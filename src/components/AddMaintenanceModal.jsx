@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { X, Plus } from 'lucide-react';
-import { CATEGORIES } from '../data/initialData';
+import { MAINTENANCE_TYPES } from '../data/initialData';
 
-export default function AddItemModal({ isOpen, onClose, onAdd }) {
+export default function AddMaintenanceModal({ isOpen, onClose, onAdd }) {
   const [form, setForm] = useState({
-    category: 'vehicle-purchase',
-    itemName: '',
-    budgeted: '',
-    actual: '',
+    assetName: '',
+    maintenanceType: 'oil',
+    lastServiceDate: '',
+    nextServiceDate: '',
+    estimatedCost: '',
   });
 
   function handleChange(e) {
@@ -16,16 +17,29 @@ export default function AddItemModal({ isOpen, onClose, onAdd }) {
 
   function handleSubmit(e) {
     e.preventDefault();
-    if (!form.itemName.trim() || !form.budgeted) return;
+    if (
+      !form.assetName.trim() ||
+      !form.lastServiceDate ||
+      !form.nextServiceDate ||
+      !form.estimatedCost
+    )
+      return;
 
     onAdd({
-      category: form.category,
-      itemName: form.itemName.trim(),
-      budgeted: parseFloat(form.budgeted),
-      actual: form.actual ? parseFloat(form.actual) : 0,
+      assetName: form.assetName.trim(),
+      maintenanceType: form.maintenanceType,
+      lastServiceDate: form.lastServiceDate,
+      nextServiceDate: form.nextServiceDate,
+      estimatedCost: parseFloat(form.estimatedCost),
     });
 
-    setForm({ category: 'vehicle-purchase', itemName: '', budgeted: '', actual: '' });
+    setForm({
+      assetName: '',
+      maintenanceType: 'oil',
+      lastServiceDate: '',
+      nextServiceDate: '',
+      estimatedCost: '',
+    });
     onClose();
   }
 
@@ -33,16 +47,14 @@ export default function AddItemModal({ isOpen, onClose, onAdd }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
 
-      {/* Modal */}
       <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50">
           <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
             <Plus size={20} className="text-primary-600" />
-            إضافة بند جديد
+            إضافة سجل صيانة
           </h3>
           <button
             onClick={onClose}
@@ -52,70 +64,85 @@ export default function AddItemModal({ isOpen, onClose, onAdd }) {
           </button>
         </div>
 
-        {/* Form */}
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
-          {/* Category */}
+          {/* Asset Name */}
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">التصنيف</label>
-            <select
-              name="category"
-              value={form.category}
-              onChange={handleChange}
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white"
-            >
-              {CATEGORIES.map((cat) => (
-                <option key={cat.id} value={cat.id}>
-                  {cat.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Item Name */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">اسم البند</label>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+              اسم المركبة/المعدة
+            </label>
             <input
               type="text"
-              name="itemName"
-              value={form.itemName}
+              name="assetName"
+              value={form.assetName}
               onChange={handleChange}
-              placeholder="مثال: غسالة صناعية"
+              placeholder="مثال: شاحنة إيسوزو"
               required
               className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
             />
           </div>
 
-          {/* Amounts row */}
+          {/* Maintenance Type */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">نوع الصيانة</label>
+            <select
+              name="maintenanceType"
+              value={form.maintenanceType}
+              onChange={handleChange}
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white"
+            >
+              {MAINTENANCE_TYPES.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Dates row */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                الميزانية المحددة (ر.س)
+                تاريخ آخر صيانة
               </label>
               <input
-                type="number"
-                name="budgeted"
-                value={form.budgeted}
+                type="date"
+                name="lastServiceDate"
+                value={form.lastServiceDate}
                 onChange={handleChange}
-                placeholder="0"
                 required
-                min="0"
                 className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               />
             </div>
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                التكلفة الفعلية (ر.س)
+                تاريخ الصيانة القادمة
               </label>
               <input
-                type="number"
-                name="actual"
-                value={form.actual}
+                type="date"
+                name="nextServiceDate"
+                value={form.nextServiceDate}
                 onChange={handleChange}
-                placeholder="0"
-                min="0"
+                required
                 className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               />
             </div>
+          </div>
+
+          {/* Cost */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+              التكلفة التقديرية (ر.س)
+            </label>
+            <input
+              type="number"
+              name="estimatedCost"
+              value={form.estimatedCost}
+              onChange={handleChange}
+              placeholder="0"
+              required
+              min="0"
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            />
           </div>
 
           {/* Actions */}
@@ -125,7 +152,7 @@ export default function AddItemModal({ isOpen, onClose, onAdd }) {
               className="flex-1 bg-primary-600 hover:bg-primary-700 text-white py-2.5 px-4 rounded-xl text-sm font-semibold transition-colors flex items-center justify-center gap-2"
             >
               <Plus size={18} />
-              إضافة البند
+              إضافة السجل
             </button>
             <button
               type="button"

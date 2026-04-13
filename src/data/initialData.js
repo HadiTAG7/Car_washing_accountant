@@ -142,11 +142,85 @@ export const initialAssets = [
   },
 ];
 
+// ─── Fleet Maintenance Records ──────────────────────────────────────────────
+export const MAINTENANCE_TYPES = [
+  { id: 'oil', label: 'تغيير زيت' },
+  { id: 'pumps', label: 'صيانة مضخات' },
+  { id: 'filters', label: 'تغيير فلاتر' },
+  { id: 'tires', label: 'إطارات' },
+  { id: 'brakes', label: 'فرامل' },
+  { id: 'generator', label: 'صيانة مولد' },
+  { id: 'general', label: 'صيانة عامة' },
+];
+
+export const initialMaintenanceRecords = [
+  {
+    id: 1,
+    assetName: 'شاحنة إيسوزو مجهزة',
+    maintenanceType: 'oil',
+    lastServiceDate: '2026-02-10',
+    nextServiceDate: '2026-05-10',
+    estimatedCost: 450,
+  },
+  {
+    id: 2,
+    assetName: 'شاحنة إيسوزو مجهزة',
+    maintenanceType: 'filters',
+    lastServiceDate: '2026-01-20',
+    nextServiceDate: '2026-04-20',
+    estimatedCost: 300,
+  },
+  {
+    id: 3,
+    assetName: 'فان هيونداي H1',
+    maintenanceType: 'oil',
+    lastServiceDate: '2026-03-01',
+    nextServiceDate: '2026-06-01',
+    estimatedCost: 350,
+  },
+  {
+    id: 4,
+    assetName: 'فان هيونداي H1',
+    maintenanceType: 'brakes',
+    lastServiceDate: '2025-12-15',
+    nextServiceDate: '2026-06-15',
+    estimatedCost: 1200,
+  },
+  {
+    id: 5,
+    assetName: 'مولد كهرباء متنقل',
+    maintenanceType: 'generator',
+    lastServiceDate: '2026-03-05',
+    nextServiceDate: '2026-04-05',
+    estimatedCost: 600,
+  },
+  {
+    id: 6,
+    assetName: 'غسالة ضغط عالي متنقلة',
+    maintenanceType: 'pumps',
+    lastServiceDate: '2026-01-10',
+    nextServiceDate: '2026-04-10',
+    estimatedCost: 800,
+  },
+];
+
+// ─── Unit Economics Defaults ────────────────────────────────────────────────
+export const defaultUnitEconomics = {
+  avgOrderPrice: 150,
+  variableCostPerOrder: 35,
+  monthlyFixedCosts: 18000,
+};
+
 // ─── Helper Functions ───────────────────────────────────────────────────────
 
 export function getCategoryLabel(categoryId) {
   const cat = CATEGORIES.find((c) => c.id === categoryId);
   return cat ? cat.label : categoryId;
+}
+
+export function getMaintenanceTypeLabel(typeId) {
+  const t = MAINTENANCE_TYPES.find((m) => m.id === typeId);
+  return t ? t.label : typeId;
 }
 
 export function formatCurrency(amount) {
@@ -156,6 +230,10 @@ export function formatCurrency(amount) {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(amount);
+}
+
+export function formatNumber(n) {
+  return new Intl.NumberFormat('ar-SA').format(n);
 }
 
 export function getVariance(budgeted, actual) {
@@ -179,7 +257,6 @@ export function calcAnnualDepreciation(purchaseCost, salvageValue, usefulLife) {
 
 /**
  * Current book value based on elapsed years since purchase.
- * Book Value = Purchase Cost - (Annual Depreciation * Years Elapsed)
  * Clamped so it never drops below salvage value.
  */
 export function calcBookValue(purchaseCost, salvageValue, usefulLife, purchaseDate) {
@@ -190,4 +267,54 @@ export function calcBookValue(purchaseCost, salvageValue, usefulLife, purchaseDa
   const accumulatedDep = annual * yearsElapsed;
   const bookValue = purchaseCost - accumulatedDep;
   return Math.max(bookValue, salvageValue);
+}
+
+/**
+ * Maintenance status based on next service date relative to today.
+ * Returns 'overdue' | 'due-soon' (within 14 days) | 'good'
+ */
+export function getMaintenanceStatus(nextServiceDate) {
+  const next = new Date(nextServiceDate);
+  const now = new Date();
+  const diffDays = (next - now) / (1000 * 60 * 60 * 24);
+  if (diffDays < 0) return 'overdue';
+  if (diffDays <= 14) return 'due-soon';
+  return 'good';
+}
+
+/**
+ * Generate 12-month cash flow projection.
+ * Starts with totalCapital and subtracts monthlyBurn each month.
+ */
+export function generateCashFlowProjection(totalCapital, monthlyBurn) {
+  const months = [
+    'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
+    'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر',
+  ];
+  const data = [];
+  let remaining = totalCapital;
+  for (let i = 0; i < 12; i++) {
+    data.push({ month: months[i], remaining: Math.max(remaining, 0) });
+    remaining -= monthlyBurn;
+  }
+  return data;
+}
+
+/**
+ * Export arrays of objects to CSV and trigger browser download.
+ */
+export function exportToCSV(filename, headers, rows) {
+  const bom = '\uFEFF';
+  const headerLine = headers.join(',');
+  const csvRows = rows.map((row) =>
+    row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')
+  );
+  const csv = bom + headerLine + '\n' + csvRows.join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
 }

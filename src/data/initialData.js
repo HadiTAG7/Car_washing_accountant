@@ -211,6 +211,28 @@ export const defaultUnitEconomics = {
   monthlyFixedCosts: 18000,
 };
 
+// ─── Route / Fleet Profitability Seed Data ──────────────────────────────────
+export const initialVehiclePerformance = [
+  {
+    id: 1,
+    vehicleName: 'شاحنة إيسوزو مجهزة',
+    route: 'شمال الرياض',
+    monthlyRevenue: 28000,
+    directCosts: 6500,
+    allocatedFixedCosts: 9000,
+    assetCost: 115000,
+  },
+  {
+    id: 2,
+    vehicleName: 'فان هيونداي H1',
+    route: 'شرق الرياض',
+    monthlyRevenue: 22000,
+    directCosts: 5200,
+    allocatedFixedCosts: 9000,
+    assetCost: 88000,
+  },
+];
+
 // ─── Helper Functions ───────────────────────────────────────────────────────
 
 export function getCategoryLabel(categoryId) {
@@ -271,7 +293,6 @@ export function calcBookValue(purchaseCost, salvageValue, usefulLife, purchaseDa
 
 /**
  * Maintenance status based on next service date relative to today.
- * Returns 'overdue' | 'due-soon' (within 14 days) | 'good'
  */
 export function getMaintenanceStatus(nextServiceDate) {
   const next = new Date(nextServiceDate);
@@ -284,7 +305,6 @@ export function getMaintenanceStatus(nextServiceDate) {
 
 /**
  * Generate 12-month cash flow projection.
- * Starts with totalCapital and subtracts monthlyBurn each month.
  */
 export function generateCashFlowProjection(totalCapital, monthlyBurn) {
   const months = [
@@ -317,4 +337,59 @@ export function exportToCSV(filename, headers, rows) {
   link.download = filename;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+// ─── Investment Metrics ─────────────────────────────────────────────────────
+
+/**
+ * Payback period in months.
+ * initialInvestment: total capital spent upfront
+ * monthlyNetCashFlow: monthly revenue minus monthly costs
+ */
+export function calcPaybackPeriod(initialInvestment, monthlyNetCashFlow) {
+  if (monthlyNetCashFlow <= 0) return Infinity;
+  return initialInvestment / monthlyNetCashFlow;
+}
+
+/**
+ * Net Present Value over N months.
+ * annualDiscountRate: e.g. 0.10 for 10%
+ * monthlyCashFlows: array of net cash flows per month
+ * initialInvestment: upfront cost (positive number, subtracted)
+ */
+export function calcNPV(initialInvestment, monthlyCashFlows, annualDiscountRate) {
+  const monthlyRate = annualDiscountRate / 12;
+  let npv = -initialInvestment;
+  for (let t = 0; t < monthlyCashFlows.length; t++) {
+    npv += monthlyCashFlows[t] / Math.pow(1 + monthlyRate, t + 1);
+  }
+  return npv;
+}
+
+/**
+ * Internal Rate of Return (monthly) using Newton-Raphson,
+ * then annualized. Returns annualized rate or null if not converging.
+ */
+export function calcIRR(initialInvestment, monthlyCashFlows) {
+  let rate = 0.01; // initial guess: 1% per month
+  const maxIter = 200;
+  const tolerance = 1e-6;
+
+  for (let i = 0; i < maxIter; i++) {
+    let npv = -initialInvestment;
+    let dnpv = 0;
+    for (let t = 0; t < monthlyCashFlows.length; t++) {
+      const discountFactor = Math.pow(1 + rate, t + 1);
+      npv += monthlyCashFlows[t] / discountFactor;
+      dnpv -= ((t + 1) * monthlyCashFlows[t]) / Math.pow(1 + rate, t + 2);
+    }
+    if (Math.abs(dnpv) < 1e-12) break;
+    const newRate = rate - npv / dnpv;
+    if (Math.abs(newRate - rate) < tolerance) {
+      const annualized = Math.pow(1 + newRate, 12) - 1;
+      return annualized;
+    }
+    rate = newRate;
+  }
+  return null;
 }

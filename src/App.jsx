@@ -6,11 +6,13 @@ import {
   Calculator,
   Wrench,
   FileBarChart,
+  MapPin,
 } from 'lucide-react';
 import {
   initialCostItems,
   initialAssets,
   initialMaintenanceRecords,
+  initialVehiclePerformance,
 } from './data/initialData';
 import SummaryCards from './components/SummaryCards';
 import CostTable from './components/CostTable';
@@ -22,12 +24,15 @@ import UnitEconomics from './components/UnitEconomics';
 import FleetMaintenance from './components/FleetMaintenance';
 import AddMaintenanceModal from './components/AddMaintenanceModal';
 import CashFlowReport from './components/CashFlowReport';
+import RouteProfitability from './components/RouteProfitability';
 
+// Context-aware header add-button config per tab
 const ADD_BUTTON_CONFIG = {
-  startup: { label: 'إضافة بند جديد', modal: 'cost' },
-  economics: null,
-  fleet: { label: 'إضافة سجل صيانة', modal: 'maintenance' },
-  cashflow: null,
+  startup:    { label: 'إضافة بند جديد',    modal: 'cost' },
+  economics:  null,
+  fleet:      { label: 'إضافة سجل صيانة',  modal: 'maintenance' },
+  cashflow:   null,
+  routes:     null, // table has its own inline button
 };
 
 function App() {
@@ -37,22 +42,18 @@ function App() {
   const [items, setItems] = useState(initialCostItems);
   const [isCostModalOpen, setIsCostModalOpen] = useState(false);
 
-  const totalBudgeted = items.reduce((sum, item) => sum + item.budgeted, 0);
-  const totalActual = items.reduce((sum, item) => sum + item.actual, 0);
+  const totalBudgeted = items.reduce((sum, i) => sum + i.budgeted, 0);
+  const totalActual   = items.reduce((sum, i) => sum + i.actual,   0);
   const totalVariance = totalBudgeted - totalActual;
 
   function handleAddItem(newItem) {
     setItems((prev) => [...prev, { ...newItem, id: Date.now() }]);
   }
-
   function handleUpdateActual(id, newActual) {
-    setItems((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, actual: newActual } : item))
-    );
+    setItems((prev) => prev.map((i) => (i.id === id ? { ...i, actual: newActual } : i)));
   }
-
   function handleDeleteItem(id) {
-    setItems((prev) => prev.filter((item) => item.id !== id));
+    setItems((prev) => prev.filter((i) => i.id !== id));
   }
 
   // ── Depreciation state ────────────────────────────────────
@@ -62,7 +63,6 @@ function App() {
   function handleAddAsset(newAsset) {
     setAssets((prev) => [...prev, { ...newAsset, id: Date.now() }]);
   }
-
   function handleDeleteAsset(id) {
     setAssets((prev) => prev.filter((a) => a.id !== id));
   }
@@ -74,32 +74,42 @@ function App() {
   function handleAddMaintenance(record) {
     setMaintenanceRecords((prev) => [...prev, { ...record, id: Date.now() }]);
   }
-
   function handleDeleteMaintenance(id) {
     setMaintenanceRecords((prev) => prev.filter((r) => r.id !== id));
   }
 
-  // ── Context-aware add button ──────────────────────────────
-  function handleAddClick() {
-    const config = ADD_BUTTON_CONFIG[activeTab];
-    if (!config) return;
-    if (config.modal === 'cost') setIsCostModalOpen(true);
-    else if (config.modal === 'maintenance') setIsMaintenanceModalOpen(true);
+  // ── Route Profitability state ─────────────────────────────
+  const [vehicles, setVehicles] = useState(initialVehiclePerformance);
+
+  function handleAddVehicle(newVehicle) {
+    setVehicles((prev) => [...prev, { ...newVehicle, id: Date.now() }]);
+  }
+  function handleDeleteVehicle(id) {
+    setVehicles((prev) => prev.filter((v) => v.id !== id));
   }
 
-  const addBtnConfig = ADD_BUTTON_CONFIG[activeTab];
+  // ── Context-aware header add button ──────────────────────
+  function handleAddClick() {
+    const cfg = ADD_BUTTON_CONFIG[activeTab];
+    if (!cfg) return;
+    if (cfg.modal === 'cost')        setIsCostModalOpen(true);
+    if (cfg.modal === 'maintenance') setIsMaintenanceModalOpen(true);
+  }
+
+  const addBtnCfg = ADD_BUTTON_CONFIG[activeTab];
 
   // ── Tab definitions ───────────────────────────────────────
   const tabs = [
-    { id: 'startup', label: 'التأسيس والإهلاك', icon: Landmark },
-    { id: 'economics', label: 'اقتصاديات الوحدة ونقطة التعادل', icon: Calculator },
-    { id: 'fleet', label: 'صيانة الأسطول', icon: Wrench },
-    { id: 'cashflow', label: 'التدفق النقدي والتقارير', icon: FileBarChart },
+    { id: 'startup',   label: 'التأسيس والإهلاك',                  icon: Landmark    },
+    { id: 'economics', label: 'اقتصاديات الوحدة ونقطة التعادل',    icon: Calculator  },
+    { id: 'fleet',     label: 'صيانة الأسطول',                     icon: Wrench      },
+    { id: 'cashflow',  label: 'التدفق النقدي والتقارير',            icon: FileBarChart},
+    { id: 'routes',    label: 'ربحية المسارات والأسطول',            icon: MapPin      },
   ];
 
   return (
     <div className="min-h-screen bg-slate-100">
-      {/* Header */}
+      {/* ── Header ── */}
       <header className="bg-gradient-to-l from-primary-700 to-primary-900 text-white shadow-lg">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5">
           <div className="flex items-center justify-between">
@@ -114,13 +124,13 @@ function App() {
             </div>
 
             {/* Context-aware Add button */}
-            {addBtnConfig && (
+            {addBtnCfg && (
               <button
                 onClick={handleAddClick}
                 className="bg-white/15 hover:bg-white/25 text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors flex items-center gap-2 border border-white/20"
               >
                 <Plus size={18} />
-                {addBtnConfig.label}
+                {addBtnCfg.label}
               </button>
             )}
           </div>
@@ -128,14 +138,13 @@ function App() {
 
         {/* Tabs */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <nav className="flex gap-1 -mb-px overflow-x-auto scrollbar-hide">
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              const isActive = activeTab === tab.id;
+          <nav className="flex gap-1 -mb-px overflow-x-auto">
+            {tabs.map(({ id, label, icon: Icon }) => {
+              const isActive = activeTab === id;
               return (
                 <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
+                  key={id}
+                  onClick={() => setActiveTab(id)}
                   className={`flex items-center gap-2 px-5 py-3 text-sm font-semibold rounded-t-xl transition-colors whitespace-nowrap ${
                     isActive
                       ? 'bg-slate-100 text-primary-800'
@@ -143,7 +152,7 @@ function App() {
                   }`}
                 >
                   <Icon size={18} />
-                  {tab.label}
+                  {label}
                 </button>
               );
             })}
@@ -151,12 +160,12 @@ function App() {
         </div>
       </header>
 
-      {/* Main Content */}
+      {/* ── Main Content ── */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Tab 1: Startup Costs + Depreciation combined */}
+
+        {/* Tab 1 — Startup Costs + Depreciation */}
         {activeTab === 'startup' && (
           <>
-            {/* ── Cost section ── */}
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-lg font-bold text-gray-800">التكاليف التأسيسية</h2>
               <button
@@ -180,7 +189,6 @@ function App() {
             />
             <BudgetChart items={items} />
 
-            {/* ── Depreciation section ── */}
             <div className="mt-12 pt-8 border-t-2 border-gray-200">
               <h2 className="text-lg font-bold text-gray-800 mb-6">سجل إهلاك الأصول</h2>
               <DepreciationTable assets={assets} onDeleteAsset={handleDeleteAsset} />
@@ -188,10 +196,10 @@ function App() {
           </>
         )}
 
-        {/* Tab 2: Unit Economics & Break-Even */}
+        {/* Tab 2 — Unit Economics & Break-Even + Scenario Analysis */}
         {activeTab === 'economics' && <UnitEconomics />}
 
-        {/* Tab 3: Fleet Maintenance */}
+        {/* Tab 3 — Fleet Maintenance */}
         {activeTab === 'fleet' && (
           <FleetMaintenance
             records={maintenanceRecords}
@@ -199,20 +207,29 @@ function App() {
           />
         )}
 
-        {/* Tab 4: Cash Flow & Reports */}
+        {/* Tab 4 — Cash Flow, Investment Metrics & Reports */}
         {activeTab === 'cashflow' && (
           <CashFlowReport items={items} assets={assets} />
         )}
+
+        {/* Tab 5 — Route & Fleet Profitability */}
+        {activeTab === 'routes' && (
+          <RouteProfitability
+            vehicles={vehicles}
+            onAddVehicle={handleAddVehicle}
+            onDeleteVehicle={handleDeleteVehicle}
+          />
+        )}
       </main>
 
-      {/* Footer */}
+      {/* ── Footer ── */}
       <footer className="border-t border-gray-200 bg-white mt-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 text-center text-sm text-gray-400">
           نظام محاسبة المغسلة المتنقلة — إدارة التكاليف والأصول والتشغيل
         </div>
       </footer>
 
-      {/* Modals */}
+      {/* ── Modals ── */}
       <AddItemModal
         isOpen={isCostModalOpen}
         onClose={() => setIsCostModalOpen(false)}

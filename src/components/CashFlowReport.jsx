@@ -1,7 +1,5 @@
 import { useState } from 'react';
 import {
-  LineChart,
-  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -10,17 +8,30 @@ import {
   Area,
   AreaChart,
 } from 'recharts';
-import { Download, TrendingDown, Banknote, CalendarRange } from 'lucide-react';
+import {
+  Download,
+  TrendingDown,
+  Banknote,
+  CalendarRange,
+  BadgeDollarSign,
+  Clock,
+  Percent,
+  TrendingUp,
+} from 'lucide-react';
 import {
   formatCurrency,
+  formatNumber,
   generateCashFlowProjection,
   exportToCSV,
   calcAnnualDepreciation,
   calcBookValue,
   getCategoryLabel,
+  calcPaybackPeriod,
+  calcNPV,
+  calcIRR,
 } from '../data/initialData';
 
-function CustomTooltip({ active, payload, label }) {
+function CashFlowTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
   return (
     <div className="bg-white border border-gray-200 rounded-xl shadow-lg p-3 text-sm" dir="rtl">
@@ -35,12 +46,26 @@ function CustomTooltip({ active, payload, label }) {
 export default function CashFlowReport({ items, assets }) {
   const totalActual = items.reduce((s, i) => s + i.actual, 0);
 
-  const [startingCapital, setStartingCapital] = useState(totalActual > 0 ? Math.round(totalActual * 1.3) : 350000);
+  const [startingCapital, setStartingCapital] = useState(
+    totalActual > 0 ? Math.round(totalActual * 1.3) : 350000
+  );
   const [monthlyBurn, setMonthlyBurn] = useState(25000);
+  const [monthlyRevenue, setMonthlyRevenue] = useState(45000);
+  const [discountRate, setDiscountRate] = useState(10);
 
   const projectionData = generateCashFlowProjection(startingCapital, monthlyBurn);
   const monthsUntilZero = projectionData.filter((d) => d.remaining > 0).length;
 
+  // ── Investment metrics ────────────────────────────────────
+  const monthlyNetCashFlow = monthlyRevenue - monthlyBurn;
+  const projectionMonths = 36; // 3-year horizon
+
+  const paybackMonths = calcPaybackPeriod(totalActual, monthlyNetCashFlow);
+  const monthlyCashFlows = Array(projectionMonths).fill(monthlyNetCashFlow);
+  const npv = calcNPV(totalActual, monthlyCashFlows, discountRate / 100);
+  const irr = calcIRR(totalActual, monthlyCashFlows);
+
+  // ── Export handlers ───────────────────────────────────────
   function handleExportCosts() {
     const headers = ['التصنيف', 'اسم البند', 'الميزانية المحددة', 'التكلفة الفعلية', 'الفرق'];
     const rows = items.map((i) => [
@@ -77,7 +102,7 @@ export default function CashFlowReport({ items, assets }) {
 
   return (
     <div>
-      {/* Summary cards */}
+      {/* ── Cash Flow Summary Cards ── */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between mb-4">
@@ -99,29 +124,47 @@ export default function CashFlowReport({ items, assets }) {
           <p className="text-2xl font-bold text-gray-800">{formatCurrency(monthlyBurn)}</p>
         </div>
 
-        <div className={`rounded-2xl shadow-sm border p-6 hover:shadow-md transition-shadow ${
-          monthsUntilZero <= 3 ? 'bg-red-50 border-red-100' : monthsUntilZero <= 6 ? 'bg-amber-50 border-amber-100' : 'bg-emerald-50 border-emerald-100'
-        }`}>
+        <div
+          className={`rounded-2xl shadow-sm border p-6 hover:shadow-md transition-shadow ${
+            monthsUntilZero <= 3
+              ? 'bg-red-50 border-red-100'
+              : monthsUntilZero <= 6
+                ? 'bg-amber-50 border-amber-100'
+                : 'bg-emerald-50 border-emerald-100'
+          }`}
+        >
           <div className="flex items-center justify-between mb-4">
-            <div className={`p-3 rounded-xl ${
-              monthsUntilZero <= 3 ? 'bg-red-100 text-red-600' : monthsUntilZero <= 6 ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'
-            }`}>
+            <div
+              className={`p-3 rounded-xl ${
+                monthsUntilZero <= 3
+                  ? 'bg-red-100 text-red-600'
+                  : monthsUntilZero <= 6
+                    ? 'bg-amber-100 text-amber-600'
+                    : 'bg-emerald-100 text-emerald-600'
+              }`}
+            >
               <CalendarRange size={24} />
             </div>
           </div>
           <p className="text-sm text-gray-500 mb-1">المدة المالية المتاحة</p>
-          <p className={`text-2xl font-bold ${
-            monthsUntilZero <= 3 ? 'text-red-700' : monthsUntilZero <= 6 ? 'text-amber-700' : 'text-emerald-700'
-          }`}>
+          <p
+            className={`text-2xl font-bold ${
+              monthsUntilZero <= 3
+                ? 'text-red-700'
+                : monthsUntilZero <= 6
+                  ? 'text-amber-700'
+                  : 'text-emerald-700'
+            }`}
+          >
             {monthsUntilZero >= 12 ? '+١٢' : monthsUntilZero} شهر
           </p>
         </div>
       </div>
 
-      {/* Input controls */}
+      {/* ── Input controls ── */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-8">
         <h2 className="text-lg font-bold text-gray-800 mb-4">إعدادات التدفق النقدي</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">
               رأس المال الابتدائي (ر.س)
@@ -147,10 +190,23 @@ export default function CashFlowReport({ items, assets }) {
             />
             <p className="text-xs text-gray-400 mt-1">المصروفات التشغيلية الشهرية المتوقعة</p>
           </div>
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+              الإيرادات الشهرية المتوقعة (ر.س)
+            </label>
+            <input
+              type="number"
+              value={monthlyRevenue}
+              onChange={(e) => setMonthlyRevenue(parseFloat(e.target.value) || 0)}
+              min="0"
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            />
+            <p className="text-xs text-gray-400 mt-1">لحساب مقاييس الاستثمار</p>
+          </div>
         </div>
       </div>
 
-      {/* Chart */}
+      {/* ── Cash Flow Chart ── */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-8">
         <h2 className="text-lg font-bold text-gray-800 mb-6">توقعات رأس المال المتبقي (١٢ شهر)</h2>
 
@@ -174,7 +230,7 @@ export default function CashFlowReport({ items, assets }) {
                 axisLine={{ stroke: '#d1d5db' }}
                 tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`}
               />
-              <Tooltip content={<CustomTooltip />} />
+              <Tooltip content={<CashFlowTooltip />} />
               <Area
                 type="monotone"
                 dataKey="remaining"
@@ -188,7 +244,138 @@ export default function CashFlowReport({ items, assets }) {
         </div>
       </div>
 
-      {/* Export buttons */}
+      {/* ── Investment Metrics ── */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-8">
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+            <BadgeDollarSign size={22} className="text-primary-600" />
+            مقاييس الاستثمار
+          </h2>
+        </div>
+        <p className="text-xs text-gray-400 mb-6">
+          على أساس استثمار أولي {formatCurrency(totalActual)} وأفق ٣ سنوات
+        </p>
+
+        {/* Discount rate control */}
+        <div className="mb-6 max-w-xs">
+          <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+            معدل الخصم السنوي (%)
+          </label>
+          <input
+            type="number"
+            value={discountRate}
+            onChange={(e) => setDiscountRate(parseFloat(e.target.value) || 0)}
+            min="0"
+            max="50"
+            step="0.5"
+            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+          />
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* Payback Period */}
+          <div
+            className={`rounded-2xl border p-6 ${
+              paybackMonths <= 24
+                ? 'bg-emerald-50 border-emerald-100'
+                : paybackMonths <= 36
+                  ? 'bg-amber-50 border-amber-100'
+                  : 'bg-red-50 border-red-100'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div
+                className={`p-3 rounded-xl ${
+                  paybackMonths <= 24
+                    ? 'bg-emerald-100 text-emerald-600'
+                    : paybackMonths <= 36
+                      ? 'bg-amber-100 text-amber-600'
+                      : 'bg-red-100 text-red-600'
+                }`}
+              >
+                <Clock size={24} />
+              </div>
+            </div>
+            <p className="text-sm text-gray-500 mb-1">فترة الاسترداد</p>
+            <p className="text-2xl font-bold text-gray-800">
+              {monthlyNetCashFlow <= 0
+                ? '∞'
+                : paybackMonths < 1
+                  ? 'أقل من شهر'
+                  : `${formatNumber(Math.round(paybackMonths))} شهر`}
+            </p>
+            <p className="text-xs text-gray-400 mt-1">
+              {monthlyNetCashFlow > 0
+                ? `صافي التدفق الشهري: ${formatCurrency(monthlyNetCashFlow)}`
+                : 'التدفق النقدي الشهري سالب'}
+            </p>
+          </div>
+
+          {/* NPV */}
+          <div
+            className={`rounded-2xl border p-6 ${
+              npv >= 0 ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div
+                className={`p-3 rounded-xl ${
+                  npv >= 0 ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-600'
+                }`}
+              >
+                <TrendingUp size={24} />
+              </div>
+            </div>
+            <p className="text-sm text-gray-500 mb-1">صافي القيمة الحالية (NPV)</p>
+            <p
+              className={`text-2xl font-bold ${npv >= 0 ? 'text-emerald-700' : 'text-red-700'}`}
+            >
+              {formatCurrency(Math.round(npv))}
+            </p>
+            <p className="text-xs text-gray-400 mt-1">
+              بمعدل خصم {discountRate}% على ٣٦ شهر
+            </p>
+          </div>
+
+          {/* IRR */}
+          <div
+            className={`rounded-2xl border p-6 ${
+              irr !== null && irr > 0
+                ? 'bg-emerald-50 border-emerald-100'
+                : 'bg-gray-50 border-gray-200'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div
+                className={`p-3 rounded-xl ${
+                  irr !== null && irr > 0
+                    ? 'bg-emerald-100 text-emerald-600'
+                    : 'bg-gray-200 text-gray-500'
+                }`}
+              >
+                <Percent size={24} />
+              </div>
+            </div>
+            <p className="text-sm text-gray-500 mb-1">معدل العائد الداخلي (IRR)</p>
+            <p
+              className={`text-2xl font-bold ${
+                irr !== null && irr > 0 ? 'text-emerald-700' : 'text-gray-700'
+              }`}
+            >
+              {irr !== null ? `${(irr * 100).toFixed(1)}%` : '—'}
+            </p>
+            <p className="text-xs text-gray-400 mt-1">
+              {irr !== null
+                ? irr > discountRate / 100
+                  ? 'أعلى من معدل الخصم ✅'
+                  : 'أقل من معدل الخصم ⚠️'
+                : 'غير قابل للحساب'}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Export Buttons ── */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
         <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
           <Download size={20} className="text-primary-600" />

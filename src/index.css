@@ -1,26 +1,53 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "IBM Plex Sans Arabic", system-ui, sans-serif;
-  --color-primary-50: #eff6ff;
-  --color-primary-100: #dbeafe;
-  --color-primary-200: #bfdbfe;
-  --color-primary-300: #93c5fd;
-  --color-primary-400: #60a5fa;
-  --color-primary-500: #3b82f6;
-  --color-primary-600: #2563eb;
-  --color-primary-700: #1d4ed8;
-  --color-primary-800: #1e40af;
-  --color-primary-900: #1e3a8a;
+  --font-sans: "Tajawal", "IBM Plex Sans Arabic", system-ui, sans-serif;
+
+  /* Deep navy primary — Monster Wash brand */
+  --color-primary-50:  #eef2ff;
+  --color-primary-100: #dfe5f5;
+  --color-primary-200: #bcc7e6;
+  --color-primary-300: #8b9bcb;
+  --color-primary-400: #5f70a8;
+  --color-primary-500: #3f528a;
+  --color-primary-600: #2a3c70;
+  --color-primary-700: #1f2d5a;
+  --color-primary-800: #172144;
+  --color-primary-900: #101935;
+  --color-primary-950: #0a1028;
+
+  /* Neutral surface */
+  --color-surface-50:  #f7f8fb;
+  --color-surface-100: #eef1f6;
+  --color-surface-200: #e3e8f0;
+}
+
+html, body, #root {
+  height: 100%;
 }
 
 body {
   margin: 0;
   direction: rtl;
-  font-family: "IBM Plex Sans Arabic", system-ui, sans-serif;
-  background-color: #f1f5f9;
+  font-family: "Tajawal", "IBM Plex Sans Arabic", system-ui, sans-serif;
+  background-color: #eef2f7;
+  color: #0f172a;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "kern", "liga";
 }
 
 * {
   box-sizing: border-box;
 }
+
+/* Custom scrollbar */
+::-webkit-scrollbar          { width: 10px; height: 10px; }
+::-webkit-scrollbar-track    { background: transparent; }
+::-webkit-scrollbar-thumb    { background: #c7d1e0; border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: #9aa7bd; }
+
+/* Utility: thin number tabular */
+.tabular-nums { font-variant-numeric: tabular-nums; }
+
+/* LTR wrapper (for charts) */
+.chart-ltr { direction: ltr; }

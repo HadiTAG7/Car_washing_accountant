@@ -12,36 +12,42 @@ import TopBar from './TopBar';
 import {
   Card, SectionHeader, PrimaryButton, SecondaryButton, ProgressBar,
 } from './UI';
+import LoadingState from './LoadingState';
+import ErrorState from './ErrorState';
+import { useVehicles } from '../hooks/useVehicles';
+import { useTransactions } from '../hooks/useTransactions';
 
 const ROUTE_COLORS = ['#2a3c70', '#3f528a', '#5f70a8', '#8b9bcb'];
 
 // ─── Inline Add-Vehicle Modal ───────────────────────────────────────────────
 function AddVehicleModal({ isOpen, onClose, onAdd }) {
   const [form, setForm] = useState({
-    vehicleName: '', route: '', monthlyRevenue: '', directCosts: '',
-    allocatedFixedCosts: '', assetCost: '',
+    vehicleName: '', route: '', allocatedFixedCosts: '', assetCost: '',
   });
+  const [submitting, setSubmitting] = useState(false);
 
   function handleChange(e) {
     setForm({ ...form, [e.target.name]: e.target.value });
   }
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
     if (!form.vehicleName.trim() || !form.route.trim()) return;
-    onAdd({
-      vehicleName: form.vehicleName.trim(),
-      route:       form.route.trim(),
-      monthlyRevenue:      parseFloat(form.monthlyRevenue)      || 0,
-      directCosts:         parseFloat(form.directCosts)         || 0,
-      allocatedFixedCosts: parseFloat(form.allocatedFixedCosts) || 0,
-      assetCost:           parseFloat(form.assetCost)           || 0,
-    });
-    setForm({
-      vehicleName: '', route: '', monthlyRevenue: '', directCosts: '',
-      allocatedFixedCosts: '', assetCost: '',
-    });
-    onClose();
+    setSubmitting(true);
+    try {
+      await onAdd({
+        vehicleName: form.vehicleName.trim(),
+        route:       form.route.trim(),
+        allocatedFixedCosts: parseFloat(form.allocatedFixedCosts) || 0,
+        assetCost:           parseFloat(form.assetCost)           || 0,
+      });
+      setForm({
+        vehicleName: '', route: '', allocatedFixedCosts: '', assetCost: '',
+      });
+      onClose();
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   if (!isOpen) return null;
@@ -67,17 +73,19 @@ function AddVehicleModal({ isOpen, onClose, onAdd }) {
           <div className="grid grid-cols-2 gap-4">
             <ModalField label="اسم المركبة" name="vehicleName" value={form.vehicleName} onChange={handleChange} required />
             <ModalField label="المسار"      name="route"       value={form.route}       onChange={handleChange} required />
-            <ModalField label="الإيراد الشهري (ر.س)"  name="monthlyRevenue"      value={form.monthlyRevenue}      onChange={handleChange} type="number" />
-            <ModalField label="التكاليف المباشرة (ر.س)" name="directCosts"        value={form.directCosts}        onChange={handleChange} type="number" />
-            <ModalField label="التكاليف الثابتة المخصصة" name="allocatedFixedCosts" value={form.allocatedFixedCosts} onChange={handleChange} type="number" />
-            <ModalField label="تكلفة الأصل (ر.س)"       name="assetCost"          value={form.assetCost}          onChange={handleChange} type="number" />
+            <ModalField label="التكاليف الثابتة المخصصة (ر.س)" name="allocatedFixedCosts" value={form.allocatedFixedCosts} onChange={handleChange} type="number" />
+            <ModalField label="تكلفة الأصل (ر.س)"              name="assetCost"          value={form.assetCost}          onChange={handleChange} type="number" />
           </div>
+          <p className="text-[11px] text-slate-400">
+            * يتم احتساب الإيرادات والتكاليف المباشرة تلقائياً من الحركات النقدية المرتبطة بالمركبة.
+          </p>
           <div className="flex items-center gap-3 pt-2">
             <button
               type="submit"
-              className="flex-1 bg-primary-800 hover:bg-primary-900 text-white py-2.5 px-4 rounded-xl text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+              disabled={submitting}
+              className="flex-1 bg-primary-800 hover:bg-primary-900 disabled:opacity-60 text-white py-2.5 px-4 rounded-xl text-sm font-semibold transition-colors flex items-center justify-center gap-2"
             >
-              <Plus size={18} /> إضافة المركبة
+              <Plus size={18} /> {submitting ? 'جارٍ الحفظ...' : 'إضافة المركبة'}
             </button>
             <button
               type="button"
@@ -111,22 +119,67 @@ function ModalField({ label, name, value, onChange, type = 'text', required }) {
 }
 
 // ─── Page ───────────────────────────────────────────────────────────────────
-export default function RoutesPage({ vehicles, onAddVehicle, onDeleteVehicle }) {
-  const [isModalOpen, setIsModalOpen] = useState(false);
+export default function RoutesPage() {
+  const {
+    vehicles,
+    loading: vehiclesLoading,
+    error:   vehiclesError,
+    addVehicle,
+    deleteVehicle,
+    refetch: refetchVehicles,
+  } = useVehicles();
 
-  // ── Derived metrics ────────────────────────────────────
+  const {
+    transactions,
+    loading: txLoading,
+    error:   txError,
+    refetch: refetchTx,
+  } = useTransactions();
+
+  const [isModalOpen,   setIsModalOpen]   = useState(false);
+  const [mutationError, setMutationError] = useState(null);
+
+  // ── Aggregate last-month transactions per vehicle ──────────
+  const txByVehicle = useMemo(() => {
+    // Use the most recent month present in the data, per vehicle.
+    const byVehicle = new Map();
+    transactions.forEach((t) => {
+      if (!t.vehicleId) return;
+      if (!byVehicle.has(t.vehicleId)) {
+        byVehicle.set(t.vehicleId, { revenue: 0, directCosts: 0, count: 0 });
+      }
+      const b = byVehicle.get(t.vehicleId);
+      if (t.type === 'in') b.revenue     += t.amount;
+      else                 b.directCosts += t.amount;
+      b.count += 1;
+    });
+    return byVehicle;
+  }, [transactions]);
+
+  // ── Derived metrics per vehicle ───────────────────────────
   const enriched = useMemo(
     () =>
       vehicles
         .map((v) => {
-          const totalCost = v.directCosts + v.allocatedFixedCosts;
-          const profit    = v.monthlyRevenue - totalCost;
-          const margin    = v.monthlyRevenue > 0 ? profit / v.monthlyRevenue : 0;
-          const roa       = v.assetCost > 0 ? (profit * 12) / v.assetCost : 0;
-          return { ...v, totalCost, profit, margin, roa };
+          const live = txByVehicle.get(v.id) || { revenue: 0, directCosts: 0 };
+          const monthlyRevenue = live.revenue;
+          const directCosts    = live.directCosts;
+          const totalCost      = directCosts + (v.allocatedFixedCosts || 0);
+          const profit         = monthlyRevenue - totalCost;
+          const margin         = monthlyRevenue > 0 ? profit / monthlyRevenue : 0;
+          const roa            = v.assetCost > 0 ? (profit * 12) / v.assetCost : 0;
+          return {
+            ...v,
+            monthlyRevenue,
+            directCosts,
+            totalCost,
+            profit,
+            margin,
+            roa,
+          };
         })
         .sort((a, b) => b.profit - a.profit),
-    [vehicles],
+    [vehicles, txByVehicle],
   );
 
   const mostProfitable = enriched[0];
@@ -135,10 +188,28 @@ export default function RoutesPage({ vehicles, onAddVehicle, onDeleteVehicle }) 
   const overallMargin  = totalRevenue > 0 ? totalProfit / totalRevenue : 0;
 
   const chartData = enriched.map((v) => ({
-    name:    v.route,
+    name:    v.route || v.vehicleName,
     الإيراد: v.monthlyRevenue,
     الربح:   v.profit,
   }));
+
+  async function handleAddVehicle(payload) {
+    try {
+      setMutationError(null);
+      await addVehicle(payload);
+    } catch (err) {
+      setMutationError(err);
+    }
+  }
+
+  async function handleDeleteVehicle(id) {
+    try {
+      setMutationError(null);
+      await deleteVehicle(id);
+    } catch (err) {
+      setMutationError(err);
+    }
+  }
 
   function handleExport() {
     exportToCSV(
@@ -150,6 +221,9 @@ export default function RoutesPage({ vehicles, onAddVehicle, onDeleteVehicle }) 
       ]),
     );
   }
+
+  const loading = (vehiclesLoading && vehicles.length === 0) ||
+                  (txLoading && transactions.length === 0);
 
   return (
     <>
@@ -164,6 +238,29 @@ export default function RoutesPage({ vehicles, onAddVehicle, onDeleteVehicle }) 
       />
 
       <main className="p-8 space-y-6">
+        {mutationError && (
+          <ErrorState
+            title="تعذّر تنفيذ العملية"
+            error={mutationError}
+            onRetry={() => setMutationError(null)}
+          />
+        )}
+        {vehiclesError && (
+          <ErrorState
+            title="تعذّر تحميل المركبات"
+            error={vehiclesError}
+            onRetry={refetchVehicles}
+          />
+        )}
+        {txError && (
+          <ErrorState
+            title="تعذّر تحميل الحركات النقدية"
+            error={txError}
+            onRetry={refetchTx}
+          />
+        )}
+        {loading && <LoadingState message="جارٍ تحميل بيانات الأسطول..." />}
+
         {/* ── Hero grid: Most profitable card + chart ────────── */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
           {/* Most profitable — dark card */}
@@ -185,7 +282,7 @@ export default function RoutesPage({ vehicles, onAddVehicle, onDeleteVehicle }) 
 
                 <h3 className="text-lg font-bold mb-1 flex items-center gap-2">
                   <MapPin size={17} className="text-primary-300" />
-                  {mostProfitable.route}
+                  {mostProfitable.route || '—'}
                 </h3>
                 <p className="text-[11px] text-primary-300 mb-6">{mostProfitable.vehicleName}</p>
 
@@ -222,29 +319,35 @@ export default function RoutesPage({ vehicles, onAddVehicle, onDeleteVehicle }) 
               subtitle="أعمدة الإيراد مقابل الربح الصافي لكل مسار"
             />
             <div className="h-72 chart-ltr">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                  <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                  <YAxis
-                    tick={{ fontSize: 11, fill: '#64748b' }}
-                    axisLine={false}
-                    tickLine={false}
-                    tickFormatter={(v) => `${(v / 1000).toFixed(0)}ك`}
-                  />
-                  <Tooltip
-                    formatter={(v) => [formatCurrency(v), '']}
-                    contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', fontFamily: 'Tajawal' }}
-                    labelStyle={{ fontFamily: 'Tajawal' }}
-                  />
-                  <Bar dataKey="الإيراد" radius={[6, 6, 0, 0]} maxBarSize={40}>
-                    {chartData.map((_, i) => (
-                      <Cell key={i} fill={ROUTE_COLORS[i % ROUTE_COLORS.length]} />
-                    ))}
-                  </Bar>
-                  <Bar dataKey="الربح" fill="#10b981" radius={[6, 6, 0, 0]} maxBarSize={40} />
-                </BarChart>
-              </ResponsiveContainer>
+              {chartData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                    <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                    <YAxis
+                      tick={{ fontSize: 11, fill: '#64748b' }}
+                      axisLine={false}
+                      tickLine={false}
+                      tickFormatter={(v) => `${(v / 1000).toFixed(0)}ك`}
+                    />
+                    <Tooltip
+                      formatter={(v) => [formatCurrency(v), '']}
+                      contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', fontFamily: 'Tajawal' }}
+                      labelStyle={{ fontFamily: 'Tajawal' }}
+                    />
+                    <Bar dataKey="الإيراد" radius={[6, 6, 0, 0]} maxBarSize={40}>
+                      {chartData.map((_, i) => (
+                        <Cell key={i} fill={ROUTE_COLORS[i % ROUTE_COLORS.length]} />
+                      ))}
+                    </Bar>
+                    <Bar dataKey="الربح" fill="#10b981" radius={[6, 6, 0, 0]} maxBarSize={40} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center text-sm text-slate-400">
+                  لا توجد بيانات مركبات بعد
+                </div>
+              )}
             </div>
             <div className="flex items-center justify-center gap-6 mt-4 text-xs">
               <Legend color="#2a3c70" label="الإيراد الشهري" />
@@ -301,6 +404,13 @@ export default function RoutesPage({ vehicles, onAddVehicle, onDeleteVehicle }) 
                 </tr>
               </thead>
               <tbody>
+                {enriched.length === 0 && !loading && (
+                  <tr>
+                    <td colSpan={8} className="py-12 text-center text-sm text-slate-400">
+                      لا توجد مركبات مسجّلة بعد — ابدأ بإضافة مركبة إلى أسطولك
+                    </td>
+                  </tr>
+                )}
                 {enriched.map((v, idx) => (
                   <tr key={v.id} className="border-b border-slate-50 hover:bg-slate-50/60 transition-colors">
                     <td className="py-3 px-4 font-medium text-slate-800">
@@ -314,7 +424,7 @@ export default function RoutesPage({ vehicles, onAddVehicle, onDeleteVehicle }) 
                     </td>
                     <td className="py-3 px-4 text-slate-600">
                       <span className="inline-flex items-center gap-1 text-slate-700">
-                        <MapPin size={13} /> {v.route}
+                        <MapPin size={13} /> {v.route || '—'}
                       </span>
                     </td>
                     <td className="py-3 px-4 text-left tabular-nums text-slate-800">
@@ -352,7 +462,7 @@ export default function RoutesPage({ vehicles, onAddVehicle, onDeleteVehicle }) 
                     </td>
                     <td className="py-3 px-4 text-left">
                       <button
-                        onClick={() => onDeleteVehicle(v.id)}
+                        onClick={() => handleDeleteVehicle(v.id)}
                         className="text-slate-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors"
                         aria-label="حذف"
                       >
@@ -370,7 +480,7 @@ export default function RoutesPage({ vehicles, onAddVehicle, onDeleteVehicle }) 
       <AddVehicleModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        onAdd={onAddVehicle}
+        onAdd={handleAddVehicle}
       />
     </>
   );

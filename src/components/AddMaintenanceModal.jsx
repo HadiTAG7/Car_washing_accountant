@@ -1,46 +1,54 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { X, Plus } from 'lucide-react';
 import { MAINTENANCE_TYPES } from '../data/initialData';
 
-export default function AddMaintenanceModal({ isOpen, onClose, onAdd }) {
-  const [form, setForm] = useState({
-    assetName: '',
-    maintenanceType: 'oil',
-    lastServiceDate: '',
-    nextServiceDate: '',
-    estimatedCost: '',
-  });
+const INITIAL_FORM = {
+  vehicleId: '',
+  maintenanceType: 'oil',
+  lastServiceDate: '',
+  nextServiceDate: '',
+  estimatedCost: '',
+};
+
+export default function AddMaintenanceModal({ isOpen, onClose, onAdd, vehicles = [] }) {
+  const [form, setForm] = useState(INITIAL_FORM);
+  const [submitting, setSubmitting] = useState(false);
+
+  // Auto-select first vehicle when the list loads.
+  useEffect(() => {
+    if (isOpen && !form.vehicleId && vehicles.length > 0) {
+      setForm((prev) => ({ ...prev, vehicleId: vehicles[0].id }));
+    }
+  }, [isOpen, vehicles, form.vehicleId]);
 
   function handleChange(e) {
     setForm({ ...form, [e.target.name]: e.target.value });
   }
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
     if (
-      !form.assetName.trim() ||
+      !form.vehicleId ||
       !form.lastServiceDate ||
       !form.nextServiceDate ||
       !form.estimatedCost
     )
       return;
 
-    onAdd({
-      assetName: form.assetName.trim(),
-      maintenanceType: form.maintenanceType,
-      lastServiceDate: form.lastServiceDate,
-      nextServiceDate: form.nextServiceDate,
-      estimatedCost: parseFloat(form.estimatedCost),
-    });
-
-    setForm({
-      assetName: '',
-      maintenanceType: 'oil',
-      lastServiceDate: '',
-      nextServiceDate: '',
-      estimatedCost: '',
-    });
-    onClose();
+    setSubmitting(true);
+    try {
+      await onAdd({
+        vehicleId:       form.vehicleId,
+        maintenanceType: form.maintenanceType,
+        lastServiceDate: form.lastServiceDate,
+        nextServiceDate: form.nextServiceDate,
+        estimatedCost:   parseFloat(form.estimatedCost),
+      });
+      setForm(INITIAL_FORM);
+      onClose();
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   if (!isOpen) return null;
@@ -65,20 +73,30 @@ export default function AddMaintenanceModal({ isOpen, onClose, onAdd }) {
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
-          {/* Asset Name */}
+          {/* Vehicle select */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-              اسم المركبة/المعدة
+              المركبة/المعدة
             </label>
-            <input
-              type="text"
-              name="assetName"
-              value={form.assetName}
-              onChange={handleChange}
-              placeholder="مثال: شاحنة إيسوزو"
-              required
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-            />
+            {vehicles.length === 0 ? (
+              <div className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2.5">
+                أضف مركبة إلى الأسطول أولاً قبل تسجيل عملية صيانة.
+              </div>
+            ) : (
+              <select
+                name="vehicleId"
+                value={form.vehicleId}
+                onChange={handleChange}
+                required
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white"
+              >
+                {vehicles.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.vehicleName}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
 
           {/* Maintenance Type */}
@@ -149,10 +167,11 @@ export default function AddMaintenanceModal({ isOpen, onClose, onAdd }) {
           <div className="flex items-center gap-3 pt-2">
             <button
               type="submit"
-              className="flex-1 bg-primary-600 hover:bg-primary-700 text-white py-2.5 px-4 rounded-xl text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+              disabled={submitting || vehicles.length === 0}
+              className="flex-1 bg-primary-600 hover:bg-primary-700 disabled:opacity-60 text-white py-2.5 px-4 rounded-xl text-sm font-semibold transition-colors flex items-center justify-center gap-2"
             >
               <Plus size={18} />
-              إضافة السجل
+              {submitting ? 'جارٍ الحفظ...' : 'إضافة السجل'}
             </button>
             <button
               type="button"

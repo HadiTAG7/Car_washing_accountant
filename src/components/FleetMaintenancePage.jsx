@@ -12,10 +12,14 @@ import {
 } from '../data/initialData';
 import TopBar from './TopBar';
 import {
-  Card, SectionHeader, StatCard, StatusBadge, ProgressBar,
+  Card, SectionHeader, StatCard, StatusBadge,
   PrimaryButton, SecondaryButton,
 } from './UI';
 import AddMaintenanceModal from './AddMaintenanceModal';
+import LoadingState from './LoadingState';
+import ErrorState from './ErrorState';
+import { useMaintenanceLogs } from '../hooks/useMaintenanceLogs';
+import { useVehicles } from '../hooks/useVehicles';
 
 const STATUS_LABEL = {
   critical:   'متأخر جداً',
@@ -24,32 +28,66 @@ const STATUS_LABEL = {
   good:       'حالة جيدة',
 };
 
-export default function FleetMaintenancePage({ records, onAddRecord, onDeleteRecord }) {
+export default function FleetMaintenancePage() {
+  const {
+    logs,
+    loading: logsLoading,
+    error:   logsError,
+    addLog,
+    deleteLog,
+    refetch: refetchLogs,
+  } = useMaintenanceLogs();
+
+  const {
+    vehicles,
+    loading: vehiclesLoading,
+    error:   vehiclesError,
+    refetch: refetchVehicles,
+  } = useVehicles();
+
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [mutationError, setMutationError] = useState(null);
 
   // ── Computed KPIs ─────────────────────────────────────────
   const { criticalCount, totalCost, fleetHealth } = useMemo(() => {
     let critical = 0;
     let overdue  = 0;
     let cost     = 0;
-    records.forEach((r) => {
+    logs.forEach((r) => {
       const s = getMaintenanceStatus(r.nextServiceDate);
       if (s === 'critical') critical += 1;
       else if (s === 'overdue') overdue += 1;
       cost += r.estimatedCost || 0;
     });
-    // Heuristic health: base 100, subtract weighted penalties
-    const total = records.length || 1;
+    const total = logs.length || 1;
     const penalty = ((critical * 1.93) + (overdue * 0.8)) * (8 / total);
     const health = Math.max(0, Math.min(100, 100 - penalty));
     return { criticalCount: critical, totalCost: cost, fleetHealth: health };
-  }, [records]);
+  }, [logs]);
+
+  async function handleAddRecord(record) {
+    try {
+      setMutationError(null);
+      await addLog(record);
+    } catch (err) {
+      setMutationError(err);
+    }
+  }
+
+  async function handleDeleteRecord(id) {
+    try {
+      setMutationError(null);
+      await deleteLog(id);
+    } catch (err) {
+      setMutationError(err);
+    }
+  }
 
   function handleExport() {
     exportToCSV(
       'monster-wash-maintenance.csv',
       ['المركبة', 'نوع الصيانة', 'آخر صيانة', 'الصيانة القادمة', 'التكلفة التقديرية', 'الحالة'],
-      records.map((r) => [
+      logs.map((r) => [
         r.assetName,
         getMaintenanceTypeLabel(r.maintenanceType),
         r.lastServiceDate,
@@ -59,6 +97,8 @@ export default function FleetMaintenancePage({ records, onAddRecord, onDeleteRec
       ]),
     );
   }
+
+  const loading = (logsLoading && logs.length === 0) || (vehiclesLoading && vehicles.length === 0);
 
   return (
     <>
@@ -73,6 +113,28 @@ export default function FleetMaintenancePage({ records, onAddRecord, onDeleteRec
       />
 
       <main className="p-8 space-y-6">
+        {mutationError && (
+          <ErrorState
+            title="تعذّر تنفيذ العملية"
+            error={mutationError}
+            onRetry={() => setMutationError(null)}
+          />
+        )}
+        {logsError && (
+          <ErrorState
+            title="تعذّر تحميل سجلات الصيانة"
+            error={logsError}
+            onRetry={refetchLogs}
+          />
+        )}
+        {vehiclesError && (
+          <ErrorState
+            title="تعذّر تحميل المركبات"
+            error={vehiclesError}
+            onRetry={refetchVehicles}
+          />
+        )}
+
         {/* ── KPI row ─────────────────────────────────────── */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           <StatCard
@@ -97,7 +159,7 @@ export default function FleetMaintenancePage({ records, onAddRecord, onDeleteRec
             iconColor="text-primary-700"
             label="تكلفة الصيانة الشهرية"
             value={formatCurrency(totalCost)}
-            sub={`${formatNumber(records.length)} سجل صيانة نشط`}
+            sub={`${formatNumber(logs.length)} سجل صيانة نشط`}
           />
         </div>
 
@@ -107,7 +169,12 @@ export default function FleetMaintenancePage({ records, onAddRecord, onDeleteRec
             title="سجل الصيانة"
             subtitle="جميع عمليات الصيانة المجدولة والمستحقة — انقر على تاريخ قادم لإعادة جدولة"
             action={
-              <PrimaryButton icon={Plus} onClick={() => setIsModalOpen(true)}>
+              <PrimaryButton
+                icon={Plus}
+                onClick={() => setIsModalOpen(true)}
+                disabled={vehicles.length === 0}
+                title={vehicles.length === 0 ? 'أضف مركبة أولاً' : undefined}
+              >
                 إضافة سجل صيانة
               </PrimaryButton>
             }
@@ -126,7 +193,21 @@ export default function FleetMaintenancePage({ records, onAddRecord, onDeleteRec
                 </tr>
               </thead>
               <tbody>
-                {records.map((r) => {
+                {loading && logs.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="py-10">
+                      <LoadingState message="جارٍ تحميل سجلات الصيانة..." />
+                    </td>
+                  </tr>
+                )}
+                {!loading && logs.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="py-12 text-center text-sm text-slate-400">
+                      لا توجد سجلات صيانة مسجّلة بعد
+                    </td>
+                  </tr>
+                )}
+                {logs.map((r) => {
                   const status = getMaintenanceStatus(r.nextServiceDate);
                   return (
                     <tr key={r.id} className="border-b border-slate-50 hover:bg-slate-50/60 transition-colors">
@@ -158,7 +239,7 @@ export default function FleetMaintenancePage({ records, onAddRecord, onDeleteRec
                       </td>
                       <td className="py-3 px-4 text-left">
                         <button
-                          onClick={() => onDeleteRecord(r.id)}
+                          onClick={() => handleDeleteRecord(r.id)}
                           className="text-slate-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors"
                           aria-label="حذف"
                         >
@@ -217,7 +298,8 @@ export default function FleetMaintenancePage({ records, onAddRecord, onDeleteRec
       <AddMaintenanceModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        onAdd={onAddRecord}
+        onAdd={handleAddRecord}
+        vehicles={vehicles}
       />
     </>
   );

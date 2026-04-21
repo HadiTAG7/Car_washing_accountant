@@ -100,12 +100,14 @@ export function ProgressBar({ value, max = 100, className = '', color = 'primary
 }
 
 /** Primary button. */
-export function PrimaryButton({ icon: Icon, children, onClick, className = '', type = 'button' }) {
+export function PrimaryButton({ icon: Icon, children, onClick, className = '', type = 'button', disabled = false, title }) {
   return (
     <button
       type={type}
       onClick={onClick}
-      className={`inline-flex items-center gap-2 bg-primary-800 hover:bg-primary-900 text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors shadow-sm ${className}`}
+      disabled={disabled}
+      title={title}
+      className={`inline-flex items-center gap-2 bg-primary-800 hover:bg-primary-900 disabled:opacity-60 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors shadow-sm ${className}`}
     >
       {Icon && <Icon size={16} />}
       {children}
@@ -114,12 +116,14 @@ export function PrimaryButton({ icon: Icon, children, onClick, className = '', t
 }
 
 /** Secondary (outline) button. */
-export function SecondaryButton({ icon: Icon, children, onClick, className = '', type = 'button' }) {
+export function SecondaryButton({ icon: Icon, children, onClick, className = '', type = 'button', disabled = false, title }) {
   return (
     <button
       type={type}
       onClick={onClick}
-      className={`inline-flex items-center gap-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors ${className}`}
+      disabled={disabled}
+      title={title}
+      className={`inline-flex items-center gap-2 bg-white border border-slate-200 hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed text-slate-700 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors ${className}`}
     >
       {Icon && <Icon size={16} />}
       {children}

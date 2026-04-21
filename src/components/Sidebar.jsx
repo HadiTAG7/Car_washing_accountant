@@ -9,7 +9,7 @@ import { BRAND } from '../data/initialData';
  *   activeTab     currently-selected tab id
  *   onSelectTab   (id) => void
  */
-export default function Sidebar({ tabs, activeTab, onSelectTab }) {
+export default function Sidebar({ tabs, activeTab, onSelectTab, user, onSignOut }) {
   return (
     <aside className="fixed top-0 right-0 h-screen w-64 bg-primary-900 text-white flex flex-col z-30 shadow-2xl">
       {/* Logo / brand */}
@@ -56,16 +56,21 @@ export default function Sidebar({ tabs, activeTab, onSelectTab }) {
       {/* Footer */}
       <div className="p-4 border-t border-white/10">
         <div className="bg-white/5 rounded-xl p-3 mb-3">
-          <p className="text-[11px] text-primary-300 mb-0.5">حساب المدير</p>
-          <p className="text-sm font-bold">أحمد الراجحي</p>
+          <p className="text-[11px] text-primary-300 mb-0.5">الحساب الحالي</p>
+          <p className="text-sm font-bold truncate" title={user?.email || 'أحمد الراجحي'}>
+            {user?.email || 'أحمد الراجحي'}
+          </p>
         </div>
-        <button
-          type="button"
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-[13px] text-primary-200 hover:bg-white/10 hover:text-white transition-colors"
-        >
-          <LogOut size={16} />
-          تسجيل الخروج
-        </button>
+        {onSignOut && (
+          <button
+            type="button"
+            onClick={onSignOut}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-[13px] text-primary-200 hover:bg-white/10 hover:text-white transition-colors"
+          >
+            <LogOut size={16} />
+            تسجيل الخروج
+          </button>
+        )}
       </div>
     </aside>
   );

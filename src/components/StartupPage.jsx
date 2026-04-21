@@ -18,6 +18,10 @@ import {
 } from './UI';
 import AddItemModal from './AddItemModal';
 import AddAssetModal from './AddAssetModal';
+import LoadingState from './LoadingState';
+import ErrorState from './ErrorState';
+import { useStartupCosts } from '../hooks/useStartupCosts';
+import { useAssets } from '../hooks/useAssets';
 
 // ─── Category group progress card ────────────────────────────────────────────
 function CategoryGroupCard({ label, budgeted, actual }) {
@@ -52,12 +56,20 @@ function CategoryGroupCard({ label, budgeted, actual }) {
   );
 }
 
-export default function StartupPage({
-  items, assets, onAddItem, onUpdateActual, onDeleteItem,
-  onAddAsset, onDeleteAsset,
-}) {
+export default function StartupPage() {
+  const {
+    items, loading: itemsLoading, error: itemsError,
+    addItem, updateActual, deleteItem, refetch: refetchItems,
+  } = useStartupCosts();
+
+  const {
+    assets, loading: assetsLoading, error: assetsError,
+    addAsset, deleteAsset, refetch: refetchAssets,
+  } = useAssets();
+
   const [isItemModalOpen,  setIsItemModalOpen]  = useState(false);
   const [isAssetModalOpen, setIsAssetModalOpen] = useState(false);
+  const [mutationError,    setMutationError]    = useState(null);
 
   // ── Totals ───────────────────────────────────────────────────
   const totals = useMemo(() => {
@@ -92,6 +104,28 @@ export default function StartupPage({
     );
   }
 
+  // ── Mutation wrappers that surface errors in the UI ──────────
+  async function handleAddItem(newItem) {
+    try { await addItem(newItem); }
+    catch (e) { setMutationError(e); }
+  }
+  async function handleUpdateActual(id, value) {
+    try { await updateActual(id, value); }
+    catch (e) { setMutationError(e); }
+  }
+  async function handleDeleteItem(id) {
+    try { await deleteItem(id); }
+    catch (e) { setMutationError(e); }
+  }
+  async function handleAddAsset(newAsset) {
+    try { await addAsset(newAsset); }
+    catch (e) { setMutationError(e); }
+  }
+  async function handleDeleteAsset(id) {
+    try { await deleteAsset(id); }
+    catch (e) { setMutationError(e); }
+  }
+
   return (
     <>
       <TopBar
@@ -105,6 +139,14 @@ export default function StartupPage({
       />
 
       <main className="p-8 space-y-6">
+        {mutationError && (
+          <ErrorState
+            title="تعذّر حفظ التغييرات"
+            error={mutationError}
+            onRetry={() => setMutationError(null)}
+          />
+        )}
+
         {/* ── KPI Summary cards ───────────────────────────────── */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           <StatCard
@@ -121,7 +163,7 @@ export default function StartupPage({
             iconColor="text-amber-600"
             label="الإنفاق الفعلي"
             value={formatCurrency(totals.actual)}
-            sub={`${((totals.actual / totals.budgeted) * 100).toFixed(1)}% من الميزانية`}
+            sub={totals.budgeted > 0 ? `${((totals.actual / totals.budgeted) * 100).toFixed(1)}% من الميزانية` : '—'}
           />
           <StatCard
             icon={PiggyBank}
@@ -129,7 +171,7 @@ export default function StartupPage({
             iconColor={totals.savings >= 0 ? 'text-emerald-600' : 'text-red-600'}
             label={totals.savings >= 0 ? 'الوفورات المحققة' : 'تجاوز الميزانية'}
             value={formatCurrency(Math.abs(totals.savings))}
-            trend={`${((Math.abs(totals.savings) / totals.budgeted) * 100).toFixed(1)}%`}
+            trend={totals.budgeted > 0 ? `${((Math.abs(totals.savings) / totals.budgeted) * 100).toFixed(1)}%` : undefined}
             trendPositive={totals.savings >= 0}
           />
         </div>
@@ -145,16 +187,21 @@ export default function StartupPage({
               </PrimaryButton>
             }
           />
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {grouped.map((g) => (
-              <CategoryGroupCard
-                key={g.id}
-                label={g.label}
-                budgeted={g.budgeted}
-                actual={g.actual}
-              />
-            ))}
-          </div>
+          {itemsError && <ErrorState error={itemsError} onRetry={refetchItems} />}
+          {itemsLoading && !items.length
+            ? <LoadingState rows={3} />
+            : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                {grouped.map((g) => (
+                  <CategoryGroupCard
+                    key={g.id}
+                    label={g.label}
+                    budgeted={g.budgeted}
+                    actual={g.actual}
+                  />
+                ))}
+              </div>
+            )}
         </Card>
 
         {/* ── Detailed line-item table ─────────────────────────── */}
@@ -163,151 +210,157 @@ export default function StartupPage({
             title="تفاصيل البنود"
             subtitle="تحرير الإنفاق الفعلي لكل بند أو حذف البنود غير الضرورية"
           />
-          <div className="overflow-x-auto -mx-6 px-6">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-right text-[11px] font-bold text-slate-500 uppercase border-b border-slate-100">
-                  <th className="py-3 px-4">التصنيف</th>
-                  <th className="py-3 px-4">اسم البند</th>
-                  <th className="py-3 px-4 text-left tabular-nums">الميزانية</th>
-                  <th className="py-3 px-4 text-left tabular-nums">الفعلي</th>
-                  <th className="py-3 px-4 text-left tabular-nums">الفرق</th>
-                  <th className="py-3 px-4">الحالة</th>
-                  <th className="py-3 px-4 text-left w-16">إجراء</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((i) => {
-                  const variance = i.budgeted - i.actual;
-                  const status = variance > 0 ? 'under' : variance < 0 ? 'over' : 'on';
-                  const label  = variance > 0 ? 'ضمن الميزانية' : variance < 0 ? 'تجاوز' : 'مطابق';
-                  return (
-                    <tr key={i.id} className="border-b border-slate-50 hover:bg-slate-50/60 transition-colors">
-                      <td className="py-3 px-4">
-                        <span className="inline-flex text-[11px] font-semibold bg-slate-100 text-slate-700 px-2 py-1 rounded-md">
-                          {getCategoryLabel(i.category)}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 font-medium text-slate-800">{i.itemName}</td>
-                      <td className="py-3 px-4 text-left tabular-nums text-slate-700">
-                        {formatCurrency(i.budgeted)}
-                      </td>
-                      <td className="py-3 px-4 text-left">
-                        <input
-                          type="number"
-                          value={i.actual}
-                          onChange={(e) =>
-                            onUpdateActual(i.id, parseFloat(e.target.value) || 0)
-                          }
-                          className="w-28 px-2 py-1 border border-slate-200 rounded-lg text-sm text-left tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-200"
-                        />
-                      </td>
-                      <td
-                        className={`py-3 px-4 text-left tabular-nums font-bold ${
-                          variance > 0 ? 'text-emerald-600' : variance < 0 ? 'text-red-600' : 'text-slate-500'
-                        }`}
-                      >
-                        {variance > 0 ? '−' : variance < 0 ? '+' : ''}
-                        {formatCurrency(Math.abs(variance))}
-                      </td>
-                      <td className="py-3 px-4">
-                        <StatusBadge status={status}>{label}</StatusBadge>
-                      </td>
-                      <td className="py-3 px-4 text-left">
-                        <button
-                          onClick={() => onDeleteItem(i.id)}
-                          className="text-slate-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors"
-                          aria-label="حذف"
+          {itemsLoading && !items.length ? <LoadingState rows={5} /> : (
+            <div className="overflow-x-auto -mx-6 px-6">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-right text-[11px] font-bold text-slate-500 uppercase border-b border-slate-100">
+                    <th className="py-3 px-4">التصنيف</th>
+                    <th className="py-3 px-4">اسم البند</th>
+                    <th className="py-3 px-4 text-left tabular-nums">الميزانية</th>
+                    <th className="py-3 px-4 text-left tabular-nums">الفعلي</th>
+                    <th className="py-3 px-4 text-left tabular-nums">الفرق</th>
+                    <th className="py-3 px-4">الحالة</th>
+                    <th className="py-3 px-4 text-left w-16">إجراء</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((i) => {
+                    const variance = i.budgeted - i.actual;
+                    const status = variance > 0 ? 'under' : variance < 0 ? 'over' : 'on';
+                    const label  = variance > 0 ? 'ضمن الميزانية' : variance < 0 ? 'تجاوز' : 'مطابق';
+                    return (
+                      <tr key={i.id} className="border-b border-slate-50 hover:bg-slate-50/60 transition-colors">
+                        <td className="py-3 px-4">
+                          <span className="inline-flex text-[11px] font-semibold bg-slate-100 text-slate-700 px-2 py-1 rounded-md">
+                            {getCategoryLabel(i.category)}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 font-medium text-slate-800">{i.itemName}</td>
+                        <td className="py-3 px-4 text-left tabular-nums text-slate-700">
+                          {formatCurrency(i.budgeted)}
+                        </td>
+                        <td className="py-3 px-4 text-left">
+                          <input
+                            type="number"
+                            defaultValue={i.actual}
+                            onBlur={(e) => {
+                              const next = parseFloat(e.target.value) || 0;
+                              if (next !== i.actual) handleUpdateActual(i.id, next);
+                            }}
+                            className="w-28 px-2 py-1 border border-slate-200 rounded-lg text-sm text-left tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-200"
+                          />
+                        </td>
+                        <td
+                          className={`py-3 px-4 text-left tabular-nums font-bold ${
+                            variance > 0 ? 'text-emerald-600' : variance < 0 ? 'text-red-600' : 'text-slate-500'
+                          }`}
                         >
-                          <Trash2 size={15} />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                          {variance > 0 ? '−' : variance < 0 ? '+' : ''}
+                          {formatCurrency(Math.abs(variance))}
+                        </td>
+                        <td className="py-3 px-4">
+                          <StatusBadge status={status}>{label}</StatusBadge>
+                        </td>
+                        <td className="py-3 px-4 text-left">
+                          <button
+                            onClick={() => handleDeleteItem(i.id)}
+                            className="text-slate-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors"
+                            aria-label="حذف"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </Card>
 
         {/* ── Depreciation table ─────────────────────────────── */}
         <Card className="p-6">
           <SectionHeader
             title="جدول إهلاك الأصول الثابتة"
-            subtitle="طريقة القسط الثابت — يتم حساب القيمة الدفترية تلقائياً بناءً على تاريخ الشراء"
+            subtitle="طريقة القسط الثابت — القيمة الدفترية تُحسب تلقائياً من تاريخ الشراء والعمر الإنتاجي"
             action={
               <PrimaryButton icon={Plus} onClick={() => setIsAssetModalOpen(true)}>
                 إضافة أصل جديد
               </PrimaryButton>
             }
           />
-          <div className="overflow-x-auto -mx-6 px-6">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-right text-[11px] font-bold text-slate-500 uppercase border-b border-slate-100">
-                  <th className="py-3 px-4">الأصل</th>
-                  <th className="py-3 px-4">تاريخ الشراء</th>
-                  <th className="py-3 px-4 text-left tabular-nums">تكلفة الشراء</th>
-                  <th className="py-3 px-4 text-left tabular-nums">قيمة الخردة</th>
-                  <th className="py-3 px-4 text-center">العمر الإنتاجي</th>
-                  <th className="py-3 px-4 text-left tabular-nums">الإهلاك السنوي</th>
-                  <th className="py-3 px-4 text-left tabular-nums">القيمة الدفترية</th>
-                  <th className="py-3 px-4 text-left w-16">إجراء</th>
-                </tr>
-              </thead>
-              <tbody>
-                {assets.map((a) => {
-                  const annual = calcAnnualDepreciation(a.purchaseCost, a.salvageValue, a.usefulLife);
-                  const bv     = calcBookValue(a.purchaseCost, a.salvageValue, a.usefulLife, a.purchaseDate);
-                  const used   = a.purchaseCost > a.salvageValue
-                    ? ((a.purchaseCost - bv) / (a.purchaseCost - a.salvageValue)) * 100
-                    : 0;
-                  return (
-                    <tr key={a.id} className="border-b border-slate-50 hover:bg-slate-50/60 transition-colors">
-                      <td className="py-3 px-4 font-medium text-slate-800 flex items-center gap-2">
-                        <span className="bg-primary-50 text-primary-700 w-8 h-8 rounded-lg flex items-center justify-center">
-                          <Truck size={14} />
-                        </span>
-                        {a.assetName}
-                      </td>
-                      <td className="py-3 px-4 text-slate-600 tabular-nums">{a.purchaseDate}</td>
-                      <td className="py-3 px-4 text-left tabular-nums text-slate-700">
-                        {formatCurrency(a.purchaseCost)}
-                      </td>
-                      <td className="py-3 px-4 text-left tabular-nums text-slate-500">
-                        {formatCurrency(a.salvageValue)}
-                      </td>
-                      <td className="py-3 px-4 text-center text-slate-600">
-                        {formatNumber(a.usefulLife)} سنة
-                      </td>
-                      <td className="py-3 px-4 text-left tabular-nums text-red-600 font-semibold">
-                        −{formatCurrency(annual)}
-                      </td>
-                      <td className="py-3 px-4 text-left">
-                        <div className="flex flex-col items-end gap-1">
-                          <span className="tabular-nums font-bold text-slate-900">
-                            {formatCurrency(bv)}
+          {assetsError && <ErrorState error={assetsError} onRetry={refetchAssets} />}
+          {assetsLoading && !assets.length ? <LoadingState rows={4} /> : (
+            <div className="overflow-x-auto -mx-6 px-6">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-right text-[11px] font-bold text-slate-500 uppercase border-b border-slate-100">
+                    <th className="py-3 px-4">الأصل</th>
+                    <th className="py-3 px-4">تاريخ الشراء</th>
+                    <th className="py-3 px-4 text-left tabular-nums">تكلفة الشراء</th>
+                    <th className="py-3 px-4 text-left tabular-nums">قيمة الخردة</th>
+                    <th className="py-3 px-4 text-center">العمر الإنتاجي</th>
+                    <th className="py-3 px-4 text-left tabular-nums">الإهلاك السنوي</th>
+                    <th className="py-3 px-4 text-left tabular-nums">القيمة الدفترية</th>
+                    <th className="py-3 px-4 text-left w-16">إجراء</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {assets.map((a) => {
+                    const annual = calcAnnualDepreciation(a.purchaseCost, a.salvageValue, a.usefulLife);
+                    const bv     = calcBookValue(a.purchaseCost, a.salvageValue, a.usefulLife, a.purchaseDate);
+                    const used   = a.purchaseCost > a.salvageValue
+                      ? ((a.purchaseCost - bv) / (a.purchaseCost - a.salvageValue)) * 100
+                      : 0;
+                    return (
+                      <tr key={a.id} className="border-b border-slate-50 hover:bg-slate-50/60 transition-colors">
+                        <td className="py-3 px-4 font-medium text-slate-800 flex items-center gap-2">
+                          <span className="bg-primary-50 text-primary-700 w-8 h-8 rounded-lg flex items-center justify-center">
+                            <Truck size={14} />
                           </span>
-                          <div className="w-24">
-                            <ProgressBar value={100 - used} color="primary" />
+                          {a.assetName}
+                        </td>
+                        <td className="py-3 px-4 text-slate-600 tabular-nums">{a.purchaseDate}</td>
+                        <td className="py-3 px-4 text-left tabular-nums text-slate-700">
+                          {formatCurrency(a.purchaseCost)}
+                        </td>
+                        <td className="py-3 px-4 text-left tabular-nums text-slate-500">
+                          {formatCurrency(a.salvageValue)}
+                        </td>
+                        <td className="py-3 px-4 text-center text-slate-600">
+                          {formatNumber(a.usefulLife)} سنة
+                        </td>
+                        <td className="py-3 px-4 text-left tabular-nums text-red-600 font-semibold">
+                          −{formatCurrency(annual)}
+                        </td>
+                        <td className="py-3 px-4 text-left">
+                          <div className="flex flex-col items-end gap-1">
+                            <span className="tabular-nums font-bold text-slate-900">
+                              {formatCurrency(bv)}
+                            </span>
+                            <div className="w-24">
+                              <ProgressBar value={100 - used} color="primary" />
+                            </div>
                           </div>
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 text-left">
-                        <button
-                          onClick={() => onDeleteAsset(a.id)}
-                          className="text-slate-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors"
-                          aria-label="حذف"
-                        >
-                          <Trash2 size={15} />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                        </td>
+                        <td className="py-3 px-4 text-left">
+                          <button
+                            onClick={() => handleDeleteAsset(a.id)}
+                            className="text-slate-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors"
+                            aria-label="حذف"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </Card>
       </main>
 
@@ -315,12 +368,12 @@ export default function StartupPage({
       <AddItemModal
         isOpen={isItemModalOpen}
         onClose={() => setIsItemModalOpen(false)}
-        onAdd={onAddItem}
+        onAdd={handleAddItem}
       />
       <AddAssetModal
         isOpen={isAssetModalOpen}
         onClose={() => setIsAssetModalOpen(false)}
-        onAdd={onAddAsset}
+        onAdd={handleAddAsset}
       />
     </>
   );

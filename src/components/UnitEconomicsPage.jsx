@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  Legend, ResponsiveContainer, ReferenceLine,
+  ResponsiveContainer, ReferenceLine,
 } from 'recharts';
 import {
-  Calculator, Target, TrendingUp, DollarSign,
-  SlidersHorizontal, Fuel, ShoppingCart, Wallet,
+  Target, TrendingUp, DollarSign,
+  SlidersHorizontal, Fuel, ShoppingCart, Wallet, Save,
 } from 'lucide-react';
 import {
   defaultUnitEconomics,
@@ -16,6 +16,9 @@ import {
 } from '../data/initialData';
 import TopBar from './TopBar';
 import { Card, SectionHeader, StatCard } from './UI';
+import LoadingState from './LoadingState';
+import ErrorState from './ErrorState';
+import { useSettings } from '../hooks/useSettings';
 
 // ─── Scenario slider (dark card) ────────────────────────────────────────────
 function DarkSlider({ label, value, onChange, min, max, step, unit, icon: Icon }) {
@@ -56,17 +59,47 @@ function DarkSlider({ label, value, onChange, min, max, step, unit, icon: Icon }
   );
 }
 
-export default function UnitEconomicsPage() {
-  const [inputs, setInputs] = useState(defaultUnitEconomics);
-  const [estimatedOrders, setEstimatedOrders] = useState(defaultEstimatedOrders);
+const DEFAULTS = {
+  ...defaultUnitEconomics,
+  estimatedOrders: defaultEstimatedOrders,
+};
 
-  // Scenario adjustments
-  const [fuelAdjust,   setFuelAdjust]   = useState(15);   // default +15 like mockup
+export default function UnitEconomicsPage() {
+  const { value: stored, setValue: saveSettings, loading: settingsLoading, error: settingsError } =
+    useSettings('unit_economics', DEFAULTS);
+
+  // Derived base values from stored settings (or DEFAULTS if not loaded yet).
+  const base = useMemo(() => ({
+    avgOrderPrice:        stored?.avgOrderPrice        ?? DEFAULTS.avgOrderPrice,
+    variableCostPerOrder: stored?.variableCostPerOrder ?? DEFAULTS.variableCostPerOrder,
+    monthlyFixedCosts:    stored?.monthlyFixedCosts    ?? DEFAULTS.monthlyFixedCosts,
+  }), [stored]);
+  const baseOrders = stored?.estimatedOrders ?? DEFAULTS.estimatedOrders;
+
+  // Local overrides — only used once the user starts editing.
+  const [localInputs, setLocalInputs] = useState(null);
+  const [localOrders, setLocalOrders] = useState(null);
+  const [savingNow, setSavingNow]     = useState(false);
+
+  const dirty          = localInputs !== null || localOrders !== null;
+  const inputs         = localInputs ?? base;
+  const estimatedOrders = localOrders ?? baseOrders;
+
+  // Scenario adjustments (not persisted — these are ad-hoc simulations)
+  const [fuelAdjust,   setFuelAdjust]   = useState(15);
   const [ordersAdjust, setOrdersAdjust] = useState(0);
   const [priceAdjust,  setPriceAdjust]  = useState(0);
 
   function handleChange(e) {
-    setInputs((prev) => ({ ...prev, [e.target.name]: parseFloat(e.target.value) || 0 }));
+    setLocalInputs((prev) => ({ ...(prev ?? base), [e.target.name]: parseFloat(e.target.value) || 0 }));
+  }
+
+  async function persistSettings() {
+    setSavingNow(true);
+    await saveSettings({ ...inputs, estimatedOrders });
+    setSavingNow(false);
+    setLocalInputs(null);
+    setLocalOrders(null);
   }
 
   // ── Base calculations ───────────────────────────────────
@@ -95,9 +128,27 @@ export default function UnitEconomicsPage() {
       <TopBar
         title="اقتصاديات الوحدة ونقطة التعادل"
         subtitle="احسب هامش المساهمة ونقطة التعادل واختبر حساسية المشروع للتغيرات"
+        actions={
+          dirty ? (
+            <button
+              type="button"
+              onClick={persistSettings}
+              disabled={savingNow}
+              className="inline-flex items-center gap-2 bg-primary-800 hover:bg-primary-900 disabled:opacity-60 text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors shadow-sm"
+            >
+              <Save size={16} />
+              {savingNow ? 'جارٍ الحفظ...' : 'حفظ الإعدادات'}
+            </button>
+          ) : null
+        }
       />
 
       <main className="p-8 space-y-6">
+        {settingsError && (
+          <ErrorState title="تعذّر تحميل الإعدادات المحفوظة" error={settingsError} />
+        )}
+        {settingsLoading && <LoadingState message="جارٍ تحميل إعدادات الحاسبة..." />}
+
         {/* ── KPI row ─────────────────────────────────────── */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
           <StatCard
@@ -164,7 +215,7 @@ export default function UnitEconomicsPage() {
             <Field
               label="الطلبات الشهرية المتوقعة"
               value={estimatedOrders}
-              onChange={(e) => setEstimatedOrders(parseInt(e.target.value) || 0)}
+              onChange={(e) => setLocalOrders(parseInt(e.target.value) || 0)}
             />
           </div>
         </Card>

@@ -5,21 +5,20 @@ import {
   Wrench,
   FileBarChart,
   MapPin,
+  Loader2,
 } from 'lucide-react';
 
-import {
-  initialCostItems,
-  initialAssets,
-  initialMaintenanceRecords,
-  initialVehiclePerformance,
-} from './data/initialData';
-
 import Sidebar from './components/Sidebar';
+import LoginScreen from './components/LoginScreen';
+import { DemoBanner } from './components/ErrorState';
 import StartupPage from './components/StartupPage';
 import UnitEconomicsPage from './components/UnitEconomicsPage';
 import FleetMaintenancePage from './components/FleetMaintenancePage';
 import CashFlowPage from './components/CashFlowPage';
 import RoutesPage from './components/RoutesPage';
+
+import { useAuth } from './hooks/useAuth';
+import { isSupabaseConfigured, requireAuth } from './lib/supabaseClient';
 
 const TABS = [
   { id: 'startup',   label: 'التأسيس والأصول',   icon: Landmark    },
@@ -31,71 +30,44 @@ const TABS = [
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('startup');
+  const { session, loading: authLoading, signOut } = useAuth();
 
-  // ── Shared state ────────────────────────────────────────
-  const [items,              setItems]              = useState(initialCostItems);
-  const [assets,             setAssets]             = useState(initialAssets);
-  const [maintenanceRecords, setMaintenanceRecords] = useState(initialMaintenanceRecords);
-  const [vehicles,           setVehicles]           = useState(initialVehiclePerformance);
+  // Bootstrapping auth
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-[#eef2f7] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3 text-slate-500">
+          <Loader2 size={28} className="animate-spin text-primary-700" />
+          <p className="text-sm">جارٍ التحقق من الجلسة...</p>
+        </div>
+      </div>
+    );
+  }
 
-  // ── Handlers: Cost items ────────────────────────────────
-  const addItem          = (i) => setItems((p) => [...p, { ...i, id: Date.now() }]);
-  const updateItemActual = (id, actual) =>
-    setItems((p) => p.map((i) => (i.id === id ? { ...i, actual } : i)));
-  const deleteItem       = (id) => setItems((p) => p.filter((i) => i.id !== id));
-
-  // ── Handlers: Assets ────────────────────────────────────
-  const addAsset    = (a) => setAssets((p) => [...p, { ...a, id: Date.now() }]);
-  const deleteAsset = (id) => setAssets((p) => p.filter((a) => a.id !== id));
-
-  // ── Handlers: Maintenance ───────────────────────────────
-  const addMaintenance    = (r) => setMaintenanceRecords((p) => [...p, { ...r, id: Date.now() }]);
-  const deleteMaintenance = (id) => setMaintenanceRecords((p) => p.filter((r) => r.id !== id));
-
-  // ── Handlers: Vehicles ──────────────────────────────────
-  const addVehicle    = (v) => setVehicles((p) => [...p, { ...v, id: Date.now() }]);
-  const deleteVehicle = (id) => setVehicles((p) => p.filter((v) => v.id !== id));
+  // Gate behind auth if VITE_REQUIRE_AUTH=true AND Supabase is configured
+  const mustAuthenticate = requireAuth && isSupabaseConfigured;
+  if (mustAuthenticate && !session) {
+    return <LoginScreen />;
+  }
 
   return (
     <div className="min-h-screen bg-[#eef2f7]">
-      {/* Fixed right sidebar */}
-      <Sidebar tabs={TABS} activeTab={activeTab} onSelectTab={setActiveTab} />
+      <Sidebar
+        tabs={TABS}
+        activeTab={activeTab}
+        onSelectTab={setActiveTab}
+        user={session?.user}
+        onSignOut={isSupabaseConfigured ? signOut : null}
+      />
 
-      {/* Main content — offset for sidebar */}
       <div className="mr-64 min-h-screen flex flex-col">
-        {activeTab === 'startup' && (
-          <StartupPage
-            items={items}
-            assets={assets}
-            onAddItem={addItem}
-            onUpdateActual={updateItemActual}
-            onDeleteItem={deleteItem}
-            onAddAsset={addAsset}
-            onDeleteAsset={deleteAsset}
-          />
-        )}
+        {!isSupabaseConfigured && <DemoBanner />}
 
+        {activeTab === 'startup'   && <StartupPage />}
         {activeTab === 'economics' && <UnitEconomicsPage />}
-
-        {activeTab === 'fleet' && (
-          <FleetMaintenancePage
-            records={maintenanceRecords}
-            onAddRecord={addMaintenance}
-            onDeleteRecord={deleteMaintenance}
-          />
-        )}
-
-        {activeTab === 'cashflow' && (
-          <CashFlowPage items={items} assets={assets} />
-        )}
-
-        {activeTab === 'routes' && (
-          <RoutesPage
-            vehicles={vehicles}
-            onAddVehicle={addVehicle}
-            onDeleteVehicle={deleteVehicle}
-          />
-        )}
+        {activeTab === 'fleet'     && <FleetMaintenancePage />}
+        {activeTab === 'cashflow'  && <CashFlowPage />}
+        {activeTab === 'routes'    && <RoutesPage />}
       </div>
     </div>
   );

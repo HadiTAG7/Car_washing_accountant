@@ -1,47 +1,146 @@
 import { useMemo } from 'react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  ReferenceLine,
 } from 'recharts';
 import {
   Download, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight,
   Wallet, Calendar, BarChart3, Percent,
 } from 'lucide-react';
 import {
-  initialCashSummary,
-  initialCashTransactions,
   formatCurrency,
   formatCompact,
   formatNumber,
   formatPercent,
   exportToCSV,
-  generateRunwayProjection,
 } from '../data/initialData';
 import TopBar from './TopBar';
 import { Card, SectionHeader, SecondaryButton } from './UI';
+import LoadingState from './LoadingState';
+import ErrorState from './ErrorState';
+import { useTransactions } from '../hooks/useTransactions';
+import { useAssets } from '../hooks/useAssets';
+import { useStartupCosts } from '../hooks/useStartupCosts';
 
-export default function CashFlowPage({ items, assets }) {
-  // Current cash / burn derived from mock summary (but we also show some items context)
-  const summary = initialCashSummary;
+const MONTH_LABELS_AR = [
+  'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
+  'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر',
+];
 
-  const runwayData = useMemo(
-    () => generateRunwayProjection(summary.currentCash, summary.monthlyBurn),
-    [summary.currentCash, summary.monthlyBurn],
-  );
+function monthKey(dateStr) {
+  // Accepts 'YYYY-MM-DD' or ISO. Returns 'YYYY-MM'.
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return null;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
 
+function monthLabel(ym) {
+  if (!ym) return '';
+  const [, m] = ym.split('-');
+  return MONTH_LABELS_AR[parseInt(m, 10) - 1] || ym;
+}
+
+export default function CashFlowPage() {
+  const {
+    transactions,
+    loading: txLoading,
+    error:   txError,
+    refetch: refetchTx,
+  } = useTransactions();
+
+  const { items } = useStartupCosts();
+  const { assets } = useAssets();
+
+  // ── Bucket transactions per month ───────────────────────────
+  const monthlyBuckets = useMemo(() => {
+    const map = new Map();
+    transactions.forEach((t) => {
+      const k = monthKey(t.date);
+      if (!k) return;
+      if (!map.has(k)) map.set(k, { key: k, in: 0, out: 0 });
+      const b = map.get(k);
+      if (t.type === 'in') b.in += t.amount;
+      else                 b.out += t.amount;
+    });
+    return Array.from(map.values()).sort((a, b) => a.key.localeCompare(b.key));
+  }, [transactions]);
+
+  // ── Totals ──────────────────────────────────────────────────
   const txTotals = useMemo(() => {
     let inSum = 0, outSum = 0;
-    initialCashTransactions.forEach((t) => {
+    transactions.forEach((t) => {
       if (t.type === 'in') inSum += t.amount;
-      else outSum += t.amount;
+      else                 outSum += t.amount;
     });
     return { inSum, outSum, net: inSum - outSum };
-  }, []);
+  }, [transactions]);
+
+  // ── Running cash balance (historical) + forward runway ──────
+  const { chartData, currentCash, monthlyBurn, runwayMonths } = useMemo(() => {
+    const cumulativeCash = monthlyBuckets.reduce((sums, b) => {
+      const prev = sums.length > 0 ? sums[sums.length - 1] : 0;
+      return [...sums, prev + b.in - b.out];
+    }, []);
+    const historical = monthlyBuckets.map((b, i) => ({
+      month:     monthLabel(b.key),
+      cash:      cumulativeCash[i],
+      inflow:    b.in,
+      outflow:   b.out,
+      net:       b.in - b.out,
+      projected: false,
+    }));
+
+    const cashNow = historical.length > 0 ? historical[historical.length - 1].cash : 0;
+
+    // Average monthly burn from the last ≤3 months (net negative only)
+    const last3   = monthlyBuckets.slice(-3);
+    const netSum  = last3.reduce((s, b) => s + (b.out - b.in), 0);
+    const burn    = last3.length > 0 ? Math.max(0, netSum / last3.length) : 0;
+
+    const runway = burn > 0 ? cashNow / burn : Infinity;
+
+    // Project forward 6 months (if burn > 0)
+    const projected = burn > 0
+      ? Array.from({ length: 6 }, (_, i) => {
+          const lastKey = monthlyBuckets.length > 0
+            ? monthlyBuckets[monthlyBuckets.length - 1].key
+            : monthKey(new Date().toISOString());
+          const [y, mo] = lastKey.split('-').map(Number);
+          const d = new Date(y, (mo - 1) + i + 1, 1);
+          return {
+            month:     MONTH_LABELS_AR[d.getMonth()],
+            cash:      Math.max(0, cashNow - burn * (i + 1)),
+            projected: true,
+          };
+        })
+      : [];
+
+    return {
+      chartData:    [...historical, ...projected],
+      currentCash:  cashNow,
+      monthlyBurn:  burn,
+      runwayMonths: runway,
+    };
+  }, [monthlyBuckets]);
+
+  // ── Investment metrics (derived from startup/asset totals) ──
+  const investmentTotals = useMemo(() => {
+    const totalInvestment =
+      items.reduce((s, i) => s + (i.actual || 0), 0) +
+      assets.reduce((s, a) => s + (a.purchaseCost || 0), 0);
+    const netMonthly      = txTotals.net / Math.max(1, monthlyBuckets.length);
+    const paybackMonths   = netMonthly > 0 ? totalInvestment / netMonthly : null;
+    const annualNet       = netMonthly * 12;
+    const irr             = totalInvestment > 0 ? annualNet / totalInvestment : 0;
+    const npv             = totalInvestment > 0 ? (annualNet * 5) - totalInvestment : 0;
+    return { totalInvestment, netMonthly, paybackMonths, irr, npv };
+  }, [items, assets, txTotals.net, monthlyBuckets.length]);
 
   function handleExport() {
     exportToCSV(
       'monster-wash-cashflow.csv',
       ['التاريخ', 'الوصف', 'النوع', 'المبلغ'],
-      initialCashTransactions.map((t) => [
+      transactions.map((t) => [
         t.date,
         t.description,
         t.type === 'in' ? 'داخل' : 'خارج',
@@ -49,6 +148,10 @@ export default function CashFlowPage({ items, assets }) {
       ]),
     );
   }
+
+  const runwayDisplay = Number.isFinite(runwayMonths)
+    ? runwayMonths.toFixed(1)
+    : '∞';
 
   return (
     <>
@@ -63,6 +166,17 @@ export default function CashFlowPage({ items, assets }) {
       />
 
       <main className="p-8 space-y-6">
+        {txError && (
+          <ErrorState
+            title="تعذّر تحميل الحركات النقدية"
+            error={txError}
+            onRetry={refetchTx}
+          />
+        )}
+        {txLoading && transactions.length === 0 && (
+          <LoadingState message="جارٍ تحميل الحركات النقدية..." />
+        )}
+
         {/* ── Hero: Runway chart + Investment side-cards ─────── */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
           {/* Chart (2/3 width) */}
@@ -72,50 +186,61 @@ export default function CashFlowPage({ items, assets }) {
                 <p className="text-xs text-slate-500 mb-1">فترة الاستمرارية (Runway)</p>
                 <div className="flex items-baseline gap-3">
                   <span className="text-4xl font-extrabold text-slate-900 tabular-nums">
-                    {summary.runwayMonths.toFixed(1)}
+                    {runwayDisplay}
                   </span>
-                  <span className="text-sm font-semibold text-slate-500">شهراً متبقياً</span>
+                  <span className="text-sm font-semibold text-slate-500">
+                    {Number.isFinite(runwayMonths) ? 'شهراً متبقياً' : 'تدفق نقدي موجب'}
+                  </span>
                 </div>
                 <p className="text-[11px] text-slate-500 mt-1">
-                  بمعدل حرق شهري {formatCurrency(summary.monthlyBurn)} — رصيد حالي {formatCurrency(summary.currentCash)}
+                  بمعدل حرق شهري {formatCurrency(monthlyBurn)} — رصيد حالي {formatCurrency(currentCash)}
                 </p>
               </div>
-              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg">
-                <ArrowUpRight size={13} /> +2.3 شهر
-              </span>
+              {currentCash > 0 && (
+                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg">
+                  <ArrowUpRight size={13} /> رصيد نشط
+                </span>
+              )}
             </div>
 
             <div className="h-64 chart-ltr">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={runwayData} margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="runwayGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%"  stopColor="#3f528a" stopOpacity={0.55} />
-                      <stop offset="100%" stopColor="#3f528a" stopOpacity={0}    />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                  <YAxis
-                    tick={{ fontSize: 11, fill: '#64748b' }}
-                    axisLine={false}
-                    tickLine={false}
-                    tickFormatter={(v) => formatCompact(v)}
-                  />
-                  <Tooltip
-                    formatter={(v) => [formatCurrency(v), 'الرصيد']}
-                    contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', fontFamily: 'Tajawal' }}
-                    labelStyle={{ fontFamily: 'Tajawal' }}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="cash"
-                    stroke="#2a3c70"
-                    strokeWidth={2.5}
-                    fill="url(#runwayGrad)"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
+              {chartData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={chartData} margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="runwayGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%"  stopColor="#3f528a" stopOpacity={0.55} />
+                        <stop offset="100%" stopColor="#3f528a" stopOpacity={0}    />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                    <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                    <YAxis
+                      tick={{ fontSize: 11, fill: '#64748b' }}
+                      axisLine={false}
+                      tickLine={false}
+                      tickFormatter={(v) => formatCompact(v)}
+                    />
+                    <Tooltip
+                      formatter={(v) => [formatCurrency(v), 'الرصيد']}
+                      contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', fontFamily: 'Tajawal' }}
+                      labelStyle={{ fontFamily: 'Tajawal' }}
+                    />
+                    <ReferenceLine y={0} stroke="#cbd5e1" strokeDasharray="3 3" />
+                    <Area
+                      type="monotone"
+                      dataKey="cash"
+                      stroke="#2a3c70"
+                      strokeWidth={2.5}
+                      fill="url(#runwayGrad)"
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center text-sm text-slate-400">
+                  لا توجد حركات نقدية بعد لعرض المنحنى
+                </div>
+              )}
             </div>
           </Card>
 
@@ -126,30 +251,34 @@ export default function CashFlowPage({ items, assets }) {
               iconBg="bg-emerald-50"
               iconColor="text-emerald-600"
               label="صافي القيمة الحالية"
-              sub="NPV — معدل خصم 10%"
-              value={`$${(summary.npv / 1_000_000).toFixed(2)}م`}
-              trend="+8.4%"
-              positive
+              sub="NPV — بناءً على الصافي الشهري"
+              value={formatCompact(investmentTotals.npv)}
+              positive={investmentTotals.npv >= 0}
             />
             <InvestmentCard
               icon={Percent}
               iconBg="bg-primary-50"
               iconColor="text-primary-700"
               label="معدل العائد الداخلي"
-              sub="IRR — على مدى 60 شهر"
-              value={formatPercent(summary.irr, 1)}
-              trend="+3.2%"
-              positive
+              sub="IRR — تقديري سنوي"
+              value={formatPercent(investmentTotals.irr, 1)}
+              positive={investmentTotals.irr >= 0}
             />
             <InvestmentCard
               icon={Calendar}
               iconBg="bg-amber-50"
               iconColor="text-amber-600"
               label="فترة الاسترداد"
-              sub="PBP — من رأس المال"
-              value={`${summary.paybackMonths.toFixed(1)} شهر`}
-              trend="−1.4 شهر"
-              positive
+              sub="PBP — من الصافي الشهري"
+              value={
+                investmentTotals.paybackMonths && Number.isFinite(investmentTotals.paybackMonths)
+                  ? `${investmentTotals.paybackMonths.toFixed(1)} شهر`
+                  : '—'
+              }
+              positive={
+                !!investmentTotals.paybackMonths &&
+                investmentTotals.paybackMonths < 36
+              }
             />
           </div>
         </div>
@@ -180,7 +309,7 @@ export default function CashFlowPage({ items, assets }) {
         <Card className="p-6">
           <SectionHeader
             title="آخر الحركات النقدية"
-            subtitle={`${formatNumber(initialCashTransactions.length)} حركة خلال الأيام الماضية`}
+            subtitle={`${formatNumber(transactions.length)} حركة خلال الأيام الماضية`}
           />
           <div className="overflow-x-auto -mx-6 px-6">
             <table className="w-full text-sm">
@@ -193,7 +322,14 @@ export default function CashFlowPage({ items, assets }) {
                 </tr>
               </thead>
               <tbody>
-                {initialCashTransactions.map((t) => {
+                {transactions.length === 0 && !txLoading && (
+                  <tr>
+                    <td colSpan={4} className="py-12 text-center text-sm text-slate-400">
+                      لا توجد حركات نقدية مسجّلة بعد
+                    </td>
+                  </tr>
+                )}
+                {transactions.map((t) => {
                   const isIn = t.type === 'in';
                   return (
                     <tr key={t.id} className="border-b border-slate-50 hover:bg-slate-50/60 transition-colors">
@@ -227,7 +363,7 @@ export default function CashFlowPage({ items, assets }) {
         </Card>
 
         <p className="text-[11px] text-slate-400 pt-2">
-          * التدفق النقدي مبني على {formatNumber(items?.length || 0)} بند تأسيس و {formatNumber(assets?.length || 0)} أصل ثابت مسجل.
+          * الحسابات محسوبة من {formatNumber(transactions.length)} حركة نقدية + {formatNumber(items.length)} بند تأسيس + {formatNumber(assets.length)} أصل ثابت.
         </p>
       </main>
     </>
@@ -235,7 +371,7 @@ export default function CashFlowPage({ items, assets }) {
 }
 
 // ─── Subcomponents ──────────────────────────────────────────────────────────
-function InvestmentCard({ icon: Icon, iconBg, iconColor, label, sub, value, trend, positive }) {
+function InvestmentCard({ icon: Icon, iconBg, iconColor, label, sub, value, positive }) {
   return (
     <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
       <div className="flex items-start justify-between mb-3">
@@ -247,7 +383,7 @@ function InvestmentCard({ icon: Icon, iconBg, iconColor, label, sub, value, tren
             positive ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
           }`}
         >
-          {trend}
+          {positive ? '▲' : '▼'}
         </span>
       </div>
       <p className="text-xs text-slate-500 mb-1">{label}</p>

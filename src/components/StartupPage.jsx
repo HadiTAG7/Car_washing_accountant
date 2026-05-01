@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
   Plus, Wallet, TrendingDown, PiggyBank, Truck, Download, Trash2,
-  Pencil, X, Check,
+  Pencil, X, Check, Target, CircleDollarSign,
 } from 'lucide-react';
 import {
   calcAnnualDepreciation,
@@ -22,6 +22,112 @@ import ErrorState from './ErrorState';
 import { useStartupCosts } from '../hooks/useStartupCosts';
 import { useAssets } from '../hooks/useAssets';
 import { useCategories } from '../hooks/useCategories';
+import { useSettings } from '../hooks/useSettings';
+
+// ─── Master budget tracker ──────────────────────────────────────────────────
+function BudgetTracker({ totalBudget, spent, onSetBudget }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft]     = useState('');
+  const remaining = totalBudget - spent;
+  const pct       = totalBudget > 0 ? Math.min((spent / totalBudget) * 100, 100) : 0;
+  const overBudget = remaining < 0;
+
+  function handleSave() {
+    const val = parseFloat(draft);
+    if (val > 0) onSetBudget(val);
+    setEditing(false);
+  }
+
+  return (
+    <Card className="p-6 bg-gradient-to-l from-primary-50/60 to-white border-primary-100">
+      <div className="flex flex-col md:flex-row md:items-center gap-6">
+        {/* Budget amount */}
+        <div className="flex-1">
+          <div className="flex items-center gap-2 mb-1">
+            <Target size={18} className="text-primary-600" />
+            <span className="text-sm font-bold text-slate-700">ميزانية المشروع</span>
+          </div>
+          {editing ? (
+            <div className="flex items-center gap-2 mt-1">
+              <input
+                type="number"
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                className="w-48 px-3 py-2 border border-primary-300 rounded-xl text-lg font-bold tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400"
+                autoFocus
+                placeholder="0"
+                min="0"
+                onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') setEditing(false); }}
+              />
+              <span className="text-sm text-slate-500">ر.س</span>
+              <button onClick={handleSave} className="text-emerald-600 hover:text-emerald-800 p-1"><Check size={18} /></button>
+              <button onClick={() => setEditing(false)} className="text-slate-400 hover:text-slate-600 p-1"><X size={18} /></button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <span className="text-3xl font-extrabold text-slate-900 tabular-nums">
+                {totalBudget > 0 ? formatCurrency(totalBudget) : '—'}
+              </span>
+              <button
+                onClick={() => { setDraft(totalBudget > 0 ? String(totalBudget) : ''); setEditing(true); }}
+                className="text-slate-400 hover:text-primary-600 p-1 rounded-lg hover:bg-primary-50 transition-colors"
+                title="تعديل الميزانية"
+              >
+                <Pencil size={14} />
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Spent */}
+        <div className="text-center">
+          <div className="flex items-center justify-center gap-1.5 mb-1">
+            <CircleDollarSign size={16} className="text-amber-500" />
+            <span className="text-xs font-semibold text-slate-500">تم صرفه</span>
+          </div>
+          <p className="text-xl font-extrabold text-slate-800 tabular-nums">{formatCurrency(spent)}</p>
+        </div>
+
+        {/* Remaining */}
+        <div className="text-center">
+          <div className="flex items-center justify-center gap-1.5 mb-1">
+            <PiggyBank size={16} className={overBudget ? 'text-red-500' : 'text-emerald-500'} />
+            <span className="text-xs font-semibold text-slate-500">
+              {overBudget ? 'تجاوز' : 'المتبقي'}
+            </span>
+          </div>
+          <p className={`text-xl font-extrabold tabular-nums ${overBudget ? 'text-red-600' : 'text-emerald-600'}`}>
+            {formatCurrency(Math.abs(remaining))}
+          </p>
+        </div>
+      </div>
+
+      {/* Progress bar */}
+      {totalBudget > 0 && (
+        <div className="mt-5">
+          <div className="flex justify-between text-[11px] text-slate-500 mb-1.5">
+            <span>صُرف {pct.toFixed(1)}% من الميزانية</span>
+            <span>{overBudget ? 'تجاوز الميزانية!' : `باقي ${formatCurrency(remaining)}`}</span>
+          </div>
+          <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all duration-700 ${
+                overBudget ? 'bg-red-500' : pct >= 85 ? 'bg-amber-500' : 'bg-emerald-500'
+              }`}
+              style={{ width: `${Math.min(pct, 100)}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {totalBudget === 0 && (
+        <p className="text-sm text-slate-400 mt-3">
+          اضغط على أيقونة القلم لتحديد ميزانية المشروع الإجمالية
+        </p>
+      )}
+    </Card>
+  );
+}
 
 // ─── Category group progress card ────────────────────────────────────────────
 function CategoryGroupCard({ label, budgeted, actual, onEdit, onDelete }) {
@@ -108,6 +214,8 @@ export default function StartupPage() {
     addCategory, updateCategory, deleteCategory, getCategoryLabel,
   } = useCategories();
 
+  const { value: budgetSettings, setValue: saveBudgetSettings } = useSettings('project_budget', { total: 0 });
+
   const [isItemModalOpen,  setIsItemModalOpen]  = useState(false);
   const [isAssetModalOpen, setIsAssetModalOpen] = useState(false);
   const [mutationError,    setMutationError]    = useState(null);
@@ -118,6 +226,12 @@ export default function StartupPage() {
     const actual   = items.reduce((s, i) => s + i.actual,   0);
     return { budgeted, actual, savings: budgeted - actual };
   }, [items]);
+
+  const totalSpent = useMemo(() => {
+    const itemsActual  = items.reduce((s, i) => s + i.actual, 0);
+    const assetsActual = assets.reduce((s, a) => s + a.purchaseCost, 0);
+    return itemsActual + assetsActual;
+  }, [items, assets]);
 
   // ── Category groupings ───────────────────────────────────────
   const grouped = useMemo(() => {
@@ -199,6 +313,13 @@ export default function StartupPage() {
             onRetry={() => setMutationError(null)}
           />
         )}
+
+        {/* ── Master budget tracker ──────────────────────────── */}
+        <BudgetTracker
+          totalBudget={budgetSettings.total}
+          spent={totalSpent}
+          onSetBudget={(val) => saveBudgetSettings({ ...budgetSettings, total: val })}
+        />
 
         {/* ── KPI Summary cards ───────────────────────────────── */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">

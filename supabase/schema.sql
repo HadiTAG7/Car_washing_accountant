@@ -8,6 +8,14 @@
 -- Required extension for UUID generation
 create extension if not exists "pgcrypto";
 
+-- ─── categories ───────────────────────────────────────────────────────────
+create table if not exists public.categories (
+  id          text primary key,
+  label       text not null,
+  sort_order  integer not null default 0,
+  created_at  timestamptz not null default now()
+);
+
 -- ─── startup_costs ─────────────────────────────────────────────────────────
 create table if not exists public.startup_costs (
   id                uuid primary key default gen_random_uuid(),
@@ -102,6 +110,7 @@ for each row execute function public.touch_updated_at();
 -- policy's `to authenticated` for `to public`.
 -- ═══════════════════════════════════════════════════════════════════════════
 
+alter table public.categories        enable row level security;
 alter table public.startup_costs     enable row level security;
 alter table public.assets            enable row level security;
 alter table public.vehicles          enable row level security;
@@ -115,33 +124,50 @@ do $$ begin
 exception when others then null;
 end $$;
 
+drop policy if exists "rw_auth" on public.categories;
+create policy "rw_auth" on public.categories
+  for all to public using (true) with check (true);
+
 drop policy if exists "rw_auth" on public.startup_costs;
 create policy "rw_auth" on public.startup_costs
-  for all to authenticated using (true) with check (true);
+  for all to public using (true) with check (true);
 
 drop policy if exists "rw_auth" on public.assets;
 create policy "rw_auth" on public.assets
-  for all to authenticated using (true) with check (true);
+  for all to public using (true) with check (true);
 
 drop policy if exists "rw_auth" on public.vehicles;
 create policy "rw_auth" on public.vehicles
-  for all to authenticated using (true) with check (true);
+  for all to public using (true) with check (true);
 
 drop policy if exists "rw_auth" on public.maintenance_logs;
 create policy "rw_auth" on public.maintenance_logs
-  for all to authenticated using (true) with check (true);
+  for all to public using (true) with check (true);
 
 drop policy if exists "rw_auth" on public.transactions;
 create policy "rw_auth" on public.transactions
-  for all to authenticated using (true) with check (true);
+  for all to public using (true) with check (true);
 
 drop policy if exists "rw_auth" on public.app_settings;
 create policy "rw_auth" on public.app_settings
-  for all to authenticated using (true) with check (true);
+  for all to public using (true) with check (true);
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Seed data (idempotent — only inserts when tables are empty)
 -- ═══════════════════════════════════════════════════════════════════════════
+
+insert into public.categories (id, label, sort_order)
+select * from (values
+  ('vehicle-purchase',      'شراء المركبات',    1),
+  ('vehicle-customization', 'تجهيز المركبات',   2),
+  ('portable-equipment',    'معدات متنقلة',     3),
+  ('routing-software',      'أنظمة التتبع',     4),
+  ('mobile-permits',        'تراخيص متنقلة',    5),
+  ('marketing',             'التسويق',          6),
+  ('supplies',              'المستلزمات',       7),
+  ('other',                 'أخرى',             8)
+) as t(id, label, sort_order)
+where not exists (select 1 from public.categories);
 
 insert into public.startup_costs (category, item_name, budgeted_amount, actual_amount)
 select * from (values

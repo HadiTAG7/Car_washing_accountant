@@ -1,15 +1,14 @@
 import { useMemo, useState } from 'react';
 import {
   Plus, Wallet, TrendingDown, PiggyBank, Truck, Download, Trash2,
+  Pencil, X, Check,
 } from 'lucide-react';
 import {
   calcAnnualDepreciation,
   calcBookValue,
   formatCurrency,
   formatNumber,
-  getCategoryLabel,
   exportToCSV,
-  CATEGORIES,
 } from '../data/initialData';
 import TopBar from './TopBar';
 import {
@@ -22,19 +21,56 @@ import LoadingState from './LoadingState';
 import ErrorState from './ErrorState';
 import { useStartupCosts } from '../hooks/useStartupCosts';
 import { useAssets } from '../hooks/useAssets';
+import { useCategories } from '../hooks/useCategories';
 
 // ─── Category group progress card ────────────────────────────────────────────
-function CategoryGroupCard({ label, budgeted, actual }) {
+function CategoryGroupCard({ label, budgeted, actual, onEdit, onDelete }) {
+  const [editing, setEditing]     = useState(false);
+  const [editLabel, setEditLabel] = useState(label);
   const variance = budgeted - actual;
   const pct      = budgeted > 0 ? Math.min((actual / budgeted) * 100, 100) : 0;
   const over     = variance < 0;
   const color    = over ? 'red' : pct >= 90 ? 'amber' : 'emerald';
 
+  function handleSave() {
+    if (editLabel.trim() && editLabel.trim() !== label) {
+      onEdit(editLabel.trim());
+    }
+    setEditing(false);
+  }
+
   return (
     <div className="bg-white border border-slate-100 rounded-2xl p-5 hover:shadow-md transition-shadow">
       <div className="flex items-start justify-between mb-3">
-        <div>
-          <p className="text-xs text-slate-500 mb-1">{label}</p>
+        <div className="flex-1 min-w-0">
+          {editing ? (
+            <div className="flex items-center gap-1.5 mb-1">
+              <input
+                type="text"
+                value={editLabel}
+                onChange={(e) => setEditLabel(e.target.value)}
+                className="px-2 py-0.5 border border-primary-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-300 w-full"
+                autoFocus
+                onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') setEditing(false); }}
+              />
+              <button onClick={handleSave} className="text-emerald-600 hover:text-emerald-800 p-0.5"><Check size={14} /></button>
+              <button onClick={() => setEditing(false)} className="text-slate-400 hover:text-slate-600 p-0.5"><X size={14} /></button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 mb-1">
+              <p className="text-xs text-slate-500">{label}</p>
+              {onEdit && (
+                <button onClick={() => { setEditLabel(label); setEditing(true); }} className="text-slate-300 hover:text-primary-600 p-0.5 rounded transition-colors">
+                  <Pencil size={11} />
+                </button>
+              )}
+              {onDelete && (
+                <button onClick={onDelete} className="text-slate-300 hover:text-red-500 p-0.5 rounded transition-colors">
+                  <X size={11} />
+                </button>
+              )}
+            </div>
+          )}
           <p className="text-lg font-extrabold text-slate-900 tabular-nums">
             {formatCurrency(actual)}
           </p>
@@ -67,6 +103,11 @@ export default function StartupPage() {
     addAsset, deleteAsset, refetch: refetchAssets,
   } = useAssets();
 
+  const {
+    categories,
+    addCategory, updateCategory, deleteCategory, getCategoryLabel,
+  } = useCategories();
+
   const [isItemModalOpen,  setIsItemModalOpen]  = useState(false);
   const [isAssetModalOpen, setIsAssetModalOpen] = useState(false);
   const [mutationError,    setMutationError]    = useState(null);
@@ -85,10 +126,10 @@ export default function StartupPage() {
       const cur = map.get(i.category) || { budgeted: 0, actual: 0 };
       map.set(i.category, { budgeted: cur.budgeted + i.budgeted, actual: cur.actual + i.actual });
     });
-    return CATEGORIES
+    return categories
       .map((cat) => ({ ...cat, ...(map.get(cat.id) || { budgeted: 0, actual: 0 }) }))
       .filter((g) => g.budgeted > 0);
-  }, [items]);
+  }, [items, categories]);
 
   function handleExport() {
     exportToCSV(
@@ -123,6 +164,18 @@ export default function StartupPage() {
   }
   async function handleDeleteAsset(id) {
     try { await deleteAsset(id); }
+    catch (e) { setMutationError(e); }
+  }
+  async function handleAddCategory(cat) {
+    try { await addCategory(cat); }
+    catch (e) { setMutationError(e); }
+  }
+  async function handleUpdateCategory(id, label) {
+    try { await updateCategory(id, label); }
+    catch (e) { setMutationError(e); }
+  }
+  async function handleDeleteCategory(id) {
+    try { await deleteCategory(id); }
     catch (e) { setMutationError(e); }
   }
 
@@ -198,6 +251,8 @@ export default function StartupPage() {
                     label={g.label}
                     budgeted={g.budgeted}
                     actual={g.actual}
+                    onEdit={(newLabel) => handleUpdateCategory(g.id, newLabel)}
+                    onDelete={() => handleDeleteCategory(g.id)}
                   />
                 ))}
               </div>
@@ -369,6 +424,8 @@ export default function StartupPage() {
         isOpen={isItemModalOpen}
         onClose={() => setIsItemModalOpen(false)}
         onAdd={handleAddItem}
+        categories={categories}
+        onAddCategory={handleAddCategory}
       />
       <AddAssetModal
         isOpen={isAssetModalOpen}

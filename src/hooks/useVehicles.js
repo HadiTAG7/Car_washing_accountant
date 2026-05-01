@@ -38,5 +38,6 @@ export function useVehicles() {
     await refetch();
   }, [refetch]);
 
-  return { vehicles: data || FALLBACK, loading, error, addVehicle, deleteVehicle, refetch };
+  const vehicles = isSupabaseConfigured ? (data ?? []) : (data || FALLBACK);
+  return { vehicles, loading, error, addVehicle, deleteVehicle, refetch };
 }

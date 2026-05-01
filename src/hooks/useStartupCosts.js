@@ -45,5 +45,6 @@ export function useStartupCosts() {
     await refetch();
   }, [refetch]);
 
-  return { items: data || FALLBACK, loading, error, addItem, updateActual, deleteItem, refetch };
+  const items = isSupabaseConfigured ? (data ?? []) : (data || FALLBACK);
+  return { items, loading, error, addItem, updateActual, deleteItem, refetch };
 }

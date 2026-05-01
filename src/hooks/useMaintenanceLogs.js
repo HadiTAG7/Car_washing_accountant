@@ -48,5 +48,6 @@ export function useMaintenanceLogs() {
     await refetch();
   }, [refetch]);
 
-  return { logs: data || FALLBACK, loading, error, addLog, deleteLog, refetch };
+  const logs = isSupabaseConfigured ? (data ?? []) : (data || FALLBACK);
+  return { logs, loading, error, addLog, deleteLog, refetch };
 }

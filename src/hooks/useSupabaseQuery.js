@@ -33,7 +33,7 @@ export function useSupabaseQuery(queryFn, { deps = [], map, fallback = null, ena
       if (!mounted.current) return;
 
       if (result && result.error) {
-        setState({ data: fallback, loading: false, error: result.error });
+        setState({ data: null, loading: false, error: result.error });
         return;
       }
       const rows = Array.isArray(result?.data) ? result.data : (result?.data ?? []);
@@ -41,7 +41,7 @@ export function useSupabaseQuery(queryFn, { deps = [], map, fallback = null, ena
       setState({ data: mapped, loading: false, error: null });
     } catch (err) {
       if (!mounted.current) return;
-      setState({ data: fallback, loading: false, error: err });
+      setState({ data: null, loading: false, error: err });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, ...deps]);

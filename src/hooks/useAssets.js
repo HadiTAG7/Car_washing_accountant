@@ -30,5 +30,6 @@ export function useAssets() {
     await refetch();
   }, [refetch]);
 
-  return { assets: data || initialAssets, loading, error, addAsset, deleteAsset, refetch };
+  const assets = isSupabaseConfigured ? (data ?? []) : (data || initialAssets);
+  return { assets, loading, error, addAsset, deleteAsset, refetch };
 }

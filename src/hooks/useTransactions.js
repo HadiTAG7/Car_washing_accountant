@@ -43,5 +43,6 @@ export function useTransactions() {
     await refetch();
   }, [refetch]);
 
-  return { transactions: data || FALLBACK, loading, error, addTransaction, deleteTransaction, refetch };
+  const transactions = isSupabaseConfigured ? (data ?? []) : (data || FALLBACK);
+  return { transactions, loading, error, addTransaction, deleteTransaction, refetch };
 }

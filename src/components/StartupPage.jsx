@@ -27,7 +27,7 @@ import { useCategories } from '../hooks/useCategories';
 import { useSettings } from '../hooks/useSettings';
 
 // ─── Master budget tracker ──────────────────────────────────────────────────
-function BudgetTracker({ totalBudget, spent, onSetBudget }) {
+function BudgetTracker({ totalBudget, spent, sunkCosts, assetsCost, onSetBudget }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft]     = useState('');
   const remaining = totalBudget - spent;
@@ -88,6 +88,9 @@ function BudgetTracker({ totalBudget, spent, onSetBudget }) {
             <span className="text-xs font-semibold text-slate-500">تم صرفه</span>
           </div>
           <p className="text-xl font-extrabold text-slate-800 tabular-nums">{formatCurrency(spent)}</p>
+          <p className="text-[10px] text-slate-400 mt-0.5 tabular-nums">
+            {formatCurrency(sunkCosts)} تأسيس + {formatCurrency(assetsCost)} أصول
+          </p>
         </div>
 
         {/* Remaining */}
@@ -242,7 +245,7 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
     return { sunkCosts, assetsCost, txIn, txOut, txNet: txIn - txOut };
   }, [items, assets, transactions]);
 
-  const totalSpent = pillarTotals.sunkCosts + pillarTotals.assetsCost + pillarTotals.txOut;
+  const totalSpent = pillarTotals.sunkCosts + pillarTotals.assetsCost;
 
   // ── Category groupings ───────────────────────────────────────
   const grouped = useMemo(() => {
@@ -329,6 +332,8 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
         <BudgetTracker
           totalBudget={budgetSettings.total}
           spent={totalSpent}
+          sunkCosts={pillarTotals.sunkCosts}
+          assetsCost={pillarTotals.assetsCost}
           onSetBudget={(val) => saveBudgetSettings({ ...budgetSettings, total: val })}
         />
 

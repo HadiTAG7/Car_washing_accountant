@@ -16,7 +16,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  */
 export function useSupabaseQuery(queryFn, { deps = [], map, fallback = null, enabled = true } = {}) {
   const [state, setState] = useState({
-    data:    fallback,
+    data:    enabled ? null : fallback,
     loading: enabled,
     error:   null,
   });

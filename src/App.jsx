@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import {
   Landmark,
   Calculator,
@@ -6,6 +6,7 @@ import {
   FileBarChart,
   MapPin,
   Loader2,
+  Plus,
 } from 'lucide-react';
 
 import Sidebar from './components/Sidebar';
@@ -16,6 +17,7 @@ import UnitEconomicsPage from './components/UnitEconomicsPage';
 import FleetMaintenancePage from './components/FleetMaintenancePage';
 import CashFlowPage from './components/CashFlowPage';
 import RoutesPage from './components/RoutesPage';
+import FinancialEntrySelector from './components/FinancialEntrySelector';
 
 import { useAuth } from './hooks/useAuth';
 import { isSupabaseConfigured, requireAuth } from './lib/supabaseClient';
@@ -32,7 +34,21 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('startup');
   const { session, loading: authLoading, signOut } = useAuth();
 
-  // Bootstrapping auth
+  const [showEntrySelector, setShowEntrySelector] = useState(false);
+  const [pendingEntry, setPendingEntry] = useState(null);
+
+  const clearPendingEntry = useCallback(() => setPendingEntry(null), []);
+
+  function handleEntrySelect(type) {
+    setShowEntrySelector(false);
+    if (type === 'item' || type === 'asset') {
+      setActiveTab('startup');
+    } else if (type === 'transaction') {
+      setActiveTab('cashflow');
+    }
+    setPendingEntry(type);
+  }
+
   if (authLoading) {
     return (
       <div className="min-h-screen bg-[#eef2f7] flex items-center justify-center">
@@ -44,7 +60,6 @@ export default function App() {
     );
   }
 
-  // Gate behind auth if VITE_REQUIRE_AUTH=true AND Supabase is configured
   const mustAuthenticate = requireAuth && isSupabaseConfigured;
   if (mustAuthenticate && !session) {
     return <LoginScreen />;
@@ -58,17 +73,34 @@ export default function App() {
         onSelectTab={setActiveTab}
         user={session?.user}
         onSignOut={isSupabaseConfigured ? signOut : null}
+        onAddEntry={() => setShowEntrySelector(true)}
       />
 
       <div className="mr-64 min-h-screen flex flex-col">
         {!isSupabaseConfigured && <DemoBanner />}
 
-        {activeTab === 'startup'   && <StartupPage />}
+        {activeTab === 'startup'   && (
+          <StartupPage
+            pendingEntry={pendingEntry}
+            onClearPendingEntry={clearPendingEntry}
+          />
+        )}
         {activeTab === 'economics' && <UnitEconomicsPage />}
         {activeTab === 'fleet'     && <FleetMaintenancePage />}
-        {activeTab === 'cashflow'  && <CashFlowPage />}
+        {activeTab === 'cashflow'  && (
+          <CashFlowPage
+            pendingEntry={pendingEntry}
+            onClearPendingEntry={clearPendingEntry}
+          />
+        )}
         {activeTab === 'routes'    && <RoutesPage />}
       </div>
+
+      <FinancialEntrySelector
+        isOpen={showEntrySelector}
+        onSelect={handleEntrySelect}
+        onClose={() => setShowEntrySelector(false)}
+      />
     </div>
   );
 }

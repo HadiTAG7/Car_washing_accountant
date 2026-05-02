@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import {
-  Plus, Wallet, TrendingDown, PiggyBank, Truck, Download, Trash2,
+  Plus, Truck, Download, Trash2,
   Pencil, X, Check, Target, CircleDollarSign,
+  Receipt, ArrowLeftRight,
 } from 'lucide-react';
 import {
   calcAnnualDepreciation,
@@ -21,6 +22,7 @@ import LoadingState from './LoadingState';
 import ErrorState from './ErrorState';
 import { useStartupCosts } from '../hooks/useStartupCosts';
 import { useAssets } from '../hooks/useAssets';
+import { useTransactions } from '../hooks/useTransactions';
 import { useCategories } from '../hooks/useCategories';
 import { useSettings } from '../hooks/useSettings';
 
@@ -198,7 +200,7 @@ function CategoryGroupCard({ label, budgeted, actual, onEdit, onDelete }) {
   );
 }
 
-export default function StartupPage() {
+export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
   const {
     items, loading: itemsLoading, error: itemsError,
     addItem, updateActual, deleteItem, refetch: refetchItems,
@@ -209,6 +211,8 @@ export default function StartupPage() {
     addAsset, deleteAsset, refetch: refetchAssets,
   } = useAssets();
 
+  const { transactions } = useTransactions();
+
   const {
     categories,
     addCategory, updateCategory, deleteCategory, getCategoryLabel,
@@ -216,22 +220,29 @@ export default function StartupPage() {
 
   const { value: budgetSettings, setValue: saveBudgetSettings } = useSettings('project_budget', { total: 0 });
 
-  const [isItemModalOpen,  setIsItemModalOpen]  = useState(false);
-  const [isAssetModalOpen, setIsAssetModalOpen] = useState(false);
-  const [mutationError,    setMutationError]    = useState(null);
+  const [localItemOpen,  setLocalItemOpen]  = useState(false);
+  const [localAssetOpen, setLocalAssetOpen] = useState(false);
+  const [mutationError,  setMutationError]  = useState(null);
 
-  // ── Totals ───────────────────────────────────────────────────
-  const totals = useMemo(() => {
-    const budgeted = items.reduce((s, i) => s + i.budgeted, 0);
-    const actual   = items.reduce((s, i) => s + i.actual,   0);
-    return { budgeted, actual, savings: budgeted - actual };
-  }, [items]);
+  const isItemModalOpen  = localItemOpen  || pendingEntry === 'item';
+  const isAssetModalOpen = localAssetOpen || pendingEntry === 'asset';
 
-  const totalSpent = useMemo(() => {
-    const itemsActual  = items.reduce((s, i) => s + i.actual, 0);
-    const assetsActual = assets.reduce((s, a) => s + a.purchaseCost, 0);
-    return itemsActual + assetsActual;
-  }, [items, assets]);
+  function closeItemModal()  { setLocalItemOpen(false);  if (pendingEntry) onClearPendingEntry(); }
+  function closeAssetModal() { setLocalAssetOpen(false); if (pendingEntry) onClearPendingEntry(); }
+
+  // ── 3-Pillar totals ──────────────────────────────────────────
+  const pillarTotals = useMemo(() => {
+    const sunkCosts  = items.reduce((s, i) => s + i.actual, 0);
+    const assetsCost = assets.reduce((s, a) => s + a.purchaseCost, 0);
+    let txIn = 0, txOut = 0;
+    transactions.forEach((t) => {
+      if (t.type === 'in') txIn += t.amount;
+      else txOut += t.amount;
+    });
+    return { sunkCosts, assetsCost, txIn, txOut, txNet: txIn - txOut };
+  }, [items, assets, transactions]);
+
+  const totalSpent = pillarTotals.sunkCosts + pillarTotals.assetsCost + pillarTotals.txOut;
 
   // ── Category groupings ───────────────────────────────────────
   const grouped = useMemo(() => {
@@ -321,32 +332,33 @@ export default function StartupPage() {
           onSetBudget={(val) => saveBudgetSettings({ ...budgetSettings, total: val })}
         />
 
-        {/* ── KPI Summary cards ───────────────────────────────── */}
+        {/* ── 3-Pillar KPI Summary ─────────────────────────────── */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           <StatCard
-            icon={Wallet}
-            iconBg="bg-primary-50"
-            iconColor="text-primary-700"
-            label="إجمالي الميزانية المخططة"
-            value={formatCurrency(totals.budgeted)}
-            sub="الميزانية المعتمدة للإطلاق"
-          />
-          <StatCard
-            icon={TrendingDown}
+            icon={Receipt}
             iconBg="bg-amber-50"
             iconColor="text-amber-600"
-            label="الإنفاق الفعلي"
-            value={formatCurrency(totals.actual)}
-            sub={totals.budgeted > 0 ? `${((totals.actual / totals.budgeted) * 100).toFixed(1)}% من الميزانية` : '—'}
+            label="مدفوعات تأسيسية لمرة واحدة"
+            value={formatCurrency(pillarTotals.sunkCosts)}
+            sub={`${formatNumber(items.length)} بند — رسوم، تراخيص، هوية`}
           />
           <StatCard
-            icon={PiggyBank}
-            iconBg={totals.savings >= 0 ? 'bg-emerald-50' : 'bg-red-50'}
-            iconColor={totals.savings >= 0 ? 'text-emerald-600' : 'text-red-600'}
-            label={totals.savings >= 0 ? 'الوفورات المحققة' : 'تجاوز الميزانية'}
-            value={formatCurrency(Math.abs(totals.savings))}
-            trend={totals.budgeted > 0 ? `${((Math.abs(totals.savings) / totals.budgeted) * 100).toFixed(1)}%` : undefined}
-            trendPositive={totals.savings >= 0}
+            icon={Truck}
+            iconBg="bg-primary-50"
+            iconColor="text-primary-700"
+            label="أصول رأسمالية (قابلة للإهلاك)"
+            value={formatCurrency(pillarTotals.assetsCost)}
+            sub={`${formatNumber(assets.length)} أصل ثابت`}
+          />
+          <StatCard
+            icon={ArrowLeftRight}
+            iconBg={pillarTotals.txNet >= 0 ? 'bg-emerald-50' : 'bg-red-50'}
+            iconColor={pillarTotals.txNet >= 0 ? 'text-emerald-600' : 'text-red-600'}
+            label="الإيرادات والتشغيل (صافي)"
+            value={formatCurrency(pillarTotals.txNet)}
+            sub={`↑ ${formatCurrency(pillarTotals.txIn)} إيرادات — ↓ ${formatCurrency(pillarTotals.txOut)} مصروفات`}
+            trend={pillarTotals.txIn > 0 ? `${((pillarTotals.txNet / pillarTotals.txIn) * 100).toFixed(0)}%` : undefined}
+            trendPositive={pillarTotals.txNet >= 0}
           />
         </div>
 
@@ -356,7 +368,7 @@ export default function StartupPage() {
             title="التكاليف حسب الفئة"
             subtitle="نظرة مجمّعة على الميزانية الفعلية لكل فئة تأسيس"
             action={
-              <PrimaryButton icon={Plus} onClick={() => setIsItemModalOpen(true)}>
+              <PrimaryButton icon={Plus} onClick={() => setLocalItemOpen(true)}>
                 إضافة بند جديد
               </PrimaryButton>
             }
@@ -462,7 +474,7 @@ export default function StartupPage() {
             title="جدول إهلاك الأصول الثابتة"
             subtitle="طريقة القسط الثابت — القيمة الدفترية تُحسب تلقائياً من تاريخ الشراء والعمر الإنتاجي"
             action={
-              <PrimaryButton icon={Plus} onClick={() => setIsAssetModalOpen(true)}>
+              <PrimaryButton icon={Plus} onClick={() => setLocalAssetOpen(true)}>
                 إضافة أصل جديد
               </PrimaryButton>
             }
@@ -543,14 +555,14 @@ export default function StartupPage() {
       {/* Modals */}
       <AddItemModal
         isOpen={isItemModalOpen}
-        onClose={() => setIsItemModalOpen(false)}
+        onClose={closeItemModal}
         onAdd={handleAddItem}
         categories={categories}
         onAddCategory={handleAddCategory}
       />
       <AddAssetModal
         isOpen={isAssetModalOpen}
-        onClose={() => setIsAssetModalOpen(false)}
+        onClose={closeAssetModal}
         onAdd={handleAddAsset}
       />
     </>

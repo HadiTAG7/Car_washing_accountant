@@ -1,11 +1,11 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   ReferenceLine,
 } from 'recharts';
 import {
   Download, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight,
-  Wallet, Calendar, BarChart3, Percent,
+  Wallet, Calendar, BarChart3, Percent, Plus, Trash2,
 } from 'lucide-react';
 import {
   formatCurrency,
@@ -15,9 +15,10 @@ import {
   exportToCSV,
 } from '../data/initialData';
 import TopBar from './TopBar';
-import { Card, SectionHeader, SecondaryButton } from './UI';
+import { Card, SectionHeader, SecondaryButton, PrimaryButton } from './UI';
 import LoadingState from './LoadingState';
 import ErrorState from './ErrorState';
+import AddTransactionModal from './AddTransactionModal';
 import { useTransactions } from '../hooks/useTransactions';
 import { useAssets } from '../hooks/useAssets';
 import { useStartupCosts } from '../hooks/useStartupCosts';
@@ -40,16 +41,34 @@ function monthLabel(ym) {
   return MONTH_LABELS_AR[parseInt(m, 10) - 1] || ym;
 }
 
-export default function CashFlowPage() {
+export default function CashFlowPage({ pendingEntry, onClearPendingEntry }) {
   const {
     transactions,
     loading: txLoading,
     error:   txError,
+    addTransaction,
+    deleteTransaction,
     refetch: refetchTx,
   } = useTransactions();
 
   const { items } = useStartupCosts();
   const { assets } = useAssets();
+
+  const [localTxOpen, setLocalTxOpen] = useState(false);
+  const [mutationError, setMutationError] = useState(null);
+
+  const isTxModalOpen = localTxOpen || pendingEntry === 'transaction';
+
+  function closeTxModal() { setLocalTxOpen(false); if (pendingEntry) onClearPendingEntry(); }
+
+  async function handleAddTransaction(tx) {
+    try { await addTransaction(tx); }
+    catch (e) { setMutationError(e); }
+  }
+  async function handleDeleteTransaction(id) {
+    try { await deleteTransaction(id); }
+    catch (e) { setMutationError(e); }
+  }
 
   // ── Bucket transactions per month ───────────────────────────
   const monthlyBuckets = useMemo(() => {
@@ -159,13 +178,25 @@ export default function CashFlowPage() {
         title="التدفق النقدي والتقارير"
         subtitle="مراقبة الرصيد النقدي، فترة الاستمرارية، والعائد على الاستثمار"
         actions={
-          <SecondaryButton icon={Download} onClick={handleExport} className="hidden md:inline-flex">
-            تصدير CSV
-          </SecondaryButton>
+          <div className="flex items-center gap-2">
+            <PrimaryButton icon={Plus} onClick={() => setLocalTxOpen(true)}>
+              إضافة حركة
+            </PrimaryButton>
+            <SecondaryButton icon={Download} onClick={handleExport} className="hidden md:inline-flex">
+              تصدير CSV
+            </SecondaryButton>
+          </div>
         }
       />
 
       <main className="p-8 space-y-6">
+        {mutationError && (
+          <ErrorState
+            title="تعذّر حفظ التغييرات"
+            error={mutationError}
+            onRetry={() => setMutationError(null)}
+          />
+        )}
         {txError && (
           <ErrorState
             title="تعذّر تحميل الحركات النقدية"
@@ -310,6 +341,11 @@ export default function CashFlowPage() {
           <SectionHeader
             title="آخر الحركات النقدية"
             subtitle={`${formatNumber(transactions.length)} حركة خلال الأيام الماضية`}
+            action={
+              <PrimaryButton icon={Plus} onClick={() => setLocalTxOpen(true)}>
+                إضافة حركة
+              </PrimaryButton>
+            }
           />
           <div className="overflow-x-auto -mx-6 px-6">
             <table className="w-full text-sm">
@@ -319,12 +355,13 @@ export default function CashFlowPage() {
                   <th className="py-3 px-4">الوصف</th>
                   <th className="py-3 px-4">النوع</th>
                   <th className="py-3 px-4 text-left tabular-nums">المبلغ</th>
+                  <th className="py-3 px-4 text-left w-16">إجراء</th>
                 </tr>
               </thead>
               <tbody>
                 {transactions.length === 0 && !txLoading && (
                   <tr>
-                    <td colSpan={4} className="py-12 text-center text-sm text-slate-400">
+                    <td colSpan={5} className="py-12 text-center text-sm text-slate-400">
                       لا توجد حركات نقدية مسجّلة بعد
                     </td>
                   </tr>
@@ -354,6 +391,15 @@ export default function CashFlowPage() {
                       >
                         {isIn ? '+' : '−'}{formatCurrency(t.amount)}
                       </td>
+                      <td className="py-3 px-4 text-left">
+                        <button
+                          onClick={() => handleDeleteTransaction(t.id)}
+                          className="text-slate-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors"
+                          aria-label="حذف"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}
@@ -366,6 +412,12 @@ export default function CashFlowPage() {
           * الحسابات محسوبة من {formatNumber(transactions.length)} حركة نقدية + {formatNumber(items.length)} بند تأسيس + {formatNumber(assets.length)} أصل ثابت.
         </p>
       </main>
+
+      <AddTransactionModal
+        isOpen={isTxModalOpen}
+        onClose={closeTxModal}
+        onAdd={handleAddTransaction}
+      />
     </>
   );
 }

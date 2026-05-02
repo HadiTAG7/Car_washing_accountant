@@ -1,15 +1,7 @@
-import { Droplet, LogOut } from 'lucide-react';
+import { Droplet, LogOut, Plus } from 'lucide-react';
 import { BRAND } from '../data/initialData';
 
-/**
- * Fixed right-side sidebar navigation.
- *
- * Props:
- *   tabs          Array of { id, label, icon, description? }
- *   activeTab     currently-selected tab id
- *   onSelectTab   (id) => void
- */
-export default function Sidebar({ tabs, activeTab, onSelectTab, user, onSignOut }) {
+export default function Sidebar({ tabs, activeTab, onSelectTab, user, onSignOut, onAddEntry }) {
   return (
     <aside className="fixed top-0 right-0 h-screen w-64 bg-primary-900 text-white flex flex-col z-30 shadow-2xl">
       {/* Logo / brand */}
@@ -52,6 +44,20 @@ export default function Sidebar({ tabs, activeTab, onSelectTab, user, onSignOut 
           })}
         </ul>
       </nav>
+
+      {/* Financial Entry CTA */}
+      {onAddEntry && (
+        <div className="px-4 pb-3">
+          <button
+            type="button"
+            onClick={onAddEntry}
+            className="w-full flex items-center justify-center gap-2 px-3 py-3 rounded-xl bg-gradient-to-l from-primary-400 to-primary-500 hover:from-primary-300 hover:to-primary-400 text-white font-bold text-sm transition-all shadow-lg hover:shadow-xl"
+          >
+            <Plus size={18} strokeWidth={2.5} />
+            إضافة سجل مالي
+          </button>
+        </div>
+      )}
 
       {/* Footer */}
       <div className="p-4 border-t border-white/10">

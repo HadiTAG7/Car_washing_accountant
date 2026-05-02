@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
   Plus, Truck, Download, Trash2,
-  Pencil, X, Check, Target, CircleDollarSign,
+  Pencil, X, Check, Target, CircleDollarSign, PiggyBank,
   Receipt, ArrowLeftRight,
 } from 'lucide-react';
 import {

@@ -121,19 +121,15 @@ export function mapPartner(row) {
     status:         row.status || 'active',
   };
 }
-export function toPartnerInsert({ partnerName, workersCount, contactNumber, status }) {
+export function toPartnerInsert({ partnerName, workersCount }) {
   return {
-    partner_name:    partnerName,
-    workers_count:   Number(workersCount) || 0,
-    contact_number:  contactNumber || null,
-    status:          status || 'active',
+    partner_name:   partnerName,
+    workers_count:  Number(workersCount) || 0,
   };
 }
-export function toPartnerUpdate({ partnerName, workersCount, contactNumber, status }) {
+export function toPartnerUpdate({ partnerName, workersCount }) {
   const payload = {};
-  if (partnerName    !== undefined) payload.partner_name   = partnerName;
-  if (workersCount   !== undefined) payload.workers_count  = Number(workersCount) || 0;
-  if (contactNumber  !== undefined) payload.contact_number = contactNumber || null;
-  if (status         !== undefined) payload.status         = status;
+  if (partnerName  !== undefined) payload.partner_name  = partnerName;
+  if (workersCount !== undefined) payload.workers_count = Number(workersCount) || 0;
   return payload;
 }

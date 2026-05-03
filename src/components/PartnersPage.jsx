@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react';
 import {
-  Plus, Users, UserCheck, Briefcase, Trash2, Phone, Pencil, Check, X,
+  Plus, Users, UserCheck, Briefcase, Trash2, Pencil, Check, X,
 } from 'lucide-react';
 import { formatNumber } from '../data/initialData';
 import TopBar from './TopBar';
 import {
-  Card, SectionHeader, StatCard, StatusBadge,
+  Card, SectionHeader, StatCard,
   PrimaryButton,
 } from './UI';
 import AddPartnerModal from './AddPartnerModal';
@@ -13,7 +13,7 @@ import LoadingState from './LoadingState';
 import ErrorState from './ErrorState';
 import { usePartners } from '../hooks/usePartners';
 
-function EditableCell({ value, onSave, type = 'text', placeholder, className = '' }) {
+function EditableCell({ value, onSave, type = 'text', className = '' }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
 
@@ -31,7 +31,6 @@ function EditableCell({ value, onSave, type = 'text', placeholder, className = '
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setEditing(false); }}
-          placeholder={placeholder}
           autoFocus
           className={`px-2 py-1 border border-primary-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-300 ${className}`}
         />
@@ -88,15 +87,12 @@ export default function PartnersPage() {
     try { setMutationError(null); await deletePartner(id); }
     catch (e) { setMutationError(e); }
   }
-  async function toggleStatus(p) {
-    await handleUpdate(p.id, { status: p.status === 'active' ? 'inactive' : 'active' });
-  }
 
   return (
     <>
       <TopBar
         title="إدارة الشركاء"
-        subtitle="متابعة الشركاء، عدد العمالة، وبيانات التواصل"
+        subtitle="متابعة الشركاء وعدد العمالة لكل شريك"
       />
 
       <main className="p-8 space-y-6">
@@ -147,7 +143,7 @@ export default function PartnersPage() {
         <Card className="p-6">
           <SectionHeader
             title="قائمة الشركاء"
-            subtitle="انقر على أي خانة للتعديل المباشر — أو على زر الحالة لتفعيل/تعطيل الشريك"
+            subtitle="انقر على أي خانة للتعديل المباشر"
             action={
               <PrimaryButton icon={Plus} onClick={() => setIsModalOpen(true)}>
                 إضافة شريك جديد
@@ -160,22 +156,20 @@ export default function PartnersPage() {
                 <tr className="text-right text-[11px] font-bold text-slate-500 uppercase border-b border-slate-100">
                   <th className="py-3 px-4">اسم الشريك</th>
                   <th className="py-3 px-4 text-center">عدد العمالة</th>
-                  <th className="py-3 px-4">رقم التواصل</th>
-                  <th className="py-3 px-4">الحالة</th>
                   <th className="py-3 px-4 text-left w-16">إجراءات</th>
                 </tr>
               </thead>
               <tbody>
                 {loading && partners.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="py-10">
+                    <td colSpan={3} className="py-10">
                       <LoadingState message="جارٍ تحميل بيانات الشركاء..." />
                     </td>
                   </tr>
                 )}
                 {!loading && partners.length === 0 && !error && (
                   <tr>
-                    <td colSpan={5} className="py-12 text-center text-sm text-slate-400">
+                    <td colSpan={3} className="py-12 text-center text-sm text-slate-400">
                       لا يوجد شركاء مسجّلين بعد — اضغط &quot;إضافة شريك جديد&quot; للبدء
                     </td>
                   </tr>
@@ -201,24 +195,6 @@ export default function PartnersPage() {
                         onSave={(v) => handleUpdate(p.id, { workersCount: v })}
                         className="w-20 text-center"
                       />
-                    </td>
-                    <td className="py-3 px-4 text-slate-600 tabular-nums">
-                      <div className="flex items-center gap-2">
-                        <Phone size={13} className="text-slate-400 flex-shrink-0" />
-                        <EditableCell
-                          value={p.contactNumber}
-                          onSave={(v) => handleUpdate(p.id, { contactNumber: v })}
-                          placeholder="+966 5X XXX XXXX"
-                          className="w-40"
-                        />
-                      </div>
-                    </td>
-                    <td className="py-3 px-4">
-                      <button onClick={() => toggleStatus(p)} className="cursor-pointer" title="انقر لتغيير الحالة">
-                        <StatusBadge status={p.status === 'active' ? 'good' : 'neutral'}>
-                          {p.status === 'active' ? 'نشط' : 'غير نشط'}
-                        </StatusBadge>
-                      </button>
                     </td>
                     <td className="py-3 px-4 text-left">
                       <button

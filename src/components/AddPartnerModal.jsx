@@ -5,8 +5,6 @@ export default function AddPartnerModal({ isOpen, onClose, onAdd }) {
   const [form, setForm] = useState({
     partnerName: '',
     workersCount: '',
-    contactNumber: '',
-    status: 'active',
   });
 
   function handleChange(e) {
@@ -20,11 +18,9 @@ export default function AddPartnerModal({ isOpen, onClose, onAdd }) {
     onAdd({
       partnerName: form.partnerName.trim(),
       workersCount: parseInt(form.workersCount, 10) || 0,
-      contactNumber: form.contactNumber.trim(),
-      status: form.status,
     });
 
-    setForm({ partnerName: '', workersCount: '', contactNumber: '', status: 'active' });
+    setForm({ partnerName: '', workersCount: '' });
     onClose();
   }
 
@@ -63,60 +59,18 @@ export default function AddPartnerModal({ isOpen, onClose, onAdd }) {
             />
           </div>
 
-          {/* Workers + Contact row */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">عدد العمالة</label>
-              <input
-                type="number"
-                name="workersCount"
-                value={form.workersCount}
-                onChange={handleChange}
-                placeholder="0"
-                min="0"
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">رقم التواصل</label>
-              <input
-                type="tel"
-                name="contactNumber"
-                value={form.contactNumber}
-                onChange={handleChange}
-                placeholder="+966 5X XXX XXXX"
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-              />
-            </div>
-          </div>
-
-          {/* Status */}
+          {/* Workers Count */}
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">الحالة</label>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => setForm({ ...form, status: 'active' })}
-                className={`px-4 py-2.5 rounded-xl text-sm font-bold border-2 transition-all ${
-                  form.status === 'active'
-                    ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
-                    : 'border-gray-200 text-gray-500 hover:border-gray-300'
-                }`}
-              >
-                نشط
-              </button>
-              <button
-                type="button"
-                onClick={() => setForm({ ...form, status: 'inactive' })}
-                className={`px-4 py-2.5 rounded-xl text-sm font-bold border-2 transition-all ${
-                  form.status === 'inactive'
-                    ? 'border-slate-400 bg-slate-100 text-slate-700'
-                    : 'border-gray-200 text-gray-500 hover:border-gray-300'
-                }`}
-              >
-                غير نشط
-              </button>
-            </div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">عدد العمالة</label>
+            <input
+              type="number"
+              name="workersCount"
+              value={form.workersCount}
+              onChange={handleChange}
+              placeholder="0"
+              min="0"
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            />
           </div>
 
           {/* Actions */}

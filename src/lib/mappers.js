@@ -110,3 +110,30 @@ export function toTransactionInsert({ date, description, type, amount, vehicleId
     vehicle_id:   vehicleId || null,
   };
 }
+
+// ── partners ──────────────────────────────────────────────────────────────
+export function mapPartner(row) {
+  return {
+    id:             row.id,
+    partnerName:    row.partner_name,
+    workersCount:   Number(row.workers_count) || 0,
+    contactNumber:  row.contact_number || '',
+    status:         row.status || 'active',
+  };
+}
+export function toPartnerInsert({ partnerName, workersCount, contactNumber, status }) {
+  return {
+    partner_name:    partnerName,
+    workers_count:   Number(workersCount) || 0,
+    contact_number:  contactNumber || null,
+    status:          status || 'active',
+  };
+}
+export function toPartnerUpdate({ partnerName, workersCount, contactNumber, status }) {
+  const payload = {};
+  if (partnerName    !== undefined) payload.partner_name   = partnerName;
+  if (workersCount   !== undefined) payload.workers_count  = Number(workersCount) || 0;
+  if (contactNumber  !== undefined) payload.contact_number = contactNumber || null;
+  if (status         !== undefined) payload.status         = status;
+  return payload;
+}

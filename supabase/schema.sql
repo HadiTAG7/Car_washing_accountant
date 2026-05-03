@@ -103,6 +103,16 @@ create trigger app_settings_touch
 before update on public.app_settings
 for each row execute function public.touch_updated_at();
 
+-- ─── partners ─────────────────────────────────────────────────────────────
+create table if not exists public.partners (
+  id              uuid primary key default gen_random_uuid(),
+  partner_name    text not null,
+  workers_count   integer not null default 0,
+  contact_number  text,
+  status          text not null default 'active',
+  created_at      timestamptz not null default now()
+);
+
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Row-Level Security
 -- For an internal financial tool, we enable RLS and grant full access to
@@ -117,6 +127,7 @@ alter table public.vehicles          enable row level security;
 alter table public.maintenance_logs  enable row level security;
 alter table public.transactions      enable row level security;
 alter table public.app_settings      enable row level security;
+alter table public.partners          enable row level security;
 
 do $$ begin
   -- Drop existing policies first (idempotent)
@@ -150,6 +161,10 @@ create policy "rw_auth" on public.transactions
 
 drop policy if exists "rw_auth" on public.app_settings;
 create policy "rw_auth" on public.app_settings
+  for all to public using (true) with check (true);
+
+drop policy if exists "rw_auth" on public.partners;
+create policy "rw_auth" on public.partners
   for all to public using (true) with check (true);
 
 -- ═══════════════════════════════════════════════════════════════════════════

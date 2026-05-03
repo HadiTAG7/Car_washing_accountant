@@ -5,8 +5,8 @@ import {
   Wrench,
   FileBarChart,
   MapPin,
+  Handshake,
   Loader2,
-  Plus,
 } from 'lucide-react';
 
 import Sidebar from './components/Sidebar';
@@ -17,6 +17,7 @@ import UnitEconomicsPage from './components/UnitEconomicsPage';
 import FleetMaintenancePage from './components/FleetMaintenancePage';
 import CashFlowPage from './components/CashFlowPage';
 import RoutesPage from './components/RoutesPage';
+import PartnersPage from './components/PartnersPage';
 import FinancialEntrySelector from './components/FinancialEntrySelector';
 
 import { useAuth } from './hooks/useAuth';
@@ -28,6 +29,7 @@ const TABS = [
   { id: 'fleet',     label: 'صيانة الأسطول',     icon: Wrench      },
   { id: 'cashflow',  label: 'التدفق النقدي',     icon: FileBarChart},
   { id: 'routes',    label: 'ربحية المسارات',    icon: MapPin      },
+  { id: 'partners',  label: 'إدارة الشركاء',     icon: Handshake   },
 ];
 
 export default function App() {
@@ -94,6 +96,7 @@ export default function App() {
           />
         )}
         {activeTab === 'routes'    && <RoutesPage />}
+        {activeTab === 'partners'  && <PartnersPage />}
       </div>
 
       <FinancialEntrySelector

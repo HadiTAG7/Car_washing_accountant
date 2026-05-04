@@ -19,6 +19,7 @@ import { Card, SectionHeader, StatCard } from './UI';
 import LoadingState from './LoadingState';
 import ErrorState from './ErrorState';
 import { useSettings } from '../hooks/useSettings';
+import { useTransactions } from '../hooks/useTransactions';
 
 // ─── Scenario slider (dark card) ────────────────────────────────────────────
 function DarkSlider({ label, value, onChange, min, max, step, unit, icon: Icon }) {
@@ -67,13 +68,38 @@ const DEFAULTS = {
 export default function UnitEconomicsPage() {
   const { value: stored, setValue: saveSettings, loading: settingsLoading, error: settingsError } =
     useSettings('unit_economics', DEFAULTS);
+  const { transactions } = useTransactions();
+
+  // Compute monthly fixed costs from registered expenses (type='out')
+  const monthlyFixedCosts = useMemo(() => {
+    const expenses = (transactions || []).filter(t => t.type === 'out');
+    if (expenses.length === 0) return 0;
+
+    const now = new Date();
+    const thisMonth = expenses.filter(t => {
+      const d = new Date(t.date);
+      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    });
+
+    if (thisMonth.length > 0) {
+      return thisMonth.reduce((sum, t) => sum + t.amount, 0);
+    }
+
+    const latest = expenses[0];
+    const latestMonth = expenses.filter(t => {
+      const d = new Date(t.date);
+      const ld = new Date(latest.date);
+      return d.getMonth() === ld.getMonth() && d.getFullYear() === ld.getFullYear();
+    });
+    return latestMonth.reduce((sum, t) => sum + t.amount, 0);
+  }, [transactions]);
 
   // Derived base values from stored settings (or DEFAULTS if not loaded yet).
   const base = useMemo(() => ({
     avgOrderPrice:        stored?.avgOrderPrice        ?? DEFAULTS.avgOrderPrice,
     variableCostPerOrder: stored?.variableCostPerOrder ?? DEFAULTS.variableCostPerOrder,
-    monthlyFixedCosts:    stored?.monthlyFixedCosts    ?? DEFAULTS.monthlyFixedCosts,
-  }), [stored]);
+    monthlyFixedCosts,
+  }), [stored, monthlyFixedCosts]);
   const baseOrders = stored?.estimatedOrders ?? DEFAULTS.estimatedOrders;
 
   // Local overrides — only used once the user starts editing.
@@ -82,7 +108,7 @@ export default function UnitEconomicsPage() {
   const [savingNow, setSavingNow]     = useState(false);
 
   const dirty          = localInputs !== null || localOrders !== null;
-  const inputs         = localInputs ?? base;
+  const inputs         = { ...(localInputs ?? base), monthlyFixedCosts };
   const estimatedOrders = localOrders ?? baseOrders;
 
   // Scenario adjustments (not persisted — these are ad-hoc simulations)
@@ -96,7 +122,8 @@ export default function UnitEconomicsPage() {
 
   async function persistSettings() {
     setSavingNow(true);
-    await saveSettings({ ...inputs, estimatedOrders });
+    const { monthlyFixedCosts: _omit, ...rest } = inputs;
+    await saveSettings({ ...rest, estimatedOrders });
     setSavingNow(false);
     setLocalInputs(null);
     setLocalOrders(null);
@@ -205,13 +232,17 @@ export default function UnitEconomicsPage() {
               onChange={handleChange}
               hint="صابون، ماء، وقود، تشغيل"
             />
-            <Field
-              label="التكاليف الثابتة الشهرية (ر.س)"
-              name="monthlyFixedCosts"
-              value={inputs.monthlyFixedCosts}
-              onChange={handleChange}
-              hint="رواتب، تسويق، اشتراكات"
-            />
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5">التكاليف الثابتة الشهرية (ر.س)</label>
+              <div className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm tabular-nums text-slate-800 font-semibold">
+                {formatNumber(monthlyFixedCosts)}
+              </div>
+              <p className="text-[11px] text-slate-400 mt-1">
+                {monthlyFixedCosts > 0
+                  ? 'محسوبة من المصاريف المسجّلة في التدفق النقدي'
+                  : 'لا توجد مصاريف مسجّلة بعد'}
+              </p>
+            </div>
             <Field
               label="الطلبات الشهرية المتوقعة"
               value={estimatedOrders}

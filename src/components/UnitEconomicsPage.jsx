@@ -69,37 +69,53 @@ export default function UnitEconomicsPage() {
   const { value: stored, setValue: saveSettings, loading: settingsLoading, error: settingsError } =
     useSettings('unit_economics', DEFAULTS);
   const { transactions } = useTransactions();
+  const [costPeriod, setCostPeriod] = useState('monthly');
 
-  // Compute monthly fixed costs from registered expenses (type='out')
-  const monthlyFixedCosts = useMemo(() => {
+  const { dailyCosts, monthlyCosts } = useMemo(() => {
     const expenses = (transactions || []).filter(t => t.type === 'out');
-    if (expenses.length === 0) return 0;
+    if (expenses.length === 0) return { dailyCosts: 0, monthlyCosts: 0 };
 
     const now = new Date();
+    const todayStr = now.toISOString().slice(0, 10);
+
+    // daily: today or latest day with data
+    let daily = expenses.filter(t => t.date === todayStr);
+    if (daily.length === 0) {
+      const latestDay = expenses[0].date;
+      daily = expenses.filter(t => t.date === latestDay);
+    }
+    const dailyCosts = daily.reduce((s, t) => s + t.amount, 0);
+
+    // monthly: this month or latest month with data
     const thisMonth = expenses.filter(t => {
       const d = new Date(t.date);
       return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
     });
 
+    let monthly;
     if (thisMonth.length > 0) {
-      return thisMonth.reduce((sum, t) => sum + t.amount, 0);
+      monthly = thisMonth.reduce((s, t) => s + t.amount, 0);
+    } else {
+      const latest = expenses[0];
+      const latestMonth = expenses.filter(t => {
+        const d = new Date(t.date);
+        const ld = new Date(latest.date);
+        return d.getMonth() === ld.getMonth() && d.getFullYear() === ld.getFullYear();
+      });
+      monthly = latestMonth.reduce((s, t) => s + t.amount, 0);
     }
 
-    const latest = expenses[0];
-    const latestMonth = expenses.filter(t => {
-      const d = new Date(t.date);
-      const ld = new Date(latest.date);
-      return d.getMonth() === ld.getMonth() && d.getFullYear() === ld.getFullYear();
-    });
-    return latestMonth.reduce((sum, t) => sum + t.amount, 0);
+    return { dailyCosts, monthlyCosts: monthly };
   }, [transactions]);
+
+  const fixedCosts = costPeriod === 'daily' ? dailyCosts : monthlyCosts;
 
   // Derived base values from stored settings (or DEFAULTS if not loaded yet).
   const base = useMemo(() => ({
     avgOrderPrice:        stored?.avgOrderPrice        ?? DEFAULTS.avgOrderPrice,
     variableCostPerOrder: stored?.variableCostPerOrder ?? DEFAULTS.variableCostPerOrder,
-    monthlyFixedCosts,
-  }), [stored, monthlyFixedCosts]);
+    fixedCosts,
+  }), [stored, fixedCosts]);
   const baseOrders = stored?.estimatedOrders ?? DEFAULTS.estimatedOrders;
 
   // Local overrides — only used once the user starts editing.
@@ -108,7 +124,7 @@ export default function UnitEconomicsPage() {
   const [savingNow, setSavingNow]     = useState(false);
 
   const dirty          = localInputs !== null || localOrders !== null;
-  const inputs         = { ...(localInputs ?? base), monthlyFixedCosts };
+  const inputs         = { ...(localInputs ?? base), fixedCosts };
   const estimatedOrders = localOrders ?? baseOrders;
 
   // Scenario adjustments (not persisted — these are ad-hoc simulations)
@@ -122,7 +138,7 @@ export default function UnitEconomicsPage() {
 
   async function persistSettings() {
     setSavingNow(true);
-    const { monthlyFixedCosts: _omit, ...rest } = inputs;
+    const { fixedCosts: _omit, ...rest } = inputs;
     await saveSettings({ ...rest, estimatedOrders });
     setSavingNow(false);
     setLocalInputs(null);
@@ -132,8 +148,8 @@ export default function UnitEconomicsPage() {
   // ── Base calculations ───────────────────────────────────
   const contribution = inputs.avgOrderPrice - inputs.variableCostPerOrder;
   const marginPct    = inputs.avgOrderPrice > 0 ? (contribution / inputs.avgOrderPrice) * 100 : 0;
-  const breakEven    = contribution > 0 ? Math.ceil(inputs.monthlyFixedCosts / contribution) : 0;
-  const profit       = contribution * estimatedOrders - inputs.monthlyFixedCosts;
+  const breakEven    = contribution > 0 ? Math.ceil(inputs.fixedCosts / contribution) : 0;
+  const profit       = contribution * estimatedOrders - inputs.fixedCosts;
   const revenue      = inputs.avgOrderPrice * estimatedOrders;
 
   // ── Stressed calculations ───────────────────────────────
@@ -141,13 +157,13 @@ export default function UnitEconomicsPage() {
   const sPrice     = inputs.avgOrderPrice * (1 + priceAdjust / 100);
   const sOrders    = Math.round(estimatedOrders * (1 + ordersAdjust / 100));
   const sContrib   = sPrice - sVar;
-  const sBreakEven = sContrib > 0 ? Math.ceil(inputs.monthlyFixedCosts / sContrib) : 0;
-  const sProfit    = sContrib * sOrders - inputs.monthlyFixedCosts;
+  const sBreakEven = sContrib > 0 ? Math.ceil(inputs.fixedCosts / sContrib) : 0;
+  const sProfit    = sContrib * sOrders - inputs.fixedCosts;
 
   // ── Chart data ──────────────────────────────────────────
   const chartData = useMemo(
-    () => generateBreakEvenProjection(contribution, inputs.monthlyFixedCosts, estimatedOrders),
-    [contribution, inputs.monthlyFixedCosts, estimatedOrders],
+    () => generateBreakEvenProjection(contribution, inputs.fixedCosts, estimatedOrders),
+    [contribution, inputs.fixedCosts, estimatedOrders],
   );
 
   return (
@@ -182,9 +198,9 @@ export default function UnitEconomicsPage() {
             icon={TrendingUp}
             iconBg={profit >= 0 ? 'bg-emerald-50' : 'bg-red-50'}
             iconColor={profit >= 0 ? 'text-emerald-600' : 'text-red-600'}
-            label="الربح الشهري المتوقع"
+            label={costPeriod === 'daily' ? 'الربح اليومي المتوقع' : 'الربح الشهري المتوقع'}
             value={formatCurrency(profit)}
-            sub={`عند ${formatNumber(estimatedOrders)} طلب شهرياً`}
+            sub={`عند ${formatNumber(estimatedOrders)} طلب ${costPeriod === 'daily' ? 'يومياً' : 'شهرياً'}`}
           />
           <StatCard
             icon={DollarSign}
@@ -200,13 +216,13 @@ export default function UnitEconomicsPage() {
             iconColor="text-amber-600"
             label="نقطة التعادل"
             value={contribution > 0 ? `${formatNumber(breakEven)} طلب` : '—'}
-            sub={contribution <= 0 ? 'هامش المساهمة سالب' : 'طلبات شهرياً لتغطية التكاليف'}
+            sub={contribution <= 0 ? 'هامش المساهمة سالب' : `طلبات ${costPeriod === 'daily' ? 'يومياً' : 'شهرياً'} لتغطية التكاليف`}
           />
           <StatCard
             icon={Wallet}
             iconBg="bg-violet-50"
             iconColor="text-violet-600"
-            label="الإيراد الشهري"
+            label={costPeriod === 'daily' ? 'الإيراد اليومي' : 'الإيراد الشهري'}
             value={formatCurrency(revenue)}
             sub={`${formatNumber(estimatedOrders)} × ${formatCurrency(inputs.avgOrderPrice)}`}
           />
@@ -233,13 +249,39 @@ export default function UnitEconomicsPage() {
               hint="صابون، ماء، وقود، تشغيل"
             />
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">التكاليف الثابتة الشهرية (ر.س)</label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-semibold text-slate-600">التكاليف الثابتة (ر.س)</label>
+                <div className="flex bg-slate-100 rounded-lg p-0.5 gap-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setCostPeriod('daily')}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors ${
+                      costPeriod === 'daily'
+                        ? 'bg-white text-primary-700 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    يومية
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCostPeriod('monthly')}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors ${
+                      costPeriod === 'monthly'
+                        ? 'bg-white text-primary-700 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    شهرية
+                  </button>
+                </div>
+              </div>
               <div className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm tabular-nums text-slate-800 font-semibold">
-                {formatNumber(monthlyFixedCosts)}
+                {formatNumber(fixedCosts)}
               </div>
               <p className="text-[11px] text-slate-400 mt-1">
-                {monthlyFixedCosts > 0
-                  ? 'محسوبة من المصاريف المسجّلة في التدفق النقدي'
+                {fixedCosts > 0
+                  ? `محسوبة من المصاريف المسجّلة (${costPeriod === 'daily' ? 'اليوم' : 'هذا الشهر'})`
                   : 'لا توجد مصاريف مسجّلة بعد'}
               </p>
             </div>

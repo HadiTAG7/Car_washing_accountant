@@ -50,38 +50,6 @@ export const initialAssets = [
   { id: 6, assetName: 'نظام تتبع GPS',             purchaseDate: '2025-04-01', purchaseCost: 6500,   salvageValue: 0,     usefulLife: 3 },
 ];
 
-// ─── Fleet Maintenance ──────────────────────────────────────────────────────
-export const MAINTENANCE_TYPES = [
-  { id: 'oil',       label: 'تغيير زيت' },
-  { id: 'pumps',     label: 'صيانة مضخات' },
-  { id: 'filters',   label: 'تغيير فلاتر' },
-  { id: 'tires',     label: 'إطارات' },
-  { id: 'brakes',    label: 'فرامل' },
-  { id: 'generator', label: 'صيانة مولد' },
-  { id: 'general',   label: 'صيانة عامة' },
-];
-
-// Crafted so exactly 3 are critical (>14d overdue) and total cost ≈ 12,450 (today 2026-04-15)
-export const initialMaintenanceRecords = [
-  { id: 1, assetName: 'شاحنة إيسوزو مجهزة',       maintenanceType: 'oil',       lastServiceDate: '2026-01-10', nextServiceDate: '2026-03-10', estimatedCost: 900  },
-  { id: 2, assetName: 'شاحنة إيسوزو مجهزة',       maintenanceType: 'filters',   lastServiceDate: '2026-01-20', nextServiceDate: '2026-04-20', estimatedCost: 600  },
-  { id: 3, assetName: 'فان هيونداي H1',            maintenanceType: 'oil',       lastServiceDate: '2026-01-01', nextServiceDate: '2026-03-20', estimatedCost: 700  },
-  { id: 4, assetName: 'فان هيونداي H1',            maintenanceType: 'brakes',    lastServiceDate: '2025-12-15', nextServiceDate: '2026-06-15', estimatedCost: 2400 },
-  { id: 5, assetName: 'بيك أب تويوتا هايلوكس',     maintenanceType: 'tires',     lastServiceDate: '2025-10-20', nextServiceDate: '2026-03-20', estimatedCost: 4550 },
-  { id: 6, assetName: 'مولد كهرباء 15kVA',         maintenanceType: 'generator', lastServiceDate: '2026-03-05', nextServiceDate: '2026-04-28', estimatedCost: 1200 },
-  { id: 7, assetName: 'غسالة ضغط عالي صناعية',    maintenanceType: 'pumps',     lastServiceDate: '2026-01-10', nextServiceDate: '2026-05-10', estimatedCost: 1600 },
-  { id: 8, assetName: 'نظام تتبع GPS',             maintenanceType: 'general',   lastServiceDate: '2026-02-01', nextServiceDate: '2026-08-01', estimatedCost: 500  },
-];
-
-// Parts efficiency (Fleet page dark card progress bars)
-export const initialPartsEfficiency = [
-  { partName: 'فلاتر الهواء',    lifeRatio: 92 },
-  { partName: 'زيت المحرك',      lifeRatio: 78 },
-  { partName: 'مضخات الضغط',     lifeRatio: 65 },
-  { partName: 'الإطارات',        lifeRatio: 48 },
-  { partName: 'الفرامل',         lifeRatio: 86 },
-];
-
 // ─── Unit Economics ─────────────────────────────────────────────────────────
 // Targets: 42,850 monthly profit, 64% margin, 125 break-even
 export const defaultUnitEconomics = {
@@ -130,11 +98,6 @@ export function getCategoryLabel(categoryId) {
   return cat ? cat.label : categoryId;
 }
 
-export function getMaintenanceTypeLabel(typeId) {
-  const t = MAINTENANCE_TYPES.find((m) => m.id === typeId);
-  return t ? t.label : typeId;
-}
-
 const SAR_FMT = new Intl.NumberFormat('ar-SA', {
   style: 'currency',
   currency: 'SAR',
@@ -181,16 +144,6 @@ export function calcBookValue(purchaseCost, salvageValue, usefulLife, purchaseDa
   const years  = (now - start) / (1000 * 60 * 60 * 24 * 365.25);
   const bv     = purchaseCost - annual * years;
   return Math.max(bv, salvageValue);
-}
-
-export function getMaintenanceStatus(nextServiceDate) {
-  const next = new Date(nextServiceDate);
-  const now  = new Date();
-  const diffDays = (next - now) / (1000 * 60 * 60 * 24);
-  if (diffDays < -14) return 'critical';
-  if (diffDays < 0)   return 'overdue';
-  if (diffDays <= 14) return 'due-soon';
-  return 'good';
 }
 
 /** 12-month runway projection */

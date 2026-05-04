@@ -2,7 +2,6 @@ import { useState, useCallback } from 'react';
 import {
   Landmark,
   Calculator,
-  Wrench,
   FileBarChart,
   MapPin,
   Handshake,
@@ -14,7 +13,6 @@ import LoginScreen from './components/LoginScreen';
 import { DemoBanner } from './components/ErrorState';
 import StartupPage from './components/StartupPage';
 import UnitEconomicsPage from './components/UnitEconomicsPage';
-import FleetMaintenancePage from './components/FleetMaintenancePage';
 import CashFlowPage from './components/CashFlowPage';
 import RoutesPage from './components/RoutesPage';
 import PartnersPage from './components/PartnersPage';
@@ -26,7 +24,6 @@ import { isSupabaseConfigured, requireAuth } from './lib/supabaseClient';
 const TABS = [
   { id: 'startup',   label: 'التأسيس والأصول',   icon: Landmark    },
   { id: 'economics', label: 'اقتصاديات الوحدة',  icon: Calculator  },
-  { id: 'fleet',     label: 'صيانة الأسطول',     icon: Wrench      },
   { id: 'cashflow',  label: 'التدفق النقدي',     icon: FileBarChart},
   { id: 'routes',    label: 'ربحية المسارات',    icon: MapPin      },
   { id: 'partners',  label: 'إدارة الشركاء',     icon: Handshake   },
@@ -88,7 +85,6 @@ export default function App() {
           />
         )}
         {activeTab === 'economics' && <UnitEconomicsPage />}
-        {activeTab === 'fleet'     && <FleetMaintenancePage />}
         {activeTab === 'cashflow'  && (
           <CashFlowPage
             pendingEntry={pendingEntry}

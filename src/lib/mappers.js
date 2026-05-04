@@ -66,30 +66,6 @@ export function toVehicleInsert({ vehicleName, route, assetCost, allocatedFixedC
   };
 }
 
-// ── maintenance_logs (+ joined vehicle) ───────────────────────────────────
-export function mapMaintenanceLog(row) {
-  return {
-    id:               row.id,
-    vehicleId:        row.vehicle_id,
-    assetName:        row.vehicles?.vehicle_name || row.vehicle_name || '—',
-    maintenanceType:  row.maintenance_type,
-    lastServiceDate:  row.last_service_date,
-    nextServiceDate:  row.next_service_date,
-    estimatedCost:    Number(row.estimated_cost) || 0,
-  };
-}
-export function toMaintenanceInsert({
-  vehicleId, maintenanceType, lastServiceDate, nextServiceDate, estimatedCost,
-}) {
-  return {
-    vehicle_id:         vehicleId,
-    maintenance_type:   maintenanceType,
-    last_service_date:  lastServiceDate || null,
-    next_service_date:  nextServiceDate || null,
-    estimated_cost:     Number(estimatedCost) || 0,
-  };
-}
-
 // ── transactions ──────────────────────────────────────────────────────────
 export function mapTransaction(row) {
   return {

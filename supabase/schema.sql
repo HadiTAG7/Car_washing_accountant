@@ -114,6 +114,42 @@ create table if not exists public.partners (
   created_at      timestamptz not null default now()
 );
 
+-- ─── monthly_expense_categories (Module 3 — dynamic category list) ───────
+-- Mirrors annual_expense_categories. UUID id is auto-generated; clients
+-- should NOT supply an id when inserting.
+create table if not exists public.monthly_expense_categories (
+  id          uuid primary key default gen_random_uuid(),
+  label       text not null,
+  sort_order  integer not null default 0,
+  created_at  timestamptz not null default now()
+);
+
+-- ─── monthly_expenses (Module 3 — recurring monthly operational costs) ───
+-- Stores BOTH unit_cost and total_monthly_cost (= quantity × unit_cost),
+-- so the table can render the unit cost directly without divide-on-read.
+create table if not exists public.monthly_expenses (
+  id                  uuid primary key default gen_random_uuid(),
+  expense_name        text not null,
+  category_id         uuid references public.monthly_expense_categories(id) on delete set null,
+  quantity            integer not null default 1 check (quantity > 0),
+  unit_cost           numeric(12,2) not null default 0 check (unit_cost >= 0),
+  total_monthly_cost  numeric(12,2) not null default 0 check (total_monthly_cost >= 0),
+  billing_date        date,
+  payment_status      text not null default 'pending'
+                      check (payment_status in ('paid','pending')),
+  notes               text,
+  created_at          timestamptz not null default now(),
+  updated_at          timestamptz not null default now()
+);
+create index if not exists monthly_expenses_billing_date_idx    on public.monthly_expenses(billing_date);
+create index if not exists monthly_expenses_payment_status_idx  on public.monthly_expenses(payment_status);
+create index if not exists monthly_expenses_category_id_idx    on public.monthly_expenses(category_id);
+
+drop trigger if exists monthly_expenses_touch on public.monthly_expenses;
+create trigger monthly_expenses_touch
+before update on public.monthly_expenses
+for each row execute function public.touch_updated_at();
+
 -- ─── annual_expense_categories (Module 2 — dynamic category list) ─────────
 -- IMPORTANT: id is UUID (matches the rest of the schema). The client must
 -- NOT generate an id — it should let this default fill in a fresh UUID.
@@ -163,6 +199,8 @@ alter table public.app_settings      enable row level security;
 alter table public.partners                    enable row level security;
 alter table public.annual_expense_categories   enable row level security;
 alter table public.annual_expenses             enable row level security;
+alter table public.monthly_expense_categories  enable row level security;
+alter table public.monthly_expenses            enable row level security;
 
 do $$ begin
   -- Drop existing policies first (idempotent)
@@ -208,6 +246,14 @@ create policy "rw_auth" on public.annual_expense_categories
 
 drop policy if exists "rw_auth" on public.annual_expenses;
 create policy "rw_auth" on public.annual_expenses
+  for all to public using (true) with check (true);
+
+drop policy if exists "rw_auth" on public.monthly_expense_categories;
+create policy "rw_auth" on public.monthly_expense_categories
+  for all to public using (true) with check (true);
+
+drop policy if exists "rw_auth" on public.monthly_expenses;
+create policy "rw_auth" on public.monthly_expenses
   for all to public using (true) with check (true);
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -332,6 +378,57 @@ select * from (values
   ('أخرى',                     5)
 ) as t(label, sort_order)
 where not exists (select 1 from public.annual_expense_categories);
+
+-- ─── monthly_expenses — defensive column repair ───────────────────────────
+-- Ensure all columns + the UUID default exist when this script runs against
+-- a partial/older DB. Idempotent on re-run.
+alter table public.monthly_expense_categories
+  add column if not exists label      text;
+alter table public.monthly_expense_categories
+  add column if not exists sort_order integer not null default 0;
+alter table public.monthly_expense_categories
+  add column if not exists created_at timestamptz not null default now();
+alter table public.monthly_expense_categories
+  alter column id set default gen_random_uuid();
+
+alter table public.monthly_expenses
+  add column if not exists quantity           integer not null default 1;
+alter table public.monthly_expenses
+  add column if not exists unit_cost          numeric(12,2) not null default 0;
+alter table public.monthly_expenses
+  add column if not exists total_monthly_cost numeric(12,2) not null default 0;
+alter table public.monthly_expenses
+  add column if not exists billing_date       date;
+alter table public.monthly_expenses
+  add column if not exists payment_status     text not null default 'pending';
+alter table public.monthly_expenses
+  add column if not exists category_id        uuid;
+alter table public.monthly_expenses
+  alter column id set default gen_random_uuid();
+alter table public.monthly_expenses
+  drop constraint if exists monthly_expenses_quantity_chk;
+alter table public.monthly_expenses
+  add  constraint monthly_expenses_quantity_chk
+  check (quantity > 0);
+alter table public.monthly_expenses
+  drop constraint if exists monthly_expenses_status_chk;
+alter table public.monthly_expenses
+  add  constraint monthly_expenses_status_chk
+  check (payment_status in ('paid','pending'));
+
+-- Seed the six default fleet-monthly categories on a fresh DB. Omit `id`
+-- so the UUID default kicks in; the WHERE NOT EXISTS guard keeps this
+-- block idempotent across re-runs.
+insert into public.monthly_expense_categories (label, sort_order)
+select * from (values
+  ('رواتب وأجور',          1),
+  ('إيجار ومرافق',         2),
+  ('محروقات',              3),
+  ('مستلزمات تشغيلية',     4),
+  ('صيانة دورية',          5),
+  ('أخرى',                 6)
+) as t(label, sort_order)
+where not exists (select 1 from public.monthly_expense_categories);
 
 -- ─── annual_expenses — defensive column repair ────────────────────────────
 -- Existing DBs created before the quantity column was added get it now

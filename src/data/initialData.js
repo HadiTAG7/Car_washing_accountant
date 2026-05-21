@@ -32,6 +32,16 @@ export function getRecurringCategoryLabel(id) {
   return found ? found.label : id;
 }
 
+// ─── Monthly Expense Categories (Module 3 — demo fallback) ──────────────────
+export const MONTHLY_EXPENSE_CATEGORIES = [
+  { id: 'salaries-wages',     label: 'رواتب وأجور' },
+  { id: 'rent-utilities',     label: 'إيجار ومرافق' },
+  { id: 'fuel',               label: 'محروقات' },
+  { id: 'operating-supplies', label: 'مستلزمات تشغيلية' },
+  { id: 'periodic-maintenance', label: 'صيانة دورية' },
+  { id: 'other',              label: 'أخرى' },
+];
+
 // ─── Startup Cost Items ─────────────────────────────────────────────────────
 // Totals: budgeted 450,000 / actual 432,500 / variance 17,500
 export const initialCostItems = [

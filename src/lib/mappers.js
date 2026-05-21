@@ -147,6 +147,57 @@ export function toAnnualExpenseUpdate(updates = {}) {
   return payload;
 }
 
+// ── monthly_expenses (Module 3) ───────────────────────────────────────────
+// App-side shape: { id, expenseName, categoryId, quantity, unitCost,
+// totalMonthlyCost, billingDate, paymentStatus }
+// Both unit_cost AND total_monthly_cost are stored — no divide-on-read.
+export function mapMonthlyExpenseCategory(row) {
+  return {
+    id:        row.id,
+    label:     row.label,
+    sortOrder: row.sort_order ?? 0,
+  };
+}
+export function mapMonthlyExpense(row) {
+  return {
+    id:               row.id,
+    expenseName:      row.expense_name,
+    categoryId:       row.category_id || '',
+    quantity:         clampExpenseQuantity(row.quantity),
+    unitCost:         Number(row.unit_cost) || 0,
+    totalMonthlyCost: Number(row.total_monthly_cost) || 0,
+    billingDate:      row.billing_date || '',
+    paymentStatus:    clampStatus(row.payment_status),
+  };
+}
+export function toMonthlyExpenseInsert({
+  expenseName, categoryId, quantity, unitCost, totalMonthlyCost,
+  billingDate, paymentStatus,
+}) {
+  const q  = clampExpenseQuantity(quantity);
+  const uc = Math.max(0, Number(unitCost) || 0);
+  return {
+    expense_name:       expenseName,
+    category_id:        categoryId || null,
+    quantity:           q,
+    unit_cost:          uc,
+    total_monthly_cost: Math.max(0, Number(totalMonthlyCost) || q * uc),
+    billing_date:       billingDate || null,
+    payment_status:     clampStatus(paymentStatus),
+  };
+}
+export function toMonthlyExpenseUpdate(updates = {}) {
+  const payload = {};
+  if (updates.expenseName      !== undefined) payload.expense_name       = updates.expenseName;
+  if (updates.categoryId       !== undefined) payload.category_id        = updates.categoryId || null;
+  if (updates.quantity         !== undefined) payload.quantity           = clampExpenseQuantity(updates.quantity);
+  if (updates.unitCost         !== undefined) payload.unit_cost          = Math.max(0, Number(updates.unitCost) || 0);
+  if (updates.totalMonthlyCost !== undefined) payload.total_monthly_cost = Math.max(0, Number(updates.totalMonthlyCost) || 0);
+  if (updates.billingDate      !== undefined) payload.billing_date       = updates.billingDate || null;
+  if (updates.paymentStatus    !== undefined) payload.payment_status     = clampStatus(updates.paymentStatus);
+  return payload;
+}
+
 // ── partners ──────────────────────────────────────────────────────────────
 export function mapPartner(row) {
   return {

@@ -23,7 +23,8 @@ create table if not exists public.startup_costs (
   item_name         text        not null,
   budgeted_amount   numeric(12,2) not null default 0,
   actual_amount     numeric(12,2) not null default 0,
-  status            text,          -- 'under' | 'over' | 'on' (derived, optional)
+  quantity          integer     not null default 1 check (quantity > 0),
+  status            text,          -- 'in_progress' | 'completed'
   notes             text,
   created_at        timestamptz not null default now(),
   updated_at        timestamptz not null default now()
@@ -113,6 +114,76 @@ create table if not exists public.partners (
   created_at      timestamptz not null default now()
 );
 
+-- ─── monthly_expense_categories (Module 3 — dynamic category list) ───────
+-- Mirrors annual_expense_categories. UUID id is auto-generated; clients
+-- should NOT supply an id when inserting.
+create table if not exists public.monthly_expense_categories (
+  id          uuid primary key default gen_random_uuid(),
+  label       text not null,
+  sort_order  integer not null default 0,
+  created_at  timestamptz not null default now()
+);
+
+-- ─── monthly_expenses (Module 3 — recurring monthly operational costs) ───
+-- Stores BOTH unit_cost and total_monthly_cost (= quantity × unit_cost),
+-- so the table can render the unit cost directly without divide-on-read.
+create table if not exists public.monthly_expenses (
+  id                  uuid primary key default gen_random_uuid(),
+  expense_name        text not null,
+  category_id         uuid references public.monthly_expense_categories(id) on delete set null,
+  quantity            integer not null default 1 check (quantity > 0),
+  unit_cost           numeric(12,2) not null default 0 check (unit_cost >= 0),
+  total_monthly_cost  numeric(12,2) not null default 0 check (total_monthly_cost >= 0),
+  payment_day         integer      check (payment_day is null or (payment_day between 1 and 31)),
+  payment_status      text not null default 'pending'
+                      check (payment_status in ('paid','pending')),
+  notes               text,
+  created_at          timestamptz not null default now(),
+  updated_at          timestamptz not null default now()
+);
+create index if not exists monthly_expenses_payment_day_idx     on public.monthly_expenses(payment_day);
+create index if not exists monthly_expenses_payment_status_idx  on public.monthly_expenses(payment_status);
+create index if not exists monthly_expenses_category_id_idx    on public.monthly_expenses(category_id);
+
+drop trigger if exists monthly_expenses_touch on public.monthly_expenses;
+create trigger monthly_expenses_touch
+before update on public.monthly_expenses
+for each row execute function public.touch_updated_at();
+
+-- ─── annual_expense_categories (Module 2 — dynamic category list) ─────────
+-- IMPORTANT: id is UUID (matches the rest of the schema). The client must
+-- NOT generate an id — it should let this default fill in a fresh UUID.
+create table if not exists public.annual_expense_categories (
+  id          uuid primary key default gen_random_uuid(),
+  label       text not null,
+  sort_order  integer not null default 0,
+  created_at  timestamptz not null default now()
+);
+
+-- ─── annual_expenses (Module 2 — recurring fleet expenses) ─────────────────
+create table if not exists public.annual_expenses (
+  id              uuid primary key default gen_random_uuid(),
+  expense_name    text        not null,
+  category        text        not null,
+  annual_cost     numeric(12,2) not null default 0 check (annual_cost >= 0),
+  quantity        integer     not null default 1 check (quantity > 0),
+  payment_month   integer     check (payment_month is null or (payment_month between 1 and 12)),
+  payment_day     integer     check (payment_day   is null or (payment_day   between 1 and 31)),
+  payment_status  text        not null default 'pending'
+                  check (payment_status in ('paid','pending')),
+  notes           text,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now()
+);
+create index if not exists annual_expenses_payment_month_idx  on public.annual_expenses(payment_month);
+create index if not exists annual_expenses_payment_day_idx    on public.annual_expenses(payment_day);
+create index if not exists annual_expenses_payment_status_idx on public.annual_expenses(payment_status);
+
+drop trigger if exists annual_expenses_touch on public.annual_expenses;
+create trigger annual_expenses_touch
+before update on public.annual_expenses
+for each row execute function public.touch_updated_at();
+
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Row-Level Security
 -- For an internal financial tool, we enable RLS and grant full access to
@@ -127,7 +198,11 @@ alter table public.vehicles          enable row level security;
 alter table public.maintenance_logs  enable row level security;
 alter table public.transactions      enable row level security;
 alter table public.app_settings      enable row level security;
-alter table public.partners          enable row level security;
+alter table public.partners                    enable row level security;
+alter table public.annual_expense_categories   enable row level security;
+alter table public.annual_expenses             enable row level security;
+alter table public.monthly_expense_categories  enable row level security;
+alter table public.monthly_expenses            enable row level security;
 
 do $$ begin
   -- Drop existing policies first (idempotent)
@@ -167,40 +242,36 @@ drop policy if exists "rw_auth" on public.partners;
 create policy "rw_auth" on public.partners
   for all to public using (true) with check (true);
 
+drop policy if exists "rw_auth" on public.annual_expense_categories;
+create policy "rw_auth" on public.annual_expense_categories
+  for all to public using (true) with check (true);
+
+drop policy if exists "rw_auth" on public.annual_expenses;
+create policy "rw_auth" on public.annual_expenses
+  for all to public using (true) with check (true);
+
+drop policy if exists "rw_auth" on public.monthly_expense_categories;
+create policy "rw_auth" on public.monthly_expense_categories
+  for all to public using (true) with check (true);
+
+drop policy if exists "rw_auth" on public.monthly_expenses;
+create policy "rw_auth" on public.monthly_expenses
+  for all to public using (true) with check (true);
+
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Seed data (idempotent — only inserts when tables are empty)
 -- ═══════════════════════════════════════════════════════════════════════════
 
 insert into public.categories (id, label, sort_order)
 select * from (values
-  ('vehicle-purchase',      'شراء المركبات',    1),
-  ('vehicle-customization', 'تجهيز المركبات',   2),
-  ('portable-equipment',    'معدات متنقلة',     3),
-  ('routing-software',      'أنظمة التتبع',     4),
-  ('mobile-permits',        'تراخيص متنقلة',    5),
-  ('marketing',             'التسويق',          6),
-  ('supplies',              'المستلزمات',       7),
-  ('other',                 'أخرى',             8)
+  ('legal-permits',      'تراخيص ورسوم قانونية',       1),
+  ('franchise-sweater',  'رسوم الامتياز لـ سويتر',      2),
+  ('branding-marketing', 'هوية بصرية وتسويق افتتاحي',  3),
+  ('other',              'أخرى',                        4)
 ) as t(id, label, sort_order)
 where not exists (select 1 from public.categories);
 
-insert into public.startup_costs (category, item_name, budgeted_amount, actual_amount)
-select * from (values
-  ('vehicle-purchase',      'شاحنة إيسوزو مجهزة',            120000, 115000),
-  ('vehicle-purchase',      'فان هيونداي H1',                  85000,  88000),
-  ('vehicle-purchase',      'بيك أب تويوتا هايلوكس',           95000,  92500),
-  ('vehicle-customization', 'خزانات مياه داخلية (×3)',         36000,  34000),
-  ('vehicle-customization', 'أنظمة صرف وتنقية',                24000,  22800),
-  ('portable-equipment',    'مولدات كهرباء متنقلة (×3)',       45000,  43500),
-  ('portable-equipment',    'غسالات ضغط عالي (×3)',            18000,  19200),
-  ('portable-equipment',    'مكانس صناعية (×3)',               10500,  10500),
-  ('routing-software',      'نظام GPS وإدارة مسارات',           7000,   6500),
-  ('mobile-permits',        'رخص ومعالجات بيئية',                8500,   8200),
-  ('marketing',             'تغليف المركبات والإعلانات',        15000,  14800),
-  ('supplies',              'مستلزمات تشغيل (3 أشهر)',          12000,  12500),
-  ('other',                 'احتياطي تشغيلي',                    74000,  65000)
-) as t(category, item_name, budgeted_amount, actual_amount)
-where not exists (select 1 from public.startup_costs);
+-- (Module 1 spec: no startup_costs seed rows — users add their own.)
 
 insert into public.assets (asset_name, purchase_date, cost, salvage_value, useful_life_years)
 select * from (values
@@ -280,3 +351,226 @@ values (
   '{"avgOrderPrice":95,"variableCostPerOrder":34,"monthlyFixedCosts":7625,"estimatedOrders":825}'::jsonb
 )
 on conflict (key) do nothing;
+
+-- ─── annual_expense_categories — defensive column repair ──────────────────
+-- If an older version of this table exists (e.g. created in the dashboard
+-- with different column names or without a default on id), `create table
+-- if not exists` above won't touch it. These statements ensure the table
+-- ends up with the exact shape the app expects.
+alter table public.annual_expense_categories
+  add column if not exists label      text;
+alter table public.annual_expense_categories
+  add column if not exists sort_order integer not null default 0;
+alter table public.annual_expense_categories
+  add column if not exists created_at timestamptz not null default now();
+-- Ensure id auto-generates UUIDs when omitted from inserts (required by
+-- the new addCategory flow, which sends only label + sort_order).
+alter table public.annual_expense_categories
+  alter column id set default gen_random_uuid();
+
+-- Default recurring-expense categories (Module 2 dropdown source). We
+-- omit id and let the column default generate UUIDs; the WHERE NOT EXISTS
+-- guard keeps the block idempotent on re-runs.
+insert into public.annual_expense_categories (label, sort_order)
+select * from (values
+  ('تأمين شامل للأسطول',       1),
+  ('تراخيص ورسوم حكومية',      2),
+  ('اشتراكات برمجية وأنظمة',   3),
+  ('تسويق وحملات سنوية',       4),
+  ('أخرى',                     5)
+) as t(label, sort_order)
+where not exists (select 1 from public.annual_expense_categories);
+
+-- ─── monthly_expenses — defensive column repair ───────────────────────────
+-- Ensure all columns + the UUID default exist when this script runs against
+-- a partial/older DB. Idempotent on re-run.
+alter table public.monthly_expense_categories
+  add column if not exists label      text;
+alter table public.monthly_expense_categories
+  add column if not exists sort_order integer not null default 0;
+alter table public.monthly_expense_categories
+  add column if not exists created_at timestamptz not null default now();
+alter table public.monthly_expense_categories
+  alter column id set default gen_random_uuid();
+
+alter table public.monthly_expenses
+  add column if not exists quantity           integer not null default 1;
+alter table public.monthly_expenses
+  add column if not exists unit_cost          numeric(12,2) not null default 0;
+alter table public.monthly_expenses
+  add column if not exists total_monthly_cost numeric(12,2) not null default 0;
+alter table public.monthly_expenses
+  add column if not exists payment_status     text not null default 'pending';
+alter table public.monthly_expenses
+  add column if not exists category_id        uuid;
+alter table public.monthly_expenses
+  alter column id set default gen_random_uuid();
+alter table public.monthly_expenses
+  drop constraint if exists monthly_expenses_quantity_chk;
+alter table public.monthly_expenses
+  add  constraint monthly_expenses_quantity_chk
+  check (quantity > 0);
+alter table public.monthly_expenses
+  drop constraint if exists monthly_expenses_status_chk;
+alter table public.monthly_expenses
+  add  constraint monthly_expenses_status_chk
+  check (payment_status in ('paid','pending'));
+
+-- Recurring payment-day column (replaces billing_date in the UI).
+alter table public.monthly_expenses
+  add column if not exists payment_day integer;
+alter table public.monthly_expenses
+  drop constraint if exists monthly_expenses_payment_day_chk;
+alter table public.monthly_expenses
+  add  constraint monthly_expenses_payment_day_chk
+  check (payment_day is null or (payment_day between 1 and 31));
+
+-- One-shot migration: pull the day-of-month out of legacy billing_date
+-- when payment_day hasn't been set yet. Guarded so a DB whose
+-- billing_date column has already been dropped doesn't error.
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+     where table_schema = 'public'
+       and table_name   = 'monthly_expenses'
+       and column_name  = 'billing_date'
+  ) then
+    update public.monthly_expenses
+       set payment_day = extract(day from billing_date)::int
+     where billing_date is not null and payment_day is null;
+  end if;
+end $$;
+
+-- Seed the six default fleet-monthly categories on a fresh DB. Omit `id`
+-- so the UUID default kicks in; the WHERE NOT EXISTS guard keeps this
+-- block idempotent across re-runs.
+insert into public.monthly_expense_categories (label, sort_order)
+select * from (values
+  ('رواتب وأجور',          1),
+  ('إيجار ومرافق',         2),
+  ('محروقات',              3),
+  ('مستلزمات تشغيلية',     4),
+  ('صيانة دورية',          5),
+  ('أخرى',                 6)
+) as t(label, sort_order)
+where not exists (select 1 from public.monthly_expense_categories);
+
+-- ─── annual_expenses — defensive column repair ────────────────────────────
+-- Existing DBs created before the quantity column was added get it now
+-- with a sensible default (1 × stored total preserves the persisted
+-- annual_cost). Re-runs are no-ops.
+alter table public.annual_expenses
+  add column if not exists quantity integer not null default 1;
+alter table public.annual_expenses
+  drop constraint if exists annual_expenses_quantity_chk;
+alter table public.annual_expenses
+  add  constraint annual_expenses_quantity_chk
+  check (quantity > 0);
+
+-- Recurring payment-month + payment-day columns (replace due_date in the UI).
+alter table public.annual_expenses
+  add column if not exists payment_month integer;
+alter table public.annual_expenses
+  add column if not exists payment_day   integer;
+alter table public.annual_expenses
+  drop constraint if exists annual_expenses_payment_month_chk;
+alter table public.annual_expenses
+  add  constraint annual_expenses_payment_month_chk
+  check (payment_month is null or (payment_month between 1 and 12));
+alter table public.annual_expenses
+  drop constraint if exists annual_expenses_payment_day_chk;
+alter table public.annual_expenses
+  add  constraint annual_expenses_payment_day_chk
+  check (payment_day is null or (payment_day between 1 and 31));
+
+-- One-shot migration: pull month + day out of legacy due_date when the
+-- new columns aren't populated yet. Guarded so a DB whose due_date
+-- column has already been dropped doesn't error.
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+     where table_schema = 'public'
+       and table_name   = 'annual_expenses'
+       and column_name  = 'due_date'
+  ) then
+    update public.annual_expenses
+       set payment_month = extract(month from due_date)::int,
+           payment_day   = extract(day   from due_date)::int
+     where due_date is not null
+       and (payment_month is null or payment_day is null);
+  end if;
+end $$;
+
+-- Tell PostgREST to refresh its schema introspection now that the table
+-- and its columns are guaranteed. Without this, the REST API can keep
+-- returning "Could not find the 'label' column ... in the schema cache"
+-- until the next auto-reload.
+notify pgrst, 'reload schema';
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Migration 2026-05 — Module 1 (Startup Sunk Costs) rebuild
+-- Replaces legacy mobile-fleet categories+items with the 4 franchise-startup
+-- categories, and constrains startup_costs.status to ('in_progress','completed').
+-- Idempotent: safe to re-run.
+-- ═══════════════════════════════════════════════════════════════════════════
+do $$
+begin
+  -- 1) Wipe legacy seed items whose categories no longer exist in the new set.
+  --    NOTE: the id 'other' is shared between the old and new category sets,
+  --    so we delete the single legacy 'other' row by its exact seed item_name
+  --    instead of by category — protects user-added rows on migration re-runs.
+  delete from public.startup_costs
+   where category in (
+     'vehicle-purchase','vehicle-customization','portable-equipment',
+     'routing-software','mobile-permits','marketing','supplies'
+   );
+  delete from public.startup_costs
+   where category = 'other' and item_name = 'احتياطي تشغيلي'
+     and budgeted_amount = 74000 and actual_amount = 65000;
+
+  -- 2) Wipe legacy categories (everything except 'other', which is kept and
+  --    re-labeled by the upsert below).
+  delete from public.categories
+   where id in (
+     'vehicle-purchase','vehicle-customization','portable-equipment',
+     'routing-software','mobile-permits','marketing','supplies'
+   );
+
+  -- 3) Upsert the 4 franchise-startup categories.
+  insert into public.categories (id, label, sort_order) values
+    ('legal-permits',      'تراخيص ورسوم قانونية',       1),
+    ('franchise-sweater',  'رسوم الامتياز لـ سويتر',      2),
+    ('branding-marketing', 'هوية بصرية وتسويق افتتاحي',  3),
+    ('other',              'أخرى',                        4)
+  on conflict (id) do update
+    set label      = excluded.label,
+        sort_order = excluded.sort_order;
+
+  -- 4) Normalize any legacy status values to the new enum.
+  update public.startup_costs
+     set status = case
+       when status in ('completed','in_progress') then status
+       else 'in_progress'
+     end;
+end $$;
+
+alter table public.startup_costs
+  alter column status set default 'in_progress';
+
+alter table public.startup_costs
+  drop constraint if exists startup_costs_status_chk;
+alter table public.startup_costs
+  add  constraint startup_costs_status_chk
+  check (status in ('in_progress','completed'));
+
+-- Add the `quantity` column for existing DBs (default 1; existing rows
+-- become "1 × total" which preserves their persisted totals exactly).
+alter table public.startup_costs
+  add column if not exists quantity integer not null default 1;
+alter table public.startup_costs
+  drop constraint if exists startup_costs_quantity_chk;
+alter table public.startup_costs
+  add  constraint startup_costs_quantity_chk
+  check (quantity > 0);

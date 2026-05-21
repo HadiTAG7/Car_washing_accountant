@@ -1,325 +1,118 @@
 import { useMemo, useState } from 'react';
 import {
-  Plus, Truck, Download, Trash2,
-  Pencil, X, Check, Target, CircleDollarSign, PiggyBank,
-  Receipt, ArrowLeftRight,
+  Plus, Trash2, Pencil, Wallet, Receipt, Scale, FileText,
 } from 'lucide-react';
-import {
-  calcAnnualDepreciation,
-  calcBookValue,
-  formatCurrency,
-  formatNumber,
-  exportToCSV,
-} from '../data/initialData';
+import { formatCurrency, formatNumber } from '../data/initialData';
 import TopBar from './TopBar';
 import {
-  Card, SectionHeader, StatCard, ProgressBar,
-  PrimaryButton, SecondaryButton, StatusBadge,
+  Card, SectionHeader, StatCard, PrimaryButton,
 } from './UI';
-import AddItemModal from './AddItemModal';
-import AddAssetModal from './AddAssetModal';
+import AddStartupFeeModal from './AddStartupFeeModal';
 import LoadingState from './LoadingState';
-import ErrorState from './ErrorState';
+import ErrorState, { SetupRequiredCard } from './ErrorState';
 import { useStartupCosts } from '../hooks/useStartupCosts';
-import { useAssets } from '../hooks/useAssets';
-import { useTransactions } from '../hooks/useTransactions';
 import { useCategories } from '../hooks/useCategories';
-import { useSettings } from '../hooks/useSettings';
+import { isSupabaseConfigured, missingEnvNames } from '../lib/supabaseClient';
 
-// ─── Master budget tracker ──────────────────────────────────────────────────
-function BudgetTracker({ totalBudget, spent, sunkCosts, assetsCost, onSetBudget }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft]     = useState('');
-  const remaining = totalBudget - spent;
-  const pct       = totalBudget > 0 ? Math.min((spent / totalBudget) * 100, 100) : 0;
-  const overBudget = remaining < 0;
-
-  function handleSave() {
-    const val = parseFloat(draft);
-    if (val > 0) onSetBudget(val);
-    setEditing(false);
-  }
-
+// ─── Status toggle pill (in_progress ↔ completed) ──────────────────────────
+function StatusTogglePill({ status, onChange }) {
+  const isCompleted = status === 'completed';
+  const next        = isCompleted ? 'in_progress' : 'completed';
+  const classes = isCompleted
+    ? 'bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-emerald-100'
+    : 'bg-amber-50 text-amber-700 border-amber-100 hover:bg-amber-100';
+  const dot = isCompleted ? 'bg-emerald-500' : 'bg-amber-500';
   return (
-    <Card className="p-6 bg-gradient-to-l from-primary-50/60 to-white border-primary-100">
-      <div className="flex flex-col md:flex-row md:items-center gap-6">
-        {/* Budget amount */}
-        <div className="flex-1">
-          <div className="flex items-center gap-2 mb-1">
-            <Target size={18} className="text-primary-600" />
-            <span className="text-sm font-bold text-slate-700">ميزانية المشروع</span>
-          </div>
-          {editing ? (
-            <div className="flex items-center gap-2 mt-1">
-              <input
-                type="number"
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                className="w-48 px-3 py-2 border border-primary-300 rounded-xl text-lg font-bold tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400"
-                autoFocus
-                placeholder="0"
-                min="0"
-                onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') setEditing(false); }}
-              />
-              <span className="text-sm text-slate-500">ر.س</span>
-              <button onClick={handleSave} className="text-emerald-600 hover:text-emerald-800 p-1"><Check size={18} /></button>
-              <button onClick={() => setEditing(false)} className="text-slate-400 hover:text-slate-600 p-1"><X size={18} /></button>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <span className="text-3xl font-extrabold text-slate-900 tabular-nums">
-                {totalBudget > 0 ? formatCurrency(totalBudget) : '—'}
-              </span>
-              <button
-                onClick={() => { setDraft(totalBudget > 0 ? String(totalBudget) : ''); setEditing(true); }}
-                className="text-slate-400 hover:text-primary-600 p-1 rounded-lg hover:bg-primary-50 transition-colors"
-                title="تعديل الميزانية"
-              >
-                <Pencil size={14} />
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Spent */}
-        <div className="text-center">
-          <div className="flex items-center justify-center gap-1.5 mb-1">
-            <CircleDollarSign size={16} className="text-amber-500" />
-            <span className="text-xs font-semibold text-slate-500">تم صرفه</span>
-          </div>
-          <p className="text-xl font-extrabold text-slate-800 tabular-nums">{formatCurrency(spent)}</p>
-          <p className="text-[10px] text-slate-400 mt-0.5 tabular-nums">
-            {formatCurrency(sunkCosts)} تأسيس + {formatCurrency(assetsCost)} أصول
-          </p>
-        </div>
-
-        {/* Remaining */}
-        <div className="text-center">
-          <div className="flex items-center justify-center gap-1.5 mb-1">
-            <PiggyBank size={16} className={overBudget ? 'text-red-500' : 'text-emerald-500'} />
-            <span className="text-xs font-semibold text-slate-500">
-              {overBudget ? 'تجاوز' : 'المتبقي'}
-            </span>
-          </div>
-          <p className={`text-xl font-extrabold tabular-nums ${overBudget ? 'text-red-600' : 'text-emerald-600'}`}>
-            {formatCurrency(Math.abs(remaining))}
-          </p>
-        </div>
-      </div>
-
-      {/* Progress bar */}
-      {totalBudget > 0 && (
-        <div className="mt-5">
-          <div className="flex justify-between text-[11px] text-slate-500 mb-1.5">
-            <span>صُرف {pct.toFixed(1)}% من الميزانية</span>
-            <span>{overBudget ? 'تجاوز الميزانية!' : `باقي ${formatCurrency(remaining)}`}</span>
-          </div>
-          <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
-            <div
-              className={`h-full rounded-full transition-all duration-700 ${
-                overBudget ? 'bg-red-500' : pct >= 85 ? 'bg-amber-500' : 'bg-emerald-500'
-              }`}
-              style={{ width: `${Math.min(pct, 100)}%` }}
-            />
-          </div>
-        </div>
-      )}
-
-      {totalBudget === 0 && (
-        <p className="text-sm text-slate-400 mt-3">
-          اضغط على أيقونة القلم لتحديد ميزانية المشروع الإجمالية
-        </p>
-      )}
-    </Card>
+    <button
+      type="button"
+      onClick={() => onChange(next)}
+      title={isCompleted ? 'انقر لإعادة الحالة إلى قيد التنفيذ' : 'انقر لإنهاء البند'}
+      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-semibold transition-colors ${classes}`}
+    >
+      <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />
+      {isCompleted ? 'مكتمل' : 'قيد التنفيذ'}
+    </button>
   );
 }
 
-// ─── Category group progress card ────────────────────────────────────────────
-function CategoryGroupCard({ label, budgeted, actual, onEdit, onDelete }) {
-  const [editing, setEditing]     = useState(false);
-  const [editLabel, setEditLabel] = useState(label);
-  const variance = budgeted - actual;
-  const pct      = budgeted > 0 ? Math.min((actual / budgeted) * 100, 100) : 0;
-  const over     = variance < 0;
-  const color    = over ? 'red' : pct >= 90 ? 'amber' : 'emerald';
-
-  function handleSave() {
-    if (editLabel.trim() && editLabel.trim() !== label) {
-      onEdit(editLabel.trim());
-    }
-    setEditing(false);
-  }
-
+// ─── Empty-state for the table area ────────────────────────────────────────
+function EmptyState({ onAdd }) {
   return (
-    <div className="bg-white border border-slate-100 rounded-2xl p-5 hover:shadow-md transition-shadow">
-      <div className="flex items-start justify-between mb-3">
-        <div className="flex-1 min-w-0">
-          {editing ? (
-            <div className="flex items-center gap-1.5 mb-1">
-              <input
-                type="text"
-                value={editLabel}
-                onChange={(e) => setEditLabel(e.target.value)}
-                className="px-2 py-0.5 border border-primary-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-300 w-full"
-                autoFocus
-                onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') setEditing(false); }}
-              />
-              <button onClick={handleSave} className="text-emerald-600 hover:text-emerald-800 p-0.5"><Check size={14} /></button>
-              <button onClick={() => setEditing(false)} className="text-slate-400 hover:text-slate-600 p-0.5"><X size={14} /></button>
-            </div>
-          ) : (
-            <div className="flex items-center gap-1.5 mb-1">
-              <p className="text-xs text-slate-500">{label}</p>
-              {onEdit && (
-                <button onClick={() => { setEditLabel(label); setEditing(true); }} className="text-slate-300 hover:text-primary-600 p-0.5 rounded transition-colors">
-                  <Pencil size={11} />
-                </button>
-              )}
-              {onDelete && (
-                <button onClick={onDelete} className="text-slate-300 hover:text-red-500 p-0.5 rounded transition-colors">
-                  <X size={11} />
-                </button>
-              )}
-            </div>
-          )}
-          <p className="text-lg font-extrabold text-slate-900 tabular-nums">
-            {formatCurrency(actual)}
-          </p>
-        </div>
-        <span
-          className={`text-[11px] font-bold px-2 py-1 rounded-lg ${
-            over ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'
-          }`}
-        >
-          {over ? '▲' : '▼'} {formatCurrency(Math.abs(variance))}
-        </span>
+    <div className="flex flex-col items-center justify-center py-14 text-center">
+      <div className="bg-primary-50 text-primary-700 w-14 h-14 rounded-2xl flex items-center justify-center mb-4">
+        <FileText size={26} />
       </div>
-      <ProgressBar value={pct} color={color} />
-      <div className="flex justify-between text-[11px] text-slate-500 mt-2">
-        <span>الفعلي {pct.toFixed(0)}%</span>
-        <span>من أصل {formatCurrency(budgeted)}</span>
-      </div>
+      <p className="text-base font-bold text-slate-800 mb-1">لا توجد بنود تأسيس بعد</p>
+      <p className="text-sm text-slate-500 mb-5 max-w-sm">
+        أضف أول بند رسوم تأسيس لبدء تتبع الميزانية والصرف الفعلي.
+      </p>
+      <PrimaryButton icon={Plus} onClick={onAdd}>
+        إضافة رسوم تأسيس
+      </PrimaryButton>
     </div>
   );
 }
 
 export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
   const {
-    items, loading: itemsLoading, error: itemsError,
-    addItem, updateActual, deleteItem, refetch: refetchItems,
+    items, loading, error,
+    addItem, updateItem, updateActual, updateStatus, deleteItem, refetch,
   } = useStartupCosts();
 
-  const {
-    assets, loading: assetsLoading, error: assetsError,
-    addAsset, deleteAsset, refetch: refetchAssets,
-  } = useAssets();
+  const { categories, getCategoryLabel } = useCategories();
 
-  const { transactions } = useTransactions();
+  const [localOpen, setLocalOpen]       = useState(false);
+  const [editingItem, setEditingItem]   = useState(null);
+  const [mutationError, setMutationError] = useState(null);
 
-  const {
-    categories,
-    addCategory, updateCategory, deleteCategory, getCategoryLabel,
-  } = useCategories();
-
-  const { value: budgetSettings, setValue: saveBudgetSettings } = useSettings('project_budget', { total: 0 });
-
-  const [localItemOpen,  setLocalItemOpen]  = useState(false);
-  const [localAssetOpen, setLocalAssetOpen] = useState(false);
-  const [mutationError,  setMutationError]  = useState(null);
-
-  const isItemModalOpen  = localItemOpen  || pendingEntry === 'item';
-  const isAssetModalOpen = localAssetOpen || pendingEntry === 'asset';
-
-  function closeItemModal()  { setLocalItemOpen(false);  if (pendingEntry) onClearPendingEntry(); }
-  function closeAssetModal() { setLocalAssetOpen(false); if (pendingEntry) onClearPendingEntry(); }
-
-  // ── 3-Pillar totals ──────────────────────────────────────────
-  const pillarTotals = useMemo(() => {
-    const sunkCosts  = items.reduce((s, i) => s + i.actual, 0);
-    const assetsCost = assets.reduce((s, a) => s + a.purchaseCost, 0);
-    let txIn = 0, txOut = 0;
-    transactions.forEach((t) => {
-      if (t.type === 'in') txIn += t.amount;
-      else txOut += t.amount;
-    });
-    return { sunkCosts, assetsCost, txIn, txOut, txNet: txIn - txOut };
-  }, [items, assets, transactions]);
-
-  const totalSpent = pillarTotals.sunkCosts + pillarTotals.assetsCost;
-
-  // ── Category groupings ───────────────────────────────────────
-  const grouped = useMemo(() => {
-    const map = new Map();
-    items.forEach((i) => {
-      const cur = map.get(i.category) || { budgeted: 0, actual: 0 };
-      map.set(i.category, { budgeted: cur.budgeted + i.budgeted, actual: cur.actual + i.actual });
-    });
-    return categories
-      .map((cat) => ({ ...cat, ...(map.get(cat.id) || { budgeted: 0, actual: 0 }) }))
-      .filter((g) => g.budgeted > 0);
-  }, [items, categories]);
-
-  function handleExport() {
-    exportToCSV(
-      'monster-wash-startup-costs.csv',
-      ['التصنيف', 'اسم البند', 'الميزانية', 'الفعلي', 'الفرق'],
-      items.map((i) => [
-        getCategoryLabel(i.category),
-        i.itemName,
-        i.budgeted,
-        i.actual,
-        i.budgeted - i.actual,
-      ]),
-    );
+  const isModalOpen = localOpen || Boolean(editingItem) || pendingEntry === 'item';
+  function openAddModal()        { setEditingItem(null); setLocalOpen(true); }
+  function openEditModal(item)   { setLocalOpen(false); setEditingItem(item); }
+  function closeModal() {
+    setLocalOpen(false);
+    setEditingItem(null);
+    if (pendingEntry) onClearPendingEntry?.();
   }
 
-  // ── Mutation wrappers that surface errors in the UI ──────────
-  async function handleAddItem(newItem) {
-    try { await addItem(newItem); }
+  const totals = useMemo(() => {
+    const planned = items.reduce((s, i) => s + i.plannedAmount, 0);
+    const actual  = items.reduce((s, i) => s + i.actualAmount,  0);
+    const variance = planned - actual;
+    return { planned, actual, variance, ok: variance >= 0 };
+  }, [items]);
+
+  async function handleAddItem(item) {
+    try { await addItem(item); }
+    catch (e) { setMutationError(e); throw e; }
+  }
+  async function handleUpdateItem(id, updates) {
+    try { await updateItem(id, updates); }
+    catch (e) { setMutationError(e); throw e; }
+  }
+  async function handleUpdateActual(id, next, current) {
+    if (next === current) return;
+    try { await updateActual(id, next); }
     catch (e) { setMutationError(e); }
   }
-  async function handleUpdateActual(id, value) {
-    try { await updateActual(id, value); }
+  async function handleUpdateStatus(id, status) {
+    try { await updateStatus(id, status); }
     catch (e) { setMutationError(e); }
   }
-  async function handleDeleteItem(id) {
+  async function handleDelete(id) {
     try { await deleteItem(id); }
-    catch (e) { setMutationError(e); }
-  }
-  async function handleAddAsset(newAsset) {
-    try { await addAsset(newAsset); }
-    catch (e) { setMutationError(e); }
-  }
-  async function handleDeleteAsset(id) {
-    try { await deleteAsset(id); }
-    catch (e) { setMutationError(e); }
-  }
-  async function handleAddCategory(cat) {
-    try { await addCategory(cat); }
-    catch (e) { setMutationError(e); }
-  }
-  async function handleUpdateCategory(id, label) {
-    try { await updateCategory(id, label); }
-    catch (e) { setMutationError(e); }
-  }
-  async function handleDeleteCategory(id) {
-    try { await deleteCategory(id); }
     catch (e) { setMutationError(e); }
   }
 
   return (
     <>
       <TopBar
-        title="التأسيس والأصول"
-        subtitle="مراقبة تكاليف الإطلاق وإهلاك الأصول الثابتة"
-        actions={
-          <SecondaryButton icon={Download} onClick={handleExport} className="hidden md:inline-flex">
-            تصدير CSV
-          </SecondaryButton>
-        }
+        title="رسوم التأسيس"
+        subtitle="تتبع المصاريف التأسيسية لمرة واحدة لامتياز مونستر واش"
       />
 
       <main className="p-8 space-y-6">
+        {!isSupabaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
+
         {mutationError && (
           <ErrorState
             title="تعذّر حفظ التغييرات"
@@ -328,224 +121,142 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
           />
         )}
 
-        {/* ── Master budget tracker ──────────────────────────── */}
-        <BudgetTracker
-          totalBudget={budgetSettings.total}
-          spent={totalSpent}
-          sunkCosts={pillarTotals.sunkCosts}
-          assetsCost={pillarTotals.assetsCost}
-          onSetBudget={(val) => saveBudgetSettings({ ...budgetSettings, total: val })}
-        />
+        {error && (
+          <ErrorState
+            title="تعذّر تحميل بنود التأسيس"
+            error={error}
+            onRetry={refetch}
+          />
+        )}
 
-        {/* ── 3-Pillar KPI Summary ─────────────────────────────── */}
+        {/* ── KPI summary ─────────────────────────────────────────── */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          <StatCard
+            icon={Wallet}
+            iconBg="bg-primary-50"
+            iconColor="text-primary-700"
+            label="إجمالي الميزانية المخططة"
+            value={formatCurrency(totals.planned)}
+            sub={`${items.length} ${items.length === 1 ? 'بند' : 'بنود'}`}
+          />
           <StatCard
             icon={Receipt}
             iconBg="bg-amber-50"
             iconColor="text-amber-600"
-            label="مدفوعات تأسيسية لمرة واحدة"
-            value={formatCurrency(pillarTotals.sunkCosts)}
-            sub={`${formatNumber(items.length)} بند — رسوم، تراخيص، هوية`}
+            label="إجمالي الصرف الفعلي"
+            value={formatCurrency(totals.actual)}
+            sub={
+              totals.planned > 0
+                ? `${((totals.actual / totals.planned) * 100).toFixed(0)}% من الميزانية`
+                : 'لا توجد ميزانية بعد'
+            }
           />
           <StatCard
-            icon={Truck}
-            iconBg="bg-primary-50"
-            iconColor="text-primary-700"
-            label="أصول رأسمالية (قابلة للإهلاك)"
-            value={formatCurrency(pillarTotals.assetsCost)}
-            sub={`${formatNumber(assets.length)} أصل ثابت`}
-          />
-          <StatCard
-            icon={ArrowLeftRight}
-            iconBg={pillarTotals.txNet >= 0 ? 'bg-emerald-50' : 'bg-red-50'}
-            iconColor={pillarTotals.txNet >= 0 ? 'text-emerald-600' : 'text-red-600'}
-            label="الإيرادات والتشغيل (صافي)"
-            value={formatCurrency(pillarTotals.txNet)}
-            sub={`↑ ${formatCurrency(pillarTotals.txIn)} إيرادات — ↓ ${formatCurrency(pillarTotals.txOut)} مصروفات`}
-            trend={pillarTotals.txIn > 0 ? `${((pillarTotals.txNet / pillarTotals.txIn) * 100).toFixed(0)}%` : undefined}
-            trendPositive={pillarTotals.txNet >= 0}
+            icon={Scale}
+            iconBg={totals.ok ? 'bg-emerald-50' : 'bg-accent-50'}
+            iconColor={totals.ok ? 'text-emerald-600' : 'text-accent-600'}
+            label={totals.ok ? 'المتبقي من الميزانية' : 'تجاوز الميزانية'}
+            value={formatCurrency(Math.abs(totals.variance))}
+            sub={totals.ok ? 'ضمن الحدود المخططة' : 'الإنفاق تجاوز المخطط'}
           />
         </div>
 
-        {/* ── Progress by category ────────────────────────────── */}
+        {/* ── Main sunk-costs table ───────────────────────────────── */}
         <Card className="p-6">
           <SectionHeader
-            title="التكاليف حسب الفئة"
-            subtitle="نظرة مجمّعة على الميزانية الفعلية لكل فئة تأسيس"
+            title="بنود رسوم التأسيس"
+            subtitle="حرّر المبلغ الفعلي أو الحالة مباشرةً من الجدول"
             action={
-              <PrimaryButton icon={Plus} onClick={() => setLocalItemOpen(true)}>
-                إضافة بند جديد
+              <PrimaryButton icon={Plus} onClick={openAddModal}>
+                إضافة رسوم تأسيس
               </PrimaryButton>
             }
           />
-          {itemsError && <ErrorState error={itemsError} onRetry={refetchItems} />}
-          {itemsLoading && !items.length
-            ? <LoadingState rows={3} />
-            : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                {grouped.map((g) => (
-                  <CategoryGroupCard
-                    key={g.id}
-                    label={g.label}
-                    budgeted={g.budgeted}
-                    actual={g.actual}
-                    onEdit={(newLabel) => handleUpdateCategory(g.id, newLabel)}
-                    onDelete={() => handleDeleteCategory(g.id)}
-                  />
-                ))}
-              </div>
-            )}
-        </Card>
 
-        {/* ── Detailed line-item table ─────────────────────────── */}
-        <Card className="p-6">
-          <SectionHeader
-            title="تفاصيل البنود"
-            subtitle="تحرير الإنفاق الفعلي لكل بند أو حذف البنود غير الضرورية"
-          />
-          {itemsLoading && !items.length ? <LoadingState rows={5} /> : (
+          {loading && !items.length ? (
+            <LoadingState rows={4} />
+          ) : items.length === 0 ? (
+            <EmptyState onAdd={openAddModal} />
+          ) : (
             <div className="overflow-x-auto -mx-6 px-6">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-right text-[11px] font-bold text-slate-500 uppercase border-b border-slate-100">
+                    <th className="py-3 px-4">البند</th>
                     <th className="py-3 px-4">التصنيف</th>
-                    <th className="py-3 px-4">اسم البند</th>
-                    <th className="py-3 px-4 text-left tabular-nums">الميزانية</th>
-                    <th className="py-3 px-4 text-left tabular-nums">الفعلي</th>
-                    <th className="py-3 px-4 text-left tabular-nums">الفرق</th>
+                    <th className="py-3 px-4 text-left tabular-nums">المبلغ المخطط</th>
+                    <th className="py-3 px-4 text-left tabular-nums">المبلغ الفعلي</th>
                     <th className="py-3 px-4">الحالة</th>
-                    <th className="py-3 px-4 text-left w-16">إجراء</th>
+                    <th className="py-3 px-4 text-left w-16">إجراءات</th>
                   </tr>
                 </thead>
                 <tbody>
                   {items.map((i) => {
-                    const variance = i.budgeted - i.actual;
-                    const status = variance > 0 ? 'under' : variance < 0 ? 'over' : 'on';
-                    const label  = variance > 0 ? 'ضمن الميزانية' : variance < 0 ? 'تجاوز' : 'مطابق';
+                    const qty = Math.max(1, parseInt(i.quantity, 10) || 1);
+                    const unitPlanned = qty > 0 ? i.plannedAmount / qty : 0;
                     return (
-                      <tr key={i.id} className="border-b border-slate-50 hover:bg-slate-50/60 transition-colors">
-                        <td className="py-3 px-4">
+                      <tr
+                        key={i.id}
+                        className="border-b border-slate-50 hover:bg-slate-50/60 transition-colors"
+                      >
+                        <td className="py-3 px-4 align-top">
+                          <div className="font-medium text-slate-800">{i.itemName}</div>
+                          {qty > 1 && (
+                            <div className="text-[11px] text-slate-400 mt-0.5 tabular-nums">
+                              الكمية: {formatNumber(qty)} | سعر الوحدة: {formatCurrency(unitPlanned)}
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 align-top">
                           <span className="inline-flex text-[11px] font-semibold bg-slate-100 text-slate-700 px-2 py-1 rounded-md">
                             {getCategoryLabel(i.category)}
                           </span>
                         </td>
-                        <td className="py-3 px-4 font-medium text-slate-800">{i.itemName}</td>
-                        <td className="py-3 px-4 text-left tabular-nums text-slate-700">
-                          {formatCurrency(i.budgeted)}
+                        <td className="py-3 px-4 text-left tabular-nums text-slate-700 align-top">
+                          {formatCurrency(i.plannedAmount)}
                         </td>
-                        <td className="py-3 px-4 text-left">
+                        <td className="py-3 px-4 text-left align-top">
                           <input
                             type="number"
-                            defaultValue={i.actual}
+                            min="0"
+                            step="any"
+                            defaultValue={i.actualAmount}
                             onBlur={(e) => {
-                              const next = parseFloat(e.target.value) || 0;
-                              if (next !== i.actual) handleUpdateActual(i.id, next);
+                              const next = parseFloat(e.target.value);
+                              const safe = Number.isFinite(next) ? Math.max(0, next) : 0;
+                              handleUpdateActual(i.id, safe, i.actualAmount);
                             }}
-                            className="w-28 px-2 py-1 border border-slate-200 rounded-lg text-sm text-left tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-200"
+                            aria-label={`المبلغ الفعلي لـ ${i.itemName}`}
+                            className="w-28 px-2 py-1 border border-slate-200 rounded-lg text-sm text-slate-900 font-medium text-left tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-300"
                           />
                         </td>
-                        <td
-                          className={`py-3 px-4 text-left tabular-nums font-bold ${
-                            variance > 0 ? 'text-emerald-600' : variance < 0 ? 'text-red-600' : 'text-slate-500'
-                          }`}
-                        >
-                          {variance > 0 ? '−' : variance < 0 ? '+' : ''}
-                          {formatCurrency(Math.abs(variance))}
+                        <td className="py-3 px-4 align-top">
+                          <StatusTogglePill
+                            status={i.status}
+                            onChange={(next) => handleUpdateStatus(i.id, next)}
+                          />
                         </td>
-                        <td className="py-3 px-4">
-                          <StatusBadge status={status}>{label}</StatusBadge>
-                        </td>
-                        <td className="py-3 px-4 text-left">
-                          <button
-                            onClick={() => handleDeleteItem(i.id)}
-                            className="text-slate-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors"
-                            aria-label="حذف"
-                          >
-                            <Trash2 size={15} />
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Card>
-
-        {/* ── Depreciation table ─────────────────────────────── */}
-        <Card className="p-6">
-          <SectionHeader
-            title="جدول إهلاك الأصول الثابتة"
-            subtitle="طريقة القسط الثابت — القيمة الدفترية تُحسب تلقائياً من تاريخ الشراء والعمر الإنتاجي"
-            action={
-              <PrimaryButton icon={Plus} onClick={() => setLocalAssetOpen(true)}>
-                إضافة أصل جديد
-              </PrimaryButton>
-            }
-          />
-          {assetsError && <ErrorState error={assetsError} onRetry={refetchAssets} />}
-          {assetsLoading && !assets.length ? <LoadingState rows={4} /> : (
-            <div className="overflow-x-auto -mx-6 px-6">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-right text-[11px] font-bold text-slate-500 uppercase border-b border-slate-100">
-                    <th className="py-3 px-4">الأصل</th>
-                    <th className="py-3 px-4">تاريخ الشراء</th>
-                    <th className="py-3 px-4 text-left tabular-nums">تكلفة الشراء</th>
-                    <th className="py-3 px-4 text-left tabular-nums">قيمة الخردة</th>
-                    <th className="py-3 px-4 text-center">العمر الإنتاجي</th>
-                    <th className="py-3 px-4 text-left tabular-nums">الإهلاك السنوي</th>
-                    <th className="py-3 px-4 text-left tabular-nums">القيمة الدفترية</th>
-                    <th className="py-3 px-4 text-left w-16">إجراء</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {assets.map((a) => {
-                    const annual = calcAnnualDepreciation(a.purchaseCost, a.salvageValue, a.usefulLife);
-                    const bv     = calcBookValue(a.purchaseCost, a.salvageValue, a.usefulLife, a.purchaseDate);
-                    const used   = a.purchaseCost > a.salvageValue
-                      ? ((a.purchaseCost - bv) / (a.purchaseCost - a.salvageValue)) * 100
-                      : 0;
-                    return (
-                      <tr key={a.id} className="border-b border-slate-50 hover:bg-slate-50/60 transition-colors">
-                        <td className="py-3 px-4 font-medium text-slate-800 flex items-center gap-2">
-                          <span className="bg-primary-50 text-primary-700 w-8 h-8 rounded-lg flex items-center justify-center">
-                            <Truck size={14} />
-                          </span>
-                          {a.assetName}
-                        </td>
-                        <td className="py-3 px-4 text-slate-600 tabular-nums">{a.purchaseDate}</td>
-                        <td className="py-3 px-4 text-left tabular-nums text-slate-700">
-                          {formatCurrency(a.purchaseCost)}
-                        </td>
-                        <td className="py-3 px-4 text-left tabular-nums text-slate-500">
-                          {formatCurrency(a.salvageValue)}
-                        </td>
-                        <td className="py-3 px-4 text-center text-slate-600">
-                          {formatNumber(a.usefulLife)} سنة
-                        </td>
-                        <td className="py-3 px-4 text-left tabular-nums text-red-600 font-semibold">
-                          −{formatCurrency(annual)}
-                        </td>
-                        <td className="py-3 px-4 text-left">
-                          <div className="flex flex-col items-end gap-1">
-                            <span className="tabular-nums font-bold text-slate-900">
-                              {formatCurrency(bv)}
-                            </span>
-                            <div className="w-24">
-                              <ProgressBar value={100 - used} color="primary" />
-                            </div>
+                        <td className="py-3 px-4 text-left align-top">
+                          <div className="inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => openEditModal(i)}
+                              className="text-slate-400 hover:text-primary-700 p-1.5 rounded-lg hover:bg-primary-50 transition-colors"
+                              aria-label={`تعديل ${i.itemName}`}
+                              title="تعديل البند"
+                            >
+                              <Pencil size={15} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(i.id)}
+                              className="text-slate-400 hover:text-accent-600 p-1.5 rounded-lg hover:bg-accent-50 transition-colors"
+                              aria-label={`حذف ${i.itemName}`}
+                              title="حذف البند"
+                            >
+                              <Trash2 size={15} />
+                            </button>
                           </div>
-                        </td>
-                        <td className="py-3 px-4 text-left">
-                          <button
-                            onClick={() => handleDeleteAsset(a.id)}
-                            className="text-slate-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors"
-                            aria-label="حذف"
-                          >
-                            <Trash2 size={15} />
-                          </button>
                         </td>
                       </tr>
                     );
@@ -557,18 +268,13 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
         </Card>
       </main>
 
-      {/* Modals */}
-      <AddItemModal
-        isOpen={isItemModalOpen}
-        onClose={closeItemModal}
+      <AddStartupFeeModal
+        isOpen={isModalOpen}
+        onClose={closeModal}
         onAdd={handleAddItem}
+        onUpdate={handleUpdateItem}
         categories={categories}
-        onAddCategory={handleAddCategory}
-      />
-      <AddAssetModal
-        isOpen={isAssetModalOpen}
-        onClose={closeAssetModal}
-        onAdd={handleAddAsset}
+        initialValues={editingItem}
       />
     </>
   );

@@ -7,19 +7,39 @@
 export const BRAND = {
   nameAr: 'مونستر واش',
   nameEn: 'Monster Wash',
-  tagline: 'لوحة التحكم المالية — الأسطول المتنقل',
+  tagline: 'لوحة التحكم المالية — امتياز سويتر',
 };
 
-// ─── Cost Categories ────────────────────────────────────────────────────────
+// ─── Cost Categories — franchise startup ────────────────────────────────────
 export const CATEGORIES = [
-  { id: 'vehicle-purchase',      label: 'شراء المركبات' },
-  { id: 'vehicle-customization', label: 'تجهيز المركبات' },
-  { id: 'portable-equipment',    label: 'معدات متنقلة' },
-  { id: 'routing-software',      label: 'أنظمة التتبع' },
-  { id: 'mobile-permits',        label: 'تراخيص متنقلة' },
-  { id: 'marketing',             label: 'التسويق' },
-  { id: 'supplies',              label: 'المستلزمات' },
-  { id: 'other',                 label: 'أخرى' },
+  { id: 'legal-permits',      label: 'تراخيص ورسوم قانونية' },
+  { id: 'franchise-sweater',  label: 'رسوم الامتياز لـ سويتر' },
+  { id: 'branding-marketing', label: 'هوية بصرية وتسويق افتتاحي' },
+  { id: 'other',              label: 'أخرى' },
+];
+
+// ─── Recurring Expense Categories (Module 2) ────────────────────────────────
+export const RECURRING_EXPENSE_CATEGORIES = [
+  { id: 'fleet-insurance',        label: 'تأمين شامل للأسطول' },
+  { id: 'government-licenses',    label: 'تراخيص ورسوم حكومية' },
+  { id: 'software-subscriptions', label: 'اشتراكات برمجية وأنظمة' },
+  { id: 'annual-marketing',       label: 'تسويق وحملات سنوية' },
+  { id: 'other',                  label: 'أخرى' },
+];
+
+export function getRecurringCategoryLabel(id) {
+  const found = RECURRING_EXPENSE_CATEGORIES.find((c) => c.id === id);
+  return found ? found.label : id;
+}
+
+// ─── Monthly Expense Categories (Module 3 — demo fallback) ──────────────────
+export const MONTHLY_EXPENSE_CATEGORIES = [
+  { id: 'salaries-wages',     label: 'رواتب وأجور' },
+  { id: 'rent-utilities',     label: 'إيجار ومرافق' },
+  { id: 'fuel',               label: 'محروقات' },
+  { id: 'operating-supplies', label: 'مستلزمات تشغيلية' },
+  { id: 'periodic-maintenance', label: 'صيانة دورية' },
+  { id: 'other',              label: 'أخرى' },
 ];
 
 // ─── Startup Cost Items ─────────────────────────────────────────────────────

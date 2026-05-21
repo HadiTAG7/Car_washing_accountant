@@ -1,34 +1,71 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { X, Plus } from 'lucide-react';
+import { formatCurrency, formatNumber } from '../data/initialData';
+
+const EMPTY = {
+  category:         '',
+  itemName:         '',
+  quantity:         '1',
+  plannedUnitPrice: '',
+  actualUnitPrice:  '',
+};
+
+function toPositive(value) {
+  const n = parseFloat(value);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
 
 export default function AddItemModal({ isOpen, onClose, onAdd, categories = [], onAddCategory }) {
-  const [form, setForm] = useState({
-    category: '',
-    itemName: '',
-    budgeted: '',
-    actual: '',
-  });
+  const [form, setForm] = useState(EMPTY);
   const [showNewCat, setShowNewCat] = useState(false);
   const [newCatLabel, setNewCatLabel] = useState('');
   const [addingCat, setAddingCat] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setForm({ ...EMPTY, category: categories[0]?.id || '' });
+      setShowNewCat(false);
+      setNewCatLabel('');
+    }
+  }, [isOpen, categories]);
 
   function handleChange(e) {
-    setForm({ ...form, [e.target.name]: e.target.value });
+    setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   }
 
-  function handleSubmit(e) {
+  const quantity         = toPositive(form.quantity);
+  const plannedUnitPrice = toPositive(form.plannedUnitPrice);
+  const actualUnitPrice  = Math.max(0, parseFloat(form.actualUnitPrice) || 0);
+  const plannedTotal     = quantity * plannedUnitPrice;
+  const actualTotal      = quantity * actualUnitPrice;
+
+  const isValid =
+    form.itemName.trim().length > 0 &&
+    Boolean(form.category) &&
+    quantity > 0 &&
+    plannedUnitPrice > 0;
+
+  async function handleSubmit(e) {
     e.preventDefault();
-    if (!form.category || !form.itemName.trim() || !form.budgeted) return;
-
-    onAdd({
-      category: form.category,
-      itemName: form.itemName.trim(),
-      budgeted: parseFloat(form.budgeted),
-      actual: form.actual ? parseFloat(form.actual) : 0,
-    });
-
-    setForm({ category: categories[0]?.id || '', itemName: '', budgeted: '', actual: '' });
-    onClose();
+    if (!isValid || submitting) return;
+    setSubmitting(true);
+    try {
+      await onAdd({
+        category:      form.category,
+        itemName:      form.itemName.trim(),
+        // Legacy shape (used by older callers of this modal)
+        budgeted:      plannedTotal,
+        actual:        actualTotal,
+        // Module 1 shape (used by the new useStartupCosts.addItem flow)
+        plannedAmount: plannedTotal,
+        actualAmount:  actualTotal,
+        status:        'in_progress',
+      });
+      onClose();
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   async function handleAddCategory(e) {
@@ -47,8 +84,6 @@ export default function AddItemModal({ isOpen, onClose, onAdd, categories = [], 
   }
 
   if (!isOpen) return null;
-
-  const selectedCategory = form.category || categories[0]?.id || '';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -69,41 +104,79 @@ export default function AddItemModal({ isOpen, onClose, onAdd, categories = [], 
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
+          {/* Item Name */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5" htmlFor="itemName">
+              اسم البند
+            </label>
+            <input
+              id="itemName"
+              type="text"
+              name="itemName"
+              value={form.itemName}
+              onChange={handleChange}
+              placeholder="مثال: دبابات تنظيف، غسالة صناعية"
+              required
+              autoFocus
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            />
+          </div>
+
+          {/* Quantity */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5" htmlFor="quantity">
+              الكمية
+            </label>
+            <input
+              id="quantity"
+              type="number"
+              name="quantity"
+              value={form.quantity}
+              onChange={handleChange}
+              min="1"
+              step="1"
+              required
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-slate-900 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            />
+          </div>
+
           {/* Category */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">التصنيف</label>
             <div className="flex gap-2">
               <select
                 name="category"
-                value={selectedCategory}
+                value={form.category}
                 onChange={handleChange}
-                className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white"
+                className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white"
               >
+                {categories.length === 0 && <option value="">— لا توجد تصنيفات —</option>}
                 {categories.map((cat) => (
                   <option key={cat.id} value={cat.id}>
                     {cat.label}
                   </option>
                 ))}
               </select>
-              <button
-                type="button"
-                onClick={() => setShowNewCat(!showNewCat)}
-                className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-primary-700 hover:bg-primary-50 transition-colors font-semibold"
-                title="إضافة تصنيف جديد"
-              >
-                <Plus size={18} />
-              </button>
+              {onAddCategory && (
+                <button
+                  type="button"
+                  onClick={() => setShowNewCat(!showNewCat)}
+                  className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-primary-700 hover:bg-primary-50 transition-colors font-semibold"
+                  title="إضافة تصنيف جديد"
+                >
+                  <Plus size={18} />
+                </button>
+              )}
             </div>
 
-            {/* Inline new category form */}
-            {showNewCat && (
+            {showNewCat && onAddCategory && (
               <div className="flex gap-2 mt-2">
                 <input
                   type="text"
                   value={newCatLabel}
                   onChange={(e) => setNewCatLabel(e.target.value)}
                   placeholder="اسم التصنيف الجديد"
-                  className="flex-1 px-3 py-2 border border-primary-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-300 bg-primary-50/50"
+                  className="flex-1 px-3 py-2 border border-primary-200 rounded-xl text-sm text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-primary-300 bg-primary-50/50"
                 />
                 <button
                   type="button"
@@ -117,50 +190,60 @@ export default function AddItemModal({ isOpen, onClose, onAdd, categories = [], 
             )}
           </div>
 
-          {/* Item Name */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">اسم البند</label>
-            <input
-              type="text"
-              name="itemName"
-              value={form.itemName}
-              onChange={handleChange}
-              placeholder="مثال: غسالة صناعية"
-              required
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-            />
-          </div>
-
-          {/* Amounts row */}
+          {/* Unit-price row */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                الميزانية المحددة (ر.س)
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5" htmlFor="plannedUnitPrice">
+                سعر الوحدة المخطط (ر.س)
               </label>
               <input
+                id="plannedUnitPrice"
                 type="number"
-                name="budgeted"
-                value={form.budgeted}
+                name="plannedUnitPrice"
+                value={form.plannedUnitPrice}
                 onChange={handleChange}
                 placeholder="0"
                 required
                 min="0"
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                step="any"
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-slate-900 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                التكلفة الفعلية (ر.س)
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5" htmlFor="actualUnitPrice">
+                سعر الوحدة الفعلي (ر.س)
               </label>
               <input
+                id="actualUnitPrice"
                 type="number"
-                name="actual"
-                value={form.actual}
+                name="actualUnitPrice"
+                value={form.actualUnitPrice}
                 onChange={handleChange}
                 placeholder="0"
                 min="0"
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                step="any"
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-slate-900 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               />
+            </div>
+          </div>
+
+          {/* Live totals */}
+          <div className="bg-gray-50 border border-gray-100 rounded-xl p-4 space-y-2 text-sm">
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-gray-600">إجمالي الميزانية المخططة:</span>
+              <span className="font-bold text-gray-900 tabular-nums">
+                {quantity > 0 && plannedUnitPrice > 0
+                  ? `${formatNumber(quantity)} × ${formatCurrency(plannedUnitPrice)} = ${formatCurrency(plannedTotal)}`
+                  : formatCurrency(0)}
+              </span>
+            </div>
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-gray-600">إجمالي التكلفة الفعلية:</span>
+              <span className="font-bold text-gray-900 tabular-nums">
+                {quantity > 0 && actualUnitPrice > 0
+                  ? `${formatNumber(quantity)} × ${formatCurrency(actualUnitPrice)} = ${formatCurrency(actualTotal)}`
+                  : formatCurrency(0)}
+              </span>
             </div>
           </div>
 
@@ -168,10 +251,11 @@ export default function AddItemModal({ isOpen, onClose, onAdd, categories = [], 
           <div className="flex items-center gap-3 pt-2">
             <button
               type="submit"
-              className="flex-1 bg-primary-600 hover:bg-primary-700 text-white py-2.5 px-4 rounded-xl text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+              disabled={!isValid || submitting}
+              className="flex-1 bg-primary-600 hover:bg-primary-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white py-2.5 px-4 rounded-xl text-sm font-semibold transition-colors flex items-center justify-center gap-2"
             >
               <Plus size={18} />
-              إضافة البند
+              {submitting ? 'جارٍ الإضافة...' : 'إضافة البند'}
             </button>
             <button
               type="button"

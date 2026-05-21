@@ -115,8 +115,10 @@ create table if not exists public.partners (
 );
 
 -- ─── annual_expense_categories (Module 2 — dynamic category list) ─────────
+-- IMPORTANT: id is UUID (matches the rest of the schema). The client must
+-- NOT generate an id — it should let this default fill in a fresh UUID.
 create table if not exists public.annual_expense_categories (
-  id          text primary key,
+  id          uuid primary key default gen_random_uuid(),
   label       text not null,
   sort_order  integer not null default 0,
   created_at  timestamptz not null default now()
@@ -303,26 +305,32 @@ on conflict (key) do nothing;
 
 -- ─── annual_expense_categories — defensive column repair ──────────────────
 -- If an older version of this table exists (e.g. created in the dashboard
--- with different column names), `create table if not exists` above won't
--- touch it. These ADD COLUMN IF NOT EXISTS statements make sure the
--- columns the app expects are always present.
+-- with different column names or without a default on id), `create table
+-- if not exists` above won't touch it. These statements ensure the table
+-- ends up with the exact shape the app expects.
 alter table public.annual_expense_categories
   add column if not exists label      text;
 alter table public.annual_expense_categories
   add column if not exists sort_order integer not null default 0;
 alter table public.annual_expense_categories
   add column if not exists created_at timestamptz not null default now();
+-- Ensure id auto-generates UUIDs when omitted from inserts (required by
+-- the new addCategory flow, which sends only label + sort_order).
+alter table public.annual_expense_categories
+  alter column id set default gen_random_uuid();
 
--- Default recurring-expense categories (Module 2 dropdown source)
-insert into public.annual_expense_categories (id, label, sort_order)
+-- Default recurring-expense categories (Module 2 dropdown source). We
+-- omit id and let the column default generate UUIDs; the WHERE NOT EXISTS
+-- guard keeps the block idempotent on re-runs.
+insert into public.annual_expense_categories (label, sort_order)
 select * from (values
-  ('fleet-insurance',        'تأمين شامل للأسطول',       1),
-  ('government-licenses',    'تراخيص ورسوم حكومية',      2),
-  ('software-subscriptions', 'اشتراكات برمجية وأنظمة',   3),
-  ('annual-marketing',       'تسويق وحملات سنوية',       4),
-  ('other',                  'أخرى',                     5)
-) as t(id, label, sort_order)
-on conflict (id) do nothing;
+  ('تأمين شامل للأسطول',       1),
+  ('تراخيص ورسوم حكومية',      2),
+  ('اشتراكات برمجية وأنظمة',   3),
+  ('تسويق وحملات سنوية',       4),
+  ('أخرى',                     5)
+) as t(label, sort_order)
+where not exists (select 1 from public.annual_expense_categories);
 
 -- Tell PostgREST to refresh its schema introspection now that the table
 -- and its columns are guaranteed. Without this, the REST API can keep

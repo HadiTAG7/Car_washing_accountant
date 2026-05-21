@@ -13,21 +13,6 @@ function mapRow(row) {
 
 const FALLBACK = RECURRING_EXPENSE_CATEGORIES.map((c, i) => ({ ...c, sortOrder: i + 1 }));
 
-// Build a stable text id from a label. Keeps Arabic chars, lowercases ASCII,
-// replaces whitespace + punctuation with dashes, and appends a short random
-// suffix to avoid collisions if the same label is added twice.
-function slugifyLabel(label) {
-  const base = String(label || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[\s/\\]+/g, '-')
-    .replace(/[^\w؀-ۿ-]/g, '')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '');
-  const suffix = Math.random().toString(36).slice(2, 7);
-  return base ? `${base}-${suffix}` : `cat-${suffix}`;
-}
-
 export function useAnnualExpenseCategories() {
   const { data, loading, error, refetch } = useSupabaseQuery(
     () => supabase.from('annual_expense_categories').select('*').order('sort_order'),
@@ -54,9 +39,11 @@ export function useAnnualExpenseCategories() {
     );
     if (existing) return existing.id;
 
-    const id = slugifyLabel(trimmed);
     const maxOrder = categories.reduce((m, c) => Math.max(m, c.sortOrder || 0), 0);
-    const payload = { id, label: trimmed, sort_order: maxOrder + 1 };
+    // Do NOT send `id` — let Supabase generate the UUID via the column's
+    // default (gen_random_uuid). We `.select().single()` to grab the real
+    // UUID it assigned so the caller can auto-select the new category.
+    const payload = { label: trimmed, sort_order: maxOrder + 1 };
     console.info('[annual_expense_categories] inserting payload:', payload);
     const { data: inserted, error: err } = await supabase
       .from('annual_expense_categories')
@@ -69,7 +56,7 @@ export function useAnnualExpenseCategories() {
     }
     console.info('[annual_expense_categories] inserted:', inserted);
     await refetch();
-    return id;
+    return inserted?.id;
   }, [refetch, categories]);
 
   const getCategoryLabel = useCallback((id) => {

@@ -56,6 +56,17 @@ body {
   box-sizing: border-box;
 }
 
+/* Inputs sit inside white cards on the dark theme — force a high-contrast
+   dark text color so typed values aren't faint against the white field. */
+input, select, textarea {
+  color: #0f172a;
+}
+input::placeholder,
+textarea::placeholder {
+  color: #94a3b8;
+  opacity: 1;
+}
+
 /* Custom scrollbar — tuned for dark bg */
 ::-webkit-scrollbar          { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track    { background: transparent; }

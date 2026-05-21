@@ -207,7 +207,7 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
                             handleUpdateActual(i.id, safe, i.actualAmount);
                           }}
                           aria-label={`المبلغ الفعلي لـ ${i.itemName}`}
-                          className="w-28 px-2 py-1 border border-slate-200 rounded-lg text-sm text-left tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-300"
+                          className="w-28 px-2 py-1 border border-slate-200 rounded-lg text-sm text-slate-900 font-medium text-left tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-300"
                         />
                       </td>
                       <td className="py-3 px-4">

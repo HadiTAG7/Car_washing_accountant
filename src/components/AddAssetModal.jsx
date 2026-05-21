@@ -104,7 +104,7 @@ export default function AddAssetModal({ isOpen, onClose, onAdd }) {
               placeholder="مثال: دبابات تنظيف، شاحنة غسيل"
               required
               autoFocus
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
             />
           </div>
 
@@ -120,7 +120,7 @@ export default function AddAssetModal({ isOpen, onClose, onAdd }) {
               value={form.purchaseDate}
               onChange={handleChange}
               required
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
             />
           </div>
 
@@ -138,7 +138,7 @@ export default function AddAssetModal({ isOpen, onClose, onAdd }) {
               min="1"
               step="1"
               required
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-slate-900 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
             />
           </div>
 
@@ -158,7 +158,7 @@ export default function AddAssetModal({ isOpen, onClose, onAdd }) {
                 required
                 min="0"
                 step="any"
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-slate-900 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               />
             </div>
             <div>
@@ -174,7 +174,7 @@ export default function AddAssetModal({ isOpen, onClose, onAdd }) {
                 placeholder="0"
                 min="0"
                 step="any"
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-slate-900 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               />
             </div>
           </div>
@@ -194,7 +194,7 @@ export default function AddAssetModal({ isOpen, onClose, onAdd }) {
                 placeholder="0"
                 min="0"
                 step="any"
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-slate-900 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               />
             </div>
             <div>
@@ -211,7 +211,7 @@ export default function AddAssetModal({ isOpen, onClose, onAdd }) {
                 required
                 min="1"
                 step="1"
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-slate-900 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               />
             </div>
           </div>

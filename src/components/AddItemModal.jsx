@@ -118,7 +118,7 @@ export default function AddItemModal({ isOpen, onClose, onAdd, categories = [], 
               placeholder="مثال: دبابات تنظيف، غسالة صناعية"
               required
               autoFocus
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
             />
           </div>
 
@@ -136,7 +136,7 @@ export default function AddItemModal({ isOpen, onClose, onAdd, categories = [], 
               min="1"
               step="1"
               required
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-slate-900 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
             />
           </div>
 
@@ -148,7 +148,7 @@ export default function AddItemModal({ isOpen, onClose, onAdd, categories = [], 
                 name="category"
                 value={form.category}
                 onChange={handleChange}
-                className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white"
+                className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white"
               >
                 {categories.length === 0 && <option value="">— لا توجد تصنيفات —</option>}
                 {categories.map((cat) => (
@@ -176,7 +176,7 @@ export default function AddItemModal({ isOpen, onClose, onAdd, categories = [], 
                   value={newCatLabel}
                   onChange={(e) => setNewCatLabel(e.target.value)}
                   placeholder="اسم التصنيف الجديد"
-                  className="flex-1 px-3 py-2 border border-primary-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-300 bg-primary-50/50"
+                  className="flex-1 px-3 py-2 border border-primary-200 rounded-xl text-sm text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-primary-300 bg-primary-50/50"
                 />
                 <button
                   type="button"
@@ -206,7 +206,7 @@ export default function AddItemModal({ isOpen, onClose, onAdd, categories = [], 
                 required
                 min="0"
                 step="any"
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-slate-900 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               />
             </div>
             <div>
@@ -222,7 +222,7 @@ export default function AddItemModal({ isOpen, onClose, onAdd, categories = [], 
                 placeholder="0"
                 min="0"
                 step="any"
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-slate-900 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               />
             </div>
           </div>

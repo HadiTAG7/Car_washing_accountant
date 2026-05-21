@@ -97,7 +97,7 @@ export default function AddStartupFeeModal({ isOpen, onClose, onAdd, categories 
               placeholder="مثال: دبابات تنظيف، رسوم التسجيل التجاري"
               autoFocus
               required
-              className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+              className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
             />
           </div>
 
@@ -111,7 +111,7 @@ export default function AddStartupFeeModal({ isOpen, onClose, onAdd, categories 
               value={form.category}
               onChange={handleChange}
               required
-              className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+              className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium bg-white focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
             >
               {categories.length === 0 && <option value="">— لا توجد تصنيفات —</option>}
               {categories.map((cat) => (
@@ -134,7 +134,7 @@ export default function AddStartupFeeModal({ isOpen, onClose, onAdd, categories 
                 min="1"
                 step="1"
                 required
-                className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+                className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
               />
             </div>
             <div>
@@ -151,7 +151,7 @@ export default function AddStartupFeeModal({ isOpen, onClose, onAdd, categories 
                 min="0"
                 step="any"
                 required
-                className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+                className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
               />
             </div>
             <div>
@@ -167,7 +167,7 @@ export default function AddStartupFeeModal({ isOpen, onClose, onAdd, categories 
                 placeholder="0"
                 min="0"
                 step="any"
-                className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+                className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
               />
             </div>
           </div>

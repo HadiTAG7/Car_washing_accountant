@@ -11,7 +11,10 @@ export function useAnnualExpenses() {
   const { data, loading, error, refetch } = useSupabaseQuery(
     () => supabase
       .from('annual_expenses')
-      .select('*')
+      // Explicit column list — never `select('*')` — so a stale PostgREST
+      // schema cache can't accidentally include dropped legacy columns
+      // (e.g. due_date) in the projected query.
+      .select('id, expense_name, category, quantity, annual_cost, payment_month, payment_day, payment_status, created_at, updated_at')
       .order('payment_month', { ascending: true, nullsFirst: false })
       .order('payment_day',   { ascending: true, nullsFirst: false }),
     {

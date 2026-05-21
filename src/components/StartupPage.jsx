@@ -9,9 +9,10 @@ import {
 } from './UI';
 import AddStartupFeeModal from './AddStartupFeeModal';
 import LoadingState from './LoadingState';
-import ErrorState from './ErrorState';
+import ErrorState, { SetupRequiredCard } from './ErrorState';
 import { useStartupCosts } from '../hooks/useStartupCosts';
 import { useCategories } from '../hooks/useCategories';
+import { isSupabaseConfigured, missingEnvNames } from '../lib/supabaseClient';
 
 // ─── Status toggle pill (in_progress ↔ completed) ──────────────────────────
 function StatusTogglePill({ status, onChange }) {
@@ -100,6 +101,8 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
       />
 
       <main className="p-8 space-y-6">
+        {!isSupabaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
+
         {mutationError && (
           <ErrorState
             title="تعذّر حفظ التغييرات"

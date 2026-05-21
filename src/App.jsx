@@ -19,7 +19,7 @@ import PartnersPage from './components/PartnersPage';
 import FinancialEntrySelector from './components/FinancialEntrySelector';
 
 import { useAuth } from './hooks/useAuth';
-import { isSupabaseConfigured, requireAuth } from './lib/supabaseClient';
+import { isSupabaseConfigured, requireAuth, missingEnvNames } from './lib/supabaseClient';
 
 const TABS = [
   { id: 'startup',   label: 'رسوم التأسيس',      icon: Landmark    },
@@ -79,7 +79,7 @@ export default function App() {
       />
 
       <div className="mr-64 min-h-screen flex flex-col">
-        {!isSupabaseConfigured && <DemoBanner />}
+        {!isSupabaseConfigured && <DemoBanner missing={missingEnvNames} />}
 
         {activeTab === 'startup'   && (
           <StartupPage

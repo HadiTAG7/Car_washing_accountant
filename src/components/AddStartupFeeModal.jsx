@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { X, Plus, Receipt } from 'lucide-react';
+import { X, Plus, Pencil, Receipt } from 'lucide-react';
 import { formatCurrency, formatNumber } from '../data/initialData';
 
 const EMPTY = {
@@ -10,27 +10,48 @@ const EMPTY = {
   actualUnitPrice:  '',
 };
 
-function toNonNegativeNumber(value) {
+function toPositive(value) {
   const n = parseFloat(value);
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
-export default function AddStartupFeeModal({ isOpen, onClose, onAdd, categories = [] }) {
+function formatUnitPriceForInput(total, quantity) {
+  if (!total || !quantity || quantity <= 0) return '';
+  const unit = total / quantity;
+  if (!Number.isFinite(unit) || unit <= 0) return '';
+  // Trim trailing .00 / floating noise; keep up to 2 decimals when needed.
+  return Number(unit.toFixed(2)).toString();
+}
+
+export default function AddStartupFeeModal({
+  isOpen, onClose, onAdd, onUpdate, categories = [], initialValues = null,
+}) {
+  const editing = Boolean(initialValues?.id);
   const [form, setForm] = useState(EMPTY);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (isOpen) {
+    if (!isOpen) return;
+    if (initialValues?.id) {
+      const qty = Math.max(1, parseInt(initialValues.quantity, 10) || 1);
+      setForm({
+        itemName:         initialValues.itemName || '',
+        category:         initialValues.category || categories[0]?.id || '',
+        quantity:         String(qty),
+        plannedUnitPrice: formatUnitPriceForInput(initialValues.plannedAmount, qty),
+        actualUnitPrice:  formatUnitPriceForInput(initialValues.actualAmount,  qty),
+      });
+    } else {
       setForm({ ...EMPTY, category: categories[0]?.id || '' });
     }
-  }, [isOpen, categories]);
+  }, [isOpen, categories, initialValues]);
 
   function handleChange(e) {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   }
 
-  const quantity         = toNonNegativeNumber(form.quantity);
-  const plannedUnitPrice = toNonNegativeNumber(form.plannedUnitPrice);
+  const quantity         = toPositive(form.quantity);
+  const plannedUnitPrice = toPositive(form.plannedUnitPrice);
   const actualUnitPrice  = Math.max(0, parseFloat(form.actualUnitPrice) || 0);
   const plannedTotal     = quantity * plannedUnitPrice;
   const actualTotal      = quantity * actualUnitPrice;
@@ -46,13 +67,18 @@ export default function AddStartupFeeModal({ isOpen, onClose, onAdd, categories 
     if (!isValid || submitting) return;
     setSubmitting(true);
     try {
-      await onAdd({
+      const payload = {
         itemName:      form.itemName.trim(),
         category:      form.category,
+        quantity,
         plannedAmount: plannedTotal,
         actualAmount:  actualTotal,
-        status:        'in_progress',
-      });
+      };
+      if (editing && onUpdate) {
+        await onUpdate(initialValues.id, payload);
+      } else if (onAdd) {
+        await onAdd({ ...payload, status: 'in_progress' });
+      }
       onClose();
     } finally {
       setSubmitting(false);
@@ -60,6 +86,8 @@ export default function AddStartupFeeModal({ isOpen, onClose, onAdd, categories 
   }
 
   if (!isOpen) return null;
+
+  const HeaderIcon = editing ? Pencil : Receipt;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -69,9 +97,9 @@ export default function AddStartupFeeModal({ isOpen, onClose, onAdd, categories 
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50">
           <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
             <span className="bg-accent-50 text-accent-600 w-9 h-9 rounded-xl flex items-center justify-center">
-              <Receipt size={18} />
+              <HeaderIcon size={18} />
             </span>
-            إضافة رسوم تأسيس
+            {editing ? 'تعديل بند رسوم التأسيس' : 'إضافة رسوم تأسيس'}
           </h3>
           <button
             type="button"
@@ -172,7 +200,6 @@ export default function AddStartupFeeModal({ isOpen, onClose, onAdd, categories 
             </div>
           </div>
 
-          {/* Live totals — calculated from quantity × unit price */}
           <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 space-y-2 text-sm">
             <div className="flex items-baseline justify-between gap-3">
               <span className="text-slate-600">إجمالي الميزانية المخططة:</span>
@@ -198,8 +225,10 @@ export default function AddStartupFeeModal({ isOpen, onClose, onAdd, categories 
               disabled={!isValid || submitting}
               className="flex-1 inline-flex items-center justify-center gap-2 bg-primary-800 hover:bg-primary-900 disabled:bg-slate-300 disabled:cursor-not-allowed text-white py-2.5 px-4 rounded-xl text-sm font-semibold transition-colors shadow-sm"
             >
-              <Plus size={18} />
-              {submitting ? 'جارٍ الإضافة...' : 'إضافة البند'}
+              {editing ? <Pencil size={18} /> : <Plus size={18} />}
+              {submitting
+                ? (editing ? 'جارٍ الحفظ...' : 'جارٍ الإضافة...')
+                : (editing ? 'حفظ التعديلات' : 'إضافة البند')}
             </button>
             <button
               type="button"

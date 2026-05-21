@@ -4,27 +4,43 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 // ── startup_costs ─────────────────────────────────────────────────────────
-// App-side shape: { id, category, itemName, plannedAmount, actualAmount, status }
+// App-side shape: { id, category, itemName, quantity, plannedAmount, actualAmount, status }
 // DB column `budgeted_amount` is aliased to `plannedAmount` for the new UI.
 // Status is persisted ('in_progress' | 'completed'), defaulting to 'in_progress'.
+function clampQuantity(value) {
+  const n = parseInt(value, 10);
+  return Number.isFinite(n) && n > 0 ? n : 1;
+}
 export function mapStartupCost(row) {
   return {
     id:            row.id,
     category:      row.category,
     itemName:      row.item_name,
+    quantity:      clampQuantity(row.quantity),
     plannedAmount: Number(row.budgeted_amount) || 0,
     actualAmount:  Number(row.actual_amount)   || 0,
     status:        row.status === 'completed' ? 'completed' : 'in_progress',
   };
 }
-export function toStartupCostInsert({ category, itemName, plannedAmount, actualAmount, status }) {
+export function toStartupCostInsert({ category, itemName, quantity, plannedAmount, actualAmount, status }) {
   return {
     category,
     item_name:       itemName,
+    quantity:        clampQuantity(quantity),
     budgeted_amount: Math.max(0, Number(plannedAmount) || 0),
     actual_amount:   Math.max(0, Number(actualAmount)  || 0),
     status:          status === 'completed' ? 'completed' : 'in_progress',
   };
+}
+export function toStartupCostUpdate(updates = {}) {
+  const payload = {};
+  if (updates.category      !== undefined) payload.category        = updates.category;
+  if (updates.itemName      !== undefined) payload.item_name       = updates.itemName;
+  if (updates.quantity      !== undefined) payload.quantity        = clampQuantity(updates.quantity);
+  if (updates.plannedAmount !== undefined) payload.budgeted_amount = Math.max(0, Number(updates.plannedAmount) || 0);
+  if (updates.actualAmount  !== undefined) payload.actual_amount   = Math.max(0, Number(updates.actualAmount)  || 0);
+  if (updates.status        !== undefined) payload.status          = updates.status === 'completed' ? 'completed' : 'in_progress';
+  return payload;
 }
 
 // ── assets ────────────────────────────────────────────────────────────────

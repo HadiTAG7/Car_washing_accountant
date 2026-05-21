@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import {
-  Plus, Trash2, Wallet, Receipt, Scale, FileText,
+  Plus, Trash2, Pencil, Wallet, Receipt, Scale, FileText,
 } from 'lucide-react';
-import { formatCurrency } from '../data/initialData';
+import { formatCurrency, formatNumber } from '../data/initialData';
 import TopBar from './TopBar';
 import {
   Card, SectionHeader, StatCard, PrimaryButton,
@@ -56,17 +56,23 @@ function EmptyState({ onAdd }) {
 export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
   const {
     items, loading, error,
-    addItem, updateActual, updateStatus, deleteItem, refetch,
+    addItem, updateItem, updateActual, updateStatus, deleteItem, refetch,
   } = useStartupCosts();
 
   const { categories, getCategoryLabel } = useCategories();
 
-  const [localOpen, setLocalOpen] = useState(false);
+  const [localOpen, setLocalOpen]       = useState(false);
+  const [editingItem, setEditingItem]   = useState(null);
   const [mutationError, setMutationError] = useState(null);
 
-  const isModalOpen = localOpen || pendingEntry === 'item';
-  function openModal()  { setLocalOpen(true); }
-  function closeModal() { setLocalOpen(false); if (pendingEntry) onClearPendingEntry?.(); }
+  const isModalOpen = localOpen || Boolean(editingItem) || pendingEntry === 'item';
+  function openAddModal()        { setEditingItem(null); setLocalOpen(true); }
+  function openEditModal(item)   { setLocalOpen(false); setEditingItem(item); }
+  function closeModal() {
+    setLocalOpen(false);
+    setEditingItem(null);
+    if (pendingEntry) onClearPendingEntry?.();
+  }
 
   const totals = useMemo(() => {
     const planned = items.reduce((s, i) => s + i.plannedAmount, 0);
@@ -77,6 +83,10 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
 
   async function handleAddItem(item) {
     try { await addItem(item); }
+    catch (e) { setMutationError(e); throw e; }
+  }
+  async function handleUpdateItem(id, updates) {
+    try { await updateItem(id, updates); }
     catch (e) { setMutationError(e); throw e; }
   }
   async function handleUpdateActual(id, next, current) {
@@ -157,7 +167,7 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
             title="بنود رسوم التأسيس"
             subtitle="حرّر المبلغ الفعلي أو الحالة مباشرةً من الجدول"
             action={
-              <PrimaryButton icon={Plus} onClick={openModal}>
+              <PrimaryButton icon={Plus} onClick={openAddModal}>
                 إضافة رسوم تأسيس
               </PrimaryButton>
             }
@@ -166,7 +176,7 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
           {loading && !items.length ? (
             <LoadingState rows={4} />
           ) : items.length === 0 ? (
-            <EmptyState onAdd={openModal} />
+            <EmptyState onAdd={openAddModal} />
           ) : (
             <div className="overflow-x-auto -mx-6 px-6">
               <table className="w-full text-sm">
@@ -181,54 +191,76 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((i) => (
-                    <tr
-                      key={i.id}
-                      className="border-b border-slate-50 hover:bg-slate-50/60 transition-colors"
-                    >
-                      <td className="py-3 px-4 font-medium text-slate-800">{i.itemName}</td>
-                      <td className="py-3 px-4">
-                        <span className="inline-flex text-[11px] font-semibold bg-slate-100 text-slate-700 px-2 py-1 rounded-md">
-                          {getCategoryLabel(i.category)}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-left tabular-nums text-slate-700">
-                        {formatCurrency(i.plannedAmount)}
-                      </td>
-                      <td className="py-3 px-4 text-left">
-                        <input
-                          type="number"
-                          min="0"
-                          step="any"
-                          defaultValue={i.actualAmount}
-                          onBlur={(e) => {
-                            const next = parseFloat(e.target.value);
-                            const safe = Number.isFinite(next) ? Math.max(0, next) : 0;
-                            handleUpdateActual(i.id, safe, i.actualAmount);
-                          }}
-                          aria-label={`المبلغ الفعلي لـ ${i.itemName}`}
-                          className="w-28 px-2 py-1 border border-slate-200 rounded-lg text-sm text-slate-900 font-medium text-left tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-300"
-                        />
-                      </td>
-                      <td className="py-3 px-4">
-                        <StatusTogglePill
-                          status={i.status}
-                          onChange={(next) => handleUpdateStatus(i.id, next)}
-                        />
-                      </td>
-                      <td className="py-3 px-4 text-left">
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(i.id)}
-                          className="text-slate-400 hover:text-accent-600 p-1.5 rounded-lg hover:bg-accent-50 transition-colors"
-                          aria-label={`حذف ${i.itemName}`}
-                          title="حذف البند"
-                        >
-                          <Trash2 size={15} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {items.map((i) => {
+                    const qty = Math.max(1, parseInt(i.quantity, 10) || 1);
+                    const unitPlanned = qty > 0 ? i.plannedAmount / qty : 0;
+                    return (
+                      <tr
+                        key={i.id}
+                        className="border-b border-slate-50 hover:bg-slate-50/60 transition-colors"
+                      >
+                        <td className="py-3 px-4 align-top">
+                          <div className="font-medium text-slate-800">{i.itemName}</div>
+                          {qty > 1 && (
+                            <div className="text-[11px] text-slate-400 mt-0.5 tabular-nums">
+                              الكمية: {formatNumber(qty)} | سعر الوحدة: {formatCurrency(unitPlanned)}
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 align-top">
+                          <span className="inline-flex text-[11px] font-semibold bg-slate-100 text-slate-700 px-2 py-1 rounded-md">
+                            {getCategoryLabel(i.category)}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-left tabular-nums text-slate-700 align-top">
+                          {formatCurrency(i.plannedAmount)}
+                        </td>
+                        <td className="py-3 px-4 text-left align-top">
+                          <input
+                            type="number"
+                            min="0"
+                            step="any"
+                            defaultValue={i.actualAmount}
+                            onBlur={(e) => {
+                              const next = parseFloat(e.target.value);
+                              const safe = Number.isFinite(next) ? Math.max(0, next) : 0;
+                              handleUpdateActual(i.id, safe, i.actualAmount);
+                            }}
+                            aria-label={`المبلغ الفعلي لـ ${i.itemName}`}
+                            className="w-28 px-2 py-1 border border-slate-200 rounded-lg text-sm text-slate-900 font-medium text-left tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-300"
+                          />
+                        </td>
+                        <td className="py-3 px-4 align-top">
+                          <StatusTogglePill
+                            status={i.status}
+                            onChange={(next) => handleUpdateStatus(i.id, next)}
+                          />
+                        </td>
+                        <td className="py-3 px-4 text-left align-top">
+                          <div className="inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => openEditModal(i)}
+                              className="text-slate-400 hover:text-primary-700 p-1.5 rounded-lg hover:bg-primary-50 transition-colors"
+                              aria-label={`تعديل ${i.itemName}`}
+                              title="تعديل البند"
+                            >
+                              <Pencil size={15} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(i.id)}
+                              className="text-slate-400 hover:text-accent-600 p-1.5 rounded-lg hover:bg-accent-50 transition-colors"
+                              aria-label={`حذف ${i.itemName}`}
+                              title="حذف البند"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -240,7 +272,9 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
         isOpen={isModalOpen}
         onClose={closeModal}
         onAdd={handleAddItem}
+        onUpdate={handleUpdateItem}
         categories={categories}
+        initialValues={editingItem}
       />
     </>
   );

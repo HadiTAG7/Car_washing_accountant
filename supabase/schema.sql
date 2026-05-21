@@ -23,7 +23,8 @@ create table if not exists public.startup_costs (
   item_name         text        not null,
   budgeted_amount   numeric(12,2) not null default 0,
   actual_amount     numeric(12,2) not null default 0,
-  status            text,          -- 'under' | 'over' | 'on' (derived, optional)
+  quantity          integer     not null default 1 check (quantity > 0),
+  status            text,          -- 'in_progress' | 'completed'
   notes             text,
   created_at        timestamptz not null default now(),
   updated_at        timestamptz not null default now()
@@ -316,3 +317,13 @@ alter table public.startup_costs
 alter table public.startup_costs
   add  constraint startup_costs_status_chk
   check (status in ('in_progress','completed'));
+
+-- Add the `quantity` column for existing DBs (default 1; existing rows
+-- become "1 × total" which preserves their persisted totals exactly).
+alter table public.startup_costs
+  add column if not exists quantity integer not null default 1;
+alter table public.startup_costs
+  drop constraint if exists startup_costs_quantity_chk;
+alter table public.startup_costs
+  add  constraint startup_costs_quantity_chk
+  check (quantity > 0);

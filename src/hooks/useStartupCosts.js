@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
-import { mapStartupCost, toStartupCostInsert } from '../lib/mappers';
+import { mapStartupCost, toStartupCostInsert, toStartupCostUpdate } from '../lib/mappers';
 import { useSupabaseQuery } from './useSupabaseQuery';
 
 export function useStartupCosts() {
@@ -17,6 +17,18 @@ export function useStartupCosts() {
     const { error: err } = await supabase
       .from('startup_costs')
       .insert(toStartupCostInsert(item));
+    if (err) throw err;
+    await refetch();
+  }, [refetch]);
+
+  const updateItem = useCallback(async (id, updates) => {
+    if (!isSupabaseConfigured) return null;
+    const payload = toStartupCostUpdate(updates);
+    if (Object.keys(payload).length === 0) return null;
+    const { error: err } = await supabase
+      .from('startup_costs')
+      .update(payload)
+      .eq('id', id);
     if (err) throw err;
     await refetch();
   }, [refetch]);
@@ -53,5 +65,9 @@ export function useStartupCosts() {
   }, [refetch]);
 
   const items = data ?? [];
-  return { items, loading, error, addItem, updateActual, updateStatus, deleteItem, refetch };
+  return {
+    items, loading, error,
+    addItem, updateItem, updateActual, updateStatus, deleteItem,
+    refetch,
+  };
 }

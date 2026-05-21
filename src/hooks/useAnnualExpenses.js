@@ -12,7 +12,8 @@ export function useAnnualExpenses() {
     () => supabase
       .from('annual_expenses')
       .select('*')
-      .order('due_date', { ascending: true, nullsFirst: false }),
+      .order('payment_month', { ascending: true, nullsFirst: false })
+      .order('payment_day',   { ascending: true, nullsFirst: false }),
     {
       enabled: isSupabaseConfigured,
       map:     mapAnnualExpense,

@@ -12,7 +12,7 @@ export function useMonthlyExpenses() {
     () => supabase
       .from('monthly_expenses')
       .select('*')
-      .order('billing_date', { ascending: true, nullsFirst: false }),
+      .order('payment_day', { ascending: true, nullsFirst: false }),
     {
       enabled: isSupabaseConfigured,
       map:     mapMonthlyExpense,

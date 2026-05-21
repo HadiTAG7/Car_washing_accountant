@@ -107,8 +107,8 @@ export function toTransactionInsert({ date, description, type, amount, vehicleId
 // ── annual_expenses (Module 2) ────────────────────────────────────────────
 // App-side shape: { id, expenseName, category, quantity, annualCost,
 // paymentMonth, paymentDay, paymentStatus }. The recurring payment date is
-// stored as (payment_month, payment_day) — the legacy `due_date` column is
-// preserved in the DB but no longer read or written by the app.
+// stored as (payment_month, payment_day). The legacy `due_date` column is
+// no longer read or written by the app.
 function clampStatus(value) {
   return value === 'paid' ? 'paid' : 'pending';
 }
@@ -168,9 +168,8 @@ export function toAnnualExpenseUpdate(updates = {}) {
 
 // ── monthly_expenses (Module 3) ───────────────────────────────────────────
 // App-side shape: { id, expenseName, categoryId, quantity, unitCost,
-// totalMonthlyCost, paymentDay, paymentStatus }. Recurring payment day
-// replaces the legacy `billing_date` column (which is kept in the DB but
-// no longer read or written here).
+// totalMonthlyCost, paymentDay, paymentStatus }. The recurring `payment_day`
+// column replaces the legacy `billing_date` — no longer read or written.
 export function mapMonthlyExpenseCategory(row) {
   return {
     id:        row.id,

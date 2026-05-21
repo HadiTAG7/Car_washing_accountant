@@ -134,7 +134,6 @@ create table if not exists public.monthly_expenses (
   quantity            integer not null default 1 check (quantity > 0),
   unit_cost           numeric(12,2) not null default 0 check (unit_cost >= 0),
   total_monthly_cost  numeric(12,2) not null default 0 check (total_monthly_cost >= 0),
-  billing_date        date,        -- legacy: replaced by payment_day, kept for safety
   payment_day         integer      check (payment_day is null or (payment_day between 1 and 31)),
   payment_status      text not null default 'pending'
                       check (payment_status in ('paid','pending')),
@@ -142,7 +141,7 @@ create table if not exists public.monthly_expenses (
   created_at          timestamptz not null default now(),
   updated_at          timestamptz not null default now()
 );
-create index if not exists monthly_expenses_billing_date_idx    on public.monthly_expenses(billing_date);
+create index if not exists monthly_expenses_payment_day_idx     on public.monthly_expenses(payment_day);
 create index if not exists monthly_expenses_payment_status_idx  on public.monthly_expenses(payment_status);
 create index if not exists monthly_expenses_category_id_idx    on public.monthly_expenses(category_id);
 
@@ -168,7 +167,6 @@ create table if not exists public.annual_expenses (
   category        text        not null,
   annual_cost     numeric(12,2) not null default 0 check (annual_cost >= 0),
   quantity        integer     not null default 1 check (quantity > 0),
-  due_date        date,                          -- legacy: replaced by payment_month + payment_day
   payment_month   integer     check (payment_month is null or (payment_month between 1 and 12)),
   payment_day     integer     check (payment_day   is null or (payment_day   between 1 and 31)),
   payment_status  text        not null default 'pending'
@@ -177,7 +175,8 @@ create table if not exists public.annual_expenses (
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now()
 );
-create index if not exists annual_expenses_due_date_idx       on public.annual_expenses(due_date);
+create index if not exists annual_expenses_payment_month_idx  on public.annual_expenses(payment_month);
+create index if not exists annual_expenses_payment_day_idx    on public.annual_expenses(payment_day);
 create index if not exists annual_expenses_payment_status_idx on public.annual_expenses(payment_status);
 
 drop trigger if exists annual_expenses_touch on public.annual_expenses;
@@ -401,8 +400,6 @@ alter table public.monthly_expenses
 alter table public.monthly_expenses
   add column if not exists total_monthly_cost numeric(12,2) not null default 0;
 alter table public.monthly_expenses
-  add column if not exists billing_date       date;
-alter table public.monthly_expenses
   add column if not exists payment_status     text not null default 'pending';
 alter table public.monthly_expenses
   add column if not exists category_id        uuid;
@@ -429,11 +426,21 @@ alter table public.monthly_expenses
   check (payment_day is null or (payment_day between 1 and 31));
 
 -- One-shot migration: pull the day-of-month out of legacy billing_date
--- when payment_day hasn't been set yet. Old rows now ring the reminder
--- automatically. Idempotent on re-run.
-update public.monthly_expenses
-   set payment_day = extract(day from billing_date)::int
- where billing_date is not null and payment_day is null;
+-- when payment_day hasn't been set yet. Guarded so a DB whose
+-- billing_date column has already been dropped doesn't error.
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+     where table_schema = 'public'
+       and table_name   = 'monthly_expenses'
+       and column_name  = 'billing_date'
+  ) then
+    update public.monthly_expenses
+       set payment_day = extract(day from billing_date)::int
+     where billing_date is not null and payment_day is null;
+  end if;
+end $$;
 
 -- Seed the six default fleet-monthly categories on a fresh DB. Omit `id`
 -- so the UUID default kicks in; the WHERE NOT EXISTS guard keeps this
@@ -478,12 +485,23 @@ alter table public.annual_expenses
   check (payment_day is null or (payment_day between 1 and 31));
 
 -- One-shot migration: pull month + day out of legacy due_date when the
--- new columns aren't populated yet. Idempotent on re-run.
-update public.annual_expenses
-   set payment_month = extract(month from due_date)::int,
-       payment_day   = extract(day   from due_date)::int
- where due_date is not null
-   and (payment_month is null or payment_day is null);
+-- new columns aren't populated yet. Guarded so a DB whose due_date
+-- column has already been dropped doesn't error.
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+     where table_schema = 'public'
+       and table_name   = 'annual_expenses'
+       and column_name  = 'due_date'
+  ) then
+    update public.annual_expenses
+       set payment_month = extract(month from due_date)::int,
+           payment_day   = extract(day   from due_date)::int
+     where due_date is not null
+       and (payment_month is null or payment_day is null);
+  end if;
+end $$;
 
 -- Tell PostgREST to refresh its schema introspection now that the table
 -- and its columns are guaranteed. Without this, the REST API can keep

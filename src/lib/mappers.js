@@ -4,25 +4,26 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 // ── startup_costs ─────────────────────────────────────────────────────────
+// App-side shape: { id, category, itemName, plannedAmount, actualAmount, status }
+// DB column `budgeted_amount` is aliased to `plannedAmount` for the new UI.
+// Status is persisted ('in_progress' | 'completed'), defaulting to 'in_progress'.
 export function mapStartupCost(row) {
-  const budgeted = Number(row.budgeted_amount) || 0;
-  const actual   = Number(row.actual_amount)   || 0;
   return {
-    id:        row.id,
-    category:  row.category,
-    itemName:  row.item_name,
-    budgeted,
-    actual,
-    status:    row.status ||
-      (budgeted > actual ? 'under' : budgeted < actual ? 'over' : 'on'),
+    id:            row.id,
+    category:      row.category,
+    itemName:      row.item_name,
+    plannedAmount: Number(row.budgeted_amount) || 0,
+    actualAmount:  Number(row.actual_amount)   || 0,
+    status:        row.status === 'completed' ? 'completed' : 'in_progress',
   };
 }
-export function toStartupCostInsert({ category, itemName, budgeted, actual }) {
+export function toStartupCostInsert({ category, itemName, plannedAmount, status }) {
   return {
     category,
     item_name:       itemName,
-    budgeted_amount: Number(budgeted) || 0,
-    actual_amount:   Number(actual)   || 0,
+    budgeted_amount: Number(plannedAmount) || 0,
+    actual_amount:   0,
+    status:          status === 'completed' ? 'completed' : 'in_progress',
   };
 }
 

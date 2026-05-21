@@ -1,10 +1,7 @@
 import { useCallback } from 'react';
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
 import { mapStartupCost, toStartupCostInsert } from '../lib/mappers';
-import { initialCostItems } from '../data/initialData';
 import { useSupabaseQuery } from './useSupabaseQuery';
-
-const FALLBACK = initialCostItems.map((i) => ({ ...i, status: i.status || 'on' }));
 
 export function useStartupCosts() {
   const { data, loading, error, refetch } = useSupabaseQuery(
@@ -12,7 +9,6 @@ export function useStartupCosts() {
     {
       enabled: isSupabaseConfigured,
       map:     mapStartupCost,
-      fallback: FALLBACK,
     },
   );
 
@@ -29,7 +25,18 @@ export function useStartupCosts() {
     if (!isSupabaseConfigured) return null;
     const { error: err } = await supabase
       .from('startup_costs')
-      .update({ actual_amount: Number(actualAmount) || 0 })
+      .update({ actual_amount: Math.max(0, Number(actualAmount) || 0) })
+      .eq('id', id);
+    if (err) throw err;
+    await refetch();
+  }, [refetch]);
+
+  const updateStatus = useCallback(async (id, status) => {
+    if (!isSupabaseConfigured) return null;
+    const safe = status === 'completed' ? 'completed' : 'in_progress';
+    const { error: err } = await supabase
+      .from('startup_costs')
+      .update({ status: safe })
       .eq('id', id);
     if (err) throw err;
     await refetch();
@@ -45,6 +52,6 @@ export function useStartupCosts() {
     await refetch();
   }, [refetch]);
 
-  const items = isSupabaseConfigured ? (data ?? []) : (data || FALLBACK);
-  return { items, loading, error, addItem, updateActual, deleteItem, refetch };
+  const items = data ?? [];
+  return { items, loading, error, addItem, updateActual, updateStatus, deleteItem, refetch };
 }

@@ -16,6 +16,22 @@
   --color-primary-900: #101935;
   --color-primary-950: #0a1028;
 
+  /* Crimson accent — Monster Wash logo red */
+  --color-accent-50:  #fff1f2;
+  --color-accent-100: #ffe1e3;
+  --color-accent-200: #ffc8cd;
+  --color-accent-300: #ff97a0;
+  --color-accent-400: #f9636f;
+  --color-accent-500: #e63946;
+  --color-accent-600: #c5283a;
+  --color-accent-700: #9f1e2e;
+  --color-accent-800: #7a1722;
+  --color-accent-900: #501018;
+
+  /* Dark app surface */
+  --color-app-bg:      #0f172a;
+  --color-app-bg-soft: #111c34;
+
   /* Neutral surface */
   --color-surface-50:  #f7f8fb;
   --color-surface-100: #eef1f6;
@@ -30,8 +46,8 @@ body {
   margin: 0;
   direction: rtl;
   font-family: "Tajawal", "IBM Plex Sans Arabic", system-ui, sans-serif;
-  background-color: #eef2f7;
-  color: #0f172a;
+  background-color: var(--color-app-bg);
+  color: #e2e8f0;
   -webkit-font-smoothing: antialiased;
   font-feature-settings: "kern", "liga";
 }
@@ -40,11 +56,11 @@ body {
   box-sizing: border-box;
 }
 
-/* Custom scrollbar */
+/* Custom scrollbar — tuned for dark bg */
 ::-webkit-scrollbar          { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track    { background: transparent; }
-::-webkit-scrollbar-thumb    { background: #c7d1e0; border-radius: 8px; }
-::-webkit-scrollbar-thumb:hover { background: #9aa7bd; }
+::-webkit-scrollbar-thumb    { background: #334155; border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: #475569; }
 
 /* Utility: thin number tabular */
 .tabular-nums { font-variant-numeric: tabular-nums; }

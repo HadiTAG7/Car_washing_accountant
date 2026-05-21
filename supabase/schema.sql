@@ -173,34 +173,14 @@ create policy "rw_auth" on public.partners
 
 insert into public.categories (id, label, sort_order)
 select * from (values
-  ('vehicle-purchase',      'شراء المركبات',    1),
-  ('vehicle-customization', 'تجهيز المركبات',   2),
-  ('portable-equipment',    'معدات متنقلة',     3),
-  ('routing-software',      'أنظمة التتبع',     4),
-  ('mobile-permits',        'تراخيص متنقلة',    5),
-  ('marketing',             'التسويق',          6),
-  ('supplies',              'المستلزمات',       7),
-  ('other',                 'أخرى',             8)
+  ('legal-permits',      'تراخيص ورسوم قانونية',       1),
+  ('franchise-sweater',  'رسوم الامتياز لـ سويتر',      2),
+  ('branding-marketing', 'هوية بصرية وتسويق افتتاحي',  3),
+  ('other',              'أخرى',                        4)
 ) as t(id, label, sort_order)
 where not exists (select 1 from public.categories);
 
-insert into public.startup_costs (category, item_name, budgeted_amount, actual_amount)
-select * from (values
-  ('vehicle-purchase',      'شاحنة إيسوزو مجهزة',            120000, 115000),
-  ('vehicle-purchase',      'فان هيونداي H1',                  85000,  88000),
-  ('vehicle-purchase',      'بيك أب تويوتا هايلوكس',           95000,  92500),
-  ('vehicle-customization', 'خزانات مياه داخلية (×3)',         36000,  34000),
-  ('vehicle-customization', 'أنظمة صرف وتنقية',                24000,  22800),
-  ('portable-equipment',    'مولدات كهرباء متنقلة (×3)',       45000,  43500),
-  ('portable-equipment',    'غسالات ضغط عالي (×3)',            18000,  19200),
-  ('portable-equipment',    'مكانس صناعية (×3)',               10500,  10500),
-  ('routing-software',      'نظام GPS وإدارة مسارات',           7000,   6500),
-  ('mobile-permits',        'رخص ومعالجات بيئية',                8500,   8200),
-  ('marketing',             'تغليف المركبات والإعلانات',        15000,  14800),
-  ('supplies',              'مستلزمات تشغيل (3 أشهر)',          12000,  12500),
-  ('other',                 'احتياطي تشغيلي',                    74000,  65000)
-) as t(category, item_name, budgeted_amount, actual_amount)
-where not exists (select 1 from public.startup_costs);
+-- (Module 1 spec: no startup_costs seed rows — users add their own.)
 
 insert into public.assets (asset_name, purchase_date, cost, salvage_value, useful_life_years)
 select * from (values
@@ -280,3 +260,59 @@ values (
   '{"avgOrderPrice":95,"variableCostPerOrder":34,"monthlyFixedCosts":7625,"estimatedOrders":825}'::jsonb
 )
 on conflict (key) do nothing;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Migration 2026-05 — Module 1 (Startup Sunk Costs) rebuild
+-- Replaces legacy mobile-fleet categories+items with the 4 franchise-startup
+-- categories, and constrains startup_costs.status to ('in_progress','completed').
+-- Idempotent: safe to re-run.
+-- ═══════════════════════════════════════════════════════════════════════════
+do $$
+begin
+  -- 1) Wipe legacy seed items whose categories no longer exist in the new set.
+  --    NOTE: the id 'other' is shared between the old and new category sets,
+  --    so we delete the single legacy 'other' row by its exact seed item_name
+  --    instead of by category — protects user-added rows on migration re-runs.
+  delete from public.startup_costs
+   where category in (
+     'vehicle-purchase','vehicle-customization','portable-equipment',
+     'routing-software','mobile-permits','marketing','supplies'
+   );
+  delete from public.startup_costs
+   where category = 'other' and item_name = 'احتياطي تشغيلي'
+     and budgeted_amount = 74000 and actual_amount = 65000;
+
+  -- 2) Wipe legacy categories (everything except 'other', which is kept and
+  --    re-labeled by the upsert below).
+  delete from public.categories
+   where id in (
+     'vehicle-purchase','vehicle-customization','portable-equipment',
+     'routing-software','mobile-permits','marketing','supplies'
+   );
+
+  -- 3) Upsert the 4 franchise-startup categories.
+  insert into public.categories (id, label, sort_order) values
+    ('legal-permits',      'تراخيص ورسوم قانونية',       1),
+    ('franchise-sweater',  'رسوم الامتياز لـ سويتر',      2),
+    ('branding-marketing', 'هوية بصرية وتسويق افتتاحي',  3),
+    ('other',              'أخرى',                        4)
+  on conflict (id) do update
+    set label      = excluded.label,
+        sort_order = excluded.sort_order;
+
+  -- 4) Normalize any legacy status values to the new enum.
+  update public.startup_costs
+     set status = case
+       when status in ('completed','in_progress') then status
+       else 'in_progress'
+     end;
+end $$;
+
+alter table public.startup_costs
+  alter column status set default 'in_progress';
+
+alter table public.startup_costs
+  drop constraint if exists startup_costs_status_chk;
+alter table public.startup_costs
+  add  constraint startup_costs_status_chk
+  check (status in ('in_progress','completed'));

@@ -7,7 +7,7 @@ export default function Sidebar({ tabs, activeTab, onSelectTab, user, onSignOut,
       {/* Logo / brand */}
       <div className="px-6 pt-7 pb-6 border-b border-white/10">
         <div className="flex items-center gap-3">
-          <div className="bg-gradient-to-br from-primary-400 to-primary-600 w-11 h-11 rounded-xl flex items-center justify-center shadow-lg">
+          <div className="bg-gradient-to-br from-accent-500 to-accent-700 w-11 h-11 rounded-xl flex items-center justify-center shadow-lg">
             <Droplet size={22} className="text-white" strokeWidth={2.5} />
           </div>
           <div className="leading-tight">
@@ -37,7 +37,7 @@ export default function Sidebar({ tabs, activeTab, onSelectTab, user, onSignOut,
                 >
                   <Icon size={18} strokeWidth={isActive ? 2.5 : 2} />
                   <span className="flex-1 text-right">{label}</span>
-                  {isActive && <span className="w-1.5 h-1.5 rounded-full bg-primary-500" />}
+                  {isActive && <span className="w-1.5 h-1.5 rounded-full bg-accent-500" />}
                 </button>
               </li>
             );
@@ -51,7 +51,7 @@ export default function Sidebar({ tabs, activeTab, onSelectTab, user, onSignOut,
           <button
             type="button"
             onClick={onAddEntry}
-            className="w-full flex items-center justify-center gap-2 px-3 py-3 rounded-xl bg-gradient-to-l from-primary-400 to-primary-500 hover:from-primary-300 hover:to-primary-400 text-white font-bold text-sm transition-all shadow-lg hover:shadow-xl"
+            className="w-full flex items-center justify-center gap-2 px-3 py-3 rounded-xl bg-gradient-to-l from-accent-500 to-accent-600 hover:from-accent-400 hover:to-accent-500 text-white font-bold text-sm transition-all shadow-lg hover:shadow-xl"
           >
             <Plus size={18} strokeWidth={2.5} />
             إضافة سجل مالي

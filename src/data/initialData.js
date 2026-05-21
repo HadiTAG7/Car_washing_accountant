@@ -7,19 +7,15 @@
 export const BRAND = {
   nameAr: 'مونستر واش',
   nameEn: 'Monster Wash',
-  tagline: 'لوحة التحكم المالية — الأسطول المتنقل',
+  tagline: 'لوحة التحكم المالية — امتياز سويتر',
 };
 
-// ─── Cost Categories ────────────────────────────────────────────────────────
+// ─── Cost Categories — franchise startup ────────────────────────────────────
 export const CATEGORIES = [
-  { id: 'vehicle-purchase',      label: 'شراء المركبات' },
-  { id: 'vehicle-customization', label: 'تجهيز المركبات' },
-  { id: 'portable-equipment',    label: 'معدات متنقلة' },
-  { id: 'routing-software',      label: 'أنظمة التتبع' },
-  { id: 'mobile-permits',        label: 'تراخيص متنقلة' },
-  { id: 'marketing',             label: 'التسويق' },
-  { id: 'supplies',              label: 'المستلزمات' },
-  { id: 'other',                 label: 'أخرى' },
+  { id: 'legal-permits',      label: 'تراخيص ورسوم قانونية' },
+  { id: 'franchise-sweater',  label: 'رسوم الامتياز لـ سويتر' },
+  { id: 'branding-marketing', label: 'هوية بصرية وتسويق افتتاحي' },
+  { id: 'other',              label: 'أخرى' },
 ];
 
 // ─── Startup Cost Items ─────────────────────────────────────────────────────

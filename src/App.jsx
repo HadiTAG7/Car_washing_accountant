@@ -22,7 +22,7 @@ import { useAuth } from './hooks/useAuth';
 import { isSupabaseConfigured, requireAuth } from './lib/supabaseClient';
 
 const TABS = [
-  { id: 'startup',   label: 'التأسيس والأصول',   icon: Landmark    },
+  { id: 'startup',   label: 'رسوم التأسيس',      icon: Landmark    },
   { id: 'economics', label: 'اقتصاديات الوحدة',  icon: Calculator  },
   { id: 'cashflow',  label: 'التدفق النقدي',     icon: FileBarChart},
   { id: 'routes',    label: 'ربحية المسارات',    icon: MapPin      },
@@ -41,6 +41,9 @@ export default function App() {
   function handleEntrySelect(type) {
     setShowEntrySelector(false);
     if (type === 'item' || type === 'asset') {
+      // TODO: 'asset' routes here from FinancialEntrySelector but the assets
+      // module is not part of Module 1 — it will be reintroduced in a later
+      // module rebuild. For now the entry is a no-op on the startup tab.
       setActiveTab('startup');
     } else if (type === 'transaction') {
       setActiveTab('cashflow');
@@ -50,9 +53,9 @@ export default function App() {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-[#eef2f7] flex items-center justify-center">
-        <div className="flex flex-col items-center gap-3 text-slate-500">
-          <Loader2 size={28} className="animate-spin text-primary-700" />
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3 text-slate-400">
+          <Loader2 size={28} className="animate-spin text-accent-500" />
           <p className="text-sm">جارٍ التحقق من الجلسة...</p>
         </div>
       </div>
@@ -65,7 +68,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#eef2f7]">
+    <div className="min-h-screen">
       <Sidebar
         tabs={TABS}
         activeTab={activeTab}

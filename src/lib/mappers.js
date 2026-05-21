@@ -105,15 +105,28 @@ export function toTransactionInsert({ date, description, type, amount, vehicleId
 }
 
 // ── annual_expenses (Module 2) ────────────────────────────────────────────
-// App-side shape: { id, expenseName, category, quantity, annualCost, dueDate, paymentStatus }
-// `annualCost` is the stored TOTAL (quantity × unit cost); unit cost is
-// derived in the UI on edit.
+// App-side shape: { id, expenseName, category, quantity, annualCost,
+// paymentMonth, paymentDay, paymentStatus }. The recurring payment date is
+// stored as (payment_month, payment_day) — the legacy `due_date` column is
+// preserved in the DB but no longer read or written by the app.
 function clampStatus(value) {
   return value === 'paid' ? 'paid' : 'pending';
 }
 function clampExpenseQuantity(value) {
   const n = parseInt(value, 10);
   return Number.isFinite(n) && n > 0 ? n : 1;
+}
+function clampPaymentDay(value) {
+  if (value === '' || value == null) return null;
+  const n = parseInt(value, 10);
+  if (!Number.isFinite(n)) return null;
+  return Math.min(31, Math.max(1, n));
+}
+function clampPaymentMonth(value) {
+  if (value === '' || value == null) return null;
+  const n = parseInt(value, 10);
+  if (!Number.isFinite(n)) return null;
+  return Math.min(12, Math.max(1, n));
 }
 export function mapAnnualExpense(row) {
   return {
@@ -122,17 +135,22 @@ export function mapAnnualExpense(row) {
     category:      row.category,
     quantity:      clampExpenseQuantity(row.quantity),
     annualCost:    Number(row.annual_cost) || 0,
-    dueDate:       row.due_date || '',
+    paymentMonth:  row.payment_month != null ? Number(row.payment_month) : null,
+    paymentDay:    row.payment_day   != null ? Number(row.payment_day)   : null,
     paymentStatus: clampStatus(row.payment_status),
   };
 }
-export function toAnnualExpenseInsert({ expenseName, category, quantity, annualCost, dueDate, paymentStatus }) {
+export function toAnnualExpenseInsert({
+  expenseName, category, quantity, annualCost,
+  paymentMonth, paymentDay, paymentStatus,
+}) {
   return {
     expense_name:   expenseName,
     category,
     quantity:       clampExpenseQuantity(quantity),
     annual_cost:    Math.max(0, Number(annualCost) || 0),
-    due_date:       dueDate || null,
+    payment_month:  clampPaymentMonth(paymentMonth),
+    payment_day:    clampPaymentDay(paymentDay),
     payment_status: clampStatus(paymentStatus),
   };
 }
@@ -142,15 +160,17 @@ export function toAnnualExpenseUpdate(updates = {}) {
   if (updates.category      !== undefined) payload.category       = updates.category;
   if (updates.quantity      !== undefined) payload.quantity       = clampExpenseQuantity(updates.quantity);
   if (updates.annualCost    !== undefined) payload.annual_cost    = Math.max(0, Number(updates.annualCost) || 0);
-  if (updates.dueDate       !== undefined) payload.due_date       = updates.dueDate || null;
+  if (updates.paymentMonth  !== undefined) payload.payment_month  = clampPaymentMonth(updates.paymentMonth);
+  if (updates.paymentDay    !== undefined) payload.payment_day    = clampPaymentDay(updates.paymentDay);
   if (updates.paymentStatus !== undefined) payload.payment_status = clampStatus(updates.paymentStatus);
   return payload;
 }
 
 // ── monthly_expenses (Module 3) ───────────────────────────────────────────
 // App-side shape: { id, expenseName, categoryId, quantity, unitCost,
-// totalMonthlyCost, billingDate, paymentStatus }
-// Both unit_cost AND total_monthly_cost are stored — no divide-on-read.
+// totalMonthlyCost, paymentDay, paymentStatus }. Recurring payment day
+// replaces the legacy `billing_date` column (which is kept in the DB but
+// no longer read or written here).
 export function mapMonthlyExpenseCategory(row) {
   return {
     id:        row.id,
@@ -166,13 +186,13 @@ export function mapMonthlyExpense(row) {
     quantity:         clampExpenseQuantity(row.quantity),
     unitCost:         Number(row.unit_cost) || 0,
     totalMonthlyCost: Number(row.total_monthly_cost) || 0,
-    billingDate:      row.billing_date || '',
+    paymentDay:       row.payment_day != null ? Number(row.payment_day) : null,
     paymentStatus:    clampStatus(row.payment_status),
   };
 }
 export function toMonthlyExpenseInsert({
   expenseName, categoryId, quantity, unitCost, totalMonthlyCost,
-  billingDate, paymentStatus,
+  paymentDay, paymentStatus,
 }) {
   const q  = clampExpenseQuantity(quantity);
   const uc = Math.max(0, Number(unitCost) || 0);
@@ -182,7 +202,7 @@ export function toMonthlyExpenseInsert({
     quantity:           q,
     unit_cost:          uc,
     total_monthly_cost: Math.max(0, Number(totalMonthlyCost) || q * uc),
-    billing_date:       billingDate || null,
+    payment_day:        clampPaymentDay(paymentDay),
     payment_status:     clampStatus(paymentStatus),
   };
 }
@@ -193,7 +213,7 @@ export function toMonthlyExpenseUpdate(updates = {}) {
   if (updates.quantity         !== undefined) payload.quantity           = clampExpenseQuantity(updates.quantity);
   if (updates.unitCost         !== undefined) payload.unit_cost          = Math.max(0, Number(updates.unitCost) || 0);
   if (updates.totalMonthlyCost !== undefined) payload.total_monthly_cost = Math.max(0, Number(updates.totalMonthlyCost) || 0);
-  if (updates.billingDate      !== undefined) payload.billing_date       = updates.billingDate || null;
+  if (updates.paymentDay       !== undefined) payload.payment_day        = clampPaymentDay(updates.paymentDay);
   if (updates.paymentStatus    !== undefined) payload.payment_status     = clampStatus(updates.paymentStatus);
   return payload;
 }

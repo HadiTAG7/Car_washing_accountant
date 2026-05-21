@@ -1,8 +1,8 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
-  Plus, Trash2, Pencil, Wallet, CheckCircle2, Clock, CalendarRange, Repeat,
+  Plus, Trash2, Pencil, Wallet, CheckCircle2, Clock, CalendarClock, Repeat,
 } from 'lucide-react';
-import { formatCurrency } from '../data/initialData';
+import { formatCurrency, formatNumber } from '../data/initialData';
 import TopBar from './TopBar';
 import {
   Card, SectionHeader, StatCard, PrimaryButton,
@@ -15,25 +15,46 @@ import { useAnnualExpenses } from '../hooks/useAnnualExpenses';
 import { useAnnualExpenseCategories } from '../hooks/useAnnualExpenseCategories';
 import { isSupabaseConfigured, missingEnvNames, describeSupabaseError } from '../lib/supabaseClient';
 
-// ─── Status toggle pill (paid ↔ pending) ───────────────────────────────────
-function PaymentStatusPill({ status, onChange }) {
+// ─── Status toggle pill (paid ↔ pending; flashes red when due today) ──────
+function PaymentStatusPill({ status, dueToday, onChange }) {
   const isPaid = status === 'paid';
   const next   = isPaid ? 'pending' : 'paid';
-  const classes = isPaid
-    ? 'bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-emerald-100'
-    : 'bg-amber-50 text-amber-700 border-amber-100 hover:bg-amber-100';
-  const dot = isPaid ? 'bg-emerald-500' : 'bg-amber-500';
+  const dueAndPending = dueToday && !isPaid;
+  let classes, dotClass;
+  if (isPaid) {
+    classes  = 'bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-emerald-100';
+    dotClass = 'bg-emerald-500';
+  } else if (dueAndPending) {
+    classes  = 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100';
+    dotClass = 'bg-red-500 animate-pulse';
+  } else {
+    classes  = 'bg-amber-50 text-amber-700 border-amber-100 hover:bg-amber-100';
+    dotClass = 'bg-amber-500';
+  }
+  const title = isPaid
+    ? 'انقر للتراجع إلى قيد الانتظار'
+    : (dueAndPending
+        ? 'موعد الصرف اليوم — اضغط لتسجيل المدفوع'
+        : 'انقر لتسجيل المصروف كمدفوع');
   return (
     <button
       type="button"
       onClick={() => onChange(next)}
-      title={isPaid ? 'انقر للتراجع إلى قيد الانتظار' : 'انقر لتسجيل المصروف كمدفوع'}
+      title={title}
       className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-semibold transition-colors ${classes}`}
     >
-      <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />
+      <span className={`w-1.5 h-1.5 rounded-full ${dotClass}`} />
       {isPaid ? 'مدفوع' : 'قيد الانتظار'}
     </button>
   );
+}
+
+// True when today's month + day match the row's recurring payment date.
+function isAnnualDueToday(paymentMonth, paymentDay) {
+  if (!paymentMonth || !paymentDay) return false;
+  const now = new Date();
+  return now.getMonth() + 1 === Number(paymentMonth)
+      && now.getDate() === Number(paymentDay);
 }
 
 function EmptyState({ onAdd }) {
@@ -53,18 +74,9 @@ function EmptyState({ onAdd }) {
   );
 }
 
-function formatDueDate(value) {
-  if (!value) return '—';
-  // Stored as 'YYYY-MM-DD' from the date input; render in ar-SA locale.
-  try {
-    const d = new Date(value);
-    if (Number.isNaN(d.getTime())) return value;
-    return new Intl.DateTimeFormat('ar-SA', {
-      year: 'numeric', month: 'long', day: 'numeric',
-    }).format(d);
-  } catch {
-    return value;
-  }
+function formatAnnualPaymentDate(month, day) {
+  if (!month || !day) return '—';
+  return `${formatNumber(day)} / ${formatNumber(month)} من كل عام`;
 }
 
 export default function AnnualExpensesPage() {
@@ -223,7 +235,7 @@ export default function AnnualExpensesPage() {
                     <th className="py-3 px-4">المصروف</th>
                     <th className="py-3 px-4">التصنيف</th>
                     <th className="py-3 px-4 text-left tabular-nums">التكلفة السنوية</th>
-                    <th className="py-3 px-4">تاريخ التجديد القادم</th>
+                    <th className="py-3 px-4">تاريخ الصرف السنوي</th>
                     <th className="py-3 px-4">الحالة</th>
                     <th className="py-3 px-4 text-left w-20">إجراءات</th>
                   </tr>
@@ -244,14 +256,15 @@ export default function AnnualExpensesPage() {
                         {formatCurrency(i.annualCost)}
                       </td>
                       <td className="py-3 px-4 text-slate-600">
-                        <span className="inline-flex items-center gap-1.5">
-                          <CalendarRange size={13} className="text-slate-400" />
-                          {formatDueDate(i.dueDate)}
+                        <span className="inline-flex items-center gap-1.5 tabular-nums">
+                          <CalendarClock size={13} className="text-slate-400" />
+                          {formatAnnualPaymentDate(i.paymentMonth, i.paymentDay)}
                         </span>
                       </td>
                       <td className="py-3 px-4">
                         <PaymentStatusPill
                           status={i.paymentStatus}
+                          dueToday={isAnnualDueToday(i.paymentMonth, i.paymentDay)}
                           onChange={(next) => handleUpdateStatus(i.id, next)}
                         />
                       </td>

@@ -7,7 +7,7 @@ const EMPTY = {
   categoryId:    '',
   quantity:      '1',
   unitCost:      '',
-  billingDate:   '',
+  paymentDay:    '1',
   paymentStatus: 'pending',
 };
 
@@ -30,12 +30,13 @@ export default function AddMonthlyExpenseModal({
     setNewCatLabel('');
     setCatError('');
     if (initialValues?.id) {
+      const day = Number(initialValues.paymentDay);
       setForm({
         expenseName:   initialValues.expenseName || '',
         categoryId:    initialValues.categoryId  || '',
         quantity:      String(Math.max(1, parseInt(initialValues.quantity, 10) || 1)),
         unitCost:      initialValues.unitCost ? String(initialValues.unitCost) : '',
-        billingDate:   initialValues.billingDate || '',
+        paymentDay:    Number.isFinite(day) && day >= 1 && day <= 31 ? String(day) : '1',
         paymentStatus: initialValues.paymentStatus === 'paid' ? 'paid' : 'pending',
       });
     } else {
@@ -62,11 +63,13 @@ export default function AddMonthlyExpenseModal({
   const quantity         = Math.max(1, parseInt(form.quantity, 10) || 0);
   const unitCost         = Math.max(0, parseFloat(form.unitCost) || 0);
   const totalMonthlyCost = quantity * unitCost;
+  const paymentDayNum    = Math.min(31, Math.max(1, parseInt(form.paymentDay, 10) || 1));
   const isValid =
     form.expenseName.trim().length > 0 &&
     Boolean(form.categoryId) &&
     quantity > 0 &&
-    unitCost > 0;
+    unitCost > 0 &&
+    paymentDayNum >= 1 && paymentDayNum <= 31;
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -79,7 +82,7 @@ export default function AddMonthlyExpenseModal({
         quantity,
         unitCost,
         totalMonthlyCost,
-        billingDate:      form.billingDate || '',
+        paymentDay:       paymentDayNum,
         paymentStatus:    form.paymentStatus === 'paid' ? 'paid' : 'pending',
       };
       if (editing && onUpdate) {
@@ -265,17 +268,24 @@ export default function AddMonthlyExpenseModal({
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="billingDate">
-                تاريخ الاستحقاق
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="paymentDay">
+                يوم الصرف الشهري
               </label>
               <input
-                id="billingDate"
-                type="date"
-                name="billingDate"
-                value={form.billingDate}
+                id="paymentDay"
+                type="number"
+                name="paymentDay"
+                value={form.paymentDay}
                 onChange={handleChange}
-                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+                min="1"
+                max="31"
+                step="1"
+                required
+                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
               />
+              <p className="mt-1.5 text-[11px] text-slate-500 leading-relaxed">
+                سيقوم النظام بتذكيرك تلقائياً يوم {paymentDayNum} من كل شهر
+              </p>
             </div>
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="paymentStatus">

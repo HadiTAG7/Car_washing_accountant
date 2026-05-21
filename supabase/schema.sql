@@ -134,7 +134,8 @@ create table if not exists public.monthly_expenses (
   quantity            integer not null default 1 check (quantity > 0),
   unit_cost           numeric(12,2) not null default 0 check (unit_cost >= 0),
   total_monthly_cost  numeric(12,2) not null default 0 check (total_monthly_cost >= 0),
-  billing_date        date,
+  billing_date        date,        -- legacy: replaced by payment_day, kept for safety
+  payment_day         integer      check (payment_day is null or (payment_day between 1 and 31)),
   payment_status      text not null default 'pending'
                       check (payment_status in ('paid','pending')),
   notes               text,
@@ -167,7 +168,9 @@ create table if not exists public.annual_expenses (
   category        text        not null,
   annual_cost     numeric(12,2) not null default 0 check (annual_cost >= 0),
   quantity        integer     not null default 1 check (quantity > 0),
-  due_date        date,
+  due_date        date,                          -- legacy: replaced by payment_month + payment_day
+  payment_month   integer     check (payment_month is null or (payment_month between 1 and 12)),
+  payment_day     integer     check (payment_day   is null or (payment_day   between 1 and 31)),
   payment_status  text        not null default 'pending'
                   check (payment_status in ('paid','pending')),
   notes           text,
@@ -416,6 +419,22 @@ alter table public.monthly_expenses
   add  constraint monthly_expenses_status_chk
   check (payment_status in ('paid','pending'));
 
+-- Recurring payment-day column (replaces billing_date in the UI).
+alter table public.monthly_expenses
+  add column if not exists payment_day integer;
+alter table public.monthly_expenses
+  drop constraint if exists monthly_expenses_payment_day_chk;
+alter table public.monthly_expenses
+  add  constraint monthly_expenses_payment_day_chk
+  check (payment_day is null or (payment_day between 1 and 31));
+
+-- One-shot migration: pull the day-of-month out of legacy billing_date
+-- when payment_day hasn't been set yet. Old rows now ring the reminder
+-- automatically. Idempotent on re-run.
+update public.monthly_expenses
+   set payment_day = extract(day from billing_date)::int
+ where billing_date is not null and payment_day is null;
+
 -- Seed the six default fleet-monthly categories on a fresh DB. Omit `id`
 -- so the UUID default kicks in; the WHERE NOT EXISTS guard keeps this
 -- block idempotent across re-runs.
@@ -441,6 +460,30 @@ alter table public.annual_expenses
 alter table public.annual_expenses
   add  constraint annual_expenses_quantity_chk
   check (quantity > 0);
+
+-- Recurring payment-month + payment-day columns (replace due_date in the UI).
+alter table public.annual_expenses
+  add column if not exists payment_month integer;
+alter table public.annual_expenses
+  add column if not exists payment_day   integer;
+alter table public.annual_expenses
+  drop constraint if exists annual_expenses_payment_month_chk;
+alter table public.annual_expenses
+  add  constraint annual_expenses_payment_month_chk
+  check (payment_month is null or (payment_month between 1 and 12));
+alter table public.annual_expenses
+  drop constraint if exists annual_expenses_payment_day_chk;
+alter table public.annual_expenses
+  add  constraint annual_expenses_payment_day_chk
+  check (payment_day is null or (payment_day between 1 and 31));
+
+-- One-shot migration: pull month + day out of legacy due_date when the
+-- new columns aren't populated yet. Idempotent on re-run.
+update public.annual_expenses
+   set payment_month = extract(month from due_date)::int,
+       payment_day   = extract(day   from due_date)::int
+ where due_date is not null
+   and (payment_month is null or payment_day is null);
 
 -- Tell PostgREST to refresh its schema introspection now that the table
 -- and its columns are guaranteed. Without this, the REST API can keep

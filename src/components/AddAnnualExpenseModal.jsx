@@ -7,15 +7,33 @@ const EMPTY = {
   category:       '',
   quantity:       '1',
   unitCost:       '',
-  dueDate:        '',
+  paymentMonth:   '1',
+  paymentDay:     '1',
   paymentStatus:  'pending',
 };
+
+const MONTH_NAMES = [
+  'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
+  'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر',
+];
 
 function formatUnitForInput(total, quantity) {
   if (!total || !quantity || quantity <= 0) return '';
   const unit = total / quantity;
   if (!Number.isFinite(unit) || unit <= 0) return '';
   return Number(unit.toFixed(2)).toString();
+}
+
+function clampDayString(value, fallback = '1') {
+  const n = parseInt(value, 10);
+  if (!Number.isFinite(n)) return fallback;
+  return String(Math.min(31, Math.max(1, n)));
+}
+
+function clampMonthString(value, fallback = '1') {
+  const n = parseInt(value, 10);
+  if (!Number.isFinite(n)) return fallback;
+  return String(Math.min(12, Math.max(1, n)));
 }
 
 export default function AddAnnualExpenseModal({
@@ -48,7 +66,8 @@ export default function AddAnnualExpenseModal({
         category:       initialValues.category      || '',
         quantity:       String(qty),
         unitCost:       formatUnitForInput(initialValues.annualCost, qty),
-        dueDate:        initialValues.dueDate       || '',
+        paymentMonth:   clampMonthString(initialValues.paymentMonth, '1'),
+        paymentDay:     clampDayString(initialValues.paymentDay, '1'),
         paymentStatus:  initialValues.paymentStatus === 'paid' ? 'paid' : 'pending',
       });
     } else {
@@ -71,14 +90,18 @@ export default function AddAnnualExpenseModal({
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   }
 
-  const quantity   = Math.max(1, parseInt(form.quantity, 10) || 0);
-  const unitCost   = Math.max(0, parseFloat(form.unitCost) || 0);
-  const annualCost = quantity * unitCost;
+  const quantity     = Math.max(1, parseInt(form.quantity, 10) || 0);
+  const unitCost     = Math.max(0, parseFloat(form.unitCost) || 0);
+  const annualCost   = quantity * unitCost;
+  const paymentMonth = Math.min(12, Math.max(1, parseInt(form.paymentMonth, 10) || 1));
+  const paymentDay   = Math.min(31, Math.max(1, parseInt(form.paymentDay,   10) || 1));
   const isValid =
     form.expenseName.trim().length > 0 &&
     Boolean(form.category) &&
     quantity > 0 &&
-    unitCost > 0;
+    unitCost > 0 &&
+    paymentMonth >= 1 && paymentMonth <= 12 &&
+    paymentDay   >= 1 && paymentDay   <= 31;
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -90,7 +113,8 @@ export default function AddAnnualExpenseModal({
         category:      form.category,
         quantity,
         annualCost,
-        dueDate:       form.dueDate || '',
+        paymentMonth,
+        paymentDay,
         paymentStatus: form.paymentStatus === 'paid' ? 'paid' : 'pending',
       };
       if (editing && onUpdate) {
@@ -276,33 +300,56 @@ export default function AddAnnualExpenseModal({
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="dueDate">
-                تاريخ التجديد القادم
-              </label>
-              <input
-                id="dueDate"
-                type="date"
-                name="dueDate"
-                value={form.dueDate}
-                onChange={handleChange}
-                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="paymentStatus">
-                الحالة
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="paymentMonth">
+                شهر الصرف السنوي
               </label>
               <select
-                id="paymentStatus"
-                name="paymentStatus"
-                value={form.paymentStatus}
+                id="paymentMonth"
+                name="paymentMonth"
+                value={form.paymentMonth}
                 onChange={handleChange}
-                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium bg-white focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+                required
+                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium bg-white tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
               >
-                <option value="pending">قيد الانتظار</option>
-                <option value="paid">مدفوع</option>
+                {MONTH_NAMES.map((name, idx) => {
+                  const m = String(idx + 1);
+                  return <option key={m} value={m}>{m} — {name}</option>;
+                })}
               </select>
             </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="paymentDay">
+                يوم الصرف
+              </label>
+              <input
+                id="paymentDay"
+                type="number"
+                name="paymentDay"
+                value={form.paymentDay}
+                onChange={handleChange}
+                min="1"
+                max="31"
+                step="1"
+                required
+                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="paymentStatus">
+              الحالة
+            </label>
+            <select
+              id="paymentStatus"
+              name="paymentStatus"
+              value={form.paymentStatus}
+              onChange={handleChange}
+              className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium bg-white focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+            >
+              <option value="pending">قيد الانتظار</option>
+              <option value="paid">مدفوع</option>
+            </select>
           </div>
 
           {/* Live total — quantity × annual unit cost */}

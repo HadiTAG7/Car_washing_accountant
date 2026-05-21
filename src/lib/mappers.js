@@ -17,12 +17,12 @@ export function mapStartupCost(row) {
     status:        row.status === 'completed' ? 'completed' : 'in_progress',
   };
 }
-export function toStartupCostInsert({ category, itemName, plannedAmount, status }) {
+export function toStartupCostInsert({ category, itemName, plannedAmount, actualAmount, status }) {
   return {
     category,
     item_name:       itemName,
-    budgeted_amount: Number(plannedAmount) || 0,
-    actual_amount:   0,
+    budgeted_amount: Math.max(0, Number(plannedAmount) || 0),
+    actual_amount:   Math.max(0, Number(actualAmount)  || 0),
     status:          status === 'completed' ? 'completed' : 'in_progress',
   };
 }

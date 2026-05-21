@@ -1,7 +1,19 @@
 import { useEffect, useState } from 'react';
 import { X, Plus, Receipt } from 'lucide-react';
+import { formatCurrency, formatNumber } from '../data/initialData';
 
-const EMPTY = { itemName: '', category: '', plannedAmount: '' };
+const EMPTY = {
+  itemName:         '',
+  category:         '',
+  quantity:         '1',
+  plannedUnitPrice: '',
+  actualUnitPrice:  '',
+};
+
+function toNonNegativeNumber(value) {
+  const n = parseFloat(value);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
 
 export default function AddStartupFeeModal({ isOpen, onClose, onAdd, categories = [] }) {
   const [form, setForm] = useState(EMPTY);
@@ -9,7 +21,7 @@ export default function AddStartupFeeModal({ isOpen, onClose, onAdd, categories 
 
   useEffect(() => {
     if (isOpen) {
-      setForm({ itemName: '', category: categories[0]?.id || '', plannedAmount: '' });
+      setForm({ ...EMPTY, category: categories[0]?.id || '' });
     }
   }, [isOpen, categories]);
 
@@ -17,10 +29,17 @@ export default function AddStartupFeeModal({ isOpen, onClose, onAdd, categories 
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   }
 
+  const quantity         = toNonNegativeNumber(form.quantity);
+  const plannedUnitPrice = toNonNegativeNumber(form.plannedUnitPrice);
+  const actualUnitPrice  = Math.max(0, parseFloat(form.actualUnitPrice) || 0);
+  const plannedTotal     = quantity * plannedUnitPrice;
+  const actualTotal      = quantity * actualUnitPrice;
+
   const isValid =
     form.itemName.trim().length > 0 &&
     Boolean(form.category) &&
-    parseFloat(form.plannedAmount) > 0;
+    quantity > 0 &&
+    plannedUnitPrice > 0;
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -30,7 +49,8 @@ export default function AddStartupFeeModal({ isOpen, onClose, onAdd, categories 
       await onAdd({
         itemName:      form.itemName.trim(),
         category:      form.category,
-        plannedAmount: parseFloat(form.plannedAmount),
+        plannedAmount: plannedTotal,
+        actualAmount:  actualTotal,
         status:        'in_progress',
       });
       onClose();
@@ -74,7 +94,7 @@ export default function AddStartupFeeModal({ isOpen, onClose, onAdd, categories 
               name="itemName"
               value={form.itemName}
               onChange={handleChange}
-              placeholder="مثال: رسوم التسجيل التجاري"
+              placeholder="مثال: دبابات تنظيف، رسوم التسجيل التجاري"
               autoFocus
               required
               className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
@@ -100,22 +120,76 @@ export default function AddStartupFeeModal({ isOpen, onClose, onAdd, categories 
             </select>
           </div>
 
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="plannedAmount">
-              المبلغ المخطط (ر.س)
-            </label>
-            <input
-              id="plannedAmount"
-              type="number"
-              name="plannedAmount"
-              value={form.plannedAmount}
-              onChange={handleChange}
-              placeholder="0"
-              min="0"
-              step="any"
-              required
-              className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
-            />
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="quantity">
+                الكمية
+              </label>
+              <input
+                id="quantity"
+                type="number"
+                name="quantity"
+                value={form.quantity}
+                onChange={handleChange}
+                min="1"
+                step="1"
+                required
+                className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="plannedUnitPrice">
+                سعر الوحدة المخطط (ر.س)
+              </label>
+              <input
+                id="plannedUnitPrice"
+                type="number"
+                name="plannedUnitPrice"
+                value={form.plannedUnitPrice}
+                onChange={handleChange}
+                placeholder="0"
+                min="0"
+                step="any"
+                required
+                className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="actualUnitPrice">
+                سعر الوحدة الفعلي (ر.س)
+              </label>
+              <input
+                id="actualUnitPrice"
+                type="number"
+                name="actualUnitPrice"
+                value={form.actualUnitPrice}
+                onChange={handleChange}
+                placeholder="0"
+                min="0"
+                step="any"
+                className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+              />
+            </div>
+          </div>
+
+          {/* Live totals — calculated from quantity × unit price */}
+          <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 space-y-2 text-sm">
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-slate-600">إجمالي الميزانية المخططة:</span>
+              <span className="font-bold text-slate-900 tabular-nums">
+                {quantity > 0 && plannedUnitPrice > 0
+                  ? `${formatNumber(quantity)} × ${formatCurrency(plannedUnitPrice)} = ${formatCurrency(plannedTotal)}`
+                  : `${formatCurrency(0)}`}
+              </span>
+            </div>
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-slate-600">إجمالي التكلفة الفعلية:</span>
+              <span className="font-bold text-slate-900 tabular-nums">
+                {quantity > 0 && actualUnitPrice > 0
+                  ? `${formatNumber(quantity)} × ${formatCurrency(actualUnitPrice)} = ${formatCurrency(actualTotal)}`
+                  : `${formatCurrency(0)}`}
+              </span>
+            </div>
           </div>
 
           <div className="flex items-center gap-3 pt-2">

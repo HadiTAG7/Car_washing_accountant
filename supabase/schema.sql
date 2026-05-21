@@ -114,6 +114,14 @@ create table if not exists public.partners (
   created_at      timestamptz not null default now()
 );
 
+-- ─── annual_expense_categories (Module 2 — dynamic category list) ─────────
+create table if not exists public.annual_expense_categories (
+  id          text primary key,
+  label       text not null,
+  sort_order  integer not null default 0,
+  created_at  timestamptz not null default now()
+);
+
 -- ─── annual_expenses (Module 2 — recurring fleet expenses) ─────────────────
 create table if not exists public.annual_expenses (
   id              uuid primary key default gen_random_uuid(),
@@ -149,8 +157,9 @@ alter table public.vehicles          enable row level security;
 alter table public.maintenance_logs  enable row level security;
 alter table public.transactions      enable row level security;
 alter table public.app_settings      enable row level security;
-alter table public.partners          enable row level security;
-alter table public.annual_expenses   enable row level security;
+alter table public.partners                    enable row level security;
+alter table public.annual_expense_categories   enable row level security;
+alter table public.annual_expenses             enable row level security;
 
 do $$ begin
   -- Drop existing policies first (idempotent)
@@ -188,6 +197,10 @@ create policy "rw_auth" on public.app_settings
 
 drop policy if exists "rw_auth" on public.partners;
 create policy "rw_auth" on public.partners
+  for all to public using (true) with check (true);
+
+drop policy if exists "rw_auth" on public.annual_expense_categories;
+create policy "rw_auth" on public.annual_expense_categories
   for all to public using (true) with check (true);
 
 drop policy if exists "rw_auth" on public.annual_expenses;
@@ -287,6 +300,17 @@ values (
   '{"avgOrderPrice":95,"variableCostPerOrder":34,"monthlyFixedCosts":7625,"estimatedOrders":825}'::jsonb
 )
 on conflict (key) do nothing;
+
+-- Default recurring-expense categories (Module 2 dropdown source)
+insert into public.annual_expense_categories (id, label, sort_order)
+select * from (values
+  ('fleet-insurance',        'تأمين شامل للأسطول',       1),
+  ('government-licenses',    'تراخيص ورسوم حكومية',      2),
+  ('software-subscriptions', 'اشتراكات برمجية وأنظمة',   3),
+  ('annual-marketing',       'تسويق وحملات سنوية',       4),
+  ('other',                  'أخرى',                     5)
+) as t(id, label, sort_order)
+on conflict (id) do nothing;
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Migration 2026-05 — Module 1 (Startup Sunk Costs) rebuild

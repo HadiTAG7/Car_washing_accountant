@@ -1,36 +1,45 @@
 import { useEffect, useState } from 'react';
-import { X, Plus, Pencil, Repeat } from 'lucide-react';
-import { RECURRING_EXPENSE_CATEGORIES } from '../data/initialData';
+import { X, Plus, Pencil, Repeat, Check } from 'lucide-react';
 
 const EMPTY = {
   expenseName:   '',
-  category:      RECURRING_EXPENSE_CATEGORIES[0]?.id || '',
+  category:      '',
   annualCost:    '',
   dueDate:       '',
   paymentStatus: 'pending',
 };
 
 export default function AddAnnualExpenseModal({
-  isOpen, onClose, onAdd, onUpdate, initialValues = null,
+  isOpen, onClose, onAdd, onUpdate, onAddCategory,
+  categories = [], initialValues = null,
 }) {
   const editing = Boolean(initialValues?.id);
   const [form, setForm] = useState(EMPTY);
   const [submitting, setSubmitting] = useState(false);
 
+  // Inline "add new category" UI state.
+  const [showNewCat, setShowNewCat] = useState(false);
+  const [newCatLabel, setNewCatLabel] = useState('');
+  const [addingCat, setAddingCat] = useState(false);
+  const [catError, setCatError] = useState('');
+
   useEffect(() => {
     if (!isOpen) return;
+    setShowNewCat(false);
+    setNewCatLabel('');
+    setCatError('');
     if (initialValues?.id) {
       setForm({
         expenseName:   initialValues.expenseName   || '',
-        category:      initialValues.category      || EMPTY.category,
+        category:      initialValues.category      || categories[0]?.id || '',
         annualCost:    initialValues.annualCost ? String(initialValues.annualCost) : '',
         dueDate:       initialValues.dueDate       || '',
         paymentStatus: initialValues.paymentStatus === 'paid' ? 'paid' : 'pending',
       });
     } else {
-      setForm(EMPTY);
+      setForm({ ...EMPTY, category: categories[0]?.id || '' });
     }
-  }, [isOpen, initialValues]);
+  }, [isOpen, initialValues, categories]);
 
   function handleChange(e) {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
@@ -62,6 +71,26 @@ export default function AddAnnualExpenseModal({
       onClose();
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleSaveNewCategory(e) {
+    e?.preventDefault?.();
+    const trimmed = newCatLabel.trim();
+    if (!trimmed || !onAddCategory || addingCat) return;
+    setCatError('');
+    setAddingCat(true);
+    try {
+      const newId = await onAddCategory(trimmed);
+      if (newId) {
+        setForm((prev) => ({ ...prev, category: newId }));
+      }
+      setNewCatLabel('');
+      setShowNewCat(false);
+    } catch (err) {
+      setCatError(err?.message || 'تعذّر إضافة التصنيف');
+    } finally {
+      setAddingCat(false);
     }
   }
 
@@ -113,18 +142,67 @@ export default function AddAnnualExpenseModal({
             <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="category">
               التصنيف
             </label>
-            <select
-              id="category"
-              name="category"
-              value={form.category}
-              onChange={handleChange}
-              required
-              className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium bg-white focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
-            >
-              {RECURRING_EXPENSE_CATEGORIES.map((cat) => (
-                <option key={cat.id} value={cat.id}>{cat.label}</option>
-              ))}
-            </select>
+            <div className="flex gap-2">
+              <select
+                id="category"
+                name="category"
+                value={form.category}
+                onChange={handleChange}
+                required
+                className="flex-1 px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium bg-white focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+              >
+                {categories.length === 0 && <option value="">— لا توجد تصنيفات —</option>}
+                {categories.map((cat) => (
+                  <option key={cat.id} value={cat.id}>{cat.label}</option>
+                ))}
+              </select>
+              {onAddCategory && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowNewCat((v) => !v);
+                    setCatError('');
+                    setNewCatLabel('');
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-2.5 border border-primary-200 bg-primary-50 hover:bg-primary-100 text-primary-700 rounded-xl text-sm font-semibold transition-colors"
+                  title="إضافة تصنيف جديد"
+                >
+                  <Plus size={16} />
+                  تصنيف جديد
+                </button>
+              )}
+            </div>
+
+            {showNewCat && onAddCategory && (
+              <div className="mt-2">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newCatLabel}
+                    onChange={(e) => setNewCatLabel(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { e.preventDefault(); handleSaveNewCategory(); }
+                      if (e.key === 'Escape') { setShowNewCat(false); setCatError(''); }
+                    }}
+                    placeholder="اسم التصنيف الجديد"
+                    autoFocus
+                    className="flex-1 px-3 py-2 border border-primary-200 rounded-xl text-sm text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-primary-300 bg-primary-50/40"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSaveNewCategory}
+                    disabled={!newCatLabel.trim() || addingCat}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-primary-800 hover:bg-primary-900 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-xl text-sm font-semibold transition-colors"
+                  >
+                    <Check size={16} />
+                    {addingCat ? '...' : 'حفظ'}
+                  </button>
+                </div>
+                {catError && (
+                  <p className="mt-1.5 text-[12px] text-red-600 font-medium">{catError}</p>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">

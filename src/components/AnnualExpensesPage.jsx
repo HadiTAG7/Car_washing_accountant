@@ -1,10 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   Plus, Trash2, Pencil, Wallet, CheckCircle2, Clock, CalendarRange, Repeat,
 } from 'lucide-react';
-import {
-  formatCurrency, getRecurringCategoryLabel,
-} from '../data/initialData';
+import { formatCurrency } from '../data/initialData';
 import TopBar from './TopBar';
 import {
   Card, SectionHeader, StatCard, PrimaryButton,
@@ -12,7 +10,9 @@ import {
 import AddAnnualExpenseModal from './AddAnnualExpenseModal';
 import LoadingState from './LoadingState';
 import ErrorState, { SetupRequiredCard } from './ErrorState';
+import Toast from './Toast';
 import { useAnnualExpenses } from '../hooks/useAnnualExpenses';
+import { useAnnualExpenseCategories } from '../hooks/useAnnualExpenseCategories';
 import { isSupabaseConfigured, missingEnvNames } from '../lib/supabaseClient';
 
 // ─── Status toggle pill (paid ↔ pending) ───────────────────────────────────
@@ -73,9 +73,21 @@ export default function AnnualExpensesPage() {
     addItem, updateItem, updateStatus, deleteItem, refetch,
   } = useAnnualExpenses();
 
+  const {
+    categories, addCategory, getCategoryLabel,
+  } = useAnnualExpenseCategories();
+
   const [localOpen, setLocalOpen]         = useState(false);
   const [editingItem, setEditingItem]     = useState(null);
   const [mutationError, setMutationError] = useState(null);
+  const [toast, setToast]                 = useState({ open: false, message: '', tone: 'success' });
+
+  const showToast = useCallback((message, tone = 'success') => {
+    setToast({ open: true, message, tone });
+  }, []);
+  const closeToast = useCallback(() => {
+    setToast((t) => ({ ...t, open: false }));
+  }, []);
 
   const isModalOpen = localOpen || Boolean(editingItem);
   function openAddModal()      { setEditingItem(null); setLocalOpen(true); }
@@ -93,12 +105,17 @@ export default function AnnualExpensesPage() {
   }, [items]);
 
   async function handleAddItem(item) {
-    try { await addItem(item); }
+    try { await addItem(item); showToast('تم إضافة المصروف بنجاح'); }
     catch (e) { setMutationError(e); throw e; }
   }
   async function handleUpdateItem(id, updates) {
-    try { await updateItem(id, updates); }
+    try { await updateItem(id, updates); showToast('تم حفظ التعديلات'); }
     catch (e) { setMutationError(e); throw e; }
+  }
+  async function handleAddCategory(label) {
+    const newId = await addCategory({ label });
+    showToast('تم إضافة التصنيف الجديد بنجاح');
+    return newId;
   }
   async function handleUpdateStatus(id, status) {
     try { await updateStatus(id, status); }
@@ -213,7 +230,7 @@ export default function AnnualExpensesPage() {
                       <td className="py-3 px-4 font-medium text-slate-800">{i.expenseName}</td>
                       <td className="py-3 px-4">
                         <span className="inline-flex text-[11px] font-semibold bg-slate-100 text-slate-700 px-2 py-1 rounded-md">
-                          {getRecurringCategoryLabel(i.category)}
+                          {getCategoryLabel(i.category)}
                         </span>
                       </td>
                       <td className="py-3 px-4 text-left tabular-nums text-slate-700">
@@ -267,7 +284,16 @@ export default function AnnualExpensesPage() {
         onClose={closeModal}
         onAdd={handleAddItem}
         onUpdate={handleUpdateItem}
+        onAddCategory={handleAddCategory}
+        categories={categories}
         initialValues={editingItem}
+      />
+
+      <Toast
+        open={toast.open}
+        message={toast.message}
+        tone={toast.tone}
+        onClose={closeToast}
       />
     </>
   );

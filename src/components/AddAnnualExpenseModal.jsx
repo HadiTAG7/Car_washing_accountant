@@ -23,6 +23,10 @@ export default function AddAnnualExpenseModal({
   const [addingCat, setAddingCat] = useState(false);
   const [catError, setCatError] = useState('');
 
+  // Re-init when the modal opens or switches between add/edit. We DO NOT
+  // re-init on every `categories` change — after addCategory triggers a
+  // refetch we want to preserve the user's selection (the new category id
+  // we just set), not snap back to categories[0].
   useEffect(() => {
     if (!isOpen) return;
     setShowNewCat(false);
@@ -31,15 +35,26 @@ export default function AddAnnualExpenseModal({
     if (initialValues?.id) {
       setForm({
         expenseName:   initialValues.expenseName   || '',
-        category:      initialValues.category      || categories[0]?.id || '',
+        category:      initialValues.category      || '',
         annualCost:    initialValues.annualCost ? String(initialValues.annualCost) : '',
         dueDate:       initialValues.dueDate       || '',
         paymentStatus: initialValues.paymentStatus === 'paid' ? 'paid' : 'pending',
       });
     } else {
-      setForm({ ...EMPTY, category: categories[0]?.id || '' });
+      setForm({ ...EMPTY });
     }
-  }, [isOpen, initialValues, categories]);
+  }, [isOpen, initialValues]);
+
+  // Default the category to the first option ONCE categories have loaded,
+  // but only if the form doesn't already have a (still-valid) selection.
+  useEffect(() => {
+    if (!isOpen || categories.length === 0) return;
+    setForm((prev) => {
+      const stillValid = prev.category && categories.some((c) => c.id === prev.category);
+      if (stillValid) return prev;
+      return { ...prev, category: categories[0].id };
+    });
+  }, [isOpen, categories]);
 
   function handleChange(e) {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
@@ -186,15 +201,15 @@ export default function AddAnnualExpenseModal({
                     }}
                     placeholder="اسم التصنيف الجديد"
                     autoFocus
-                    className="flex-1 px-3 py-2 border border-primary-200 rounded-xl text-sm text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-primary-300 bg-primary-50/40"
+                    className="flex-1 px-4 py-2.5 border border-slate-300 bg-white rounded-lg text-sm text-slate-900 font-medium placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-300 focus:border-primary-400"
                   />
                   <button
                     type="button"
                     onClick={handleSaveNewCategory}
                     disabled={!newCatLabel.trim() || addingCat}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-primary-800 hover:bg-primary-900 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-xl text-sm font-semibold transition-colors"
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-lg text-sm font-semibold shadow-sm transition-colors"
                   >
-                    <Check size={16} />
+                    <Check size={16} strokeWidth={2.5} />
                     {addingCat ? '...' : 'حفظ'}
                   </button>
                 </div>

@@ -68,7 +68,8 @@ export function maskedSupabaseUrl() {
 // "Failed to fetch".
 export function describeSupabaseError(error) {
   if (!error) return '';
-  const msg = String(error.message || error.error_description || error).toLowerCase();
+  const raw = error.message || error.error_description || String(error);
+  const msg = raw.toLowerCase();
   if (msg.includes('failed to fetch') || msg.includes('networkerror')) {
     return (
       'تعذّر الاتصال بـ Supabase. تحقّق من قيمة VITE_SUPABASE_URL ' +
@@ -79,10 +80,23 @@ export function describeSupabaseError(error) {
   if (msg.includes('invalid api key') || msg.includes('jwt')) {
     return 'قيمة VITE_SUPABASE_ANON_KEY غير صحيحة أو منتهية الصلاحية. أعد نسخها من إعدادات Supabase API.';
   }
+  if (msg.includes('schema cache') || msg.includes("could not find the")) {
+    return (
+      'ذاكرة مخطط Supabase لم تتحدّث بعد إضافة العمود/الجدول الجديد. ' +
+      'افتح Supabase → SQL Editor ونفّذ:  notify pgrst, \'reload schema\';  ' +
+      'ثم أعد المحاولة (أو شغّل ملف schema.sql مرة أخرى للتحقّق من وجود الأعمدة المطلوبة).'
+    );
+  }
   if (msg.includes('row-level security') || msg.includes('permission denied') || msg.includes('rls')) {
     return 'تم رفض الطلب بواسطة سياسات RLS. تأكد من تطبيق سياسات الصلاحيات الموجودة في schema.sql.';
   }
-  return error.message || error.error_description || String(error);
+  if (msg.includes('duplicate key') || msg.includes('unique constraint')) {
+    return 'هذا السجل موجود مسبقاً (تكرار في المفتاح الفريد).';
+  }
+  if (msg.includes('violates check constraint')) {
+    return 'القيمة المُرسلة لا تستوفي أحد القيود (check constraint) في قاعدة البيانات.';
+  }
+  return raw;
 }
 
 if (typeof window !== 'undefined') {

@@ -301,6 +301,18 @@ values (
 )
 on conflict (key) do nothing;
 
+-- ─── annual_expense_categories — defensive column repair ──────────────────
+-- If an older version of this table exists (e.g. created in the dashboard
+-- with different column names), `create table if not exists` above won't
+-- touch it. These ADD COLUMN IF NOT EXISTS statements make sure the
+-- columns the app expects are always present.
+alter table public.annual_expense_categories
+  add column if not exists label      text;
+alter table public.annual_expense_categories
+  add column if not exists sort_order integer not null default 0;
+alter table public.annual_expense_categories
+  add column if not exists created_at timestamptz not null default now();
+
 -- Default recurring-expense categories (Module 2 dropdown source)
 insert into public.annual_expense_categories (id, label, sort_order)
 select * from (values
@@ -311,6 +323,12 @@ select * from (values
   ('other',                  'أخرى',                     5)
 ) as t(id, label, sort_order)
 on conflict (id) do nothing;
+
+-- Tell PostgREST to refresh its schema introspection now that the table
+-- and its columns are guaranteed. Without this, the REST API can keep
+-- returning "Could not find the 'label' column ... in the schema cache"
+-- until the next auto-reload.
+notify pgrst, 'reload schema';
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Migration 2026-05 — Module 1 (Startup Sunk Costs) rebuild

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { X, Plus, Pencil, Repeat, Check } from 'lucide-react';
+import { X, Plus, Pencil, Repeat, Check, AlertTriangle } from 'lucide-react';
 
 const EMPTY = {
   expenseName:   '',
@@ -214,7 +214,10 @@ export default function AddAnnualExpenseModal({
                   </button>
                 </div>
                 {catError && (
-                  <p className="mt-1.5 text-[12px] text-red-600 font-medium">{catError}</p>
+                  <div className="mt-2 flex items-start gap-2 bg-red-50 border border-red-100 rounded-lg px-3 py-2 text-[12px] text-red-700 font-medium leading-relaxed">
+                    <AlertTriangle size={13} className="mt-0.5 shrink-0 text-red-500" />
+                    <span className="flex-1 break-words">{catError}</span>
+                  </div>
                 )}
               </div>
             )}

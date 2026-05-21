@@ -50,16 +50,24 @@ export function useAnnualExpenseCategories() {
 
     // Reject duplicates by case-insensitive label match.
     const existing = categories.find(
-      (c) => c.label.trim().toLowerCase() === trimmed.toLowerCase(),
+      (c) => String(c.label || '').trim().toLowerCase() === trimmed.toLowerCase(),
     );
     if (existing) return existing.id;
 
     const id = slugifyLabel(trimmed);
     const maxOrder = categories.reduce((m, c) => Math.max(m, c.sortOrder || 0), 0);
-    const { error: err } = await supabase
+    const payload = { id, label: trimmed, sort_order: maxOrder + 1 };
+    console.info('[annual_expense_categories] inserting payload:', payload);
+    const { data: inserted, error: err } = await supabase
       .from('annual_expense_categories')
-      .insert({ id, label: trimmed, sort_order: maxOrder + 1 });
-    if (err) throw err;
+      .insert(payload)
+      .select()
+      .single();
+    if (err) {
+      console.error('Supabase Category Error:', err, 'payload:', payload);
+      throw err;
+    }
+    console.info('[annual_expense_categories] inserted:', inserted);
     await refetch();
     return id;
   }, [refetch, categories]);

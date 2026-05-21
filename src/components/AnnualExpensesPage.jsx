@@ -13,7 +13,7 @@ import ErrorState, { SetupRequiredCard } from './ErrorState';
 import Toast from './Toast';
 import { useAnnualExpenses } from '../hooks/useAnnualExpenses';
 import { useAnnualExpenseCategories } from '../hooks/useAnnualExpenseCategories';
-import { isSupabaseConfigured, missingEnvNames } from '../lib/supabaseClient';
+import { isSupabaseConfigured, missingEnvNames, describeSupabaseError } from '../lib/supabaseClient';
 
 // ─── Status toggle pill (paid ↔ pending) ───────────────────────────────────
 function PaymentStatusPill({ status, onChange }) {
@@ -80,10 +80,10 @@ export default function AnnualExpensesPage() {
   const [localOpen, setLocalOpen]         = useState(false);
   const [editingItem, setEditingItem]     = useState(null);
   const [mutationError, setMutationError] = useState(null);
-  const [toast, setToast]                 = useState({ open: false, message: '', tone: 'success' });
+  const [toast, setToast] = useState({ open: false, message: '', tone: 'success', duration: 3000 });
 
   const showToast = useCallback((message, tone = 'success') => {
-    setToast({ open: true, message, tone });
+    setToast({ open: true, message, tone, duration: tone === 'error' ? 8000 : 3000 });
   }, []);
   const closeToast = useCallback(() => {
     setToast((t) => ({ ...t, open: false }));
@@ -113,9 +113,16 @@ export default function AnnualExpensesPage() {
     catch (e) { setMutationError(e); throw e; }
   }
   async function handleAddCategory(label) {
-    const newId = await addCategory({ label });
-    showToast('تم إضافة التصنيف الجديد بنجاح');
-    return newId;
+    try {
+      const newId = await addCategory({ label });
+      showToast('تم إضافة التصنيف الجديد بنجاح');
+      return newId;
+    } catch (e) {
+      console.error('Supabase Category Error:', e, 'label:', label);
+      const friendly = describeSupabaseError(e) || 'تعذّر إضافة التصنيف الجديد';
+      showToast(friendly, 'error');
+      throw e; // re-throw so the modal can also display the inline error
+    }
   }
   async function handleUpdateStatus(id, status) {
     try { await updateStatus(id, status); }
@@ -293,6 +300,7 @@ export default function AnnualExpensesPage() {
         open={toast.open}
         message={toast.message}
         tone={toast.tone}
+        duration={toast.duration}
         onClose={closeToast}
       />
     </>

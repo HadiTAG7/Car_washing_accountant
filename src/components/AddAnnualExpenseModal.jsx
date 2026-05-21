@@ -1,13 +1,22 @@
 import { useEffect, useState } from 'react';
 import { X, Plus, Pencil, Repeat, Check, AlertTriangle } from 'lucide-react';
+import { formatCurrency, formatNumber } from '../data/initialData';
 
 const EMPTY = {
-  expenseName:   '',
-  category:      '',
-  annualCost:    '',
-  dueDate:       '',
-  paymentStatus: 'pending',
+  expenseName:    '',
+  category:       '',
+  quantity:       '1',
+  unitCost:       '',
+  dueDate:        '',
+  paymentStatus:  'pending',
 };
+
+function formatUnitForInput(total, quantity) {
+  if (!total || !quantity || quantity <= 0) return '';
+  const unit = total / quantity;
+  if (!Number.isFinite(unit) || unit <= 0) return '';
+  return Number(unit.toFixed(2)).toString();
+}
 
 export default function AddAnnualExpenseModal({
   isOpen, onClose, onAdd, onUpdate, onAddCategory,
@@ -33,12 +42,14 @@ export default function AddAnnualExpenseModal({
     setNewCatLabel('');
     setCatError('');
     if (initialValues?.id) {
+      const qty = Math.max(1, parseInt(initialValues.quantity, 10) || 1);
       setForm({
-        expenseName:   initialValues.expenseName   || '',
-        category:      initialValues.category      || '',
-        annualCost:    initialValues.annualCost ? String(initialValues.annualCost) : '',
-        dueDate:       initialValues.dueDate       || '',
-        paymentStatus: initialValues.paymentStatus === 'paid' ? 'paid' : 'pending',
+        expenseName:    initialValues.expenseName   || '',
+        category:       initialValues.category      || '',
+        quantity:       String(qty),
+        unitCost:       formatUnitForInput(initialValues.annualCost, qty),
+        dueDate:        initialValues.dueDate       || '',
+        paymentStatus:  initialValues.paymentStatus === 'paid' ? 'paid' : 'pending',
       });
     } else {
       setForm({ ...EMPTY });
@@ -60,11 +71,14 @@ export default function AddAnnualExpenseModal({
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   }
 
-  const annualCost = Math.max(0, parseFloat(form.annualCost) || 0);
+  const quantity   = Math.max(1, parseInt(form.quantity, 10) || 0);
+  const unitCost   = Math.max(0, parseFloat(form.unitCost) || 0);
+  const annualCost = quantity * unitCost;
   const isValid =
     form.expenseName.trim().length > 0 &&
     Boolean(form.category) &&
-    annualCost > 0;
+    quantity > 0 &&
+    unitCost > 0;
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -74,6 +88,7 @@ export default function AddAnnualExpenseModal({
       const payload = {
         expenseName:   form.expenseName.trim(),
         category:      form.category,
+        quantity,
         annualCost,
         dueDate:       form.dueDate || '',
         paymentStatus: form.paymentStatus === 'paid' ? 'paid' : 'pending',
@@ -225,14 +240,30 @@ export default function AddAnnualExpenseModal({
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="annualCost">
-                التكلفة السنوية (ر.س)
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="quantity">
+                الكمية
               </label>
               <input
-                id="annualCost"
+                id="quantity"
                 type="number"
-                name="annualCost"
-                value={form.annualCost}
+                name="quantity"
+                value={form.quantity}
+                onChange={handleChange}
+                min="1"
+                step="1"
+                required
+                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="unitCost">
+                تكلفة الوحدة السنوية (ر.س)
+              </label>
+              <input
+                id="unitCost"
+                type="number"
+                name="unitCost"
+                value={form.unitCost}
                 onChange={handleChange}
                 placeholder="0"
                 min="0"
@@ -241,6 +272,9 @@ export default function AddAnnualExpenseModal({
                 className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
               />
             </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="dueDate">
                 تاريخ التجديد القادم
@@ -254,22 +288,33 @@ export default function AddAnnualExpenseModal({
                 className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
               />
             </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="paymentStatus">
+                الحالة
+              </label>
+              <select
+                id="paymentStatus"
+                name="paymentStatus"
+                value={form.paymentStatus}
+                onChange={handleChange}
+                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium bg-white focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+              >
+                <option value="pending">قيد الانتظار</option>
+                <option value="paid">مدفوع</option>
+              </select>
+            </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="paymentStatus">
-              الحالة
-            </label>
-            <select
-              id="paymentStatus"
-              name="paymentStatus"
-              value={form.paymentStatus}
-              onChange={handleChange}
-              className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium bg-white focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
-            >
-              <option value="pending">قيد الانتظار</option>
-              <option value="paid">مدفوع</option>
-            </select>
+          {/* Live total — quantity × annual unit cost */}
+          <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 text-sm">
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-slate-600">إجمالي التكلفة السنوية:</span>
+              <span className="font-bold text-slate-900 tabular-nums">
+                {quantity > 0 && unitCost > 0
+                  ? `${formatNumber(quantity)} × ${formatCurrency(unitCost)} = ${formatCurrency(annualCost)}`
+                  : formatCurrency(0)}
+              </span>
+            </div>
           </div>
 
           <div className="flex items-center gap-3 pt-2">

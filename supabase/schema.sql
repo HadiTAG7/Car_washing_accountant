@@ -130,6 +130,7 @@ create table if not exists public.annual_expenses (
   expense_name    text        not null,
   category        text        not null,
   annual_cost     numeric(12,2) not null default 0 check (annual_cost >= 0),
+  quantity        integer     not null default 1 check (quantity > 0),
   due_date        date,
   payment_status  text        not null default 'pending'
                   check (payment_status in ('paid','pending')),
@@ -331,6 +332,18 @@ select * from (values
   ('أخرى',                     5)
 ) as t(label, sort_order)
 where not exists (select 1 from public.annual_expense_categories);
+
+-- ─── annual_expenses — defensive column repair ────────────────────────────
+-- Existing DBs created before the quantity column was added get it now
+-- with a sensible default (1 × stored total preserves the persisted
+-- annual_cost). Re-runs are no-ops.
+alter table public.annual_expenses
+  add column if not exists quantity integer not null default 1;
+alter table public.annual_expenses
+  drop constraint if exists annual_expenses_quantity_chk;
+alter table public.annual_expenses
+  add  constraint annual_expenses_quantity_chk
+  check (quantity > 0);
 
 -- Tell PostgREST to refresh its schema introspection now that the table
 -- and its columns are guaranteed. Without this, the REST API can keep

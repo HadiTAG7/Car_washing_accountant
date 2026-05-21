@@ -105,24 +105,32 @@ export function toTransactionInsert({ date, description, type, amount, vehicleId
 }
 
 // ── annual_expenses (Module 2) ────────────────────────────────────────────
-// App-side shape: { id, expenseName, category, annualCost, dueDate, paymentStatus }
+// App-side shape: { id, expenseName, category, quantity, annualCost, dueDate, paymentStatus }
+// `annualCost` is the stored TOTAL (quantity × unit cost); unit cost is
+// derived in the UI on edit.
 function clampStatus(value) {
   return value === 'paid' ? 'paid' : 'pending';
+}
+function clampExpenseQuantity(value) {
+  const n = parseInt(value, 10);
+  return Number.isFinite(n) && n > 0 ? n : 1;
 }
 export function mapAnnualExpense(row) {
   return {
     id:            row.id,
     expenseName:   row.expense_name,
     category:      row.category,
+    quantity:      clampExpenseQuantity(row.quantity),
     annualCost:    Number(row.annual_cost) || 0,
     dueDate:       row.due_date || '',
     paymentStatus: clampStatus(row.payment_status),
   };
 }
-export function toAnnualExpenseInsert({ expenseName, category, annualCost, dueDate, paymentStatus }) {
+export function toAnnualExpenseInsert({ expenseName, category, quantity, annualCost, dueDate, paymentStatus }) {
   return {
     expense_name:   expenseName,
     category,
+    quantity:       clampExpenseQuantity(quantity),
     annual_cost:    Math.max(0, Number(annualCost) || 0),
     due_date:       dueDate || null,
     payment_status: clampStatus(paymentStatus),
@@ -132,6 +140,7 @@ export function toAnnualExpenseUpdate(updates = {}) {
   const payload = {};
   if (updates.expenseName   !== undefined) payload.expense_name   = updates.expenseName;
   if (updates.category      !== undefined) payload.category       = updates.category;
+  if (updates.quantity      !== undefined) payload.quantity       = clampExpenseQuantity(updates.quantity);
   if (updates.annualCost    !== undefined) payload.annual_cost    = Math.max(0, Number(updates.annualCost) || 0);
   if (updates.dueDate       !== undefined) payload.due_date       = updates.dueDate || null;
   if (updates.paymentStatus !== undefined) payload.payment_status = clampStatus(updates.paymentStatus);

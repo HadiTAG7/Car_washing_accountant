@@ -18,6 +18,20 @@ export const CATEGORIES = [
   { id: 'other',              label: 'أخرى' },
 ];
 
+// ─── Recurring Expense Categories (Module 2) ────────────────────────────────
+export const RECURRING_EXPENSE_CATEGORIES = [
+  { id: 'fleet-insurance',        label: 'تأمين شامل للأسطول' },
+  { id: 'government-licenses',    label: 'تراخيص ورسوم حكومية' },
+  { id: 'software-subscriptions', label: 'اشتراكات برمجية وأنظمة' },
+  { id: 'annual-marketing',       label: 'تسويق وحملات سنوية' },
+  { id: 'other',                  label: 'أخرى' },
+];
+
+export function getRecurringCategoryLabel(id) {
+  const found = RECURRING_EXPENSE_CATEGORIES.find((c) => c.id === id);
+  return found ? found.label : id;
+}
+
 // ─── Startup Cost Items ─────────────────────────────────────────────────────
 // Totals: budgeted 450,000 / actual 432,500 / variance 17,500
 export const initialCostItems = [

@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import {
   Landmark,
+  Repeat,
   Calculator,
   FileBarChart,
   MapPin,
@@ -12,6 +13,7 @@ import Sidebar from './components/Sidebar';
 import LoginScreen from './components/LoginScreen';
 import { DemoBanner } from './components/ErrorState';
 import StartupPage from './components/StartupPage';
+import AnnualExpensesPage from './components/AnnualExpensesPage';
 import UnitEconomicsPage from './components/UnitEconomicsPage';
 import CashFlowPage from './components/CashFlowPage';
 import RoutesPage from './components/RoutesPage';
@@ -23,6 +25,7 @@ import { isSupabaseConfigured, requireAuth, missingEnvNames } from './lib/supaba
 
 const TABS = [
   { id: 'startup',   label: 'رسوم التأسيس',      icon: Landmark    },
+  { id: 'annual',    label: 'المصاريف السنوية',  icon: Repeat      },
   { id: 'economics', label: 'اقتصاديات الوحدة',  icon: Calculator  },
   { id: 'cashflow',  label: 'التدفق النقدي',     icon: FileBarChart},
   { id: 'routes',    label: 'ربحية المسارات',    icon: MapPin      },
@@ -87,6 +90,7 @@ export default function App() {
             onClearPendingEntry={clearPendingEntry}
           />
         )}
+        {activeTab === 'annual'    && <AnnualExpensesPage />}
         {activeTab === 'economics' && <UnitEconomicsPage />}
         {activeTab === 'cashflow'  && (
           <CashFlowPage

@@ -1,0 +1,202 @@
+import { useEffect, useState } from 'react';
+import { X, Plus, Pencil, Repeat } from 'lucide-react';
+import { RECURRING_EXPENSE_CATEGORIES } from '../data/initialData';
+
+const EMPTY = {
+  expenseName:   '',
+  category:      RECURRING_EXPENSE_CATEGORIES[0]?.id || '',
+  annualCost:    '',
+  dueDate:       '',
+  paymentStatus: 'pending',
+};
+
+export default function AddAnnualExpenseModal({
+  isOpen, onClose, onAdd, onUpdate, initialValues = null,
+}) {
+  const editing = Boolean(initialValues?.id);
+  const [form, setForm] = useState(EMPTY);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (initialValues?.id) {
+      setForm({
+        expenseName:   initialValues.expenseName   || '',
+        category:      initialValues.category      || EMPTY.category,
+        annualCost:    initialValues.annualCost ? String(initialValues.annualCost) : '',
+        dueDate:       initialValues.dueDate       || '',
+        paymentStatus: initialValues.paymentStatus === 'paid' ? 'paid' : 'pending',
+      });
+    } else {
+      setForm(EMPTY);
+    }
+  }, [isOpen, initialValues]);
+
+  function handleChange(e) {
+    setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+  }
+
+  const annualCost = Math.max(0, parseFloat(form.annualCost) || 0);
+  const isValid =
+    form.expenseName.trim().length > 0 &&
+    Boolean(form.category) &&
+    annualCost > 0;
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!isValid || submitting) return;
+    setSubmitting(true);
+    try {
+      const payload = {
+        expenseName:   form.expenseName.trim(),
+        category:      form.category,
+        annualCost,
+        dueDate:       form.dueDate || '',
+        paymentStatus: form.paymentStatus === 'paid' ? 'paid' : 'pending',
+      };
+      if (editing && onUpdate) {
+        await onUpdate(initialValues.id, payload);
+      } else if (onAdd) {
+        await onAdd(payload);
+      }
+      onClose();
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (!isOpen) return null;
+
+  const HeaderIcon = editing ? Pencil : Repeat;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50">
+          <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+            <span className="bg-accent-50 text-accent-600 w-9 h-9 rounded-xl flex items-center justify-center">
+              <HeaderIcon size={18} />
+            </span>
+            {editing ? 'تعديل مصروف سنوي' : 'إضافة مصروف سنوي'}
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-slate-400 hover:text-slate-700 p-1 rounded-lg hover:bg-slate-200 transition-colors"
+            aria-label="إغلاق"
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="expenseName">
+              اسم المصروف
+            </label>
+            <input
+              id="expenseName"
+              type="text"
+              name="expenseName"
+              value={form.expenseName}
+              onChange={handleChange}
+              placeholder="مثال: تأمين الأسطول السنوي"
+              autoFocus
+              required
+              className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="category">
+              التصنيف
+            </label>
+            <select
+              id="category"
+              name="category"
+              value={form.category}
+              onChange={handleChange}
+              required
+              className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium bg-white focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+            >
+              {RECURRING_EXPENSE_CATEGORIES.map((cat) => (
+                <option key={cat.id} value={cat.id}>{cat.label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="annualCost">
+                التكلفة السنوية (ر.س)
+              </label>
+              <input
+                id="annualCost"
+                type="number"
+                name="annualCost"
+                value={form.annualCost}
+                onChange={handleChange}
+                placeholder="0"
+                min="0"
+                step="any"
+                required
+                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="dueDate">
+                تاريخ التجديد القادم
+              </label>
+              <input
+                id="dueDate"
+                type="date"
+                name="dueDate"
+                value={form.dueDate}
+                onChange={handleChange}
+                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="paymentStatus">
+              الحالة
+            </label>
+            <select
+              id="paymentStatus"
+              name="paymentStatus"
+              value={form.paymentStatus}
+              onChange={handleChange}
+              className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium bg-white focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+            >
+              <option value="pending">قيد الانتظار</option>
+              <option value="paid">مدفوع</option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-3 pt-2">
+            <button
+              type="submit"
+              disabled={!isValid || submitting}
+              className="flex-1 inline-flex items-center justify-center gap-2 bg-primary-800 hover:bg-primary-900 disabled:bg-slate-300 disabled:cursor-not-allowed text-white py-2.5 px-4 rounded-xl text-sm font-semibold transition-colors shadow-sm"
+            >
+              {editing ? <Pencil size={18} /> : <Plus size={18} />}
+              {submitting
+                ? (editing ? 'جارٍ الحفظ...' : 'جارٍ الإضافة...')
+                : (editing ? 'حفظ التعديلات' : 'إضافة المصروف')}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-6 py-2.5 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl text-sm font-medium transition-colors"
+            >
+              إلغاء
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}

@@ -114,6 +114,27 @@ create table if not exists public.partners (
   created_at      timestamptz not null default now()
 );
 
+-- ─── annual_expenses (Module 2 — recurring fleet expenses) ─────────────────
+create table if not exists public.annual_expenses (
+  id              uuid primary key default gen_random_uuid(),
+  expense_name    text        not null,
+  category        text        not null,
+  annual_cost     numeric(12,2) not null default 0 check (annual_cost >= 0),
+  due_date        date,
+  payment_status  text        not null default 'pending'
+                  check (payment_status in ('paid','pending')),
+  notes           text,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now()
+);
+create index if not exists annual_expenses_due_date_idx       on public.annual_expenses(due_date);
+create index if not exists annual_expenses_payment_status_idx on public.annual_expenses(payment_status);
+
+drop trigger if exists annual_expenses_touch on public.annual_expenses;
+create trigger annual_expenses_touch
+before update on public.annual_expenses
+for each row execute function public.touch_updated_at();
+
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Row-Level Security
 -- For an internal financial tool, we enable RLS and grant full access to
@@ -129,6 +150,7 @@ alter table public.maintenance_logs  enable row level security;
 alter table public.transactions      enable row level security;
 alter table public.app_settings      enable row level security;
 alter table public.partners          enable row level security;
+alter table public.annual_expenses   enable row level security;
 
 do $$ begin
   -- Drop existing policies first (idempotent)
@@ -166,6 +188,10 @@ create policy "rw_auth" on public.app_settings
 
 drop policy if exists "rw_auth" on public.partners;
 create policy "rw_auth" on public.partners
+  for all to public using (true) with check (true);
+
+drop policy if exists "rw_auth" on public.annual_expenses;
+create policy "rw_auth" on public.annual_expenses
   for all to public using (true) with check (true);
 
 -- ═══════════════════════════════════════════════════════════════════════════

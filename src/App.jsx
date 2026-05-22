@@ -4,7 +4,7 @@ import {
   Repeat,
   Receipt,
   Activity,
-  FileBarChart,
+  Car,
   MapPin,
   Handshake,
   Loader2,
@@ -17,7 +17,7 @@ import StartupPage from './components/StartupPage';
 import AnnualExpensesPage from './components/AnnualExpensesPage';
 import MonthlyExpensesPage from './components/MonthlyExpensesPage';
 import VariableExpensesPage from './components/VariableExpensesPage';
-import CashFlowPage from './components/CashFlowPage';
+import WashesPage from './components/WashesPage';
 import RoutesPage from './components/RoutesPage';
 import PartnersPage from './components/PartnersPage';
 import FinancialEntrySelector from './components/FinancialEntrySelector';
@@ -30,7 +30,7 @@ const TABS = [
   { id: 'annual',    label: 'المصاريف السنوية',  icon: Repeat      },
   { id: 'monthly',   label: 'المصاريف الشهرية',  icon: Receipt     },
   { id: 'variable',  label: 'المصاريف المتغيرة', icon: Activity    },
-  { id: 'cashflow',  label: 'التدفق النقدي',     icon: FileBarChart},
+  { id: 'washes',    label: 'الغسلات',           icon: Car         },
   { id: 'routes',    label: 'ربحية المسارات',    icon: MapPin      },
   { id: 'partners',  label: 'إدارة الشركاء',     icon: Handshake   },
 ];
@@ -51,8 +51,6 @@ export default function App() {
       // module is not part of Module 1 — it will be reintroduced in a later
       // module rebuild. For now the entry is a no-op on the startup tab.
       setActiveTab('startup');
-    } else if (type === 'transaction') {
-      setActiveTab('cashflow');
     }
     setPendingEntry(type);
   }
@@ -96,12 +94,7 @@ export default function App() {
         {activeTab === 'annual'    && <AnnualExpensesPage />}
         {activeTab === 'monthly'   && <MonthlyExpensesPage />}
         {activeTab === 'variable'  && <VariableExpensesPage />}
-        {activeTab === 'cashflow'  && (
-          <CashFlowPage
-            pendingEntry={pendingEntry}
-            onClearPendingEntry={clearPendingEntry}
-          />
-        )}
+        {activeTab === 'washes'    && <WashesPage />}
         {activeTab === 'routes'    && <RoutesPage />}
         {activeTab === 'partners'  && <PartnersPage />}
       </div>

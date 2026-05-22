@@ -1,4 +1,4 @@
-import { X, Receipt, Truck, ArrowLeftRight } from 'lucide-react';
+import { X, Receipt, Truck } from 'lucide-react';
 
 const ENTRY_TYPES = [
   {
@@ -20,16 +20,6 @@ const ENTRY_TYPES = [
     titleEn: 'Depreciable Asset',
     description: 'أصل ثابت ملموس يُستهلك على مدار عمره الإنتاجي',
     examples: 'شاحنات، مولدات، غسالات ضغط عالي',
-  },
-  {
-    id: 'transaction',
-    icon: ArrowLeftRight,
-    iconBg: 'bg-emerald-50',
-    iconColor: 'text-emerald-600',
-    title: 'إيراد أو مصروف تشغيلي',
-    titleEn: 'Revenue / Operational Expense',
-    description: 'دخل يومي أو مصاريف تشغيلية متكررة',
-    examples: 'إيرادات غسيل، وقود، صابون، رواتب',
   },
 ];
 

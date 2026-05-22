@@ -1,7 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
-  Plus, Trash2, Pencil, Wallet, Layers, Scale, CalendarClock, Activity,
-  Check, X,
+  Plus, Trash2, Pencil, Wallet, Layers, Scale, CalendarClock, Activity, Car,
 } from 'lucide-react';
 import { formatCurrency, formatNumber } from '../data/initialData';
 import TopBar from './TopBar';
@@ -14,31 +13,11 @@ import ErrorState, { SetupRequiredCard } from './ErrorState';
 import Toast from './Toast';
 import { useVariableExpenses } from '../hooks/useVariableExpenses';
 import { useVariableExpenseCategories } from '../hooks/useVariableExpenseCategories';
-import { useSettings } from '../hooks/useSettings';
+import { useWashes } from '../hooks/useWashes';
 import { isSupabaseConfigured, missingEnvNames, describeSupabaseError } from '../lib/supabaseClient';
 
-// ─── Wash counter widget — single source of truth for dynamic rules ───────
-function WashCounterCard({ washCount, onSave }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft]     = useState(String(washCount));
-  const [saving, setSaving]   = useState(false);
-
-  function start() {
-    setDraft(String(washCount));
-    setEditing(true);
-  }
-  function cancel() {
-    setDraft(String(washCount));
-    setEditing(false);
-  }
-  async function commit() {
-    const n = Math.max(0, parseInt(draft, 10) || 0);
-    if (n === washCount) { setEditing(false); return; }
-    setSaving(true);
-    try { await onSave(n); setEditing(false); }
-    finally { setSaving(false); }
-  }
-
+// ─── Live wash counter readout (driven by the Washes module) ──────────────
+function WashCounterReadout({ washCount }) {
   return (
     <div className="rounded-2xl border border-primary-100 bg-gradient-to-l from-primary-50 to-white shadow-sm p-5">
       <div className="flex items-start gap-4">
@@ -46,61 +25,19 @@ function WashCounterCard({ washCount, onSave }) {
           <Layers size={22} strokeWidth={2.2} />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-xs text-primary-700 font-bold tracking-wide">إجمالي الغسلات المحققة (الفترة الحالية)</p>
+          <p className="text-xs text-primary-700 font-bold tracking-wide">إجمالي الغسلات المكتملة</p>
           <div className="flex items-baseline gap-3 mt-1">
-            {editing ? (
-              <>
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter')  { e.preventDefault(); commit(); }
-                    if (e.key === 'Escape') { cancel(); }
-                  }}
-                  autoFocus
-                  className="w-40 px-3 py-1.5 border border-primary-200 rounded-lg text-2xl font-extrabold text-slate-900 tabular-nums bg-white focus:outline-none focus:ring-2 focus:ring-primary-300"
-                />
-                <button
-                  type="button"
-                  onClick={commit}
-                  disabled={saving}
-                  className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white transition-colors"
-                  aria-label="حفظ"
-                >
-                  <Check size={16} strokeWidth={2.5} />
-                </button>
-                <button
-                  type="button"
-                  onClick={cancel}
-                  className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 text-slate-500 transition-colors"
-                  aria-label="إلغاء"
-                >
-                  <X size={16} />
-                </button>
-              </>
-            ) : (
-              <>
-                <span className="text-3xl font-extrabold text-slate-900 tabular-nums">
-                  {formatNumber(washCount)}
-                </span>
-                <span className="text-sm text-slate-500">غسلة</span>
-                <button
-                  type="button"
-                  onClick={start}
-                  className="text-primary-700 hover:text-primary-900 p-1.5 rounded-lg hover:bg-primary-100 transition-colors"
-                  title="تعديل العداد"
-                  aria-label="تعديل العداد"
-                >
-                  <Pencil size={15} />
-                </button>
-              </>
-            )}
+            <span className="text-3xl font-extrabold text-slate-900 tabular-nums">
+              {formatNumber(washCount)}
+            </span>
+            <span className="text-sm text-slate-500">غسلة</span>
+            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary-700 bg-primary-100 border border-primary-200 rounded-md px-2 py-0.5">
+              <Car size={11} strokeWidth={2.5} />
+              تلقائي
+            </span>
           </div>
           <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
-            تتغير تكلفة العمولات المرتبطة بالغسلات تلقائياً عند تعديل هذا العداد.
+            يُحسب تلقائياً من سجل الغسلات المكتملة في تبويب &laquo;الغسلات&raquo;. أضف غسلة جديدة لرفع تكلفة العمولات.
           </p>
         </div>
       </div>
@@ -167,9 +104,14 @@ export default function VariableExpensesPage() {
     categories, addCategory, getCategoryLabel,
   } = useVariableExpenseCategories();
 
-  const { value: washSettings, setValue: saveWashSettings } =
-    useSettings('total_achieved_washes', { count: 0 });
-  const washCount = Math.max(0, parseInt(washSettings?.count, 10) || 0);
+  // Live wash counter — derived from the new washes module. Each visit
+  // to this tab refetches via useWashes(), so cross-tab additions appear
+  // automatically without any manual sync.
+  const { items: washes } = useWashes();
+  const washCount = useMemo(
+    () => washes.filter((w) => w.status === 'مكتملة').length,
+    [washes],
+  );
 
   const [localOpen, setLocalOpen]         = useState(false);
   const [editingItem, setEditingItem]     = useState(null);
@@ -213,15 +155,6 @@ export default function VariableExpensesPage() {
     return { cost, units, weightedUnitCost };
   }, [effectiveItems]);
 
-  async function handleSaveWashCount(nextCount) {
-    try {
-      await saveWashSettings({ count: nextCount });
-      showToast('تم تحديث عداد الغسلات');
-    } catch (e) {
-      console.error('Wash counter save error:', e);
-      showToast(describeSupabaseError(e) || 'تعذّر تحديث العداد', 'error');
-    }
-  }
 
   async function handleAddItem(item) {
     try { await addItem(item); showToast('تم إضافة المصروف المتغير بنجاح'); }
@@ -277,7 +210,7 @@ export default function VariableExpensesPage() {
           />
         )}
 
-        <WashCounterCard washCount={washCount} onSave={handleSaveWashCount} />
+        <WashCounterReadout washCount={washCount} />
 
         {/* ── KPI summary ─────────────────────────────────────────── */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">

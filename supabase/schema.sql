@@ -158,6 +158,32 @@ create table if not exists public.monthly_expense_categories (
   created_at  timestamptz not null default now()
 );
 
+-- ─── washes (Module 5 — service log; drives wash-linked variable rules) ──
+-- Every recorded wash becomes one row here. The Variable Expenses page
+-- counts the rows with status = 'مكتملة' to auto-scale the biker
+-- commissions rule.
+create table if not exists public.washes (
+  id              uuid primary key default gen_random_uuid(),
+  vehicle_type    text not null check (vehicle_type in ('صغيرة','وسط','جيب','كبيرة')),
+  plate_number    text not null,
+  service_type    text not null check (service_type in ('غسيل خارجي','غسيل كامل')),
+  biker_name      text not null,
+  price           numeric(12,2) not null default 40 check (price >= 0),
+  status          text not null default 'مكتملة'
+                  check (status in ('مكتملة','قيد التنفيذ')),
+  wash_date       date,
+  notes           text,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now()
+);
+create index if not exists washes_wash_date_idx on public.washes(wash_date desc);
+create index if not exists washes_status_idx    on public.washes(status);
+
+drop trigger if exists washes_touch on public.washes;
+create trigger washes_touch
+before update on public.washes
+for each row execute function public.touch_updated_at();
+
 -- ─── monthly_expenses (Module 3 — recurring monthly operational costs) ───
 -- Stores BOTH unit_cost and total_monthly_cost (= quantity × unit_cost),
 -- so the table can render the unit cost directly without divide-on-read.
@@ -239,6 +265,7 @@ alter table public.monthly_expense_categories  enable row level security;
 alter table public.monthly_expenses            enable row level security;
 alter table public.variable_expense_categories enable row level security;
 alter table public.variable_expenses           enable row level security;
+alter table public.washes                      enable row level security;
 
 do $$ begin
   -- Drop existing policies first (idempotent)
@@ -300,6 +327,10 @@ create policy "rw_auth" on public.variable_expense_categories
 
 drop policy if exists "rw_auth" on public.variable_expenses;
 create policy "rw_auth" on public.variable_expenses
+  for all to public using (true) with check (true);
+
+drop policy if exists "rw_auth" on public.washes;
+create policy "rw_auth" on public.washes
   for all to public using (true) with check (true);
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -608,6 +639,46 @@ begin
        and (payment_month is null or payment_day is null);
   end if;
 end $$;
+
+-- ─── washes — defensive column repair ─────────────────────────────────────
+-- Ensure all columns + the UUID default + check constraints exist on
+-- partial/older DBs. Idempotent on re-run.
+alter table public.washes
+  add column if not exists vehicle_type text;
+alter table public.washes
+  add column if not exists plate_number text;
+alter table public.washes
+  add column if not exists service_type text;
+alter table public.washes
+  add column if not exists biker_name   text;
+alter table public.washes
+  add column if not exists price        numeric(12,2) not null default 40;
+alter table public.washes
+  add column if not exists status       text not null default 'مكتملة';
+alter table public.washes
+  add column if not exists wash_date    date;
+alter table public.washes
+  alter column id set default gen_random_uuid();
+alter table public.washes
+  drop constraint if exists washes_vehicle_type_chk;
+alter table public.washes
+  add  constraint washes_vehicle_type_chk
+  check (vehicle_type in ('صغيرة','وسط','جيب','كبيرة'));
+alter table public.washes
+  drop constraint if exists washes_service_type_chk;
+alter table public.washes
+  add  constraint washes_service_type_chk
+  check (service_type in ('غسيل خارجي','غسيل كامل'));
+alter table public.washes
+  drop constraint if exists washes_status_chk;
+alter table public.washes
+  add  constraint washes_status_chk
+  check (status in ('مكتملة','قيد التنفيذ'));
+alter table public.washes
+  drop constraint if exists washes_price_chk;
+alter table public.washes
+  add  constraint washes_price_chk
+  check (price >= 0);
 
 -- Tell PostgREST to refresh its schema introspection now that the table
 -- and its columns are guaranteed. Without this, the REST API can keep

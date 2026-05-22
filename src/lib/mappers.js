@@ -265,6 +265,55 @@ export function toVariableExpenseUpdate(updates = {}) {
   return payload;
 }
 
+// ── washes (Module 5) ─────────────────────────────────────────────────────
+// App-side shape: { id, vehicleType, plateNumber, serviceType, bikerName,
+// price, status, washDate }. Status drives the "completed" count that
+// Module 4's biker-commissions rule reads to auto-scale.
+const WASH_VEHICLES = new Set(['صغيرة', 'وسط', 'جيب', 'كبيرة']);
+const WASH_SERVICES = new Set(['غسيل خارجي', 'غسيل كامل']);
+function clampWashStatus(value) {
+  return value === 'قيد التنفيذ' ? 'قيد التنفيذ' : 'مكتملة';
+}
+function clampWashEnum(value, allowed, fallback) {
+  return allowed.has(value) ? value : fallback;
+}
+export function mapWash(row) {
+  return {
+    id:           row.id,
+    vehicleType:  row.vehicle_type,
+    plateNumber:  row.plate_number,
+    serviceType:  row.service_type,
+    bikerName:    row.biker_name,
+    price:        Number(row.price) || 0,
+    status:       clampWashStatus(row.status),
+    washDate:     row.wash_date || '',
+  };
+}
+export function toWashInsert({
+  vehicleType, plateNumber, serviceType, bikerName, price, status, washDate,
+}) {
+  return {
+    vehicle_type: clampWashEnum(vehicleType, WASH_VEHICLES, 'صغيرة'),
+    plate_number: String(plateNumber || '').trim(),
+    service_type: clampWashEnum(serviceType, WASH_SERVICES, 'غسيل خارجي'),
+    biker_name:   String(bikerName || '').trim(),
+    price:        Math.max(0, Number(price) || 0),
+    status:       clampWashStatus(status),
+    wash_date:    washDate || null,
+  };
+}
+export function toWashUpdate(updates = {}) {
+  const payload = {};
+  if (updates.vehicleType !== undefined) payload.vehicle_type = clampWashEnum(updates.vehicleType, WASH_VEHICLES, 'صغيرة');
+  if (updates.plateNumber !== undefined) payload.plate_number = String(updates.plateNumber || '').trim();
+  if (updates.serviceType !== undefined) payload.service_type = clampWashEnum(updates.serviceType, WASH_SERVICES, 'غسيل خارجي');
+  if (updates.bikerName   !== undefined) payload.biker_name   = String(updates.bikerName   || '').trim();
+  if (updates.price       !== undefined) payload.price        = Math.max(0, Number(updates.price) || 0);
+  if (updates.status      !== undefined) payload.status       = clampWashStatus(updates.status);
+  if (updates.washDate    !== undefined) payload.wash_date    = updates.washDate || null;
+  return payload;
+}
+
 // ── partners ──────────────────────────────────────────────────────────────
 export function mapPartner(row) {
   return {

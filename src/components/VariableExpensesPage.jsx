@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
-  Plus, Trash2, Pencil, Wallet, Layers, Scale, CalendarClock, Activity, Car,
+  Plus, Trash2, Pencil, Wallet, Layers, Scale, CalendarClock, Activity, Calendar, Car,
 } from 'lucide-react';
 import { formatCurrency, formatNumber } from '../data/initialData';
 import TopBar from './TopBar';
@@ -15,10 +15,16 @@ import { useVariableExpenses } from '../hooks/useVariableExpenses';
 import { useVariableExpenseCategories } from '../hooks/useVariableExpenseCategories';
 import { useWashes } from '../hooks/useWashes';
 import { isSupabaseConfigured, missingEnvNames, describeSupabaseError } from '../lib/supabaseClient';
-import { effectiveVariableRow, sumCompletedWashQuantity } from '../lib/variableExpenseTotals';
+import {
+  todayMonth,
+  formatMonthLabel,
+  listAvailableMonths,
+  sumCompletedWashQuantityInMonth,
+  variableItemsForMonth,
+} from '../lib/variableExpenseTotals';
 
 // ─── Live wash counter readout (driven by the Washes module) ──────────────
-function WashCounterReadout({ washCount }) {
+function WashCounterReadout({ washCount, monthLabel }) {
   return (
     <div className="rounded-2xl border border-primary-100 bg-gradient-to-l from-primary-50 to-white shadow-sm p-5">
       <div className="flex items-start gap-4">
@@ -26,7 +32,9 @@ function WashCounterReadout({ washCount }) {
           <Layers size={22} strokeWidth={2.2} />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-xs text-primary-700 font-bold tracking-wide">إجمالي الغسلات المكتملة</p>
+          <p className="text-xs text-primary-700 font-bold tracking-wide">
+            إجمالي الغسلات المكتملة — {monthLabel}
+          </p>
           <div className="flex items-baseline gap-3 mt-1">
             <span className="text-3xl font-extrabold text-slate-900 tabular-nums">
               {formatNumber(washCount)}
@@ -38,7 +46,7 @@ function WashCounterReadout({ washCount }) {
             </span>
           </div>
           <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
-            يُحسب تلقائياً من سجل الغسلات المكتملة في تبويب &laquo;الغسلات&raquo;. أضف غسلة جديدة لرفع تكلفة العمولات.
+            يُحسب تلقائياً من سجل الغسلات المكتملة للشهر المحدد ويغذّي عداد عمولات البايكرز.
           </p>
         </div>
       </div>
@@ -46,15 +54,47 @@ function WashCounterReadout({ washCount }) {
   );
 }
 
-function EmptyState({ onAdd }) {
+function PeriodSelectorCard({ value, onChange, options }) {
+  return (
+    <div className="rounded-2xl border border-primary-100 bg-gradient-to-l from-primary-50 to-white shadow-sm p-5">
+      <div className="flex items-start gap-4">
+        <div className="bg-primary-700 text-white w-12 h-12 rounded-2xl flex items-center justify-center shrink-0">
+          <Calendar size={22} strokeWidth={2.2} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <label htmlFor="variable-period" className="block text-xs text-primary-700 font-bold tracking-wide">
+            فترة العرض (الشهر)
+          </label>
+          <select
+            id="variable-period"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            className="mt-1.5 w-full max-w-xs px-4 py-2.5 border border-primary-200 rounded-xl bg-white text-base font-bold text-slate-900 tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-300"
+          >
+            {options.map((ym) => (
+              <option key={ym} value={ym}>{formatMonthLabel(ym)}</option>
+            ))}
+          </select>
+          <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
+            اختر الشهر لعرض مصاريفه المتغيرة. عمولات البايكرز تُحسب تلقائياً من غسلات الشهر المحدد.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EmptyState({ onAdd, monthLabel }) {
   return (
     <div className="flex flex-col items-center justify-center py-14 text-center">
       <div className="bg-primary-50 text-primary-700 w-14 h-14 rounded-2xl flex items-center justify-center mb-4">
         <Activity size={26} />
       </div>
-      <p className="text-base font-bold text-slate-800 mb-1">لا توجد مصاريف متغيرة بعد</p>
+      <p className="text-base font-bold text-slate-800 mb-1">
+        لا توجد مصاريف متغيرة مسجّلة لشهر {monthLabel}
+      </p>
       <p className="text-sm text-slate-500 mb-5 max-w-sm">
-        سجّل أول مصروف متغير (عمولات، مستلزمات لكل غسلة، حوافز...) لتبدأ متابعة تكلفة الوحدة.
+        سجّل أول مصروف متغير (مستلزمات، حوافز، نقل...) لتبدأ متابعة تكلفة الوحدة لهذا الشهر.
       </p>
       <PrimaryButton icon={Plus} onClick={onAdd}>
         إضافة مصروف متغير
@@ -86,10 +126,9 @@ export default function VariableExpensesPage() {
     categories, addCategory, getCategoryLabel,
   } = useVariableExpenseCategories();
 
-  // Live wash counter — sum of quantity across completed batches. One
-  // bulk row with quantity=50 contributes 50, NOT 1.
   const { items: washes } = useWashes();
-  const washCount = useMemo(() => sumCompletedWashQuantity(washes), [washes]);
+
+  const [selectedMonth, setSelectedMonth] = useState(todayMonth());
 
   const [localOpen, setLocalOpen]         = useState(false);
   const [editingItem, setEditingItem]     = useState(null);
@@ -108,31 +147,39 @@ export default function VariableExpensesPage() {
   function openEditModal(item) { setLocalOpen(false); setEditingItem(item); }
   function closeModal()        { setLocalOpen(false); setEditingItem(null); }
 
-  // Categories keyed by id, so the table + KPI calc can cheaply look up
-  // each row's dynamic flag.
-  const categoryMap = useMemo(() => {
-    const m = new Map();
-    categories.forEach((c) => m.set(c.id, c));
-    return m;
-  }, [categories]);
+  const availableMonths = useMemo(
+    () => listAvailableMonths(washes, items),
+    [washes, items],
+  );
 
-  // Compose effective rows once — every other render branch reads from
-  // here so the dashboard auto-scales when the wash counter changes.
-  const effectiveItems = useMemo(
-    () => items.map((i) => ({ ...i, _eff: effectiveVariableRow(i, categoryMap, washCount) })),
-    [items, categoryMap, washCount],
+  const washCountInMonth = useMemo(
+    () => sumCompletedWashQuantityInMonth(washes, selectedMonth),
+    [washes, selectedMonth],
+  );
+
+  // displayedItems = virtual biker-commission row(s) for this month +
+  // any manual non-dynamic rows logged in this month.
+  const displayedItems = useMemo(
+    () => variableItemsForMonth({
+      manualItems: items,
+      categories,
+      selectedMonth,
+      washCountInMonth,
+    }),
+    [items, categories, selectedMonth, washCountInMonth],
   );
 
   const totals = useMemo(() => {
     let cost = 0, units = 0;
-    effectiveItems.forEach((row) => {
-      cost  += row._eff.totalVariableCost;
-      units += row._eff.quantity;
+    displayedItems.forEach((row) => {
+      cost  += row.totalVariableCost || 0;
+      units += row.quantity || 0;
     });
     const weightedUnitCost = units > 0 ? cost / units : 0;
     return { cost, units, weightedUnitCost };
-  }, [effectiveItems]);
+  }, [displayedItems]);
 
+  const monthLabel = formatMonthLabel(selectedMonth);
 
   async function handleAddItem(item) {
     try { await addItem(item); showToast('تم إضافة المصروف المتغير بنجاح'); }
@@ -154,6 +201,7 @@ export default function VariableExpensesPage() {
     }
   }
   async function handleDelete(item) {
+    if (item.isVirtual) return; // safety: virtual rows have no DB id
     const confirmed = typeof window !== 'undefined'
       ? window.confirm(`هل تريد حذف "${item.expenseName}"؟ لا يمكن التراجع.`)
       : true;
@@ -166,7 +214,7 @@ export default function VariableExpensesPage() {
     <>
       <TopBar
         title="المصاريف المتغيرة"
-        subtitle="تتبّع تكاليف الغسلة الواحدة، العمولات، والمستلزمات المتغيرة"
+        subtitle="تتبّع تكاليف الغسلة الواحدة، العمولات، والمستلزمات المتغيرة حسب الشهر"
       />
 
       <main className="p-8 space-y-6">
@@ -188,7 +236,13 @@ export default function VariableExpensesPage() {
           />
         )}
 
-        <WashCounterReadout washCount={washCount} />
+        <PeriodSelectorCard
+          value={selectedMonth}
+          onChange={setSelectedMonth}
+          options={availableMonths}
+        />
+
+        <WashCounterReadout washCount={washCountInMonth} monthLabel={monthLabel} />
 
         {/* ── KPI summary ─────────────────────────────────────────── */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
@@ -198,7 +252,7 @@ export default function VariableExpensesPage() {
             iconColor="text-primary-700"
             label="إجمالي المصاريف المتغيرة"
             value={formatCurrency(totals.cost)}
-            sub={`${items.length} ${items.length === 1 ? 'بند' : 'بنود'}`}
+            sub={`${displayedItems.length} ${displayedItems.length === 1 ? 'بند' : 'بنود'} لشهر ${monthLabel}`}
           />
           <StatCard
             icon={Layers}
@@ -207,9 +261,9 @@ export default function VariableExpensesPage() {
             label="عدد الغسلات / الوحدات المدعومة"
             value={formatNumber(totals.units)}
             sub={
-              items.length === 0
-                ? 'لم تُسجَّل وحدات بعد'
-                : `موزّعة على ${items.length} ${items.length === 1 ? 'تسجيل' : 'تسجيلات'}`
+              totals.units === 0
+                ? 'لم تُسجَّل وحدات في هذا الشهر بعد'
+                : `موزّعة على ${displayedItems.length} ${displayedItems.length === 1 ? 'بند' : 'بنود'}`
             }
           />
           <StatCard
@@ -229,8 +283,8 @@ export default function VariableExpensesPage() {
         {/* ── Main table ─────────────────────────────────────────── */}
         <Card className="p-6">
           <SectionHeader
-            title="سجل المصاريف المتغيرة"
-            subtitle="كل بند مسجّل بتاريخه — افتح بنداً للتعديل الكامل أو احذفه"
+            title={`سجل المصاريف المتغيرة — ${monthLabel}`}
+            subtitle="عمولات البايكرز مُضمّنة تلقائياً وفق غسلات الشهر؛ الباقي بنود مسجّلة يدوياً"
             action={
               <PrimaryButton icon={Plus} onClick={openAddModal}>
                 إضافة مصروف متغير
@@ -238,10 +292,10 @@ export default function VariableExpensesPage() {
             }
           />
 
-          {loading && !items.length ? (
+          {loading && !displayedItems.length ? (
             <LoadingState rows={4} />
-          ) : items.length === 0 ? (
-            <EmptyState onAdd={openAddModal} />
+          ) : displayedItems.length === 0 ? (
+            <EmptyState onAdd={openAddModal} monthLabel={monthLabel} />
           ) : (
             <div className="overflow-x-auto -mx-6 px-6">
               <table className="w-full text-sm">
@@ -257,12 +311,19 @@ export default function VariableExpensesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {effectiveItems.map((i) => (
+                  {displayedItems.map((i) => (
                     <tr
                       key={i.id}
-                      className="border-b border-slate-50 hover:bg-slate-50/60 transition-colors"
+                      className={`border-b border-slate-50 transition-colors ${i.isVirtual ? 'bg-primary-50/30 hover:bg-primary-50/50' : 'hover:bg-slate-50/60'}`}
                     >
-                      <td className="py-3 px-4 font-medium text-slate-800 align-top">{i.expenseName}</td>
+                      <td className="py-3 px-4 font-medium text-slate-800 align-top">
+                        <div>{i.expenseName}</div>
+                        {i.isVirtual && (
+                          <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
+                            محسوب تلقائياً من إجمالي غسلات شهر {monthLabel}
+                          </p>
+                        )}
+                      </td>
                       <td className="py-3 px-4 align-top">
                         <span className="inline-flex text-[11px] font-semibold bg-slate-100 text-slate-700 px-2 py-1 rounded-md">
                           {getCategoryLabel(i.categoryId)}
@@ -270,8 +331,8 @@ export default function VariableExpensesPage() {
                       </td>
                       <td className="py-3 px-4 text-center tabular-nums text-slate-700 align-top">
                         <span className="inline-flex items-center justify-center gap-1.5">
-                          <span>{formatNumber(i._eff.quantity)}</span>
-                          {i._eff.isRule && (
+                          <span>{formatNumber(i.quantity)}</span>
+                          {i.isVirtual && (
                             <span
                               className="inline-flex items-center gap-1 bg-primary-50 text-primary-700 border border-primary-100 text-[10px] font-bold px-1.5 py-0.5 rounded-md"
                               title="يُحسب تلقائياً من عداد الغسلات"
@@ -286,35 +347,39 @@ export default function VariableExpensesPage() {
                         {formatCurrency(i.unitCost)}
                       </td>
                       <td className="py-3 px-4 text-left tabular-nums font-bold text-slate-900 align-top">
-                        {formatCurrency(i._eff.totalVariableCost)}
+                        {formatCurrency(i.totalVariableCost)}
                       </td>
                       <td className="py-3 px-4 text-slate-600 align-top">
                         <span className="inline-flex items-center gap-1.5 tabular-nums">
                           <CalendarClock size={13} className="text-slate-400" />
-                          {formatLoggedDate(i.loggedDate)}
+                          {i.isVirtual ? monthLabel : formatLoggedDate(i.loggedDate)}
                         </span>
                       </td>
                       <td className="py-3 px-4 text-left align-top">
-                        <div className="inline-flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => openEditModal(i)}
-                            className="text-slate-400 hover:text-primary-700 p-1.5 rounded-lg hover:bg-primary-50 transition-colors"
-                            aria-label={`تعديل ${i.expenseName}`}
-                            title="تعديل المصروف"
-                          >
-                            <Pencil size={15} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(i)}
-                            className="text-slate-400 hover:text-accent-600 p-1.5 rounded-lg hover:bg-accent-50 transition-colors"
-                            aria-label={`حذف ${i.expenseName}`}
-                            title="حذف المصروف"
-                          >
-                            <Trash2 size={15} />
-                          </button>
-                        </div>
+                        {i.isVirtual ? (
+                          <span className="text-slate-300 text-sm">—</span>
+                        ) : (
+                          <div className="inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => openEditModal(i)}
+                              className="text-slate-400 hover:text-primary-700 p-1.5 rounded-lg hover:bg-primary-50 transition-colors"
+                              aria-label={`تعديل ${i.expenseName}`}
+                              title="تعديل المصروف"
+                            >
+                              <Pencil size={15} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(i)}
+                              className="text-slate-400 hover:text-accent-600 p-1.5 rounded-lg hover:bg-accent-50 transition-colors"
+                              aria-label={`حذف ${i.expenseName}`}
+                              title="حذف المصروف"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -333,7 +398,7 @@ export default function VariableExpensesPage() {
         onAddCategory={handleAddCategory}
         categories={categories}
         initialValues={editingItem}
-        washCount={washCount}
+        washCount={washCountInMonth}
       />
 
       <Toast

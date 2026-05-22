@@ -12,27 +12,14 @@ import { useVariableExpenses } from '../hooks/useVariableExpenses';
 import { useVariableExpenseCategories } from '../hooks/useVariableExpenseCategories';
 import { useMonthlyExpenses } from '../hooks/useMonthlyExpenses';
 import { useAnnualExpenses } from '../hooks/useAnnualExpenses';
-import { effectiveVariableRow } from '../lib/variableExpenseTotals';
+import {
+  todayMonth,
+  formatMonthLabel,
+  listAvailableMonths,
+  sumCompletedWashQuantityInMonth,
+  variableItemsForMonth,
+} from '../lib/variableExpenseTotals';
 import { isSupabaseConfigured, missingEnvNames } from '../lib/supabaseClient';
-
-// ─── Period helpers ───────────────────────────────────────────────────────
-const ARABIC_MONTHS = [
-  'يناير', 'فبراير', 'مارس',   'أبريل', 'مايو',   'يونيو',
-  'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر',
-];
-
-function monthOf(dateStr) {
-  return (dateStr || '').slice(0, 7);
-}
-function todayMonth() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-}
-function formatMonthLabel(ym) {
-  const [y, m] = ym.split('-');
-  const idx = parseInt(m, 10) - 1;
-  return `${ARABIC_MONTHS[idx] || m} ${y}`;
-}
 
 // ─── Income statement row ────────────────────────────────────────────────
 // `kind`: 'plus' (revenue) | 'minus' (cost) | 'subtotal' (gross profit)
@@ -91,42 +78,41 @@ export default function FinancialSummaryPage() {
 
   const [selectedMonth, setSelectedMonth] = useState(todayMonth());
 
-  const categoryMap = useMemo(() => {
-    const m = new Map();
-    varCategories.forEach((c) => m.set(c.id, c));
-    return m;
-  }, [varCategories]);
+  const availableMonths = useMemo(
+    () => listAvailableMonths(washes, variables),
+    [washes, variables],
+  );
 
-  // Union of months found in wash + variable rows; always include today's
-  // month so the user can always file the current period.
-  const availableMonths = useMemo(() => {
-    const set = new Set([todayMonth()]);
-    washes.forEach((w)    => { const ym = monthOf(w.washDate);   if (ym) set.add(ym); });
-    variables.forEach((v) => { const ym = monthOf(v.loggedDate); if (ym) set.add(ym); });
-    return [...set].sort().reverse();
-  }, [washes, variables]);
-
-  // Period-scoped wash counter — drives the biker-commissions rule
-  // contribution for THIS month's statement.
+  // Period-scoped wash counter — drives the virtual biker-commissions
+  // row for THIS month's statement.
   const washCountInMonth = useMemo(
-    () => washes
-      .filter((w) => w.status === 'مكتملة' && monthOf(w.washDate) === selectedMonth)
-      .reduce((s, w) => s + (w.quantity || 0), 0),
+    () => sumCompletedWashQuantityInMonth(washes, selectedMonth),
     [washes, selectedMonth],
+  );
+
+  // Build the same display list the Variable Expenses page uses for this
+  // month — manual non-dynamic rows logged in the month PLUS one virtual
+  // row per dynamic category sized by washCountInMonth × default unit cost.
+  const periodVariableItems = useMemo(
+    () => variableItemsForMonth({
+      manualItems: variables,
+      categories:  varCategories,
+      selectedMonth,
+      washCountInMonth,
+    }),
+    [variables, varCategories, selectedMonth, washCountInMonth],
   );
 
   const revenue = useMemo(
     () => washes
-      .filter((w) => w.status === 'مكتملة' && monthOf(w.washDate) === selectedMonth)
+      .filter((w) => w.status === 'مكتملة' && (w.washDate || '').slice(0, 7) === selectedMonth)
       .reduce((s, w) => s + (w.quantity || 0) * (w.price || 0), 0),
     [washes, selectedMonth],
   );
 
   const variableTotal = useMemo(
-    () => variables
-      .filter((v) => monthOf(v.loggedDate) === selectedMonth)
-      .reduce((sum, item) => sum + effectiveVariableRow(item, categoryMap, washCountInMonth).totalVariableCost, 0),
-    [variables, categoryMap, washCountInMonth, selectedMonth],
+    () => periodVariableItems.reduce((s, r) => s + (r.totalVariableCost || 0), 0),
+    [periodVariableItems],
   );
 
   const monthlyFixed = useMemo(

@@ -6,6 +6,7 @@ import {
   Activity,
   Car,
   BarChart3,
+  Target,
   Handshake,
   Loader2,
 } from 'lucide-react';
@@ -19,6 +20,7 @@ import MonthlyExpensesPage from './components/MonthlyExpensesPage';
 import VariableExpensesPage from './components/VariableExpensesPage';
 import WashesPage from './components/WashesPage';
 import FinancialSummaryPage from './components/FinancialSummaryPage';
+import BudgetsPage from './components/BudgetsPage';
 import PartnersPage from './components/PartnersPage';
 import FinancialEntrySelector from './components/FinancialEntrySelector';
 
@@ -32,6 +34,7 @@ const TABS = [
   { id: 'variable',  label: 'المصاريف المتغيرة',      icon: Activity    },
   { id: 'washes',    label: 'الغسلات',                icon: Car         },
   { id: 'summary',   label: 'الملخص المالي وصافي الربح', icon: BarChart3 },
+  { id: 'budgets',   label: 'الرقابة والميزانيات',    icon: Target      },
   { id: 'partners',  label: 'إدارة الشركاء',          icon: Handshake   },
 ];
 
@@ -96,6 +99,7 @@ export default function App() {
         {activeTab === 'variable'  && <VariableExpensesPage />}
         {activeTab === 'washes'    && <WashesPage />}
         {activeTab === 'summary'   && <FinancialSummaryPage />}
+        {activeTab === 'budgets'   && <BudgetsPage />}
         {activeTab === 'partners'  && <PartnersPage />}
       </div>
 

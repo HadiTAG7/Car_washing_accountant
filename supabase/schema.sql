@@ -182,6 +182,27 @@ create trigger washes_touch
 before update on public.washes
 for each row execute function public.touch_updated_at();
 
+-- ─── category_budgets (Module 7 — budget allocations vs actual spend) ────
+-- One row per budget envelope. category_label is a free-text key matched
+-- against expense names and category labels at display time (no FK so
+-- users can budget for things they haven't yet logged).
+create table if not exists public.category_budgets (
+  id              uuid primary key default gen_random_uuid(),
+  category_label  text not null,
+  budget_type     text not null default 'monthly'
+                  check (budget_type in ('monthly','annual')),
+  amount          numeric(12,2) not null default 0 check (amount >= 0),
+  notes           text,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now()
+);
+create index if not exists category_budgets_type_idx on public.category_budgets(budget_type);
+
+drop trigger if exists category_budgets_touch on public.category_budgets;
+create trigger category_budgets_touch
+before update on public.category_budgets
+for each row execute function public.touch_updated_at();
+
 -- ─── monthly_expenses (Module 3 — recurring monthly operational costs) ───
 -- Stores BOTH unit_cost and total_monthly_cost (= quantity × unit_cost),
 -- so the table can render the unit cost directly without divide-on-read.
@@ -264,6 +285,7 @@ alter table public.monthly_expenses            enable row level security;
 alter table public.variable_expense_categories enable row level security;
 alter table public.variable_expenses           enable row level security;
 alter table public.washes                      enable row level security;
+alter table public.category_budgets             enable row level security;
 
 do $$ begin
   -- Drop existing policies first (idempotent)
@@ -329,6 +351,10 @@ create policy "rw_auth" on public.variable_expenses
 
 drop policy if exists "rw_auth" on public.washes;
 create policy "rw_auth" on public.washes
+  for all to public using (true) with check (true);
+
+drop policy if exists "rw_auth" on public.category_budgets;
+create policy "rw_auth" on public.category_budgets
   for all to public using (true) with check (true);
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -637,6 +663,27 @@ begin
        and (payment_month is null or payment_day is null);
   end if;
 end $$;
+
+-- ─── category_budgets — defensive column repair ──────────────────────────
+-- Ensure the UUID default + check constraints exist on existing DBs.
+alter table public.category_budgets
+  add column if not exists category_label text;
+alter table public.category_budgets
+  add column if not exists budget_type    text not null default 'monthly';
+alter table public.category_budgets
+  add column if not exists amount         numeric(12,2) not null default 0;
+alter table public.category_budgets
+  alter column id set default gen_random_uuid();
+alter table public.category_budgets
+  drop constraint if exists category_budgets_type_chk;
+alter table public.category_budgets
+  add  constraint category_budgets_type_chk
+  check (budget_type in ('monthly','annual'));
+alter table public.category_budgets
+  drop constraint if exists category_budgets_amount_chk;
+alter table public.category_budgets
+  add  constraint category_budgets_amount_chk
+  check (amount >= 0);
 
 -- ─── washes — defensive column repair ─────────────────────────────────────
 -- Ensure all columns + the UUID default + check constraints exist on

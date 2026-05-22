@@ -310,6 +310,34 @@ export function toWashUpdate(updates = {}) {
   return payload;
 }
 
+// ── category_budgets (Module 7) ───────────────────────────────────────────
+// App-side shape: { id, categoryLabel, budgetType, amount }.
+function clampBudgetType(value) {
+  return value === 'annual' ? 'annual' : 'monthly';
+}
+export function mapBudget(row) {
+  return {
+    id:            row.id,
+    categoryLabel: row.category_label || '',
+    budgetType:    clampBudgetType(row.budget_type),
+    amount:        Number(row.amount) || 0,
+  };
+}
+export function toBudgetInsert({ categoryLabel, budgetType, amount }) {
+  return {
+    category_label: String(categoryLabel || '').trim(),
+    budget_type:    clampBudgetType(budgetType),
+    amount:         Math.max(0, Number(amount) || 0),
+  };
+}
+export function toBudgetUpdate(updates = {}) {
+  const payload = {};
+  if (updates.categoryLabel !== undefined) payload.category_label = String(updates.categoryLabel || '').trim();
+  if (updates.budgetType    !== undefined) payload.budget_type    = clampBudgetType(updates.budgetType);
+  if (updates.amount        !== undefined) payload.amount         = Math.max(0, Number(updates.amount) || 0);
+  return payload;
+}
+
 // ── partners ──────────────────────────────────────────────────────────────
 export function mapPartner(row) {
   return {

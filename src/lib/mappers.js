@@ -226,6 +226,7 @@ export function mapVariableExpenseCategory(row) {
     id:        row.id,
     label:     row.label,
     sortOrder: row.sort_order ?? 0,
+    isDynamic: Boolean(row.is_dynamic),
   };
 }
 export function mapVariableExpense(row) {

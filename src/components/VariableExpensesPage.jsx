@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
   Plus, Trash2, Pencil, Wallet, Layers, Scale, CalendarClock, Activity,
+  Check, X,
 } from 'lucide-react';
 import { formatCurrency, formatNumber } from '../data/initialData';
 import TopBar from './TopBar';
@@ -13,7 +14,118 @@ import ErrorState, { SetupRequiredCard } from './ErrorState';
 import Toast from './Toast';
 import { useVariableExpenses } from '../hooks/useVariableExpenses';
 import { useVariableExpenseCategories } from '../hooks/useVariableExpenseCategories';
+import { useSettings } from '../hooks/useSettings';
 import { isSupabaseConfigured, missingEnvNames, describeSupabaseError } from '../lib/supabaseClient';
+
+// ─── Wash counter widget — single source of truth for dynamic rules ───────
+function WashCounterCard({ washCount, onSave }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft]     = useState(String(washCount));
+  const [saving, setSaving]   = useState(false);
+
+  function start() {
+    setDraft(String(washCount));
+    setEditing(true);
+  }
+  function cancel() {
+    setDraft(String(washCount));
+    setEditing(false);
+  }
+  async function commit() {
+    const n = Math.max(0, parseInt(draft, 10) || 0);
+    if (n === washCount) { setEditing(false); return; }
+    setSaving(true);
+    try { await onSave(n); setEditing(false); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <div className="rounded-2xl border border-primary-100 bg-gradient-to-l from-primary-50 to-white shadow-sm p-5">
+      <div className="flex items-start gap-4">
+        <div className="bg-primary-700 text-white w-12 h-12 rounded-2xl flex items-center justify-center shrink-0">
+          <Layers size={22} strokeWidth={2.2} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-xs text-primary-700 font-bold tracking-wide">إجمالي الغسلات المحققة (الفترة الحالية)</p>
+          <div className="flex items-baseline gap-3 mt-1">
+            {editing ? (
+              <>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter')  { e.preventDefault(); commit(); }
+                    if (e.key === 'Escape') { cancel(); }
+                  }}
+                  autoFocus
+                  className="w-40 px-3 py-1.5 border border-primary-200 rounded-lg text-2xl font-extrabold text-slate-900 tabular-nums bg-white focus:outline-none focus:ring-2 focus:ring-primary-300"
+                />
+                <button
+                  type="button"
+                  onClick={commit}
+                  disabled={saving}
+                  className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white transition-colors"
+                  aria-label="حفظ"
+                >
+                  <Check size={16} strokeWidth={2.5} />
+                </button>
+                <button
+                  type="button"
+                  onClick={cancel}
+                  className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 text-slate-500 transition-colors"
+                  aria-label="إلغاء"
+                >
+                  <X size={16} />
+                </button>
+              </>
+            ) : (
+              <>
+                <span className="text-3xl font-extrabold text-slate-900 tabular-nums">
+                  {formatNumber(washCount)}
+                </span>
+                <span className="text-sm text-slate-500">غسلة</span>
+                <button
+                  type="button"
+                  onClick={start}
+                  className="text-primary-700 hover:text-primary-900 p-1.5 rounded-lg hover:bg-primary-100 transition-colors"
+                  title="تعديل العداد"
+                  aria-label="تعديل العداد"
+                >
+                  <Pencil size={15} />
+                </button>
+              </>
+            )}
+          </div>
+          <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
+            تتغير تكلفة العمولات المرتبطة بالغسلات تلقائياً عند تعديل هذا العداد.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Compute the effective (display-time) quantity + total for a row,
+// honoring the row's category-level is_dynamic flag.
+function effectiveRow(item, categoryMap, washCount) {
+  const cat    = categoryMap.get(item.categoryId);
+  const isRule = Boolean(cat?.isDynamic);
+  if (isRule) {
+    return {
+      quantity:           washCount,
+      totalVariableCost:  washCount * item.unitCost,
+      isRule:             true,
+    };
+  }
+  return {
+    quantity:           item.quantity,
+    totalVariableCost:  item.totalVariableCost,
+    isRule:             false,
+  };
+}
 
 function EmptyState({ onAdd }) {
   return (
@@ -55,6 +167,10 @@ export default function VariableExpensesPage() {
     categories, addCategory, getCategoryLabel,
   } = useVariableExpenseCategories();
 
+  const { value: washSettings, setValue: saveWashSettings } =
+    useSettings('total_achieved_washes', { count: 0 });
+  const washCount = Math.max(0, parseInt(washSettings?.count, 10) || 0);
+
   const [localOpen, setLocalOpen]         = useState(false);
   const [editingItem, setEditingItem]     = useState(null);
   const [mutationError, setMutationError] = useState(null);
@@ -72,15 +188,40 @@ export default function VariableExpensesPage() {
   function openEditModal(item) { setLocalOpen(false); setEditingItem(item); }
   function closeModal()        { setLocalOpen(false); setEditingItem(null); }
 
+  // Categories keyed by id, so the table + KPI calc can cheaply look up
+  // each row's dynamic flag.
+  const categoryMap = useMemo(() => {
+    const m = new Map();
+    categories.forEach((c) => m.set(c.id, c));
+    return m;
+  }, [categories]);
+
+  // Compose effective rows once — every other render branch reads from
+  // here so the dashboard auto-scales when the wash counter changes.
+  const effectiveItems = useMemo(
+    () => items.map((i) => ({ ...i, _eff: effectiveRow(i, categoryMap, washCount) })),
+    [items, categoryMap, washCount],
+  );
+
   const totals = useMemo(() => {
     let cost = 0, units = 0;
-    items.forEach((i) => {
-      cost  += i.totalVariableCost;
-      units += i.quantity;
+    effectiveItems.forEach((row) => {
+      cost  += row._eff.totalVariableCost;
+      units += row._eff.quantity;
     });
     const weightedUnitCost = units > 0 ? cost / units : 0;
     return { cost, units, weightedUnitCost };
-  }, [items]);
+  }, [effectiveItems]);
+
+  async function handleSaveWashCount(nextCount) {
+    try {
+      await saveWashSettings({ count: nextCount });
+      showToast('تم تحديث عداد الغسلات');
+    } catch (e) {
+      console.error('Wash counter save error:', e);
+      showToast(describeSupabaseError(e) || 'تعذّر تحديث العداد', 'error');
+    }
+  }
 
   async function handleAddItem(item) {
     try { await addItem(item); showToast('تم إضافة المصروف المتغير بنجاح'); }
@@ -135,6 +276,8 @@ export default function VariableExpensesPage() {
             onRetry={refetch}
           />
         )}
+
+        <WashCounterCard washCount={washCount} onSave={handleSaveWashCount} />
 
         {/* ── KPI summary ─────────────────────────────────────────── */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
@@ -203,7 +346,7 @@ export default function VariableExpensesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((i) => (
+                  {effectiveItems.map((i) => (
                     <tr
                       key={i.id}
                       className="border-b border-slate-50 hover:bg-slate-50/60 transition-colors"
@@ -215,13 +358,24 @@ export default function VariableExpensesPage() {
                         </span>
                       </td>
                       <td className="py-3 px-4 text-center tabular-nums text-slate-700 align-top">
-                        {formatNumber(i.quantity)}
+                        <span className="inline-flex items-center justify-center gap-1.5">
+                          <span>{formatNumber(i._eff.quantity)}</span>
+                          {i._eff.isRule && (
+                            <span
+                              className="inline-flex items-center gap-1 bg-primary-50 text-primary-700 border border-primary-100 text-[10px] font-bold px-1.5 py-0.5 rounded-md"
+                              title="يُحسب تلقائياً من عداد الغسلات"
+                            >
+                              <Activity size={9} strokeWidth={2.5} />
+                              تلقائي
+                            </span>
+                          )}
+                        </span>
                       </td>
                       <td className="py-3 px-4 text-left tabular-nums text-slate-700 align-top">
                         {formatCurrency(i.unitCost)}
                       </td>
                       <td className="py-3 px-4 text-left tabular-nums font-bold text-slate-900 align-top">
-                        {formatCurrency(i.totalVariableCost)}
+                        {formatCurrency(i._eff.totalVariableCost)}
                       </td>
                       <td className="py-3 px-4 text-slate-600 align-top">
                         <span className="inline-flex items-center gap-1.5 tabular-nums">
@@ -268,6 +422,7 @@ export default function VariableExpensesPage() {
         onAddCategory={handleAddCategory}
         categories={categories}
         initialValues={editingItem}
+        washCount={washCount}
       />
 
       <Toast

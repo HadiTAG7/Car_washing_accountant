@@ -11,7 +11,7 @@ export function useVariableExpenseCategories() {
     () => supabase
       .from('variable_expense_categories')
       // Explicit column list — never `select('*')`.
-      .select('id, label, sort_order')
+      .select('id, label, sort_order, is_dynamic')
       .order('sort_order'),
     {
       enabled: isSupabaseConfigured,

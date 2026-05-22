@@ -121,6 +121,7 @@ create table if not exists public.variable_expense_categories (
   id          uuid primary key default gen_random_uuid(),
   label       text not null,
   sort_order  integer not null default 0,
+  is_dynamic  boolean not null default false,
   created_at  timestamptz not null default now()
 );
 
@@ -395,6 +396,13 @@ values (
 )
 on conflict (key) do nothing;
 
+-- Total achieved washes counter (Module 4 dynamic-rule baseline).
+-- Edited inline from the Variable Expenses page; rule-based categories
+-- like "عمولات البايكرز والموزعين" multiply this against their unit_cost.
+insert into public.app_settings (key, value)
+values ('total_achieved_washes', '{"count":0}'::jsonb)
+on conflict (key) do nothing;
+
 -- ─── annual_expense_categories — defensive column repair ──────────────────
 -- If an older version of this table exists (e.g. created in the dashboard
 -- with different column names or without a default on id), `create table
@@ -507,6 +515,8 @@ alter table public.variable_expense_categories
 alter table public.variable_expense_categories
   add column if not exists sort_order integer not null default 0;
 alter table public.variable_expense_categories
+  add column if not exists is_dynamic boolean not null default false;
+alter table public.variable_expense_categories
   add column if not exists created_at timestamptz not null default now();
 alter table public.variable_expense_categories
   alter column id set default gen_random_uuid();
@@ -540,6 +550,17 @@ select * from (values
   ('أخرى',                       5)
 ) as t(label, sort_order)
 where not exists (select 1 from public.variable_expense_categories);
+
+-- Flag the default biker commissions category as a dynamic rule (its
+-- quantity is computed live from total_achieved_washes). Guarded so a
+-- user's later toggles of other categories aren't clobbered on re-runs.
+update public.variable_expense_categories
+   set is_dynamic = true
+ where label = 'عمولات البايكرز والموزعين'
+   and is_dynamic = false
+   and not exists (
+     select 1 from public.variable_expense_categories where is_dynamic = true
+   );
 
 -- ─── annual_expenses — defensive column repair ────────────────────────────
 -- Existing DBs created before the quantity column was added get it now

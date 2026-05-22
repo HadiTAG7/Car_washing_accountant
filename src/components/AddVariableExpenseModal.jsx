@@ -20,7 +20,7 @@ const EMPTY_TEMPLATE = {
 
 export default function AddVariableExpenseModal({
   isOpen, onClose, onAdd, onUpdate, onAddCategory,
-  categories = [], initialValues = null,
+  categories = [], initialValues = null, washCount = 0,
 }) {
   const editing = Boolean(initialValues?.id);
   const [form, setForm] = useState(EMPTY_TEMPLATE);
@@ -64,13 +64,22 @@ export default function AddVariableExpenseModal({
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   }
 
-  const quantity          = Math.max(1, parseInt(form.quantity, 10) || 0);
+  // Is the selected category a dynamic rule (auto-quantity from wash counter)?
+  const selectedCategory = categories.find((c) => c.id === form.categoryId);
+  const isRule           = Boolean(selectedCategory?.isDynamic);
+  const safeWashCount    = Math.max(0, parseInt(washCount, 10) || 0);
+
+  // For rule rows, quantity is read from the live wash counter — never
+  // from the form field. The form's quantity input is locked + readOnly.
+  const manualQuantity    = Math.max(1, parseInt(form.quantity, 10) || 0);
+  const effectiveQuantity = isRule ? safeWashCount : manualQuantity;
   const unitCost          = Math.max(0, parseFloat(form.unitCost) || 0);
-  const totalVariableCost = quantity * unitCost;
+  const totalVariableCost = effectiveQuantity * unitCost;
+
   const isValid =
     form.expenseName.trim().length > 0 &&
     Boolean(form.categoryId) &&
-    quantity > 0 &&
+    (isRule ? safeWashCount > 0 : manualQuantity > 0) &&
     unitCost > 0;
 
   async function handleSubmit(e) {
@@ -81,7 +90,10 @@ export default function AddVariableExpenseModal({
       const payload = {
         expenseName:       form.expenseName.trim(),
         categoryId:        form.categoryId,
-        quantity,
+        // For rule rows we snapshot the live wash count so the persisted
+        // columns stay valid; the page overrides quantity + total on
+        // display so dashboards still auto-scale.
+        quantity:          effectiveQuantity,
         unitCost,
         totalVariableCost,
         loggedDate:        form.loggedDate || '',
@@ -240,13 +252,26 @@ export default function AddVariableExpenseModal({
                 id="quantity"
                 type="number"
                 name="quantity"
-                value={form.quantity}
+                value={isRule ? String(safeWashCount) : form.quantity}
                 onChange={handleChange}
                 min="1"
                 step="1"
-                required
-                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+                required={!isRule}
+                disabled={isRule}
+                readOnly={isRule}
+                className={
+                  isRule
+                    ? 'w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-500 font-medium tabular-nums bg-slate-100 cursor-not-allowed focus:outline-none'
+                    : 'w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent'
+                }
+                title={isRule ? 'يُحسب تلقائياً من عداد الغسلات' : undefined}
               />
+              {isRule && (
+                <p className="mt-1.5 inline-flex items-start gap-1.5 text-[11px] font-semibold text-primary-700 bg-primary-50 border border-primary-100 rounded-lg px-2.5 py-1 leading-relaxed">
+                  <Activity size={11} className="mt-0.5 shrink-0" />
+                  <span>يتم الحساب تلقائياً بناءً على عداد المبيعات الفعلي</span>
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="unitCost">
@@ -281,13 +306,13 @@ export default function AddVariableExpenseModal({
             />
           </div>
 
-          {/* Live total — quantity × unit cost */}
+          {/* Live total — effective quantity × unit cost (live for rule rows) */}
           <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 text-sm">
             <div className="flex items-baseline justify-between gap-3">
               <span className="text-slate-600">إجمالي التكلفة المتغيرة:</span>
               <span className="font-bold text-slate-900 tabular-nums">
-                {quantity > 0 && unitCost > 0
-                  ? `${formatNumber(quantity)} × ${formatCurrency(unitCost)} = ${formatCurrency(totalVariableCost)}`
+                {effectiveQuantity > 0 && unitCost > 0
+                  ? `${formatNumber(effectiveQuantity)} × ${formatCurrency(unitCost)} = ${formatCurrency(totalVariableCost)}`
                   : formatCurrency(0)}
               </span>
             </div>

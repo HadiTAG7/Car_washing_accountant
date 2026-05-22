@@ -265,52 +265,48 @@ export function toVariableExpenseUpdate(updates = {}) {
   return payload;
 }
 
-// ── washes (Module 5) ─────────────────────────────────────────────────────
-// App-side shape: { id, vehicleType, plateNumber, serviceType, bikerName,
-// price, status, washDate }. Status drives the "completed" count that
-// Module 4's biker-commissions rule reads to auto-scale.
-const WASH_VEHICLES = new Set(['صغيرة', 'وسط', 'جيب', 'كبيرة']);
-const WASH_SERVICES = new Set(['غسيل خارجي', 'غسيل كامل']);
+// ── washes (Module 5 — bulk-quantity log) ─────────────────────────────────
+// App-side shape: { id, bikerName, quantity, price, status, washDate }.
+// Each row represents a batch: `quantity` washes at `price` each. The
+// Variable Expenses biker-commissions rule sums quantity across rows
+// where status = 'مكتملة' to auto-scale.
 function clampWashStatus(value) {
   return value === 'قيد التنفيذ' ? 'قيد التنفيذ' : 'مكتملة';
 }
-function clampWashEnum(value, allowed, fallback) {
-  return allowed.has(value) ? value : fallback;
+function clampWashQuantity(value) {
+  const n = parseInt(value, 10);
+  return Number.isFinite(n) && n > 0 ? n : 1;
 }
 export function mapWash(row) {
   return {
-    id:           row.id,
-    vehicleType:  row.vehicle_type,
-    plateNumber:  row.plate_number,
-    serviceType:  row.service_type,
-    bikerName:    row.biker_name,
-    price:        Number(row.price) || 0,
-    status:       clampWashStatus(row.status),
-    washDate:     row.wash_date || '',
+    id:         row.id,
+    bikerName:  row.biker_name || '',
+    quantity:   clampWashQuantity(row.quantity),
+    price:      Number(row.price) || 0,
+    status:     clampWashStatus(row.status),
+    washDate:   row.wash_date || '',
   };
 }
-export function toWashInsert({
-  vehicleType, plateNumber, serviceType, bikerName, price, status, washDate,
-}) {
+export function toWashInsert({ bikerName, quantity, price, status, washDate }) {
+  const trimmed = String(bikerName || '').trim();
   return {
-    vehicle_type: clampWashEnum(vehicleType, WASH_VEHICLES, 'صغيرة'),
-    plate_number: String(plateNumber || '').trim(),
-    service_type: clampWashEnum(serviceType, WASH_SERVICES, 'غسيل خارجي'),
-    biker_name:   String(bikerName || '').trim(),
-    price:        Math.max(0, Number(price) || 0),
-    status:       clampWashStatus(status),
-    wash_date:    washDate || null,
+    biker_name: trimmed || null,
+    quantity:   clampWashQuantity(quantity),
+    price:      Math.max(0, Number(price) || 0),
+    status:     clampWashStatus(status),
+    wash_date:  washDate || null,
   };
 }
 export function toWashUpdate(updates = {}) {
   const payload = {};
-  if (updates.vehicleType !== undefined) payload.vehicle_type = clampWashEnum(updates.vehicleType, WASH_VEHICLES, 'صغيرة');
-  if (updates.plateNumber !== undefined) payload.plate_number = String(updates.plateNumber || '').trim();
-  if (updates.serviceType !== undefined) payload.service_type = clampWashEnum(updates.serviceType, WASH_SERVICES, 'غسيل خارجي');
-  if (updates.bikerName   !== undefined) payload.biker_name   = String(updates.bikerName   || '').trim();
-  if (updates.price       !== undefined) payload.price        = Math.max(0, Number(updates.price) || 0);
-  if (updates.status      !== undefined) payload.status       = clampWashStatus(updates.status);
-  if (updates.washDate    !== undefined) payload.wash_date    = updates.washDate || null;
+  if (updates.bikerName !== undefined) {
+    const trimmed = String(updates.bikerName || '').trim();
+    payload.biker_name = trimmed || null;
+  }
+  if (updates.quantity  !== undefined) payload.quantity   = clampWashQuantity(updates.quantity);
+  if (updates.price     !== undefined) payload.price      = Math.max(0, Number(updates.price) || 0);
+  if (updates.status    !== undefined) payload.status     = clampWashStatus(updates.status);
+  if (updates.washDate  !== undefined) payload.wash_date  = updates.washDate || null;
   return payload;
 }
 

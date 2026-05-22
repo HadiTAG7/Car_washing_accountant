@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react';
 import { X, Plus, Pencil, Car } from 'lucide-react';
-
-const VEHICLE_TYPES = ['صغيرة', 'وسط', 'جيب', 'كبيرة'];
-const SERVICE_TYPES = ['غسيل خارجي', 'غسيل كامل'];
+import { formatCurrency, formatNumber } from '../data/initialData';
 
 function todayISO() {
   const d = new Date();
@@ -11,12 +9,10 @@ function todayISO() {
 }
 
 const EMPTY_TEMPLATE = {
-  vehicleType: VEHICLE_TYPES[0],
-  plateNumber: '',
-  serviceType: SERVICE_TYPES[0],
-  bikerName:   '',
-  price:       '40',
-  washDate:    '',
+  bikerName:  '',
+  quantity:   '1',
+  price:      '40',
+  washDate:   '',
 };
 
 export default function AddWashModal({
@@ -30,12 +26,10 @@ export default function AddWashModal({
     if (!isOpen) return;
     if (initialValues?.id) {
       setForm({
-        vehicleType: initialValues.vehicleType || VEHICLE_TYPES[0],
-        plateNumber: initialValues.plateNumber || '',
-        serviceType: initialValues.serviceType || SERVICE_TYPES[0],
-        bikerName:   initialValues.bikerName   || '',
-        price:       initialValues.price ? String(initialValues.price) : '0',
-        washDate:    initialValues.washDate    || '',
+        bikerName: initialValues.bikerName || '',
+        quantity:  String(Math.max(1, parseInt(initialValues.quantity, 10) || 1)),
+        price:     initialValues.price ? String(initialValues.price) : '0',
+        washDate:  initialValues.washDate || '',
       });
     } else {
       setForm({ ...EMPTY_TEMPLATE, washDate: todayISO() });
@@ -46,13 +40,10 @@ export default function AddWashModal({
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   }
 
-  const price = Math.max(0, parseFloat(form.price) || 0);
-  const isValid =
-    form.plateNumber.trim().length > 0 &&
-    form.bikerName.trim().length   > 0 &&
-    VEHICLE_TYPES.includes(form.vehicleType) &&
-    SERVICE_TYPES.includes(form.serviceType) &&
-    price > 0;
+  const quantity     = Math.max(1, parseInt(form.quantity, 10) || 0);
+  const price        = Math.max(0, parseFloat(form.price) || 0);
+  const batchRevenue = quantity * price;
+  const isValid      = quantity > 0 && price > 0;
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -60,17 +51,15 @@ export default function AddWashModal({
     setSubmitting(true);
     try {
       const payload = {
-        vehicleType: form.vehicleType,
-        plateNumber: form.plateNumber.trim(),
-        serviceType: form.serviceType,
-        bikerName:   form.bikerName.trim(),
+        bikerName: form.bikerName.trim(),
+        quantity,
         price,
-        washDate:    form.washDate || '',
+        washDate:  form.washDate || '',
       };
       if (editing && onUpdate) {
         await onUpdate(initialValues.id, payload);
       } else if (onAdd) {
-        // Default new washes to 'مكتملة' so the biker-commissions rule
+        // Default new batches to 'مكتملة' so the biker-commissions rule
         // picks them up immediately. Status can be flipped from the table.
         await onAdd({ ...payload, status: 'مكتملة' });
       }
@@ -94,7 +83,7 @@ export default function AddWashModal({
             <span className="bg-emerald-50 text-emerald-600 w-9 h-9 rounded-xl flex items-center justify-center">
               <HeaderIcon size={18} />
             </span>
-            {editing ? 'تعديل غسلة' : 'إضافة غسلة جديدة'}
+            {editing ? 'تعديل دفعة غسلات' : 'إضافة دفعة غسلات'}
           </h3>
           <button
             type="button"
@@ -108,62 +97,8 @@ export default function AddWashModal({
 
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
           <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="plateNumber">
-              رقم اللوحة
-            </label>
-            <input
-              id="plateNumber"
-              type="text"
-              name="plateNumber"
-              value={form.plateNumber}
-              onChange={handleChange}
-              placeholder="مثال: أ ب ج 1234"
-              autoFocus
-              required
-              className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="vehicleType">
-                نوع السيارة
-              </label>
-              <select
-                id="vehicleType"
-                name="vehicleType"
-                value={form.vehicleType}
-                onChange={handleChange}
-                required
-                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium bg-white focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent"
-              >
-                {VEHICLE_TYPES.map((v) => (
-                  <option key={v} value={v}>{v}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="serviceType">
-                نوع الخدمة
-              </label>
-              <select
-                id="serviceType"
-                name="serviceType"
-                value={form.serviceType}
-                onChange={handleChange}
-                required
-                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium bg-white focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent"
-              >
-                {SERVICE_TYPES.map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div>
             <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="bikerName">
-              اسم البايكر المسؤول
+              اسم البايكر المسؤول <span className="text-[11px] font-normal text-slate-400">(اختياري)</span>
             </label>
             <input
               id="bikerName"
@@ -171,13 +106,29 @@ export default function AddWashModal({
               name="bikerName"
               value={form.bikerName}
               onChange={handleChange}
-              placeholder="مثال: أحمد"
-              required
+              placeholder="مثال: أحمد، أو فريق الورديّة الصباحية"
+              autoFocus
               className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="quantity">
+                عدد الغسلات
+              </label>
+              <input
+                id="quantity"
+                type="number"
+                name="quantity"
+                value={form.quantity}
+                onChange={handleChange}
+                min="1"
+                step="1"
+                required
+                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent"
+              />
+            </div>
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="price">
                 سعر الغسلة (ر.س)
@@ -195,18 +146,31 @@ export default function AddWashModal({
                 className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent"
               />
             </div>
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="washDate">
-                تاريخ الغسلة
-              </label>
-              <input
-                id="washDate"
-                type="date"
-                name="washDate"
-                value={form.washDate}
-                onChange={handleChange}
-                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent"
-              />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="washDate">
+              تاريخ الغسلة
+            </label>
+            <input
+              id="washDate"
+              type="date"
+              name="washDate"
+              value={form.washDate}
+              onChange={handleChange}
+              className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent"
+            />
+          </div>
+
+          {/* Live batch revenue — quantity × price */}
+          <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 text-sm">
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-slate-600">إجمالي إيرادات الدفعة:</span>
+              <span className="font-bold text-slate-900 tabular-nums">
+                {quantity > 0 && price > 0
+                  ? `${formatNumber(quantity)} × ${formatCurrency(price)} = ${formatCurrency(batchRevenue)}`
+                  : formatCurrency(0)}
+              </span>
             </div>
           </div>
 
@@ -219,7 +183,7 @@ export default function AddWashModal({
               {editing ? <Pencil size={18} /> : <Plus size={18} />}
               {submitting
                 ? (editing ? 'جارٍ الحفظ...' : 'جارٍ الإضافة...')
-                : (editing ? 'حفظ التعديلات' : 'إضافة الغسلة')}
+                : (editing ? 'حفظ التعديلات' : 'إضافة الدفعة')}
             </button>
             <button
               type="button"

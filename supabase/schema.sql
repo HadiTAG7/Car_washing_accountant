@@ -158,16 +158,14 @@ create table if not exists public.monthly_expense_categories (
   created_at  timestamptz not null default now()
 );
 
--- ─── washes (Module 5 — service log; drives wash-linked variable rules) ──
--- Every recorded wash becomes one row here. The Variable Expenses page
--- counts the rows with status = 'مكتملة' to auto-scale the biker
+-- ─── washes (Module 5 — bulk-quantity service log) ───────────────────────
+-- Each row represents a batch of N washes (quantity column). The Variable
+-- Expenses page sums quantity for completed rows to auto-scale the biker
 -- commissions rule.
 create table if not exists public.washes (
   id              uuid primary key default gen_random_uuid(),
-  vehicle_type    text not null check (vehicle_type in ('صغيرة','وسط','جيب','كبيرة')),
-  plate_number    text not null,
-  service_type    text not null check (service_type in ('غسيل خارجي','غسيل كامل')),
-  biker_name      text not null,
+  biker_name      text,
+  quantity        integer not null default 1 check (quantity > 0),
   price           numeric(12,2) not null default 40 check (price >= 0),
   status          text not null default 'مكتملة'
                   check (status in ('مكتملة','قيد التنفيذ')),
@@ -644,12 +642,6 @@ end $$;
 -- Ensure all columns + the UUID default + check constraints exist on
 -- partial/older DBs. Idempotent on re-run.
 alter table public.washes
-  add column if not exists vehicle_type text;
-alter table public.washes
-  add column if not exists plate_number text;
-alter table public.washes
-  add column if not exists service_type text;
-alter table public.washes
   add column if not exists biker_name   text;
 alter table public.washes
   add column if not exists price        numeric(12,2) not null default 40;
@@ -660,16 +652,6 @@ alter table public.washes
 alter table public.washes
   alter column id set default gen_random_uuid();
 alter table public.washes
-  drop constraint if exists washes_vehicle_type_chk;
-alter table public.washes
-  add  constraint washes_vehicle_type_chk
-  check (vehicle_type in ('صغيرة','وسط','جيب','كبيرة'));
-alter table public.washes
-  drop constraint if exists washes_service_type_chk;
-alter table public.washes
-  add  constraint washes_service_type_chk
-  check (service_type in ('غسيل خارجي','غسيل كامل'));
-alter table public.washes
   drop constraint if exists washes_status_chk;
 alter table public.washes
   add  constraint washes_status_chk
@@ -679,6 +661,38 @@ alter table public.washes
 alter table public.washes
   add  constraint washes_price_chk
   check (price >= 0);
+
+-- Bulk-quantity refactor: add the new `quantity` column + soften the
+-- legacy per-car columns so existing rows survive but new inserts no
+-- longer need vehicle_type / plate_number / service_type / biker_name.
+-- check (x in (...)) constraints on the enum columns pass NULLs by
+-- default, so no constraint drop is required there.
+alter table public.washes
+  add column if not exists quantity integer not null default 1;
+alter table public.washes
+  drop constraint if exists washes_quantity_chk;
+alter table public.washes
+  add  constraint washes_quantity_chk
+  check (quantity > 0);
+do $$
+begin
+  if exists (select 1 from information_schema.columns
+              where table_schema='public' and table_name='washes'
+                and column_name='vehicle_type') then
+    alter table public.washes alter column vehicle_type drop not null;
+  end if;
+  if exists (select 1 from information_schema.columns
+              where table_schema='public' and table_name='washes'
+                and column_name='plate_number') then
+    alter table public.washes alter column plate_number drop not null;
+  end if;
+  if exists (select 1 from information_schema.columns
+              where table_schema='public' and table_name='washes'
+                and column_name='service_type') then
+    alter table public.washes alter column service_type drop not null;
+  end if;
+end $$;
+alter table public.washes alter column biker_name drop not null;
 
 -- Tell PostgREST to refresh its schema introspection now that the table
 -- and its columns are guaranteed. Without this, the REST API can keep

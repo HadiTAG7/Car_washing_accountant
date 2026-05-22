@@ -104,12 +104,13 @@ export default function VariableExpensesPage() {
     categories, addCategory, getCategoryLabel,
   } = useVariableExpenseCategories();
 
-  // Live wash counter — derived from the new washes module. Each visit
-  // to this tab refetches via useWashes(), so cross-tab additions appear
-  // automatically without any manual sync.
+  // Live wash counter — sum of quantity across completed batches. One
+  // bulk row with quantity=50 contributes 50, NOT 1.
   const { items: washes } = useWashes();
   const washCount = useMemo(
-    () => washes.filter((w) => w.status === 'مكتملة').length,
+    () => washes
+      .filter((w) => w.status === 'مكتملة')
+      .reduce((sum, w) => sum + (w.quantity || 0), 0),
     [washes],
   );
 

@@ -98,11 +98,12 @@ export default function WashesPage() {
     const today = todayISO();
     let completed = 0, revenue = 0, todays = 0;
     items.forEach((w) => {
+      const q = w.quantity || 0;
       if (w.status === 'مكتملة') {
-        completed += 1;
-        revenue   += w.price;
+        completed += q;
+        revenue   += q * w.price;
       }
-      if (w.washDate === today) todays += 1;
+      if (w.washDate === today) todays += q;
     });
     return { completed, revenue, todays };
   }, [items]);
@@ -121,7 +122,7 @@ export default function WashesPage() {
   }
   async function handleDelete(item) {
     const confirmed = typeof window !== 'undefined'
-      ? window.confirm(`هل تريد حذف غسلة "${item.plateNumber}"؟ لا يمكن التراجع.`)
+      ? window.confirm(`هل تريد حذف هذه الدفعة (${formatNumber(item.quantity)} غسلة)؟ لا يمكن التراجع.`)
       : true;
     if (!confirmed) return;
     try { await deleteItem(item.id); showToast('تم حذف الغسلة'); }
@@ -164,8 +165,8 @@ export default function WashesPage() {
             value={formatNumber(totals.completed)}
             sub={
               items.length === 0
-                ? 'ابدأ بتسجيل أول غسلة'
-                : `${formatNumber(items.length)} ${items.length === 1 ? 'غسلة' : 'غسلات'} مسجّلة`
+                ? 'ابدأ بتسجيل أول دفعة'
+                : `${formatNumber(items.length)} ${items.length === 1 ? 'دفعة' : 'دفعات'} مسجّلة`
             }
           />
           <StatCard
@@ -174,7 +175,7 @@ export default function WashesPage() {
             iconColor="text-primary-700"
             label="إجمالي الإيرادات"
             value={formatCurrency(totals.revenue)}
-            sub="من الغسلات المكتملة فقط"
+            sub="عدد الغسلات × سعر الغسلة (للدفعات المكتملة)"
           />
           <StatCard
             icon={CalendarClock}
@@ -182,7 +183,7 @@ export default function WashesPage() {
             iconColor="text-amber-600"
             label="غسلات اليوم"
             value={formatNumber(totals.todays)}
-            sub="جميع الحالات لتاريخ اليوم"
+            sub="إجمالي الغسلات المسجّلة لتاريخ اليوم"
           />
         </div>
 
@@ -207,69 +208,73 @@ export default function WashesPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-right text-[11px] font-bold text-slate-500 uppercase border-b border-slate-100">
-                    <th className="py-3 px-4">نوع السيارة</th>
-                    <th className="py-3 px-4">رقم اللوحة</th>
-                    <th className="py-3 px-4">نوع الخدمة</th>
-                    <th className="py-3 px-4">البايكر</th>
-                    <th className="py-3 px-4 text-left tabular-nums">السعر</th>
+                    <th className="py-3 px-4">البيان / اسم البايكر</th>
+                    <th className="py-3 px-4 text-center tabular-nums">عدد الغسلات</th>
+                    <th className="py-3 px-4 text-left tabular-nums">سعر الغسلة</th>
+                    <th className="py-3 px-4 text-left tabular-nums">إجمالي الإيرادات</th>
                     <th className="py-3 px-4">التاريخ</th>
                     <th className="py-3 px-4">الحالة</th>
                     <th className="py-3 px-4 text-left w-20">إجراءات</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((w) => (
-                    <tr
-                      key={w.id}
-                      className="border-b border-slate-50 hover:bg-slate-50/60 transition-colors"
-                    >
-                      <td className="py-3 px-4 align-top">
-                        <span className="inline-flex text-[11px] font-semibold bg-slate-100 text-slate-700 px-2 py-1 rounded-md">
-                          {w.vehicleType}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 font-medium text-slate-800 align-top tabular-nums">{w.plateNumber}</td>
-                      <td className="py-3 px-4 text-slate-700 align-top">{w.serviceType}</td>
-                      <td className="py-3 px-4 text-slate-700 align-top">{w.bikerName}</td>
-                      <td className="py-3 px-4 text-left tabular-nums font-bold text-slate-900 align-top">
-                        {formatCurrency(w.price)}
-                      </td>
-                      <td className="py-3 px-4 text-slate-600 align-top">
-                        <span className="inline-flex items-center gap-1.5 tabular-nums">
-                          <CalendarClock size={13} className="text-slate-400" />
-                          {formatWashDate(w.washDate)}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 align-top">
-                        <WashStatusPill
-                          status={w.status}
-                          onChange={(next) => handleUpdateStatus(w.id, next)}
-                        />
-                      </td>
-                      <td className="py-3 px-4 text-left align-top">
-                        <div className="inline-flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => openEditModal(w)}
-                            className="text-slate-400 hover:text-primary-700 p-1.5 rounded-lg hover:bg-primary-50 transition-colors"
-                            aria-label={`تعديل غسلة ${w.plateNumber}`}
-                            title="تعديل الغسلة"
-                          >
-                            <Pencil size={15} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(w)}
-                            className="text-slate-400 hover:text-accent-600 p-1.5 rounded-lg hover:bg-accent-50 transition-colors"
-                            aria-label={`حذف غسلة ${w.plateNumber}`}
-                            title="حذف الغسلة"
-                          >
-                            <Trash2 size={15} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {items.map((w) => {
+                    const total = (w.quantity || 0) * (w.price || 0);
+                    const label = w.bikerName || '—';
+                    return (
+                      <tr
+                        key={w.id}
+                        className="border-b border-slate-50 hover:bg-slate-50/60 transition-colors"
+                      >
+                        <td className="py-3 px-4 font-medium text-slate-800 align-top">
+                          {label}
+                        </td>
+                        <td className="py-3 px-4 text-center tabular-nums text-slate-700 align-top">
+                          {formatNumber(w.quantity)}
+                        </td>
+                        <td className="py-3 px-4 text-left tabular-nums text-slate-700 align-top">
+                          {formatCurrency(w.price)}
+                        </td>
+                        <td className="py-3 px-4 text-left tabular-nums font-bold text-slate-900 align-top">
+                          {formatCurrency(total)}
+                        </td>
+                        <td className="py-3 px-4 text-slate-600 align-top">
+                          <span className="inline-flex items-center gap-1.5 tabular-nums">
+                            <CalendarClock size={13} className="text-slate-400" />
+                            {formatWashDate(w.washDate)}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 align-top">
+                          <WashStatusPill
+                            status={w.status}
+                            onChange={(next) => handleUpdateStatus(w.id, next)}
+                          />
+                        </td>
+                        <td className="py-3 px-4 text-left align-top">
+                          <div className="inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => openEditModal(w)}
+                              className="text-slate-400 hover:text-primary-700 p-1.5 rounded-lg hover:bg-primary-50 transition-colors"
+                              aria-label={`تعديل دفعة ${label}`}
+                              title="تعديل الدفعة"
+                            >
+                              <Pencil size={15} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(w)}
+                              className="text-slate-400 hover:text-accent-600 p-1.5 rounded-lg hover:bg-accent-50 transition-colors"
+                              aria-label={`حذف دفعة ${label}`}
+                              title="حذف الدفعة"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

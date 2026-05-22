@@ -8,7 +8,7 @@ export function useWashes() {
     () => supabase
       .from('washes')
       // Explicit column list — never `select('*')`.
-      .select('id, vehicle_type, plate_number, service_type, biker_name, price, status, wash_date, created_at, updated_at')
+      .select('id, biker_name, quantity, price, status, wash_date, created_at, updated_at')
       .order('wash_date', { ascending: false, nullsFirst: false }),
     {
       enabled: isSupabaseConfigured,

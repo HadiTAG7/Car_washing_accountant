@@ -30,43 +30,60 @@ function yearOf(dateStr) {
 }
 
 // Normalize for case-insensitive contains-style matching across Arabic /
-// Latin labels.
+// Latin labels. Trims, lowercases, collapses inner whitespace, and strips
+// common separator punctuation so "سكن  العمال" or "سكن-العمال" still
+// matches "سكن العمال".
 function norm(s) {
-  return String(s || '').trim().toLowerCase();
+  return String(s || '')
+    .trim()
+    .toLowerCase()
+    // Replace common separator punctuation with a space so
+    // "سكن-العمال" / "housing/staff" still align with "سكن العمال".
+    .replace(/[-_,./|]+/g, ' ')
+    // Collapse every run of whitespace (incl. NBSP, tab, newline)
+    // into a single ASCII space.
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 function matches(label, target) {
   if (!label || !target) return false;
   const a = norm(label);
   const b = norm(target);
+  if (!a || !b) return false;
   return a === b || a.includes(b) || b.includes(a);
 }
 
 /**
  * Compute the actual amount spent against a budget envelope.
  *
- * For each expense across the three modules, match by name OR category
- * label against the budget's `categoryLabel`. Then apply a period filter
- * based on the budget's `budgetType`:
- *   - 'monthly': only count expenses tied to the current local month.
- *     Monthly recurring rows always count once (they represent one month
- *     by design); annual rows are amortized as annualCost / 12; variable
- *     rows count if their loggedDate falls in the current month.
- *   - 'annual': count expenses across the current year. Monthly recurring
- *     rows × 12; annual rows × 1; variable rows in the current year.
+ * Matches expenses across all three modules (monthly_expenses,
+ * annual_expenses, variable_expenses) by:
+ *   1. The expense_name, OR
+ *   2. The expense's resolved category label (via the category-id maps
+ *      for monthly + variable rows; via the `category` text key + the
+ *      annual category map for annual rows).
+ * Matching is normalized + case-insensitive + contains-style — so a
+ * budget "سكن العمال" captures "إيجار سكن العمال" and rows under a
+ * category labeled "سكن العمال".
+ *
+ * Period filter is applied based on the budget's type:
+ *   - 'monthly': monthly recurring rows count once (full month); annual
+ *     rows are amortized as annualCost / 12; variable rows count if
+ *     their loggedDate is in the current local month.
+ *   - 'annual': monthly recurring rows × 12; annual rows × 1; variable
+ *     rows count if their loggedDate is in the current calendar year.
  */
 function computeBudgetSpend({
   budget,
   monthlies, monthlyCatMap,
-  annuals,
+  annuals,   annualCatMap,
   variableItems, variableCatMap,
 }) {
   const targetLabel = budget.categoryLabel;
   let spent = 0;
   const isMonthly = budget.budgetType === 'monthly';
 
-  // Monthly expenses: name OR category label match. Period filter is a
-  // no-op for monthly budgets (recurring rows apply every month). For
-  // annual budgets, multiply by 12 to annualize.
+  // ── monthly_expenses ────────────────────────────────────────────────
   monthlies.forEach((m) => {
     const catLabel = monthlyCatMap.get(m.categoryId)?.label || '';
     if (matches(m.expenseName, targetLabel) || matches(catLabel, targetLabel)) {
@@ -74,11 +91,12 @@ function computeBudgetSpend({
     }
   });
 
-  // Annual expenses: category here is already a text label.
+  // ── annual_expenses ─────────────────────────────────────────────────
+  // `a.category` is the category ID (foreign-key text); resolve the
+  // user-visible label via the annual categories map before matching.
   annuals.forEach((a) => {
-    const catLabel = a.category || '';
+    const catLabel = annualCatMap.get(a.category)?.label || a.category || '';
     if (matches(a.expenseName, targetLabel) || matches(catLabel, targetLabel)) {
-      // monthly budget → amortize annual / 12; annual budget → full.
       spent += isMonthly ? (a.annualCost || 0) / 12 : (a.annualCost || 0);
     }
   });
@@ -277,6 +295,14 @@ export default function BudgetsPage() {
     return m;
   }, [monthlyCats]);
 
+  // Annual category map — critical for matching annual_expenses, since
+  // a.category is the category ID/key, not the display label.
+  const annualCatMap = useMemo(() => {
+    const m = new Map();
+    annualCats.forEach((c) => m.set(c.id, c));
+    return m;
+  }, [annualCats]);
+
   const variableCatMap = useMemo(() => {
     const m = new Map();
     variableCats.forEach((c) => m.set(c.id, c));
@@ -341,11 +367,12 @@ export default function BudgetsPage() {
       monthlies,
       monthlyCatMap,
       annuals,
+      annualCatMap,
       variableItems: variableInputForBudget,
       variableCatMap,
     });
     return { budget: b, spent };
-  }), [budgets, monthlies, monthlyCatMap, annuals, variableInputForBudget, variableCatMap]);
+  }), [budgets, monthlies, monthlyCatMap, annuals, annualCatMap, variableInputForBudget, variableCatMap]);
 
   // KPI totals across all budgets.
   const totals = useMemo(() => {

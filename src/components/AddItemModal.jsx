@@ -89,15 +89,15 @@ export default function AddItemModal({ isOpen, onClose, onAdd, categories = [], 
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
 
-      <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50">
-          <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+      <div className="relative bg-white dark:bg-slate-900 rounded-2xl shadow-xl w-full max-w-lg mx-4 overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-slate-800 bg-gray-50 dark:bg-slate-800/60">
+          <h3 className="text-lg font-bold text-gray-800 dark:text-slate-200 flex items-center gap-2">
             <Plus size={20} className="text-primary-600" />
             إضافة بند جديد
           </h3>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-200 transition-colors"
+            className="text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:text-slate-400 p-1 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-700 transition-colors"
           >
             <X size={20} />
           </button>
@@ -106,7 +106,7 @@ export default function AddItemModal({ isOpen, onClose, onAdd, categories = [], 
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
           {/* Item Name */}
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5" htmlFor="itemName">
+            <label className="block text-sm font-semibold text-gray-700 dark:text-slate-300 mb-1.5" htmlFor="itemName">
               اسم البند
             </label>
             <input
@@ -118,13 +118,13 @@ export default function AddItemModal({ isOpen, onClose, onAdd, categories = [], 
               placeholder="مثال: دبابات تنظيف، غسالة صناعية"
               required
               autoFocus
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="w-full px-4 py-2.5 border border-gray-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
             />
           </div>
 
           {/* Quantity */}
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5" htmlFor="quantity">
+            <label className="block text-sm font-semibold text-gray-700 dark:text-slate-300 mb-1.5" htmlFor="quantity">
               الكمية
             </label>
             <input
@@ -136,19 +136,19 @@ export default function AddItemModal({ isOpen, onClose, onAdd, categories = [], 
               min="1"
               step="1"
               required
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-slate-900 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="w-full px-4 py-2.5 border border-gray-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
             />
           </div>
 
           {/* Category */}
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">التصنيف</label>
+            <label className="block text-sm font-semibold text-gray-700 dark:text-slate-300 mb-1.5">التصنيف</label>
             <div className="flex gap-2">
               <select
                 name="category"
                 value={form.category}
                 onChange={handleChange}
-                className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white"
+                className="flex-1 px-4 py-2.5 border border-gray-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white"
               >
                 {categories.length === 0 && <option value="">— لا توجد تصنيفات —</option>}
                 {categories.map((cat) => (
@@ -161,7 +161,7 @@ export default function AddItemModal({ isOpen, onClose, onAdd, categories = [], 
                 <button
                   type="button"
                   onClick={() => setShowNewCat(!showNewCat)}
-                  className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-primary-700 hover:bg-primary-50 transition-colors font-semibold"
+                  className="px-3 py-2.5 border border-gray-200 dark:border-slate-700 rounded-xl text-sm text-primary-700 hover:bg-primary-50 transition-colors font-semibold"
                   title="إضافة تصنيف جديد"
                 >
                   <Plus size={18} />
@@ -176,7 +176,7 @@ export default function AddItemModal({ isOpen, onClose, onAdd, categories = [], 
                   value={newCatLabel}
                   onChange={(e) => setNewCatLabel(e.target.value)}
                   placeholder="اسم التصنيف الجديد"
-                  className="flex-1 px-3 py-2 border border-primary-200 rounded-xl text-sm text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-primary-300 bg-primary-50/50"
+                  className="flex-1 px-3 py-2 border border-primary-200 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium focus:outline-none focus:ring-2 focus:ring-primary-300 bg-primary-50/50"
                 />
                 <button
                   type="button"
@@ -193,7 +193,7 @@ export default function AddItemModal({ isOpen, onClose, onAdd, categories = [], 
           {/* Unit-price row */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5" htmlFor="plannedUnitPrice">
+              <label className="block text-sm font-semibold text-gray-700 dark:text-slate-300 mb-1.5" htmlFor="plannedUnitPrice">
                 سعر الوحدة المخطط (ر.س)
               </label>
               <input
@@ -206,11 +206,11 @@ export default function AddItemModal({ isOpen, onClose, onAdd, categories = [], 
                 required
                 min="0"
                 step="any"
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-slate-900 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                className="w-full px-4 py-2.5 border border-gray-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5" htmlFor="actualUnitPrice">
+              <label className="block text-sm font-semibold text-gray-700 dark:text-slate-300 mb-1.5" htmlFor="actualUnitPrice">
                 سعر الوحدة الفعلي (ر.س)
               </label>
               <input
@@ -222,15 +222,15 @@ export default function AddItemModal({ isOpen, onClose, onAdd, categories = [], 
                 placeholder="0"
                 min="0"
                 step="any"
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-slate-900 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                className="w-full px-4 py-2.5 border border-gray-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               />
             </div>
           </div>
 
           {/* Live totals */}
-          <div className="bg-gray-50 border border-gray-100 rounded-xl p-4 space-y-2 text-sm">
+          <div className="bg-gray-50 dark:bg-slate-800/60 border border-gray-100 dark:border-slate-800 rounded-xl p-4 space-y-2 text-sm">
             <div className="flex items-baseline justify-between gap-3">
-              <span className="text-gray-600">إجمالي الميزانية المخططة:</span>
+              <span className="text-gray-600 dark:text-slate-400">إجمالي الميزانية المخططة:</span>
               <span className="font-bold text-gray-900 tabular-nums">
                 {quantity > 0 && plannedUnitPrice > 0
                   ? `${formatNumber(quantity)} × ${formatCurrency(plannedUnitPrice)} = ${formatCurrency(plannedTotal)}`
@@ -238,7 +238,7 @@ export default function AddItemModal({ isOpen, onClose, onAdd, categories = [], 
               </span>
             </div>
             <div className="flex items-baseline justify-between gap-3">
-              <span className="text-gray-600">إجمالي التكلفة الفعلية:</span>
+              <span className="text-gray-600 dark:text-slate-400">إجمالي التكلفة الفعلية:</span>
               <span className="font-bold text-gray-900 tabular-nums">
                 {quantity > 0 && actualUnitPrice > 0
                   ? `${formatNumber(quantity)} × ${formatCurrency(actualUnitPrice)} = ${formatCurrency(actualTotal)}`
@@ -260,7 +260,7 @@ export default function AddItemModal({ isOpen, onClose, onAdd, categories = [], 
             <button
               type="button"
               onClick={onClose}
-              className="px-6 py-2.5 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl text-sm font-medium transition-colors"
+              className="px-6 py-2.5 border border-gray-200 dark:border-slate-700 text-gray-600 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-800 dark:bg-slate-800/60 rounded-xl text-sm font-medium transition-colors"
             >
               إلغاء
             </button>

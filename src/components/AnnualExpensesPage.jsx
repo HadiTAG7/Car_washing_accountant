@@ -63,8 +63,8 @@ function EmptyState({ onAdd }) {
       <div className="bg-primary-50 text-primary-700 w-14 h-14 rounded-2xl flex items-center justify-center mb-4">
         <Repeat size={26} />
       </div>
-      <p className="text-base font-bold text-slate-800 mb-1">لا توجد مصاريف سنوية بعد</p>
-      <p className="text-sm text-slate-500 mb-5 max-w-sm">
+      <p className="text-base font-bold text-slate-800 dark:text-slate-200 mb-1">لا توجد مصاريف سنوية بعد</p>
+      <p className="text-sm text-slate-500 dark:text-slate-400 mb-5 max-w-sm">
         أضف أول مصروف سنوي متكرر لمتابعة التكاليف التشغيلية المستمرة.
       </p>
       <PrimaryButton icon={Plus} onClick={onAdd}>
@@ -231,7 +231,7 @@ export default function AnnualExpensesPage() {
             <div className="overflow-x-auto -mx-6 px-6">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-right text-[11px] font-bold text-slate-500 uppercase border-b border-slate-100">
+                  <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
                     <th className="py-3 px-4">المصروف</th>
                     <th className="py-3 px-4">التصنيف</th>
                     <th className="py-3 px-4 text-left tabular-nums">التكلفة السنوية</th>
@@ -244,20 +244,20 @@ export default function AnnualExpensesPage() {
                   {items.map((i) => (
                     <tr
                       key={i.id}
-                      className="border-b border-slate-50 hover:bg-slate-50/60 transition-colors"
+                      className="border-b border-slate-50 dark:border-slate-800 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
                     >
-                      <td className="py-3 px-4 font-medium text-slate-800">{i.expenseName}</td>
+                      <td className="py-3 px-4 font-medium text-slate-800 dark:text-slate-200">{i.expenseName}</td>
                       <td className="py-3 px-4">
-                        <span className="inline-flex text-[11px] font-semibold bg-slate-100 text-slate-700 px-2 py-1 rounded-md">
+                        <span className="inline-flex text-[11px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-2 py-1 rounded-md">
                           {getCategoryLabel(i.category)}
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-left tabular-nums text-slate-700">
+                      <td className="py-3 px-4 text-left tabular-nums text-slate-700 dark:text-slate-300">
                         {formatCurrency(i.annualCost)}
                       </td>
-                      <td className="py-3 px-4 text-slate-600">
+                      <td className="py-3 px-4 text-slate-600 dark:text-slate-400">
                         <span className="inline-flex items-center gap-1.5 tabular-nums">
-                          <CalendarClock size={13} className="text-slate-400" />
+                          <CalendarClock size={13} className="text-slate-400 dark:text-slate-500" />
                           {formatAnnualPaymentDate(i.paymentMonth, i.paymentDay)}
                         </span>
                       </td>
@@ -273,7 +273,7 @@ export default function AnnualExpensesPage() {
                           <button
                             type="button"
                             onClick={() => openEditModal(i)}
-                            className="text-slate-400 hover:text-primary-700 p-1.5 rounded-lg hover:bg-primary-50 transition-colors"
+                            className="text-slate-400 dark:text-slate-500 hover:text-primary-700 p-1.5 rounded-lg hover:bg-primary-50 transition-colors"
                             aria-label={`تعديل ${i.expenseName}`}
                             title="تعديل المصروف"
                           >
@@ -282,7 +282,7 @@ export default function AnnualExpensesPage() {
                           <button
                             type="button"
                             onClick={() => handleDelete(i)}
-                            className="text-slate-400 hover:text-accent-600 p-1.5 rounded-lg hover:bg-accent-50 transition-colors"
+                            className="text-slate-400 dark:text-slate-500 hover:text-accent-600 p-1.5 rounded-lg hover:bg-accent-50 transition-colors"
                             aria-label={`حذف ${i.expenseName}`}
                             title="حذف المصروف"
                           >

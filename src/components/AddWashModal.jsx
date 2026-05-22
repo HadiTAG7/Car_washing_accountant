@@ -77,9 +77,9 @@ export default function AddWashModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
 
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50">
-          <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+      <div className="relative bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60">
+          <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
             <span className="bg-emerald-50 text-emerald-600 w-9 h-9 rounded-xl flex items-center justify-center">
               <HeaderIcon size={18} />
             </span>
@@ -88,7 +88,7 @@ export default function AddWashModal({
           <button
             type="button"
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-700 p-1 rounded-lg hover:bg-slate-200 transition-colors"
+            className="text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:text-slate-300 p-1 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
             aria-label="إغلاق"
           >
             <X size={20} />
@@ -97,8 +97,8 @@ export default function AddWashModal({
 
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
           <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="bikerName">
-              اسم البايكر المسؤول <span className="text-[11px] font-normal text-slate-400">(اختياري)</span>
+            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5" htmlFor="bikerName">
+              اسم البايكر المسؤول <span className="text-[11px] font-normal text-slate-400 dark:text-slate-500">(اختياري)</span>
             </label>
             <input
               id="bikerName"
@@ -108,13 +108,13 @@ export default function AddWashModal({
               onChange={handleChange}
               placeholder="مثال: أحمد، أو فريق الورديّة الصباحية"
               autoFocus
-              className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent"
+              className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="quantity">
+              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5" htmlFor="quantity">
                 عدد الغسلات
               </label>
               <input
@@ -126,11 +126,11 @@ export default function AddWashModal({
                 min="1"
                 step="1"
                 required
-                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent"
+                className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent"
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="price">
+              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5" htmlFor="price">
                 سعر الغسلة (ر.س)
               </label>
               <input
@@ -143,13 +143,13 @@ export default function AddWashModal({
                 min="0"
                 step="any"
                 required
-                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent"
+                className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="washDate">
+            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5" htmlFor="washDate">
               تاريخ الغسلة
             </label>
             <input
@@ -158,15 +158,15 @@ export default function AddWashModal({
               name="washDate"
               value={form.washDate}
               onChange={handleChange}
-              className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent"
+              className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent"
             />
           </div>
 
           {/* Live batch revenue — quantity × price */}
-          <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 text-sm">
+          <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 rounded-xl p-4 text-sm">
             <div className="flex items-baseline justify-between gap-3">
-              <span className="text-slate-600">إجمالي إيرادات الدفعة:</span>
-              <span className="font-bold text-slate-900 tabular-nums">
+              <span className="text-slate-600 dark:text-slate-400">إجمالي إيرادات الدفعة:</span>
+              <span className="font-bold text-slate-900 dark:text-slate-100 tabular-nums">
                 {quantity > 0 && price > 0
                   ? `${formatNumber(quantity)} × ${formatCurrency(price)} = ${formatCurrency(batchRevenue)}`
                   : formatCurrency(0)}
@@ -188,7 +188,7 @@ export default function AddWashModal({
             <button
               type="button"
               onClick={onClose}
-              className="px-6 py-2.5 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl text-sm font-medium transition-colors"
+              className="px-6 py-2.5 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/60 rounded-xl text-sm font-medium transition-colors"
             >
               إلغاء
             </button>

@@ -36,16 +36,16 @@ function WashCounterReadout({ washCount, monthLabel }) {
             إجمالي الغسلات المكتملة — {monthLabel}
           </p>
           <div className="flex items-baseline gap-3 mt-1">
-            <span className="text-3xl font-extrabold text-slate-900 tabular-nums">
+            <span className="text-3xl font-extrabold text-slate-900 dark:text-slate-100 tabular-nums">
               {formatNumber(washCount)}
             </span>
-            <span className="text-sm text-slate-500">غسلة</span>
+            <span className="text-sm text-slate-500 dark:text-slate-400">غسلة</span>
             <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary-700 bg-primary-100 border border-primary-200 rounded-md px-2 py-0.5">
               <Car size={11} strokeWidth={2.5} />
               تلقائي
             </span>
           </div>
-          <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5 leading-relaxed">
             يُحسب تلقائياً من سجل الغسلات المكتملة للشهر المحدد ويغذّي عداد عمولات البايكرز.
           </p>
         </div>
@@ -69,13 +69,13 @@ function PeriodSelectorCard({ value, onChange, options }) {
             id="variable-period"
             value={value}
             onChange={(e) => onChange(e.target.value)}
-            className="mt-1.5 w-full max-w-xs px-4 py-2.5 border border-primary-200 rounded-xl bg-white text-base font-bold text-slate-900 tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-300"
+            className="mt-1.5 w-full max-w-xs px-4 py-2.5 border border-primary-200 rounded-xl bg-white text-base font-bold text-slate-900 dark:text-slate-100 tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-300"
           >
             {options.map((ym) => (
               <option key={ym} value={ym}>{formatMonthLabel(ym)}</option>
             ))}
           </select>
-          <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5 leading-relaxed">
             اختر الشهر لعرض مصاريفه المتغيرة. عمولات البايكرز تُحسب تلقائياً من غسلات الشهر المحدد.
           </p>
         </div>
@@ -90,10 +90,10 @@ function EmptyState({ onAdd, monthLabel }) {
       <div className="bg-primary-50 text-primary-700 w-14 h-14 rounded-2xl flex items-center justify-center mb-4">
         <Activity size={26} />
       </div>
-      <p className="text-base font-bold text-slate-800 mb-1">
+      <p className="text-base font-bold text-slate-800 dark:text-slate-200 mb-1">
         لا توجد مصاريف متغيرة مسجّلة لشهر {monthLabel}
       </p>
-      <p className="text-sm text-slate-500 mb-5 max-w-sm">
+      <p className="text-sm text-slate-500 dark:text-slate-400 mb-5 max-w-sm">
         سجّل أول مصروف متغير (مستلزمات، حوافز، نقل...) لتبدأ متابعة تكلفة الوحدة لهذا الشهر.
       </p>
       <PrimaryButton icon={Plus} onClick={onAdd}>
@@ -301,7 +301,7 @@ export default function VariableExpensesPage() {
             <div className="overflow-x-auto -mx-6 px-6">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-right text-[11px] font-bold text-slate-500 uppercase border-b border-slate-100">
+                  <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
                     <th className="py-3 px-4">المصروف</th>
                     <th className="py-3 px-4">التصنيف</th>
                     <th className="py-3 px-4 text-center tabular-nums">عدد الغسلات / الوحدات</th>
@@ -315,12 +315,12 @@ export default function VariableExpensesPage() {
                   {displayedItems.map((i) => (
                     <tr
                       key={i.id}
-                      className={`border-b border-slate-50 transition-colors ${i.isVirtual ? 'bg-primary-50/30 hover:bg-primary-50/50' : 'hover:bg-slate-50/60'}`}
+                      className={`border-b border-slate-50 dark:border-slate-800 transition-colors ${i.isVirtual ? 'bg-primary-50/30 hover:bg-primary-50/50' : 'hover:bg-slate-50/60 dark:hover:bg-slate-800/40'}`}
                     >
-                      <td className="py-3 px-4 font-medium text-slate-800 align-top">
+                      <td className="py-3 px-4 font-medium text-slate-800 dark:text-slate-200 align-top">
                         <div>{i.expenseName}</div>
                         {i.isVirtual && (
-                          <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
+                          <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5 leading-relaxed">
                             {i.bikerName
                               ? `محسوب تلقائياً من غسلات ${i.bikerName} لشهر ${monthLabel}`
                               : `محسوب تلقائياً من إجمالي غسلات شهر ${monthLabel}`}
@@ -328,11 +328,11 @@ export default function VariableExpensesPage() {
                         )}
                       </td>
                       <td className="py-3 px-4 align-top">
-                        <span className="inline-flex text-[11px] font-semibold bg-slate-100 text-slate-700 px-2 py-1 rounded-md">
+                        <span className="inline-flex text-[11px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-2 py-1 rounded-md">
                           {getCategoryLabel(i.categoryId)}
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-center tabular-nums text-slate-700 align-top">
+                      <td className="py-3 px-4 text-center tabular-nums text-slate-700 dark:text-slate-300 align-top">
                         <span className="inline-flex items-center justify-center gap-1.5">
                           <span>{formatNumber(i.quantity)}</span>
                           {i.isVirtual && (
@@ -346,15 +346,15 @@ export default function VariableExpensesPage() {
                           )}
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-left tabular-nums text-slate-700 align-top">
+                      <td className="py-3 px-4 text-left tabular-nums text-slate-700 dark:text-slate-300 align-top">
                         {formatCurrency(i.unitCost)}
                       </td>
-                      <td className="py-3 px-4 text-left tabular-nums font-bold text-slate-900 align-top">
+                      <td className="py-3 px-4 text-left tabular-nums font-bold text-slate-900 dark:text-slate-100 align-top">
                         {formatCurrency(i.totalVariableCost)}
                       </td>
-                      <td className="py-3 px-4 text-slate-600 align-top">
+                      <td className="py-3 px-4 text-slate-600 dark:text-slate-400 align-top">
                         <span className="inline-flex items-center gap-1.5 tabular-nums">
-                          <CalendarClock size={13} className="text-slate-400" />
+                          <CalendarClock size={13} className="text-slate-400 dark:text-slate-500" />
                           {i.isVirtual ? monthLabel : formatLoggedDate(i.loggedDate)}
                         </span>
                       </td>
@@ -366,7 +366,7 @@ export default function VariableExpensesPage() {
                             <button
                               type="button"
                               onClick={() => openEditModal(i)}
-                              className="text-slate-400 hover:text-primary-700 p-1.5 rounded-lg hover:bg-primary-50 transition-colors"
+                              className="text-slate-400 dark:text-slate-500 hover:text-primary-700 p-1.5 rounded-lg hover:bg-primary-50 transition-colors"
                               aria-label={`تعديل ${i.expenseName}`}
                               title="تعديل المصروف"
                             >
@@ -375,7 +375,7 @@ export default function VariableExpensesPage() {
                             <button
                               type="button"
                               onClick={() => handleDelete(i)}
-                              className="text-slate-400 hover:text-accent-600 p-1.5 rounded-lg hover:bg-accent-50 transition-colors"
+                              className="text-slate-400 dark:text-slate-500 hover:text-accent-600 p-1.5 rounded-lg hover:bg-accent-50 transition-colors"
                               aria-label={`حذف ${i.expenseName}`}
                               title="حذف المصروف"
                             >

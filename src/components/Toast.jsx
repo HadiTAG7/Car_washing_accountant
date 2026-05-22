@@ -4,18 +4,18 @@ import { CheckCircle2, AlertTriangle, X } from 'lucide-react';
 const TONES = {
   success: {
     icon: CheckCircle2,
-    classes: 'bg-emerald-50 border-emerald-200 text-emerald-800',
-    iconClass: 'text-emerald-600',
+    classes: 'bg-emerald-50 dark:bg-emerald-500/15 border-emerald-200 dark:border-emerald-500/40 text-emerald-800 dark:text-emerald-200',
+    iconClass: 'text-emerald-600 dark:text-emerald-400',
   },
   error: {
     icon: AlertTriangle,
-    classes: 'bg-red-50 border-red-200 text-red-800',
-    iconClass: 'text-red-600',
+    classes: 'bg-red-50 dark:bg-red-500/15 border-red-200 dark:border-red-500/40 text-red-800 dark:text-red-200',
+    iconClass: 'text-red-600 dark:text-red-400',
   },
   info: {
     icon: CheckCircle2,
-    classes: 'bg-primary-50 border-primary-200 text-primary-800',
-    iconClass: 'text-primary-700',
+    classes: 'bg-primary-50 dark:bg-primary-500/15 border-primary-200 dark:border-primary-500/40 text-primary-800 dark:text-primary-200',
+    iconClass: 'text-primary-700 dark:text-primary-400',
   },
 };
 

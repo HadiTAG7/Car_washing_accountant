@@ -41,8 +41,8 @@ function EmptyState({ onAdd }) {
       <div className="bg-emerald-50 text-emerald-600 w-14 h-14 rounded-2xl flex items-center justify-center mb-4">
         <Car size={26} />
       </div>
-      <p className="text-base font-bold text-slate-800 mb-1">لم تُسجَّل أي غسلة بعد</p>
-      <p className="text-sm text-slate-500 mb-5 max-w-sm">
+      <p className="text-base font-bold text-slate-800 dark:text-slate-200 mb-1">لم تُسجَّل أي غسلة بعد</p>
+      <p className="text-sm text-slate-500 dark:text-slate-400 mb-5 max-w-sm">
         ابدأ بتسجيل أول غسلة. ستظهر تلقائياً في عداد الغسلات داخل تبويب المصاريف المتغيرة.
       </p>
       <PrimaryButton icon={Plus} onClick={onAdd}>
@@ -207,7 +207,7 @@ export default function WashesPage() {
             <div className="overflow-x-auto -mx-6 px-6">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-right text-[11px] font-bold text-slate-500 uppercase border-b border-slate-100">
+                  <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
                     <th className="py-3 px-4">البيان / اسم البايكر</th>
                     <th className="py-3 px-4 text-center tabular-nums">عدد الغسلات</th>
                     <th className="py-3 px-4 text-left tabular-nums">سعر الغسلة</th>
@@ -224,23 +224,23 @@ export default function WashesPage() {
                     return (
                       <tr
                         key={w.id}
-                        className="border-b border-slate-50 hover:bg-slate-50/60 transition-colors"
+                        className="border-b border-slate-50 dark:border-slate-800 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
                       >
-                        <td className="py-3 px-4 font-medium text-slate-800 align-top">
+                        <td className="py-3 px-4 font-medium text-slate-800 dark:text-slate-200 align-top">
                           {label}
                         </td>
-                        <td className="py-3 px-4 text-center tabular-nums text-slate-700 align-top">
+                        <td className="py-3 px-4 text-center tabular-nums text-slate-700 dark:text-slate-300 align-top">
                           {formatNumber(w.quantity)}
                         </td>
-                        <td className="py-3 px-4 text-left tabular-nums text-slate-700 align-top">
+                        <td className="py-3 px-4 text-left tabular-nums text-slate-700 dark:text-slate-300 align-top">
                           {formatCurrency(w.price)}
                         </td>
-                        <td className="py-3 px-4 text-left tabular-nums font-bold text-slate-900 align-top">
+                        <td className="py-3 px-4 text-left tabular-nums font-bold text-slate-900 dark:text-slate-100 align-top">
                           {formatCurrency(total)}
                         </td>
-                        <td className="py-3 px-4 text-slate-600 align-top">
+                        <td className="py-3 px-4 text-slate-600 dark:text-slate-400 align-top">
                           <span className="inline-flex items-center gap-1.5 tabular-nums">
-                            <CalendarClock size={13} className="text-slate-400" />
+                            <CalendarClock size={13} className="text-slate-400 dark:text-slate-500" />
                             {formatWashDate(w.washDate)}
                           </span>
                         </td>
@@ -255,7 +255,7 @@ export default function WashesPage() {
                             <button
                               type="button"
                               onClick={() => openEditModal(w)}
-                              className="text-slate-400 hover:text-primary-700 p-1.5 rounded-lg hover:bg-primary-50 transition-colors"
+                              className="text-slate-400 dark:text-slate-500 hover:text-primary-700 p-1.5 rounded-lg hover:bg-primary-50 transition-colors"
                               aria-label={`تعديل دفعة ${label}`}
                               title="تعديل الدفعة"
                             >
@@ -264,7 +264,7 @@ export default function WashesPage() {
                             <button
                               type="button"
                               onClick={() => handleDelete(w)}
-                              className="text-slate-400 hover:text-accent-600 p-1.5 rounded-lg hover:bg-accent-50 transition-colors"
+                              className="text-slate-400 dark:text-slate-500 hover:text-accent-600 p-1.5 rounded-lg hover:bg-accent-50 transition-colors"
                               aria-label={`حذف دفعة ${label}`}
                               title="حذف الدفعة"
                             >

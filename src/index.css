@@ -1,5 +1,11 @@
 @import "tailwindcss";
 
+/* Class-based dark mode (Tailwind v4 idiom — equivalent to v3's
+   `darkMode: 'class'`). Any element nested under `.dark` (or `.dark`
+   itself) activates `dark:` variants. We toggle this class on
+   <html> from App.jsx via state persisted in localStorage. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* ── Thmanyah Sans (geometric Arabic + Latin) ────────────────────────────
    Bundled locally under /public/fonts/thmanyah/. Five weights map to the
    standard CSS keyword weights; Tailwind's font-* utilities pick the
@@ -87,11 +93,19 @@ body {
   margin: 0;
   direction: rtl;
   font-family: "Thmanyah Sans", "IBM Plex Sans Arabic", "Tajawal", system-ui, sans-serif;
-  background-color: var(--color-app-bg);
-  color: #e2e8f0;
+  /* Light theme defaults. The `.dark` class on <html> flips these
+     plus every `dark:` variant on Tailwind-styled elements. */
+  background-color: #f8fafc; /* slate-50 */
+  color: #0f172a;            /* slate-900 */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   font-feature-settings: "kern", "liga", "ss01";
+  transition: background-color 200ms ease, color 200ms ease;
+}
+
+html.dark body {
+  background-color: #020617; /* slate-950 */
+  color: #f1f5f9;            /* slate-100 */
 }
 
 * {
@@ -102,6 +116,7 @@ body {
    dark text color so typed values aren't faint against the white field. */
 input, select, textarea {
   color: #0f172a;
+  transition: background-color 200ms ease, color 200ms ease, border-color 200ms ease;
 }
 input::placeholder,
 textarea::placeholder {
@@ -109,11 +124,27 @@ textarea::placeholder {
   opacity: 1;
 }
 
-/* Custom scrollbar — tuned for dark bg */
+/* Dark-mode input defaults: deep slate background, light text, slate-700
+   border. Components can still override with explicit `dark:` classes. */
+html.dark input,
+html.dark select,
+html.dark textarea {
+  background-color: #1e293b; /* slate-800 */
+  color: #f1f5f9;            /* slate-100 */
+  border-color: #334155;     /* slate-700 */
+}
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: #64748b;            /* slate-500 */
+}
+
+/* Custom scrollbar — light by default, deeper in dark mode. */
 ::-webkit-scrollbar          { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track    { background: transparent; }
-::-webkit-scrollbar-thumb    { background: #334155; border-radius: 8px; }
-::-webkit-scrollbar-thumb:hover { background: #475569; }
+::-webkit-scrollbar-thumb    { background: #cbd5e1; border-radius: 8px; } /* slate-300 */
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }                  /* slate-400 */
+html.dark ::-webkit-scrollbar-thumb       { background: #334155; }        /* slate-700 */
+html.dark ::-webkit-scrollbar-thumb:hover { background: #475569; }        /* slate-600 */
 
 /* Utility: thin number tabular */
 .tabular-nums { font-variant-numeric: tabular-nums; }

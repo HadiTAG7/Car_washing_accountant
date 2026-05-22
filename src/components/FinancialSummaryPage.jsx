@@ -36,22 +36,22 @@ function StatementRow({ label, amount, kind = 'minus', tone = 'auto' }) {
   const sign = isPlus ? '+' : (isSubtotal || isFinal) ? '=' : '−';
 
   let rowClass = '';
-  if (isSubtotal) rowClass = 'border-t-2 border-slate-200 bg-slate-50';
+  if (isSubtotal) rowClass = 'border-t-2 border-slate-200 dark:border-slate-700 bg-slate-50';
   if (finalGood)  rowClass = 'border-t-2 border-emerald-200 bg-emerald-50';
   if (finalBad)   rowClass = 'border-t-2 border-rose-200 bg-rose-50';
 
   let amountClass = 'text-rose-700';
   if (isPlus)     amountClass = 'text-emerald-700';
-  if (isSubtotal) amountClass = positive ? 'text-slate-900' : 'text-rose-700';
+  if (isSubtotal) amountClass = positive ? 'text-slate-900 dark:text-slate-100' : 'text-rose-700';
   if (finalGood)  amountClass = 'text-emerald-700';
   if (finalBad)   amountClass = 'text-rose-700';
-  if (tone === 'slate' && !isFinal && !isSubtotal) amountClass = 'text-slate-700';
+  if (tone === 'slate' && !isFinal && !isSubtotal) amountClass = 'text-slate-700 dark:text-slate-300';
 
   const labelClass = isFinal
-    ? 'font-extrabold text-slate-900'
+    ? 'font-extrabold text-slate-900 dark:text-slate-100'
     : isSubtotal
-      ? 'font-bold text-slate-900'
-      : 'text-slate-700';
+      ? 'font-bold text-slate-900 dark:text-slate-100'
+      : 'text-slate-700 dark:text-slate-300';
   const amountWeight = isFinal
     ? 'font-extrabold text-lg'
     : isSubtotal
@@ -172,13 +172,13 @@ export default function FinancialSummaryPage() {
                 id="period-selector"
                 value={selectedMonth}
                 onChange={(e) => setSelectedMonth(e.target.value)}
-                className="mt-1.5 w-full max-w-xs px-4 py-2.5 border border-primary-200 rounded-xl bg-white text-base font-bold text-slate-900 tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-300"
+                className="mt-1.5 w-full max-w-xs px-4 py-2.5 border border-primary-200 rounded-xl bg-white text-base font-bold text-slate-900 dark:text-slate-100 tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-300"
               >
                 {availableMonths.map((ym) => (
                   <option key={ym} value={ym}>{formatMonthLabel(ym)}</option>
                 ))}
               </select>
-              <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5 leading-relaxed">
                 اختر الشهر لعرض قائمة الدخل المخصصة له. المصاريف الثابتة الشهرية والسنوية موزّعة بالتساوي على كل شهر.
               </p>
             </div>
@@ -201,8 +201,8 @@ export default function FinancialSummaryPage() {
               />
               <StatCard
                 icon={TrendingDown}
-                iconBg="bg-slate-100"
-                iconColor="text-slate-700"
+                iconBg="bg-slate-100 dark:bg-slate-800"
+                iconColor="text-slate-700 dark:text-slate-300"
                 label="إجمالي تكاليف الشهر"
                 value={formatCurrency(totalCosts)}
                 sub="متغيّرة + شهرية ثابتة + مخصص سنوي"
@@ -226,7 +226,7 @@ export default function FinancialSummaryPage() {
               <div className="overflow-x-auto -mx-6 px-6">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="text-right text-[11px] font-bold text-slate-500 uppercase border-b border-slate-100">
+                    <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
                       <th className="py-3 px-4">البند</th>
                       <th className="py-3 px-4 text-left">المبلغ</th>
                     </tr>

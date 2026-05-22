@@ -61,8 +61,8 @@ function EmptyState({ onAdd }) {
       <div className="bg-primary-50 text-primary-700 w-14 h-14 rounded-2xl flex items-center justify-center mb-4">
         <Receipt size={26} />
       </div>
-      <p className="text-base font-bold text-slate-800 mb-1">لا توجد مصاريف شهرية بعد</p>
-      <p className="text-sm text-slate-500 mb-5 max-w-sm">
+      <p className="text-base font-bold text-slate-800 dark:text-slate-200 mb-1">لا توجد مصاريف شهرية بعد</p>
+      <p className="text-sm text-slate-500 dark:text-slate-400 mb-5 max-w-sm">
         أضف أول مصروف شهري متكرر لمتابعة التكاليف التشغيلية الجارية.
       </p>
       <PrimaryButton icon={Plus} onClick={onAdd}>
@@ -228,7 +228,7 @@ export default function MonthlyExpensesPage() {
             <div className="overflow-x-auto -mx-6 px-6">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-right text-[11px] font-bold text-slate-500 uppercase border-b border-slate-100">
+                  <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
                     <th className="py-3 px-4">المصروف</th>
                     <th className="py-3 px-4">التصنيف</th>
                     <th className="py-3 px-4 text-center tabular-nums">الكمية</th>
@@ -243,33 +243,33 @@ export default function MonthlyExpensesPage() {
                   {items.map((i) => (
                     <tr
                       key={i.id}
-                      className="border-b border-slate-50 hover:bg-slate-50/60 transition-colors"
+                      className="border-b border-slate-50 dark:border-slate-800 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
                     >
                       <td className="py-3 px-4 align-top">
-                        <div className="font-medium text-slate-800">{i.expenseName}</div>
+                        <div className="font-medium text-slate-800 dark:text-slate-200">{i.expenseName}</div>
                         {i.quantity > 1 && (
-                          <div className="text-[11px] text-slate-400 mt-0.5 tabular-nums">
+                          <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5 tabular-nums">
                             الكمية: {formatNumber(i.quantity)} | تكلفة الوحدة: {formatCurrency(i.unitCost)}
                           </div>
                         )}
                       </td>
                       <td className="py-3 px-4 align-top">
-                        <span className="inline-flex text-[11px] font-semibold bg-slate-100 text-slate-700 px-2 py-1 rounded-md">
+                        <span className="inline-flex text-[11px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-2 py-1 rounded-md">
                           {getCategoryLabel(i.categoryId)}
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-center tabular-nums text-slate-700 align-top">
+                      <td className="py-3 px-4 text-center tabular-nums text-slate-700 dark:text-slate-300 align-top">
                         {formatNumber(i.quantity)}
                       </td>
-                      <td className="py-3 px-4 text-left tabular-nums text-slate-700 align-top">
+                      <td className="py-3 px-4 text-left tabular-nums text-slate-700 dark:text-slate-300 align-top">
                         {formatCurrency(i.unitCost)}
                       </td>
-                      <td className="py-3 px-4 text-left tabular-nums font-bold text-slate-900 align-top">
+                      <td className="py-3 px-4 text-left tabular-nums font-bold text-slate-900 dark:text-slate-100 align-top">
                         {formatCurrency(i.totalMonthlyCost)}
                       </td>
-                      <td className="py-3 px-4 text-slate-600 align-top">
+                      <td className="py-3 px-4 text-slate-600 dark:text-slate-400 align-top">
                         <span className="inline-flex items-center gap-1.5 tabular-nums">
-                          <CalendarClock size={13} className="text-slate-400" />
+                          <CalendarClock size={13} className="text-slate-400 dark:text-slate-500" />
                           {formatPaymentDay(i.paymentDay)}
                         </span>
                       </td>
@@ -285,7 +285,7 @@ export default function MonthlyExpensesPage() {
                           <button
                             type="button"
                             onClick={() => openEditModal(i)}
-                            className="text-slate-400 hover:text-primary-700 p-1.5 rounded-lg hover:bg-primary-50 transition-colors"
+                            className="text-slate-400 dark:text-slate-500 hover:text-primary-700 p-1.5 rounded-lg hover:bg-primary-50 transition-colors"
                             aria-label={`تعديل ${i.expenseName}`}
                             title="تعديل المصروف"
                           >
@@ -294,7 +294,7 @@ export default function MonthlyExpensesPage() {
                           <button
                             type="button"
                             onClick={() => handleDelete(i)}
-                            className="text-slate-400 hover:text-accent-600 p-1.5 rounded-lg hover:bg-accent-50 transition-colors"
+                            className="text-slate-400 dark:text-slate-500 hover:text-accent-600 p-1.5 rounded-lg hover:bg-accent-50 transition-colors"
                             aria-label={`حذف ${i.expenseName}`}
                             title="حذف المصروف"
                           >

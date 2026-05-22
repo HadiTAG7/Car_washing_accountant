@@ -35,7 +35,7 @@ function EditableCell({ value, onSave, type = 'text', className = '' }) {
           className={`px-2 py-1 border border-primary-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-300 ${className}`}
         />
         <button onClick={commit} className="text-emerald-600 hover:text-emerald-800 p-0.5"><Check size={14} /></button>
-        <button onClick={() => setEditing(false)} className="text-slate-400 hover:text-slate-600 p-0.5"><X size={14} /></button>
+        <button onClick={() => setEditing(false)} className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:text-slate-400 p-0.5"><X size={14} /></button>
       </div>
     );
   }
@@ -153,7 +153,7 @@ export default function PartnersPage() {
           <div className="overflow-x-auto -mx-6 px-6">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-right text-[11px] font-bold text-slate-500 uppercase border-b border-slate-100">
+                <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
                   <th className="py-3 px-4">اسم الشريك</th>
                   <th className="py-3 px-4 text-center">عدد العمالة</th>
                   <th className="py-3 px-4 text-center">النسبة</th>
@@ -170,7 +170,7 @@ export default function PartnersPage() {
                 )}
                 {!loading && partners.length === 0 && !error && (
                   <tr>
-                    <td colSpan={4} className="py-12 text-center text-sm text-slate-400">
+                    <td colSpan={4} className="py-12 text-center text-sm text-slate-400 dark:text-slate-500">
                       لا يوجد شركاء مسجّلين بعد — اضغط &quot;إضافة شريك جديد&quot; للبدء
                     </td>
                   </tr>
@@ -180,8 +180,8 @@ export default function PartnersPage() {
                     ? (p.workersCount / kpis.totalWorkers) * 100
                     : 0;
                   return (
-                    <tr key={p.id} className="border-b border-slate-50 hover:bg-slate-50/60 transition-colors">
-                      <td className="py-3 px-4 font-medium text-slate-800">
+                    <tr key={p.id} className="border-b border-slate-50 dark:border-slate-800 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
+                      <td className="py-3 px-4 font-medium text-slate-800 dark:text-slate-200">
                         <div className="flex items-center gap-2">
                           <span className="bg-primary-50 text-primary-700 w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0">
                             <Briefcase size={14} />
@@ -193,7 +193,7 @@ export default function PartnersPage() {
                           />
                         </div>
                       </td>
-                      <td className="py-3 px-4 text-center tabular-nums text-slate-700">
+                      <td className="py-3 px-4 text-center tabular-nums text-slate-700 dark:text-slate-300">
                         <EditableCell
                           value={p.workersCount}
                           type="number"
@@ -209,7 +209,7 @@ export default function PartnersPage() {
                       <td className="py-3 px-4 text-left">
                         <button
                           onClick={() => handleDelete(p.id)}
-                          className="text-slate-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors"
+                          className="text-slate-400 dark:text-slate-500 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors"
                           aria-label="حذف"
                         >
                           <Trash2 size={15} />

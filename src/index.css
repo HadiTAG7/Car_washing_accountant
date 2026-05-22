@@ -1,7 +1,48 @@
 @import "tailwindcss";
 
+/* ── Thmanyah Sans (geometric Arabic + Latin) ────────────────────────────
+   Bundled locally under /public/fonts/thmanyah/. Five weights map to the
+   standard CSS keyword weights; Tailwind's font-* utilities pick the
+   closest match. `font-display: swap` keeps text legible during the
+   font fetch (system fallback renders first, then swaps when ready). */
+@font-face {
+  font-family: 'Thmanyah Sans';
+  src: url('/fonts/thmanyah/thmanyahsans-Light.woff2') format('woff2');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Thmanyah Sans';
+  src: url('/fonts/thmanyah/thmanyahsans-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Thmanyah Sans';
+  src: url('/fonts/thmanyah/thmanyahsans-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Thmanyah Sans';
+  src: url('/fonts/thmanyah/thmanyahsans-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Thmanyah Sans';
+  src: url('/fonts/thmanyah/thmanyahsans-Black.woff2') format('woff2');
+  font-weight: 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 @theme {
-  --font-sans: "Tajawal", "IBM Plex Sans Arabic", system-ui, sans-serif;
+  --font-sans: "Thmanyah Sans", "IBM Plex Sans Arabic", "Tajawal", system-ui, sans-serif;
 
   /* Deep navy primary — Monster Wash brand */
   --color-primary-50:  #eef2ff;
@@ -45,11 +86,12 @@ html, body, #root {
 body {
   margin: 0;
   direction: rtl;
-  font-family: "Tajawal", "IBM Plex Sans Arabic", system-ui, sans-serif;
+  font-family: "Thmanyah Sans", "IBM Plex Sans Arabic", "Tajawal", system-ui, sans-serif;
   background-color: var(--color-app-bg);
   color: #e2e8f0;
   -webkit-font-smoothing: antialiased;
-  font-feature-settings: "kern", "liga";
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "kern", "liga", "ss01";
 }
 
 * {

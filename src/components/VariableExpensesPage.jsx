@@ -109,7 +109,7 @@ function formatLoggedDate(value) {
     const d = new Date(value);
     if (Number.isNaN(d.getTime())) return value;
     return new Intl.DateTimeFormat('ar-SA', {
-      year: 'numeric', month: 'long', day: 'numeric',
+      year: 'numeric', month: 'long', day: 'numeric', numberingSystem: 'latn',
     }).format(d);
   } catch {
     return value;

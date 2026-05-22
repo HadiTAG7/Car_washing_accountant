@@ -15,6 +15,7 @@ export default function TopBar({ title, subtitle, actions }) {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
+    numberingSystem: 'latn',
   }).format(today);
 
   return (

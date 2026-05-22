@@ -127,13 +127,17 @@ export function getCategoryLabel(categoryId) {
   return cat ? cat.label : categoryId;
 }
 
+// Western (Latin) digits everywhere — `numberingSystem: 'latn'` keeps the
+// Arabic-locale formatting conventions (currency symbol, thousands
+// separator) while forcing 0-9 instead of ٠-٩.
 const SAR_FMT = new Intl.NumberFormat('ar-SA', {
   style: 'currency',
   currency: 'SAR',
   minimumFractionDigits: 0,
   maximumFractionDigits: 0,
+  numberingSystem: 'latn',
 });
-const NUM_FMT = new Intl.NumberFormat('ar-SA');
+const NUM_FMT = new Intl.NumberFormat('ar-SA', { numberingSystem: 'latn' });
 
 export function formatCurrency(amount) {
   return SAR_FMT.format(amount || 0);

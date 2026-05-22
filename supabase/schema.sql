@@ -114,6 +114,39 @@ create table if not exists public.partners (
   created_at      timestamptz not null default now()
 );
 
+-- ─── variable_expense_categories (Module 4 — dynamic category list) ──────
+-- Mirrors monthly_expense_categories. UUID id auto-generated; clients must
+-- NOT supply an id when inserting.
+create table if not exists public.variable_expense_categories (
+  id          uuid primary key default gen_random_uuid(),
+  label       text not null,
+  sort_order  integer not null default 0,
+  created_at  timestamptz not null default now()
+);
+
+-- ─── variable_expenses (Module 4 — per-wash / per-unit logged expenses) ──
+-- One-off logged events with a specific date (not recurring). Stores both
+-- unit_cost and total_variable_cost so the page renders unit cost directly.
+create table if not exists public.variable_expenses (
+  id                    uuid primary key default gen_random_uuid(),
+  expense_name          text not null,
+  category_id           uuid references public.variable_expense_categories(id) on delete set null,
+  quantity              integer not null default 1 check (quantity > 0),
+  unit_cost             numeric(12,2) not null default 0 check (unit_cost >= 0),
+  total_variable_cost   numeric(12,2) not null default 0 check (total_variable_cost >= 0),
+  logged_date           date,
+  notes                 text,
+  created_at            timestamptz not null default now(),
+  updated_at            timestamptz not null default now()
+);
+create index if not exists variable_expenses_logged_date_idx on public.variable_expenses(logged_date desc);
+create index if not exists variable_expenses_category_id_idx on public.variable_expenses(category_id);
+
+drop trigger if exists variable_expenses_touch on public.variable_expenses;
+create trigger variable_expenses_touch
+before update on public.variable_expenses
+for each row execute function public.touch_updated_at();
+
 -- ─── monthly_expense_categories (Module 3 — dynamic category list) ───────
 -- Mirrors annual_expense_categories. UUID id is auto-generated; clients
 -- should NOT supply an id when inserting.
@@ -203,6 +236,8 @@ alter table public.annual_expense_categories   enable row level security;
 alter table public.annual_expenses             enable row level security;
 alter table public.monthly_expense_categories  enable row level security;
 alter table public.monthly_expenses            enable row level security;
+alter table public.variable_expense_categories enable row level security;
+alter table public.variable_expenses           enable row level security;
 
 do $$ begin
   -- Drop existing policies first (idempotent)
@@ -256,6 +291,14 @@ create policy "rw_auth" on public.monthly_expense_categories
 
 drop policy if exists "rw_auth" on public.monthly_expenses;
 create policy "rw_auth" on public.monthly_expenses
+  for all to public using (true) with check (true);
+
+drop policy if exists "rw_auth" on public.variable_expense_categories;
+create policy "rw_auth" on public.variable_expense_categories
+  for all to public using (true) with check (true);
+
+drop policy if exists "rw_auth" on public.variable_expenses;
+create policy "rw_auth" on public.variable_expenses
   for all to public using (true) with check (true);
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -455,6 +498,48 @@ select * from (values
   ('أخرى',                 6)
 ) as t(label, sort_order)
 where not exists (select 1 from public.monthly_expense_categories);
+
+-- ─── variable_expenses — defensive column repair ──────────────────────────
+-- Ensure all columns + the UUID default exist when this script runs against
+-- a partial/older DB. Idempotent on re-run.
+alter table public.variable_expense_categories
+  add column if not exists label      text;
+alter table public.variable_expense_categories
+  add column if not exists sort_order integer not null default 0;
+alter table public.variable_expense_categories
+  add column if not exists created_at timestamptz not null default now();
+alter table public.variable_expense_categories
+  alter column id set default gen_random_uuid();
+
+alter table public.variable_expenses
+  add column if not exists quantity            integer not null default 1;
+alter table public.variable_expenses
+  add column if not exists unit_cost           numeric(12,2) not null default 0;
+alter table public.variable_expenses
+  add column if not exists total_variable_cost numeric(12,2) not null default 0;
+alter table public.variable_expenses
+  add column if not exists logged_date         date;
+alter table public.variable_expenses
+  add column if not exists category_id         uuid;
+alter table public.variable_expenses
+  alter column id set default gen_random_uuid();
+alter table public.variable_expenses
+  drop constraint if exists variable_expenses_quantity_chk;
+alter table public.variable_expenses
+  add  constraint variable_expenses_quantity_chk
+  check (quantity > 0);
+
+-- Seed five default variable-expense categories on a fresh DB. Omit `id`
+-- so the UUID default kicks in; WHERE NOT EXISTS keeps it idempotent.
+insert into public.variable_expense_categories (label, sort_order)
+select * from (values
+  ('عمولات البايكرز والموزعين',  1),
+  ('مستلزمات لكل غسلة',          2),
+  ('مكافآت أداء وحوافز',         3),
+  ('نقل ومواصلات',               4),
+  ('أخرى',                       5)
+) as t(label, sort_order)
+where not exists (select 1 from public.variable_expense_categories);
 
 -- ─── annual_expenses — defensive column repair ────────────────────────────
 -- Existing DBs created before the quantity column was added get it now

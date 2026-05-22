@@ -217,6 +217,53 @@ export function toMonthlyExpenseUpdate(updates = {}) {
   return payload;
 }
 
+// ── variable_expenses (Module 4) ──────────────────────────────────────────
+// App-side shape: { id, expenseName, categoryId, quantity, unitCost,
+// totalVariableCost, loggedDate }. One-off logged events (no recurring
+// payment day, no payment status).
+export function mapVariableExpenseCategory(row) {
+  return {
+    id:        row.id,
+    label:     row.label,
+    sortOrder: row.sort_order ?? 0,
+  };
+}
+export function mapVariableExpense(row) {
+  return {
+    id:                row.id,
+    expenseName:       row.expense_name,
+    categoryId:        row.category_id || '',
+    quantity:          clampExpenseQuantity(row.quantity),
+    unitCost:          Number(row.unit_cost) || 0,
+    totalVariableCost: Number(row.total_variable_cost) || 0,
+    loggedDate:        row.logged_date || '',
+  };
+}
+export function toVariableExpenseInsert({
+  expenseName, categoryId, quantity, unitCost, totalVariableCost, loggedDate,
+}) {
+  const q  = clampExpenseQuantity(quantity);
+  const uc = Math.max(0, Number(unitCost) || 0);
+  return {
+    expense_name:        expenseName,
+    category_id:         categoryId || null,
+    quantity:            q,
+    unit_cost:           uc,
+    total_variable_cost: Math.max(0, Number(totalVariableCost) || q * uc),
+    logged_date:         loggedDate || null,
+  };
+}
+export function toVariableExpenseUpdate(updates = {}) {
+  const payload = {};
+  if (updates.expenseName       !== undefined) payload.expense_name        = updates.expenseName;
+  if (updates.categoryId        !== undefined) payload.category_id         = updates.categoryId || null;
+  if (updates.quantity          !== undefined) payload.quantity            = clampExpenseQuantity(updates.quantity);
+  if (updates.unitCost          !== undefined) payload.unit_cost           = Math.max(0, Number(updates.unitCost) || 0);
+  if (updates.totalVariableCost !== undefined) payload.total_variable_cost = Math.max(0, Number(updates.totalVariableCost) || 0);
+  if (updates.loggedDate        !== undefined) payload.logged_date         = updates.loggedDate || null;
+  return payload;
+}
+
 // ── partners ──────────────────────────────────────────────────────────────
 export function mapPartner(row) {
   return {

@@ -3,7 +3,7 @@ import {
   Landmark,
   Repeat,
   Receipt,
-  Calculator,
+  Activity,
   FileBarChart,
   MapPin,
   Handshake,
@@ -16,7 +16,7 @@ import { DemoBanner } from './components/ErrorState';
 import StartupPage from './components/StartupPage';
 import AnnualExpensesPage from './components/AnnualExpensesPage';
 import MonthlyExpensesPage from './components/MonthlyExpensesPage';
-import UnitEconomicsPage from './components/UnitEconomicsPage';
+import VariableExpensesPage from './components/VariableExpensesPage';
 import CashFlowPage from './components/CashFlowPage';
 import RoutesPage from './components/RoutesPage';
 import PartnersPage from './components/PartnersPage';
@@ -29,7 +29,7 @@ const TABS = [
   { id: 'startup',   label: 'رسوم التأسيس',      icon: Landmark    },
   { id: 'annual',    label: 'المصاريف السنوية',  icon: Repeat      },
   { id: 'monthly',   label: 'المصاريف الشهرية',  icon: Receipt     },
-  { id: 'economics', label: 'اقتصاديات الوحدة',  icon: Calculator  },
+  { id: 'variable',  label: 'المصاريف المتغيرة', icon: Activity    },
   { id: 'cashflow',  label: 'التدفق النقدي',     icon: FileBarChart},
   { id: 'routes',    label: 'ربحية المسارات',    icon: MapPin      },
   { id: 'partners',  label: 'إدارة الشركاء',     icon: Handshake   },
@@ -95,7 +95,7 @@ export default function App() {
         )}
         {activeTab === 'annual'    && <AnnualExpensesPage />}
         {activeTab === 'monthly'   && <MonthlyExpensesPage />}
-        {activeTab === 'economics' && <UnitEconomicsPage />}
+        {activeTab === 'variable'  && <VariableExpensesPage />}
         {activeTab === 'cashflow'  && (
           <CashFlowPage
             pendingEntry={pendingEntry}

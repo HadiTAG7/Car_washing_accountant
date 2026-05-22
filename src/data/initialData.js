@@ -42,6 +42,15 @@ export const MONTHLY_EXPENSE_CATEGORIES = [
   { id: 'other',              label: 'أخرى' },
 ];
 
+// ─── Variable Expense Categories (Module 4 — demo fallback) ─────────────────
+export const VARIABLE_EXPENSE_CATEGORIES = [
+  { id: 'biker-commissions',   label: 'عمولات البايكرز والموزعين' },
+  { id: 'per-wash-supplies',   label: 'مستلزمات لكل غسلة' },
+  { id: 'performance-bonuses', label: 'مكافآت أداء وحوافز' },
+  { id: 'transport',           label: 'نقل ومواصلات' },
+  { id: 'other',               label: 'أخرى' },
+];
+
 // ─── Startup Cost Items ─────────────────────────────────────────────────────
 // Totals: budgeted 450,000 / actual 432,500 / variance 17,500
 export const initialCostItems = [

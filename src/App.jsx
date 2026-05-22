@@ -5,7 +5,7 @@ import {
   Receipt,
   Activity,
   Car,
-  MapPin,
+  BarChart3,
   Handshake,
   Loader2,
 } from 'lucide-react';
@@ -18,7 +18,7 @@ import AnnualExpensesPage from './components/AnnualExpensesPage';
 import MonthlyExpensesPage from './components/MonthlyExpensesPage';
 import VariableExpensesPage from './components/VariableExpensesPage';
 import WashesPage from './components/WashesPage';
-import RoutesPage from './components/RoutesPage';
+import FinancialSummaryPage from './components/FinancialSummaryPage';
 import PartnersPage from './components/PartnersPage';
 import FinancialEntrySelector from './components/FinancialEntrySelector';
 
@@ -26,13 +26,13 @@ import { useAuth } from './hooks/useAuth';
 import { isSupabaseConfigured, requireAuth, missingEnvNames } from './lib/supabaseClient';
 
 const TABS = [
-  { id: 'startup',   label: 'رسوم التأسيس',      icon: Landmark    },
-  { id: 'annual',    label: 'المصاريف السنوية',  icon: Repeat      },
-  { id: 'monthly',   label: 'المصاريف الشهرية',  icon: Receipt     },
-  { id: 'variable',  label: 'المصاريف المتغيرة', icon: Activity    },
-  { id: 'washes',    label: 'الغسلات',           icon: Car         },
-  { id: 'routes',    label: 'ربحية المسارات',    icon: MapPin      },
-  { id: 'partners',  label: 'إدارة الشركاء',     icon: Handshake   },
+  { id: 'startup',   label: 'رسوم التأسيس',           icon: Landmark    },
+  { id: 'annual',    label: 'المصاريف السنوية',       icon: Repeat      },
+  { id: 'monthly',   label: 'المصاريف الشهرية',       icon: Receipt     },
+  { id: 'variable',  label: 'المصاريف المتغيرة',      icon: Activity    },
+  { id: 'washes',    label: 'الغسلات',                icon: Car         },
+  { id: 'summary',   label: 'الملخص المالي وصافي الربح', icon: BarChart3 },
+  { id: 'partners',  label: 'إدارة الشركاء',          icon: Handshake   },
 ];
 
 export default function App() {
@@ -95,7 +95,7 @@ export default function App() {
         {activeTab === 'monthly'   && <MonthlyExpensesPage />}
         {activeTab === 'variable'  && <VariableExpensesPage />}
         {activeTab === 'washes'    && <WashesPage />}
-        {activeTab === 'routes'    && <RoutesPage />}
+        {activeTab === 'summary'   && <FinancialSummaryPage />}
         {activeTab === 'partners'  && <PartnersPage />}
       </div>
 

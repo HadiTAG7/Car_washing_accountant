@@ -15,6 +15,7 @@ import { useVariableExpenses } from '../hooks/useVariableExpenses';
 import { useVariableExpenseCategories } from '../hooks/useVariableExpenseCategories';
 import { useWashes } from '../hooks/useWashes';
 import { isSupabaseConfigured, missingEnvNames, describeSupabaseError } from '../lib/supabaseClient';
+import { effectiveVariableRow, sumCompletedWashQuantity } from '../lib/variableExpenseTotals';
 
 // ─── Live wash counter readout (driven by the Washes module) ──────────────
 function WashCounterReadout({ washCount }) {
@@ -43,25 +44,6 @@ function WashCounterReadout({ washCount }) {
       </div>
     </div>
   );
-}
-
-// Compute the effective (display-time) quantity + total for a row,
-// honoring the row's category-level is_dynamic flag.
-function effectiveRow(item, categoryMap, washCount) {
-  const cat    = categoryMap.get(item.categoryId);
-  const isRule = Boolean(cat?.isDynamic);
-  if (isRule) {
-    return {
-      quantity:           washCount,
-      totalVariableCost:  washCount * item.unitCost,
-      isRule:             true,
-    };
-  }
-  return {
-    quantity:           item.quantity,
-    totalVariableCost:  item.totalVariableCost,
-    isRule:             false,
-  };
 }
 
 function EmptyState({ onAdd }) {
@@ -107,12 +89,7 @@ export default function VariableExpensesPage() {
   // Live wash counter — sum of quantity across completed batches. One
   // bulk row with quantity=50 contributes 50, NOT 1.
   const { items: washes } = useWashes();
-  const washCount = useMemo(
-    () => washes
-      .filter((w) => w.status === 'مكتملة')
-      .reduce((sum, w) => sum + (w.quantity || 0), 0),
-    [washes],
-  );
+  const washCount = useMemo(() => sumCompletedWashQuantity(washes), [washes]);
 
   const [localOpen, setLocalOpen]         = useState(false);
   const [editingItem, setEditingItem]     = useState(null);
@@ -142,7 +119,7 @@ export default function VariableExpensesPage() {
   // Compose effective rows once — every other render branch reads from
   // here so the dashboard auto-scales when the wash counter changes.
   const effectiveItems = useMemo(
-    () => items.map((i) => ({ ...i, _eff: effectiveRow(i, categoryMap, washCount) })),
+    () => items.map((i) => ({ ...i, _eff: effectiveVariableRow(i, categoryMap, washCount) })),
     [items, categoryMap, washCount],
   );
 

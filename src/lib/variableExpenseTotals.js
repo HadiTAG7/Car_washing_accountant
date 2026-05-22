@@ -66,48 +66,79 @@ export function sumCompletedWashQuantityInMonth(washes = [], month) {
 
 /**
  * THE central helper. Returns the display-ready list of variable-expense
- * rows for the selected month, applying both the period filter and the
- * virtual-injection rule:
+ * rows for the selected month, applying the period filter, hiding manual
+ * rows in dynamic categories, and auto-injecting one virtual row PER
+ * (dynamic category × biker) so commissions are attributable per person:
  *
  *   1. Manual rows whose category is `isDynamic` are dropped entirely.
- *   2. Remaining manual rows are filtered to `monthOf(loggedDate) === selectedMonth`.
- *   3. For every dynamic category, one synthetic row is prepended whose
- *      quantity = washCountInMonth and unitCost = DEFAULT_DYNAMIC_UNIT_COST.
- *      The synthetic row carries `isVirtual: true` so the UI can hide
- *      edit/delete actions on it.
+ *   2. Remaining manual rows are filtered to
+ *      `monthOf(loggedDate) === selectedMonth`.
+ *   3. Completed washes for the selected month are grouped by
+ *      `bikerName` (trimmed; empty names bucket as "بدون اسم بايكر").
+ *   4. For every dynamic category × biker pair with quantity > 0, one
+ *      synthetic row is prepended:
+ *        { id, categoryId, expenseName: `عمولات - ${name} (تلقائي)`,
+ *          bikerName, quantity, unitCost, totalVariableCost, loggedDate,
+ *          isVirtual: true }
  *
- * Virtual rows always render at the top of the list (most prominent),
- * followed by manual non-dynamic rows.
+ * Virtual rows render before manual rows. Bikers are sorted by Arabic
+ * locale order; the unattributed bucket always sorts last.
  */
 export function variableItemsForMonth({
   manualItems = [],
   categories = [],
   selectedMonth,
-  washCountInMonth = 0,
+  washes = [],
   dynamicUnitCost = DEFAULT_DYNAMIC_UNIT_COST,
 }) {
   const dynamicIds = new Set(
     categories.filter((c) => c.isDynamic).map((c) => c.id),
   );
 
+  // 1 + 2. Filter manual rows.
   const manualNonDynamicInMonth = manualItems.filter(
     (row) =>
       !dynamicIds.has(row.categoryId) &&
       monthOf(row.loggedDate) === selectedMonth,
   );
 
-  const virtualRows = categories
-    .filter((c) => c.isDynamic)
-    .map((c) => ({
-      id:                `virtual-${c.id}-${selectedMonth}`,
-      categoryId:        c.id,
-      expenseName:       `${c.label} (تلقائي)`,
-      quantity:          washCountInMonth,
-      unitCost:          dynamicUnitCost,
-      totalVariableCost: washCountInMonth * dynamicUnitCost,
-      loggedDate:        `${selectedMonth}-01`,
-      isVirtual:         true,
-    }));
+  // 3. Group completed washes for the selected month by biker name.
+  const UNATTRIBUTED = '__UNATTRIBUTED__';
+  const byBiker = new Map();
+  for (const w of washes) {
+    if (w.status !== 'مكتملة') continue;
+    if (monthOf(w.washDate) !== selectedMonth) continue;
+    const key = (w.bikerName || '').trim() || UNATTRIBUTED;
+    byBiker.set(key, (byBiker.get(key) || 0) + (w.quantity || 0));
+  }
+
+  // Sort bikers — Arabic locale-aware; "unattributed" always last.
+  const sortedBikers = [...byBiker.entries()].sort(([a], [b]) => {
+    if (a === UNATTRIBUTED) return 1;
+    if (b === UNATTRIBUTED) return -1;
+    return a.localeCompare(b, 'ar');
+  });
+
+  // 4. Emit one virtual row per (dynamic category × biker with qty > 0).
+  const virtualRows = [];
+  for (const cat of categories) {
+    if (!cat.isDynamic) continue;
+    for (const [bikerKey, qty] of sortedBikers) {
+      if (qty <= 0) continue;
+      const displayName = bikerKey === UNATTRIBUTED ? 'بدون اسم بايكر' : bikerKey;
+      virtualRows.push({
+        id:                `virtual-${cat.id}-${selectedMonth}-${encodeURIComponent(bikerKey)}`,
+        categoryId:        cat.id,
+        expenseName:       `عمولات - ${displayName} (تلقائي)`,
+        bikerName:         displayName,
+        quantity:          qty,
+        unitCost:          dynamicUnitCost,
+        totalVariableCost: qty * dynamicUnitCost,
+        loggedDate:        `${selectedMonth}-01`,
+        isVirtual:         true,
+      });
+    }
+  }
 
   return [...virtualRows, ...manualNonDynamicInMonth];
 }

@@ -16,7 +16,6 @@ import {
   todayMonth,
   formatMonthLabel,
   listAvailableMonths,
-  sumCompletedWashQuantityInMonth,
   variableItemsForMonth,
 } from '../lib/variableExpenseTotals';
 import { isSupabaseConfigured, missingEnvNames } from '../lib/supabaseClient';
@@ -83,24 +82,19 @@ export default function FinancialSummaryPage() {
     [washes, variables],
   );
 
-  // Period-scoped wash counter — drives the virtual biker-commissions
-  // row for THIS month's statement.
-  const washCountInMonth = useMemo(
-    () => sumCompletedWashQuantityInMonth(washes, selectedMonth),
-    [washes, selectedMonth],
-  );
-
   // Build the same display list the Variable Expenses page uses for this
   // month — manual non-dynamic rows logged in the month PLUS one virtual
-  // row per dynamic category sized by washCountInMonth × default unit cost.
+  // row per (dynamic category × biker). The helper consumes raw `washes`
+  // and handles the per-biker grouping, so the variable line of the P&L
+  // automatically reflects every biker's commission contribution.
   const periodVariableItems = useMemo(
     () => variableItemsForMonth({
       manualItems: variables,
       categories:  varCategories,
       selectedMonth,
-      washCountInMonth,
+      washes,
     }),
-    [variables, varCategories, selectedMonth, washCountInMonth],
+    [variables, varCategories, selectedMonth, washes],
   );
 
   const revenue = useMemo(

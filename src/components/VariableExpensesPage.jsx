@@ -157,16 +157,17 @@ export default function VariableExpensesPage() {
     [washes, selectedMonth],
   );
 
-  // displayedItems = virtual biker-commission row(s) for this month +
-  // any manual non-dynamic rows logged in this month.
+  // displayedItems = one virtual row per (dynamic category × biker who
+  // worked this month) + manual non-dynamic rows logged in this month.
+  // The helper consumes raw `washes` and handles filtering + grouping.
   const displayedItems = useMemo(
     () => variableItemsForMonth({
       manualItems: items,
       categories,
       selectedMonth,
-      washCountInMonth,
+      washes,
     }),
-    [items, categories, selectedMonth, washCountInMonth],
+    [items, categories, selectedMonth, washes],
   );
 
   const totals = useMemo(() => {
@@ -320,7 +321,9 @@ export default function VariableExpensesPage() {
                         <div>{i.expenseName}</div>
                         {i.isVirtual && (
                           <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
-                            محسوب تلقائياً من إجمالي غسلات شهر {monthLabel}
+                            {i.bikerName
+                              ? `محسوب تلقائياً من غسلات ${i.bikerName} لشهر ${monthLabel}`
+                              : `محسوب تلقائياً من إجمالي غسلات شهر ${monthLabel}`}
                           </p>
                         )}
                       </td>

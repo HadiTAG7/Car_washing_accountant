@@ -156,7 +156,7 @@ export default function AnnualExpensesPage() {
         subtitle="متابعة المصاريف التشغيلية المتكررة للأسطول والامتياز"
       />
 
-      <main className="p-8 space-y-6">
+      <main className="p-4 sm:p-6 lg:p-8 space-y-6">
         {!isSupabaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
 
         {mutationError && (
@@ -176,7 +176,7 @@ export default function AnnualExpensesPage() {
         )}
 
         {/* ── KPI summary ─────────────────────────────────────────── */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-5">
           <StatCard
             icon={Wallet}
             iconBg="bg-primary-50"
@@ -228,16 +228,16 @@ export default function AnnualExpensesPage() {
           ) : items.length === 0 ? (
             <EmptyState onAdd={openAddModal} />
           ) : (
-            <div className="overflow-x-auto -mx-6 px-6">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
+              <table className="w-full min-w-[640px] text-sm">
                 <thead>
                   <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
-                    <th className="py-3 px-4">المصروف</th>
-                    <th className="py-3 px-4">التصنيف</th>
-                    <th className="py-3 px-4 text-left tabular-nums">التكلفة السنوية</th>
-                    <th className="py-3 px-4">تاريخ الصرف السنوي</th>
-                    <th className="py-3 px-4">الحالة</th>
-                    <th className="py-3 px-4 text-left w-20">إجراءات</th>
+                    <th className="py-3 px-4 whitespace-nowrap">المصروف</th>
+                    <th className="py-3 px-4 whitespace-nowrap">التصنيف</th>
+                    <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">التكلفة السنوية</th>
+                    <th className="py-3 px-4 whitespace-nowrap">تاريخ الصرف السنوي</th>
+                    <th className="py-3 px-4 whitespace-nowrap">الحالة</th>
+                    <th className="py-3 px-4 whitespace-nowrap text-left w-20">إجراءات</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -246,29 +246,29 @@ export default function AnnualExpensesPage() {
                       key={i.id}
                       className="border-b border-slate-50 dark:border-slate-800 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
                     >
-                      <td className="py-3 px-4 font-medium text-slate-800 dark:text-slate-200">{i.expenseName}</td>
-                      <td className="py-3 px-4">
+                      <td className="py-3 px-4 whitespace-normal break-words min-w-[180px] font-medium text-slate-800 dark:text-slate-200">{i.expenseName}</td>
+                      <td className="py-3 px-4 whitespace-nowrap">
                         <span className="inline-flex text-[11px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-2 py-1 rounded-md">
                           {getCategoryLabel(i.category)}
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-left tabular-nums text-slate-700 dark:text-slate-300">
+                      <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums text-slate-700 dark:text-slate-300">
                         {formatCurrency(i.annualCost)}
                       </td>
-                      <td className="py-3 px-4 text-slate-600 dark:text-slate-400">
+                      <td className="py-3 px-4 whitespace-nowrap text-slate-600 dark:text-slate-400">
                         <span className="inline-flex items-center gap-1.5 tabular-nums">
                           <CalendarClock size={13} className="text-slate-400 dark:text-slate-500" />
                           {formatAnnualPaymentDate(i.paymentMonth, i.paymentDay)}
                         </span>
                       </td>
-                      <td className="py-3 px-4">
+                      <td className="py-3 px-4 whitespace-nowrap">
                         <PaymentStatusPill
                           status={i.paymentStatus}
                           dueToday={isAnnualDueToday(i.paymentMonth, i.paymentDay)}
                           onChange={(next) => handleUpdateStatus(i.id, next)}
                         />
                       </td>
-                      <td className="py-3 px-4 text-left">
+                      <td className="py-3 px-4 whitespace-nowrap text-left">
                         <div className="inline-flex items-center gap-1">
                           <button
                             type="button"

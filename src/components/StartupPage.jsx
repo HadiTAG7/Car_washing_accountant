@@ -110,7 +110,7 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
         subtitle="تتبع المصاريف التأسيسية لمرة واحدة لامتياز مونستر واش"
       />
 
-      <main className="p-8 space-y-6">
+      <main className="p-4 sm:p-6 lg:p-8 space-y-6">
         {!isSupabaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
 
         {mutationError && (
@@ -130,7 +130,7 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
         )}
 
         {/* ── KPI summary ─────────────────────────────────────────── */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-5">
           <StatCard
             icon={Wallet}
             iconBg="bg-primary-50"
@@ -178,16 +178,16 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
           ) : items.length === 0 ? (
             <EmptyState onAdd={openAddModal} />
           ) : (
-            <div className="overflow-x-auto -mx-6 px-6">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
+              <table className="w-full min-w-[640px] text-sm">
                 <thead>
                   <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
-                    <th className="py-3 px-4">البند</th>
-                    <th className="py-3 px-4">التصنيف</th>
-                    <th className="py-3 px-4 text-left tabular-nums">المبلغ المخطط</th>
-                    <th className="py-3 px-4 text-left tabular-nums">المبلغ الفعلي</th>
-                    <th className="py-3 px-4">الحالة</th>
-                    <th className="py-3 px-4 text-left w-16">إجراءات</th>
+                    <th className="py-3 px-4 whitespace-nowrap">البند</th>
+                    <th className="py-3 px-4 whitespace-nowrap">التصنيف</th>
+                    <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">المبلغ المخطط</th>
+                    <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">المبلغ الفعلي</th>
+                    <th className="py-3 px-4 whitespace-nowrap">الحالة</th>
+                    <th className="py-3 px-4 whitespace-nowrap text-left w-16">إجراءات</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -199,7 +199,7 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
                         key={i.id}
                         className="border-b border-slate-50 dark:border-slate-800 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
                       >
-                        <td className="py-3 px-4 align-top">
+                        <td className="py-3 px-4 whitespace-nowrap align-top">
                           <div className="font-medium text-slate-800 dark:text-slate-200">{i.itemName}</div>
                           {qty > 1 && (
                             <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5 tabular-nums">
@@ -207,15 +207,15 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
                             </div>
                           )}
                         </td>
-                        <td className="py-3 px-4 align-top">
+                        <td className="py-3 px-4 whitespace-nowrap align-top">
                           <span className="inline-flex text-[11px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-2 py-1 rounded-md">
                             {getCategoryLabel(i.category)}
                           </span>
                         </td>
-                        <td className="py-3 px-4 text-left tabular-nums text-slate-700 dark:text-slate-300 align-top">
+                        <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums text-slate-700 dark:text-slate-300 align-top">
                           {formatCurrency(i.plannedAmount)}
                         </td>
-                        <td className="py-3 px-4 text-left align-top">
+                        <td className="py-3 px-4 whitespace-nowrap text-left align-top">
                           <input
                             type="number"
                             min="0"
@@ -230,13 +230,13 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
                             className="w-28 px-2 py-1 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-slate-100 font-medium text-left tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-300"
                           />
                         </td>
-                        <td className="py-3 px-4 align-top">
+                        <td className="py-3 px-4 whitespace-nowrap align-top">
                           <StatusTogglePill
                             status={i.status}
                             onChange={(next) => handleUpdateStatus(i.id, next)}
                           />
                         </td>
-                        <td className="py-3 px-4 text-left align-top">
+                        <td className="py-3 px-4 whitespace-nowrap text-left align-top">
                           <div className="inline-flex items-center gap-1">
                             <button
                               type="button"

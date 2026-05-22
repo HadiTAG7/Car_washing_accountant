@@ -95,7 +95,7 @@ export default function PartnersPage() {
         subtitle="متابعة الشركاء وعدد العمالة لكل شريك"
       />
 
-      <main className="p-8 space-y-6">
+      <main className="p-4 sm:p-6 lg:p-8 space-y-6">
         {mutationError && (
           <ErrorState
             title="تعذّر تنفيذ العملية"
@@ -112,7 +112,7 @@ export default function PartnersPage() {
         )}
 
         {/* ── KPI row ─────────────────────────────────────────── */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-5">
           <StatCard
             icon={Briefcase}
             iconBg="bg-primary-50"
@@ -150,14 +150,14 @@ export default function PartnersPage() {
               </PrimaryButton>
             }
           />
-          <div className="overflow-x-auto -mx-6 px-6">
-            <table className="w-full text-sm">
+          <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
+            <table className="w-full min-w-[640px] text-sm">
               <thead>
                 <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
-                  <th className="py-3 px-4">اسم الشريك</th>
-                  <th className="py-3 px-4 text-center">عدد العمالة</th>
-                  <th className="py-3 px-4 text-center">النسبة</th>
-                  <th className="py-3 px-4 text-left w-16">إجراءات</th>
+                  <th className="py-3 px-4 whitespace-nowrap">اسم الشريك</th>
+                  <th className="py-3 px-4 whitespace-nowrap text-center">عدد العمالة</th>
+                  <th className="py-3 px-4 whitespace-nowrap text-center">النسبة</th>
+                  <th className="py-3 px-4 whitespace-nowrap text-left w-16">إجراءات</th>
                 </tr>
               </thead>
               <tbody>
@@ -181,7 +181,7 @@ export default function PartnersPage() {
                     : 0;
                   return (
                     <tr key={p.id} className="border-b border-slate-50 dark:border-slate-800 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
-                      <td className="py-3 px-4 font-medium text-slate-800 dark:text-slate-200">
+                      <td className="py-3 px-4 whitespace-normal break-words min-w-[180px] font-medium text-slate-800 dark:text-slate-200">
                         <div className="flex items-center gap-2">
                           <span className="bg-primary-50 text-primary-700 w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0">
                             <Briefcase size={14} />
@@ -193,7 +193,7 @@ export default function PartnersPage() {
                           />
                         </div>
                       </td>
-                      <td className="py-3 px-4 text-center tabular-nums text-slate-700 dark:text-slate-300">
+                      <td className="py-3 px-4 whitespace-nowrap text-center tabular-nums text-slate-700 dark:text-slate-300">
                         <EditableCell
                           value={p.workersCount}
                           type="number"
@@ -201,12 +201,12 @@ export default function PartnersPage() {
                           className="w-20 text-center"
                         />
                       </td>
-                      <td className="py-3 px-4 text-center tabular-nums">
+                      <td className="py-3 px-4 whitespace-nowrap text-center tabular-nums">
                         <span className="inline-flex items-center text-[13px] font-bold bg-primary-50 text-primary-700 px-2.5 py-1 rounded-lg">
                           {pct.toFixed(1)}%
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-left">
+                      <td className="py-3 px-4 whitespace-nowrap text-left">
                         <button
                           onClick={() => handleDelete(p.id)}
                           className="text-slate-400 dark:text-slate-500 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors"

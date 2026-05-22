@@ -156,8 +156,8 @@ export default function AddAnnualExpenseModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
 
-      <div className="relative bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60">
+      <div className="relative bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-lg mx-4 my-4 max-h-[92vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60">
           <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
             <span className="bg-accent-50 text-accent-600 w-9 h-9 rounded-xl flex items-center justify-center">
               <HeaderIcon size={18} />
@@ -174,7 +174,7 @@ export default function AddAnnualExpenseModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+        <form onSubmit={handleSubmit} className="p-5 sm:p-6 space-y-5">
           <div>
             <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5" htmlFor="expenseName">
               اسم المصروف
@@ -188,7 +188,7 @@ export default function AddAnnualExpenseModal({
               placeholder="مثال: تأمين الأسطول السنوي"
               autoFocus
               required
-              className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+              className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
             />
           </div>
 
@@ -203,7 +203,7 @@ export default function AddAnnualExpenseModal({
                 value={form.category}
                 onChange={handleChange}
                 required
-                className="flex-1 px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+                className="flex-1 px-4 py-3 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
               >
                 {categories.length === 0 && <option value="">— لا توجد تصنيفات —</option>}
                 {categories.map((cat) => (
@@ -240,7 +240,7 @@ export default function AddAnnualExpenseModal({
                     }}
                     placeholder="اسم التصنيف الجديد"
                     autoFocus
-                    className="flex-1 px-4 py-2.5 border border-slate-300 bg-white dark:bg-slate-800 rounded-lg text-sm text-slate-900 dark:text-slate-100 font-medium placeholder:text-slate-400 dark:text-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-300 focus:border-primary-400"
+                    className="flex-1 px-4 py-3 border border-slate-300 bg-white dark:bg-slate-800 rounded-lg text-sm text-slate-900 dark:text-slate-100 font-medium placeholder:text-slate-400 dark:text-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-300 focus:border-primary-400"
                   />
                   <button
                     type="button"
@@ -276,7 +276,7 @@ export default function AddAnnualExpenseModal({
                 min="1"
                 step="1"
                 required
-                className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+                className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
               />
             </div>
             <div>
@@ -293,7 +293,7 @@ export default function AddAnnualExpenseModal({
                 min="0"
                 step="any"
                 required
-                className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+                className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
               />
             </div>
           </div>
@@ -309,7 +309,7 @@ export default function AddAnnualExpenseModal({
                 value={form.paymentMonth}
                 onChange={handleChange}
                 required
-                className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium bg-white tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+                className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium bg-white tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
               >
                 {MONTH_NAMES.map((name, idx) => {
                   const m = String(idx + 1);
@@ -331,7 +331,7 @@ export default function AddAnnualExpenseModal({
                 max="31"
                 step="1"
                 required
-                className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+                className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
               />
             </div>
           </div>
@@ -345,7 +345,7 @@ export default function AddAnnualExpenseModal({
               name="paymentStatus"
               value={form.paymentStatus}
               onChange={handleChange}
-              className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+              className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
             >
               <option value="pending">قيد الانتظار</option>
               <option value="paid">مدفوع</option>

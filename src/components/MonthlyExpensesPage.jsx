@@ -153,7 +153,7 @@ export default function MonthlyExpensesPage() {
         subtitle="متابعة المصاريف التشغيلية الشهرية المتكررة"
       />
 
-      <main className="p-8 space-y-6">
+      <main className="p-4 sm:p-6 lg:p-8 space-y-6">
         {!isSupabaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
 
         {mutationError && (
@@ -173,7 +173,7 @@ export default function MonthlyExpensesPage() {
         )}
 
         {/* ── KPI summary ─────────────────────────────────────────── */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-5">
           <StatCard
             icon={Wallet}
             iconBg="bg-primary-50"
@@ -225,18 +225,18 @@ export default function MonthlyExpensesPage() {
           ) : items.length === 0 ? (
             <EmptyState onAdd={openAddModal} />
           ) : (
-            <div className="overflow-x-auto -mx-6 px-6">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
+              <table className="w-full min-w-[640px] text-sm">
                 <thead>
                   <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
-                    <th className="py-3 px-4">المصروف</th>
-                    <th className="py-3 px-4">التصنيف</th>
-                    <th className="py-3 px-4 text-center tabular-nums">الكمية</th>
-                    <th className="py-3 px-4 text-left tabular-nums">تكلفة الوحدة</th>
-                    <th className="py-3 px-4 text-left tabular-nums">الإجمالي الشهري</th>
-                    <th className="py-3 px-4">يوم الصرف</th>
-                    <th className="py-3 px-4">الحالة</th>
-                    <th className="py-3 px-4 text-left w-20">إجراءات</th>
+                    <th className="py-3 px-4 whitespace-nowrap">المصروف</th>
+                    <th className="py-3 px-4 whitespace-nowrap">التصنيف</th>
+                    <th className="py-3 px-4 whitespace-nowrap text-center tabular-nums">الكمية</th>
+                    <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">تكلفة الوحدة</th>
+                    <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">الإجمالي الشهري</th>
+                    <th className="py-3 px-4 whitespace-nowrap">يوم الصرف</th>
+                    <th className="py-3 px-4 whitespace-nowrap">الحالة</th>
+                    <th className="py-3 px-4 whitespace-nowrap text-left w-20">إجراءات</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -245,7 +245,7 @@ export default function MonthlyExpensesPage() {
                       key={i.id}
                       className="border-b border-slate-50 dark:border-slate-800 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
                     >
-                      <td className="py-3 px-4 align-top">
+                      <td className="py-3 px-4 whitespace-nowrap align-top">
                         <div className="font-medium text-slate-800 dark:text-slate-200">{i.expenseName}</div>
                         {i.quantity > 1 && (
                           <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5 tabular-nums">
@@ -253,34 +253,34 @@ export default function MonthlyExpensesPage() {
                           </div>
                         )}
                       </td>
-                      <td className="py-3 px-4 align-top">
+                      <td className="py-3 px-4 whitespace-nowrap align-top">
                         <span className="inline-flex text-[11px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-2 py-1 rounded-md">
                           {getCategoryLabel(i.categoryId)}
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-center tabular-nums text-slate-700 dark:text-slate-300 align-top">
+                      <td className="py-3 px-4 whitespace-nowrap text-center tabular-nums text-slate-700 dark:text-slate-300 align-top">
                         {formatNumber(i.quantity)}
                       </td>
-                      <td className="py-3 px-4 text-left tabular-nums text-slate-700 dark:text-slate-300 align-top">
+                      <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums text-slate-700 dark:text-slate-300 align-top">
                         {formatCurrency(i.unitCost)}
                       </td>
-                      <td className="py-3 px-4 text-left tabular-nums font-bold text-slate-900 dark:text-slate-100 align-top">
+                      <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums font-bold text-slate-900 dark:text-slate-100 align-top">
                         {formatCurrency(i.totalMonthlyCost)}
                       </td>
-                      <td className="py-3 px-4 text-slate-600 dark:text-slate-400 align-top">
+                      <td className="py-3 px-4 whitespace-nowrap text-slate-600 dark:text-slate-400 align-top">
                         <span className="inline-flex items-center gap-1.5 tabular-nums">
                           <CalendarClock size={13} className="text-slate-400 dark:text-slate-500" />
                           {formatPaymentDay(i.paymentDay)}
                         </span>
                       </td>
-                      <td className="py-3 px-4 align-top">
+                      <td className="py-3 px-4 whitespace-nowrap align-top">
                         <PaymentStatusPill
                           status={i.paymentStatus}
                           dueToday={isMonthlyDueToday(i.paymentDay)}
                           onChange={(next) => handleUpdateStatus(i.id, next)}
                         />
                       </td>
-                      <td className="py-3 px-4 text-left align-top">
+                      <td className="py-3 px-4 whitespace-nowrap text-left align-top">
                         <div className="inline-flex items-center gap-1">
                           <button
                             type="button"

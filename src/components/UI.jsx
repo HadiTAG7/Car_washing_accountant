@@ -17,12 +17,12 @@ export function Card({ className = '', children }) {
 /** Section header with optional action on the left (RTL: left edge). */
 export function SectionHeader({ title, subtitle, action }) {
   return (
-    <div className="flex items-start justify-between gap-4 mb-5">
-      <div>
+    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4 mb-5">
+      <div className="min-w-0">
         <h2 className="text-base font-bold text-slate-800 dark:text-slate-100">{title}</h2>
         {subtitle && <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{subtitle}</p>}
       </div>
-      {action}
+      {action && <div className="shrink-0">{action}</div>}
     </div>
   );
 }
@@ -30,7 +30,7 @@ export function SectionHeader({ title, subtitle, action }) {
 /** Compact KPI card. */
 export function StatCard({ icon: Icon, iconColor = 'text-primary-600', iconBg = 'bg-primary-50', label, value, trend, trendPositive, sub }) {
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 p-5 shadow-sm dark:shadow-slate-950/40 hover:shadow-md dark:hover:shadow-slate-950/50 transition-all duration-200">
+    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 p-4 sm:p-5 shadow-sm dark:shadow-slate-950/40 hover:shadow-md dark:hover:shadow-slate-950/50 transition-all duration-200">
       <div className="flex items-start justify-between">
         <div className={`${iconBg} ${iconColor} w-11 h-11 rounded-xl flex items-center justify-center`}>
           {Icon && <Icon size={20} strokeWidth={2.2} />}

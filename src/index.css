@@ -89,6 +89,12 @@ html, body, #root {
   height: 100%;
 }
 
+/* Prevent iOS Safari rubber-band scroll from revealing the document
+   background when a modal or nested scroller hits its end. */
+html, body {
+  overscroll-behavior-y: contain;
+}
+
 body {
   margin: 0;
   direction: rtl;

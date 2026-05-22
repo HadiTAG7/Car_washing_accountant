@@ -89,8 +89,8 @@ export default function AddItemModal({ isOpen, onClose, onAdd, categories = [], 
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
 
-      <div className="relative bg-white dark:bg-slate-900 rounded-2xl shadow-xl w-full max-w-lg mx-4 overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-slate-800 bg-gray-50 dark:bg-slate-800/60">
+      <div className="relative bg-white dark:bg-slate-900 rounded-2xl shadow-xl w-full max-w-lg mx-4 my-4 max-h-[92vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-gray-100 dark:border-slate-800 bg-gray-50 dark:bg-slate-800/60">
           <h3 className="text-lg font-bold text-gray-800 dark:text-slate-200 flex items-center gap-2">
             <Plus size={20} className="text-primary-600" />
             إضافة بند جديد
@@ -103,7 +103,7 @@ export default function AddItemModal({ isOpen, onClose, onAdd, categories = [], 
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+        <form onSubmit={handleSubmit} className="p-5 sm:p-6 space-y-5">
           {/* Item Name */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 dark:text-slate-300 mb-1.5" htmlFor="itemName">
@@ -118,7 +118,7 @@ export default function AddItemModal({ isOpen, onClose, onAdd, categories = [], 
               placeholder="مثال: دبابات تنظيف، غسالة صناعية"
               required
               autoFocus
-              className="w-full px-4 py-2.5 border border-gray-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="w-full px-4 py-3 border border-gray-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
             />
           </div>
 
@@ -136,7 +136,7 @@ export default function AddItemModal({ isOpen, onClose, onAdd, categories = [], 
               min="1"
               step="1"
               required
-              className="w-full px-4 py-2.5 border border-gray-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="w-full px-4 py-3 border border-gray-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
             />
           </div>
 
@@ -148,7 +148,7 @@ export default function AddItemModal({ isOpen, onClose, onAdd, categories = [], 
                 name="category"
                 value={form.category}
                 onChange={handleChange}
-                className="flex-1 px-4 py-2.5 border border-gray-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white"
+                className="flex-1 px-4 py-3 border border-gray-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white"
               >
                 {categories.length === 0 && <option value="">— لا توجد تصنيفات —</option>}
                 {categories.map((cat) => (
@@ -206,7 +206,7 @@ export default function AddItemModal({ isOpen, onClose, onAdd, categories = [], 
                 required
                 min="0"
                 step="any"
-                className="w-full px-4 py-2.5 border border-gray-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               />
             </div>
             <div>
@@ -222,7 +222,7 @@ export default function AddItemModal({ isOpen, onClose, onAdd, categories = [], 
                 placeholder="0"
                 min="0"
                 step="any"
-                className="w-full px-4 py-2.5 border border-gray-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               />
             </div>
           </div>

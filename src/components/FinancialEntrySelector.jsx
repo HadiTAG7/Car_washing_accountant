@@ -30,8 +30,8 @@ export default function FinancialEntrySelector({ isOpen, onSelect, onClose }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
 
-      <div className="relative bg-white dark:bg-slate-900 rounded-2xl shadow-xl w-full max-w-2xl mx-4 overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-slate-800 bg-gray-50 dark:bg-slate-800/60">
+      <div className="relative bg-white dark:bg-slate-900 rounded-2xl shadow-xl w-full max-w-2xl mx-4 my-4 max-h-[92vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-gray-100 dark:border-slate-800 bg-gray-50 dark:bg-slate-800/60">
           <div>
             <h3 className="text-lg font-bold text-gray-800 dark:text-slate-200">إضافة سجل مالي</h3>
             <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">اختر نوع القيد المالي الذي تريد تسجيله</p>
@@ -44,7 +44,7 @@ export default function FinancialEntrySelector({ isOpen, onSelect, onClose }) {
           </button>
         </div>
 
-        <div className="p-6 grid grid-cols-1 gap-4">
+        <div className="p-5 sm:p-6 grid grid-cols-1 gap-4">
           {ENTRY_TYPES.map((type) => {
             const Icon = type.icon;
             return (

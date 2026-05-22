@@ -60,8 +60,8 @@ function StatementRow({ label, amount, kind = 'minus', tone = 'auto' }) {
 
   return (
     <tr className={rowClass}>
-      <td className={`py-3 px-4 ${labelClass}`}>{label}</td>
-      <td className={`py-3 px-4 text-left tabular-nums ${amountWeight} ${amountClass}`}>
+      <td className={`py-3 px-4 whitespace-nowrap ${labelClass}`}>{label}</td>
+      <td className={`py-3 px-4 whitespace-nowrap text-left tabular-nums ${amountWeight} ${amountClass}`}>
         {sign}{formatCurrency(Math.abs(amount))}
       </td>
     </tr>
@@ -144,7 +144,7 @@ export default function FinancialSummaryPage() {
         subtitle="عرض محاسبي للإيرادات والتكاليف وصافي الربح وفق فترة شهرية محددة"
       />
 
-      <main className="p-8 space-y-6">
+      <main className="p-4 sm:p-6 lg:p-8 space-y-6">
         {!isSupabaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
 
         {anyError && (
@@ -190,7 +190,7 @@ export default function FinancialSummaryPage() {
         ) : (
           <>
             {/* ── Top 3 KPI cards ─────────────────────────────────── */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-5">
               <StatCard
                 icon={Wallet}
                 iconBg="bg-primary-50"
@@ -223,12 +223,12 @@ export default function FinancialSummaryPage() {
                 title={`هيكل قائمة الدخل — ${monthLabel}`}
                 subtitle="بيان رسمي للإيرادات التشغيلية، التكاليف، وصافي الربح للفترة"
               />
-              <div className="overflow-x-auto -mx-6 px-6">
-                <table className="w-full text-sm">
+              <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
+                <table className="w-full min-w-[640px] text-sm">
                   <thead>
                     <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
-                      <th className="py-3 px-4">البند</th>
-                      <th className="py-3 px-4 text-left">المبلغ</th>
+                      <th className="py-3 px-4 whitespace-nowrap">البند</th>
+                      <th className="py-3 px-4 whitespace-nowrap text-left">المبلغ</th>
                     </tr>
                   </thead>
                   <tbody>

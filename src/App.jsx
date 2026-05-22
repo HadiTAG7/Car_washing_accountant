@@ -26,6 +26,7 @@ import FinancialEntrySelector from './components/FinancialEntrySelector';
 
 import { useAuth } from './hooks/useAuth';
 import { isSupabaseConfigured, requireAuth, missingEnvNames } from './lib/supabaseClient';
+import { MobileMenuProvider, useMobileMenu } from './contexts/MobileMenuContext';
 
 const TABS = [
   { id: 'startup',   label: 'رسوم التأسيس',           icon: Landmark    },
@@ -38,24 +39,31 @@ const TABS = [
   { id: 'partners',  label: 'إدارة الشركاء',          icon: Handshake   },
 ];
 
-export default function App() {
+// Inner shell wraps the routed content so it can subscribe to the
+// MobileMenuContext (provider is one level up).
+function AppShell() {
   const [activeTab, setActiveTab] = useState('startup');
   const { session, loading: authLoading, signOut } = useAuth();
 
   const [showEntrySelector, setShowEntrySelector] = useState(false);
   const [pendingEntry, setPendingEntry] = useState(null);
 
+  const { open: mobileMenuOpen, setOpen: setMobileMenuOpen } = useMobileMenu();
+
   const clearPendingEntry = useCallback(() => setPendingEntry(null), []);
 
   function handleEntrySelect(type) {
     setShowEntrySelector(false);
     if (type === 'item' || type === 'asset') {
-      // TODO: 'asset' routes here from FinancialEntrySelector but the assets
-      // module is not part of Module 1 — it will be reintroduced in a later
-      // module rebuild. For now the entry is a no-op on the startup tab.
       setActiveTab('startup');
     }
     setPendingEntry(type);
+  }
+
+  // Selecting a tab from inside the mobile drawer should auto-close it.
+  function handleSelectTab(id) {
+    setActiveTab(id);
+    setMobileMenuOpen(false);
   }
 
   if (authLoading) {
@@ -79,13 +87,15 @@ export default function App() {
       <Sidebar
         tabs={TABS}
         activeTab={activeTab}
-        onSelectTab={setActiveTab}
+        onSelectTab={handleSelectTab}
         user={session?.user}
         onSignOut={isSupabaseConfigured ? signOut : null}
-        onAddEntry={() => setShowEntrySelector(true)}
+        onAddEntry={() => { setShowEntrySelector(true); setMobileMenuOpen(false); }}
+        mobileOpen={mobileMenuOpen}
+        onCloseMobile={() => setMobileMenuOpen(false)}
       />
 
-      <div className="mr-64 min-h-screen flex flex-col">
+      <div className="min-h-screen md:mr-64 flex flex-col">
         {!isSupabaseConfigured && <DemoBanner missing={missingEnvNames} />}
 
         {activeTab === 'startup'   && (
@@ -109,5 +119,13 @@ export default function App() {
         onClose={() => setShowEntrySelector(false)}
       />
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <MobileMenuProvider>
+      <AppShell />
+    </MobileMenuProvider>
   );
 }

@@ -30,8 +30,8 @@ export default function AddPartnerModal({ isOpen, onClose, onAdd }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
 
-      <div className="relative bg-white dark:bg-slate-900 rounded-2xl shadow-xl w-full max-w-lg mx-4 overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-slate-800 bg-gray-50 dark:bg-slate-800/60">
+      <div className="relative bg-white dark:bg-slate-900 rounded-2xl shadow-xl w-full max-w-lg mx-4 my-4 max-h-[92vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-gray-100 dark:border-slate-800 bg-gray-50 dark:bg-slate-800/60">
           <h3 className="text-lg font-bold text-gray-800 dark:text-slate-200 flex items-center gap-2">
             <Plus size={20} className="text-primary-600" />
             إضافة شريك جديد
@@ -44,7 +44,7 @@ export default function AddPartnerModal({ isOpen, onClose, onAdd }) {
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+        <form onSubmit={handleSubmit} className="p-5 sm:p-6 space-y-5">
           {/* Partner Name */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 dark:text-slate-300 mb-1.5">اسم الشريك</label>
@@ -55,7 +55,7 @@ export default function AddPartnerModal({ isOpen, onClose, onAdd }) {
               onChange={handleChange}
               placeholder="مثال: شركة الخدمات المحدودة"
               required
-              className="w-full px-4 py-2.5 border border-gray-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="w-full px-4 py-3 border border-gray-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
             />
           </div>
 
@@ -69,7 +69,7 @@ export default function AddPartnerModal({ isOpen, onClose, onAdd }) {
               onChange={handleChange}
               placeholder="0"
               min="0"
-              className="w-full px-4 py-2.5 border border-gray-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="w-full px-4 py-3 border border-gray-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
             />
           </div>
 

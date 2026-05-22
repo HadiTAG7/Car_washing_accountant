@@ -218,7 +218,7 @@ export default function VariableExpensesPage() {
         subtitle="تتبّع تكاليف الغسلة الواحدة، العمولات، والمستلزمات المتغيرة حسب الشهر"
       />
 
-      <main className="p-8 space-y-6">
+      <main className="p-4 sm:p-6 lg:p-8 space-y-6">
         {!isSupabaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
 
         {mutationError && (
@@ -246,7 +246,7 @@ export default function VariableExpensesPage() {
         <WashCounterReadout washCount={washCountInMonth} monthLabel={monthLabel} />
 
         {/* ── KPI summary ─────────────────────────────────────────── */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-5">
           <StatCard
             icon={Wallet}
             iconBg="bg-primary-50"
@@ -298,17 +298,17 @@ export default function VariableExpensesPage() {
           ) : displayedItems.length === 0 ? (
             <EmptyState onAdd={openAddModal} monthLabel={monthLabel} />
           ) : (
-            <div className="overflow-x-auto -mx-6 px-6">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
+              <table className="w-full min-w-[640px] text-sm">
                 <thead>
                   <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
-                    <th className="py-3 px-4">المصروف</th>
-                    <th className="py-3 px-4">التصنيف</th>
-                    <th className="py-3 px-4 text-center tabular-nums">عدد الغسلات / الوحدات</th>
-                    <th className="py-3 px-4 text-left tabular-nums">تكلفة الوحدة</th>
-                    <th className="py-3 px-4 text-left tabular-nums">الإجمالي المتغير</th>
-                    <th className="py-3 px-4">تاريخ الصرف</th>
-                    <th className="py-3 px-4 text-left w-20">إجراءات</th>
+                    <th className="py-3 px-4 whitespace-nowrap">المصروف</th>
+                    <th className="py-3 px-4 whitespace-nowrap">التصنيف</th>
+                    <th className="py-3 px-4 whitespace-nowrap text-center tabular-nums">عدد الغسلات / الوحدات</th>
+                    <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">تكلفة الوحدة</th>
+                    <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">الإجمالي المتغير</th>
+                    <th className="py-3 px-4 whitespace-nowrap">تاريخ الصرف</th>
+                    <th className="py-3 px-4 whitespace-nowrap text-left w-20">إجراءات</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -317,7 +317,7 @@ export default function VariableExpensesPage() {
                       key={i.id}
                       className={`border-b border-slate-50 dark:border-slate-800 transition-colors ${i.isVirtual ? 'bg-primary-50/30 hover:bg-primary-50/50' : 'hover:bg-slate-50/60 dark:hover:bg-slate-800/40'}`}
                     >
-                      <td className="py-3 px-4 font-medium text-slate-800 dark:text-slate-200 align-top">
+                      <td className="py-3 px-4 whitespace-normal break-words min-w-[180px] font-medium text-slate-800 dark:text-slate-200 align-top">
                         <div>{i.expenseName}</div>
                         {i.isVirtual && (
                           <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5 leading-relaxed">
@@ -327,12 +327,12 @@ export default function VariableExpensesPage() {
                           </p>
                         )}
                       </td>
-                      <td className="py-3 px-4 align-top">
+                      <td className="py-3 px-4 whitespace-nowrap align-top">
                         <span className="inline-flex text-[11px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-2 py-1 rounded-md">
                           {getCategoryLabel(i.categoryId)}
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-center tabular-nums text-slate-700 dark:text-slate-300 align-top">
+                      <td className="py-3 px-4 whitespace-nowrap text-center tabular-nums text-slate-700 dark:text-slate-300 align-top">
                         <span className="inline-flex items-center justify-center gap-1.5">
                           <span>{formatNumber(i.quantity)}</span>
                           {i.isVirtual && (
@@ -346,19 +346,19 @@ export default function VariableExpensesPage() {
                           )}
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-left tabular-nums text-slate-700 dark:text-slate-300 align-top">
+                      <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums text-slate-700 dark:text-slate-300 align-top">
                         {formatCurrency(i.unitCost)}
                       </td>
-                      <td className="py-3 px-4 text-left tabular-nums font-bold text-slate-900 dark:text-slate-100 align-top">
+                      <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums font-bold text-slate-900 dark:text-slate-100 align-top">
                         {formatCurrency(i.totalVariableCost)}
                       </td>
-                      <td className="py-3 px-4 text-slate-600 dark:text-slate-400 align-top">
+                      <td className="py-3 px-4 whitespace-nowrap text-slate-600 dark:text-slate-400 align-top">
                         <span className="inline-flex items-center gap-1.5 tabular-nums">
                           <CalendarClock size={13} className="text-slate-400 dark:text-slate-500" />
                           {i.isVirtual ? monthLabel : formatLoggedDate(i.loggedDate)}
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-left align-top">
+                      <td className="py-3 px-4 whitespace-nowrap text-left align-top">
                         {i.isVirtual ? (
                           <span className="text-slate-300 text-sm">—</span>
                         ) : (

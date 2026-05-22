@@ -1,5 +1,6 @@
-import { Search, Bell, Calendar, Sun, Moon } from 'lucide-react';
+import { Search, Bell, Calendar, Sun, Moon, Menu } from 'lucide-react';
 import { useDarkMode } from '../hooks/useDarkMode';
+import { useMobileMenu } from '../contexts/MobileMenuContext';
 
 /**
  * Top bar with page title, search, dark-mode toggle, notifications, and date.
@@ -20,18 +21,19 @@ export default function TopBar({ title, subtitle, actions }) {
   }).format(today);
 
   const { darkMode, toggle } = useDarkMode();
+  const { toggle: toggleMobileMenu } = useMobileMenu();
 
   return (
     <header className="sticky top-0 z-20 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 transition-colors duration-200">
-      <div className="px-8 py-4 flex items-center justify-between gap-6">
+      <div className="px-4 sm:px-6 lg:px-8 py-3 sm:py-4 flex items-center justify-between gap-3 sm:gap-6">
         {/* Title */}
-        <div>
-          <h1 className="text-xl font-extrabold text-slate-900 dark:text-slate-100 tracking-tight">{title}</h1>
-          {subtitle && <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{subtitle}</p>}
+        <div className="min-w-0 flex-1">
+          <h1 className="text-lg sm:text-xl font-extrabold text-slate-900 dark:text-slate-100 tracking-tight truncate">{title}</h1>
+          {subtitle && <p className="hidden sm:block text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">{subtitle}</p>}
         </div>
 
-        {/* Right cluster: search + actions + icons + date */}
-        <div className="flex items-center gap-3">
+        {/* Right cluster: hamburger (mobile) + search + actions + icons + date */}
+        <div className="flex items-center gap-2 sm:gap-3">
           {/* Search */}
           <div className="relative hidden md:block">
             <Search
@@ -53,7 +55,7 @@ export default function TopBar({ title, subtitle, actions }) {
             onClick={toggle}
             aria-label={darkMode ? 'تفعيل الوضع الفاتح' : 'تفعيل الوضع الداكن'}
             title={darkMode ? 'الوضع الفاتح' : 'الوضع الداكن'}
-            className="relative w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 transition-colors duration-200 overflow-hidden"
+            className="relative w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 transition-colors duration-200 overflow-hidden shrink-0"
           >
             <Sun
               size={18}
@@ -67,26 +69,36 @@ export default function TopBar({ title, subtitle, actions }) {
             />
           </button>
 
-          {/* Notifications */}
+          {/* Notifications — hidden on the smallest screens to save horizontal room */}
           <button
             type="button"
             aria-label="الإشعارات"
-            className="relative w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 transition-colors duration-200"
+            className="hidden sm:flex relative w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 items-center justify-center text-slate-600 dark:text-slate-300 transition-colors duration-200 shrink-0"
           >
             <Bell size={18} />
             <span className="absolute top-1.5 left-1.5 w-2 h-2 rounded-full bg-red-500 ring-2 ring-white dark:ring-slate-900" />
           </button>
 
           {/* Date */}
-          <div className="hidden lg:flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors duration-200">
+          <div className="hidden lg:flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors duration-200 shrink-0">
             <Calendar size={16} />
             <span className="text-xs font-medium whitespace-nowrap">{formatted}</span>
           </div>
 
-          {/* Avatar */}
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 to-primary-800 flex items-center justify-center text-white font-bold text-sm shadow-md">
+          {/* Avatar — desktop only */}
+          <div className="hidden sm:flex w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 to-primary-800 items-center justify-center text-white font-bold text-sm shadow-md shrink-0">
             أ.ر
           </div>
+
+          {/* Hamburger — mobile only, on the far edge (left in RTL) */}
+          <button
+            type="button"
+            onClick={toggleMobileMenu}
+            aria-label="فتح القائمة"
+            className="md:hidden w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center justify-center text-slate-700 dark:text-slate-200 transition-colors duration-200 shrink-0"
+          >
+            <Menu size={20} />
+          </button>
         </div>
       </div>
     </header>

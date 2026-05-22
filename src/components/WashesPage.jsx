@@ -136,7 +136,7 @@ export default function WashesPage() {
         subtitle="سجل كل غسلة لتغذية عداد البايكرز ومتابعة الإيرادات اليومية"
       />
 
-      <main className="p-8 space-y-6">
+      <main className="p-4 sm:p-6 lg:p-8 space-y-6">
         {!isSupabaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
 
         {mutationError && (
@@ -156,7 +156,7 @@ export default function WashesPage() {
         )}
 
         {/* ── KPI summary ─────────────────────────────────────────── */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-5">
           <StatCard
             icon={CheckCircle2}
             iconBg="bg-emerald-50"
@@ -204,17 +204,17 @@ export default function WashesPage() {
           ) : items.length === 0 ? (
             <EmptyState onAdd={openAddModal} />
           ) : (
-            <div className="overflow-x-auto -mx-6 px-6">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
+              <table className="w-full min-w-[640px] text-sm">
                 <thead>
                   <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
-                    <th className="py-3 px-4">البيان / اسم البايكر</th>
-                    <th className="py-3 px-4 text-center tabular-nums">عدد الغسلات</th>
-                    <th className="py-3 px-4 text-left tabular-nums">سعر الغسلة</th>
-                    <th className="py-3 px-4 text-left tabular-nums">إجمالي الإيرادات</th>
-                    <th className="py-3 px-4">التاريخ</th>
-                    <th className="py-3 px-4">الحالة</th>
-                    <th className="py-3 px-4 text-left w-20">إجراءات</th>
+                    <th className="py-3 px-4 whitespace-nowrap">البيان / اسم البايكر</th>
+                    <th className="py-3 px-4 whitespace-nowrap text-center tabular-nums">عدد الغسلات</th>
+                    <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">سعر الغسلة</th>
+                    <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">إجمالي الإيرادات</th>
+                    <th className="py-3 px-4 whitespace-nowrap">التاريخ</th>
+                    <th className="py-3 px-4 whitespace-nowrap">الحالة</th>
+                    <th className="py-3 px-4 whitespace-nowrap text-left w-20">إجراءات</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -226,31 +226,31 @@ export default function WashesPage() {
                         key={w.id}
                         className="border-b border-slate-50 dark:border-slate-800 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
                       >
-                        <td className="py-3 px-4 font-medium text-slate-800 dark:text-slate-200 align-top">
+                        <td className="py-3 px-4 whitespace-normal break-words min-w-[180px] font-medium text-slate-800 dark:text-slate-200 align-top">
                           {label}
                         </td>
-                        <td className="py-3 px-4 text-center tabular-nums text-slate-700 dark:text-slate-300 align-top">
+                        <td className="py-3 px-4 whitespace-nowrap text-center tabular-nums text-slate-700 dark:text-slate-300 align-top">
                           {formatNumber(w.quantity)}
                         </td>
-                        <td className="py-3 px-4 text-left tabular-nums text-slate-700 dark:text-slate-300 align-top">
+                        <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums text-slate-700 dark:text-slate-300 align-top">
                           {formatCurrency(w.price)}
                         </td>
-                        <td className="py-3 px-4 text-left tabular-nums font-bold text-slate-900 dark:text-slate-100 align-top">
+                        <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums font-bold text-slate-900 dark:text-slate-100 align-top">
                           {formatCurrency(total)}
                         </td>
-                        <td className="py-3 px-4 text-slate-600 dark:text-slate-400 align-top">
+                        <td className="py-3 px-4 whitespace-nowrap text-slate-600 dark:text-slate-400 align-top">
                           <span className="inline-flex items-center gap-1.5 tabular-nums">
                             <CalendarClock size={13} className="text-slate-400 dark:text-slate-500" />
                             {formatWashDate(w.washDate)}
                           </span>
                         </td>
-                        <td className="py-3 px-4 align-top">
+                        <td className="py-3 px-4 whitespace-nowrap align-top">
                           <WashStatusPill
                             status={w.status}
                             onChange={(next) => handleUpdateStatus(w.id, next)}
                           />
                         </td>
-                        <td className="py-3 px-4 text-left align-top">
+                        <td className="py-3 px-4 whitespace-nowrap text-left align-top">
                           <div className="inline-flex items-center gap-1">
                             <button
                               type="button"

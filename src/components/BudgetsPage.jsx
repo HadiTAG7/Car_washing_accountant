@@ -345,7 +345,7 @@ function BudgetSection({ title, subtitle, accent, icon: Icon, cards, onAddCustom
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
           {cards}
         </div>
       )}
@@ -605,7 +605,7 @@ export default function BudgetsPage() {
         subtitle="رصد الميزانيات تلقائياً لكل تصنيف ومتابعة الصرف الفعلي"
       />
 
-      <main className="p-8 space-y-6">
+      <main className="p-4 sm:p-6 lg:p-8 space-y-6">
         {!isSupabaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
 
         {anyError && (
@@ -625,7 +625,7 @@ export default function BudgetsPage() {
         )}
 
         {/* Overall KPI row */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-5">
           <StatCard
             icon={Target}
             iconBg="bg-primary-50"

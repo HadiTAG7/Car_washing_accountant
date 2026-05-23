@@ -192,8 +192,8 @@ export default function PartnersPage() {
                   <th className="py-3 px-4 whitespace-nowrap text-center">عدد العمالة</th>
                   <th className="py-3 px-4 whitespace-nowrap text-center">النسبة</th>
                   <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">الرسوم المطلوبة</th>
-                  <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">المدفوع</th>
-                  <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">المتبقي</th>
+                  <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">المبلغ المدفوع</th>
+                  <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">المبلغ المتبقي</th>
                   <th className="py-3 px-4 whitespace-nowrap text-left w-20">إجراءات</th>
                 </tr>
               </thead>
@@ -220,13 +220,14 @@ export default function PartnersPage() {
                     : 0;
                   const pct       = p.percentage != null ? p.percentage : derived;
                   const isCustom  = p.percentage != null;
-                  // Capital & receivable view: required = workers × per-worker
-                  // fee; settled when zero remaining and at least one worker
-                  // owes money in the first place.
-                  const required  = (p.workersCount || 0) * PER_WORKER_FEE;
-                  const paid      = p.paidAmount || 0;
-                  const remaining = Math.max(0, required - paid);
-                  const settled   = required > 0 && remaining === 0;
+                  // Capital & receivable view:
+                  //   required = workers × per-worker fee
+                  //   balance  = required - paid (clamped at 0 — overpay is
+                  //              treated as settled, not a credit)
+                  const required = (p.workersCount || 0) * PER_WORKER_FEE;
+                  const paid     = p.paidAmount || 0;
+                  const balance  = Math.max(0, required - paid);
+                  const settled  = balance === 0;
                   return (
                     <tr key={p.id} className="border-b border-slate-50 dark:border-slate-800 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
                       <td className="py-3 px-4 whitespace-normal break-words min-w-[180px] font-medium text-slate-800 dark:text-slate-200">
@@ -269,16 +270,14 @@ export default function PartnersPage() {
                       </td>
                       <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums">
                         <span
-                          className={`inline-flex items-center gap-1 text-[13px] font-bold px-2.5 py-1 rounded-lg ${
+                          className={`inline-flex items-center gap-1 text-[13px] font-bold px-2.5 py-1 rounded-lg border ${
                             settled
-                              ? 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-100 dark:border-emerald-500/30'
-                              : remaining > 0
-                                ? 'bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-100 dark:border-amber-500/30'
-                                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
+                              ? 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-100 dark:border-emerald-500/30'
+                              : 'bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-100 dark:border-amber-500/30'
                           }`}
-                          title={settled ? 'مسدَّد بالكامل' : remaining > 0 ? 'هناك مبلغ متبقٍّ على الشريك' : 'لا توجد رسوم مستحقة'}
+                          title={settled ? 'الرصيد مُسدَّد بالكامل' : 'مبلغ مستحَق على الشريك'}
                         >
-                          {settled ? '✓ مسدَّد' : formatCurrency(remaining)}
+                          {settled ? '✓ مسدَّد' : formatCurrency(balance)}
                         </span>
                       </td>
                       <td className="py-3 px-4 whitespace-nowrap text-left">

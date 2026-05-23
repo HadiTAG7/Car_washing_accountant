@@ -1,16 +1,18 @@
 import { useMemo, useState } from 'react';
 import {
-  Wallet, TrendingDown, TrendingUp, Calendar,
+  Wallet, TrendingDown, TrendingUp, Calendar, ListFilter,
 } from 'lucide-react';
 import { formatCurrency } from '../data/initialData';
 import TopBar from './TopBar';
 import { Card, SectionHeader, StatCard } from './UI';
 import LoadingState from './LoadingState';
 import ErrorState, { SetupRequiredCard } from './ErrorState';
+import FinancialDetailsModal from './FinancialDetailsModal';
 import { useWashes } from '../hooks/useWashes';
 import { useVariableExpenses } from '../hooks/useVariableExpenses';
 import { useVariableExpenseCategories } from '../hooks/useVariableExpenseCategories';
 import { useMonthlyExpenses } from '../hooks/useMonthlyExpenses';
+import { useMonthlyExpenseCategories } from '../hooks/useMonthlyExpenseCategories';
 import { useAnnualExpenses } from '../hooks/useAnnualExpenses';
 import {
   todayMonth,
@@ -24,7 +26,9 @@ import { isSupabaseConfigured, missingEnvNames } from '../lib/supabaseClient';
 // `kind`: 'plus' (revenue) | 'minus' (cost) | 'subtotal' (gross profit)
 //       | 'expenseSubtotal' (total outflow tally) | 'final' (net profit)
 //       — drives sign, color, and emphasis.
-function StatementRow({ label, amount, kind = 'minus', tone = 'auto' }) {
+// `onClick`: when provided, the row becomes a button-styled drill-down
+// trigger (cursor + hover tint + leading filter icon).
+function StatementRow({ label, amount, kind = 'minus', tone = 'auto', onClick }) {
   const isPlus            = kind === 'plus';
   const isSubtotal        = kind === 'subtotal';
   const isExpenseSubtotal = kind === 'expenseSubtotal';
@@ -85,9 +89,35 @@ function StatementRow({ label, amount, kind = 'minus', tone = 'auto' }) {
       ? 'font-extrabold'
       : 'font-bold';
 
+  const clickable = typeof onClick === 'function';
+  const interactiveClass = clickable
+    ? 'cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors group'
+    : '';
+
   return (
-    <tr className={rowClass}>
-      <td className={`py-3 px-4 whitespace-nowrap ${labelClass}`}>{label}</td>
+    <tr
+      className={`${rowClass} ${interactiveClass}`.trim()}
+      onClick={clickable ? onClick : undefined}
+      role={clickable ? 'button' : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onKeyDown={clickable
+        ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }
+        : undefined}
+      aria-label={clickable ? `عرض تفاصيل: ${label}` : undefined}
+    >
+      <td className={`py-3 px-4 whitespace-nowrap ${labelClass}`}>
+        <span className="inline-flex items-center gap-2">
+          {clickable && (
+            <ListFilter
+              size={13}
+              strokeWidth={2.2}
+              className="text-slate-400 dark:text-slate-500 group-hover:text-primary-700 dark:group-hover:text-primary-400 transition-colors shrink-0"
+              aria-hidden="true"
+            />
+          )}
+          <span>{label}</span>
+        </span>
+      </td>
       <td className={`py-3 px-4 whitespace-nowrap text-left tabular-nums ${amountWeight} ${amountClass}`}>
         {sign}{formatCurrency(Math.abs(amount))}
       </td>
@@ -100,9 +130,11 @@ export default function FinancialSummaryPage() {
   const { items: variables, loading: varLoading,      error: varError,      refetch: refetchVariables } = useVariableExpenses();
   const { categories: varCategories } = useVariableExpenseCategories();
   const { items: monthlies, loading: monthlyLoading,  error: monthlyError,  refetch: refetchMonthly }  = useMonthlyExpenses();
+  const { categories: monthlyCats } = useMonthlyExpenseCategories();
   const { items: annuals,   loading: annualLoading,   error: annualError,   refetch: refetchAnnual }   = useAnnualExpenses();
 
   const [selectedMonth, setSelectedMonth] = useState(todayMonth());
+  const [detailCategory, setDetailCategory] = useState(null);
 
   const availableMonths = useMemo(
     () => listAvailableMonths(washes, variables),
@@ -180,6 +212,66 @@ export default function FinancialSummaryPage() {
     refetchMonthly?.();
     refetchAnnual?.();
   }
+
+  // ── Category-label maps for the drill-down modal ─────────────────────
+  const varCategoryMap = useMemo(() => {
+    const m = new Map(); varCategories.forEach((c) => m.set(c.id, c)); return m;
+  }, [varCategories]);
+  const monthlyCategoryMap = useMemo(() => {
+    const m = new Map(); monthlyCats.forEach((c) => m.set(c.id, c)); return m;
+  }, [monthlyCats]);
+
+  // ── Pre-shaped row data for the drill-down modal ─────────────────────
+  // Each table renders columns directly off these objects — no further
+  // resolution / filtering happens inside the modal.
+  const detailData = useMemo(() => {
+    const revenue = washes
+      .filter((w) => w.status === 'مكتملة' && (w.washDate || '').slice(0, 7) === selectedMonth)
+      .map((w) => ({
+        id:       w.id,
+        date:     w.washDate,
+        biker:    w.bikerName,
+        quantity: w.quantity || 0,
+        price:    w.price || 0,
+        total:    (w.quantity || 0) * (w.price || 0),
+      }));
+
+    const variable = periodVariableItems.map((v) => ({
+      id:        v.id,
+      name:      v.expenseName,
+      category:  varCategoryMap.get(v.categoryId)?.label || '—',
+      quantity:  v.quantity || 0,
+      unitCost:  v.unitCost || 0,
+      total:     v.totalVariableCost || 0,
+      isVirtual: Boolean(v.isVirtual),
+    }));
+
+    const monthly = monthlies
+      .filter((m) => {
+        if (m.recurrence !== 'one_time') return true;
+        return String(m.loggedDate || '').slice(0, 7) === selectedMonth;
+      })
+      .map((m) => ({
+        id:        m.id,
+        name:      m.expenseName,
+        category:  monthlyCategoryMap.get(m.categoryId)?.label || '—',
+        status:    m.paymentStatus,
+        amount:    m.totalMonthlyCost || 0,
+        isOneTime: m.recurrence === 'one_time',
+      }));
+
+    const annual = annuals.map((a) => ({
+      id:      a.id,
+      name:    a.expenseName,
+      annual:  a.annualCost || 0,
+      monthly: (a.annualCost || 0) / 12,
+    }));
+
+    return { revenue, variable, monthly, annual };
+  }, [
+    washes, selectedMonth, periodVariableItems, varCategoryMap,
+    monthlies, monthlyCategoryMap, annuals,
+  ]);
 
   return (
     <>
@@ -280,11 +372,13 @@ export default function FinancialSummaryPage() {
                       label="الإيرادات التشغيلية"
                       amount={revenue}
                       kind="plus"
+                      onClick={() => setDetailCategory('revenue')}
                     />
                     <StatementRow
                       label="يُخصم منه: التكاليف المتغيرة والعمولات"
                       amount={variableTotal}
                       kind="minus"
+                      onClick={() => setDetailCategory('variable')}
                     />
                     <StatementRow
                       label="= مجمل الربح التشغيلي"
@@ -295,11 +389,13 @@ export default function FinancialSummaryPage() {
                       label="يُخصم منه: المصاريف التشغيلية الشهرية الثابتة"
                       amount={monthlyFixed}
                       kind="minus"
+                      onClick={() => setDetailCategory('monthly')}
                     />
                     <StatementRow
                       label="يُخصم منه: مخصص المصاريف السنوية الموزعة (سنوي ÷ ١٢)"
                       amount={annualAmortized}
                       kind="minus"
+                      onClick={() => setDetailCategory('annual')}
                     />
                     <StatementRow
                       label="إجمالي المصروفات الثابتة والموزعة"
@@ -328,6 +424,13 @@ export default function FinancialSummaryPage() {
           </>
         )}
       </main>
+
+      <FinancialDetailsModal
+        category={detailCategory}
+        monthLabel={monthLabel}
+        data={detailData}
+        onClose={() => setDetailCategory(null)}
+      />
     </>
   );
 }

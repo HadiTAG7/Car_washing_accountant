@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
-  Plus, Users, UserCheck, Briefcase, Trash2, Pencil,
+  Plus, Users, UserCheck, Briefcase, Trash2, Pencil, Building2, Coins,
 } from 'lucide-react';
 import { formatNumber, formatCurrency, PER_WORKER_FEE } from '../data/initialData';
 import TopBar from './TopBar';
@@ -39,10 +39,16 @@ export default function PartnersPage() {
 
   // ── KPI totals ───────────────────────────────────────────────
   const kpis = useMemo(() => {
-    const totalPartners = partners.length;
-    const totalWorkers  = partners.reduce((s, p) => s + (p.workersCount || 0), 0);
-    const activeCount   = partners.filter((p) => p.status === 'active').length;
-    return { totalPartners, totalWorkers, activeCount };
+    const totalPartners     = partners.length;
+    const totalWorkers      = partners.reduce((s, p) => s + (p.workersCount || 0), 0);
+    const activeCount       = partners.filter((p) => p.status === 'active').length;
+    // Capital fee × headcount across the entire fleet — the receivable
+    // ceiling, in other words.
+    const totalProjectValue = totalWorkers * PER_WORKER_FEE;
+    // Cash actually collected from partners so far. Reduce over the
+    // mapped `paidAmount` field (defaults to 0 on null).
+    const totalPaidTillNow  = partners.reduce((s, p) => s + (p.paidAmount || 0), 0);
+    return { totalPartners, totalWorkers, activeCount, totalProjectValue, totalPaidTillNow };
   }, [partners]);
 
   async function handleAdd(partner) {
@@ -105,7 +111,7 @@ export default function PartnersPage() {
         )}
 
         {/* ── KPI row ─────────────────────────────────────────── */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 sm:gap-5">
           <StatCard
             icon={Briefcase}
             iconBg="bg-primary-50"
@@ -129,6 +135,22 @@ export default function PartnersPage() {
             label="الشركاء النشطين"
             value={formatNumber(kpis.activeCount)}
             sub={`${kpis.totalPartners > 0 ? ((kpis.activeCount / kpis.totalPartners) * 100).toFixed(0) : 0}% من إجمالي الشركاء`}
+          />
+          <StatCard
+            icon={Building2}
+            iconBg="bg-indigo-50"
+            iconColor="text-indigo-600"
+            label="إجمالي قيمة المشروع"
+            value={formatCurrency(kpis.totalProjectValue)}
+            sub="القيمة الرأسمالية بناءً على الأسطول"
+          />
+          <StatCard
+            icon={Coins}
+            iconBg="bg-emerald-50"
+            iconColor="text-emerald-600"
+            label="إجمالي المبالغ المدفوعة"
+            value={formatCurrency(kpis.totalPaidTillNow)}
+            sub="السيولة المحصلة في الخزينة إلى الآن"
           />
         </div>
 

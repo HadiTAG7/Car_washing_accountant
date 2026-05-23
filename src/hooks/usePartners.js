@@ -15,27 +15,38 @@ export function usePartners() {
 
   const addPartner = useCallback(async (partner) => {
     if (!isSupabaseConfigured) return null;
+    const payload = toPartnerInsert(partner);
     const { error: err } = await supabase
       .from('partners')
-      .insert(toPartnerInsert(partner));
-    if (err) throw err;
+      .insert(payload);
+    if (err) {
+      console.error('🔥 Real Supabase Error (partners.insert):', err, 'payload:', payload);
+      throw err;
+    }
     await refetch();
   }, [refetch]);
 
   const updatePartner = useCallback(async (id, patch) => {
     if (!isSupabaseConfigured) return null;
+    const payload = toPartnerUpdate(patch);
     const { error: err } = await supabase
       .from('partners')
-      .update(toPartnerUpdate(patch))
+      .update(payload)
       .eq('id', id);
-    if (err) throw err;
+    if (err) {
+      console.error('🔥 Real Supabase Error (partners.update):', err, 'id:', id, 'payload:', payload);
+      throw err;
+    }
     await refetch();
   }, [refetch]);
 
   const deletePartner = useCallback(async (id) => {
     if (!isSupabaseConfigured) return null;
     const { error: err } = await supabase.from('partners').delete().eq('id', id);
-    if (err) throw err;
+    if (err) {
+      console.error('🔥 Real Supabase Error (partners.delete):', err, 'id:', id);
+      throw err;
+    }
     await refetch();
   }, [refetch]);
 

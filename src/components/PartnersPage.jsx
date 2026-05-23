@@ -51,18 +51,21 @@ export default function PartnersPage() {
       await addPartner(partner);
       showToast('تم إضافة الشريك بنجاح');
     } catch (e) {
+      console.error('🔥 Real Supabase Error (PartnersPage.handleAdd):', e);
       setMutationError(e);
-      showToast(describeSupabaseError(e) || 'تعذّر إضافة الشريك', 'error');
+      showToast(describeSupabaseError(e) || e?.message || 'تعذّر إضافة الشريك', 'error');
     }
   }
   async function handleSaveEdit(id, patch) {
     try {
       setMutationError(null);
+      console.info('[PartnersPage] saving edit', { id, patch });
       await updatePartner(id, patch);
       showToast('تم حفظ بيانات الشريك');
     } catch (e) {
+      console.error('🔥 Real Supabase Error (PartnersPage.handleSaveEdit):', e, { id, patch });
       setMutationError(e);
-      showToast(describeSupabaseError(e) || 'تعذّر حفظ التعديلات', 'error');
+      showToast(describeSupabaseError(e) || e?.message || 'تعذّر حفظ التعديلات', 'error');
       throw e;
     }
   }
@@ -72,8 +75,9 @@ export default function PartnersPage() {
       await deletePartner(id);
       showToast('تم حذف الشريك');
     } catch (e) {
+      console.error('🔥 Real Supabase Error (PartnersPage.handleDelete):', e, { id });
       setMutationError(e);
-      showToast(describeSupabaseError(e) || 'تعذّر حذف الشريك', 'error');
+      showToast(describeSupabaseError(e) || e?.message || 'تعذّر حذف الشريك', 'error');
     }
   }
 

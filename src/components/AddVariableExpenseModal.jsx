@@ -1,15 +1,7 @@
 import { useEffect, useState } from 'react';
 import { X, Plus, Pencil, Activity, Check, AlertTriangle } from 'lucide-react';
-import { formatCurrency, formatNumber } from '../data/initialData';
+import { formatCurrency, formatNumber, todayISO } from '../data/initialData';
 import CategorySelect from './CategorySelect';
-
-function todayISO() {
-  // Local-date ISO (YYYY-MM-DD) — avoids the UTC shift you get from
-  // toISOString() near midnight in non-UTC timezones.
-  const d = new Date();
-  const tzOffsetMs = d.getTimezoneOffset() * 60_000;
-  return new Date(d.getTime() - tzOffsetMs).toISOString().slice(0, 10);
-}
 
 const EMPTY_TEMPLATE = {
   expenseName: '',

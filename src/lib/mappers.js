@@ -395,3 +395,38 @@ export function toPartnerUpdate({ partnerName, workersCount, paidAmount }) {
   if (paidAmount   !== undefined) payload.paid_amount   = clampPaidAmount(paidAmount);
   return payload;
 }
+
+// ── partner_payments ──────────────────────────────────────────────────────
+// One row per receipt against a partner's capital fee. The DB trigger
+// `partner_payments_sync` keeps `partners.paid_amount` equal to
+// SUM(amount) per partner, so reading the cached aggregate stays valid.
+const PAYMENT_METHODS = new Set(['bank_transfer', 'cash', 'mada_pos']);
+function clampPaymentMethod(value) {
+  return PAYMENT_METHODS.has(value) ? value : 'bank_transfer';
+}
+function clampPaymentAmount(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, n);
+}
+
+export function mapPartnerPayment(row) {
+  return {
+    id:             row.id,
+    partnerId:      row.partner_id,
+    amount:         Number(row.amount) || 0,
+    paymentDate:    row.payment_date || '',
+    paymentMethod:  clampPaymentMethod(row.payment_method),
+    notes:          row.notes || '',
+    createdAt:      row.created_at,
+  };
+}
+export function toPartnerPaymentInsert({ partnerId, amount, paymentDate, paymentMethod, notes }) {
+  return {
+    partner_id:     partnerId,
+    amount:         clampPaymentAmount(amount),
+    payment_date:   paymentDate || null,
+    payment_method: clampPaymentMethod(paymentMethod),
+    notes:          notes && String(notes).trim() ? String(notes).trim() : null,
+  };
+}

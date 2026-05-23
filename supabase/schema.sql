@@ -120,6 +120,24 @@ create table if not exists public.partners (
   created_at      timestamptz not null default now()
 );
 
+-- ─── partner_payments (Module 8 — per-partner capital receipts ledger) ───
+-- Stores every individual payment a partner makes against their required
+-- capital fee. The trigger below keeps `partners.paid_amount` in sync as
+-- SUM(amount) per partner, so the legacy Partners page (which still reads
+-- the cached aggregate) stays accurate without any client changes.
+create table if not exists public.partner_payments (
+  id              uuid primary key default gen_random_uuid(),
+  partner_id      uuid not null references public.partners(id) on delete cascade,
+  amount          numeric(12,2) not null default 0 check (amount >= 0),
+  payment_date    date          not null default current_date,
+  payment_method  text          not null default 'bank_transfer'
+                  check (payment_method in ('bank_transfer','cash','mada_pos')),
+  notes           text,
+  created_at      timestamptz   not null default now()
+);
+create index if not exists partner_payments_partner_id_idx on public.partner_payments(partner_id);
+create index if not exists partner_payments_date_idx       on public.partner_payments(payment_date);
+
 -- ─── variable_expense_categories (Module 4 — dynamic category list) ──────
 -- Mirrors monthly_expense_categories. UUID id auto-generated; clients must
 -- NOT supply an id when inserting.
@@ -293,6 +311,7 @@ alter table public.maintenance_logs  enable row level security;
 alter table public.transactions      enable row level security;
 alter table public.app_settings      enable row level security;
 alter table public.partners                    enable row level security;
+alter table public.partner_payments             enable row level security;
 alter table public.annual_expense_categories   enable row level security;
 alter table public.annual_expenses             enable row level security;
 alter table public.monthly_expense_categories  enable row level security;
@@ -338,6 +357,10 @@ create policy "rw_auth" on public.app_settings
 
 drop policy if exists "rw_auth" on public.partners;
 create policy "rw_auth" on public.partners
+  for all to public using (true) with check (true);
+
+drop policy if exists "rw_auth" on public.partner_payments;
+create policy "rw_auth" on public.partner_payments
   for all to public using (true) with check (true);
 
 drop policy if exists "rw_auth" on public.annual_expense_categories;
@@ -783,6 +806,59 @@ alter table public.partners
 alter table public.partners
   add  constraint partners_paid_amount_chk
   check (paid_amount >= 0);
+
+-- ─── partner_payments — defensive repair + sync trigger ──────────────────
+-- The ledger table itself + the trigger that keeps `partners.paid_amount`
+-- equal to SUM(partner_payments.amount) for each partner. Trigger fires
+-- after INSERT / UPDATE / DELETE and recomputes the aggregate so the
+-- legacy Partners page stays accurate without any client refactor.
+alter table public.partner_payments
+  add column if not exists amount         numeric(12,2) not null default 0;
+alter table public.partner_payments
+  add column if not exists payment_date   date          not null default current_date;
+alter table public.partner_payments
+  add column if not exists payment_method text          not null default 'bank_transfer';
+alter table public.partner_payments
+  add column if not exists notes          text;
+alter table public.partner_payments
+  drop constraint if exists partner_payments_amount_chk;
+alter table public.partner_payments
+  add  constraint partner_payments_amount_chk
+  check (amount >= 0);
+alter table public.partner_payments
+  drop constraint if exists partner_payments_method_chk;
+alter table public.partner_payments
+  add  constraint partner_payments_method_chk
+  check (payment_method in ('bank_transfer','cash','mada_pos'));
+
+create or replace function public.sync_partner_paid_amount() returns trigger
+language plpgsql as $$
+begin
+  if (tg_op = 'DELETE') then
+    update public.partners
+       set paid_amount = (
+         select coalesce(sum(amount), 0)
+           from public.partner_payments
+          where partner_id = old.partner_id
+       )
+     where id = old.partner_id;
+    return old;
+  end if;
+  update public.partners
+     set paid_amount = (
+       select coalesce(sum(amount), 0)
+         from public.partner_payments
+        where partner_id = new.partner_id
+     )
+   where id = new.partner_id;
+  return new;
+end;
+$$;
+
+drop trigger if exists partner_payments_sync on public.partner_payments;
+create trigger partner_payments_sync
+after insert or update or delete on public.partner_payments
+for each row execute function public.sync_partner_paid_amount();
 
 -- Tell PostgREST to refresh its schema introspection now that the table
 -- and its columns are guaranteed. Without this, the REST API can keep

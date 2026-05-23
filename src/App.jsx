@@ -8,6 +8,7 @@ import {
   BarChart3,
   Target,
   Handshake,
+  HandCoins,
   Loader2,
 } from 'lucide-react';
 
@@ -22,6 +23,7 @@ import WashesPage from './components/WashesPage';
 import FinancialSummaryPage from './components/FinancialSummaryPage';
 import BudgetsPage from './components/BudgetsPage';
 import PartnersPage from './components/PartnersPage';
+import PartnerPaymentsPage from './components/PartnerPaymentsPage';
 import FinancialEntrySelector from './components/FinancialEntrySelector';
 
 import { useAuth } from './hooks/useAuth';
@@ -37,6 +39,7 @@ const TABS = [
   { id: 'summary',   label: 'الملخص المالي وصافي الربح', icon: BarChart3 },
   { id: 'budgets',   label: 'الرقابة والميزانيات',    icon: Target      },
   { id: 'partners',  label: 'إدارة الشركاء',          icon: Handshake   },
+  { id: 'payments',  label: 'المدفوعات الخاصة لكل شريك', icon: HandCoins },
 ];
 
 // Inner shell wraps the routed content so it can subscribe to the
@@ -111,6 +114,7 @@ function AppShell() {
         {activeTab === 'summary'   && <FinancialSummaryPage />}
         {activeTab === 'budgets'   && <BudgetsPage />}
         {activeTab === 'partners'  && <PartnersPage />}
+        {activeTab === 'payments'  && <PartnerPaymentsPage />}
       </div>
 
       <FinancialEntrySelector

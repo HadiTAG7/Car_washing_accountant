@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { X, Receipt, Activity, CalendarClock, Repeat } from 'lucide-react';
-import { formatCurrency, formatNumber } from '../data/initialData';
+import { formatCurrency, formatNumber, formatDate } from '../data/initialData';
 
 const HEADER_META = {
   revenue:  { title: 'الإيرادات التشغيلية',                icon: Receipt,        accent: 'text-emerald-600 dark:text-emerald-400', accentBg: 'bg-emerald-50 dark:bg-emerald-500/15' },
@@ -8,20 +8,6 @@ const HEADER_META = {
   monthly:  { title: 'المصاريف التشغيلية الشهرية الثابتة',  icon: CalendarClock,  accent: 'text-amber-600 dark:text-amber-400',     accentBg: 'bg-amber-50 dark:bg-amber-500/15' },
   annual:   { title: 'مخصص المصاريف السنوية الموزعة',      icon: Repeat,         accent: 'text-primary-700 dark:text-primary-300', accentBg: 'bg-primary-50 dark:bg-primary-500/15' },
 };
-
-function formatDate(iso) {
-  if (!iso) return '—';
-  try {
-    const d = new Date(`${String(iso).slice(0, 10)}T00:00:00`);
-    if (Number.isNaN(d.getTime())) return iso;
-    return new Intl.DateTimeFormat('ar-SA', {
-      year: 'numeric', month: 'short', day: 'numeric',
-      numberingSystem: 'latn',
-    }).format(d);
-  } catch {
-    return iso;
-  }
-}
 
 function PaymentStatusPill({ status }) {
   const paid = status === 'paid';

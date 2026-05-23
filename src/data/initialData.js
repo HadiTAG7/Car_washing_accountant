@@ -149,6 +149,32 @@ export function formatCurrency(amount) {
 export function formatNumber(n) {
   return NUM_FMT.format(n || 0);
 }
+
+// Local-zone ISO (YYYY-MM-DD). Avoids the UTC shift you get from
+// `toISOString()` near midnight in non-UTC timezones. Shared by every
+// modal that pre-fills a "today" date input.
+export function todayISO() {
+  const d = new Date();
+  const tzOffsetMs = d.getTimezoneOffset() * 60_000;
+  return new Date(d.getTime() - tzOffsetMs).toISOString().slice(0, 10);
+}
+
+// Pretty-prints a YYYY-MM-DD into an Arabic-locale date with Latin digits.
+// Used by every receipt / ledger table so all dates look uniform.
+const DATE_FMT = new Intl.DateTimeFormat('ar-SA', {
+  year: 'numeric', month: 'short', day: 'numeric',
+  numberingSystem: 'latn',
+});
+export function formatDate(iso) {
+  if (!iso) return '—';
+  try {
+    const d = new Date(`${String(iso).slice(0, 10)}T00:00:00`);
+    if (Number.isNaN(d.getTime())) return iso;
+    return DATE_FMT.format(d);
+  } catch {
+    return iso;
+  }
+}
 export function formatCompact(n) {
   if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}م`;
   if (Math.abs(n) >= 1_000)     return `${(n / 1_000).toFixed(1)}ك`;

@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
-  Plus, Users, UserCheck, Briefcase, Trash2, Pencil, Check, X,
+  Plus, Users, UserCheck, Briefcase, Trash2, Pencil,
 } from 'lucide-react';
 import { formatNumber, formatCurrency, PER_WORKER_FEE } from '../data/initialData';
 import TopBar from './TopBar';
@@ -15,46 +15,6 @@ import ErrorState from './ErrorState';
 import Toast from './Toast';
 import { usePartners } from '../hooks/usePartners';
 import { describeSupabaseError } from '../lib/supabaseClient';
-
-function EditableCell({ value, onSave, type = 'text', className = '' }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value);
-
-  function commit() {
-    const next = type === 'number' ? parseInt(draft, 10) || 0 : String(draft || '').trim();
-    if (next !== value) onSave(next);
-    setEditing(false);
-  }
-
-  if (editing) {
-    return (
-      <div className="flex items-center gap-1.5">
-        <input
-          type={type}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setEditing(false); }}
-          autoFocus
-          className={`px-2 py-1 border border-primary-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-300 ${className}`}
-        />
-        <button onClick={commit} className="text-emerald-600 hover:text-emerald-800 p-0.5"><Check size={14} /></button>
-        <button onClick={() => setEditing(false)} className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:text-slate-400 p-0.5"><X size={14} /></button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex items-center gap-1.5 group">
-      <span>{value || <span className="text-slate-300">—</span>}</span>
-      <button
-        onClick={() => { setDraft(value); setEditing(true); }}
-        className="text-slate-300 hover:text-primary-600 p-0.5 rounded transition-colors opacity-0 group-hover:opacity-100"
-      >
-        <Pencil size={11} />
-      </button>
-    </div>
-  );
-}
 
 export default function PartnersPage() {
   const {
@@ -95,21 +55,16 @@ export default function PartnersPage() {
       showToast(describeSupabaseError(e) || 'تعذّر إضافة الشريك', 'error');
     }
   }
-  async function handleUpdate(id, patch) {
+  async function handleSaveEdit(id, patch) {
     try {
       setMutationError(null);
       await updatePartner(id, patch);
+      showToast('تم حفظ بيانات الشريك');
     } catch (e) {
       setMutationError(e);
       showToast(describeSupabaseError(e) || 'تعذّر حفظ التعديلات', 'error');
       throw e;
     }
-  }
-  // Wrapper that emits a "saved" toast — used by the full edit modal so
-  // the inline-edit pencil flow doesn't fire its own redundant toast.
-  async function handleSaveEdit(id, patch) {
-    await handleUpdate(id, patch);
-    showToast('تم حفظ بيانات الشريك');
   }
   async function handleDelete(id) {
     try {
@@ -126,7 +81,7 @@ export default function PartnersPage() {
     <>
       <TopBar
         title="إدارة الشركاء"
-        subtitle="متابعة الشركاء وعدد العمالة لكل شريك"
+        subtitle="متابعة الشركاء وعدد العمالة لكل شريك ورأس المال المُسدَّد"
       />
 
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
@@ -173,11 +128,11 @@ export default function PartnersPage() {
           />
         </div>
 
-        {/* ── Partners table ─────────────────────────────────── */}
+        {/* ── Partners table (v2 — capital tracking) ─────────── */}
         <Card className="p-6">
           <SectionHeader
             title="قائمة الشركاء"
-            subtitle="انقر على أي خانة للتعديل المباشر"
+            subtitle="استخدم زر القلم لتعديل بيانات أي شريك بما فيها المبلغ المدفوع"
             action={
               <PrimaryButton icon={Plus} onClick={() => setIsModalOpen(true)}>
                 إضافة شريك جديد
@@ -185,7 +140,8 @@ export default function PartnersPage() {
             }
           />
           <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
-            <table className="w-full min-w-[640px] text-sm">
+            <table className="w-full min-w-[860px] text-sm">
+              {/* === HEADER — 7 columns, exact order per spec ============== */}
               <thead>
                 <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
                   <th className="py-3 px-4 whitespace-nowrap">اسم الشريك</th>
@@ -194,9 +150,11 @@ export default function PartnersPage() {
                   <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">الرسوم المطلوبة</th>
                   <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">المبلغ المدفوع</th>
                   <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">المبلغ المتبقي</th>
-                  <th className="py-3 px-4 whitespace-nowrap text-left w-20">إجراءات</th>
+                  <th className="py-3 px-4 whitespace-nowrap text-left w-24">إجراءات</th>
                 </tr>
               </thead>
+
+              {/* === BODY — one <tr> per partner with all 7 cells ========= */}
               <tbody>
                 {loading && partners.length === 0 && (
                   <tr>
@@ -213,43 +171,40 @@ export default function PartnersPage() {
                   </tr>
                 )}
                 {partners.map((p) => {
-                  // Prefer the stored percentage; fall back to the
-                  // workforce-share derivation when it hasn't been set.
-                  const derived = kpis.totalWorkers > 0
+                  // ── Percentage: prefer stored, fall back to workforce share
+                  const derived  = kpis.totalWorkers > 0
                     ? (p.workersCount / kpis.totalWorkers) * 100
                     : 0;
-                  const pct       = p.percentage != null ? p.percentage : derived;
-                  const isCustom  = p.percentage != null;
-                  // Capital & receivable view:
-                  //   required = workers × per-worker fee
-                  //   balance  = required - paid (clamped at 0 — overpay is
-                  //              treated as settled, not a credit)
+                  const pct      = p.percentage != null ? p.percentage : derived;
+                  const isCustom = p.percentage != null;
+
+                  // ── Capital & receivable
                   const required = (p.workersCount || 0) * PER_WORKER_FEE;
                   const paid     = p.paidAmount || 0;
                   const balance  = Math.max(0, required - paid);
                   const settled  = balance === 0;
+
                   return (
-                    <tr key={p.id} className="border-b border-slate-50 dark:border-slate-800 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
+                    <tr
+                      key={p.id}
+                      className="border-b border-slate-50 dark:border-slate-800 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
+                    >
+                      {/* 1. اسم الشريك */}
                       <td className="py-3 px-4 whitespace-normal break-words min-w-[180px] font-medium text-slate-800 dark:text-slate-200">
                         <div className="flex items-center gap-2">
-                          <span className="bg-primary-50 text-primary-700 w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0">
+                          <span className="bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300 w-8 h-8 rounded-lg flex items-center justify-center shrink-0">
                             <Briefcase size={14} />
                           </span>
-                          <EditableCell
-                            value={p.partnerName}
-                            onSave={(v) => v && handleUpdate(p.id, { partnerName: v })}
-                            className="w-48"
-                          />
+                          <span className="truncate">{p.partnerName}</span>
                         </div>
                       </td>
+
+                      {/* 2. عدد العمالة */}
                       <td className="py-3 px-4 whitespace-nowrap text-center tabular-nums text-slate-700 dark:text-slate-300">
-                        <EditableCell
-                          value={p.workersCount}
-                          type="number"
-                          onSave={(v) => handleUpdate(p.id, { workersCount: v })}
-                          className="w-20 text-center"
-                        />
+                        {formatNumber(p.workersCount || 0)}
                       </td>
+
+                      {/* 3. النسبة */}
                       <td className="py-3 px-4 whitespace-nowrap text-center tabular-nums">
                         <span
                           className={`inline-flex items-center gap-1 text-[13px] font-bold px-2.5 py-1 rounded-lg ${
@@ -262,35 +217,50 @@ export default function PartnersPage() {
                           {pct.toFixed(1)}%
                         </span>
                       </td>
+
+                      {/* 4. الرسوم المطلوبة = workersCount × PER_WORKER_FEE */}
                       <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums text-slate-700 dark:text-slate-300">
                         {formatCurrency(required)}
                       </td>
+
+                      {/* 5. المبلغ المدفوع */}
                       <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums font-bold text-slate-900 dark:text-slate-100">
                         {formatCurrency(paid)}
                       </td>
+
+                      {/* 6. المبلغ المتبقي — emerald if 0, amber if > 0 */}
                       <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums">
-                        <span
-                          className={`inline-flex items-center gap-1 text-[13px] font-bold px-2.5 py-1 rounded-lg border ${
-                            settled
-                              ? 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-100 dark:border-emerald-500/30'
-                              : 'bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-100 dark:border-amber-500/30'
-                          }`}
-                          title={settled ? 'الرصيد مُسدَّد بالكامل' : 'مبلغ مستحَق على الشريك'}
-                        >
-                          {settled ? '✓ مسدَّد' : formatCurrency(balance)}
-                        </span>
+                        {settled ? (
+                          <span
+                            className="inline-flex items-center gap-1 text-[13px] font-bold px-2.5 py-1 rounded-lg bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-500/30"
+                            title="الرصيد مُسدَّد بالكامل"
+                          >
+                            ✓ مسدّد بالكامل
+                          </span>
+                        ) : (
+                          <span
+                            className="inline-flex items-center gap-1 text-[13px] font-bold px-2.5 py-1 rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-100 dark:border-amber-500/30"
+                            title="مبلغ مستحَق على الشريك"
+                          >
+                            {formatCurrency(balance)}
+                          </span>
+                        )}
                       </td>
+
+                      {/* 7. إجراءات */}
                       <td className="py-3 px-4 whitespace-nowrap text-left">
                         <div className="inline-flex items-center gap-1">
                           <button
+                            type="button"
                             onClick={() => setEditingPartner(p)}
-                            className="text-slate-400 hover:text-indigo-500 dark:hover:text-indigo-400 transition-colors duration-150 p-1 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-500/15 cursor-pointer"
+                            className="text-slate-400 hover:text-indigo-500 dark:hover:text-indigo-400 transition-colors duration-150 p-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-500/15 cursor-pointer"
                             aria-label={`تعديل ${p.partnerName}`}
-                            title="تعديل الشريك"
+                            title="تعديل بيانات الشريك"
                           >
                             <Pencil size={15} />
                           </button>
                           <button
+                            type="button"
                             onClick={() => handleDelete(p.id)}
                             className="text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/15 transition-colors"
                             aria-label={`حذف ${p.partnerName}`}

@@ -165,15 +165,15 @@ export default function FinancialSummaryPage() {
         )}
 
         {/* ── Period selector ─────────────────────────────────────── */}
-        <div className="rounded-2xl border border-primary-100 bg-gradient-to-l from-primary-50 to-white shadow-sm p-5">
+        <div className="rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm dark:shadow-slate-950/40 p-5 transition-colors duration-200">
           <div className="flex items-start gap-4">
-            <div className="bg-primary-700 text-white w-12 h-12 rounded-2xl flex items-center justify-center shrink-0">
+            <div className="bg-primary-700 dark:bg-primary-600 text-white w-12 h-12 rounded-2xl flex items-center justify-center shrink-0">
               <Calendar size={22} strokeWidth={2.2} />
             </div>
             <div className="flex-1 min-w-0">
               <label
                 htmlFor="period-selector"
-                className="block text-xs text-primary-700 font-bold tracking-wide"
+                className="block text-xs text-primary-700 dark:text-primary-300 font-bold tracking-wide"
               >
                 فترة التقرير (الشهر)
               </label>
@@ -181,7 +181,7 @@ export default function FinancialSummaryPage() {
                 id="period-selector"
                 value={selectedMonth}
                 onChange={(e) => setSelectedMonth(e.target.value)}
-                className="mt-1.5 w-full max-w-xs px-4 py-2.5 border border-primary-200 rounded-xl bg-white text-base font-bold text-slate-900 dark:text-slate-100 tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-300"
+                className="mt-1.5 w-full max-w-xs px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-base font-bold text-slate-900 dark:text-slate-100 tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-300 dark:focus:ring-primary-500/40 transition-colors duration-200"
               >
                 {availableMonths.map((ym) => (
                   <option key={ym} value={ym}>{formatMonthLabel(ym)}</option>

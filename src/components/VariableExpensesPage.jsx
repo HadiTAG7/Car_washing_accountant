@@ -26,13 +26,13 @@ import {
 // ─── Live wash counter readout (driven by the Washes module) ──────────────
 function WashCounterReadout({ washCount, monthLabel }) {
   return (
-    <div className="rounded-2xl border border-primary-100 bg-gradient-to-l from-primary-50 to-white shadow-sm p-5">
+    <div className="rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm dark:shadow-slate-950/40 p-5 transition-colors duration-200">
       <div className="flex items-start gap-4">
-        <div className="bg-primary-700 text-white w-12 h-12 rounded-2xl flex items-center justify-center shrink-0">
+        <div className="bg-primary-700 dark:bg-primary-600 text-white w-12 h-12 rounded-2xl flex items-center justify-center shrink-0">
           <Layers size={22} strokeWidth={2.2} />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-xs text-primary-700 font-bold tracking-wide">
+          <p className="text-xs text-primary-700 dark:text-primary-300 font-bold tracking-wide">
             إجمالي الغسلات المكتملة — {monthLabel}
           </p>
           <div className="flex items-baseline gap-3 mt-1">
@@ -40,7 +40,7 @@ function WashCounterReadout({ washCount, monthLabel }) {
               {formatNumber(washCount)}
             </span>
             <span className="text-sm text-slate-500 dark:text-slate-400">غسلة</span>
-            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary-700 bg-primary-100 border border-primary-200 rounded-md px-2 py-0.5">
+            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary-700 dark:text-primary-300 bg-primary-100 dark:bg-primary-500/20 border border-primary-200 dark:border-primary-500/40 rounded-md px-2 py-0.5">
               <Car size={11} strokeWidth={2.5} />
               تلقائي
             </span>
@@ -56,20 +56,20 @@ function WashCounterReadout({ washCount, monthLabel }) {
 
 function PeriodSelectorCard({ value, onChange, options }) {
   return (
-    <div className="rounded-2xl border border-primary-100 bg-gradient-to-l from-primary-50 to-white shadow-sm p-5">
+    <div className="rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm dark:shadow-slate-950/40 p-5 transition-colors duration-200">
       <div className="flex items-start gap-4">
-        <div className="bg-primary-700 text-white w-12 h-12 rounded-2xl flex items-center justify-center shrink-0">
+        <div className="bg-primary-700 dark:bg-primary-600 text-white w-12 h-12 rounded-2xl flex items-center justify-center shrink-0">
           <Calendar size={22} strokeWidth={2.2} />
         </div>
         <div className="flex-1 min-w-0">
-          <label htmlFor="variable-period" className="block text-xs text-primary-700 font-bold tracking-wide">
+          <label htmlFor="variable-period" className="block text-xs text-primary-700 dark:text-primary-300 font-bold tracking-wide">
             فترة العرض (الشهر)
           </label>
           <select
             id="variable-period"
             value={value}
             onChange={(e) => onChange(e.target.value)}
-            className="mt-1.5 w-full max-w-xs px-4 py-2.5 border border-primary-200 rounded-xl bg-white text-base font-bold text-slate-900 dark:text-slate-100 tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-300"
+            className="mt-1.5 w-full max-w-xs px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-base font-bold text-slate-900 dark:text-slate-100 tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-300 dark:focus:ring-primary-500/40 transition-colors duration-200"
           >
             {options.map((ym) => (
               <option key={ym} value={ym}>{formatMonthLabel(ym)}</option>
@@ -337,7 +337,7 @@ export default function VariableExpensesPage() {
                           <span>{formatNumber(i.quantity)}</span>
                           {i.isVirtual && (
                             <span
-                              className="inline-flex items-center gap-1 bg-primary-50 text-primary-700 border border-primary-100 text-[10px] font-bold px-1.5 py-0.5 rounded-md"
+                              className="inline-flex items-center gap-1 bg-primary-50 dark:bg-primary-500/20 text-primary-700 dark:text-primary-300 border border-primary-100 dark:border-primary-500/40 text-[10px] font-bold px-1.5 py-0.5 rounded-md"
                               title="يُحسب تلقائياً من عداد الغسلات"
                             >
                               <Activity size={9} strokeWidth={2.5} />

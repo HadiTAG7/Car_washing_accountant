@@ -177,6 +177,15 @@ export function mapMonthlyExpenseCategory(row) {
     sortOrder: row.sort_order ?? 0,
   };
 }
+function clampRecurrence(value) {
+  return value === 'one_time' ? 'one_time' : 'monthly';
+}
+function normalizeLoggedDate(value) {
+  if (!value) return null;
+  const s = String(value);
+  return s.length >= 10 ? s.slice(0, 10) : s;
+}
+
 export function mapMonthlyExpense(row) {
   return {
     id:               row.id,
@@ -187,22 +196,28 @@ export function mapMonthlyExpense(row) {
     totalMonthlyCost: Number(row.total_monthly_cost) || 0,
     paymentDay:       row.payment_day != null ? Number(row.payment_day) : null,
     paymentStatus:    clampStatus(row.payment_status),
+    recurrence:       clampRecurrence(row.recurrence),
+    loggedDate:       row.logged_date || null,
   };
 }
 export function toMonthlyExpenseInsert({
   expenseName, categoryId, quantity, unitCost, totalMonthlyCost,
-  paymentDay, paymentStatus,
+  paymentDay, paymentStatus, recurrence, loggedDate,
 }) {
-  const q  = clampExpenseQuantity(quantity);
-  const uc = Math.max(0, Number(unitCost) || 0);
+  const q   = clampExpenseQuantity(quantity);
+  const uc  = Math.max(0, Number(unitCost) || 0);
+  const rec = clampRecurrence(recurrence);
   return {
     expense_name:       expenseName,
     category_id:        categoryId || null,
     quantity:           q,
     unit_cost:          uc,
     total_monthly_cost: Math.max(0, Number(totalMonthlyCost) || q * uc),
-    payment_day:        clampPaymentDay(paymentDay),
+    // For one_time rows we don't need a recurring payment_day reminder.
+    payment_day:        rec === 'one_time' ? null : clampPaymentDay(paymentDay),
     payment_status:     clampStatus(paymentStatus),
+    recurrence:         rec,
+    logged_date:        rec === 'one_time' ? normalizeLoggedDate(loggedDate) : null,
   };
 }
 export function toMonthlyExpenseUpdate(updates = {}) {
@@ -214,6 +229,13 @@ export function toMonthlyExpenseUpdate(updates = {}) {
   if (updates.totalMonthlyCost !== undefined) payload.total_monthly_cost = Math.max(0, Number(updates.totalMonthlyCost) || 0);
   if (updates.paymentDay       !== undefined) payload.payment_day        = clampPaymentDay(updates.paymentDay);
   if (updates.paymentStatus    !== undefined) payload.payment_status     = clampStatus(updates.paymentStatus);
+  if (updates.recurrence       !== undefined) payload.recurrence         = clampRecurrence(updates.recurrence);
+  if (updates.loggedDate       !== undefined) payload.logged_date        = normalizeLoggedDate(updates.loggedDate);
+  // Keep the two recurrence-dependent columns consistent when recurrence
+  // flips: a switch to monthly clears logged_date; a switch to one_time
+  // clears payment_day. Skip when only one of the pair was edited.
+  if (updates.recurrence === 'one_time')  payload.payment_day = null;
+  if (updates.recurrence === 'monthly')   payload.logged_date = null;
   return payload;
 }
 

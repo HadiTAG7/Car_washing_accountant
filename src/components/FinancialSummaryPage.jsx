@@ -109,9 +109,18 @@ export default function FinancialSummaryPage() {
     [periodVariableItems],
   );
 
+  // Recurring monthly rows count every month; one_time rows count only in
+  // the month their loggedDate falls in. Keeps the income statement honest
+  // when the user records a one-off payment under the monthly tab.
   const monthlyFixed = useMemo(
-    () => monthlies.reduce((s, m) => s + (m.totalMonthlyCost || 0), 0),
-    [monthlies],
+    () => monthlies.reduce((s, m) => {
+      if (m.recurrence === 'one_time') {
+        const ym = String(m.loggedDate || '').slice(0, 7);
+        if (ym !== selectedMonth) return s;
+      }
+      return s + (m.totalMonthlyCost || 0);
+    }, 0),
+    [monthlies, selectedMonth],
   );
 
   const annualAmortized = useMemo(

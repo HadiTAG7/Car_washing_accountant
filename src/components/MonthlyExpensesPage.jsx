@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
-  Plus, Trash2, Pencil, Wallet, CheckCircle2, Clock, CalendarClock, Receipt,
+  Plus, Trash2, Pencil, Wallet, CheckCircle2, Clock, CalendarClock, Calendar, Receipt,
 } from 'lucide-react';
 import { formatCurrency, formatNumber } from '../data/initialData';
 import TopBar from './TopBar';
@@ -75,6 +75,21 @@ function EmptyState({ onAdd }) {
 function formatPaymentDay(day) {
   if (!day) return '—';
   return `يوم ${formatNumber(day)} من الشهر`;
+}
+
+// Pretty-prints a YYYY-MM-DD into an Arabic date with Latin digits.
+function formatLoggedDate(iso) {
+  if (!iso) return '—';
+  try {
+    const d = new Date(`${String(iso).slice(0, 10)}T00:00:00`);
+    if (Number.isNaN(d.getTime())) return iso;
+    return new Intl.DateTimeFormat('ar-SA', {
+      year: 'numeric', month: 'short', day: 'numeric',
+      numberingSystem: 'latn',
+    }).format(d);
+  } catch {
+    return iso;
+  }
 }
 
 export default function MonthlyExpensesPage() {
@@ -234,7 +249,7 @@ export default function MonthlyExpensesPage() {
                     <th className="py-3 px-4 whitespace-nowrap text-center tabular-nums">الكمية</th>
                     <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">تكلفة الوحدة</th>
                     <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">الإجمالي الشهري</th>
-                    <th className="py-3 px-4 whitespace-nowrap">يوم الصرف</th>
+                    <th className="py-3 px-4 whitespace-nowrap">التكرار / الموعد</th>
                     <th className="py-3 px-4 whitespace-nowrap">الحالة</th>
                     <th className="py-3 px-4 whitespace-nowrap text-left w-20">إجراءات</th>
                   </tr>
@@ -268,15 +283,32 @@ export default function MonthlyExpensesPage() {
                         {formatCurrency(i.totalMonthlyCost)}
                       </td>
                       <td className="py-3 px-4 whitespace-nowrap text-slate-600 dark:text-slate-400 align-top">
-                        <span className="inline-flex items-center gap-1.5 tabular-nums">
-                          <CalendarClock size={13} className="text-slate-400 dark:text-slate-500" />
-                          {formatPaymentDay(i.paymentDay)}
-                        </span>
+                        {i.recurrence === 'one_time' ? (
+                          <div className="flex flex-col gap-1">
+                            <span className="inline-flex items-center gap-1 w-fit px-2 py-0.5 rounded-md border border-accent-200 dark:border-accent-500/40 bg-accent-50 dark:bg-accent-500/15 text-accent-700 dark:text-accent-300 text-[10px] font-bold">
+                              مرة واحدة
+                            </span>
+                            <span className="inline-flex items-center gap-1.5 tabular-nums text-[12px]">
+                              <Calendar size={13} className="text-slate-400 dark:text-slate-500" />
+                              {formatLoggedDate(i.loggedDate)}
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col gap-1">
+                            <span className="inline-flex items-center gap-1 w-fit px-2 py-0.5 rounded-md border border-primary-200 dark:border-primary-500/40 bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300 text-[10px] font-bold">
+                              متكرر شهرياً
+                            </span>
+                            <span className="inline-flex items-center gap-1.5 tabular-nums text-[12px]">
+                              <CalendarClock size={13} className="text-slate-400 dark:text-slate-500" />
+                              {formatPaymentDay(i.paymentDay)}
+                            </span>
+                          </div>
+                        )}
                       </td>
                       <td className="py-3 px-4 whitespace-nowrap align-top">
                         <PaymentStatusPill
                           status={i.paymentStatus}
-                          dueToday={isMonthlyDueToday(i.paymentDay)}
+                          dueToday={i.recurrence !== 'one_time' && isMonthlyDueToday(i.paymentDay)}
                           onChange={(next) => handleUpdateStatus(i.id, next)}
                         />
                       </td>

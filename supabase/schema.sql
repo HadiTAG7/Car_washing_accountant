@@ -206,6 +206,10 @@ for each row execute function public.touch_updated_at();
 -- ─── monthly_expenses (Module 3 — recurring monthly operational costs) ───
 -- Stores BOTH unit_cost and total_monthly_cost (= quantity × unit_cost),
 -- so the table can render the unit cost directly without divide-on-read.
+-- `recurrence` distinguishes a recurring monthly expense from a one-off
+-- payment that happens to be recorded under the monthly tab. For 'one_time'
+-- rows, `logged_date` carries the actual paid-on date so downstream
+-- computations (budgets, income statement) know which month it belongs to.
 create table if not exists public.monthly_expenses (
   id                  uuid primary key default gen_random_uuid(),
   expense_name        text not null,
@@ -216,6 +220,9 @@ create table if not exists public.monthly_expenses (
   payment_day         integer      check (payment_day is null or (payment_day between 1 and 31)),
   payment_status      text not null default 'pending'
                       check (payment_status in ('paid','pending')),
+  recurrence          text not null default 'monthly'
+                      check (recurrence in ('monthly','one_time')),
+  logged_date         date,
   notes               text,
   created_at          timestamptz not null default now(),
   updated_at          timestamptz not null default now()
@@ -223,6 +230,8 @@ create table if not exists public.monthly_expenses (
 create index if not exists monthly_expenses_payment_day_idx     on public.monthly_expenses(payment_day);
 create index if not exists monthly_expenses_payment_status_idx  on public.monthly_expenses(payment_status);
 create index if not exists monthly_expenses_category_id_idx    on public.monthly_expenses(category_id);
+create index if not exists monthly_expenses_recurrence_idx     on public.monthly_expenses(recurrence);
+create index if not exists monthly_expenses_logged_date_idx    on public.monthly_expenses(logged_date);
 
 drop trigger if exists monthly_expenses_touch on public.monthly_expenses;
 create trigger monthly_expenses_touch
@@ -530,6 +539,22 @@ alter table public.monthly_expenses
 alter table public.monthly_expenses
   add  constraint monthly_expenses_payment_day_chk
   check (payment_day is null or (payment_day between 1 and 31));
+
+-- Recurrence + paid-on date columns: lets a "monthly tab" row be either
+-- a recurring monthly fixed cost or a single one-off expense for a
+-- specific date. logged_date is nullable for backwards-compat with the
+-- recurring rows; one_time rows should populate it.
+alter table public.monthly_expenses
+  add column if not exists recurrence  text not null default 'monthly';
+alter table public.monthly_expenses
+  add column if not exists logged_date date;
+alter table public.monthly_expenses
+  drop constraint if exists monthly_expenses_recurrence_chk;
+alter table public.monthly_expenses
+  add  constraint monthly_expenses_recurrence_chk
+  check (recurrence in ('monthly','one_time'));
+create index if not exists monthly_expenses_recurrence_idx  on public.monthly_expenses(recurrence);
+create index if not exists monthly_expenses_logged_date_idx on public.monthly_expenses(logged_date);
 
 -- One-shot migration: pull the day-of-month out of legacy billing_date
 -- when payment_day hasn't been set yet. Guarded so a DB whose

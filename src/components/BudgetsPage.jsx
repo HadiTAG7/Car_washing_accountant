@@ -81,6 +81,7 @@ function computeBudgetSpend({
   monthlies, monthlyCatMap,
   annuals,   annualCatMap,
   variableItems, variableCatMap,
+  currentMonth, currentYear,
 }) {
   const targetLabel = budget.categoryLabel;
   let spent = 0;
@@ -88,9 +89,24 @@ function computeBudgetSpend({
 
   monthlies.forEach((m) => {
     const catLabel = monthlyCatMap.get(m.categoryId)?.label || '';
-    if (matches(m.expenseName, targetLabel) || matches(catLabel, targetLabel)) {
-      spent += isMonthly ? (m.totalMonthlyCost || 0) : (m.totalMonthlyCost || 0) * 12;
+    if (!(matches(m.expenseName, targetLabel) || matches(catLabel, targetLabel))) return;
+
+    if (m.recurrence === 'one_time') {
+      const ymd = String(m.loggedDate || '');
+      const ym  = ymd.slice(0, 7);
+      const y   = ymd.slice(0, 4);
+      if (isMonthly) {
+        // One-time monthly: only counts toward the current month's budget
+        // when its paid-on date falls in the current month.
+        if (ym === currentMonth) spent += (m.totalMonthlyCost || 0);
+      } else if (y === currentYear) {
+        // For annual budgets, count one-time payments made this year.
+        spent += (m.totalMonthlyCost || 0);
+      }
+      return;
     }
+    // Recurring monthly: counts every month; × 12 against annual budgets.
+    spent += isMonthly ? (m.totalMonthlyCost || 0) : (m.totalMonthlyCost || 0) * 12;
   });
 
   annuals.forEach((a) => {
@@ -607,11 +623,13 @@ export default function BudgetsPage() {
       annualCatMap,
       variableItems: variableInputForBudget,
       variableCatMap,
+      currentMonth,
+      currentYear,
     });
     return { budget: b, spent };
   }), [
     mergedBudgets, monthlies, monthlyCatMap, annuals, annualCatMap,
-    variableInputForBudget, variableCatMap,
+    variableInputForBudget, variableCatMap, currentMonth, currentYear,
   ]);
 
   const monthlyCards = useMemo(

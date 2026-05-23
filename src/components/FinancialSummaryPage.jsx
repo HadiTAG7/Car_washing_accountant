@@ -136,10 +136,17 @@ export default function FinancialSummaryPage() {
     [annuals],
   );
 
-  const grossProfit = revenue - variableTotal;
-  const totalCosts  = variableTotal + monthlyFixed + annualAmortized;
-  const netProfit   = grossProfit - monthlyFixed - annualAmortized;
-  const isProfit    = netProfit >= 0;
+  const grossProfit         = revenue - variableTotal;
+  const totalCosts          = variableTotal + monthlyFixed + annualAmortized;
+  const netProfitBeforeFees = grossProfit - monthlyFixed - annualAmortized;
+
+  // Performance-based deductions: only kick in when the period made a
+  // profit. A losing month should not trigger an automatic management
+  // fee or supervisor salary withdrawal.
+  const managementFees   = netProfitBeforeFees > 0 ? netProfitBeforeFees * 0.10 : 0;
+  const supervisorSalary = netProfitBeforeFees > 0 ? netProfitBeforeFees * 0.05 : 0;
+  const finalNetProfit   = netProfitBeforeFees - managementFees - supervisorSalary;
+  const isProfit         = finalNetProfit >= 0;
 
   const monthLabel = formatMonthLabel(selectedMonth);
 
@@ -228,9 +235,9 @@ export default function FinancialSummaryPage() {
                 icon={isProfit ? TrendingUp : TrendingDown}
                 iconBg={isProfit ? 'bg-emerald-50' : 'bg-rose-50'}
                 iconColor={isProfit ? 'text-emerald-600' : 'text-rose-600'}
-                label="صافي الربح الشهري النظيف"
-                value={`${isProfit ? '' : '−'}${formatCurrency(Math.abs(netProfit))}`}
-                sub="صافي ربح الفترة بعد الإطفاء والتوزيع المحاسبي"
+                label="صافي الربح النهائي للشركاء"
+                value={`${isProfit ? '' : '−'}${formatCurrency(Math.abs(finalNetProfit))}`}
+                sub="بعد خصم رسوم الإدارة (10%) وراتب المشرف (5%)"
               />
             </div>
 
@@ -275,8 +282,18 @@ export default function FinancialSummaryPage() {
                       kind="minus"
                     />
                     <StatementRow
-                      label="= صافي الربح أو الخسارة للفترة"
-                      amount={netProfit}
+                      label="يُخصم منه: رسوم الإدارة (10% من صافي الربح)"
+                      amount={managementFees}
+                      kind="minus"
+                    />
+                    <StatementRow
+                      label="يُخصم منه: راتب المشرف (5% من صافي الربح)"
+                      amount={supervisorSalary}
+                      kind="minus"
+                    />
+                    <StatementRow
+                      label="= صافي الربح النهائي للشركاء"
+                      amount={finalNetProfit}
                       kind="final"
                     />
                   </tbody>

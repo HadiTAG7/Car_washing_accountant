@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import {
   Plus, Users, UserCheck, Briefcase, Trash2, Pencil, Check, X,
 } from 'lucide-react';
-import { formatNumber } from '../data/initialData';
+import { formatNumber, formatCurrency, PER_WORKER_FEE } from '../data/initialData';
 import TopBar from './TopBar';
 import {
   Card, SectionHeader, StatCard,
@@ -191,20 +191,23 @@ export default function PartnersPage() {
                   <th className="py-3 px-4 whitespace-nowrap">اسم الشريك</th>
                   <th className="py-3 px-4 whitespace-nowrap text-center">عدد العمالة</th>
                   <th className="py-3 px-4 whitespace-nowrap text-center">النسبة</th>
-                  <th className="py-3 px-4 whitespace-nowrap text-left w-16">إجراءات</th>
+                  <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">الرسوم المطلوبة</th>
+                  <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">المدفوع</th>
+                  <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">المتبقي</th>
+                  <th className="py-3 px-4 whitespace-nowrap text-left w-20">إجراءات</th>
                 </tr>
               </thead>
               <tbody>
                 {loading && partners.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="py-10">
+                    <td colSpan={7} className="py-10">
                       <LoadingState message="جارٍ تحميل بيانات الشركاء..." />
                     </td>
                   </tr>
                 )}
                 {!loading && partners.length === 0 && !error && (
                   <tr>
-                    <td colSpan={4} className="py-12 text-center text-sm text-slate-400 dark:text-slate-500">
+                    <td colSpan={7} className="py-12 text-center text-sm text-slate-400 dark:text-slate-500">
                       لا يوجد شركاء مسجّلين بعد — اضغط &quot;إضافة شريك جديد&quot; للبدء
                     </td>
                   </tr>
@@ -217,6 +220,13 @@ export default function PartnersPage() {
                     : 0;
                   const pct       = p.percentage != null ? p.percentage : derived;
                   const isCustom  = p.percentage != null;
+                  // Capital & receivable view: required = workers × per-worker
+                  // fee; settled when zero remaining and at least one worker
+                  // owes money in the first place.
+                  const required  = (p.workersCount || 0) * PER_WORKER_FEE;
+                  const paid      = p.paidAmount || 0;
+                  const remaining = Math.max(0, required - paid);
+                  const settled   = required > 0 && remaining === 0;
                   return (
                     <tr key={p.id} className="border-b border-slate-50 dark:border-slate-800 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
                       <td className="py-3 px-4 whitespace-normal break-words min-w-[180px] font-medium text-slate-800 dark:text-slate-200">
@@ -249,6 +259,26 @@ export default function PartnersPage() {
                           title={isCustom ? 'نسبة مُحدّدة يدوياً' : 'محسوبة تلقائياً حسب عدد العمالة'}
                         >
                           {pct.toFixed(1)}%
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums text-slate-700 dark:text-slate-300">
+                        {formatCurrency(required)}
+                      </td>
+                      <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums font-bold text-slate-900 dark:text-slate-100">
+                        {formatCurrency(paid)}
+                      </td>
+                      <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums">
+                        <span
+                          className={`inline-flex items-center gap-1 text-[13px] font-bold px-2.5 py-1 rounded-lg ${
+                            settled
+                              ? 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-100 dark:border-emerald-500/30'
+                              : remaining > 0
+                                ? 'bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-100 dark:border-amber-500/30'
+                                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
+                          }`}
+                          title={settled ? 'مسدَّد بالكامل' : remaining > 0 ? 'هناك مبلغ متبقٍّ على الشريك' : 'لا توجد رسوم مستحقة'}
+                        >
+                          {settled ? '✓ مسدَّد' : formatCurrency(remaining)}
                         </span>
                       </td>
                       <td className="py-3 px-4 whitespace-nowrap text-left">

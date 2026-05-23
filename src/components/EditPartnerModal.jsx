@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { X, Pencil, Users, Percent, Briefcase } from 'lucide-react';
-import { formatNumber } from '../data/initialData';
+import { X, Pencil, Users, Percent, Briefcase, Wallet } from 'lucide-react';
+import { formatCurrency, PER_WORKER_FEE } from '../data/initialData';
 
-const EMPTY = { partnerName: '', workersCount: '', percentage: '' };
+const EMPTY = { partnerName: '', workersCount: '', percentage: '', paidAmount: '' };
 
 export default function EditPartnerModal({ isOpen, partner, onClose, onSave }) {
   const [form, setForm] = useState(EMPTY);
@@ -17,6 +17,7 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave }) {
       percentage:   partner.percentage === null || partner.percentage === undefined
         ? ''
         : String(partner.percentage),
+      paidAmount:   partner.paidAmount ? String(partner.paidAmount) : '',
     });
   }, [isOpen, partner]);
 
@@ -28,7 +29,11 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave }) {
   const percentageNum = form.percentage === ''
     ? null
     : Math.min(100, Math.max(0, parseFloat(form.percentage) || 0));
-  const isValid = form.partnerName.trim().length > 0;
+  const paidAmount    = Math.max(0, parseFloat(form.paidAmount) || 0);
+  const requiredTotal = workersCount * PER_WORKER_FEE;
+  const remaining     = Math.max(0, requiredTotal - paidAmount);
+  const settled       = workersCount > 0 && remaining === 0;
+  const isValid       = form.partnerName.trim().length > 0;
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -39,6 +44,7 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave }) {
         partnerName:  form.partnerName.trim(),
         workersCount,
         percentage:   percentageNum,
+        paidAmount,
       });
       onClose();
     } finally {
@@ -139,24 +145,73 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave }) {
                   className="w-full pr-9 pl-4 py-3 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white font-medium tabular-nums bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-colors"
                 />
               </div>
-              <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                اتركها فارغة لاستخدام الاحتساب التلقائي حسب عدد العمالة.
-              </p>
             </div>
           </div>
 
-          {/* Live preview */}
-          <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 rounded-xl p-4 text-sm">
-            <div className="flex items-baseline justify-between gap-3">
-              <span className="text-slate-600 dark:text-slate-400">ملخّص:</span>
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5" htmlFor="paidAmount">
+              المبلغ المدفوع (ر.س)
+            </label>
+            <div className="relative">
+              <Wallet
+                size={16}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 pointer-events-none"
+              />
+              <input
+                id="paidAmount"
+                type="number"
+                name="paidAmount"
+                value={form.paidAmount}
+                onChange={handleChange}
+                placeholder="0"
+                min="0"
+                step="any"
+                className="w-full pr-9 pl-4 py-3 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white font-medium tabular-nums bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-colors"
+              />
+            </div>
+            <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+              الرسوم المطلوبة = عدد العمالة × {formatCurrency(PER_WORKER_FEE)}. اتركها صفراً إذا لم يدفع بعد.
+            </p>
+          </div>
+
+          {/* Capital & receivable summary */}
+          <div className="rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 divide-y divide-slate-100 dark:divide-slate-800 text-sm">
+            <div className="flex items-baseline justify-between gap-3 px-4 py-2.5">
+              <span className="text-slate-600 dark:text-slate-400">إجمالي الرسوم المطلوبة</span>
               <span className="font-bold text-slate-900 dark:text-slate-100 tabular-nums">
-                {formatNumber(workersCount)} عامل
-                {percentageNum !== null && (
-                  <>
-                    {' • '}
-                    {percentageNum.toFixed(2)}%
-                  </>
-                )}
+                {formatCurrency(requiredTotal)}
+              </span>
+            </div>
+            <div className="flex items-baseline justify-between gap-3 px-4 py-2.5">
+              <span className="text-slate-600 dark:text-slate-400">المبلغ المدفوع</span>
+              <span className="font-bold text-slate-900 dark:text-slate-100 tabular-nums">
+                {formatCurrency(paidAmount)}
+              </span>
+            </div>
+            <div className={`flex items-baseline justify-between gap-3 px-4 py-3 ${
+              settled
+                ? 'bg-emerald-50 dark:bg-emerald-500/10'
+                : remaining > 0
+                  ? 'bg-amber-50 dark:bg-amber-500/10'
+                  : ''
+            }`}>
+              <span className={`font-bold ${
+                settled
+                  ? 'text-emerald-700 dark:text-emerald-300'
+                  : remaining > 0
+                    ? 'text-amber-700 dark:text-amber-300'
+                    : 'text-slate-700 dark:text-slate-300'
+              }`}>
+                {settled ? 'مسدَّد بالكامل ✓' : 'المتبقي للاستكمال'}
+              </span>
+              <span className={`font-extrabold tabular-nums ${
+                settled
+                  ? 'text-emerald-700 dark:text-emerald-300'
+                  : remaining > 0
+                    ? 'text-amber-700 dark:text-amber-300'
+                    : 'text-slate-900 dark:text-slate-100'
+              }`}>
+                {formatCurrency(remaining)}
               </span>
             </div>
           </div>

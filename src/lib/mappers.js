@@ -367,6 +367,12 @@ function clampPercentage(value) {
   if (!Number.isFinite(n)) return null;
   return Math.min(100, Math.max(0, n));
 }
+function clampPaidAmount(value) {
+  if (value === null || value === undefined || value === '') return 0;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, n);
+}
 
 export function mapPartner(row) {
   const pct = row.percentage;
@@ -375,21 +381,24 @@ export function mapPartner(row) {
     partnerName:    row.partner_name,
     workersCount:   Number(row.workers_count) || 0,
     percentage:     pct === null || pct === undefined ? null : Number(pct),
+    paidAmount:     Number(row.paid_amount) || 0,
     contactNumber:  row.contact_number || '',
     status:         row.status || 'active',
   };
 }
-export function toPartnerInsert({ partnerName, workersCount, percentage }) {
+export function toPartnerInsert({ partnerName, workersCount, percentage, paidAmount }) {
   return {
     partner_name:   partnerName,
     workers_count:  Number(workersCount) || 0,
     percentage:     clampPercentage(percentage),
+    paid_amount:    clampPaidAmount(paidAmount),
   };
 }
-export function toPartnerUpdate({ partnerName, workersCount, percentage }) {
+export function toPartnerUpdate({ partnerName, workersCount, percentage, paidAmount }) {
   const payload = {};
   if (partnerName  !== undefined) payload.partner_name  = partnerName;
   if (workersCount !== undefined) payload.workers_count = Number(workersCount) || 0;
   if (percentage   !== undefined) payload.percentage    = clampPercentage(percentage);
+  if (paidAmount   !== undefined) payload.paid_amount   = clampPaidAmount(paidAmount);
   return payload;
 }

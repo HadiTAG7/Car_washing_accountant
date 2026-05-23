@@ -139,6 +139,10 @@ const SAR_FMT = new Intl.NumberFormat('ar-SA', {
 });
 const NUM_FMT = new Intl.NumberFormat('ar-SA', { numberingSystem: 'latn' });
 
+// Per-worker corporate capital fee. Each partner owes this × workersCount;
+// what they've paid is tracked in `partners.paid_amount` (see schema.sql).
+export const PER_WORKER_FEE = 20000;
+
 export function formatCurrency(amount) {
   return SAR_FMT.format(amount || 0);
 }

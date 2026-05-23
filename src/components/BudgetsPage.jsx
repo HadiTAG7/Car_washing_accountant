@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Plus, Trash2, Pencil, Target, Wallet, TrendingDown, AlertTriangle,
-  Check, X, Receipt, Repeat, Sparkles,
+  Check, X, Receipt, Repeat, Sparkles, EyeOff, RotateCcw,
 } from 'lucide-react';
 import { formatCurrency } from '../data/initialData';
 import TopBar from './TopBar';
@@ -45,6 +45,35 @@ function matches(label, target) {
   const b = norm(target);
   if (!a || !b) return false;
   return a === b || a.includes(b) || b.includes(a);
+}
+
+// ── Hidden-virtuals persistence (localStorage) ───────────────────────────
+// User can dismiss any auto-discovered (virtual) card; we persist the
+// normalized key `${type}::${normLabel}` so the same row stays hidden
+// across reloads. Real (DB-backed) rows aren't routed through this — they
+// keep using Supabase delete.
+const HIDDEN_STORAGE_KEY = 'hidden_budget_categories';
+
+function readHidden() {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    const raw = window.localStorage.getItem(HIDDEN_STORAGE_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(arr) ? arr : []);
+  } catch {
+    return new Set();
+  }
+}
+function writeHidden(set) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(HIDDEN_STORAGE_KEY, JSON.stringify([...set]));
+  } catch {
+    // localStorage might be unavailable (private mode, quota, etc.)
+  }
+}
+function hideKeyFor(budget) {
+  return `${budget.budgetType}::${norm(budget.categoryLabel)}`;
 }
 
 function computeBudgetSpend({
@@ -97,7 +126,7 @@ function progressColor(pct) {
 }
 
 // ─── Budget card (inline editable amount) ────────────────────────────────
-function BudgetCard({ budget, allocated, spent, onSaveAmount, onDelete, onEditFull }) {
+function BudgetCard({ budget, allocated, spent, onSaveAmount, onDelete, onEditFull, onHide }) {
   const isVirtual = Boolean(budget.isVirtual);
   const remaining = allocated - spent;
   const pct = allocated > 0 ? Math.min((spent / allocated) * 100, 200) : 0;
@@ -182,15 +211,25 @@ function BudgetCard({ budget, allocated, spent, onSaveAmount, onDelete, onEditFu
               <Pencil size={15} />
             </button>
           )}
-          {!isVirtual && (
+          {isVirtual ? (
+            <button
+              type="button"
+              onClick={onHide}
+              className="text-accent-500 dark:text-accent-400 hover:text-white hover:bg-accent-600 dark:hover:bg-accent-500 p-1.5 rounded-lg ring-1 ring-accent-200 dark:ring-accent-500/40 transition-colors"
+              aria-label={`إخفاء ${budget.categoryLabel}`}
+              title="إخفاء البند من اللوحة"
+            >
+              <Trash2 size={15} strokeWidth={2.2} />
+            </button>
+          ) : (
             <button
               type="button"
               onClick={onDelete}
-              className="text-slate-400 dark:text-slate-500 hover:text-accent-600 dark:hover:text-accent-400 p-1.5 rounded-lg hover:bg-accent-50 dark:hover:bg-accent-500/10 transition-colors"
+              className="text-accent-500 dark:text-accent-400 hover:text-white hover:bg-accent-600 dark:hover:bg-accent-500 p-1.5 rounded-lg ring-1 ring-accent-200 dark:ring-accent-500/40 transition-colors"
               aria-label={`حذف ${budget.categoryLabel}`}
               title="حذف الميزانية"
             >
-              <Trash2 size={15} />
+              <Trash2 size={15} strokeWidth={2.2} />
             </button>
           )}
         </div>
@@ -417,6 +456,7 @@ export default function BudgetsPage() {
   const [editingItem, setEditingItem]   = useState(null);
   const [mutationError, setMutationError] = useState(null);
   const [toast, setToast] = useState({ open: false, message: '', tone: 'success', duration: 3000 });
+  const [hiddenKeys, setHiddenKeys] = useState(() => readHidden());
 
   const showToast = useCallback((message, tone = 'success') => {
     setToast({ open: true, message, tone, duration: tone === 'error' ? 8000 : 3000 });
@@ -530,6 +570,7 @@ export default function BudgetsPage() {
     discoveredMonthlyLabels.forEach((label, normKey) => {
       const key = `monthly::${normKey}`;
       if (realByKey.has(key)) return;
+      if (hiddenKeys.has(key)) return;     // user-dismissed virtual
       result.push({
         id:            `virtual-monthly-${normKey}`,
         categoryLabel: label,
@@ -542,6 +583,7 @@ export default function BudgetsPage() {
     discoveredAnnualLabels.forEach((label, normKey) => {
       const key = `annual::${normKey}`;
       if (realByKey.has(key)) return;
+      if (hiddenKeys.has(key)) return;     // user-dismissed virtual
       result.push({
         id:            `virtual-annual-${normKey}`,
         categoryLabel: label,
@@ -553,7 +595,7 @@ export default function BudgetsPage() {
     });
 
     return result;
-  }, [budgets, discoveredMonthlyLabels, discoveredAnnualLabels]);
+  }, [budgets, discoveredMonthlyLabels, discoveredAnnualLabels, hiddenKeys]);
 
   // Compute spend per budget once; downstream sections slice by type.
   const cards = useMemo(() => mergedBudgets.map((b) => {
@@ -661,6 +703,30 @@ export default function BudgetsPage() {
     }
   }
 
+  function handleHideVirtual(item) {
+    const confirmed = typeof window !== 'undefined'
+      ? window.confirm('هل أنت متأكد من إخفاء هذا البند من لوحة الميزانيات؟')
+      : true;
+    if (!confirmed) return;
+    const key = hideKeyFor(item);
+    const next = new Set(hiddenKeys);
+    next.add(key);
+    writeHidden(next);
+    setHiddenKeys(next);
+    showToast(`تم إخفاء "${item.categoryLabel}" من اللوحة`);
+  }
+
+  function handleResetHidden() {
+    if (hiddenKeys.size === 0) return;
+    const confirmed = typeof window !== 'undefined'
+      ? window.confirm(`إعادة إظهار ${hiddenKeys.size} بند مخفي على اللوحة؟`)
+      : true;
+    if (!confirmed) return;
+    writeHidden(new Set());
+    setHiddenKeys(new Set());
+    showToast('تم إعادة إظهار جميع البنود المخفية');
+  }
+
   const renderCards = (items) => items.map(({ budget, spent }) => (
     <BudgetCard
       key={budget.id}
@@ -670,6 +736,7 @@ export default function BudgetsPage() {
       onSaveAmount={(amount) => handleSaveAmount(budget, amount)}
       onDelete={() => handleDelete(budget)}
       onEditFull={() => openEditModal(budget)}
+      onHide={() => handleHideVirtual(budget)}
     />
   ));
 
@@ -697,6 +764,28 @@ export default function BudgetsPage() {
             error={mutationError}
             onRetry={() => setMutationError(null)}
           />
+        )}
+
+        {/* Hidden-items banner — visible only when the user has dismissed
+            at least one auto-discovered card. One click restores them all. */}
+        {hiddenKeys.size > 0 && (
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60">
+            <div className="flex items-center gap-2 text-slate-600 dark:text-slate-300">
+              <EyeOff size={16} className="text-slate-500 dark:text-slate-400 shrink-0" />
+              <p className="text-sm">
+                <span className="font-bold tabular-nums">{hiddenKeys.size}</span>
+                {' '}بند مخفي من لوحة الميزانيات
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleResetHidden}
+              className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold text-primary-700 dark:text-primary-300 hover:text-white hover:bg-primary-700 dark:hover:bg-primary-600 border border-primary-200 dark:border-primary-500/40 transition-colors shrink-0"
+            >
+              <RotateCcw size={14} strokeWidth={2.3} />
+              إعادة إظهار كافة البنود المخفية
+            </button>
+          </div>
         )}
 
         {/* Overall KPI row */}

@@ -76,6 +76,10 @@ function hideKeyFor(budget) {
   return `${budget.budgetType}::${norm(budget.categoryLabel)}`;
 }
 
+// Strict category roll-up: a budget card represents a CLASSIFICATION
+// (التصنيف). Spending on individual items rolls up to whichever category
+// the item belongs to. The expense's own `expense_name` is intentionally
+// ignored during matching — only the resolved category label counts.
 function computeBudgetSpend({
   budget,
   monthlies, monthlyCatMap,
@@ -89,7 +93,7 @@ function computeBudgetSpend({
 
   monthlies.forEach((m) => {
     const catLabel = monthlyCatMap.get(m.categoryId)?.label || '';
-    if (!(matches(m.expenseName, targetLabel) || matches(catLabel, targetLabel))) return;
+    if (!matches(catLabel, targetLabel)) return;
 
     if (m.recurrence === 'one_time') {
       const ymd = String(m.loggedDate || '');
@@ -111,22 +115,21 @@ function computeBudgetSpend({
 
   annuals.forEach((a) => {
     const catLabel = annualCatMap.get(a.category)?.label || a.category || '';
-    if (matches(a.expenseName, targetLabel) || matches(catLabel, targetLabel)) {
-      spent += isMonthly ? (a.annualCost || 0) / 12 : (a.annualCost || 0);
-    }
+    if (!matches(catLabel, targetLabel)) return;
+    spent += isMonthly ? (a.annualCost || 0) / 12 : (a.annualCost || 0);
   });
 
   if (isMonthly) {
     variableItems.forEach((v) => {
       const catLabel = variableCatMap.get(v.categoryId)?.label || '';
-      if (matches(v.expenseName, targetLabel) || matches(catLabel, targetLabel)) {
+      if (matches(catLabel, targetLabel)) {
         spent += v.totalVariableCost || 0;
       }
     });
   } else {
     variableItems.annualMatching?.forEach((v) => {
       const catLabel = variableCatMap.get(v.categoryId)?.label || '';
-      if (matches(v.expenseName, targetLabel) || matches(catLabel, targetLabel)) {
+      if (matches(catLabel, targetLabel)) {
         spent += v.totalVariableCost || 0;
       }
     });
@@ -538,10 +541,22 @@ export default function BudgetsPage() {
     [variableForCurrentMonth, variableAnnualMatching],
   );
 
-  // ── Discover labels from BOTH the category tables AND the expense rows
-  // themselves. This ensures a category that has actual expenses but no
-  // entry in the category table (legacy data, manual SQL inserts) still
-  // surfaces as a virtual budget card.
+  // ── Strict category-only discovery ────────────────────────────────────
+  // Pulls the unique set of CLASSIFICATION labels (التصنيف) — never the
+  // individual expense_name. An expense like "سكن اول يوم" belongs to
+  // (e.g.) "أخرى" and should roll its 200 ر.س up into that single card,
+  // not generate a card of its own.
+  //
+  // Sources, in order:
+  //   1. The category tables (monthly / variable / annual category lists)
+  //      — these are the canonical label source.
+  //   2. Each expense row's category, resolved through the cat map. This
+  //      is a safety net only: it catches rows that point at a category
+  //      which has since been deleted but whose label might still be
+  //      meaningful. Expense names are never read.
+  //
+  // Variable categories live with the monthlies because variable spending
+  // accrues monthly (per-biker commissions, fuel, supplies, etc.).
   const discoveredMonthlyLabels = useMemo(() => {
     const acc = new Map(); // normalized key → display label
     const add = (label) => {
@@ -549,13 +564,12 @@ export default function BudgetsPage() {
       if (!key) return;
       if (!acc.has(key)) acc.set(key, String(label).trim());
     };
-    monthlyCats.forEach((c) => add(c.label));
-    monthlies.forEach((m) => {
-      add(monthlyCatMap.get(m.categoryId)?.label);
-      add(m.expenseName);
-    });
+    monthlyCats.forEach((c)  => add(c.label));
+    variableCats.forEach((c) => add(c.label));
+    monthlies.forEach((m)    => add(monthlyCatMap.get(m.categoryId)?.label));
+    variables.forEach((v)    => add(variableCatMap.get(v.categoryId)?.label));
     return acc;
-  }, [monthlyCats, monthlies, monthlyCatMap]);
+  }, [monthlyCats, variableCats, monthlies, variables, monthlyCatMap, variableCatMap]);
 
   const discoveredAnnualLabels = useMemo(() => {
     const acc = new Map();
@@ -565,10 +579,7 @@ export default function BudgetsPage() {
       if (!acc.has(key)) acc.set(key, String(label).trim());
     };
     annualCats.forEach((c) => add(c.label));
-    annuals.forEach((a) => {
-      add(annualCatMap.get(a.category)?.label);
-      add(a.expenseName);
-    });
+    annuals.forEach((a)    => add(annualCatMap.get(a.category)?.label));
     return acc;
   }, [annualCats, annuals, annualCatMap]);
 
@@ -664,15 +675,16 @@ export default function BudgetsPage() {
     return { allocated: a, spent: s };
   }, [annualCards]);
 
-  // Suggestions for the modal's category-label input.
+  // Suggestions for the modal's category-label input — category names only,
+  // no individual expense names. Pulls from existing budgets + the strict
+  // category-only discovery maps built above.
   const suggestions = useMemo(() => {
     const set = new Set();
     budgets.forEach((b) => b.categoryLabel && set.add(b.categoryLabel));
     discoveredMonthlyLabels.forEach((label) => set.add(label));
     discoveredAnnualLabels.forEach((label) => set.add(label));
-    variableCats.forEach((c) => c.label && set.add(c.label));
     return [...set].sort((a, b) => a.localeCompare(b, 'ar'));
-  }, [budgets, discoveredMonthlyLabels, discoveredAnnualLabels, variableCats]);
+  }, [budgets, discoveredMonthlyLabels, discoveredAnnualLabels]);
 
   const anyError = budgetsError || monthlyError || annualError || varError || washesError;
 

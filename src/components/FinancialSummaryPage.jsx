@@ -44,11 +44,11 @@ function StatementRow({ label, amount, kind = 'minus', tone = 'auto' }) {
       : '−';
 
   let rowClass = '';
-  if (isSubtotal) {
+  // Both subtotal kinds share the same slate banner styling — the gross
+  // profit subtotal and the expenses tally read as parallel structural
+  // dividers in the statement.
+  if (isSubtotal || isExpenseSubtotal) {
     rowClass = 'border-t-2 border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800';
-  }
-  if (isExpenseSubtotal) {
-    rowClass = 'border-t border-b border-slate-200/80 dark:border-slate-800/60';
   }
   if (finalGood) {
     rowClass = 'border-t-2 border-emerald-100 dark:border-emerald-900/50 bg-emerald-50 dark:bg-emerald-950/30';
@@ -62,7 +62,10 @@ function StatementRow({ label, amount, kind = 'minus', tone = 'auto' }) {
   if (isSubtotal)        amountClass = positive
     ? 'text-slate-900 dark:text-slate-100'
     : 'text-rose-700 dark:text-rose-400';
-  if (isExpenseSubtotal) amountClass = 'text-rose-500 dark:text-rose-400';
+  // Expense subtotal mirrors the gross-profit subtotal's high-contrast
+  // slate text so the figure is clearly readable against the slate banner.
+  // The leading `−` sign carries the outflow semantics without needing red.
+  if (isExpenseSubtotal) amountClass = 'text-slate-900 dark:text-slate-100';
   if (finalGood)         amountClass = 'text-emerald-600 dark:text-emerald-400';
   if (finalBad)          amountClass = 'text-rose-600 dark:text-rose-400';
   if (tone === 'slate' && !isFinal && !isSubtotal && !isExpenseSubtotal) {
@@ -70,25 +73,22 @@ function StatementRow({ label, amount, kind = 'minus', tone = 'auto' }) {
   }
 
   let labelClass = 'text-slate-700 dark:text-slate-300';
-  if (isSubtotal)        labelClass = 'font-bold text-slate-900 dark:text-slate-100';
-  if (isExpenseSubtotal) labelClass = 'font-bold text-rose-500 dark:text-rose-400';
-  if (finalGood)         labelClass = 'font-black text-emerald-600 dark:text-emerald-400';
-  if (finalBad)          labelClass = 'font-black text-rose-600 dark:text-rose-400';
+  if (isSubtotal || isExpenseSubtotal) {
+    labelClass = 'font-bold text-slate-900 dark:text-slate-100';
+  }
+  if (finalGood) labelClass = 'font-black text-emerald-600 dark:text-emerald-400';
+  if (finalBad)  labelClass = 'font-black text-rose-600 dark:text-rose-400';
 
   const amountWeight = isFinal
     ? 'font-black text-lg'
-    : isSubtotal
+    : (isSubtotal || isExpenseSubtotal)
       ? 'font-extrabold'
       : 'font-bold';
 
-  // Expense subtotal sits a touch tighter than the regular minus rows to
-  // read as a hairline tally divider rather than a fully-emphasized row.
-  const cellPadding = isExpenseSubtotal ? 'py-2 px-4' : 'py-3 px-4';
-
   return (
     <tr className={rowClass}>
-      <td className={`${cellPadding} whitespace-nowrap ${labelClass}`}>{label}</td>
-      <td className={`${cellPadding} whitespace-nowrap text-left tabular-nums ${amountWeight} ${amountClass}`}>
+      <td className={`py-3 px-4 whitespace-nowrap ${labelClass}`}>{label}</td>
+      <td className={`py-3 px-4 whitespace-nowrap text-left tabular-nums ${amountWeight} ${amountClass}`}>
         {sign}{formatCurrency(Math.abs(amount))}
       </td>
     </tr>

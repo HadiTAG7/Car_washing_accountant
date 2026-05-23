@@ -64,5 +64,19 @@ export function useAnnualExpenseCategories() {
     return found ? found.label : id;
   }, [categories]);
 
-  return { categories, loading, error, addCategory, getCategoryLabel, refetch };
+  const deleteCategory = useCallback(async (id) => {
+    if (!isSupabaseConfigured) throw new Error('Supabase غير مهيأ');
+    if (!id) return;
+    const { error: err } = await supabase
+      .from('annual_expense_categories')
+      .delete()
+      .eq('id', id);
+    if (err) {
+      console.error('Supabase Category Delete Error:', err);
+      throw err;
+    }
+    await refetch();
+  }, [refetch]);
+
+  return { categories, loading, error, addCategory, deleteCategory, getCategoryLabel, refetch };
 }

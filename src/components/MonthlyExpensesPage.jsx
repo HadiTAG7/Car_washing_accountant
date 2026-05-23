@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import {
   Plus, Trash2, Pencil, Wallet, CheckCircle2, Clock, CalendarClock, Calendar, Receipt,
 } from 'lucide-react';
-import { formatCurrency, formatNumber } from '../data/initialData';
+import { formatCurrency, formatNumber, MONTHLY_EXPENSE_CATEGORIES } from '../data/initialData';
 import TopBar from './TopBar';
 import {
   Card, SectionHeader, StatCard, PrimaryButton,
@@ -99,7 +99,7 @@ export default function MonthlyExpensesPage() {
   } = useMonthlyExpenses();
 
   const {
-    categories, addCategory, getCategoryLabel,
+    categories, addCategory, deleteCategory, getCategoryLabel,
   } = useMonthlyExpenseCategories();
 
   const [localOpen, setLocalOpen]         = useState(false);
@@ -149,6 +149,15 @@ export default function MonthlyExpensesPage() {
     } catch (e) {
       console.error('Supabase Category Error:', e, 'label:', label);
       showToast(describeSupabaseError(e) || 'تعذّر إضافة التصنيف الجديد', 'error');
+      throw e;
+    }
+  }
+  async function handleDeleteCategory(id) {
+    try {
+      await deleteCategory(id);
+      showToast('تم حذف التصنيف من القوائم');
+    } catch (e) {
+      showToast(describeSupabaseError(e) || 'تعذّر حذف التصنيف', 'error');
       throw e;
     }
   }
@@ -349,7 +358,9 @@ export default function MonthlyExpensesPage() {
         onAdd={handleAddItem}
         onUpdate={handleUpdateItem}
         onAddCategory={handleAddCategory}
+        onDeleteCategory={handleDeleteCategory}
         categories={categories}
+        protectedCategoryLabels={MONTHLY_EXPENSE_CATEGORIES.map((c) => c.label)}
         initialValues={editingItem}
       />
 

@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import {
   Plus, Trash2, Pencil, Wallet, CheckCircle2, Clock, CalendarClock, Repeat,
 } from 'lucide-react';
-import { formatCurrency, formatNumber } from '../data/initialData';
+import { formatCurrency, formatNumber, RECURRING_EXPENSE_CATEGORIES } from '../data/initialData';
 import TopBar from './TopBar';
 import {
   Card, SectionHeader, StatCard, PrimaryButton,
@@ -86,7 +86,7 @@ export default function AnnualExpensesPage() {
   } = useAnnualExpenses();
 
   const {
-    categories, addCategory, getCategoryLabel,
+    categories, addCategory, deleteCategory, getCategoryLabel,
   } = useAnnualExpenseCategories();
 
   const [localOpen, setLocalOpen]         = useState(false);
@@ -134,6 +134,15 @@ export default function AnnualExpensesPage() {
       const friendly = describeSupabaseError(e) || 'تعذّر إضافة التصنيف الجديد';
       showToast(friendly, 'error');
       throw e; // re-throw so the modal can also display the inline error
+    }
+  }
+  async function handleDeleteCategory(id) {
+    try {
+      await deleteCategory(id);
+      showToast('تم حذف التصنيف من القوائم');
+    } catch (e) {
+      showToast(describeSupabaseError(e) || 'تعذّر حذف التصنيف', 'error');
+      throw e;
     }
   }
   async function handleUpdateStatus(id, status) {
@@ -305,7 +314,9 @@ export default function AnnualExpensesPage() {
         onAdd={handleAddItem}
         onUpdate={handleUpdateItem}
         onAddCategory={handleAddCategory}
+        onDeleteCategory={handleDeleteCategory}
         categories={categories}
+        protectedCategoryLabels={RECURRING_EXPENSE_CATEGORIES.map((c) => c.label)}
         initialValues={editingItem}
       />
 

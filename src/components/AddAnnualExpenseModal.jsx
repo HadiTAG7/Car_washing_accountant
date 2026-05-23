@@ -38,8 +38,8 @@ function clampMonthString(value, fallback = '1') {
 }
 
 export default function AddAnnualExpenseModal({
-  isOpen, onClose, onAdd, onUpdate, onAddCategory,
-  categories = [], initialValues = null,
+  isOpen, onClose, onAdd, onUpdate, onAddCategory, onDeleteCategory,
+  categories = [], protectedCategoryLabels = [], initialValues = null,
 }) {
   const editing = Boolean(initialValues?.id);
   const [form, setForm] = useState(EMPTY);
@@ -203,6 +203,8 @@ export default function AddAnnualExpenseModal({
                 value={form.category}
                 onChange={(id) => setForm((prev) => ({ ...prev, category: id }))}
                 ariaLabel="التصنيف السنوي"
+                onDelete={onDeleteCategory}
+                protectedLabels={protectedCategoryLabels}
               />
               {onAddCategory && (
                 <button

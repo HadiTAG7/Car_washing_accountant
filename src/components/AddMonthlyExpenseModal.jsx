@@ -23,8 +23,8 @@ const EMPTY = {
 };
 
 export default function AddMonthlyExpenseModal({
-  isOpen, onClose, onAdd, onUpdate, onAddCategory,
-  categories = [], initialValues = null,
+  isOpen, onClose, onAdd, onUpdate, onAddCategory, onDeleteCategory,
+  categories = [], protectedCategoryLabels = [], initialValues = null,
 }) {
   const editing = Boolean(initialValues?.id);
   const [form, setForm] = useState(EMPTY);
@@ -203,6 +203,8 @@ export default function AddMonthlyExpenseModal({
                 value={form.categoryId}
                 onChange={(id) => setForm((prev) => ({ ...prev, categoryId: id }))}
                 ariaLabel="التصنيف الشهري"
+                onDelete={onDeleteCategory}
+                protectedLabels={protectedCategoryLabels}
               />
               {onAddCategory && (
                 <button

@@ -22,22 +22,33 @@ import { isSupabaseConfigured, missingEnvNames } from '../lib/supabaseClient';
 
 // ─── Income statement row ────────────────────────────────────────────────
 // `kind`: 'plus' (revenue) | 'minus' (cost) | 'subtotal' (gross profit)
-//       | 'final' (net profit) — drives sign, color, and emphasis.
+//       | 'expenseSubtotal' (total outflow tally) | 'final' (net profit)
+//       — drives sign, color, and emphasis.
 function StatementRow({ label, amount, kind = 'minus', tone = 'auto' }) {
-  const isPlus     = kind === 'plus';
-  const isSubtotal = kind === 'subtotal';
-  const isFinal    = kind === 'final';
+  const isPlus            = kind === 'plus';
+  const isSubtotal        = kind === 'subtotal';
+  const isExpenseSubtotal = kind === 'expenseSubtotal';
+  const isFinal           = kind === 'final';
 
   // tone='auto' lets the final row pick emerald/rose from amount sign.
   const positive   = amount >= 0;
   const finalGood  = isFinal && positive;
   const finalBad   = isFinal && !positive;
 
-  const sign = isPlus ? '+' : (isSubtotal || isFinal) ? '=' : '−';
+  // Expense subtotals are tallies of outflow, so always show the minus
+  // sign — they should never be confused with a profit subtotal.
+  const sign = isPlus
+    ? '+'
+    : (isSubtotal || isFinal)
+      ? '='
+      : '−';
 
   let rowClass = '';
   if (isSubtotal) {
     rowClass = 'border-t-2 border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800';
+  }
+  if (isExpenseSubtotal) {
+    rowClass = 'border-t border-b border-slate-200/80 dark:border-slate-800/60';
   }
   if (finalGood) {
     rowClass = 'border-t-2 border-emerald-100 dark:border-emerald-900/50 bg-emerald-50 dark:bg-emerald-950/30';
@@ -47,18 +58,22 @@ function StatementRow({ label, amount, kind = 'minus', tone = 'auto' }) {
   }
 
   let amountClass = 'text-rose-700 dark:text-rose-400';
-  if (isPlus)     amountClass = 'text-emerald-700 dark:text-emerald-400';
-  if (isSubtotal) amountClass = positive
+  if (isPlus)            amountClass = 'text-emerald-700 dark:text-emerald-400';
+  if (isSubtotal)        amountClass = positive
     ? 'text-slate-900 dark:text-slate-100'
     : 'text-rose-700 dark:text-rose-400';
-  if (finalGood)  amountClass = 'text-emerald-600 dark:text-emerald-400';
-  if (finalBad)   amountClass = 'text-rose-600 dark:text-rose-400';
-  if (tone === 'slate' && !isFinal && !isSubtotal) amountClass = 'text-slate-700 dark:text-slate-300';
+  if (isExpenseSubtotal) amountClass = 'text-rose-500 dark:text-rose-400';
+  if (finalGood)         amountClass = 'text-emerald-600 dark:text-emerald-400';
+  if (finalBad)          amountClass = 'text-rose-600 dark:text-rose-400';
+  if (tone === 'slate' && !isFinal && !isSubtotal && !isExpenseSubtotal) {
+    amountClass = 'text-slate-700 dark:text-slate-300';
+  }
 
   let labelClass = 'text-slate-700 dark:text-slate-300';
-  if (isSubtotal) labelClass = 'font-bold text-slate-900 dark:text-slate-100';
-  if (finalGood)  labelClass = 'font-black text-emerald-600 dark:text-emerald-400';
-  if (finalBad)   labelClass = 'font-black text-rose-600 dark:text-rose-400';
+  if (isSubtotal)        labelClass = 'font-bold text-slate-900 dark:text-slate-100';
+  if (isExpenseSubtotal) labelClass = 'font-bold text-rose-500 dark:text-rose-400';
+  if (finalGood)         labelClass = 'font-black text-emerald-600 dark:text-emerald-400';
+  if (finalBad)          labelClass = 'font-black text-rose-600 dark:text-rose-400';
 
   const amountWeight = isFinal
     ? 'font-black text-lg'
@@ -66,10 +81,14 @@ function StatementRow({ label, amount, kind = 'minus', tone = 'auto' }) {
       ? 'font-extrabold'
       : 'font-bold';
 
+  // Expense subtotal sits a touch tighter than the regular minus rows to
+  // read as a hairline tally divider rather than a fully-emphasized row.
+  const cellPadding = isExpenseSubtotal ? 'py-2 px-4' : 'py-3 px-4';
+
   return (
     <tr className={rowClass}>
-      <td className={`py-3 px-4 whitespace-nowrap ${labelClass}`}>{label}</td>
-      <td className={`py-3 px-4 whitespace-nowrap text-left tabular-nums ${amountWeight} ${amountClass}`}>
+      <td className={`${cellPadding} whitespace-nowrap ${labelClass}`}>{label}</td>
+      <td className={`${cellPadding} whitespace-nowrap text-left tabular-nums ${amountWeight} ${amountClass}`}>
         {sign}{formatCurrency(Math.abs(amount))}
       </td>
     </tr>
@@ -280,6 +299,11 @@ export default function FinancialSummaryPage() {
                       label="يُخصم منه: مخصص المصاريف السنوية الموزعة (سنوي ÷ ١٢)"
                       amount={annualAmortized}
                       kind="minus"
+                    />
+                    <StatementRow
+                      label="إجمالي المصروفات التشغيلية والثابتة"
+                      amount={totalCosts}
+                      kind="expenseSubtotal"
                     />
                     <StatementRow
                       label="يُخصم منه: رسوم الإدارة (10% من صافي الربح)"

@@ -1,11 +1,11 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Plus, Trash2, Pencil, Target, Wallet, TrendingDown, AlertTriangle,
-  Check, X, Receipt, Repeat,
+  Check, X, Receipt, Repeat, Sparkles,
 } from 'lucide-react';
 import { formatCurrency } from '../data/initialData';
 import TopBar from './TopBar';
-import { Card, SectionHeader, StatCard, PrimaryButton } from './UI';
+import { Card, StatCard, PrimaryButton } from './UI';
 import AddBudgetModal from './AddBudgetModal';
 import LoadingState from './LoadingState';
 import ErrorState, { SetupRequiredCard } from './ErrorState';
@@ -111,8 +111,10 @@ function BudgetCard({ budget, allocated, spent, onSaveAmount, onDelete, onEditFu
     : 'bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-100 dark:border-amber-500/30';
 
   // ── inline edit state ────────────────────────────────────────────────
+  // Virtual cards (allocated=0, never persisted) start in always-on edit
+  // mode so the user can type the target directly without clicking pencil.
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(String(allocated));
+  const [draft, setDraft] = useState(allocated > 0 ? String(allocated) : '');
   const [saving, setSaving] = useState(false);
   const inputRef = useRef(null);
 
@@ -139,6 +141,9 @@ function BudgetCard({ budget, allocated, spent, onSaveAmount, onDelete, onEditFu
     }
   }
 
+  // Always-on inline input for virtual cards: no click needed.
+  const showInlineInput = editing || (isVirtual && allocated === 0);
+
   // Visual emphasis: virtual cards (allocated = 0) get a dashed border so
   // they read as "needs a target" instead of "no progress".
   const containerClass = isVirtual && allocated === 0
@@ -159,7 +164,8 @@ function BudgetCard({ budget, allocated, spent, onSaveAmount, onDelete, onEditFu
             </span>
             {isVirtual && allocated === 0 && (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400 text-[11px] font-semibold">
-                لم تُحدَّد
+                <Sparkles size={10} strokeWidth={2.4} />
+                مكتشَفة تلقائياً
               </span>
             )}
           </div>
@@ -196,7 +202,7 @@ function BudgetCard({ budget, allocated, spent, onSaveAmount, onDelete, onEditFu
         <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 px-3 py-2.5">
           <div className="flex items-start justify-between gap-1">
             <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">الميزانية المرصودة</p>
-            {!editing && (
+            {!showInlineInput && (
               <button
                 type="button"
                 onClick={startEdit}
@@ -208,7 +214,7 @@ function BudgetCard({ budget, allocated, spent, onSaveAmount, onDelete, onEditFu
               </button>
             )}
           </div>
-          {editing ? (
+          {showInlineInput ? (
             <div className="mt-1 flex items-center gap-1">
               <input
                 ref={inputRef}
@@ -221,9 +227,9 @@ function BudgetCard({ budget, allocated, spent, onSaveAmount, onDelete, onEditFu
                   if (e.key === 'Enter')  { e.preventDefault(); commit(); }
                   if (e.key === 'Escape') { cancelEdit(); }
                 }}
-                onBlur={commit}
+                onBlur={editing ? commit : undefined}
                 placeholder="0"
-                className="w-full px-1.5 py-0.5 border border-primary-200 dark:border-primary-500/40 rounded-md bg-white dark:bg-slate-800 text-sm font-extrabold text-slate-900 dark:text-slate-100 tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-300 dark:focus:ring-primary-500/40"
+                className="w-full px-1.5 py-1 border border-primary-200 dark:border-primary-500/40 rounded-md bg-white dark:bg-slate-800 text-sm font-extrabold text-slate-900 dark:text-slate-100 tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-300 dark:focus:ring-primary-500/40"
               />
               <button
                 type="button"
@@ -231,17 +237,20 @@ function BudgetCard({ budget, allocated, spent, onSaveAmount, onDelete, onEditFu
                 disabled={saving}
                 className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white transition-colors shrink-0"
                 aria-label="حفظ"
+                title="حفظ المبلغ"
               >
                 <Check size={12} strokeWidth={2.5} />
               </button>
-              <button
-                type="button"
-                onMouseDown={(e) => { e.preventDefault(); cancelEdit(); }}
-                className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600 text-slate-500 dark:text-slate-300 transition-colors shrink-0"
-                aria-label="إلغاء"
-              >
-                <X size={12} />
-              </button>
+              {editing && (
+                <button
+                  type="button"
+                  onMouseDown={(e) => { e.preventDefault(); cancelEdit(); }}
+                  className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600 text-slate-500 dark:text-slate-300 transition-colors shrink-0"
+                  aria-label="إلغاء"
+                >
+                  <X size={12} />
+                </button>
+              )}
             </div>
           ) : (
             <button
@@ -302,53 +311,90 @@ function BudgetCard({ budget, allocated, spent, onSaveAmount, onDelete, onEditFu
   );
 }
 
-// ─── Section wrapper for one budget-type row ─────────────────────────────
-function BudgetSection({ title, subtitle, accent, icon: Icon, cards, onAddCustom, totals }) {
-  const accentBg = accent === 'annual'
+// ─── Section banner (bold divider + accent bar + counter pill) ────────────
+function BudgetSection({
+  title, subtitle, accent, icon: Icon, cards, onAddCustom,
+  count, allocatedTotal, spentTotal,
+}) {
+  const accentChip = accent === 'annual'
     ? 'bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-400'
     : 'bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400';
 
+  // Vertical accent bar on the right (RTL leading edge) for a strong
+  // visual hand-off between the Monthly and Annual rows.
+  const accentBar = accent === 'annual'
+    ? 'bg-gradient-to-b from-primary-500 to-primary-700'
+    : 'bg-gradient-to-b from-amber-400 to-amber-600';
+
+  const countPill = accent === 'annual'
+    ? 'bg-primary-100 dark:bg-primary-500/20 text-primary-800 dark:text-primary-300'
+    : 'bg-amber-100 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300';
+
   return (
-    <Card className="p-6">
-      <div className="flex items-start justify-between gap-4 mb-5">
-        <div className="flex items-start gap-3 min-w-0 flex-1">
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${accentBg}`}>
-            {Icon && <Icon size={18} strokeWidth={2.2} />}
+    <Card className="overflow-hidden">
+      {/* Section banner */}
+      <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 px-6 py-5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/30">
+        {/* RTL: leading-edge accent bar */}
+        <div className={`absolute top-3 bottom-3 right-0 w-1 rounded-l-full ${accentBar}`} />
+
+        <div className="flex items-start gap-3 min-w-0 flex-1 pr-3">
+          <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${accentChip}`}>
+            {Icon && <Icon size={20} strokeWidth={2.3} />}
           </div>
-          <div className="min-w-0">
-            <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">{title}</h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{subtitle}</p>
-            {totals && (
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 tabular-nums">
-                {totals}
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-lg sm:text-xl font-extrabold text-slate-900 dark:text-slate-100 tracking-tight">
+                {title}
+              </h2>
+              <span className={`inline-flex items-center justify-center min-w-[1.75rem] h-6 px-2 rounded-full text-[11px] font-bold tabular-nums ${countPill}`}>
+                {count}
+              </span>
+            </div>
+            <p className="text-xs sm:text-[13px] text-slate-500 dark:text-slate-400 mt-1">
+              {subtitle}
+            </p>
+            {count > 0 && (
+              <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-2 tabular-nums">
+                <span className="font-semibold text-slate-700 dark:text-slate-300">
+                  {formatCurrency(spentTotal)}
+                </span>
+                {' '}مصروف من{' '}
+                <span className="font-semibold text-slate-700 dark:text-slate-300">
+                  {formatCurrency(allocatedTotal)}
+                </span>
+                {' '}مرصود
               </p>
             )}
           </div>
         </div>
+
         {onAddCustom && (
-          <PrimaryButton icon={Plus} onClick={onAddCustom}>
+          <PrimaryButton icon={Plus} onClick={onAddCustom} className="shrink-0">
             إضافة بند مخصّص
           </PrimaryButton>
         )}
       </div>
 
-      {cards.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-10 text-center">
-          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mb-3 ${accentBg}`}>
-            {Icon && <Icon size={20} strokeWidth={2.2} />}
+      {/* Section body */}
+      <div className="p-4 sm:p-6">
+        {cards.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-10 text-center">
+            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mb-3 ${accentChip}`}>
+              {Icon && <Icon size={20} strokeWidth={2.2} />}
+            </div>
+            <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+              لم تُكتشف تصنيفات حتى الآن
+            </p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm">
+              أضف أول مصروف في التبويب المعني ليظهر تصنيفه تلقائياً هنا، أو أضف بنداً مخصّصاً.
+            </p>
           </div>
-          <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-            لم تُكتشف تصنيفات حتى الآن
-          </p>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm">
-            أضف أول مصروف في التبويب المعني ليظهر تصنيفه تلقائياً هنا، أو أضف بنداً مخصّصاً.
-          </p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-          {cards}
-        </div>
-      )}
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+            {cards}
+          </div>
+        )}
+      </div>
     </Card>
   );
 }
@@ -436,8 +482,42 @@ export default function BudgetsPage() {
     [variableForCurrentMonth, variableAnnualMatching],
   );
 
+  // ── Discover labels from BOTH the category tables AND the expense rows
+  // themselves. This ensures a category that has actual expenses but no
+  // entry in the category table (legacy data, manual SQL inserts) still
+  // surfaces as a virtual budget card.
+  const discoveredMonthlyLabels = useMemo(() => {
+    const acc = new Map(); // normalized key → display label
+    const add = (label) => {
+      const key = norm(label);
+      if (!key) return;
+      if (!acc.has(key)) acc.set(key, String(label).trim());
+    };
+    monthlyCats.forEach((c) => add(c.label));
+    monthlies.forEach((m) => {
+      add(monthlyCatMap.get(m.categoryId)?.label);
+      add(m.expenseName);
+    });
+    return acc;
+  }, [monthlyCats, monthlies, monthlyCatMap]);
+
+  const discoveredAnnualLabels = useMemo(() => {
+    const acc = new Map();
+    const add = (label) => {
+      const key = norm(label);
+      if (!key) return;
+      if (!acc.has(key)) acc.set(key, String(label).trim());
+    };
+    annualCats.forEach((c) => add(c.label));
+    annuals.forEach((a) => {
+      add(annualCatMap.get(a.category)?.label);
+      add(a.expenseName);
+    });
+    return acc;
+  }, [annualCats, annuals, annualCatMap]);
+
   // ── Build the full budget list: real rows + virtual placeholders for
-  // any monthly / annual category that doesn't yet have a budget row.
+  // every discovered label that has no matching real budget row.
   const mergedBudgets = useMemo(() => {
     const realByKey = new Map();
     budgets.forEach((b) => {
@@ -447,14 +527,11 @@ export default function BudgetsPage() {
 
     const result = budgets.map((b) => ({ ...b, isVirtual: false }));
 
-    // Monthly virtuals: every label from monthlyCats that has no matching
-    // real budget row.
-    monthlyCats.forEach((c) => {
-      const label = c.label || '';
-      const key = `monthly::${norm(label)}`;
-      if (!label || realByKey.has(key)) return;
+    discoveredMonthlyLabels.forEach((label, normKey) => {
+      const key = `monthly::${normKey}`;
+      if (realByKey.has(key)) return;
       result.push({
-        id:            `virtual-monthly-${c.id}`,
+        id:            `virtual-monthly-${normKey}`,
         categoryLabel: label,
         budgetType:    'monthly',
         amount:        0,
@@ -462,13 +539,11 @@ export default function BudgetsPage() {
       });
       realByKey.set(key, true);
     });
-    // Annual virtuals
-    annualCats.forEach((c) => {
-      const label = c.label || '';
-      const key = `annual::${norm(label)}`;
-      if (!label || realByKey.has(key)) return;
+    discoveredAnnualLabels.forEach((label, normKey) => {
+      const key = `annual::${normKey}`;
+      if (realByKey.has(key)) return;
       result.push({
-        id:            `virtual-annual-${c.id}`,
+        id:            `virtual-annual-${normKey}`,
         categoryLabel: label,
         budgetType:    'annual',
         amount:        0,
@@ -478,7 +553,7 @@ export default function BudgetsPage() {
     });
 
     return result;
-  }, [budgets, monthlyCats, annualCats]);
+  }, [budgets, discoveredMonthlyLabels, discoveredAnnualLabels]);
 
   // Compute spend per budget once; downstream sections slice by type.
   const cards = useMemo(() => mergedBudgets.map((b) => {
@@ -533,11 +608,11 @@ export default function BudgetsPage() {
   const suggestions = useMemo(() => {
     const set = new Set();
     budgets.forEach((b) => b.categoryLabel && set.add(b.categoryLabel));
-    monthlyCats.forEach((c) => c.label && set.add(c.label));
-    annualCats.forEach((c) => c.label && set.add(c.label));
+    discoveredMonthlyLabels.forEach((label) => set.add(label));
+    discoveredAnnualLabels.forEach((label) => set.add(label));
     variableCats.forEach((c) => c.label && set.add(c.label));
     return [...set].sort((a, b) => a.localeCompare(b, 'ar'));
-  }, [budgets, monthlyCats, annualCats, variableCats]);
+  }, [budgets, discoveredMonthlyLabels, discoveredAnnualLabels, variableCats]);
 
   const anyError = budgetsError || monthlyError || annualError || varError || washesError;
 
@@ -602,7 +677,7 @@ export default function BudgetsPage() {
     <>
       <TopBar
         title="الرقابة والميزانيات"
-        subtitle="رصد الميزانيات تلقائياً لكل تصنيف ومتابعة الصرف الفعلي"
+        subtitle="اكتشاف تلقائي لكل تصنيف ومراقبة الصرف الفعلي"
       />
 
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
@@ -656,34 +731,39 @@ export default function BudgetsPage() {
           <LoadingState rows={3} />
         ) : (
           <>
-            {/* Row 1: Monthly */}
+            {/* Row 1 — Monthly Operating Budgets */}
             <BudgetSection
               title="الميزانيات التشغيلية الشهرية"
-              subtitle="تصنيفات المصاريف الشهرية المتكررة — يتم اكتشافها وعرضها تلقائياً"
+              subtitle="تصنيفات المصاريف الشهرية المتكررة — تُكتشف وتُعرض تلقائياً من سجلاتك"
               accent="monthly"
               icon={Receipt}
               cards={renderCards(monthlyCards)}
               onAddCustom={() => openAddModal()}
-              totals={
-                monthlyCards.length > 0
-                  ? `${monthlyCards.length} بند • ${formatCurrency(monthlySectionTotals.spent)} مصروف من ${formatCurrency(monthlySectionTotals.allocated)} مرصود`
-                  : 'لم تُكتشف تصنيفات شهرية بعد'
-              }
+              count={monthlyCards.length}
+              allocatedTotal={monthlySectionTotals.allocated}
+              spentTotal={monthlySectionTotals.spent}
             />
 
-            {/* Row 2: Annual */}
+            {/* Visual divider between the two rows */}
+            <div className="relative flex items-center my-2" aria-hidden="true">
+              <div className="flex-1 h-px bg-gradient-to-l from-transparent via-slate-200 dark:via-slate-700 to-transparent" />
+              <span className="px-3 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
+                ━ ━ ━
+              </span>
+              <div className="flex-1 h-px bg-gradient-to-r from-transparent via-slate-200 dark:via-slate-700 to-transparent" />
+            </div>
+
+            {/* Row 2 — Annual / Capital Budgets */}
             <BudgetSection
               title="الميزانيات الرأسمالية السنوية"
-              subtitle="التصنيفات السنوية والثابتة — تتجمّع تلقائياً من سجل المصاريف السنوية"
+              subtitle="تصنيفات سنوية وثابتة — تتجمّع تلقائياً من سجلّ المصاريف السنوية"
               accent="annual"
               icon={Repeat}
               cards={renderCards(annualCards)}
               onAddCustom={() => openAddModal()}
-              totals={
-                annualCards.length > 0
-                  ? `${annualCards.length} بند • ${formatCurrency(annualSectionTotals.spent)} مصروف من ${formatCurrency(annualSectionTotals.allocated)} مرصود`
-                  : 'لم تُكتشف تصنيفات سنوية بعد'
-              }
+              count={annualCards.length}
+              allocatedTotal={annualSectionTotals.allocated}
+              spentTotal={annualSectionTotals.spent}
             />
           </>
         )}

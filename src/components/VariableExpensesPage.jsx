@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import {
   Plus, Trash2, Pencil, Wallet, Layers, Scale, CalendarClock, Activity, Calendar, Car,
 } from 'lucide-react';
-import { formatCurrency, formatNumber } from '../data/initialData';
+import { formatCurrency, formatNumber, VARIABLE_EXPENSE_CATEGORIES } from '../data/initialData';
 import TopBar from './TopBar';
 import {
   Card, SectionHeader, StatCard, PrimaryButton,
@@ -123,7 +123,7 @@ export default function VariableExpensesPage() {
   } = useVariableExpenses();
 
   const {
-    categories, addCategory, getCategoryLabel,
+    categories, addCategory, deleteCategory, getCategoryLabel,
   } = useVariableExpenseCategories();
 
   const { items: washes } = useWashes();
@@ -198,6 +198,15 @@ export default function VariableExpensesPage() {
     } catch (e) {
       console.error('Supabase Category Error:', e, 'label:', label);
       showToast(describeSupabaseError(e) || 'تعذّر إضافة التصنيف الجديد', 'error');
+      throw e;
+    }
+  }
+  async function handleDeleteCategory(id) {
+    try {
+      await deleteCategory(id);
+      showToast('تم حذف التصنيف من القوائم');
+    } catch (e) {
+      showToast(describeSupabaseError(e) || 'تعذّر حذف التصنيف', 'error');
       throw e;
     }
   }
@@ -399,7 +408,9 @@ export default function VariableExpensesPage() {
         onAdd={handleAddItem}
         onUpdate={handleUpdateItem}
         onAddCategory={handleAddCategory}
+        onDeleteCategory={handleDeleteCategory}
         categories={categories}
+        protectedCategoryLabels={VARIABLE_EXPENSE_CATEGORIES.map((c) => c.label)}
         initialValues={editingItem}
         washCount={washCountInMonth}
       />

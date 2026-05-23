@@ -58,5 +58,19 @@ export function useVariableExpenseCategories() {
     return found ? found.label : 'بدون تصنيف';
   }, [categories]);
 
-  return { categories, loading, error, addCategory, getCategoryLabel, refetch };
+  const deleteCategory = useCallback(async (id) => {
+    if (!isSupabaseConfigured) throw new Error('Supabase غير مهيأ');
+    if (!id) return;
+    const { error: err } = await supabase
+      .from('variable_expense_categories')
+      .delete()
+      .eq('id', id);
+    if (err) {
+      console.error('Supabase Category Delete Error:', err);
+      throw err;
+    }
+    await refetch();
+  }, [refetch]);
+
+  return { categories, loading, error, addCategory, deleteCategory, getCategoryLabel, refetch };
 }

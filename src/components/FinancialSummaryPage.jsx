@@ -36,24 +36,32 @@ function StatementRow({ label, amount, kind = 'minus', tone = 'auto' }) {
   const sign = isPlus ? '+' : (isSubtotal || isFinal) ? '=' : '−';
 
   let rowClass = '';
-  if (isSubtotal) rowClass = 'border-t-2 border-slate-200 dark:border-slate-700 bg-slate-50';
-  if (finalGood)  rowClass = 'border-t-2 border-emerald-200 bg-emerald-50';
-  if (finalBad)   rowClass = 'border-t-2 border-rose-200 bg-rose-50';
+  if (isSubtotal) {
+    rowClass = 'border-t-2 border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800';
+  }
+  if (finalGood) {
+    rowClass = 'border-t-2 border-emerald-100 dark:border-emerald-900/50 bg-emerald-50 dark:bg-emerald-950/30';
+  }
+  if (finalBad) {
+    rowClass = 'border-t-2 border-rose-100 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30';
+  }
 
-  let amountClass = 'text-rose-700';
-  if (isPlus)     amountClass = 'text-emerald-700';
-  if (isSubtotal) amountClass = positive ? 'text-slate-900 dark:text-slate-100' : 'text-rose-700';
-  if (finalGood)  amountClass = 'text-emerald-700';
-  if (finalBad)   amountClass = 'text-rose-700';
+  let amountClass = 'text-rose-700 dark:text-rose-400';
+  if (isPlus)     amountClass = 'text-emerald-700 dark:text-emerald-400';
+  if (isSubtotal) amountClass = positive
+    ? 'text-slate-900 dark:text-slate-100'
+    : 'text-rose-700 dark:text-rose-400';
+  if (finalGood)  amountClass = 'text-emerald-600 dark:text-emerald-400';
+  if (finalBad)   amountClass = 'text-rose-600 dark:text-rose-400';
   if (tone === 'slate' && !isFinal && !isSubtotal) amountClass = 'text-slate-700 dark:text-slate-300';
 
-  const labelClass = isFinal
-    ? 'font-extrabold text-slate-900 dark:text-slate-100'
-    : isSubtotal
-      ? 'font-bold text-slate-900 dark:text-slate-100'
-      : 'text-slate-700 dark:text-slate-300';
+  let labelClass = 'text-slate-700 dark:text-slate-300';
+  if (isSubtotal) labelClass = 'font-bold text-slate-900 dark:text-slate-100';
+  if (finalGood)  labelClass = 'font-black text-emerald-600 dark:text-emerald-400';
+  if (finalBad)   labelClass = 'font-black text-rose-600 dark:text-rose-400';
+
   const amountWeight = isFinal
-    ? 'font-extrabold text-lg'
+    ? 'font-black text-lg'
     : isSubtotal
       ? 'font-extrabold'
       : 'font-bold';
@@ -165,7 +173,7 @@ export default function FinancialSummaryPage() {
         )}
 
         {/* ── Period selector ─────────────────────────────────────── */}
-        <div className="rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm dark:shadow-slate-950/40 p-5 transition-colors duration-200">
+        <div className="rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm dark:shadow-slate-950/40 p-5 transition-colors duration-200">
           <div className="flex items-start gap-4">
             <div className="bg-primary-700 dark:bg-primary-600 text-white w-12 h-12 rounded-2xl flex items-center justify-center shrink-0">
               <Calendar size={22} strokeWidth={2.2} />

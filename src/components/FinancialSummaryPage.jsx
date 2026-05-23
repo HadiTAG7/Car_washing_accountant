@@ -155,9 +155,10 @@ export default function FinancialSummaryPage() {
     [annuals],
   );
 
-  const grossProfit         = revenue - variableTotal;
-  const totalCosts          = variableTotal + monthlyFixed + annualAmortized;
-  const netProfitBeforeFees = grossProfit - monthlyFixed - annualAmortized;
+  const grossProfit          = revenue - variableTotal;
+  const fixedExpensesTotal   = monthlyFixed + annualAmortized;
+  const totalCosts           = variableTotal + fixedExpensesTotal;
+  const netProfitBeforeFees  = grossProfit - fixedExpensesTotal;
 
   // Performance-based deductions: only kick in when the period made a
   // profit. A losing month should not trigger an automatic management
@@ -301,8 +302,8 @@ export default function FinancialSummaryPage() {
                       kind="minus"
                     />
                     <StatementRow
-                      label="إجمالي المصروفات التشغيلية والثابتة"
-                      amount={totalCosts}
+                      label="إجمالي المصروفات الثابتة والموزعة"
+                      amount={fixedExpensesTotal}
                       kind="expenseSubtotal"
                     />
                     <StatementRow

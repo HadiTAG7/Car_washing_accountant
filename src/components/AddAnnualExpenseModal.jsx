@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
-import { X, Plus, Pencil, Repeat, Check, AlertTriangle, ChevronDown } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { X, Plus, Pencil, Repeat, Check, AlertTriangle } from 'lucide-react';
 import { formatCurrency, formatNumber } from '../data/initialData';
+import CategorySelect from './CategorySelect';
 
 const EMPTY = {
   expenseName:    '',
@@ -34,83 +35,6 @@ function clampMonthString(value, fallback = '1') {
   const n = parseInt(value, 10);
   if (!Number.isFinite(n)) return fallback;
   return String(Math.min(12, Math.max(1, n)));
-}
-
-// ─── Custom category dropdown ──────────────────────────────────────────────
-// Replaces the native <select>, which on some browsers (notably mobile
-// Safari) opens a full-screen picker with awkward empty padding even when
-// only 4-5 options are present. This panel sizes to its content.
-function CategoryDropdown({ categories, value, onChange }) {
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef(null);
-  const empty = categories.length === 0;
-  const selected = categories.find((c) => c.id === value);
-  const displayLabel = empty
-    ? '— لا توجد تصنيفات —'
-    : (selected?.label || 'اختر التصنيف');
-
-  useEffect(() => {
-    if (!open) return;
-    function handleOutside(e) {
-      if (containerRef.current && !containerRef.current.contains(e.target)) {
-        setOpen(false);
-      }
-    }
-    function handleKey(e) {
-      if (e.key === 'Escape') setOpen(false);
-    }
-    document.addEventListener('mousedown', handleOutside);
-    document.addEventListener('keydown', handleKey);
-    return () => {
-      document.removeEventListener('mousedown', handleOutside);
-      document.removeEventListener('keydown', handleKey);
-    };
-  }, [open]);
-
-  return (
-    <div ref={containerRef} className="relative flex-1">
-      <button
-        type="button"
-        onClick={() => !empty && setOpen((o) => !o)}
-        disabled={empty}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        className="w-full flex items-center justify-between gap-2 px-4 py-3 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent disabled:opacity-60 disabled:cursor-not-allowed"
-      >
-        <span className="flex-1 text-right truncate">{displayLabel}</span>
-        <ChevronDown
-          size={16}
-          className={`shrink-0 text-slate-400 dark:text-slate-500 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
-        />
-      </button>
-
-      {open && !empty && (
-        <ul
-          role="listbox"
-          className="absolute top-full right-0 left-0 mt-1 z-30 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl py-1 max-h-64 overflow-y-auto"
-        >
-          {categories.map((cat) => {
-            const active = cat.id === value;
-            return (
-              <li key={cat.id} role="option" aria-selected={active}>
-                <button
-                  type="button"
-                  onClick={() => { onChange(cat.id); setOpen(false); }}
-                  className={`w-full px-4 py-2.5 text-right text-sm transition-colors ${
-                    active
-                      ? 'bg-primary-50 dark:bg-primary-500/20 text-primary-800 dark:text-primary-200 font-semibold'
-                      : 'text-slate-800 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60'
-                  }`}
-                >
-                  {cat.label}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </div>
-  );
 }
 
 export default function AddAnnualExpenseModal({
@@ -274,10 +198,11 @@ export default function AddAnnualExpenseModal({
               التصنيف
             </label>
             <div className="flex gap-2">
-              <CategoryDropdown
+              <CategorySelect
                 categories={categories}
                 value={form.category}
                 onChange={(id) => setForm((prev) => ({ ...prev, category: id }))}
+                ariaLabel="التصنيف السنوي"
               />
               {onAddCategory && (
                 <button

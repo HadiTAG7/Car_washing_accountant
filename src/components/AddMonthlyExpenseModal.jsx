@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { X, Plus, Pencil, Receipt, Check, AlertTriangle, Repeat, Calendar } from 'lucide-react';
 import { formatCurrency, formatNumber } from '../data/initialData';
+import CategorySelect from './CategorySelect';
 
 function todayISO() {
   const d = new Date();
@@ -197,19 +198,12 @@ export default function AddMonthlyExpenseModal({
               التصنيف الشهري
             </label>
             <div className="flex gap-2">
-              <select
-                id="categoryId"
-                name="categoryId"
+              <CategorySelect
+                categories={categories}
                 value={form.categoryId}
-                onChange={handleChange}
-                required
-                className="flex-1 px-4 py-3 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
-              >
-                {categories.length === 0 && <option value="">— لا توجد تصنيفات —</option>}
-                {categories.map((cat) => (
-                  <option key={cat.id} value={cat.id}>{cat.label}</option>
-                ))}
-              </select>
+                onChange={(id) => setForm((prev) => ({ ...prev, categoryId: id }))}
+                ariaLabel="التصنيف الشهري"
+              />
               {onAddCategory && (
                 <button
                   type="button"

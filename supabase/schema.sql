@@ -105,17 +105,15 @@ before update on public.app_settings
 for each row execute function public.touch_updated_at();
 
 -- ─── partners ─────────────────────────────────────────────────────────────
--- `percentage` is a user-overridable share (nullable). When null the
--- table view falls back to a derived workforce share. When set, it
--- represents the agreed-upon ownership / distribution percentage.
--- `paid_amount` tracks the partner's contribution against the
--- per-worker capital fee (20,000 SAR × workers_count). Remaining
--- balance is computed at render time, not stored.
+-- `paid_amount` tracks the partner's contribution against the per-worker
+-- capital fee (20,000 SAR × workers_count). Remaining balance is computed
+-- at render time, not stored. The partner's percentage share is also
+-- derived on the client (workers_count / total_workers × 100) — it is
+-- intentionally NOT a column here.
 create table if not exists public.partners (
   id              uuid primary key default gen_random_uuid(),
   partner_name    text not null,
   workers_count   integer not null default 0,
-  percentage      numeric(5,2),
   paid_amount     numeric(12,2) not null default 0 check (paid_amount >= 0),
   contact_number  text,
   status          text not null default 'active',
@@ -775,10 +773,9 @@ end $$;
 alter table public.washes alter column biker_name drop not null;
 
 -- ─── partners — defensive column repair ──────────────────────────────────
--- `percentage` and `paid_amount` are later additions; older databases
--- predate them.
-alter table public.partners
-  add column if not exists percentage numeric(5,2);
+-- `paid_amount` is a later addition; older databases predate it. The
+-- (briefly-shipped) `percentage` column is intentionally NOT added here
+-- — the partner's share is a pure client-side derivation now.
 alter table public.partners
   add column if not exists paid_amount numeric(12,2) not null default 0;
 alter table public.partners

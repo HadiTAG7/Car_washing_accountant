@@ -361,12 +361,9 @@ export function toBudgetUpdate(updates = {}) {
 }
 
 // ── partners ──────────────────────────────────────────────────────────────
-function clampPercentage(value) {
-  if (value === null || value === undefined || value === '') return null;
-  const n = Number(value);
-  if (!Number.isFinite(n)) return null;
-  return Math.min(100, Math.max(0, n));
-}
+// NOTE: percentage is purely a client-derived display value
+// (workersCount / totalWorkers * 100). It is intentionally NOT mapped /
+// inserted / updated — the DB table doesn't carry that column.
 function clampPaidAmount(value) {
   if (value === null || value === undefined || value === '') return 0;
   const n = Number(value);
@@ -375,30 +372,26 @@ function clampPaidAmount(value) {
 }
 
 export function mapPartner(row) {
-  const pct = row.percentage;
   return {
     id:             row.id,
     partnerName:    row.partner_name,
     workersCount:   Number(row.workers_count) || 0,
-    percentage:     pct === null || pct === undefined ? null : Number(pct),
     paidAmount:     Number(row.paid_amount) || 0,
     contactNumber:  row.contact_number || '',
     status:         row.status || 'active',
   };
 }
-export function toPartnerInsert({ partnerName, workersCount, percentage, paidAmount }) {
+export function toPartnerInsert({ partnerName, workersCount, paidAmount }) {
   return {
     partner_name:   partnerName,
     workers_count:  Number(workersCount) || 0,
-    percentage:     clampPercentage(percentage),
     paid_amount:    clampPaidAmount(paidAmount),
   };
 }
-export function toPartnerUpdate({ partnerName, workersCount, percentage, paidAmount }) {
+export function toPartnerUpdate({ partnerName, workersCount, paidAmount }) {
   const payload = {};
   if (partnerName  !== undefined) payload.partner_name  = partnerName;
   if (workersCount !== undefined) payload.workers_count = Number(workersCount) || 0;
-  if (percentage   !== undefined) payload.percentage    = clampPercentage(percentage);
   if (paidAmount   !== undefined) payload.paid_amount   = clampPaidAmount(paidAmount);
   return payload;
 }

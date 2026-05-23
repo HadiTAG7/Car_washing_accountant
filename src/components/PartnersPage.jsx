@@ -175,12 +175,11 @@ export default function PartnersPage() {
                   </tr>
                 )}
                 {partners.map((p) => {
-                  // ── Percentage: prefer stored, fall back to workforce share
-                  const derived  = kpis.totalWorkers > 0
+                  // ── Percentage: pure client-side derivation. Never stored
+                  // in the DB — `partners` table has no percentage column.
+                  const pct = kpis.totalWorkers > 0
                     ? (p.workersCount / kpis.totalWorkers) * 100
                     : 0;
-                  const pct      = p.percentage != null ? p.percentage : derived;
-                  const isCustom = p.percentage != null;
 
                   // ── Capital & receivable
                   const required = (p.workersCount || 0) * PER_WORKER_FEE;
@@ -208,15 +207,11 @@ export default function PartnersPage() {
                         {formatNumber(p.workersCount || 0)}
                       </td>
 
-                      {/* 3. النسبة */}
+                      {/* 3. النسبة — derived on the fly from workers share */}
                       <td className="py-3 px-4 whitespace-nowrap text-center tabular-nums">
                         <span
-                          className={`inline-flex items-center gap-1 text-[13px] font-bold px-2.5 py-1 rounded-lg ${
-                            isCustom
-                              ? 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
-                              : 'bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300'
-                          }`}
-                          title={isCustom ? 'نسبة مُحدّدة يدوياً' : 'محسوبة تلقائياً حسب عدد العمالة'}
+                          className="inline-flex items-center gap-1 text-[13px] font-bold px-2.5 py-1 rounded-lg bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300"
+                          title="محسوبة تلقائياً حسب عدد العمالة"
                         >
                           {pct.toFixed(1)}%
                         </span>

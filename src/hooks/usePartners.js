@@ -5,7 +5,13 @@ import { useSupabaseQuery } from './useSupabaseQuery';
 
 export function usePartners() {
   const { data, loading, error, refetch } = useSupabaseQuery(
-    () => supabase.from('partners').select('*').order('partner_name'),
+    // Explicit column list — never `select('*')`. Notably excludes any
+    // `percentage` column: it's a client-derived value (workers_count /
+    // total_workers × 100) and must never round-trip through the DB.
+    () => supabase
+      .from('partners')
+      .select('id, partner_name, workers_count, paid_amount, contact_number, status, created_at')
+      .order('partner_name'),
     {
       enabled: isSupabaseConfigured,
       map:     mapPartner,

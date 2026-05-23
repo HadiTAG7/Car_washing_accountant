@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { X, Pencil, Users, Percent, Briefcase, Wallet } from 'lucide-react';
+import { X, Pencil, Users, Briefcase, Wallet } from 'lucide-react';
 import { formatCurrency, PER_WORKER_FEE } from '../data/initialData';
 
-const EMPTY = { partnerName: '', workersCount: '', percentage: '', paidAmount: '' };
+const EMPTY = { partnerName: '', workersCount: '', paidAmount: '' };
 
 export default function EditPartnerModal({ isOpen, partner, onClose, onSave }) {
   const [form, setForm] = useState(EMPTY);
@@ -14,9 +14,6 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave }) {
     setForm({
       partnerName:  partner.partnerName || '',
       workersCount: String(partner.workersCount ?? ''),
-      percentage:   partner.percentage === null || partner.percentage === undefined
-        ? ''
-        : String(partner.percentage),
       paidAmount:   partner.paidAmount ? String(partner.paidAmount) : '',
     });
   }, [isOpen, partner]);
@@ -25,10 +22,7 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave }) {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   }
 
-  const workersCount = Math.max(0, parseInt(form.workersCount, 10) || 0);
-  const percentageNum = form.percentage === ''
-    ? null
-    : Math.min(100, Math.max(0, parseFloat(form.percentage) || 0));
+  const workersCount  = Math.max(0, parseInt(form.workersCount, 10) || 0);
   const paidAmount    = Math.max(0, parseFloat(form.paidAmount) || 0);
   const requiredTotal = workersCount * PER_WORKER_FEE;
   const remaining     = Math.max(0, requiredTotal - paidAmount);
@@ -43,7 +37,6 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave }) {
       await onSave(partner.id, {
         partnerName:  form.partnerName.trim(),
         workersCount,
-        percentage:   percentageNum,
         paidAmount,
       });
       onClose();
@@ -100,52 +93,30 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave }) {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5" htmlFor="workersCount">
-                عدد العمالة
-              </label>
-              <div className="relative">
-                <Users
-                  size={16}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 pointer-events-none"
-                />
-                <input
-                  id="workersCount"
-                  type="number"
-                  name="workersCount"
-                  value={form.workersCount}
-                  onChange={handleChange}
-                  placeholder="0"
-                  min="0"
-                  step="1"
-                  className="w-full pr-9 pl-4 py-3 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white font-medium tabular-nums bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-colors"
-                />
-              </div>
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5" htmlFor="workersCount">
+              عدد العمالة
+            </label>
+            <div className="relative">
+              <Users
+                size={16}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 pointer-events-none"
+              />
+              <input
+                id="workersCount"
+                type="number"
+                name="workersCount"
+                value={form.workersCount}
+                onChange={handleChange}
+                placeholder="0"
+                min="0"
+                step="1"
+                className="w-full pr-9 pl-4 py-3 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white font-medium tabular-nums bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-colors"
+              />
             </div>
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5" htmlFor="percentage">
-                النسبة (%)
-              </label>
-              <div className="relative">
-                <Percent
-                  size={16}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 pointer-events-none"
-                />
-                <input
-                  id="percentage"
-                  type="number"
-                  name="percentage"
-                  value={form.percentage}
-                  onChange={handleChange}
-                  placeholder="0"
-                  min="0"
-                  max="100"
-                  step="0.01"
-                  className="w-full pr-9 pl-4 py-3 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white font-medium tabular-nums bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-colors"
-                />
-              </div>
-            </div>
+            <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+              النسبة تُحسب تلقائياً من إجمالي عدد العمالة لكل الشركاء.
+            </p>
           </div>
 
           <div>

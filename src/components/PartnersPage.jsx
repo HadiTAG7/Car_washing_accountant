@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   Plus, Users, UserCheck, Briefcase, Trash2, Pencil, Check, X,
 } from 'lucide-react';
@@ -9,9 +9,12 @@ import {
   PrimaryButton,
 } from './UI';
 import AddPartnerModal from './AddPartnerModal';
+import EditPartnerModal from './EditPartnerModal';
 import LoadingState from './LoadingState';
 import ErrorState from './ErrorState';
+import Toast from './Toast';
 import { usePartners } from '../hooks/usePartners';
+import { describeSupabaseError } from '../lib/supabaseClient';
 
 function EditableCell({ value, onSave, type = 'text', className = '' }) {
   const [editing, setEditing] = useState(false);
@@ -65,7 +68,14 @@ export default function PartnersPage() {
   } = usePartners();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingPartner, setEditingPartner] = useState(null);
   const [mutationError, setMutationError] = useState(null);
+  const [toast, setToast] = useState({ open: false, message: '', tone: 'success', duration: 3000 });
+
+  const showToast = useCallback((message, tone = 'success') => {
+    setToast({ open: true, message, tone, duration: tone === 'error' ? 8000 : 3000 });
+  }, []);
+  const closeToast = useCallback(() => setToast((t) => ({ ...t, open: false })), []);
 
   // ── KPI totals ───────────────────────────────────────────────
   const kpis = useMemo(() => {
@@ -76,16 +86,40 @@ export default function PartnersPage() {
   }, [partners]);
 
   async function handleAdd(partner) {
-    try { setMutationError(null); await addPartner(partner); }
-    catch (e) { setMutationError(e); }
+    try {
+      setMutationError(null);
+      await addPartner(partner);
+      showToast('تم إضافة الشريك بنجاح');
+    } catch (e) {
+      setMutationError(e);
+      showToast(describeSupabaseError(e) || 'تعذّر إضافة الشريك', 'error');
+    }
   }
   async function handleUpdate(id, patch) {
-    try { setMutationError(null); await updatePartner(id, patch); }
-    catch (e) { setMutationError(e); }
+    try {
+      setMutationError(null);
+      await updatePartner(id, patch);
+    } catch (e) {
+      setMutationError(e);
+      showToast(describeSupabaseError(e) || 'تعذّر حفظ التعديلات', 'error');
+      throw e;
+    }
+  }
+  // Wrapper that emits a "saved" toast — used by the full edit modal so
+  // the inline-edit pencil flow doesn't fire its own redundant toast.
+  async function handleSaveEdit(id, patch) {
+    await handleUpdate(id, patch);
+    showToast('تم حفظ بيانات الشريك');
   }
   async function handleDelete(id) {
-    try { setMutationError(null); await deletePartner(id); }
-    catch (e) { setMutationError(e); }
+    try {
+      setMutationError(null);
+      await deletePartner(id);
+      showToast('تم حذف الشريك');
+    } catch (e) {
+      setMutationError(e);
+      showToast(describeSupabaseError(e) || 'تعذّر حذف الشريك', 'error');
+    }
   }
 
   return (
@@ -176,9 +210,13 @@ export default function PartnersPage() {
                   </tr>
                 )}
                 {partners.map((p) => {
-                  const pct = kpis.totalWorkers > 0
+                  // Prefer the stored percentage; fall back to the
+                  // workforce-share derivation when it hasn't been set.
+                  const derived = kpis.totalWorkers > 0
                     ? (p.workersCount / kpis.totalWorkers) * 100
                     : 0;
+                  const pct       = p.percentage != null ? p.percentage : derived;
+                  const isCustom  = p.percentage != null;
                   return (
                     <tr key={p.id} className="border-b border-slate-50 dark:border-slate-800 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
                       <td className="py-3 px-4 whitespace-normal break-words min-w-[180px] font-medium text-slate-800 dark:text-slate-200">
@@ -202,18 +240,36 @@ export default function PartnersPage() {
                         />
                       </td>
                       <td className="py-3 px-4 whitespace-nowrap text-center tabular-nums">
-                        <span className="inline-flex items-center text-[13px] font-bold bg-primary-50 text-primary-700 px-2.5 py-1 rounded-lg">
+                        <span
+                          className={`inline-flex items-center gap-1 text-[13px] font-bold px-2.5 py-1 rounded-lg ${
+                            isCustom
+                              ? 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                              : 'bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300'
+                          }`}
+                          title={isCustom ? 'نسبة مُحدّدة يدوياً' : 'محسوبة تلقائياً حسب عدد العمالة'}
+                        >
                           {pct.toFixed(1)}%
                         </span>
                       </td>
                       <td className="py-3 px-4 whitespace-nowrap text-left">
-                        <button
-                          onClick={() => handleDelete(p.id)}
-                          className="text-slate-400 dark:text-slate-500 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors"
-                          aria-label="حذف"
-                        >
-                          <Trash2 size={15} />
-                        </button>
+                        <div className="inline-flex items-center gap-1">
+                          <button
+                            onClick={() => setEditingPartner(p)}
+                            className="text-slate-400 hover:text-indigo-500 dark:hover:text-indigo-400 transition-colors duration-150 p-1 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-500/15 cursor-pointer"
+                            aria-label={`تعديل ${p.partnerName}`}
+                            title="تعديل الشريك"
+                          >
+                            <Pencil size={15} />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(p.id)}
+                            className="text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/15 transition-colors"
+                            aria-label={`حذف ${p.partnerName}`}
+                            title="حذف الشريك"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -228,6 +284,21 @@ export default function PartnersPage() {
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onAdd={handleAdd}
+      />
+
+      <EditPartnerModal
+        isOpen={Boolean(editingPartner)}
+        partner={editingPartner}
+        onClose={() => setEditingPartner(null)}
+        onSave={handleSaveEdit}
+      />
+
+      <Toast
+        open={toast.open}
+        message={toast.message}
+        tone={toast.tone}
+        duration={toast.duration}
+        onClose={closeToast}
       />
     </>
   );

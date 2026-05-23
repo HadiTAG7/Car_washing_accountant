@@ -361,24 +361,35 @@ export function toBudgetUpdate(updates = {}) {
 }
 
 // ── partners ──────────────────────────────────────────────────────────────
+function clampPercentage(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  return Math.min(100, Math.max(0, n));
+}
+
 export function mapPartner(row) {
+  const pct = row.percentage;
   return {
     id:             row.id,
     partnerName:    row.partner_name,
     workersCount:   Number(row.workers_count) || 0,
+    percentage:     pct === null || pct === undefined ? null : Number(pct),
     contactNumber:  row.contact_number || '',
     status:         row.status || 'active',
   };
 }
-export function toPartnerInsert({ partnerName, workersCount }) {
+export function toPartnerInsert({ partnerName, workersCount, percentage }) {
   return {
     partner_name:   partnerName,
     workers_count:  Number(workersCount) || 0,
+    percentage:     clampPercentage(percentage),
   };
 }
-export function toPartnerUpdate({ partnerName, workersCount }) {
+export function toPartnerUpdate({ partnerName, workersCount, percentage }) {
   const payload = {};
   if (partnerName  !== undefined) payload.partner_name  = partnerName;
   if (workersCount !== undefined) payload.workers_count = Number(workersCount) || 0;
+  if (percentage   !== undefined) payload.percentage    = clampPercentage(percentage);
   return payload;
 }

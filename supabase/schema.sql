@@ -105,10 +105,14 @@ before update on public.app_settings
 for each row execute function public.touch_updated_at();
 
 -- ─── partners ─────────────────────────────────────────────────────────────
+-- `percentage` is a user-overridable share (nullable). When null the
+-- table view falls back to a derived workforce share. When set, it
+-- represents the agreed-upon ownership / distribution percentage.
 create table if not exists public.partners (
   id              uuid primary key default gen_random_uuid(),
   partner_name    text not null,
   workers_count   integer not null default 0,
+  percentage      numeric(5,2),
   contact_number  text,
   status          text not null default 'active',
   created_at      timestamptz not null default now()
@@ -765,6 +769,11 @@ begin
   end if;
 end $$;
 alter table public.washes alter column biker_name drop not null;
+
+-- ─── partners — defensive column repair ──────────────────────────────────
+-- `percentage` is a later addition; older databases predate it.
+alter table public.partners
+  add column if not exists percentage numeric(5,2);
 
 -- Tell PostgREST to refresh its schema introspection now that the table
 -- and its columns are guaranteed. Without this, the REST API can keep

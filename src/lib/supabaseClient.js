@@ -124,3 +124,38 @@ if (typeof window !== 'undefined') {
     console.info(`[supabase] Connected to ${supabaseUrl}`);
   }
 }
+
+// Loose email validator — one '@', dot in the domain. Matches what
+// browsers accept for type="email" and keeps the modal in sync with
+// what the RPC will actually resolve. Empty input is treated as
+// "not provided", NOT "invalid".
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+export function isValidEmail(value) {
+  return EMAIL_RE.test(String(value || '').trim());
+}
+
+/**
+ * Resolve a Supabase auth user's id from their email via the
+ * `get_user_id_by_email` RPC. Returns:
+ *   - the matched UUID string when the email exists in auth.users
+ *   - `null` when no user matches OR when Supabase isn't configured
+ *     (demo mode — the caller decides whether to treat that as "skip"
+ *     or "not registered").
+ *
+ * Throws the raw Supabase error when the RPC itself fails so the
+ * calling modal can surface a real diagnostic rather than a vague
+ * "not registered" message.
+ */
+export async function lookupUserIdByEmail(email) {
+  if (!isSupabaseConfigured) return null;
+  const trimmed = String(email || '').trim();
+  if (!trimmed) return null;
+  const { data, error } = await supabase.rpc('get_user_id_by_email', {
+    email_search: trimmed,
+  });
+  if (error) {
+    console.error('🔥 Real Supabase Error (rpc.get_user_id_by_email):', error, 'email:', trimmed);
+    throw error;
+  }
+  return data || null;
+}

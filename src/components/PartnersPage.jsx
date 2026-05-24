@@ -323,6 +323,7 @@ export default function PartnersPage() {
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onAdd={handleAdd}
+        showToast={showToast}
       />
 
       <EditPartnerModal
@@ -330,6 +331,7 @@ export default function PartnersPage() {
         partner={editingPartner}
         onClose={() => setEditingPartner(null)}
         onSave={handleSaveEdit}
+        showToast={showToast}
       />
 
       <Toast

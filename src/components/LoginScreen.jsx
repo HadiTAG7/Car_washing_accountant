@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Droplet, LogIn, UserPlus, Loader2 } from 'lucide-react';
+import { LogIn, UserPlus, Loader2 } from 'lucide-react';
+import SweaterLogo from './SweaterLogo';
 import { BRAND } from '../data/initialData';
 import { useAuth } from '../hooks/useAuth';
 
@@ -35,8 +36,8 @@ export default function LoginScreen() {
         {/* Brand */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-3 mb-4">
-            <div className="bg-gradient-to-br from-primary-400 to-primary-600 w-14 h-14 rounded-2xl flex items-center justify-center shadow-xl">
-              <Droplet size={28} className="text-white" strokeWidth={2.5} />
+            <div className="w-14 h-14 rounded-2xl overflow-hidden shadow-xl">
+              <SweaterLogo className="w-full h-full" />
             </div>
             <div className="text-right">
               <p className="text-white text-xl font-extrabold tracking-tight">{BRAND.nameAr}</p>

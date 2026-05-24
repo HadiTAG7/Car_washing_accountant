@@ -1,5 +1,6 @@
-import { Droplet, LogOut, Plus, X } from 'lucide-react';
+import { LogOut, Plus, X } from 'lucide-react';
 import { BRAND } from '../data/initialData';
+import SweaterLogo from './SweaterLogo';
 
 export default function Sidebar({
   tabs,
@@ -32,8 +33,8 @@ export default function Sidebar({
         <div className="px-6 pt-7 pb-6 border-b border-white/10">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="bg-gradient-to-br from-accent-500 to-accent-700 w-11 h-11 rounded-xl flex items-center justify-center shadow-lg">
-                <Droplet size={22} className="text-white" strokeWidth={2.5} />
+              <div className="w-11 h-11 rounded-xl overflow-hidden shadow-lg">
+                <SweaterLogo className="w-full h-full" />
               </div>
               <div className="leading-tight">
                 <div className="text-base font-extrabold tracking-tight">{BRAND.nameAr}</div>

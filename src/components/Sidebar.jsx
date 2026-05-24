@@ -100,8 +100,8 @@ export default function Sidebar({
         <div className="p-4 border-t border-white/10">
           <div className="bg-white/5 rounded-xl p-3 mb-3">
             <p className="text-[11px] text-primary-300 mb-0.5">الحساب الحالي</p>
-            <p className="text-sm font-bold truncate" title={user?.email || 'أحمد الراجحي'}>
-              {user?.email || 'أحمد الراجحي'}
+            <p className="text-sm font-bold truncate" title={user?.email || 'حساب المدير'}>
+              {user?.email || 'حساب المدير'}
             </p>
           </div>
           {onSignOut && (

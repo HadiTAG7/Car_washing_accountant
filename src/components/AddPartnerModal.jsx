@@ -2,22 +2,29 @@ import { useEffect, useState } from 'react';
 import { X, Plus, Briefcase, Users, Wallet, Mail } from 'lucide-react';
 import { formatCurrency, PER_WORKER_FEE } from '../data/initialData';
 import {
-  lookupUserIdByEmail, isValidEmail, isSupabaseConfigured,
+  lookupUserIdByEmail, createPartnerUser, isValidEmail, isSupabaseConfigured,
 } from '../lib/supabaseClient';
+import CreateUserConfirm from './CreateUserConfirm';
 
 const EMPTY = { partnerName: '', workersCount: '', paidAmount: '', email: '' };
-
-const EMAIL_NOT_REGISTERED_MSG =
-  '⚠️ البريد الإلكتروني المدخل غير مسجل في نظام الحسابات بعد، يرجى إنشاؤه في قائمة Authentication أولاً';
 
 export default function AddPartnerModal({ isOpen, onClose, onAdd, showToast }) {
   const [form, setForm] = useState(EMPTY);
   const [submitting, setSubmitting] = useState(false);
+  // When non-null, the modal swaps its submit row for the auto-create
+  // confirmation block — the admin then either accepts (we provision the
+  // user and complete the save) or cancels (back to the editable form).
+  const [pendingEmail, setPendingEmail] = useState(null);
+  const [creating, setCreating] = useState(false);
 
   // Reset whenever the modal opens, so a previously-closed form doesn't
   // pre-fill the next add.
   useEffect(() => {
-    if (isOpen) setForm(EMPTY);
+    if (isOpen) {
+      setForm(EMPTY);
+      setPendingEmail(null);
+      setCreating(false);
+    }
   }, [isOpen]);
 
   function handleChange(e) {
@@ -33,35 +40,61 @@ export default function AddPartnerModal({ isOpen, onClose, onAdd, showToast }) {
   const emailOk       = trimmedEmail === '' || isValidEmail(trimmedEmail);
   const isValid       = form.partnerName.trim().length > 0 && emailOk;
 
+  // Shared between the normal-submit path and the auto-create path —
+  // both end here once a userId (or null) has been resolved.
+  async function persistPartner(userId) {
+    await onAdd({
+      partnerName: form.partnerName.trim(),
+      workersCount,
+      paidAmount,
+      userId,
+    });
+    onClose();
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!isValid || submitting) return;
+    if (!isValid || submitting || pendingEmail) return;
     setSubmitting(true);
     try {
-      // Resolve the email → UUID up-front so a "not registered" email
-      // never produces a half-inserted partner row.
-      let resolvedUserId = null;
-      if (trimmedEmail && isSupabaseConfigured) {
-        const found = await lookupUserIdByEmail(trimmedEmail);
-        if (!found) {
-          // Surface the warning via the parent's toast helper, keep
-          // the modal open so the admin can correct the email, and
-          // abort before onAdd ever fires.
-          showToast?.(EMAIL_NOT_REGISTERED_MSG, 'error');
-          return;
-        }
-        resolvedUserId = found;
+      if (!trimmedEmail || !isSupabaseConfigured) {
+        await persistPartner(null);
+        return;
       }
-      await onAdd({
-        partnerName: form.partnerName.trim(),
-        workersCount,
-        paidAmount,
-        userId:      resolvedUserId,
-      });
-      onClose();
+      const found = await lookupUserIdByEmail(trimmedEmail);
+      if (found) {
+        await persistPartner(found);
+      } else {
+        // Don't error out — give the admin a one-click route to
+        // provision the missing user via the Edge Function.
+        setPendingEmail(trimmedEmail);
+      }
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function handleConfirmCreate() {
+    if (!pendingEmail) return;
+    setCreating(true);
+    try {
+      const newUserId = await createPartnerUser(pendingEmail);
+      await persistPartner(newUserId);
+      showToast?.(
+        '✓ تم إنشاء الحساب الموثق للبريد الإلكتروني وربطه بالشريك تلقائياً!',
+        'success',
+      );
+    } catch (err) {
+      showToast?.(err?.message || 'تعذّر إنشاء الحساب', 'error');
+      // Keep pendingEmail set so the admin can retry, but stop the
+      // spinner — they're back in interactive land.
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  function handleCancelCreate() {
+    setPendingEmail(null);
   }
 
   if (!isOpen) return null;
@@ -239,23 +272,32 @@ export default function AddPartnerModal({ isOpen, onClose, onAdd, showToast }) {
             </div>
           </div>
 
-          <div className="flex items-center gap-3 pt-2">
-            <button
-              type="submit"
-              disabled={!isValid || submitting}
-              className="flex-1 inline-flex items-center justify-center gap-2 bg-primary-800 hover:bg-primary-900 dark:bg-primary-600 dark:hover:bg-primary-500 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white py-3 px-4 rounded-xl text-sm font-semibold transition-colors shadow-sm"
-            >
-              <Plus size={18} />
-              {submitting ? 'جارٍ الإضافة...' : 'إضافة الشريك'}
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-6 py-3 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl text-sm font-medium transition-colors"
-            >
-              إلغاء
-            </button>
-          </div>
+          {pendingEmail ? (
+            <CreateUserConfirm
+              email={pendingEmail}
+              busy={creating}
+              onConfirm={handleConfirmCreate}
+              onCancel={handleCancelCreate}
+            />
+          ) : (
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="submit"
+                disabled={!isValid || submitting}
+                className="flex-1 inline-flex items-center justify-center gap-2 bg-primary-800 hover:bg-primary-900 dark:bg-primary-600 dark:hover:bg-primary-500 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white py-3 px-4 rounded-xl text-sm font-semibold transition-colors shadow-sm"
+              >
+                <Plus size={18} />
+                {submitting ? 'جارٍ الإضافة...' : 'إضافة الشريك'}
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-6 py-3 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl text-sm font-medium transition-colors"
+              >
+                إلغاء
+              </button>
+            </div>
+          )}
         </form>
       </div>
     </div>

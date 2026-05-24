@@ -159,3 +159,50 @@ export async function lookupUserIdByEmail(email) {
   }
   return data || null;
 }
+
+/**
+ * Provision a brand-new Supabase auth user (pre-verified) via the
+ * `create-partner-user` Edge Function, which holds the service_role
+ * key server-side. The admin's session is untouched — only a new row
+ * appears in auth.users.
+ *
+ * Returns the new user's UUID on success. Throws on:
+ *   - demo mode (Supabase not configured)
+ *   - missing JWT (function returns 401)
+ *   - email already registered (function returns 409) — caller should
+ *     fall back to the lookup path
+ *   - any other provisioning error
+ */
+export async function createPartnerUser(email) {
+  if (!isSupabaseConfigured) {
+    throw new Error('Supabase غير مُهيّأ — لا يمكن إنشاء حسابات في وضع العرض التجريبي.');
+  }
+  const trimmed = String(email || '').trim().toLowerCase();
+  if (!trimmed) throw new Error('البريد الإلكتروني مطلوب.');
+
+  const { data, error } = await supabase.functions.invoke('create-partner-user', {
+    body: { email: trimmed },
+  });
+  if (error) {
+    // supabase-js wraps non-2xx as FunctionsHttpError; the function's
+    // JSON body is on error.context (when available). Surface the
+    // server's Arabic-friendly message when we can read it.
+    let serverMsg = null;
+    try {
+      const ctx = error.context;
+      if (ctx && typeof ctx.json === 'function') {
+        const j = await ctx.json();
+        serverMsg = j?.error;
+      }
+    } catch { /* ignore */ }
+    console.error('🔥 Real Supabase Error (functions.create-partner-user):', error, 'email:', trimmed);
+    const msg = serverMsg || error.message || 'تعذّر إنشاء الحساب.';
+    const wrapped = new Error(msg);
+    wrapped.original = error;
+    throw wrapped;
+  }
+  if (!data?.user_id) {
+    throw new Error('Edge function did not return a user_id');
+  }
+  return data.user_id;
+}

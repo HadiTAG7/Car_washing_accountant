@@ -4,15 +4,11 @@ import {
 } from 'lucide-react';
 import { formatCurrency, PER_WORKER_FEE } from '../data/initialData';
 import {
-  lookupUserIdByEmail, isValidEmail, isSupabaseConfigured,
+  lookupUserIdByEmail, createPartnerUser, isValidEmail, isSupabaseConfigured,
 } from '../lib/supabaseClient';
+import CreateUserConfirm from './CreateUserConfirm';
 
 const EMPTY = { partnerName: '', workersCount: '', paidAmount: '', email: '' };
-
-// Specific message used by the parent to surface a warning toast when
-// the admin types an email that doesn't yet have a Supabase account.
-const EMAIL_NOT_REGISTERED_MSG =
-  '⚠️ البريد الإلكتروني المدخل غير مسجل في نظام الحسابات بعد، يرجى إنشاؤه في قائمة Authentication أولاً';
 
 export default function EditPartnerModal({ isOpen, partner, onClose, onSave, showToast }) {
   const [form, setForm] = useState(EMPTY);
@@ -22,6 +18,10 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave, sho
   //   - email filled              → resolve email → set userId
   //   - unlink=true                → explicitly clear partners.user_id
   const [unlinkRequested, setUnlinkRequested] = useState(false);
+  // When non-null, the modal swaps its submit row for the auto-create
+  // confirmation block (Edge Function provisions the user on confirm).
+  const [pendingEmail, setPendingEmail] = useState(null);
+  const [creating, setCreating] = useState(false);
 
   // Re-init whenever the modal opens for a new partner.
   useEffect(() => {
@@ -33,6 +33,8 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave, sho
       email:        '',
     });
     setUnlinkRequested(false);
+    setPendingEmail(null);
+    setCreating(false);
   }, [isOpen, partner]);
 
   function handleChange(e) {
@@ -53,9 +55,25 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave, sho
   const isValid       = form.partnerName.trim().length > 0 && emailOk;
   const currentlyLinked = Boolean(partner?.userId);
 
+  // Build the update payload once a userId decision has been made and
+  // ship it. Used by both the normal-submit path and the auto-create
+  // path so they stay in lock-step.
+  async function persistPatch(resolvedUserId) {
+    const patch = {
+      partnerName:  form.partnerName.trim(),
+      workersCount,
+      paidAmount,
+    };
+    if (resolvedUserId !== undefined) {
+      patch.userId = resolvedUserId;
+    }
+    await onSave(partner.id, patch);
+    onClose();
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!isValid || submitting || !partner?.id) return;
+    if (!isValid || submitting || !partner?.id || pendingEmail) return;
     setSubmitting(true);
     try {
       // Resolve which userId (if any) goes into the update payload.
@@ -64,16 +82,13 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave, sho
       let resolvedUserId;
       if (trimmedEmail) {
         if (!isSupabaseConfigured) {
-          // Demo mode — no auth.users to look in. Save the partner row
-          // but leave the link column alone; admin gets a useful save
-          // either way once Supabase is configured.
           resolvedUserId = undefined;
         } else {
           const found = await lookupUserIdByEmail(trimmedEmail);
           if (!found) {
-            // Surface the warning toast, keep the modal open so the
-            // admin can fix the email, and abort before any DB write.
-            showToast?.(EMAIL_NOT_REGISTERED_MSG, 'error');
+            // Drop into the "create the account?" sub-state instead
+            // of erroring out.
+            setPendingEmail(trimmedEmail);
             return;
           }
           resolvedUserId = found;
@@ -82,22 +97,31 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave, sho
         resolvedUserId = null;
       }
 
-      const patch = {
-        partnerName:  form.partnerName.trim(),
-        workersCount,
-        paidAmount,
-      };
-      // Only thread userId through when there's an explicit decision —
-      // toPartnerUpdate's `if (userId !== undefined)` guard preserves
-      // the existing link when we omit the key entirely.
-      if (resolvedUserId !== undefined) {
-        patch.userId = resolvedUserId;
-      }
-      await onSave(partner.id, patch);
-      onClose();
+      await persistPatch(resolvedUserId);
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function handleConfirmCreate() {
+    if (!pendingEmail) return;
+    setCreating(true);
+    try {
+      const newUserId = await createPartnerUser(pendingEmail);
+      await persistPatch(newUserId);
+      showToast?.(
+        '✓ تم إنشاء الحساب الموثق للبريد الإلكتروني وربطه بالشريك تلقائياً!',
+        'success',
+      );
+    } catch (err) {
+      showToast?.(err?.message || 'تعذّر إنشاء الحساب', 'error');
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  function handleCancelCreate() {
+    setPendingEmail(null);
   }
 
   if (!isOpen || !partner) return null;
@@ -320,23 +344,32 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave, sho
             </div>
           </div>
 
-          <div className="flex items-center gap-3 pt-2">
-            <button
-              type="submit"
-              disabled={!isValid || submitting}
-              className="flex-1 inline-flex items-center justify-center gap-2 bg-primary-800 hover:bg-primary-900 dark:bg-primary-600 dark:hover:bg-primary-500 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white py-3 px-4 rounded-xl text-sm font-semibold transition-colors shadow-sm"
-            >
-              <Pencil size={18} />
-              {submitting ? 'جارٍ الحفظ...' : 'حفظ التعديلات'}
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-6 py-3 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl text-sm font-medium transition-colors"
-            >
-              إلغاء
-            </button>
-          </div>
+          {pendingEmail ? (
+            <CreateUserConfirm
+              email={pendingEmail}
+              busy={creating}
+              onConfirm={handleConfirmCreate}
+              onCancel={handleCancelCreate}
+            />
+          ) : (
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="submit"
+                disabled={!isValid || submitting}
+                className="flex-1 inline-flex items-center justify-center gap-2 bg-primary-800 hover:bg-primary-900 dark:bg-primary-600 dark:hover:bg-primary-500 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white py-3 px-4 rounded-xl text-sm font-semibold transition-colors shadow-sm"
+              >
+                <Pencil size={18} />
+                {submitting ? 'جارٍ الحفظ...' : 'حفظ التعديلات'}
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-6 py-3 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl text-sm font-medium transition-colors"
+              >
+                إلغاء
+              </button>
+            </div>
+          )}
         </form>
       </div>
     </div>

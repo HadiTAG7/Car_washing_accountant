@@ -1,17 +1,47 @@
 import { LogOut, Plus, X } from 'lucide-react';
 import { BRAND } from '../data/initialData';
 import SweaterLogo from './SweaterLogo';
+import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
 
 export default function Sidebar({
   tabs,
   activeTab,
   onSelectTab,
   user,
+  // onSignOut is still passed by App.jsx for backwards compat but no
+  // longer wired — handleLogout below owns the full sign-out lifecycle
+  // (Supabase signOut → simulation state cleanup → hard reload).
+  // eslint-disable-next-line no-unused-vars
   onSignOut,
   onAddEntry,
   mobileOpen = false,
   onCloseMobile,
 }) {
+  // Self-contained sign-out: drops the Supabase session, scrubs any
+  // partner-view simulation state in localStorage (so the next login
+  // doesn't inherit a stale "acting as X" view), then forces a hard
+  // reload so the auth gate re-evaluates from a clean slate. Without
+  // the reload, components holding on to memoized session state can
+  // stay rendered after the JWT is gone.
+  async function handleLogout() {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+
+      // PartnerViewContext persists the admin's simulate-as selection
+      // here; clear it so the next signed-in user starts at zero. The
+      // legacy 'partner_view_simulation' key is removed too in case an
+      // older build seeded it.
+      try { localStorage.removeItem('sweater:actingAsPartnerId'); } catch { /* ignore */ }
+      try { localStorage.removeItem('partner_view_simulation');   } catch { /* ignore */ }
+
+      // Hard reload — App.jsx's auth gate now renders the login screen
+      // because session === null + requireAuth is on.
+      window.location.reload();
+    } catch (err) {
+      console.error('🔥 Logout Error:', err);
+    }
+  }
   return (
     <>
       {/* Backdrop — mobile only, visible when drawer is open */}
@@ -104,10 +134,10 @@ export default function Sidebar({
               {user?.email || 'حساب المدير'}
             </p>
           </div>
-          {onSignOut && (
+          {isSupabaseConfigured && (
             <button
               type="button"
-              onClick={onSignOut}
+              onClick={handleLogout}
               className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-[13px] text-primary-200 hover:bg-white/10 hover:text-white transition-colors"
             >
               <LogOut size={16} />

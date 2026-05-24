@@ -1,7 +1,9 @@
-import { LogOut, Plus, X } from 'lucide-react';
+import { useState } from 'react';
+import { LogOut, Plus, X, KeyRound } from 'lucide-react';
 import { BRAND } from '../data/initialData';
 import SweaterLogo from './SweaterLogo';
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
+import ChangePasswordModal from './ChangePasswordModal';
 
 export default function Sidebar({
   tabs,
@@ -17,6 +19,11 @@ export default function Sidebar({
   mobileOpen = false,
   onCloseMobile,
 }) {
+  // Modal for in-app password change — opened from the footer "تغيير
+  // كلمة المرور" button. Distinct from the email-based forgot-password
+  // flow on LoginScreen.
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+
   // NON-BLOCKING sign-out. Two reported failure modes informed this
   // shape:
   //   (a) `await supabase.auth.signOut()` was hanging on slow/expired
@@ -172,17 +179,33 @@ export default function Sidebar({
             </p>
           </div>
           {isSupabaseConfigured && (
-            <button
-              type="button"
-              onClick={handleAbsoluteLogout}
-              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-[13px] text-primary-200 hover:bg-white/10 hover:text-white transition-colors cursor-pointer"
-            >
-              <LogOut size={16} />
-              تسجيل الخروج
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => setChangePasswordOpen(true)}
+                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-[13px] text-primary-200 hover:bg-white/10 hover:text-white transition-colors cursor-pointer mb-1"
+              >
+                <KeyRound size={16} />
+                تغيير كلمة المرور
+              </button>
+              <button
+                type="button"
+                onClick={handleAbsoluteLogout}
+                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-[13px] text-primary-200 hover:bg-white/10 hover:text-white transition-colors cursor-pointer"
+              >
+                <LogOut size={16} />
+                تسجيل الخروج
+              </button>
+            </>
           )}
         </div>
       </aside>
+
+      <ChangePasswordModal
+        isOpen={changePasswordOpen}
+        onClose={() => setChangePasswordOpen(false)}
+        userEmail={user?.email}
+      />
     </>
   );
 }

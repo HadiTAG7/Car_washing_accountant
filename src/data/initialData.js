@@ -5,8 +5,8 @@
 
 // ─── Brand ──────────────────────────────────────────────────────────────────
 export const BRAND = {
-  nameAr: 'مونستر واش',
-  nameEn: 'Monster Wash',
+  nameAr: 'سويتر',
+  nameEn: 'Sweater',
   tagline: 'لوحة التحكم المالية — امتياز سويتر',
 };
 

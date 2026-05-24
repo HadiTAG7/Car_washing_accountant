@@ -107,7 +107,7 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
     <>
       <TopBar
         title="رسوم التأسيس"
-        subtitle="تتبع المصاريف التأسيسية لمرة واحدة لامتياز مونستر واش"
+        subtitle="تتبع المصاريف التأسيسية لمرة واحدة لامتياز سويتر"
       />
 
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">

@@ -17,37 +17,67 @@ export default function Sidebar({
   mobileOpen = false,
   onCloseMobile,
 }) {
-  // NON-BLOCKING sign-out. The previous async/await form was reported as
-  // freezing whenever `supabase.auth.signOut()` hangs (slow network,
-  // CORS, expired refresh token, etc.) because the await blocked the
-  // storage clear + navigation that should run unconditionally.
-  //
-  // The fix: flip the order so client-side cleanup executes
-  // synchronously and the server call is detached as a fire-and-forget
-  // promise. The user is navigated to the login screen instantly; the
-  // background signOut can succeed or log an error to the console
-  // without ever holding up the UI.
+  // NON-BLOCKING sign-out. Two reported failure modes informed this
+  // shape:
+  //   (a) `await supabase.auth.signOut()` was hanging on slow/expired
+  //       sessions, blocking the storage wipe and navigation that
+  //       should fire unconditionally → handler is now a plain (non-
+  //       async) function, and the server call is detached as
+  //       fire-and-forget so a hung network never freezes the UI.
+  //   (b) `window.location.href = origin` had no visible effect when
+  //       the app was running inside a same-origin preview iframe
+  //       (the inner frame navigated but the user kept seeing the
+  //       parent's stale shell) → we try `window.top` first to break
+  //       out of the iframe, fall back to the current frame, use
+  //       `.replace()` so the logout doesn't pollute history, and
+  //       append a `?signedOut=<ts>` query so the destination URL is
+  //       *guaranteed* different from the current URL (defeats the
+  //       browser's same-URL nav dedup). App.jsx watches for that
+  //       query param and forces the LoginScreen regardless of the
+  //       VITE_REQUIRE_AUTH flag.
   function handleAbsoluteLogout(e) {
     if (e) {
       e.preventDefault();
       e.stopPropagation();
     }
 
-    // 1. Trigger server signout in the background WITHOUT `await` so
-    //    a hung network call can never freeze the UI.
+    // Visible breadcrumb in the browser tab so the user can confirm
+    // the click was received even if the subsequent navigation is
+    // blocked by a hostile iframe sandbox. Cheap and idempotent.
+    try { document.title = 'جارٍ تسجيل الخروج…'; } catch { /* no-op */ }
+    console.info('[logout] handler fired');
+
+    // 1. Detached server call — never awaited, never blocking.
     supabase.auth.signOut().catch((err) => {
       console.error('Background signout log:', err);
     });
 
-    // 2. Instantly wipe all client-side session crumbs synchronously —
-    //    PartnerViewContext's actingAsPartnerId, Supabase's auth-token
-    //    entry, dark-mode pref, anything else cached by the app.
+    // 2. Synchronous client wipe. Each storage is wrapped separately so
+    //    a quota / private-mode failure in one doesn't skip the other.
     try { localStorage.clear();   } catch (err) { console.error('localStorage.clear failed:', err); }
     try { sessionStorage.clear(); } catch (err) { console.error('sessionStorage.clear failed:', err); }
 
-    // 3. Hard navigation to origin — not reload() of the current
-    //    path. Resets every React component tree from absolute zero.
-    window.location.href = window.location.origin;
+    // 3. Build a destination URL that's *different* from the current
+    //    URL by a query timestamp. Some browsers no-op `location.href`
+    //    assignments that resolve to the exact same URL — the ?ts
+    //    suffix bypasses that.
+    const target = `${window.location.origin}/?signedOut=${Date.now()}`;
+
+    // 4. Aggressive navigation cascade:
+    //    a. Try to navigate the TOP frame (breaks out of preview
+    //       iframes like Lovable). Wrapped in try/catch because
+    //       accessing `window.top.location` cross-origin throws
+    //       SecurityError.
+    //    b. Fall back to the current frame.
+    //    c. `.replace()` over `.href` so the dashboard doesn't sit in
+    //       history (back button would otherwise revisit it).
+    try {
+      if (window.top && window.top !== window) {
+        window.top.location.replace(target);
+        return;
+      }
+    } catch { /* cross-origin top access blocked — fall through */ }
+    window.location.replace(target);
   }
   return (
     <>

@@ -86,7 +86,14 @@ function AppShell() {
     );
   }
 
-  const mustAuthenticate = requireAuth && isSupabaseConfigured;
+  // Sidebar's logout appends `?signedOut=<ts>` to the URL so that we
+  // can force the LoginScreen even when VITE_REQUIRE_AUTH is off.
+  // Without this, the dashboard re-renders unauthenticated and looks
+  // identical to "nothing happened" from the user's perspective.
+  const justSignedOut = typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).has('signedOut');
+
+  const mustAuthenticate = (requireAuth || justSignedOut) && isSupabaseConfigured;
   if (mustAuthenticate && !session) {
     return <LoginScreen />;
   }

@@ -15,6 +15,7 @@ import {
 
 import Sidebar from './components/Sidebar';
 import LoginScreen from './components/LoginScreen';
+import UpdatePasswordScreen from './components/UpdatePasswordScreen';
 import { DemoBanner } from './components/ErrorState';
 import StartupPage from './components/StartupPage';
 import AnnualExpensesPage from './components/AnnualExpensesPage';
@@ -84,6 +85,17 @@ function AppShell() {
         </div>
       </div>
     );
+  }
+
+  // /update-password is the landing route for Supabase's reset-password
+  // email. Render the dedicated UpdatePasswordScreen instead of either
+  // the dashboard OR the login screen — the user lands here WITH a
+  // short-lived recovery session, so the auth gate below would
+  // otherwise let them straight into the dashboard with stale state.
+  const onUpdatePasswordRoute = typeof window !== 'undefined'
+    && window.location.pathname === '/update-password';
+  if (onUpdatePasswordRoute) {
+    return <UpdatePasswordScreen />;
   }
 
   // Sidebar's logout appends `?signedOut=<ts>` to the URL so that we

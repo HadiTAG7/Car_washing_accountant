@@ -25,9 +25,8 @@ export default function CreateUserConfirm({ email, busy, onConfirm, onCancel }) 
       <p className="text-[11px] text-amber-700/90 dark:text-amber-300/90 leading-relaxed">
         البريد: <span dir="ltr" className="font-mono font-bold">{email}</span>
         <br />
-        كلمة مرور مؤقتة ستُضبط على{' '}
-        <span dir="ltr" className="font-mono">TemporaryPassword123!</span>{' '}
-        — يُنصح بمشاركتها مع الشريك ليُغيّرها عند أول تسجيل دخول.
+        سيقوم النظام بإنشاء كلمة مرور مؤقتة قوية وعشوائية تظهر لك فور الانتهاء
+        — انسخها وسلّمها للشريك ليُغيّرها عند أول تسجيل دخول.
       </p>
       <div className="flex items-center gap-2 pt-1">
         <button

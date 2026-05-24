@@ -5,17 +5,20 @@ import {
   lookupUserIdByEmail, createPartnerUser, isValidEmail, isSupabaseConfigured,
 } from '../lib/supabaseClient';
 import CreateUserConfirm from './CreateUserConfirm';
+import CreatedCredentials from './CreatedCredentials';
 
 const EMPTY = { partnerName: '', workersCount: '', paidAmount: '', email: '' };
 
 export default function AddPartnerModal({ isOpen, onClose, onAdd, showToast }) {
   const [form, setForm] = useState(EMPTY);
   const [submitting, setSubmitting] = useState(false);
-  // When non-null, the modal swaps its submit row for the auto-create
-  // confirmation block — the admin then either accepts (we provision the
-  // user and complete the save) or cancels (back to the editable form).
+  // Sub-state ladder for the bottom action area:
+  //   1. idle               → normal submit row
+  //   2. pendingEmail set   → "create the missing account?" confirm
+  //   3. createdCreds set   → "here are the new credentials" panel
   const [pendingEmail, setPendingEmail] = useState(null);
   const [creating, setCreating] = useState(false);
+  const [createdCreds, setCreatedCreds] = useState(null);
 
   // Reset whenever the modal opens, so a previously-closed form doesn't
   // pre-fill the next add.
@@ -24,6 +27,7 @@ export default function AddPartnerModal({ isOpen, onClose, onAdd, showToast }) {
       setForm(EMPTY);
       setPendingEmail(null);
       setCreating(false);
+      setCreatedCreds(null);
     }
   }, [isOpen]);
 
@@ -40,21 +44,23 @@ export default function AddPartnerModal({ isOpen, onClose, onAdd, showToast }) {
   const emailOk       = trimmedEmail === '' || isValidEmail(trimmedEmail);
   const isValid       = form.partnerName.trim().length > 0 && emailOk;
 
-  // Shared between the normal-submit path and the auto-create path —
-  // both end here once a userId (or null) has been resolved.
-  async function persistPartner(userId) {
+  // Persist the partner row. Used by both the simple "email already
+  // exists" path and the post-auto-create path so the actual DB write
+  // stays in lock-step. Does NOT auto-close the modal when fresh
+  // credentials need to be displayed — that's the caller's call.
+  async function persistPartner(userId, { closeAfter = true } = {}) {
     await onAdd({
       partnerName: form.partnerName.trim(),
       workersCount,
       paidAmount,
       userId,
     });
-    onClose();
+    if (closeAfter) onClose();
   }
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!isValid || submitting || pendingEmail) return;
+    if (!isValid || submitting || pendingEmail || createdCreds) return;
     setSubmitting(true);
     try {
       if (!trimmedEmail || !isSupabaseConfigured) {
@@ -65,8 +71,7 @@ export default function AddPartnerModal({ isOpen, onClose, onAdd, showToast }) {
       if (found) {
         await persistPartner(found);
       } else {
-        // Don't error out — give the admin a one-click route to
-        // provision the missing user via the Edge Function.
+        // Drop into the confirm sub-state instead of erroring out.
         setPendingEmail(trimmedEmail);
       }
     } finally {
@@ -78,16 +83,25 @@ export default function AddPartnerModal({ isOpen, onClose, onAdd, showToast }) {
     if (!pendingEmail) return;
     setCreating(true);
     try {
-      const newUserId = await createPartnerUser(pendingEmail);
-      await persistPartner(newUserId);
-      showToast?.(
-        '✓ تم إنشاء الحساب الموثق للبريد الإلكتروني وربطه بالشريك تلقائياً!',
-        'success',
-      );
+      // Provision via the isolated client. The admin's session is
+      // unaffected; we get back the new user_id + the temporary
+      // password we generated for the partner.
+      const { userId, password, emailConfirmRequired } =
+        await createPartnerUser(pendingEmail);
+      // Link first — if the partner insert fails the credentials panel
+      // would be misleading. Keep the modal open so the next step
+      // (credentials display) replaces the confirm block.
+      await persistPartner(userId, { closeAfter: false });
+      setPendingEmail(null);
+      setCreatedCreds({
+        email: pendingEmail,
+        password,
+        emailConfirmRequired,
+      });
     } catch (err) {
       showToast?.(err?.message || 'تعذّر إنشاء الحساب', 'error');
-      // Keep pendingEmail set so the admin can retry, but stop the
-      // spinner — they're back in interactive land.
+      // Stay in the confirm sub-state so the admin can retry; the
+      // spinner stops via the finally block below.
     } finally {
       setCreating(false);
     }
@@ -95,6 +109,17 @@ export default function AddPartnerModal({ isOpen, onClose, onAdd, showToast }) {
 
   function handleCancelCreate() {
     setPendingEmail(null);
+  }
+
+  function handleCredentialsDone() {
+    // Admin acknowledged + saved the password. Fire the short success
+    // toast and close the modal.
+    showToast?.(
+      '✓ تم إنشاء الحساب الموثق للبريد الإلكتروني وربطه بالشريك تلقائياً!',
+      'success',
+    );
+    setCreatedCreds(null);
+    onClose();
   }
 
   if (!isOpen) return null;
@@ -272,7 +297,14 @@ export default function AddPartnerModal({ isOpen, onClose, onAdd, showToast }) {
             </div>
           </div>
 
-          {pendingEmail ? (
+          {createdCreds ? (
+            <CreatedCredentials
+              email={createdCreds.email}
+              password={createdCreds.password}
+              emailConfirmRequired={createdCreds.emailConfirmRequired}
+              onDone={handleCredentialsDone}
+            />
+          ) : pendingEmail ? (
             <CreateUserConfirm
               email={pendingEmail}
               busy={creating}

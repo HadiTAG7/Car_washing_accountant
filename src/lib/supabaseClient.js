@@ -161,18 +161,78 @@ export async function lookupUserIdByEmail(email) {
 }
 
 /**
- * Provision a brand-new Supabase auth user (pre-verified) via the
- * `create-partner-user` Edge Function, which holds the service_role
- * key server-side. The admin's session is untouched — only a new row
- * appears in auth.users.
+ * Provision a brand-new Supabase auth user via the standard `signUp`
+ * API, but on an isolated client instance so the admin's existing
+ * session is NOT replaced.
  *
- * Returns the new user's UUID on success. Throws on:
- *   - demo mode (Supabase not configured)
- *   - missing JWT (function returns 401)
- *   - email already registered (function returns 409) — caller should
- *     fall back to the lookup path
- *   - any other provisioning error
+ * Why an isolated client: `auth.signUp` returns a session for the new
+ * user, and the SDK normally writes that session into the configured
+ * storage (overwriting the admin's session in localStorage). We avoid
+ * that by giving this second client a no-op storage adapter +
+ * `persistSession: false`, so the signUp's side-effect dies inside
+ * the ephemeral runtime and the main `supabase` client keeps the
+ * admin logged in.
+ *
+ * Returns `{ userId, password, emailConfirmRequired }`:
+ *   - userId — the new auth.users.id (always present on signUp success)
+ *   - password — the random temporary password we generated, so the
+ *     calling modal can display it to the admin to relay to the partner
+ *   - emailConfirmRequired — `true` when Supabase's project setting
+ *     "Confirm email" is on. The partner will need to click the
+ *     verification email before they can sign in.
+ *
+ * Throws on:
+ *   - demo mode (no Supabase configured)
+ *   - signUp errors (email already registered, rate limit, etc.) —
+ *     the caller surfaces the message via the toast helper
  */
+let ephemeralAuthClient = null;
+function getEphemeralAuthClient() {
+  if (!isSupabaseConfigured) return null;
+  if (ephemeralAuthClient) return ephemeralAuthClient;
+  // No-op storage: anything signUp tries to write goes nowhere. Pair
+  // with persistSession:false so the SDK doesn't even attempt to keep
+  // the new-user session alive.
+  const memoryStorage = {
+    getItem:    () => null,
+    setItem:    () => {},
+    removeItem: () => {},
+  };
+  ephemeralAuthClient = createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession:    false,
+      autoRefreshToken:  false,
+      detectSessionInUrl: false,
+      storage:           memoryStorage,
+      // Distinct storageKey so it can never collide with the main
+      // client's key — paranoia, since the no-op storage already
+      // prevents any write.
+      storageKey:        'sweater:provision:noop',
+    },
+  });
+  return ephemeralAuthClient;
+}
+
+// Generates a 20-character password mixing uppercase, lowercase, digits,
+// and a few safe symbols. Excludes visually-similar chars (I/l/O/0) so a
+// hand-relayed password is less error-prone. Backed by Web Crypto.
+function generateStrongPassword(length = 20) {
+  const upper   = 'ABCDEFGHJKMNPQRSTUVWXYZ';
+  const lower   = 'abcdefghijkmnopqrstuvwxyz';
+  const digits  = '23456789';
+  const symbols = '!@#$%^&*';
+  const all     = upper + lower + digits + symbols;
+  const bytes   = new Uint8Array(length);
+  (globalThis.crypto || window.crypto).getRandomValues(bytes);
+  let out = '';
+  for (let i = 0; i < length; i++) out += all[bytes[i] % all.length];
+  // Ensure at least one of each character class so projects with strict
+  // password policies don't reject. Replace the first 4 chars with one
+  // of each class drawn from the random byte stream.
+  const pick = (set, idx) => set[bytes[idx] % set.length];
+  return pick(upper, 0) + pick(lower, 1) + pick(digits, 2) + pick(symbols, 3) + out.slice(4);
+}
+
 export async function createPartnerUser(email) {
   if (!isSupabaseConfigured) {
     throw new Error('Supabase غير مُهيّأ — لا يمكن إنشاء حسابات في وضع العرض التجريبي.');
@@ -180,29 +240,32 @@ export async function createPartnerUser(email) {
   const trimmed = String(email || '').trim().toLowerCase();
   if (!trimmed) throw new Error('البريد الإلكتروني مطلوب.');
 
-  const { data, error } = await supabase.functions.invoke('create-partner-user', {
-    body: { email: trimmed },
+  const client = getEphemeralAuthClient();
+  const password = generateStrongPassword(20);
+
+  const { data, error } = await client.auth.signUp({
+    email:    trimmed,
+    password,
   });
   if (error) {
-    // supabase-js wraps non-2xx as FunctionsHttpError; the function's
-    // JSON body is on error.context (when available). Surface the
-    // server's Arabic-friendly message when we can read it.
-    let serverMsg = null;
-    try {
-      const ctx = error.context;
-      if (ctx && typeof ctx.json === 'function') {
-        const j = await ctx.json();
-        serverMsg = j?.error;
-      }
-    } catch { /* ignore */ }
-    console.error('🔥 Real Supabase Error (functions.create-partner-user):', error, 'email:', trimmed);
-    const msg = serverMsg || error.message || 'تعذّر إنشاء الحساب.';
-    const wrapped = new Error(msg);
-    wrapped.original = error;
-    throw wrapped;
+    console.error('🔥 Real Supabase Error (auth.signUp on ephemeral client):', error, 'email:', trimmed);
+    throw new Error(error.message || 'تعذّر إنشاء الحساب.');
   }
-  if (!data?.user_id) {
-    throw new Error('Edge function did not return a user_id');
+  if (!data?.user?.id) {
+    // Belt-and-braces: signUp can return user=null in obfuscated mode
+    // when the email already exists and "Confirm email" is on. Treat
+    // that as a soft failure with a clear message.
+    throw new Error('تعذّر تحديد معرف الحساب. قد يكون البريد مسجلاً مسبقاً.');
   }
-  return data.user_id;
+
+  // session is null when project setting "Confirm email" is enabled —
+  // the user exists in auth.users (so we can link them to a partner
+  // row) but they can't sign in until they verify via email.
+  const emailConfirmRequired = data.session == null;
+
+  return {
+    userId: data.user.id,
+    password,
+    emailConfirmRequired,
+  };
 }

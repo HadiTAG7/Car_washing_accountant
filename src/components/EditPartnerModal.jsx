@@ -7,6 +7,7 @@ import {
   lookupUserIdByEmail, createPartnerUser, isValidEmail, isSupabaseConfigured,
 } from '../lib/supabaseClient';
 import CreateUserConfirm from './CreateUserConfirm';
+import CreatedCredentials from './CreatedCredentials';
 
 const EMPTY = { partnerName: '', workersCount: '', paidAmount: '', email: '' };
 
@@ -18,10 +19,13 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave, sho
   //   - email filled              → resolve email → set userId
   //   - unlink=true                → explicitly clear partners.user_id
   const [unlinkRequested, setUnlinkRequested] = useState(false);
-  // When non-null, the modal swaps its submit row for the auto-create
-  // confirmation block (Edge Function provisions the user on confirm).
+  // Sub-state ladder for the bottom action area:
+  //   1. idle               → normal submit row
+  //   2. pendingEmail set   → "create the missing account?" confirm
+  //   3. createdCreds set   → "here are the new credentials" panel
   const [pendingEmail, setPendingEmail] = useState(null);
   const [creating, setCreating] = useState(false);
+  const [createdCreds, setCreatedCreds] = useState(null);
 
   // Re-init whenever the modal opens for a new partner.
   useEffect(() => {
@@ -35,6 +39,7 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave, sho
     setUnlinkRequested(false);
     setPendingEmail(null);
     setCreating(false);
+    setCreatedCreds(null);
   }, [isOpen, partner]);
 
   function handleChange(e) {
@@ -57,8 +62,9 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave, sho
 
   // Build the update payload once a userId decision has been made and
   // ship it. Used by both the normal-submit path and the auto-create
-  // path so they stay in lock-step.
-  async function persistPatch(resolvedUserId) {
+  // path so they stay in lock-step. closeAfter=false leaves the modal
+  // open so the credentials step can render.
+  async function persistPatch(resolvedUserId, { closeAfter = true } = {}) {
     const patch = {
       partnerName:  form.partnerName.trim(),
       workersCount,
@@ -68,12 +74,12 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave, sho
       patch.userId = resolvedUserId;
     }
     await onSave(partner.id, patch);
-    onClose();
+    if (closeAfter) onClose();
   }
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!isValid || submitting || !partner?.id || pendingEmail) return;
+    if (!isValid || submitting || !partner?.id || pendingEmail || createdCreds) return;
     setSubmitting(true);
     try {
       // Resolve which userId (if any) goes into the update payload.
@@ -107,12 +113,18 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave, sho
     if (!pendingEmail) return;
     setCreating(true);
     try {
-      const newUserId = await createPartnerUser(pendingEmail);
-      await persistPatch(newUserId);
-      showToast?.(
-        '✓ تم إنشاء الحساب الموثق للبريد الإلكتروني وربطه بالشريك تلقائياً!',
-        'success',
-      );
+      const { userId, password, emailConfirmRequired } =
+        await createPartnerUser(pendingEmail);
+      // Link first, THEN reveal credentials — if the partner update
+      // fails the password isn't useful anyway and the admin gets a
+      // toast about the failure.
+      await persistPatch(userId, { closeAfter: false });
+      setPendingEmail(null);
+      setCreatedCreds({
+        email: pendingEmail,
+        password,
+        emailConfirmRequired,
+      });
     } catch (err) {
       showToast?.(err?.message || 'تعذّر إنشاء الحساب', 'error');
     } finally {
@@ -122,6 +134,15 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave, sho
 
   function handleCancelCreate() {
     setPendingEmail(null);
+  }
+
+  function handleCredentialsDone() {
+    showToast?.(
+      '✓ تم إنشاء الحساب الموثق للبريد الإلكتروني وربطه بالشريك تلقائياً!',
+      'success',
+    );
+    setCreatedCreds(null);
+    onClose();
   }
 
   if (!isOpen || !partner) return null;
@@ -344,7 +365,14 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave, sho
             </div>
           </div>
 
-          {pendingEmail ? (
+          {createdCreds ? (
+            <CreatedCredentials
+              email={createdCreds.email}
+              password={createdCreds.password}
+              emailConfirmRequired={createdCreds.emailConfirmRequired}
+              onDone={handleCredentialsDone}
+            />
+          ) : pendingEmail ? (
             <CreateUserConfirm
               email={pendingEmail}
               busy={creating}

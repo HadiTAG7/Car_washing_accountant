@@ -117,8 +117,10 @@ create table if not exists public.partners (
   paid_amount     numeric(12,2) not null default 0 check (paid_amount >= 0),
   contact_number  text,
   status          text not null default 'active',
+  user_id         uuid references auth.users(id) on delete set null,
   created_at      timestamptz not null default now()
 );
+create index if not exists partners_user_id_idx on public.partners(user_id);
 
 -- ─── partner_payments (Module 8 — per-partner capital receipts ledger) ───
 -- Stores every individual payment a partner makes against their required

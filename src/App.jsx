@@ -31,6 +31,8 @@ import FinancialEntrySelector from './components/FinancialEntrySelector';
 import { useAuth } from './hooks/useAuth';
 import { isSupabaseConfigured, requireAuth, missingEnvNames } from './lib/supabaseClient';
 import { MobileMenuProvider, useMobileMenu } from './contexts/MobileMenuContext';
+import { PartnerViewProvider, usePartnerView } from './contexts/PartnerViewContext';
+import PartnerViewBanner from './components/PartnerViewBanner';
 
 const TABS = [
   { id: 'startup',   label: 'رسوم التأسيس',           icon: Landmark    },
@@ -50,6 +52,7 @@ const TABS = [
 function AppShell() {
   const [activeTab, setActiveTab] = useState('startup');
   const { session, loading: authLoading, signOut } = useAuth();
+  const { canMutate } = usePartnerView();
 
   const [showEntrySelector, setShowEntrySelector] = useState(false);
   const [pendingEntry, setPendingEntry] = useState(null);
@@ -96,12 +99,18 @@ function AppShell() {
         onSelectTab={handleSelectTab}
         user={session?.user}
         onSignOut={isSupabaseConfigured ? signOut : null}
-        onAddEntry={() => { setShowEntrySelector(true); setMobileMenuOpen(false); }}
+        // Hide the "+ إضافة سجل مالي" sidebar entrypoint in partner view —
+        // a partner has strict read-only access; a simulating admin sees
+        // the partner's UX (no shortcut to write).
+        onAddEntry={canMutate
+          ? () => { setShowEntrySelector(true); setMobileMenuOpen(false); }
+          : null}
         mobileOpen={mobileMenuOpen}
         onCloseMobile={() => setMobileMenuOpen(false)}
       />
 
       <div className="min-h-screen md:mr-64 flex flex-col">
+        <PartnerViewBanner />
         {!isSupabaseConfigured && <DemoBanner missing={missingEnvNames} />}
 
         {activeTab === 'startup'   && (
@@ -131,9 +140,15 @@ function AppShell() {
 }
 
 export default function App() {
+  // PartnerViewProvider sits INSIDE MobileMenuProvider because it depends
+  // on useAuth + usePartners; those hooks are safe to call at any point
+  // in the tree, but keeping the auth-aware contexts close to the shell
+  // makes the ownership easier to follow.
   return (
     <MobileMenuProvider>
-      <AppShell />
+      <PartnerViewProvider>
+        <AppShell />
+      </PartnerViewProvider>
     </MobileMenuProvider>
   );
 }

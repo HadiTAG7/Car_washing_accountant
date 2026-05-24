@@ -19,6 +19,7 @@ import { usePartnerPayments } from '../hooks/usePartnerPayments';
 import {
   isSupabaseConfigured, missingEnvNames, describeSupabaseError,
 } from '../lib/supabaseClient';
+import { usePartnerView } from '../contexts/PartnerViewContext';
 
 // Visual treatment for the three payment methods in the table.
 const METHOD_META = {
@@ -52,7 +53,7 @@ function MethodPill({ method }) {
 
 export default function PartnerPaymentsPage() {
   const {
-    partners,
+    partners: allPartners,
     loading: partnersLoading,
     error: partnersError,
     refetch: refetchPartners,
@@ -65,6 +66,17 @@ export default function PartnerPaymentsPage() {
     deletePayment,
     refetch: refetchPayments,
   } = usePartnerPayments();
+  const { isPartnerView, viewedPartner, canMutate } = usePartnerView();
+
+  // In partner view we narrow the picker (and downstream rendering) to
+  // ONLY the viewed partner. Admin sees the full list and can switch
+  // freely via the dropdown.
+  const partners = useMemo(() => {
+    if (isPartnerView && viewedPartner) {
+      return allPartners.filter((p) => p.id === viewedPartner.id);
+    }
+    return allPartners;
+  }, [allPartners, isPartnerView, viewedPartner]);
 
   // The user's explicit pick. May be null (initial load) or stale (if the
   // partner row got deleted while we were viewing it). The derived
@@ -251,7 +263,7 @@ export default function PartnerPaymentsPage() {
             subtitle={selectedPartner
               ? `كل الدفعات المسجّلة للشريك "${selectedPartner.partnerName}"`
               : 'اختر شريكاً لعرض دفعاته'}
-            action={
+            action={canMutate ? (
               <PrimaryButton
                 icon={Plus}
                 onClick={() => setAddOpen(true)}
@@ -259,7 +271,7 @@ export default function PartnerPaymentsPage() {
               >
                 إضافة دفعة جديدة
               </PrimaryButton>
-            }
+            ) : null}
           />
 
           {anyLoading && partnerPayments.length === 0 ? (
@@ -285,11 +297,15 @@ export default function PartnerPaymentsPage() {
                 لا توجد دفعات مسجّلة لهذا الشريك بعد
               </p>
               <p className="text-sm text-slate-500 dark:text-slate-400 mb-5 max-w-sm">
-                اضغط &quot;إضافة دفعة جديدة&quot; لتسجيل أول إيصال لهذا الشريك.
+                {canMutate
+                  ? 'اضغط "إضافة دفعة جديدة" لتسجيل أول إيصال لهذا الشريك.'
+                  : 'لم يتم تسجيل أي إيصال لهذا الشريك بعد.'}
               </p>
-              <PrimaryButton icon={Plus} onClick={() => setAddOpen(true)}>
-                إضافة دفعة جديدة
-              </PrimaryButton>
+              {canMutate && (
+                <PrimaryButton icon={Plus} onClick={() => setAddOpen(true)}>
+                  إضافة دفعة جديدة
+                </PrimaryButton>
+              )}
             </div>
           ) : (
             <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
@@ -322,15 +338,17 @@ export default function PartnerPaymentsPage() {
                         {p.notes || <span className="text-slate-300 dark:text-slate-600">—</span>}
                       </td>
                       <td className="py-3 px-4 whitespace-nowrap text-left">
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(p)}
-                          className="text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/15 transition-colors"
-                          aria-label={`حذف دفعة ${formatDate(p.paymentDate)}`}
-                          title="حذف هذه الدفعة"
-                        >
-                          <Trash2 size={15} />
-                        </button>
+                        {canMutate && (
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(p)}
+                            className="text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/15 transition-colors"
+                            aria-label={`حذف دفعة ${formatDate(p.paymentDate)}`}
+                            title="حذف هذه الدفعة"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}

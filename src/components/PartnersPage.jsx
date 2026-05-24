@@ -15,10 +15,11 @@ import ErrorState from './ErrorState';
 import Toast from './Toast';
 import { usePartners } from '../hooks/usePartners';
 import { describeSupabaseError } from '../lib/supabaseClient';
+import { usePartnerView } from '../contexts/PartnerViewContext';
 
 export default function PartnersPage() {
   const {
-    partners,
+    partners: allPartners,
     loading,
     error,
     addPartner,
@@ -26,6 +27,20 @@ export default function PartnersPage() {
     deletePartner,
     refetch,
   } = usePartners();
+  const { isPartnerView, viewedPartner, canMutate } = usePartnerView();
+
+  // Partner view filters the page to just the viewed partner's row — they
+  // shouldn't see the rest of the fleet's data. Admin (no partner view)
+  // sees the full list. The KPIs below recompute from `partners`, so the
+  // totals in partner view reflect ONLY that one row's contribution —
+  // which is exactly what a partner expects to see on this page (their
+  // own headcount, their own paid_amount, their own capital ceiling).
+  const partners = useMemo(() => {
+    if (isPartnerView && viewedPartner) {
+      return allPartners.filter((p) => p.id === viewedPartner.id);
+    }
+    return allPartners;
+  }, [allPartners, isPartnerView, viewedPartner]);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPartner, setEditingPartner] = useState(null);
@@ -158,12 +173,14 @@ export default function PartnersPage() {
         <Card className="p-6">
           <SectionHeader
             title="قائمة الشركاء"
-            subtitle="استخدم زر القلم لتعديل بيانات أي شريك بما فيها المبلغ المدفوع"
-            action={
+            subtitle={canMutate
+              ? 'استخدم زر القلم لتعديل بيانات أي شريك بما فيها المبلغ المدفوع'
+              : 'بياناتك كشريك (للقراءة فقط)'}
+            action={canMutate ? (
               <PrimaryButton icon={Plus} onClick={() => setIsModalOpen(true)}>
                 إضافة شريك جديد
               </PrimaryButton>
-            }
+            ) : null}
           />
           <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
             <table className="w-full min-w-[860px] text-sm">
@@ -270,26 +287,28 @@ export default function PartnersPage() {
 
                       {/* 7. إجراءات */}
                       <td className="py-3 px-4 whitespace-nowrap text-left">
-                        <div className="inline-flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => setEditingPartner(p)}
-                            className="text-slate-400 hover:text-indigo-500 dark:hover:text-indigo-400 transition-colors duration-150 p-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-500/15 cursor-pointer"
-                            aria-label={`تعديل ${p.partnerName}`}
-                            title="تعديل بيانات الشريك"
-                          >
-                            <Pencil size={15} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(p.id)}
-                            className="text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/15 transition-colors"
-                            aria-label={`حذف ${p.partnerName}`}
-                            title="حذف الشريك"
-                          >
-                            <Trash2 size={15} />
-                          </button>
-                        </div>
+                        {canMutate && (
+                          <div className="inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setEditingPartner(p)}
+                              className="text-slate-400 hover:text-indigo-500 dark:hover:text-indigo-400 transition-colors duration-150 p-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-500/15 cursor-pointer"
+                              aria-label={`تعديل ${p.partnerName}`}
+                              title="تعديل بيانات الشريك"
+                            >
+                              <Pencil size={15} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(p.id)}
+                              className="text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/15 transition-colors"
+                              aria-label={`حذف ${p.partnerName}`}
+                              title="حذف الشريك"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   );

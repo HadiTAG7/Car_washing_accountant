@@ -13,9 +13,10 @@ import ErrorState, { SetupRequiredCard } from './ErrorState';
 import Toast from './Toast';
 import { useWashes } from '../hooks/useWashes';
 import { isSupabaseConfigured, missingEnvNames } from '../lib/supabaseClient';
+import { usePartnerView } from '../contexts/PartnerViewContext';
 
 // ─── Status toggle pill (مكتملة ↔ قيد التنفيذ) ────────────────────────────
-function WashStatusPill({ status, onChange }) {
+function WashStatusPill({ status, onChange, disabled }) {
   const isCompleted = status === 'مكتملة';
   const next        = isCompleted ? 'قيد التنفيذ' : 'مكتملة';
   const classes = isCompleted
@@ -25,9 +26,12 @@ function WashStatusPill({ status, onChange }) {
   return (
     <button
       type="button"
-      onClick={() => onChange(next)}
-      title={isCompleted ? 'انقر للتراجع إلى قيد التنفيذ' : 'انقر لتسجيل الغسلة كمكتملة'}
-      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-semibold transition-colors ${classes}`}
+      onClick={() => !disabled && onChange(next)}
+      disabled={disabled}
+      title={disabled
+        ? 'غير متاح في وضع عرض الشريك'
+        : isCompleted ? 'انقر للتراجع إلى قيد التنفيذ' : 'انقر لتسجيل الغسلة كمكتملة'}
+      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-semibold transition-colors ${classes} ${disabled ? 'cursor-not-allowed opacity-70' : ''}`}
     >
       <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />
       {isCompleted ? 'مكتملة' : 'قيد التنفيذ'}
@@ -35,7 +39,7 @@ function WashStatusPill({ status, onChange }) {
   );
 }
 
-function EmptyState({ onAdd }) {
+function EmptyState({ onAdd, canMutate }) {
   return (
     <div className="flex flex-col items-center justify-center py-14 text-center">
       <div className="bg-emerald-50 text-emerald-600 w-14 h-14 rounded-2xl flex items-center justify-center mb-4">
@@ -43,11 +47,15 @@ function EmptyState({ onAdd }) {
       </div>
       <p className="text-base font-bold text-slate-800 dark:text-slate-200 mb-1">لم تُسجَّل أي غسلة بعد</p>
       <p className="text-sm text-slate-500 dark:text-slate-400 mb-5 max-w-sm">
-        ابدأ بتسجيل أول غسلة. ستظهر تلقائياً في عداد الغسلات داخل تبويب المصاريف المتغيرة.
+        {canMutate
+          ? 'ابدأ بتسجيل أول غسلة. ستظهر تلقائياً في عداد الغسلات داخل تبويب المصاريف المتغيرة.'
+          : 'لم يتم تسجيل أي غسلة من قِبَل المشرف بعد.'}
       </p>
-      <PrimaryButton icon={Plus} onClick={onAdd}>
-        إضافة غسلة جديدة
-      </PrimaryButton>
+      {canMutate && (
+        <PrimaryButton icon={Plus} onClick={onAdd}>
+          إضافة غسلة جديدة
+        </PrimaryButton>
+      )}
     </div>
   );
 }
@@ -76,6 +84,7 @@ export default function WashesPage() {
     items, loading, error,
     addItem, updateItem, updateStatus, deleteItem, refetch,
   } = useWashes();
+  const { scalingFactor, canMutate } = usePartnerView();
 
   const [localOpen, setLocalOpen]         = useState(false);
   const [editingItem, setEditingItem]     = useState(null);
@@ -105,8 +114,14 @@ export default function WashesPage() {
       }
       if (w.washDate === today) todays += q;
     });
-    return { completed, revenue, todays };
-  }, [items]);
+    // Pro-rata: revenue is a currency total (continuous), wash counts
+    // round to the nearest integer so the KPI doesn't read "3.7 غسلة".
+    return {
+      completed: Math.round(completed * scalingFactor),
+      revenue:   revenue * scalingFactor,
+      todays:    Math.round(todays   * scalingFactor),
+    };
+  }, [items, scalingFactor]);
 
   async function handleAddItem(item) {
     try { await addItem(item); showToast('تم إضافة الغسلة بنجاح'); }
@@ -191,18 +206,20 @@ export default function WashesPage() {
         <Card className="p-6">
           <SectionHeader
             title="سجل الغسلات"
-            subtitle="حرّر الحالة مباشرةً من الجدول أو افتح غسلة للتعديل الكامل"
-            action={
+            subtitle={canMutate
+              ? 'حرّر الحالة مباشرةً من الجدول أو افتح غسلة للتعديل الكامل'
+              : 'عرض حصّتك من سجل الغسلات (للقراءة فقط)'}
+            action={canMutate ? (
               <PrimaryButton icon={Plus} onClick={openAddModal}>
                 إضافة غسلة جديدة
               </PrimaryButton>
-            }
+            ) : null}
           />
 
           {loading && !items.length ? (
             <LoadingState rows={4} />
           ) : items.length === 0 ? (
-            <EmptyState onAdd={openAddModal} />
+            <EmptyState onAdd={openAddModal} canMutate={canMutate} />
           ) : (
             <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
               <table className="w-full min-w-[640px] text-sm">
@@ -236,7 +253,7 @@ export default function WashesPage() {
                           {formatCurrency(w.price)}
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums font-bold text-slate-900 dark:text-slate-100 align-top">
-                          {formatCurrency(total)}
+                          {formatCurrency(total * scalingFactor)}
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap text-slate-600 dark:text-slate-400 align-top">
                           <span className="inline-flex items-center gap-1.5 tabular-nums">
@@ -248,29 +265,32 @@ export default function WashesPage() {
                           <WashStatusPill
                             status={w.status}
                             onChange={(next) => handleUpdateStatus(w.id, next)}
+                            disabled={!canMutate}
                           />
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap text-left align-top">
-                          <div className="inline-flex items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => openEditModal(w)}
-                              className="text-slate-400 dark:text-slate-500 hover:text-primary-700 p-1.5 rounded-lg hover:bg-primary-50 transition-colors"
-                              aria-label={`تعديل دفعة ${label}`}
-                              title="تعديل الدفعة"
-                            >
-                              <Pencil size={15} />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDelete(w)}
-                              className="text-slate-400 dark:text-slate-500 hover:text-accent-600 p-1.5 rounded-lg hover:bg-accent-50 transition-colors"
-                              aria-label={`حذف دفعة ${label}`}
-                              title="حذف الدفعة"
-                            >
-                              <Trash2 size={15} />
-                            </button>
-                          </div>
+                          {canMutate && (
+                            <div className="inline-flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => openEditModal(w)}
+                                className="text-slate-400 dark:text-slate-500 hover:text-primary-700 p-1.5 rounded-lg hover:bg-primary-50 transition-colors"
+                                aria-label={`تعديل دفعة ${label}`}
+                                title="تعديل الدفعة"
+                              >
+                                <Pencil size={15} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDelete(w)}
+                                className="text-slate-400 dark:text-slate-500 hover:text-accent-600 p-1.5 rounded-lg hover:bg-accent-50 transition-colors"
+                                aria-label={`حذف دفعة ${label}`}
+                                title="حذف الدفعة"
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     );

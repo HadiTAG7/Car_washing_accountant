@@ -1,8 +1,17 @@
 import { useEffect, useState } from 'react';
-import { X, Pencil, Users, Briefcase, Wallet } from 'lucide-react';
+import { X, Pencil, Users, Briefcase, Wallet, KeyRound } from 'lucide-react';
 import { formatCurrency, PER_WORKER_FEE } from '../data/initialData';
 
-const EMPTY = { partnerName: '', workersCount: '', paidAmount: '' };
+const EMPTY = { partnerName: '', workersCount: '', paidAmount: '', userId: '' };
+
+// 8-4-4-4-12 hex with dashes. Empty string is considered valid (the
+// field is optional). Used to gate the submit button so we don't send a
+// half-typed UUID that the server would reject.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function isValidUuidOrEmpty(s) {
+  const t = String(s || '').trim();
+  return t === '' || UUID_RE.test(t);
+}
 
 export default function EditPartnerModal({ isOpen, partner, onClose, onSave }) {
   const [form, setForm] = useState(EMPTY);
@@ -15,6 +24,7 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave }) {
       partnerName:  partner.partnerName || '',
       workersCount: String(partner.workersCount ?? ''),
       paidAmount:   partner.paidAmount ? String(partner.paidAmount) : '',
+      userId:       partner.userId || '',
     });
   }, [isOpen, partner]);
 
@@ -27,7 +37,8 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave }) {
   const requiredTotal = workersCount * PER_WORKER_FEE;
   const remaining     = Math.max(0, requiredTotal - paidAmount);
   const settled       = workersCount > 0 && remaining === 0;
-  const isValid       = form.partnerName.trim().length > 0;
+  const userIdOk      = isValidUuidOrEmpty(form.userId);
+  const isValid       = form.partnerName.trim().length > 0 && userIdOk;
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -38,6 +49,8 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave }) {
         partnerName:  form.partnerName.trim(),
         workersCount,
         paidAmount,
+        // Empty string → null, propagating "unlink" to the DB.
+        userId:       form.userId.trim() || null,
       });
       onClose();
     } finally {
@@ -143,6 +156,40 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave }) {
             <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
               الرسوم المطلوبة = عدد العمالة × {formatCurrency(PER_WORKER_FEE)}. اتركها صفراً إذا لم يدفع بعد.
             </p>
+          </div>
+
+          {/* Optional: link this partner row to a Supabase user so that when
+              the user logs in, the dashboard switches to their Pro-Rata view. */}
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5" htmlFor="userId">
+              ربط بحساب Supabase
+              <span className="text-[11px] font-normal text-slate-400 dark:text-slate-500 mr-1">— اختياري</span>
+            </label>
+            <div className="relative">
+              <KeyRound
+                size={16}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 pointer-events-none"
+              />
+              <input
+                id="userId"
+                type="text"
+                name="userId"
+                value={form.userId}
+                onChange={handleChange}
+                placeholder="00000000-0000-0000-0000-000000000000"
+                dir="ltr"
+                className={`w-full pr-9 pl-4 py-3 border rounded-xl text-sm text-slate-900 dark:text-white font-mono bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-colors ${userIdOk ? 'border-slate-200 dark:border-slate-700' : 'border-red-300 dark:border-red-500/50'}`}
+              />
+            </div>
+            <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+              افتح Supabase → Authentication، انسخ UUID المستخدم وألصقه هنا. عند الدخول
+              بحسابه يرى لوحة التحكم بحصّته فقط (Pro-Rata).
+            </p>
+            {!userIdOk && (
+              <p className="mt-1 text-[11px] text-red-600 dark:text-red-400 leading-relaxed">
+                صيغة UUID غير صحيحة — يجب أن تكون 8-4-4-4-12 خانة سداسية.
+              </p>
+            )}
           </div>
 
           {/* Capital & receivable summary */}

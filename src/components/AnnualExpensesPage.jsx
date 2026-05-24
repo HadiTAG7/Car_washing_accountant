@@ -14,9 +14,10 @@ import Toast from './Toast';
 import { useAnnualExpenses } from '../hooks/useAnnualExpenses';
 import { useAnnualExpenseCategories } from '../hooks/useAnnualExpenseCategories';
 import { isSupabaseConfigured, missingEnvNames, describeSupabaseError } from '../lib/supabaseClient';
+import { usePartnerView } from '../contexts/PartnerViewContext';
 
 // ─── Status toggle pill (paid ↔ pending; flashes red when due today) ──────
-function PaymentStatusPill({ status, dueToday, onChange }) {
+function PaymentStatusPill({ status, dueToday, onChange, disabled }) {
   const isPaid = status === 'paid';
   const next   = isPaid ? 'pending' : 'paid';
   const dueAndPending = dueToday && !isPaid;
@@ -31,17 +32,20 @@ function PaymentStatusPill({ status, dueToday, onChange }) {
     classes  = 'bg-amber-50 text-amber-700 border-amber-100 hover:bg-amber-100';
     dotClass = 'bg-amber-500';
   }
-  const title = isPaid
-    ? 'انقر للتراجع إلى قيد الانتظار'
-    : (dueAndPending
-        ? 'موعد الصرف اليوم — اضغط لتسجيل المدفوع'
-        : 'انقر لتسجيل المصروف كمدفوع');
+  const title = disabled
+    ? 'غير متاح في وضع عرض الشريك'
+    : isPaid
+      ? 'انقر للتراجع إلى قيد الانتظار'
+      : (dueAndPending
+          ? 'موعد الصرف اليوم — اضغط لتسجيل المدفوع'
+          : 'انقر لتسجيل المصروف كمدفوع');
   return (
     <button
       type="button"
-      onClick={() => onChange(next)}
+      onClick={() => !disabled && onChange(next)}
+      disabled={disabled}
       title={title}
-      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-semibold transition-colors ${classes}`}
+      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-semibold transition-colors ${classes} ${disabled ? 'cursor-not-allowed opacity-70' : ''}`}
     >
       <span className={`w-1.5 h-1.5 rounded-full ${dotClass}`} />
       {isPaid ? 'مدفوع' : 'قيد الانتظار'}
@@ -57,7 +61,7 @@ function isAnnualDueToday(paymentMonth, paymentDay) {
       && now.getDate() === Number(paymentDay);
 }
 
-function EmptyState({ onAdd }) {
+function EmptyState({ onAdd, canMutate }) {
   return (
     <div className="flex flex-col items-center justify-center py-14 text-center">
       <div className="bg-primary-50 text-primary-700 w-14 h-14 rounded-2xl flex items-center justify-center mb-4">
@@ -65,11 +69,15 @@ function EmptyState({ onAdd }) {
       </div>
       <p className="text-base font-bold text-slate-800 dark:text-slate-200 mb-1">لا توجد مصاريف سنوية بعد</p>
       <p className="text-sm text-slate-500 dark:text-slate-400 mb-5 max-w-sm">
-        أضف أول مصروف سنوي متكرر لمتابعة التكاليف التشغيلية المستمرة.
+        {canMutate
+          ? 'أضف أول مصروف سنوي متكرر لمتابعة التكاليف التشغيلية المستمرة.'
+          : 'لم يقم المشرف بتسجيل أي مصروف سنوي بعد.'}
       </p>
-      <PrimaryButton icon={Plus} onClick={onAdd}>
-        إضافة مصروف سنوي
-      </PrimaryButton>
+      {canMutate && (
+        <PrimaryButton icon={Plus} onClick={onAdd}>
+          إضافة مصروف سنوي
+        </PrimaryButton>
+      )}
     </div>
   );
 }
@@ -88,6 +96,8 @@ export default function AnnualExpensesPage() {
   const {
     categories, addCategory, deleteCategory, getCategoryLabel,
   } = useAnnualExpenseCategories();
+
+  const { scalingFactor, canMutate } = usePartnerView();
 
   const [localOpen, setLocalOpen]         = useState(false);
   const [editingItem, setEditingItem]     = useState(null);
@@ -113,8 +123,13 @@ export default function AnnualExpensesPage() {
       if (i.paymentStatus === 'paid') paid += i.annualCost;
       else pending += i.annualCost;
     });
-    return { total, paid, pending };
-  }, [items]);
+    // Pro-rata: scale aggregates by the viewing partner's share.
+    return {
+      total:   total   * scalingFactor,
+      paid:    paid    * scalingFactor,
+      pending: pending * scalingFactor,
+    };
+  }, [items, scalingFactor]);
 
   async function handleAddItem(item) {
     try { await addItem(item); showToast('تم إضافة المصروف بنجاح'); }
@@ -224,18 +239,20 @@ export default function AnnualExpensesPage() {
         <Card className="p-6">
           <SectionHeader
             title="بنود المصاريف السنوية"
-            subtitle="حرّر الحالة مباشرةً من الجدول أو افتح بند للتعديل الكامل"
-            action={
+            subtitle={canMutate
+              ? 'حرّر الحالة مباشرةً من الجدول أو افتح بند للتعديل الكامل'
+              : 'عرض حصّتك من المصاريف السنوية (للقراءة فقط)'}
+            action={canMutate ? (
               <PrimaryButton icon={Plus} onClick={openAddModal}>
                 إضافة مصروف سنوي
               </PrimaryButton>
-            }
+            ) : null}
           />
 
           {loading && !items.length ? (
             <LoadingState rows={4} />
           ) : items.length === 0 ? (
-            <EmptyState onAdd={openAddModal} />
+            <EmptyState onAdd={openAddModal} canMutate={canMutate} />
           ) : (
             <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
               <table className="w-full min-w-[640px] text-sm">
@@ -262,7 +279,7 @@ export default function AnnualExpensesPage() {
                         </span>
                       </td>
                       <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums text-slate-700 dark:text-slate-300">
-                        {formatCurrency(i.annualCost)}
+                        {formatCurrency(i.annualCost * scalingFactor)}
                       </td>
                       <td className="py-3 px-4 whitespace-nowrap text-slate-600 dark:text-slate-400">
                         <span className="inline-flex items-center gap-1.5 tabular-nums">
@@ -275,29 +292,32 @@ export default function AnnualExpensesPage() {
                           status={i.paymentStatus}
                           dueToday={isAnnualDueToday(i.paymentMonth, i.paymentDay)}
                           onChange={(next) => handleUpdateStatus(i.id, next)}
+                          disabled={!canMutate}
                         />
                       </td>
                       <td className="py-3 px-4 whitespace-nowrap text-left">
-                        <div className="inline-flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => openEditModal(i)}
-                            className="text-slate-400 dark:text-slate-500 hover:text-primary-700 p-1.5 rounded-lg hover:bg-primary-50 transition-colors"
-                            aria-label={`تعديل ${i.expenseName}`}
-                            title="تعديل المصروف"
-                          >
-                            <Pencil size={15} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(i)}
-                            className="text-slate-400 dark:text-slate-500 hover:text-accent-600 p-1.5 rounded-lg hover:bg-accent-50 transition-colors"
-                            aria-label={`حذف ${i.expenseName}`}
-                            title="حذف المصروف"
-                          >
-                            <Trash2 size={15} />
-                          </button>
-                        </div>
+                        {canMutate && (
+                          <div className="inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => openEditModal(i)}
+                              className="text-slate-400 dark:text-slate-500 hover:text-primary-700 p-1.5 rounded-lg hover:bg-primary-50 transition-colors"
+                              aria-label={`تعديل ${i.expenseName}`}
+                              title="تعديل المصروف"
+                            >
+                              <Pencil size={15} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(i)}
+                              className="text-slate-400 dark:text-slate-500 hover:text-accent-600 p-1.5 rounded-lg hover:bg-accent-50 transition-colors"
+                              aria-label={`حذف ${i.expenseName}`}
+                              title="حذف المصروف"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ))}

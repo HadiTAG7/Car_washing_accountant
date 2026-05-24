@@ -15,6 +15,7 @@ import { useTemporaryExpenses } from '../hooks/useTemporaryExpenses';
 import {
   isSupabaseConfigured, missingEnvNames, describeSupabaseError,
 } from '../lib/supabaseClient';
+import { usePartnerView } from '../contexts/PartnerViewContext';
 
 export default function TemporaryExpensesPage() {
   const {
@@ -26,6 +27,7 @@ export default function TemporaryExpensesPage() {
     deleteTemporaryExpense,
     refetch,
   } = useTemporaryExpenses();
+  const { scalingFactor, canMutate } = usePartnerView();
 
   const [addOpen, setAddOpen] = useState(false);
   const [mutationError, setMutationError] = useState(null);
@@ -46,15 +48,18 @@ export default function TemporaryExpensesPage() {
     const pendingRows   = expenses.filter((e) => e.status === 'pending');
     const totalRecovered = recoveredRows.reduce((s, e) => s + (e.amount || 0), 0);
     const totalPending   = pendingRows.reduce((s, e) => s + (e.amount || 0), 0);
+    // Pro-rata: aggregate amounts scale by the viewing partner's share.
+    // Counts round to the nearest integer so the KPI text stays sensible
+    // ("1 سجل بانتظار الاسترداد" rather than "0.3 سجل").
     return {
-      totalAll,
-      totalRecovered,
-      totalPending,
-      countRecovered: recoveredRows.length,
-      countPending:   pendingRows.length,
-      countAll:       expenses.length,
+      totalAll:       totalAll       * scalingFactor,
+      totalRecovered: totalRecovered * scalingFactor,
+      totalPending:   totalPending   * scalingFactor,
+      countRecovered: Math.round(recoveredRows.length * scalingFactor),
+      countPending:   Math.round(pendingRows.length   * scalingFactor),
+      countAll:       Math.round(expenses.length      * scalingFactor),
     };
-  }, [expenses]);
+  }, [expenses, scalingFactor]);
 
   async function handleAdd(expense) {
     try {
@@ -168,12 +173,14 @@ export default function TemporaryExpensesPage() {
         <Card className="p-6">
           <SectionHeader
             title="سجل المصروفات المؤقتة"
-            subtitle="كل المبالغ المدفوعة مؤقتاً وحالة استردادها"
-            action={
+            subtitle={canMutate
+              ? 'كل المبالغ المدفوعة مؤقتاً وحالة استردادها'
+              : 'عرض حصّتك من المصروفات المؤقتة (للقراءة فقط)'}
+            action={canMutate ? (
               <PrimaryButton icon={Plus} onClick={() => setAddOpen(true)}>
                 إضافة مصروف مؤقت
               </PrimaryButton>
-            }
+            ) : null}
           />
 
           {loading && expenses.length === 0 ? (
@@ -187,11 +194,15 @@ export default function TemporaryExpensesPage() {
                 لا توجد مصروفات مؤقتة مسجّلة بعد
               </p>
               <p className="text-sm text-slate-500 dark:text-slate-400 mb-5 max-w-sm">
-                اضغط &quot;إضافة مصروف مؤقت&quot; لتسجيل أول مبلغ مدفوع مؤقتاً وستظهر هنا.
+                {canMutate
+                  ? 'اضغط "إضافة مصروف مؤقت" لتسجيل أول مبلغ مدفوع مؤقتاً وستظهر هنا.'
+                  : 'لم يتم تسجيل أي مصروف مؤقت من قِبَل المشرف بعد.'}
               </p>
-              <PrimaryButton icon={Plus} onClick={() => setAddOpen(true)}>
-                إضافة مصروف مؤقت
-              </PrimaryButton>
+              {canMutate && (
+                <PrimaryButton icon={Plus} onClick={() => setAddOpen(true)}>
+                  إضافة مصروف مؤقت
+                </PrimaryButton>
+              )}
             </div>
           ) : (
             <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
@@ -223,7 +234,7 @@ export default function TemporaryExpensesPage() {
                           )}
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums font-bold text-slate-900 dark:text-slate-100">
-                          {formatCurrency(e.amount)}
+                          {formatCurrency((e.amount || 0) * scalingFactor)}
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap tabular-nums text-slate-700 dark:text-slate-300">
                           {formatDate(e.spentDate)}
@@ -240,16 +251,18 @@ export default function TemporaryExpensesPage() {
                                 <Hourglass size={12} strokeWidth={2.5} />
                                 ⏳ معلق قيد الاسترداد
                               </span>
-                              <button
-                                type="button"
-                                onClick={() => handleToggle(e)}
-                                className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-400 text-white transition-colors shadow-sm"
-                                title="تأكيد استرداد هذا المبلغ"
-                                aria-label={`تأكيد استرداد ${e.title}`}
-                              >
-                                <CheckCircle2 size={12} strokeWidth={2.5} />
-                                تأكيد الاسترداد
-                              </button>
+                              {canMutate && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggle(e)}
+                                  className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-400 text-white transition-colors shadow-sm"
+                                  title="تأكيد استرداد هذا المبلغ"
+                                  aria-label={`تأكيد استرداد ${e.title}`}
+                                >
+                                  <CheckCircle2 size={12} strokeWidth={2.5} />
+                                  تأكيد الاسترداد
+                                </button>
+                              )}
                             </div>
                           )}
                         </td>
@@ -258,7 +271,7 @@ export default function TemporaryExpensesPage() {
                             <span className="text-emerald-700 dark:text-emerald-400 font-semibold">
                               {formatDate(e.recoveredDate)}
                             </span>
-                          ) : (
+                          ) : canMutate ? (
                             <button
                               type="button"
                               onClick={() => handleToggle(e)}
@@ -270,18 +283,22 @@ export default function TemporaryExpensesPage() {
                                 لم يُسترد بعد
                               </span>
                             </button>
+                          ) : (
+                            <span className="text-[11px] text-slate-400 dark:text-slate-500">—</span>
                           )}
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap text-left">
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(e)}
-                            className="text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/15 transition-colors md:opacity-0 md:group-hover:opacity-100"
-                            aria-label={`حذف ${e.title}`}
-                            title="حذف هذا السجل نهائياً"
-                          >
-                            <Trash2 size={15} />
-                          </button>
+                          {canMutate && (
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(e)}
+                              className="text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/15 transition-colors md:opacity-0 md:group-hover:opacity-100"
+                              aria-label={`حذف ${e.title}`}
+                              title="حذف هذا السجل نهائياً"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );

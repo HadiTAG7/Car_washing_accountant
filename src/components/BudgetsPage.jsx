@@ -24,6 +24,7 @@ import {
 import {
   isSupabaseConfigured, missingEnvNames, describeSupabaseError as describeError,
 } from '../lib/supabaseClient';
+import { usePartnerView } from '../contexts/PartnerViewContext';
 
 function thisYear() { return new Date().getFullYear(); }
 function yearOf(dateStr) { return (dateStr || '').slice(0, 4); }
@@ -145,7 +146,7 @@ function progressColor(pct) {
 }
 
 // ─── Budget card (inline editable amount) ────────────────────────────────
-function BudgetCard({ budget, allocated, spent, onSaveAmount, onDelete, onEditFull, onHide }) {
+function BudgetCard({ budget, allocated, spent, onSaveAmount, onDelete, onEditFull, onHide, canMutate = true }) {
   const isVirtual = Boolean(budget.isVirtual);
   const remaining = allocated - spent;
   const pct = allocated > 0 ? Math.min((spent / allocated) * 100, 200) : 0;
@@ -190,7 +191,9 @@ function BudgetCard({ budget, allocated, spent, onSaveAmount, onDelete, onEditFu
   }
 
   // Always-on inline input for virtual cards: no click needed.
-  const showInlineInput = editing || (isVirtual && allocated === 0);
+  // Partners get a plain readout — no edit affordance, no auto-open for
+  // virtual cards either (the underlying mutation is disallowed anyway).
+  const showInlineInput = canMutate && (editing || (isVirtual && allocated === 0));
 
   // Visual emphasis: virtual cards (allocated = 0) get a dashed border so
   // they read as "needs a target" instead of "no progress".
@@ -218,40 +221,42 @@ function BudgetCard({ budget, allocated, spent, onSaveAmount, onDelete, onEditFu
             )}
           </div>
         </div>
-        <div className="flex items-center gap-1 shrink-0">
-          {!isVirtual && (
-            <button
-              type="button"
-              onClick={onEditFull}
-              className="text-slate-400 dark:text-slate-500 hover:text-primary-700 dark:hover:text-primary-400 p-1.5 rounded-lg hover:bg-primary-50 dark:hover:bg-primary-500/10 transition-colors"
-              aria-label={`تعديل ${budget.categoryLabel}`}
-              title="تعديل التصنيف أو النوع"
-            >
-              <Pencil size={15} />
-            </button>
-          )}
-          {isVirtual ? (
-            <button
-              type="button"
-              onClick={onHide}
-              className="text-accent-500 dark:text-accent-400 hover:text-white hover:bg-accent-600 dark:hover:bg-accent-500 p-1.5 rounded-lg ring-1 ring-accent-200 dark:ring-accent-500/40 transition-colors"
-              aria-label={`إخفاء ${budget.categoryLabel}`}
-              title="إخفاء البند من اللوحة"
-            >
-              <Trash2 size={15} strokeWidth={2.2} />
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={onDelete}
-              className="text-accent-500 dark:text-accent-400 hover:text-white hover:bg-accent-600 dark:hover:bg-accent-500 p-1.5 rounded-lg ring-1 ring-accent-200 dark:ring-accent-500/40 transition-colors"
-              aria-label={`حذف ${budget.categoryLabel}`}
-              title="حذف الميزانية"
-            >
-              <Trash2 size={15} strokeWidth={2.2} />
-            </button>
-          )}
-        </div>
+        {canMutate && (
+          <div className="flex items-center gap-1 shrink-0">
+            {!isVirtual && (
+              <button
+                type="button"
+                onClick={onEditFull}
+                className="text-slate-400 dark:text-slate-500 hover:text-primary-700 dark:hover:text-primary-400 p-1.5 rounded-lg hover:bg-primary-50 dark:hover:bg-primary-500/10 transition-colors"
+                aria-label={`تعديل ${budget.categoryLabel}`}
+                title="تعديل التصنيف أو النوع"
+              >
+                <Pencil size={15} />
+              </button>
+            )}
+            {isVirtual ? (
+              <button
+                type="button"
+                onClick={onHide}
+                className="text-accent-500 dark:text-accent-400 hover:text-white hover:bg-accent-600 dark:hover:bg-accent-500 p-1.5 rounded-lg ring-1 ring-accent-200 dark:ring-accent-500/40 transition-colors"
+                aria-label={`إخفاء ${budget.categoryLabel}`}
+                title="إخفاء البند من اللوحة"
+              >
+                <Trash2 size={15} strokeWidth={2.2} />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onDelete}
+                className="text-accent-500 dark:text-accent-400 hover:text-white hover:bg-accent-600 dark:hover:bg-accent-500 p-1.5 rounded-lg ring-1 ring-accent-200 dark:ring-accent-500/40 transition-colors"
+                aria-label={`حذف ${budget.categoryLabel}`}
+                title="حذف الميزانية"
+              >
+                <Trash2 size={15} strokeWidth={2.2} />
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Three figures */}
@@ -260,7 +265,7 @@ function BudgetCard({ budget, allocated, spent, onSaveAmount, onDelete, onEditFu
         <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 px-3 py-2.5">
           <div className="flex items-start justify-between gap-1">
             <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">الميزانية المرصودة</p>
-            {!showInlineInput && (
+            {canMutate && !showInlineInput && (
               <button
                 type="button"
                 onClick={startEdit}
@@ -470,6 +475,7 @@ export default function BudgetsPage() {
   const { items: variables, error: varError,     refetch: refetchVar }     = useVariableExpenses();
   const { categories: variableCats }  = useVariableExpenseCategories();
   const { items: washes,    error: washesError,  refetch: refetchWashes }  = useWashes();
+  const { scalingFactor, canMutate } = usePartnerView();
 
   const [localOpen, setLocalOpen]       = useState(false);
   const [editingItem, setEditingItem]   = useState(null);
@@ -625,8 +631,13 @@ export default function BudgetsPage() {
   }, [budgets, discoveredMonthlyLabels, discoveredAnnualLabels, hiddenKeys]);
 
   // Compute spend per budget once; downstream sections slice by type.
+  // Pro-rata: in the partner view we scale BOTH the allocated target
+  // (budget.amount) and the actual spend so the over/under ratio stays
+  // meaningful. Scaling only one would make every budget card read as
+  // perpetually under-spent (or over-spent). Admin view uses
+  // scalingFactor=1, leaving the math identical.
   const cards = useMemo(() => mergedBudgets.map((b) => {
-    const spent = computeBudgetSpend({
+    const rawSpent = computeBudgetSpend({
       budget: b,
       monthlies,
       monthlyCatMap,
@@ -637,10 +648,14 @@ export default function BudgetsPage() {
       currentMonth,
       currentYear,
     });
-    return { budget: b, spent };
+    const scaledBudget = scalingFactor === 1
+      ? b
+      : { ...b, amount: (b.amount || 0) * scalingFactor };
+    return { budget: scaledBudget, spent: rawSpent * scalingFactor };
   }), [
     mergedBudgets, monthlies, monthlyCatMap, annuals, annualCatMap,
     variableInputForBudget, variableCatMap, currentMonth, currentYear,
+    scalingFactor,
   ]);
 
   const monthlyCards = useMemo(
@@ -763,6 +778,7 @@ export default function BudgetsPage() {
       budget={budget}
       allocated={budget.amount}
       spent={spent}
+      canMutate={canMutate}
       onSaveAmount={(amount) => handleSaveAmount(budget, amount)}
       onDelete={() => handleDelete(budget)}
       onEditFull={() => openEditModal(budget)}
@@ -857,7 +873,7 @@ export default function BudgetsPage() {
               accent="monthly"
               icon={Receipt}
               cards={renderCards(monthlyCards)}
-              onAddCustom={() => openAddModal()}
+              onAddCustom={canMutate ? () => openAddModal() : null}
               count={monthlyCards.length}
               allocatedTotal={monthlySectionTotals.allocated}
               spentTotal={monthlySectionTotals.spent}
@@ -879,7 +895,7 @@ export default function BudgetsPage() {
               accent="annual"
               icon={Repeat}
               cards={renderCards(annualCards)}
-              onAddCustom={() => openAddModal()}
+              onAddCustom={canMutate ? () => openAddModal() : null}
               count={annualCards.length}
               allocatedTotal={annualSectionTotals.allocated}
               spentTotal={annualSectionTotals.spent}

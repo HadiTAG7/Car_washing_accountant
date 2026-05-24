@@ -15,6 +15,7 @@ import { useVariableExpenses } from '../hooks/useVariableExpenses';
 import { useVariableExpenseCategories } from '../hooks/useVariableExpenseCategories';
 import { useWashes } from '../hooks/useWashes';
 import { isSupabaseConfigured, missingEnvNames, describeSupabaseError } from '../lib/supabaseClient';
+import { usePartnerView } from '../contexts/PartnerViewContext';
 import {
   todayMonth,
   formatMonthLabel,
@@ -84,7 +85,7 @@ function PeriodSelectorCard({ value, onChange, options }) {
   );
 }
 
-function EmptyState({ onAdd, monthLabel }) {
+function EmptyState({ onAdd, monthLabel, canMutate }) {
   return (
     <div className="flex flex-col items-center justify-center py-14 text-center">
       <div className="bg-primary-50 text-primary-700 w-14 h-14 rounded-2xl flex items-center justify-center mb-4">
@@ -94,11 +95,15 @@ function EmptyState({ onAdd, monthLabel }) {
         لا توجد مصاريف متغيرة مسجّلة لشهر {monthLabel}
       </p>
       <p className="text-sm text-slate-500 dark:text-slate-400 mb-5 max-w-sm">
-        سجّل أول مصروف متغير (مستلزمات، حوافز، نقل...) لتبدأ متابعة تكلفة الوحدة لهذا الشهر.
+        {canMutate
+          ? 'سجّل أول مصروف متغير (مستلزمات، حوافز، نقل...) لتبدأ متابعة تكلفة الوحدة لهذا الشهر.'
+          : 'لم يُسجَّل أي مصروف متغير لهذا الشهر بعد.'}
       </p>
-      <PrimaryButton icon={Plus} onClick={onAdd}>
-        إضافة مصروف متغير
-      </PrimaryButton>
+      {canMutate && (
+        <PrimaryButton icon={Plus} onClick={onAdd}>
+          إضافة مصروف متغير
+        </PrimaryButton>
+      )}
     </div>
   );
 }
@@ -127,6 +132,7 @@ export default function VariableExpensesPage() {
   } = useVariableExpenseCategories();
 
   const { items: washes } = useWashes();
+  const { scalingFactor, canMutate } = usePartnerView();
 
   const [selectedMonth, setSelectedMonth] = useState(todayMonth());
 
@@ -176,9 +182,17 @@ export default function VariableExpensesPage() {
       cost  += row.totalVariableCost || 0;
       units += row.quantity || 0;
     });
+    // weightedUnitCost is a RATE (cost ÷ units), not a total — both
+    // numerator and denominator scale identically so the ratio stays
+    // the same for the partner view. Only cost + units (the totals)
+    // are pro-rated.
     const weightedUnitCost = units > 0 ? cost / units : 0;
-    return { cost, units, weightedUnitCost };
-  }, [displayedItems]);
+    return {
+      cost:  cost  * scalingFactor,
+      units: Math.round(units * scalingFactor),
+      weightedUnitCost,
+    };
+  }, [displayedItems, scalingFactor]);
 
   const monthLabel = formatMonthLabel(selectedMonth);
 
@@ -294,18 +308,20 @@ export default function VariableExpensesPage() {
         <Card className="p-6">
           <SectionHeader
             title={`سجل المصاريف المتغيرة — ${monthLabel}`}
-            subtitle="عمولات البايكرز مُضمّنة تلقائياً وفق غسلات الشهر؛ الباقي بنود مسجّلة يدوياً"
-            action={
+            subtitle={canMutate
+              ? 'عمولات البايكرز مُضمّنة تلقائياً وفق غسلات الشهر؛ الباقي بنود مسجّلة يدوياً'
+              : 'عرض حصّتك من المصاريف المتغيرة للشهر (للقراءة فقط)'}
+            action={canMutate ? (
               <PrimaryButton icon={Plus} onClick={openAddModal}>
                 إضافة مصروف متغير
               </PrimaryButton>
-            }
+            ) : null}
           />
 
           {loading && !displayedItems.length ? (
             <LoadingState rows={4} />
           ) : displayedItems.length === 0 ? (
-            <EmptyState onAdd={openAddModal} monthLabel={monthLabel} />
+            <EmptyState onAdd={openAddModal} monthLabel={monthLabel} canMutate={canMutate} />
           ) : (
             <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
               <table className="w-full min-w-[640px] text-sm">
@@ -359,7 +375,7 @@ export default function VariableExpensesPage() {
                         {formatCurrency(i.unitCost)}
                       </td>
                       <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums font-bold text-slate-900 dark:text-slate-100 align-top">
-                        {formatCurrency(i.totalVariableCost)}
+                        {formatCurrency((i.totalVariableCost || 0) * scalingFactor)}
                       </td>
                       <td className="py-3 px-4 whitespace-nowrap text-slate-600 dark:text-slate-400 align-top">
                         <span className="inline-flex items-center gap-1.5 tabular-nums">
@@ -368,7 +384,7 @@ export default function VariableExpensesPage() {
                         </span>
                       </td>
                       <td className="py-3 px-4 whitespace-nowrap text-left align-top">
-                        {i.isVirtual ? (
+                        {i.isVirtual || !canMutate ? (
                           <span className="text-slate-300 text-sm">—</span>
                         ) : (
                           <div className="inline-flex items-center gap-1">

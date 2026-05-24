@@ -10,7 +10,7 @@ export function usePartners() {
     // total_workers × 100) and must never round-trip through the DB.
     () => supabase
       .from('partners')
-      .select('id, partner_name, workers_count, paid_amount, contact_number, status, created_at')
+      .select('id, partner_name, workers_count, paid_amount, contact_number, status, user_id, created_at')
       .order('partner_name'),
     {
       enabled: isSupabaseConfigured,

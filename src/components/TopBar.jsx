@@ -1,6 +1,7 @@
 import { Search, Bell, Calendar, Sun, Moon, Menu } from 'lucide-react';
 import { useDarkMode } from '../hooks/useDarkMode';
 import { useMobileMenu } from '../contexts/MobileMenuContext';
+import AdminPartnerSelector from './AdminPartnerSelector';
 
 /**
  * Top bar with page title, search, dark-mode toggle, notifications, and date.
@@ -46,6 +47,10 @@ export default function TopBar({ title, subtitle, actions }) {
               className="w-64 pr-9 pl-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 border border-transparent dark:border-slate-700 focus:bg-white dark:focus:bg-slate-900 focus:border-primary-300 dark:focus:border-primary-500 focus:ring-2 focus:ring-primary-100 dark:focus:ring-primary-500/20 focus:outline-none text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 transition-all"
             />
           </div>
+
+          {/* Admin-only: simulate-as-partner dropdown. Renders null for
+              partners (and when there are no active partners). */}
+          <AdminPartnerSelector />
 
           {actions}
 

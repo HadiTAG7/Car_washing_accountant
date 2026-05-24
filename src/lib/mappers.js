@@ -371,6 +371,16 @@ function clampPaidAmount(value) {
   return Math.max(0, n);
 }
 
+// Loose UUID validator: 8-4-4-4-12 hex with dashes. Used by the Add /
+// Edit partner modals to gate the "link to Supabase user" field. Returns
+// the trimmed UUID if valid, null otherwise.
+function clampUserId(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const s = String(value).trim().toLowerCase();
+  if (!s) return null;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(s) ? s : null;
+}
+
 export function mapPartner(row) {
   return {
     id:             row.id,
@@ -379,20 +389,23 @@ export function mapPartner(row) {
     paidAmount:     Number(row.paid_amount) || 0,
     contactNumber:  row.contact_number || '',
     status:         row.status || 'active',
+    userId:         row.user_id || null,
   };
 }
-export function toPartnerInsert({ partnerName, workersCount, paidAmount }) {
+export function toPartnerInsert({ partnerName, workersCount, paidAmount, userId }) {
   return {
     partner_name:   partnerName,
     workers_count:  Number(workersCount) || 0,
     paid_amount:    clampPaidAmount(paidAmount),
+    user_id:        clampUserId(userId),
   };
 }
-export function toPartnerUpdate({ partnerName, workersCount, paidAmount }) {
+export function toPartnerUpdate({ partnerName, workersCount, paidAmount, userId }) {
   const payload = {};
   if (partnerName  !== undefined) payload.partner_name  = partnerName;
   if (workersCount !== undefined) payload.workers_count = Number(workersCount) || 0;
   if (paidAmount   !== undefined) payload.paid_amount   = clampPaidAmount(paidAmount);
+  if (userId       !== undefined) payload.user_id       = clampUserId(userId);
   return payload;
 }
 

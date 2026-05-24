@@ -14,6 +14,7 @@ import { useVariableExpenseCategories } from '../hooks/useVariableExpenseCategor
 import { useMonthlyExpenses } from '../hooks/useMonthlyExpenses';
 import { useMonthlyExpenseCategories } from '../hooks/useMonthlyExpenseCategories';
 import { useAnnualExpenses } from '../hooks/useAnnualExpenses';
+import { usePartnerView } from '../contexts/PartnerViewContext';
 import {
   todayMonth,
   formatMonthLabel,
@@ -132,6 +133,7 @@ export default function FinancialSummaryPage() {
   const { items: monthlies, loading: monthlyLoading,  error: monthlyError,  refetch: refetchMonthly }  = useMonthlyExpenses();
   const { categories: monthlyCats } = useMonthlyExpenseCategories();
   const { items: annuals,   loading: annualLoading,   error: annualError,   refetch: refetchAnnual }   = useAnnualExpenses();
+  const { scalingFactor } = usePartnerView();
 
   const [selectedMonth, setSelectedMonth] = useState(todayMonth());
   const [detailCategory, setDetailCategory] = useState(null);
@@ -156,16 +158,22 @@ export default function FinancialSummaryPage() {
     [variables, varCategories, selectedMonth, washes],
   );
 
+  // Pro-rata: every input that feeds the P&L is multiplied by the
+  // viewing partner's workforce share. Because the downstream math
+  // (grossProfit, netProfitBeforeFees, management/supervisor fees,
+  // finalNetProfit) is linear in these four inputs, scaling at the
+  // source cascades correctly to every line below. Admin view →
+  // scalingFactor=1 → identity arithmetic.
   const revenue = useMemo(
     () => washes
       .filter((w) => w.status === 'مكتملة' && (w.washDate || '').slice(0, 7) === selectedMonth)
-      .reduce((s, w) => s + (w.quantity || 0) * (w.price || 0), 0),
-    [washes, selectedMonth],
+      .reduce((s, w) => s + (w.quantity || 0) * (w.price || 0), 0) * scalingFactor,
+    [washes, selectedMonth, scalingFactor],
   );
 
   const variableTotal = useMemo(
-    () => periodVariableItems.reduce((s, r) => s + (r.totalVariableCost || 0), 0),
-    [periodVariableItems],
+    () => periodVariableItems.reduce((s, r) => s + (r.totalVariableCost || 0), 0) * scalingFactor,
+    [periodVariableItems, scalingFactor],
   );
 
   // Recurring monthly rows count every month; one_time rows count only in
@@ -178,13 +186,13 @@ export default function FinancialSummaryPage() {
         if (ym !== selectedMonth) return s;
       }
       return s + (m.totalMonthlyCost || 0);
-    }, 0),
-    [monthlies, selectedMonth],
+    }, 0) * scalingFactor,
+    [monthlies, selectedMonth, scalingFactor],
   );
 
   const annualAmortized = useMemo(
-    () => annuals.reduce((s, a) => s + (a.annualCost || 0), 0) / 12,
-    [annuals],
+    () => annuals.reduce((s, a) => s + (a.annualCost || 0), 0) / 12 * scalingFactor,
+    [annuals, scalingFactor],
   );
 
   const grossProfit          = revenue - variableTotal;

@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import {
   Plus, Trash2, Pencil, Wallet, CheckCircle2, Clock, CalendarClock, Repeat,
 } from 'lucide-react';
-import { formatCurrency, formatNumber } from '../data/initialData';
+import { formatCurrency, formatNumber, RECURRING_EXPENSE_CATEGORIES } from '../data/initialData';
 import TopBar from './TopBar';
 import {
   Card, SectionHeader, StatCard, PrimaryButton,
@@ -14,9 +14,10 @@ import Toast from './Toast';
 import { useAnnualExpenses } from '../hooks/useAnnualExpenses';
 import { useAnnualExpenseCategories } from '../hooks/useAnnualExpenseCategories';
 import { isSupabaseConfigured, missingEnvNames, describeSupabaseError } from '../lib/supabaseClient';
+import { usePartnerView } from '../contexts/PartnerViewContext';
 
 // ─── Status toggle pill (paid ↔ pending; flashes red when due today) ──────
-function PaymentStatusPill({ status, dueToday, onChange }) {
+function PaymentStatusPill({ status, dueToday, onChange, disabled }) {
   const isPaid = status === 'paid';
   const next   = isPaid ? 'pending' : 'paid';
   const dueAndPending = dueToday && !isPaid;
@@ -31,17 +32,20 @@ function PaymentStatusPill({ status, dueToday, onChange }) {
     classes  = 'bg-amber-50 text-amber-700 border-amber-100 hover:bg-amber-100';
     dotClass = 'bg-amber-500';
   }
-  const title = isPaid
-    ? 'انقر للتراجع إلى قيد الانتظار'
-    : (dueAndPending
-        ? 'موعد الصرف اليوم — اضغط لتسجيل المدفوع'
-        : 'انقر لتسجيل المصروف كمدفوع');
+  const title = disabled
+    ? 'غير متاح في وضع عرض الشريك'
+    : isPaid
+      ? 'انقر للتراجع إلى قيد الانتظار'
+      : (dueAndPending
+          ? 'موعد الصرف اليوم — اضغط لتسجيل المدفوع'
+          : 'انقر لتسجيل المصروف كمدفوع');
   return (
     <button
       type="button"
-      onClick={() => onChange(next)}
+      onClick={() => !disabled && onChange(next)}
+      disabled={disabled}
       title={title}
-      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-semibold transition-colors ${classes}`}
+      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-semibold transition-colors ${classes} ${disabled ? 'cursor-not-allowed opacity-70' : ''}`}
     >
       <span className={`w-1.5 h-1.5 rounded-full ${dotClass}`} />
       {isPaid ? 'مدفوع' : 'قيد الانتظار'}
@@ -57,19 +61,23 @@ function isAnnualDueToday(paymentMonth, paymentDay) {
       && now.getDate() === Number(paymentDay);
 }
 
-function EmptyState({ onAdd }) {
+function EmptyState({ onAdd, canMutate }) {
   return (
     <div className="flex flex-col items-center justify-center py-14 text-center">
       <div className="bg-primary-50 text-primary-700 w-14 h-14 rounded-2xl flex items-center justify-center mb-4">
         <Repeat size={26} />
       </div>
-      <p className="text-base font-bold text-slate-800 mb-1">لا توجد مصاريف سنوية بعد</p>
-      <p className="text-sm text-slate-500 mb-5 max-w-sm">
-        أضف أول مصروف سنوي متكرر لمتابعة التكاليف التشغيلية المستمرة.
+      <p className="text-base font-bold text-slate-800 dark:text-slate-200 mb-1">لا توجد مصاريف سنوية بعد</p>
+      <p className="text-sm text-slate-500 dark:text-slate-400 mb-5 max-w-sm">
+        {canMutate
+          ? 'أضف أول مصروف سنوي متكرر لمتابعة التكاليف التشغيلية المستمرة.'
+          : 'لم يقم المشرف بتسجيل أي مصروف سنوي بعد.'}
       </p>
-      <PrimaryButton icon={Plus} onClick={onAdd}>
-        إضافة مصروف سنوي
-      </PrimaryButton>
+      {canMutate && (
+        <PrimaryButton icon={Plus} onClick={onAdd}>
+          إضافة مصروف سنوي
+        </PrimaryButton>
+      )}
     </div>
   );
 }
@@ -86,8 +94,10 @@ export default function AnnualExpensesPage() {
   } = useAnnualExpenses();
 
   const {
-    categories, addCategory, getCategoryLabel,
+    categories, addCategory, deleteCategory, getCategoryLabel,
   } = useAnnualExpenseCategories();
+
+  const { scalingFactor, canMutate } = usePartnerView();
 
   const [localOpen, setLocalOpen]         = useState(false);
   const [editingItem, setEditingItem]     = useState(null);
@@ -113,8 +123,13 @@ export default function AnnualExpensesPage() {
       if (i.paymentStatus === 'paid') paid += i.annualCost;
       else pending += i.annualCost;
     });
-    return { total, paid, pending };
-  }, [items]);
+    // Pro-rata: scale aggregates by the viewing partner's share.
+    return {
+      total:   total   * scalingFactor,
+      paid:    paid    * scalingFactor,
+      pending: pending * scalingFactor,
+    };
+  }, [items, scalingFactor]);
 
   async function handleAddItem(item) {
     try { await addItem(item); showToast('تم إضافة المصروف بنجاح'); }
@@ -134,6 +149,15 @@ export default function AnnualExpensesPage() {
       const friendly = describeSupabaseError(e) || 'تعذّر إضافة التصنيف الجديد';
       showToast(friendly, 'error');
       throw e; // re-throw so the modal can also display the inline error
+    }
+  }
+  async function handleDeleteCategory(id) {
+    try {
+      await deleteCategory(id);
+      showToast('تم حذف التصنيف من القوائم');
+    } catch (e) {
+      showToast(describeSupabaseError(e) || 'تعذّر حذف التصنيف', 'error');
+      throw e;
     }
   }
   async function handleUpdateStatus(id, status) {
@@ -156,7 +180,7 @@ export default function AnnualExpensesPage() {
         subtitle="متابعة المصاريف التشغيلية المتكررة للأسطول والامتياز"
       />
 
-      <main className="p-8 space-y-6">
+      <main className="p-4 sm:p-6 lg:p-8 space-y-6">
         {!isSupabaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
 
         {mutationError && (
@@ -176,7 +200,7 @@ export default function AnnualExpensesPage() {
         )}
 
         {/* ── KPI summary ─────────────────────────────────────────── */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-5">
           <StatCard
             icon={Wallet}
             iconBg="bg-primary-50"
@@ -215,80 +239,85 @@ export default function AnnualExpensesPage() {
         <Card className="p-6">
           <SectionHeader
             title="بنود المصاريف السنوية"
-            subtitle="حرّر الحالة مباشرةً من الجدول أو افتح بند للتعديل الكامل"
-            action={
+            subtitle={canMutate
+              ? 'حرّر الحالة مباشرةً من الجدول أو افتح بند للتعديل الكامل'
+              : 'عرض حصّتك من المصاريف السنوية (للقراءة فقط)'}
+            action={canMutate ? (
               <PrimaryButton icon={Plus} onClick={openAddModal}>
                 إضافة مصروف سنوي
               </PrimaryButton>
-            }
+            ) : null}
           />
 
           {loading && !items.length ? (
             <LoadingState rows={4} />
           ) : items.length === 0 ? (
-            <EmptyState onAdd={openAddModal} />
+            <EmptyState onAdd={openAddModal} canMutate={canMutate} />
           ) : (
-            <div className="overflow-x-auto -mx-6 px-6">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
+              <table className="w-full min-w-[640px] text-sm">
                 <thead>
-                  <tr className="text-right text-[11px] font-bold text-slate-500 uppercase border-b border-slate-100">
-                    <th className="py-3 px-4">المصروف</th>
-                    <th className="py-3 px-4">التصنيف</th>
-                    <th className="py-3 px-4 text-left tabular-nums">التكلفة السنوية</th>
-                    <th className="py-3 px-4">تاريخ الصرف السنوي</th>
-                    <th className="py-3 px-4">الحالة</th>
-                    <th className="py-3 px-4 text-left w-20">إجراءات</th>
+                  <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
+                    <th className="py-3 px-4 whitespace-nowrap">المصروف</th>
+                    <th className="py-3 px-4 whitespace-nowrap">التصنيف</th>
+                    <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">التكلفة السنوية</th>
+                    <th className="py-3 px-4 whitespace-nowrap">تاريخ الصرف السنوي</th>
+                    <th className="py-3 px-4 whitespace-nowrap">الحالة</th>
+                    <th className="py-3 px-4 whitespace-nowrap text-left w-20">إجراءات</th>
                   </tr>
                 </thead>
                 <tbody>
                   {items.map((i) => (
                     <tr
                       key={i.id}
-                      className="border-b border-slate-50 hover:bg-slate-50/60 transition-colors"
+                      className="border-b border-slate-50 dark:border-slate-800 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
                     >
-                      <td className="py-3 px-4 font-medium text-slate-800">{i.expenseName}</td>
-                      <td className="py-3 px-4">
-                        <span className="inline-flex text-[11px] font-semibold bg-slate-100 text-slate-700 px-2 py-1 rounded-md">
+                      <td className="py-3 px-4 whitespace-normal break-words min-w-[180px] font-medium text-slate-800 dark:text-slate-200">{i.expenseName}</td>
+                      <td className="py-3 px-4 whitespace-nowrap">
+                        <span className="inline-flex text-[11px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-2 py-1 rounded-md">
                           {getCategoryLabel(i.category)}
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-left tabular-nums text-slate-700">
-                        {formatCurrency(i.annualCost)}
+                      <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums text-slate-700 dark:text-slate-300">
+                        {formatCurrency(i.annualCost * scalingFactor)}
                       </td>
-                      <td className="py-3 px-4 text-slate-600">
+                      <td className="py-3 px-4 whitespace-nowrap text-slate-600 dark:text-slate-400">
                         <span className="inline-flex items-center gap-1.5 tabular-nums">
-                          <CalendarClock size={13} className="text-slate-400" />
+                          <CalendarClock size={13} className="text-slate-400 dark:text-slate-500" />
                           {formatAnnualPaymentDate(i.paymentMonth, i.paymentDay)}
                         </span>
                       </td>
-                      <td className="py-3 px-4">
+                      <td className="py-3 px-4 whitespace-nowrap">
                         <PaymentStatusPill
                           status={i.paymentStatus}
                           dueToday={isAnnualDueToday(i.paymentMonth, i.paymentDay)}
                           onChange={(next) => handleUpdateStatus(i.id, next)}
+                          disabled={!canMutate}
                         />
                       </td>
-                      <td className="py-3 px-4 text-left">
-                        <div className="inline-flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => openEditModal(i)}
-                            className="text-slate-400 hover:text-primary-700 p-1.5 rounded-lg hover:bg-primary-50 transition-colors"
-                            aria-label={`تعديل ${i.expenseName}`}
-                            title="تعديل المصروف"
-                          >
-                            <Pencil size={15} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(i)}
-                            className="text-slate-400 hover:text-accent-600 p-1.5 rounded-lg hover:bg-accent-50 transition-colors"
-                            aria-label={`حذف ${i.expenseName}`}
-                            title="حذف المصروف"
-                          >
-                            <Trash2 size={15} />
-                          </button>
-                        </div>
+                      <td className="py-3 px-4 whitespace-nowrap text-left">
+                        {canMutate && (
+                          <div className="inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => openEditModal(i)}
+                              className="text-slate-400 dark:text-slate-500 hover:text-primary-700 p-1.5 rounded-lg hover:bg-primary-50 transition-colors"
+                              aria-label={`تعديل ${i.expenseName}`}
+                              title="تعديل المصروف"
+                            >
+                              <Pencil size={15} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(i)}
+                              className="text-slate-400 dark:text-slate-500 hover:text-accent-600 p-1.5 rounded-lg hover:bg-accent-50 transition-colors"
+                              aria-label={`حذف ${i.expenseName}`}
+                              title="حذف المصروف"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -305,7 +334,9 @@ export default function AnnualExpensesPage() {
         onAdd={handleAddItem}
         onUpdate={handleUpdateItem}
         onAddCategory={handleAddCategory}
+        onDeleteCategory={handleDeleteCategory}
         categories={categories}
+        protectedCategoryLabels={RECURRING_EXPENSE_CATEGORIES.map((c) => c.label)}
         initialValues={editingItem}
       />
 

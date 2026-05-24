@@ -105,14 +105,74 @@ before update on public.app_settings
 for each row execute function public.touch_updated_at();
 
 -- ─── partners ─────────────────────────────────────────────────────────────
+-- `paid_amount` tracks the partner's contribution against the per-worker
+-- capital fee (20,000 SAR × workers_count). Remaining balance is computed
+-- at render time, not stored. The partner's percentage share is also
+-- derived on the client (workers_count / total_workers × 100) — it is
+-- intentionally NOT a column here.
 create table if not exists public.partners (
   id              uuid primary key default gen_random_uuid(),
   partner_name    text not null,
   workers_count   integer not null default 0,
+  paid_amount     numeric(12,2) not null default 0 check (paid_amount >= 0),
   contact_number  text,
   status          text not null default 'active',
+  user_id         uuid references auth.users(id) on delete set null,
   created_at      timestamptz not null default now()
 );
+create index if not exists partners_user_id_idx on public.partners(user_id);
+
+-- ─── partner_payments (Module 8 — per-partner capital receipts ledger) ───
+-- Stores every individual payment a partner makes against their required
+-- capital fee. The trigger below keeps `partners.paid_amount` in sync as
+-- SUM(amount) per partner, so the legacy Partners page (which still reads
+-- the cached aggregate) stays accurate without any client changes.
+create table if not exists public.partner_payments (
+  id              uuid primary key default gen_random_uuid(),
+  partner_id      uuid not null references public.partners(id) on delete cascade,
+  amount          numeric(12,2) not null default 0 check (amount >= 0),
+  payment_date    date          not null default current_date,
+  payment_method  text          not null default 'bank_transfer'
+                  check (payment_method in ('bank_transfer','cash','mada_pos')),
+  notes           text,
+  created_at      timestamptz   not null default now()
+);
+create index if not exists partner_payments_partner_id_idx on public.partner_payments(partner_id);
+create index if not exists partner_payments_date_idx       on public.partner_payments(payment_date);
+
+-- ─── variable_expense_categories (Module 4 — dynamic category list) ──────
+-- Mirrors monthly_expense_categories. UUID id auto-generated; clients must
+-- NOT supply an id when inserting.
+create table if not exists public.variable_expense_categories (
+  id          uuid primary key default gen_random_uuid(),
+  label       text not null,
+  sort_order  integer not null default 0,
+  is_dynamic  boolean not null default false,
+  created_at  timestamptz not null default now()
+);
+
+-- ─── variable_expenses (Module 4 — per-wash / per-unit logged expenses) ──
+-- One-off logged events with a specific date (not recurring). Stores both
+-- unit_cost and total_variable_cost so the page renders unit cost directly.
+create table if not exists public.variable_expenses (
+  id                    uuid primary key default gen_random_uuid(),
+  expense_name          text not null,
+  category_id           uuid references public.variable_expense_categories(id) on delete set null,
+  quantity              integer not null default 1 check (quantity > 0),
+  unit_cost             numeric(12,2) not null default 0 check (unit_cost >= 0),
+  total_variable_cost   numeric(12,2) not null default 0 check (total_variable_cost >= 0),
+  logged_date           date,
+  notes                 text,
+  created_at            timestamptz not null default now(),
+  updated_at            timestamptz not null default now()
+);
+create index if not exists variable_expenses_logged_date_idx on public.variable_expenses(logged_date desc);
+create index if not exists variable_expenses_category_id_idx on public.variable_expenses(category_id);
+
+drop trigger if exists variable_expenses_touch on public.variable_expenses;
+create trigger variable_expenses_touch
+before update on public.variable_expenses
+for each row execute function public.touch_updated_at();
 
 -- ─── monthly_expense_categories (Module 3 — dynamic category list) ───────
 -- Mirrors annual_expense_categories. UUID id is auto-generated; clients
@@ -124,9 +184,58 @@ create table if not exists public.monthly_expense_categories (
   created_at  timestamptz not null default now()
 );
 
+-- ─── washes (Module 5 — bulk-quantity service log) ───────────────────────
+-- Each row represents a batch of N washes (quantity column). The Variable
+-- Expenses page sums quantity for completed rows to auto-scale the biker
+-- commissions rule.
+create table if not exists public.washes (
+  id              uuid primary key default gen_random_uuid(),
+  biker_name      text,
+  quantity        integer not null default 1 check (quantity > 0),
+  price           numeric(12,2) not null default 40 check (price >= 0),
+  status          text not null default 'مكتملة'
+                  check (status in ('مكتملة','قيد التنفيذ')),
+  wash_date       date,
+  notes           text,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now()
+);
+create index if not exists washes_wash_date_idx on public.washes(wash_date desc);
+create index if not exists washes_status_idx    on public.washes(status);
+
+drop trigger if exists washes_touch on public.washes;
+create trigger washes_touch
+before update on public.washes
+for each row execute function public.touch_updated_at();
+
+-- ─── category_budgets (Module 7 — budget allocations vs actual spend) ────
+-- One row per budget envelope. category_label is a free-text key matched
+-- against expense names and category labels at display time (no FK so
+-- users can budget for things they haven't yet logged).
+create table if not exists public.category_budgets (
+  id              uuid primary key default gen_random_uuid(),
+  category_label  text not null,
+  budget_type     text not null default 'monthly'
+                  check (budget_type in ('monthly','annual')),
+  amount          numeric(12,2) not null default 0 check (amount >= 0),
+  notes           text,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now()
+);
+create index if not exists category_budgets_type_idx on public.category_budgets(budget_type);
+
+drop trigger if exists category_budgets_touch on public.category_budgets;
+create trigger category_budgets_touch
+before update on public.category_budgets
+for each row execute function public.touch_updated_at();
+
 -- ─── monthly_expenses (Module 3 — recurring monthly operational costs) ───
 -- Stores BOTH unit_cost and total_monthly_cost (= quantity × unit_cost),
 -- so the table can render the unit cost directly without divide-on-read.
+-- `recurrence` distinguishes a recurring monthly expense from a one-off
+-- payment that happens to be recorded under the monthly tab. For 'one_time'
+-- rows, `logged_date` carries the actual paid-on date so downstream
+-- computations (budgets, income statement) know which month it belongs to.
 create table if not exists public.monthly_expenses (
   id                  uuid primary key default gen_random_uuid(),
   expense_name        text not null,
@@ -137,6 +246,9 @@ create table if not exists public.monthly_expenses (
   payment_day         integer      check (payment_day is null or (payment_day between 1 and 31)),
   payment_status      text not null default 'pending'
                       check (payment_status in ('paid','pending')),
+  recurrence          text not null default 'monthly'
+                      check (recurrence in ('monthly','one_time')),
+  logged_date         date,
   notes               text,
   created_at          timestamptz not null default now(),
   updated_at          timestamptz not null default now()
@@ -144,6 +256,8 @@ create table if not exists public.monthly_expenses (
 create index if not exists monthly_expenses_payment_day_idx     on public.monthly_expenses(payment_day);
 create index if not exists monthly_expenses_payment_status_idx  on public.monthly_expenses(payment_status);
 create index if not exists monthly_expenses_category_id_idx    on public.monthly_expenses(category_id);
+create index if not exists monthly_expenses_recurrence_idx     on public.monthly_expenses(recurrence);
+create index if not exists monthly_expenses_logged_date_idx    on public.monthly_expenses(logged_date);
 
 drop trigger if exists monthly_expenses_touch on public.monthly_expenses;
 create trigger monthly_expenses_touch
@@ -184,6 +298,29 @@ create trigger annual_expenses_touch
 before update on public.annual_expenses
 for each row execute function public.touch_updated_at();
 
+-- ─── temporary_expenses (Module 9 — reimbursable outlays ledger) ──────────
+-- Temporary outlays the business pays now and recovers later (refunds,
+-- deposits, advances). `status` flips between 'pending' and 'recovered';
+-- `recovered_date` is required iff status = 'recovered' (CHECK enforced).
+create table if not exists public.temporary_expenses (
+  id              uuid primary key default gen_random_uuid(),
+  title           text          not null,
+  amount          numeric(12,2) not null default 0 check (amount >= 0),
+  spent_date      date          not null default current_date,
+  status          text          not null default 'pending'
+                  check (status in ('pending','recovered')),
+  recovered_date  date,
+  notes           text,
+  created_at      timestamptz   not null default now(),
+  constraint temporary_expenses_recovery_consistency_chk check (
+    (status = 'recovered' and recovered_date is not null)
+    or
+    (status = 'pending'   and recovered_date is null)
+  )
+);
+create index if not exists temporary_expenses_status_idx     on public.temporary_expenses(status);
+create index if not exists temporary_expenses_spent_date_idx on public.temporary_expenses(spent_date);
+
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Row-Level Security
 -- For an internal financial tool, we enable RLS and grant full access to
@@ -199,10 +336,16 @@ alter table public.maintenance_logs  enable row level security;
 alter table public.transactions      enable row level security;
 alter table public.app_settings      enable row level security;
 alter table public.partners                    enable row level security;
+alter table public.partner_payments             enable row level security;
 alter table public.annual_expense_categories   enable row level security;
 alter table public.annual_expenses             enable row level security;
 alter table public.monthly_expense_categories  enable row level security;
 alter table public.monthly_expenses            enable row level security;
+alter table public.variable_expense_categories enable row level security;
+alter table public.variable_expenses           enable row level security;
+alter table public.washes                      enable row level security;
+alter table public.category_budgets             enable row level security;
+alter table public.temporary_expenses           enable row level security;
 
 do $$ begin
   -- Drop existing policies first (idempotent)
@@ -242,6 +385,10 @@ drop policy if exists "rw_auth" on public.partners;
 create policy "rw_auth" on public.partners
   for all to public using (true) with check (true);
 
+drop policy if exists "rw_auth" on public.partner_payments;
+create policy "rw_auth" on public.partner_payments
+  for all to public using (true) with check (true);
+
 drop policy if exists "rw_auth" on public.annual_expense_categories;
 create policy "rw_auth" on public.annual_expense_categories
   for all to public using (true) with check (true);
@@ -256,6 +403,26 @@ create policy "rw_auth" on public.monthly_expense_categories
 
 drop policy if exists "rw_auth" on public.monthly_expenses;
 create policy "rw_auth" on public.monthly_expenses
+  for all to public using (true) with check (true);
+
+drop policy if exists "rw_auth" on public.variable_expense_categories;
+create policy "rw_auth" on public.variable_expense_categories
+  for all to public using (true) with check (true);
+
+drop policy if exists "rw_auth" on public.variable_expenses;
+create policy "rw_auth" on public.variable_expenses
+  for all to public using (true) with check (true);
+
+drop policy if exists "rw_auth" on public.washes;
+create policy "rw_auth" on public.washes
+  for all to public using (true) with check (true);
+
+drop policy if exists "rw_auth" on public.category_budgets;
+create policy "rw_auth" on public.category_budgets
+  for all to public using (true) with check (true);
+
+drop policy if exists "rw_auth" on public.temporary_expenses;
+create policy "rw_auth" on public.temporary_expenses
   for all to public using (true) with check (true);
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -352,6 +519,13 @@ values (
 )
 on conflict (key) do nothing;
 
+-- Total achieved washes counter (Module 4 dynamic-rule baseline).
+-- Edited inline from the Variable Expenses page; rule-based categories
+-- like "عمولات البايكرز والموزعين" multiply this against their unit_cost.
+insert into public.app_settings (key, value)
+values ('total_achieved_washes', '{"count":0}'::jsonb)
+on conflict (key) do nothing;
+
 -- ─── annual_expense_categories — defensive column repair ──────────────────
 -- If an older version of this table exists (e.g. created in the dashboard
 -- with different column names or without a default on id), `create table
@@ -425,6 +599,22 @@ alter table public.monthly_expenses
   add  constraint monthly_expenses_payment_day_chk
   check (payment_day is null or (payment_day between 1 and 31));
 
+-- Recurrence + paid-on date columns: lets a "monthly tab" row be either
+-- a recurring monthly fixed cost or a single one-off expense for a
+-- specific date. logged_date is nullable for backwards-compat with the
+-- recurring rows; one_time rows should populate it.
+alter table public.monthly_expenses
+  add column if not exists recurrence  text not null default 'monthly';
+alter table public.monthly_expenses
+  add column if not exists logged_date date;
+alter table public.monthly_expenses
+  drop constraint if exists monthly_expenses_recurrence_chk;
+alter table public.monthly_expenses
+  add  constraint monthly_expenses_recurrence_chk
+  check (recurrence in ('monthly','one_time'));
+create index if not exists monthly_expenses_recurrence_idx  on public.monthly_expenses(recurrence);
+create index if not exists monthly_expenses_logged_date_idx on public.monthly_expenses(logged_date);
+
 -- One-shot migration: pull the day-of-month out of legacy billing_date
 -- when payment_day hasn't been set yet. Guarded so a DB whose
 -- billing_date column has already been dropped doesn't error.
@@ -455,6 +645,61 @@ select * from (values
   ('أخرى',                 6)
 ) as t(label, sort_order)
 where not exists (select 1 from public.monthly_expense_categories);
+
+-- ─── variable_expenses — defensive column repair ──────────────────────────
+-- Ensure all columns + the UUID default exist when this script runs against
+-- a partial/older DB. Idempotent on re-run.
+alter table public.variable_expense_categories
+  add column if not exists label      text;
+alter table public.variable_expense_categories
+  add column if not exists sort_order integer not null default 0;
+alter table public.variable_expense_categories
+  add column if not exists is_dynamic boolean not null default false;
+alter table public.variable_expense_categories
+  add column if not exists created_at timestamptz not null default now();
+alter table public.variable_expense_categories
+  alter column id set default gen_random_uuid();
+
+alter table public.variable_expenses
+  add column if not exists quantity            integer not null default 1;
+alter table public.variable_expenses
+  add column if not exists unit_cost           numeric(12,2) not null default 0;
+alter table public.variable_expenses
+  add column if not exists total_variable_cost numeric(12,2) not null default 0;
+alter table public.variable_expenses
+  add column if not exists logged_date         date;
+alter table public.variable_expenses
+  add column if not exists category_id         uuid;
+alter table public.variable_expenses
+  alter column id set default gen_random_uuid();
+alter table public.variable_expenses
+  drop constraint if exists variable_expenses_quantity_chk;
+alter table public.variable_expenses
+  add  constraint variable_expenses_quantity_chk
+  check (quantity > 0);
+
+-- Seed five default variable-expense categories on a fresh DB. Omit `id`
+-- so the UUID default kicks in; WHERE NOT EXISTS keeps it idempotent.
+insert into public.variable_expense_categories (label, sort_order)
+select * from (values
+  ('عمولات البايكرز والموزعين',  1),
+  ('مستلزمات لكل غسلة',          2),
+  ('مكافآت أداء وحوافز',         3),
+  ('نقل ومواصلات',               4),
+  ('أخرى',                       5)
+) as t(label, sort_order)
+where not exists (select 1 from public.variable_expense_categories);
+
+-- Flag the default biker commissions category as a dynamic rule (its
+-- quantity is computed live from total_achieved_washes). Guarded so a
+-- user's later toggles of other categories aren't clobbered on re-runs.
+update public.variable_expense_categories
+   set is_dynamic = true
+ where label = 'عمولات البايكرز والموزعين'
+   and is_dynamic = false
+   and not exists (
+     select 1 from public.variable_expense_categories where is_dynamic = true
+   );
 
 -- ─── annual_expenses — defensive column repair ────────────────────────────
 -- Existing DBs created before the quantity column was added get it now
@@ -502,6 +747,148 @@ begin
        and (payment_month is null or payment_day is null);
   end if;
 end $$;
+
+-- ─── category_budgets — defensive column repair ──────────────────────────
+-- Ensure the UUID default + check constraints exist on existing DBs.
+alter table public.category_budgets
+  add column if not exists category_label text;
+alter table public.category_budgets
+  add column if not exists budget_type    text not null default 'monthly';
+alter table public.category_budgets
+  add column if not exists amount         numeric(12,2) not null default 0;
+alter table public.category_budgets
+  alter column id set default gen_random_uuid();
+alter table public.category_budgets
+  drop constraint if exists category_budgets_type_chk;
+alter table public.category_budgets
+  add  constraint category_budgets_type_chk
+  check (budget_type in ('monthly','annual'));
+alter table public.category_budgets
+  drop constraint if exists category_budgets_amount_chk;
+alter table public.category_budgets
+  add  constraint category_budgets_amount_chk
+  check (amount >= 0);
+
+-- ─── washes — defensive column repair ─────────────────────────────────────
+-- Ensure all columns + the UUID default + check constraints exist on
+-- partial/older DBs. Idempotent on re-run.
+alter table public.washes
+  add column if not exists biker_name   text;
+alter table public.washes
+  add column if not exists price        numeric(12,2) not null default 40;
+alter table public.washes
+  add column if not exists status       text not null default 'مكتملة';
+alter table public.washes
+  add column if not exists wash_date    date;
+alter table public.washes
+  alter column id set default gen_random_uuid();
+alter table public.washes
+  drop constraint if exists washes_status_chk;
+alter table public.washes
+  add  constraint washes_status_chk
+  check (status in ('مكتملة','قيد التنفيذ'));
+alter table public.washes
+  drop constraint if exists washes_price_chk;
+alter table public.washes
+  add  constraint washes_price_chk
+  check (price >= 0);
+
+-- Bulk-quantity refactor: add the new `quantity` column + soften the
+-- legacy per-car columns so existing rows survive but new inserts no
+-- longer need vehicle_type / plate_number / service_type / biker_name.
+-- check (x in (...)) constraints on the enum columns pass NULLs by
+-- default, so no constraint drop is required there.
+alter table public.washes
+  add column if not exists quantity integer not null default 1;
+alter table public.washes
+  drop constraint if exists washes_quantity_chk;
+alter table public.washes
+  add  constraint washes_quantity_chk
+  check (quantity > 0);
+do $$
+begin
+  if exists (select 1 from information_schema.columns
+              where table_schema='public' and table_name='washes'
+                and column_name='vehicle_type') then
+    alter table public.washes alter column vehicle_type drop not null;
+  end if;
+  if exists (select 1 from information_schema.columns
+              where table_schema='public' and table_name='washes'
+                and column_name='plate_number') then
+    alter table public.washes alter column plate_number drop not null;
+  end if;
+  if exists (select 1 from information_schema.columns
+              where table_schema='public' and table_name='washes'
+                and column_name='service_type') then
+    alter table public.washes alter column service_type drop not null;
+  end if;
+end $$;
+alter table public.washes alter column biker_name drop not null;
+
+-- ─── partners — defensive column repair ──────────────────────────────────
+-- `paid_amount` is a later addition; older databases predate it. The
+-- (briefly-shipped) `percentage` column is intentionally NOT added here
+-- — the partner's share is a pure client-side derivation now.
+alter table public.partners
+  add column if not exists paid_amount numeric(12,2) not null default 0;
+alter table public.partners
+  drop constraint if exists partners_paid_amount_chk;
+alter table public.partners
+  add  constraint partners_paid_amount_chk
+  check (paid_amount >= 0);
+
+-- ─── partner_payments — defensive repair + sync trigger ──────────────────
+-- The ledger table itself + the trigger that keeps `partners.paid_amount`
+-- equal to SUM(partner_payments.amount) for each partner. Trigger fires
+-- after INSERT / UPDATE / DELETE and recomputes the aggregate so the
+-- legacy Partners page stays accurate without any client refactor.
+alter table public.partner_payments
+  add column if not exists amount         numeric(12,2) not null default 0;
+alter table public.partner_payments
+  add column if not exists payment_date   date          not null default current_date;
+alter table public.partner_payments
+  add column if not exists payment_method text          not null default 'bank_transfer';
+alter table public.partner_payments
+  add column if not exists notes          text;
+alter table public.partner_payments
+  drop constraint if exists partner_payments_amount_chk;
+alter table public.partner_payments
+  add  constraint partner_payments_amount_chk
+  check (amount >= 0);
+alter table public.partner_payments
+  drop constraint if exists partner_payments_method_chk;
+alter table public.partner_payments
+  add  constraint partner_payments_method_chk
+  check (payment_method in ('bank_transfer','cash','mada_pos'));
+
+create or replace function public.sync_partner_paid_amount() returns trigger
+language plpgsql as $$
+begin
+  if (tg_op = 'DELETE') then
+    update public.partners
+       set paid_amount = (
+         select coalesce(sum(amount), 0)
+           from public.partner_payments
+          where partner_id = old.partner_id
+       )
+     where id = old.partner_id;
+    return old;
+  end if;
+  update public.partners
+     set paid_amount = (
+       select coalesce(sum(amount), 0)
+         from public.partner_payments
+        where partner_id = new.partner_id
+     )
+   where id = new.partner_id;
+  return new;
+end;
+$$;
+
+drop trigger if exists partner_payments_sync on public.partner_payments;
+create trigger partner_payments_sync
+after insert or update or delete on public.partner_payments
+for each row execute function public.sync_partner_paid_amount();
 
 -- Tell PostgREST to refresh its schema introspection now that the table
 -- and its columns are guaranteed. Without this, the REST API can keep

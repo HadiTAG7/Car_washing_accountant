@@ -74,25 +74,25 @@ export default function AddAssetModal({ isOpen, onClose, onAdd }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
 
-      <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50">
-          <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+      <div className="relative bg-white dark:bg-slate-900 rounded-2xl shadow-xl w-full max-w-lg mx-4 my-4 max-h-[92vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-gray-100 dark:border-slate-800 bg-gray-50 dark:bg-slate-800/60">
+          <h3 className="text-lg font-bold text-gray-800 dark:text-slate-200 flex items-center gap-2">
             <Plus size={20} className="text-primary-600" />
             إضافة أصل جديد
           </h3>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-200 transition-colors"
+            className="text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:text-slate-400 p-1 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-700 transition-colors"
             aria-label="إغلاق"
           >
             <X size={20} />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+        <form onSubmit={handleSubmit} className="p-5 sm:p-6 space-y-5">
           {/* Asset Name */}
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5" htmlFor="assetName">
+            <label className="block text-sm font-semibold text-gray-700 dark:text-slate-300 mb-1.5" htmlFor="assetName">
               اسم الأصل
             </label>
             <input
@@ -104,13 +104,13 @@ export default function AddAssetModal({ isOpen, onClose, onAdd }) {
               placeholder="مثال: دبابات تنظيف، شاحنة غسيل"
               required
               autoFocus
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="w-full px-4 py-3 border border-gray-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
             />
           </div>
 
           {/* Purchase Date */}
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5" htmlFor="purchaseDate">
+            <label className="block text-sm font-semibold text-gray-700 dark:text-slate-300 mb-1.5" htmlFor="purchaseDate">
               تاريخ الشراء
             </label>
             <input
@@ -120,13 +120,13 @@ export default function AddAssetModal({ isOpen, onClose, onAdd }) {
               value={form.purchaseDate}
               onChange={handleChange}
               required
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="w-full px-4 py-3 border border-gray-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
             />
           </div>
 
           {/* Quantity */}
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5" htmlFor="quantity">
+            <label className="block text-sm font-semibold text-gray-700 dark:text-slate-300 mb-1.5" htmlFor="quantity">
               الكمية
             </label>
             <input
@@ -138,14 +138,14 @@ export default function AddAssetModal({ isOpen, onClose, onAdd }) {
               min="1"
               step="1"
               required
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-slate-900 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="w-full px-4 py-3 border border-gray-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
             />
           </div>
 
           {/* Unit Price row */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5" htmlFor="plannedUnitPrice">
+              <label className="block text-sm font-semibold text-gray-700 dark:text-slate-300 mb-1.5" htmlFor="plannedUnitPrice">
                 سعر الوحدة المخطط (ر.س)
               </label>
               <input
@@ -158,11 +158,11 @@ export default function AddAssetModal({ isOpen, onClose, onAdd }) {
                 required
                 min="0"
                 step="any"
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-slate-900 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5" htmlFor="actualUnitPrice">
+              <label className="block text-sm font-semibold text-gray-700 dark:text-slate-300 mb-1.5" htmlFor="actualUnitPrice">
                 سعر الوحدة الفعلي (ر.س)
               </label>
               <input
@@ -174,7 +174,7 @@ export default function AddAssetModal({ isOpen, onClose, onAdd }) {
                 placeholder="0"
                 min="0"
                 step="any"
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-slate-900 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               />
             </div>
           </div>
@@ -182,7 +182,7 @@ export default function AddAssetModal({ isOpen, onClose, onAdd }) {
           {/* Salvage + Useful Life row */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5" htmlFor="salvageValue">
+              <label className="block text-sm font-semibold text-gray-700 dark:text-slate-300 mb-1.5" htmlFor="salvageValue">
                 القيمة التخريدية (ر.س)
               </label>
               <input
@@ -194,11 +194,11 @@ export default function AddAssetModal({ isOpen, onClose, onAdd }) {
                 placeholder="0"
                 min="0"
                 step="any"
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-slate-900 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5" htmlFor="usefulLife">
+              <label className="block text-sm font-semibold text-gray-700 dark:text-slate-300 mb-1.5" htmlFor="usefulLife">
                 العمر الإنتاجي (بالسنوات)
               </label>
               <input
@@ -211,21 +211,21 @@ export default function AddAssetModal({ isOpen, onClose, onAdd }) {
                 required
                 min="1"
                 step="1"
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-slate-900 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               />
             </div>
           </div>
 
           {/* Live totals */}
-          <div className="bg-gray-50 border border-gray-100 rounded-xl p-4 text-sm">
-            <p className="text-gray-700 leading-relaxed">
+          <div className="bg-gray-50 dark:bg-slate-800/60 border border-gray-100 dark:border-slate-800 rounded-xl p-4 text-sm">
+            <p className="text-gray-700 dark:text-slate-300 leading-relaxed">
               <span className="font-semibold">الإجمالي المخطط:</span>{' '}
               <span className="font-bold text-gray-900 tabular-nums">
                 {quantity > 0 && plannedUnitPrice > 0
                   ? `${formatNumber(quantity)} × ${formatCurrency(plannedUnitPrice)} = ${formatCurrency(plannedTotal)}`
                   : `${formatCurrency(0)} ر.س`}
               </span>
-              <span className="text-gray-400 mx-2">|</span>
+              <span className="text-gray-400 dark:text-slate-500 mx-2">|</span>
               <span className="font-semibold">الإجمالي الفعلي:</span>{' '}
               <span className="font-bold text-gray-900 tabular-nums">
                 {quantity > 0 && actualUnitPrice > 0
@@ -248,7 +248,7 @@ export default function AddAssetModal({ isOpen, onClose, onAdd }) {
             <button
               type="button"
               onClick={onClose}
-              className="px-6 py-2.5 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl text-sm font-medium transition-colors"
+              className="px-6 py-2.5 border border-gray-200 dark:border-slate-700 text-gray-600 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-800 dark:bg-slate-800/60 rounded-xl text-sm font-medium transition-colors"
             >
               إلغاء
             </button>

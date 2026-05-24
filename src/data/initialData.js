@@ -5,8 +5,8 @@
 
 // ─── Brand ──────────────────────────────────────────────────────────────────
 export const BRAND = {
-  nameAr: 'مونستر واش',
-  nameEn: 'Monster Wash',
+  nameAr: 'سويتر',
+  nameEn: 'Sweater',
   tagline: 'لوحة التحكم المالية — امتياز سويتر',
 };
 
@@ -40,6 +40,15 @@ export const MONTHLY_EXPENSE_CATEGORIES = [
   { id: 'operating-supplies', label: 'مستلزمات تشغيلية' },
   { id: 'periodic-maintenance', label: 'صيانة دورية' },
   { id: 'other',              label: 'أخرى' },
+];
+
+// ─── Variable Expense Categories (Module 4 — demo fallback) ─────────────────
+export const VARIABLE_EXPENSE_CATEGORIES = [
+  { id: 'biker-commissions',   label: 'عمولات البايكرز والموزعين' },
+  { id: 'per-wash-supplies',   label: 'مستلزمات لكل غسلة' },
+  { id: 'performance-bonuses', label: 'مكافآت أداء وحوافز' },
+  { id: 'transport',           label: 'نقل ومواصلات' },
+  { id: 'other',               label: 'أخرى' },
 ];
 
 // ─── Startup Cost Items ─────────────────────────────────────────────────────
@@ -118,19 +127,53 @@ export function getCategoryLabel(categoryId) {
   return cat ? cat.label : categoryId;
 }
 
+// Western (Latin) digits everywhere — `numberingSystem: 'latn'` keeps the
+// Arabic-locale formatting conventions (currency symbol, thousands
+// separator) while forcing 0-9 instead of ٠-٩.
 const SAR_FMT = new Intl.NumberFormat('ar-SA', {
   style: 'currency',
   currency: 'SAR',
   minimumFractionDigits: 0,
   maximumFractionDigits: 0,
+  numberingSystem: 'latn',
 });
-const NUM_FMT = new Intl.NumberFormat('ar-SA');
+const NUM_FMT = new Intl.NumberFormat('ar-SA', { numberingSystem: 'latn' });
+
+// Per-worker corporate capital fee. Each partner owes this × workersCount;
+// what they've paid is tracked in `partners.paid_amount` (see schema.sql).
+export const PER_WORKER_FEE = 20000;
 
 export function formatCurrency(amount) {
   return SAR_FMT.format(amount || 0);
 }
 export function formatNumber(n) {
   return NUM_FMT.format(n || 0);
+}
+
+// Local-zone ISO (YYYY-MM-DD). Avoids the UTC shift you get from
+// `toISOString()` near midnight in non-UTC timezones. Shared by every
+// modal that pre-fills a "today" date input.
+export function todayISO() {
+  const d = new Date();
+  const tzOffsetMs = d.getTimezoneOffset() * 60_000;
+  return new Date(d.getTime() - tzOffsetMs).toISOString().slice(0, 10);
+}
+
+// Pretty-prints a YYYY-MM-DD into an Arabic-locale date with Latin digits.
+// Used by every receipt / ledger table so all dates look uniform.
+const DATE_FMT = new Intl.DateTimeFormat('ar-SA', {
+  year: 'numeric', month: 'short', day: 'numeric',
+  numberingSystem: 'latn',
+});
+export function formatDate(iso) {
+  if (!iso) return '—';
+  try {
+    const d = new Date(`${String(iso).slice(0, 10)}T00:00:00`);
+    if (Number.isNaN(d.getTime())) return iso;
+    return DATE_FMT.format(d);
+  } catch {
+    return iso;
+  }
 }
 export function formatCompact(n) {
   if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}م`;

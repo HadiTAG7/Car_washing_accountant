@@ -11,7 +11,7 @@ export default function LoadingState({ message = 'جارٍ تحميل البيا
         {Array.from({ length: rows }).map((_, i) => (
           <div
             key={i}
-            className="h-14 bg-slate-100 rounded-xl animate-pulse"
+            className="h-14 bg-slate-100 dark:bg-slate-800 rounded-xl animate-pulse"
             style={{ animationDelay: `${i * 80}ms` }}
           />
         ))}
@@ -20,8 +20,8 @@ export default function LoadingState({ message = 'جارٍ تحميل البيا
   }
 
   return (
-    <div className="flex flex-col items-center justify-center py-12 text-slate-500">
-      <Loader2 size={28} className="animate-spin text-primary-700 mb-3" />
+    <div className="flex flex-col items-center justify-center py-12 text-slate-500 dark:text-slate-400">
+      <Loader2 size={28} className="animate-spin text-primary-700 dark:text-primary-400 mb-3" />
       <p className="text-sm font-medium">{message}</p>
     </div>
   );

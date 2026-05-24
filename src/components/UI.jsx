@@ -1,11 +1,14 @@
 /**
  * Shared UI primitives for the Monster Wash dashboard.
+ *
+ * Light mode is the default; every container/text/border declares a
+ * `dark:` counterpart so flipping `.dark` on <html> propagates cleanly.
  */
 
-/** White card container. */
+/** Container card (page sections, modals, KPI shells). */
 export function Card({ className = '', children }) {
   return (
-    <div className={`bg-white rounded-2xl shadow-sm border border-slate-100 ${className}`}>
+    <div className={`bg-white dark:bg-slate-900 rounded-2xl shadow-sm dark:shadow-slate-950/40 border border-slate-100 dark:border-slate-800 transition-colors duration-200 ${className}`}>
       {children}
     </div>
   );
@@ -14,12 +17,12 @@ export function Card({ className = '', children }) {
 /** Section header with optional action on the left (RTL: left edge). */
 export function SectionHeader({ title, subtitle, action }) {
   return (
-    <div className="flex items-start justify-between gap-4 mb-5">
-      <div>
-        <h2 className="text-base font-bold text-slate-800">{title}</h2>
-        {subtitle && <p className="text-xs text-slate-500 mt-0.5">{subtitle}</p>}
+    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4 mb-5">
+      <div className="min-w-0">
+        <h2 className="text-base font-bold text-slate-800 dark:text-slate-100">{title}</h2>
+        {subtitle && <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{subtitle}</p>}
       </div>
-      {action}
+      {action && <div className="shrink-0">{action}</div>}
     </div>
   );
 }
@@ -27,7 +30,7 @@ export function SectionHeader({ title, subtitle, action }) {
 /** Compact KPI card. */
 export function StatCard({ icon: Icon, iconColor = 'text-primary-600', iconBg = 'bg-primary-50', label, value, trend, trendPositive, sub }) {
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm hover:shadow-md transition-shadow">
+    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 p-4 sm:p-5 shadow-sm dark:shadow-slate-950/40 hover:shadow-md dark:hover:shadow-slate-950/50 transition-all duration-200">
       <div className="flex items-start justify-between">
         <div className={`${iconBg} ${iconColor} w-11 h-11 rounded-xl flex items-center justify-center`}>
           {Icon && <Icon size={20} strokeWidth={2.2} />}
@@ -35,16 +38,18 @@ export function StatCard({ icon: Icon, iconColor = 'text-primary-600', iconBg = 
         {trend !== undefined && (
           <span
             className={`text-xs font-bold px-2 py-1 rounded-lg ${
-              trendPositive ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
+              trendPositive
+                ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
+                : 'bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-400'
             }`}
           >
             {trendPositive ? '▲' : '▼'} {trend}
           </span>
         )}
       </div>
-      <p className="text-xs text-slate-500 mt-4 mb-1">{label}</p>
-      <p className="text-2xl font-extrabold text-slate-900 tabular-nums">{value}</p>
-      {sub && <p className="text-[11px] text-slate-400 mt-1">{sub}</p>}
+      <p className="text-xs text-slate-500 dark:text-slate-400 mt-4 mb-1">{label}</p>
+      <p className="text-2xl font-extrabold text-slate-900 dark:text-slate-100 tabular-nums">{value}</p>
+      {sub && <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">{sub}</p>}
     </div>
   );
 }
@@ -52,14 +57,14 @@ export function StatCard({ icon: Icon, iconColor = 'text-primary-600', iconBg = 
 /** Status badge with colored dot. */
 export function StatusBadge({ status, children }) {
   const styles = {
-    critical:  'bg-red-50 text-red-700 border-red-100',
-    overdue:   'bg-amber-50 text-amber-700 border-amber-100',
-    'due-soon':'bg-amber-50 text-amber-700 border-amber-100',
-    good:      'bg-emerald-50 text-emerald-700 border-emerald-100',
-    over:      'bg-red-50 text-red-700 border-red-100',
-    under:     'bg-emerald-50 text-emerald-700 border-emerald-100',
-    on:        'bg-slate-100 text-slate-700 border-slate-200',
-    neutral:   'bg-slate-100 text-slate-700 border-slate-200',
+    critical:  'bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-400 border-red-100 dark:border-red-500/30',
+    overdue:   'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-100 dark:border-amber-500/30',
+    'due-soon':'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-100 dark:border-amber-500/30',
+    good:      'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-100 dark:border-emerald-500/30',
+    over:      'bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-400 border-red-100 dark:border-red-500/30',
+    under:     'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-100 dark:border-emerald-500/30',
+    on:        'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700',
+    neutral:   'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700',
   };
   const dot = {
     critical:  'bg-red-500',
@@ -68,8 +73,8 @@ export function StatusBadge({ status, children }) {
     good:      'bg-emerald-500',
     over:      'bg-red-500',
     under:     'bg-emerald-500',
-    on:        'bg-slate-400',
-    neutral:   'bg-slate-400',
+    on:        'bg-slate-400 dark:bg-slate-500',
+    neutral:   'bg-slate-400 dark:bg-slate-500',
   };
   return (
     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-semibold ${styles[status] || styles.neutral}`}>
@@ -90,7 +95,7 @@ export function ProgressBar({ value, max = 100, className = '', color = 'primary
     white:   'bg-white',
   };
   return (
-    <div className={`w-full h-2 bg-slate-100 rounded-full overflow-hidden ${className}`}>
+    <div className={`w-full h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden ${className}`}>
       <div
         className={`h-full rounded-full transition-all duration-500 ${fills[color] || fills.primary}`}
         style={{ width: `${pct}%` }}
@@ -107,7 +112,7 @@ export function PrimaryButton({ icon: Icon, children, onClick, className = '', t
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className={`inline-flex items-center gap-2 bg-primary-800 hover:bg-primary-900 disabled:opacity-60 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors shadow-sm ${className}`}
+      className={`inline-flex items-center gap-2 bg-primary-800 hover:bg-primary-900 dark:bg-primary-600 dark:hover:bg-primary-500 disabled:opacity-60 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors duration-200 shadow-sm ${className}`}
     >
       {Icon && <Icon size={16} />}
       {children}
@@ -123,7 +128,7 @@ export function SecondaryButton({ icon: Icon, children, onClick, className = '',
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className={`inline-flex items-center gap-2 bg-white border border-slate-200 hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed text-slate-700 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors ${className}`}
+      className={`inline-flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-60 disabled:cursor-not-allowed text-slate-700 dark:text-slate-200 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors duration-200 ${className}`}
     >
       {Icon && <Icon size={16} />}
       {children}

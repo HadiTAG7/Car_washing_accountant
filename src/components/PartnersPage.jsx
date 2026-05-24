@@ -1,61 +1,25 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
-  Plus, Users, UserCheck, Briefcase, Trash2, Pencil, Check, X,
+  Plus, Users, UserCheck, Briefcase, Trash2, Pencil, Building2, Coins,
 } from 'lucide-react';
-import { formatNumber } from '../data/initialData';
+import { formatNumber, formatCurrency, PER_WORKER_FEE } from '../data/initialData';
 import TopBar from './TopBar';
 import {
   Card, SectionHeader, StatCard,
   PrimaryButton,
 } from './UI';
 import AddPartnerModal from './AddPartnerModal';
+import EditPartnerModal from './EditPartnerModal';
 import LoadingState from './LoadingState';
 import ErrorState from './ErrorState';
+import Toast from './Toast';
 import { usePartners } from '../hooks/usePartners';
-
-function EditableCell({ value, onSave, type = 'text', className = '' }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value);
-
-  function commit() {
-    const next = type === 'number' ? parseInt(draft, 10) || 0 : String(draft || '').trim();
-    if (next !== value) onSave(next);
-    setEditing(false);
-  }
-
-  if (editing) {
-    return (
-      <div className="flex items-center gap-1.5">
-        <input
-          type={type}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setEditing(false); }}
-          autoFocus
-          className={`px-2 py-1 border border-primary-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-300 ${className}`}
-        />
-        <button onClick={commit} className="text-emerald-600 hover:text-emerald-800 p-0.5"><Check size={14} /></button>
-        <button onClick={() => setEditing(false)} className="text-slate-400 hover:text-slate-600 p-0.5"><X size={14} /></button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex items-center gap-1.5 group">
-      <span>{value || <span className="text-slate-300">—</span>}</span>
-      <button
-        onClick={() => { setDraft(value); setEditing(true); }}
-        className="text-slate-300 hover:text-primary-600 p-0.5 rounded transition-colors opacity-0 group-hover:opacity-100"
-      >
-        <Pencil size={11} />
-      </button>
-    </div>
-  );
-}
+import { describeSupabaseError } from '../lib/supabaseClient';
+import { usePartnerView } from '../contexts/PartnerViewContext';
 
 export default function PartnersPage() {
   const {
-    partners,
+    partners: allPartners,
     loading,
     error,
     addPartner,
@@ -63,39 +27,89 @@ export default function PartnersPage() {
     deletePartner,
     refetch,
   } = usePartners();
+  const { isPartnerView, viewedPartner, canMutate } = usePartnerView();
+
+  // Partner view filters the page to just the viewed partner's row — they
+  // shouldn't see the rest of the fleet's data. Admin (no partner view)
+  // sees the full list. The KPIs below recompute from `partners`, so the
+  // totals in partner view reflect ONLY that one row's contribution —
+  // which is exactly what a partner expects to see on this page (their
+  // own headcount, their own paid_amount, their own capital ceiling).
+  const partners = useMemo(() => {
+    if (isPartnerView && viewedPartner) {
+      return allPartners.filter((p) => p.id === viewedPartner.id);
+    }
+    return allPartners;
+  }, [allPartners, isPartnerView, viewedPartner]);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingPartner, setEditingPartner] = useState(null);
   const [mutationError, setMutationError] = useState(null);
+  const [toast, setToast] = useState({ open: false, message: '', tone: 'success', duration: 3000 });
+
+  const showToast = useCallback((message, tone = 'success') => {
+    setToast({ open: true, message, tone, duration: tone === 'error' ? 8000 : 3000 });
+  }, []);
+  const closeToast = useCallback(() => setToast((t) => ({ ...t, open: false })), []);
 
   // ── KPI totals ───────────────────────────────────────────────
   const kpis = useMemo(() => {
-    const totalPartners = partners.length;
-    const totalWorkers  = partners.reduce((s, p) => s + (p.workersCount || 0), 0);
-    const activeCount   = partners.filter((p) => p.status === 'active').length;
-    return { totalPartners, totalWorkers, activeCount };
+    const totalPartners     = partners.length;
+    const totalWorkers      = partners.reduce((s, p) => s + (p.workersCount || 0), 0);
+    const activeCount       = partners.filter((p) => p.status === 'active').length;
+    // Capital fee × headcount across the entire fleet — the receivable
+    // ceiling, in other words.
+    const totalProjectValue = totalWorkers * PER_WORKER_FEE;
+    // Cash actually collected from partners so far. Reduce over the
+    // mapped `paidAmount` field (defaults to 0 on null).
+    const totalPaidTillNow  = partners.reduce((s, p) => s + (p.paidAmount || 0), 0);
+    return { totalPartners, totalWorkers, activeCount, totalProjectValue, totalPaidTillNow };
   }, [partners]);
 
   async function handleAdd(partner) {
-    try { setMutationError(null); await addPartner(partner); }
-    catch (e) { setMutationError(e); }
+    try {
+      setMutationError(null);
+      await addPartner(partner);
+      showToast('تم إضافة الشريك بنجاح');
+    } catch (e) {
+      console.error('🔥 Real Supabase Error (PartnersPage.handleAdd):', e);
+      setMutationError(e);
+      showToast(describeSupabaseError(e) || e?.message || 'تعذّر إضافة الشريك', 'error');
+    }
   }
-  async function handleUpdate(id, patch) {
-    try { setMutationError(null); await updatePartner(id, patch); }
-    catch (e) { setMutationError(e); }
+  async function handleSaveEdit(id, patch) {
+    try {
+      setMutationError(null);
+      console.info('[PartnersPage] saving edit', { id, patch });
+      await updatePartner(id, patch);
+      showToast('تم حفظ بيانات الشريك');
+    } catch (e) {
+      console.error('🔥 Real Supabase Error (PartnersPage.handleSaveEdit):', e, { id, patch });
+      setMutationError(e);
+      showToast(describeSupabaseError(e) || e?.message || 'تعذّر حفظ التعديلات', 'error');
+      throw e;
+    }
   }
   async function handleDelete(id) {
-    try { setMutationError(null); await deletePartner(id); }
-    catch (e) { setMutationError(e); }
+    try {
+      setMutationError(null);
+      await deletePartner(id);
+      showToast('تم حذف الشريك');
+    } catch (e) {
+      console.error('🔥 Real Supabase Error (PartnersPage.handleDelete):', e, { id });
+      setMutationError(e);
+      showToast(describeSupabaseError(e) || e?.message || 'تعذّر حذف الشريك', 'error');
+    }
   }
 
   return (
     <>
       <TopBar
         title="إدارة الشركاء"
-        subtitle="متابعة الشركاء وعدد العمالة لكل شريك"
+        subtitle="متابعة الشركاء وعدد العمالة لكل شريك ورأس المال المُسدَّد"
       />
 
-      <main className="p-8 space-y-6">
+      <main className="p-4 sm:p-6 lg:p-8 space-y-6">
         {mutationError && (
           <ErrorState
             title="تعذّر تنفيذ العملية"
@@ -112,7 +126,7 @@ export default function PartnersPage() {
         )}
 
         {/* ── KPI row ─────────────────────────────────────────── */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 sm:gap-5">
           <StatCard
             icon={Briefcase}
             iconBg="bg-primary-50"
@@ -137,83 +151,164 @@ export default function PartnersPage() {
             value={formatNumber(kpis.activeCount)}
             sub={`${kpis.totalPartners > 0 ? ((kpis.activeCount / kpis.totalPartners) * 100).toFixed(0) : 0}% من إجمالي الشركاء`}
           />
+          <StatCard
+            icon={Building2}
+            iconBg="bg-indigo-50"
+            iconColor="text-indigo-600"
+            label="إجمالي قيمة المشروع"
+            value={formatCurrency(kpis.totalProjectValue)}
+            sub="القيمة الرأسمالية بناءً على الأسطول"
+          />
+          <StatCard
+            icon={Coins}
+            iconBg="bg-emerald-50"
+            iconColor="text-emerald-600"
+            label="إجمالي المبالغ المدفوعة"
+            value={formatCurrency(kpis.totalPaidTillNow)}
+            sub="السيولة المحصلة في الخزينة إلى الآن"
+          />
         </div>
 
-        {/* ── Partners table ─────────────────────────────────── */}
+        {/* ── Partners table (v2 — capital tracking) ─────────── */}
         <Card className="p-6">
           <SectionHeader
             title="قائمة الشركاء"
-            subtitle="انقر على أي خانة للتعديل المباشر"
-            action={
+            subtitle={canMutate
+              ? 'استخدم زر القلم لتعديل بيانات أي شريك بما فيها المبلغ المدفوع'
+              : 'بياناتك كشريك (للقراءة فقط)'}
+            action={canMutate ? (
               <PrimaryButton icon={Plus} onClick={() => setIsModalOpen(true)}>
                 إضافة شريك جديد
               </PrimaryButton>
-            }
+            ) : null}
           />
-          <div className="overflow-x-auto -mx-6 px-6">
-            <table className="w-full text-sm">
+          <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
+            <table className="w-full min-w-[860px] text-sm">
+              {/* === HEADER — 7 columns, exact order per spec ============== */}
               <thead>
-                <tr className="text-right text-[11px] font-bold text-slate-500 uppercase border-b border-slate-100">
-                  <th className="py-3 px-4">اسم الشريك</th>
-                  <th className="py-3 px-4 text-center">عدد العمالة</th>
-                  <th className="py-3 px-4 text-center">النسبة</th>
-                  <th className="py-3 px-4 text-left w-16">إجراءات</th>
+                <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
+                  <th className="py-3 px-4 whitespace-nowrap">اسم الشريك</th>
+                  <th className="py-3 px-4 whitespace-nowrap text-center">عدد العمالة</th>
+                  <th className="py-3 px-4 whitespace-nowrap text-center">النسبة</th>
+                  <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">الرسوم المطلوبة</th>
+                  <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">المبلغ المدفوع</th>
+                  <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">المبلغ المتبقي</th>
+                  <th className="py-3 px-4 whitespace-nowrap text-left w-24">إجراءات</th>
                 </tr>
               </thead>
+
+              {/* === BODY — one <tr> per partner with all 7 cells ========= */}
               <tbody>
                 {loading && partners.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="py-10">
+                    <td colSpan={7} className="py-10">
                       <LoadingState message="جارٍ تحميل بيانات الشركاء..." />
                     </td>
                   </tr>
                 )}
                 {!loading && partners.length === 0 && !error && (
                   <tr>
-                    <td colSpan={4} className="py-12 text-center text-sm text-slate-400">
+                    <td colSpan={7} className="py-12 text-center text-sm text-slate-400 dark:text-slate-500">
                       لا يوجد شركاء مسجّلين بعد — اضغط &quot;إضافة شريك جديد&quot; للبدء
                     </td>
                   </tr>
                 )}
                 {partners.map((p) => {
+                  // ── Percentage: pure client-side derivation. Never stored
+                  // in the DB — `partners` table has no percentage column.
                   const pct = kpis.totalWorkers > 0
                     ? (p.workersCount / kpis.totalWorkers) * 100
                     : 0;
+
+                  // ── Capital & receivable
+                  const required = (p.workersCount || 0) * PER_WORKER_FEE;
+                  const paid     = p.paidAmount || 0;
+                  const balance  = Math.max(0, required - paid);
+                  const settled  = balance === 0;
+
                   return (
-                    <tr key={p.id} className="border-b border-slate-50 hover:bg-slate-50/60 transition-colors">
-                      <td className="py-3 px-4 font-medium text-slate-800">
+                    <tr
+                      key={p.id}
+                      className="border-b border-slate-50 dark:border-slate-800 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
+                    >
+                      {/* 1. اسم الشريك */}
+                      <td className="py-3 px-4 whitespace-normal break-words min-w-[180px] font-medium text-slate-800 dark:text-slate-200">
                         <div className="flex items-center gap-2">
-                          <span className="bg-primary-50 text-primary-700 w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0">
+                          <span className="bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300 w-8 h-8 rounded-lg flex items-center justify-center shrink-0">
                             <Briefcase size={14} />
                           </span>
-                          <EditableCell
-                            value={p.partnerName}
-                            onSave={(v) => v && handleUpdate(p.id, { partnerName: v })}
-                            className="w-48"
-                          />
+                          <span className="truncate">{p.partnerName}</span>
                         </div>
                       </td>
-                      <td className="py-3 px-4 text-center tabular-nums text-slate-700">
-                        <EditableCell
-                          value={p.workersCount}
-                          type="number"
-                          onSave={(v) => handleUpdate(p.id, { workersCount: v })}
-                          className="w-20 text-center"
-                        />
+
+                      {/* 2. عدد العمالة */}
+                      <td className="py-3 px-4 whitespace-nowrap text-center tabular-nums text-slate-700 dark:text-slate-300">
+                        {formatNumber(p.workersCount || 0)}
                       </td>
-                      <td className="py-3 px-4 text-center tabular-nums">
-                        <span className="inline-flex items-center text-[13px] font-bold bg-primary-50 text-primary-700 px-2.5 py-1 rounded-lg">
+
+                      {/* 3. النسبة — derived on the fly from workers share */}
+                      <td className="py-3 px-4 whitespace-nowrap text-center tabular-nums">
+                        <span
+                          className="inline-flex items-center gap-1 text-[13px] font-bold px-2.5 py-1 rounded-lg bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300"
+                          title="محسوبة تلقائياً حسب عدد العمالة"
+                        >
                           {pct.toFixed(1)}%
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-left">
-                        <button
-                          onClick={() => handleDelete(p.id)}
-                          className="text-slate-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors"
-                          aria-label="حذف"
-                        >
-                          <Trash2 size={15} />
-                        </button>
+
+                      {/* 4. الرسوم المطلوبة = workersCount × PER_WORKER_FEE */}
+                      <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums text-slate-700 dark:text-slate-300">
+                        {formatCurrency(required)}
+                      </td>
+
+                      {/* 5. المبلغ المدفوع */}
+                      <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums font-bold text-slate-900 dark:text-slate-100">
+                        {formatCurrency(paid)}
+                      </td>
+
+                      {/* 6. المبلغ المتبقي — emerald if 0, amber if > 0 */}
+                      <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums">
+                        {settled ? (
+                          <span
+                            className="inline-flex items-center gap-1 text-[13px] font-bold px-2.5 py-1 rounded-lg bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-500/30"
+                            title="الرصيد مُسدَّد بالكامل"
+                          >
+                            ✓ مسدّد بالكامل
+                          </span>
+                        ) : (
+                          <span
+                            className="inline-flex items-center gap-1 text-[13px] font-bold px-2.5 py-1 rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-100 dark:border-amber-500/30"
+                            title="مبلغ مستحَق على الشريك"
+                          >
+                            {formatCurrency(balance)}
+                          </span>
+                        )}
+                      </td>
+
+                      {/* 7. إجراءات */}
+                      <td className="py-3 px-4 whitespace-nowrap text-left">
+                        {canMutate && (
+                          <div className="inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setEditingPartner(p)}
+                              className="text-slate-400 hover:text-indigo-500 dark:hover:text-indigo-400 transition-colors duration-150 p-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-500/15 cursor-pointer"
+                              aria-label={`تعديل ${p.partnerName}`}
+                              title="تعديل بيانات الشريك"
+                            >
+                              <Pencil size={15} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(p.id)}
+                              className="text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/15 transition-colors"
+                              aria-label={`حذف ${p.partnerName}`}
+                              title="حذف الشريك"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   );
@@ -228,6 +323,23 @@ export default function PartnersPage() {
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onAdd={handleAdd}
+        showToast={showToast}
+      />
+
+      <EditPartnerModal
+        isOpen={Boolean(editingPartner)}
+        partner={editingPartner}
+        onClose={() => setEditingPartner(null)}
+        onSave={handleSaveEdit}
+        showToast={showToast}
+      />
+
+      <Toast
+        open={toast.open}
+        message={toast.message}
+        tone={toast.tone}
+        duration={toast.duration}
+        onClose={closeToast}
       />
     </>
   );

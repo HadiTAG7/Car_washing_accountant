@@ -17,42 +17,37 @@ export default function Sidebar({
   mobileOpen = false,
   onCloseMobile,
 }) {
-  // Foolproof sign-out. Three layers of belt-and-braces because the
-  // previous handler was reported as a visual no-op:
+  // NON-BLOCKING sign-out. The previous async/await form was reported as
+  // freezing whenever `supabase.auth.signOut()` hangs (slow network,
+  // CORS, expired refresh token, etc.) because the await blocked the
+  // storage clear + navigation that should run unconditionally.
   //
-  //   1. preventDefault + stopPropagation on the click event — kills any
-  //      enclosing element's click handler before it can interfere.
-  //   2. localStorage.clear() + sessionStorage.clear() — nuclear wipe of
-  //      every cached UI flag (PartnerViewContext's actingAsPartnerId,
-  //      Supabase's auth-token entry, the dark-mode pref, etc.). Anything
-  //      worth keeping after sign-out is fine to re-derive on next login.
-  //   3. window.location.href = window.location.origin — a full navigation
-  //      to the app root, NOT a reload of the current path. This guarantees
-  //      React state and the auth gate restart from absolute zero, with no
-  //      memoized session lingering in any component.
-  //
-  // Bare `async` event handlers are fine here — React will fire the
-  // promise; we don't need it returned anywhere upstream.
-  async function handleAbsoluteLogout(e) {
+  // The fix: flip the order so client-side cleanup executes
+  // synchronously and the server call is detached as a fire-and-forget
+  // promise. The user is navigated to the login screen instantly; the
+  // background signOut can succeed or log an error to the console
+  // without ever holding up the UI.
+  function handleAbsoluteLogout(e) {
     if (e) {
       e.preventDefault();
       e.stopPropagation();
     }
-    try {
-      // 1. Trigger Supabase SignOut
-      await supabase.auth.signOut();
 
-      // 2. Clear everything from localStorage to kill simulated contexts
-      //    and ghost sessions.
-      localStorage.clear();
-      sessionStorage.clear();
+    // 1. Trigger server signout in the background WITHOUT `await` so
+    //    a hung network call can never freeze the UI.
+    supabase.auth.signOut().catch((err) => {
+      console.error('Background signout log:', err);
+    });
 
-      // 3. Force hard redirect to base login screen to reset React state
-      //    completely.
-      window.location.href = window.location.origin;
-    } catch (err) {
-      console.error('🔥 Critical Logout Failure:', err);
-    }
+    // 2. Instantly wipe all client-side session crumbs synchronously —
+    //    PartnerViewContext's actingAsPartnerId, Supabase's auth-token
+    //    entry, dark-mode pref, anything else cached by the app.
+    try { localStorage.clear();   } catch (err) { console.error('localStorage.clear failed:', err); }
+    try { sessionStorage.clear(); } catch (err) { console.error('sessionStorage.clear failed:', err); }
+
+    // 3. Hard navigation to origin — not reload() of the current
+    //    path. Resets every React component tree from absolute zero.
+    window.location.href = window.location.origin;
   }
   return (
     <>

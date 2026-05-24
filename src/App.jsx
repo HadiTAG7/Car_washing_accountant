@@ -9,6 +9,7 @@ import {
   Target,
   Handshake,
   HandCoins,
+  RefreshCw,
   Loader2,
 } from 'lucide-react';
 
@@ -24,6 +25,7 @@ import FinancialSummaryPage from './components/FinancialSummaryPage';
 import BudgetsPage from './components/BudgetsPage';
 import PartnersPage from './components/PartnersPage';
 import PartnerPaymentsPage from './components/PartnerPaymentsPage';
+import TemporaryExpensesPage from './components/TemporaryExpensesPage';
 import FinancialEntrySelector from './components/FinancialEntrySelector';
 
 import { useAuth } from './hooks/useAuth';
@@ -40,6 +42,7 @@ const TABS = [
   { id: 'budgets',   label: 'الرقابة والميزانيات',    icon: Target      },
   { id: 'partners',  label: 'إدارة الشركاء',          icon: Handshake   },
   { id: 'payments',  label: 'المدفوعات الخاصة لكل شريك', icon: HandCoins },
+  { id: 'temporary_expenses', label: 'المصروفات المؤقتة', icon: RefreshCw },
 ];
 
 // Inner shell wraps the routed content so it can subscribe to the
@@ -115,6 +118,7 @@ function AppShell() {
         {activeTab === 'budgets'   && <BudgetsPage />}
         {activeTab === 'partners'  && <PartnersPage />}
         {activeTab === 'payments'  && <PartnerPaymentsPage />}
+        {activeTab === 'temporary_expenses' && <TemporaryExpensesPage />}
       </div>
 
       <FinancialEntrySelector

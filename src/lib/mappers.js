@@ -430,3 +430,59 @@ export function toPartnerPaymentInsert({ partnerId, amount, paymentDate, payment
     notes:          notes && String(notes).trim() ? String(notes).trim() : null,
   };
 }
+
+// ── temporary_expenses (Module 9 — reimbursable outlays ledger) ───────────
+// Temporary outlays the business pays now and recovers later. The
+// status/recovered_date pair travels together: clearing one without the
+// other would violate the CHECK constraint on the DB side, so the helpers
+// below enforce that invariant client-side too.
+function clampRecoveryStatus(value) {
+  return value === 'recovered' ? 'recovered' : 'pending';
+}
+function clampTemporaryAmount(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, n);
+}
+
+export function mapTemporaryExpense(row) {
+  return {
+    id:             row.id,
+    title:          row.title || '',
+    amount:         Number(row.amount) || 0,
+    spentDate:      row.spent_date || '',
+    status:         clampRecoveryStatus(row.status),
+    recoveredDate:  row.recovered_date || '',
+    notes:          row.notes || '',
+  };
+}
+export function toTemporaryExpenseInsert({ title, amount, spentDate, status, recoveredDate, notes }) {
+  const s = clampRecoveryStatus(status);
+  return {
+    title:          String(title || '').trim(),
+    amount:         clampTemporaryAmount(amount),
+    spent_date:     spentDate || null,
+    status:         s,
+    recovered_date: s === 'recovered' ? (recoveredDate || null) : null,
+    notes:          notes && String(notes).trim() ? String(notes).trim() : null,
+  };
+}
+export function toTemporaryExpenseUpdate(updates = {}) {
+  const payload = {};
+  if (updates.title         !== undefined) payload.title       = String(updates.title || '').trim();
+  if (updates.amount        !== undefined) payload.amount      = clampTemporaryAmount(updates.amount);
+  if (updates.spentDate     !== undefined) payload.spent_date  = updates.spentDate || null;
+  if (updates.notes         !== undefined) payload.notes       = updates.notes && String(updates.notes).trim() ? String(updates.notes).trim() : null;
+  // status + recovered_date are coupled by the DB CHECK constraint: keep
+  // them in lock-step so callers can't accidentally violate it.
+  if (updates.status !== undefined) {
+    const s = clampRecoveryStatus(updates.status);
+    payload.status         = s;
+    payload.recovered_date = s === 'recovered'
+      ? (updates.recoveredDate || null)
+      : null;
+  } else if (updates.recoveredDate !== undefined) {
+    payload.recovered_date = updates.recoveredDate || null;
+  }
+  return payload;
+}

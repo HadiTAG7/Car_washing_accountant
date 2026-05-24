@@ -296,6 +296,29 @@ create trigger annual_expenses_touch
 before update on public.annual_expenses
 for each row execute function public.touch_updated_at();
 
+-- ─── temporary_expenses (Module 9 — reimbursable outlays ledger) ──────────
+-- Temporary outlays the business pays now and recovers later (refunds,
+-- deposits, advances). `status` flips between 'pending' and 'recovered';
+-- `recovered_date` is required iff status = 'recovered' (CHECK enforced).
+create table if not exists public.temporary_expenses (
+  id              uuid primary key default gen_random_uuid(),
+  title           text          not null,
+  amount          numeric(12,2) not null default 0 check (amount >= 0),
+  spent_date      date          not null default current_date,
+  status          text          not null default 'pending'
+                  check (status in ('pending','recovered')),
+  recovered_date  date,
+  notes           text,
+  created_at      timestamptz   not null default now(),
+  constraint temporary_expenses_recovery_consistency_chk check (
+    (status = 'recovered' and recovered_date is not null)
+    or
+    (status = 'pending'   and recovered_date is null)
+  )
+);
+create index if not exists temporary_expenses_status_idx     on public.temporary_expenses(status);
+create index if not exists temporary_expenses_spent_date_idx on public.temporary_expenses(spent_date);
+
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Row-Level Security
 -- For an internal financial tool, we enable RLS and grant full access to
@@ -320,6 +343,7 @@ alter table public.variable_expense_categories enable row level security;
 alter table public.variable_expenses           enable row level security;
 alter table public.washes                      enable row level security;
 alter table public.category_budgets             enable row level security;
+alter table public.temporary_expenses           enable row level security;
 
 do $$ begin
   -- Drop existing policies first (idempotent)
@@ -393,6 +417,10 @@ create policy "rw_auth" on public.washes
 
 drop policy if exists "rw_auth" on public.category_budgets;
 create policy "rw_auth" on public.category_budgets
+  for all to public using (true) with check (true);
+
+drop policy if exists "rw_auth" on public.temporary_expenses;
+create policy "rw_auth" on public.temporary_expenses
   for all to public using (true) with check (true);
 
 -- ═══════════════════════════════════════════════════════════════════════════

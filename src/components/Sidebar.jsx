@@ -17,29 +17,41 @@ export default function Sidebar({
   mobileOpen = false,
   onCloseMobile,
 }) {
-  // Self-contained sign-out: drops the Supabase session, scrubs any
-  // partner-view simulation state in localStorage (so the next login
-  // doesn't inherit a stale "acting as X" view), then forces a hard
-  // reload so the auth gate re-evaluates from a clean slate. Without
-  // the reload, components holding on to memoized session state can
-  // stay rendered after the JWT is gone.
-  async function handleLogout() {
+  // Foolproof sign-out. Three layers of belt-and-braces because the
+  // previous handler was reported as a visual no-op:
+  //
+  //   1. preventDefault + stopPropagation on the click event — kills any
+  //      enclosing element's click handler before it can interfere.
+  //   2. localStorage.clear() + sessionStorage.clear() — nuclear wipe of
+  //      every cached UI flag (PartnerViewContext's actingAsPartnerId,
+  //      Supabase's auth-token entry, the dark-mode pref, etc.). Anything
+  //      worth keeping after sign-out is fine to re-derive on next login.
+  //   3. window.location.href = window.location.origin — a full navigation
+  //      to the app root, NOT a reload of the current path. This guarantees
+  //      React state and the auth gate restart from absolute zero, with no
+  //      memoized session lingering in any component.
+  //
+  // Bare `async` event handlers are fine here — React will fire the
+  // promise; we don't need it returned anywhere upstream.
+  async function handleAbsoluteLogout(e) {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     try {
-      const { error } = await supabase.auth.signOut();
-      if (error) throw error;
+      // 1. Trigger Supabase SignOut
+      await supabase.auth.signOut();
 
-      // PartnerViewContext persists the admin's simulate-as selection
-      // here; clear it so the next signed-in user starts at zero. The
-      // legacy 'partner_view_simulation' key is removed too in case an
-      // older build seeded it.
-      try { localStorage.removeItem('sweater:actingAsPartnerId'); } catch { /* ignore */ }
-      try { localStorage.removeItem('partner_view_simulation');   } catch { /* ignore */ }
+      // 2. Clear everything from localStorage to kill simulated contexts
+      //    and ghost sessions.
+      localStorage.clear();
+      sessionStorage.clear();
 
-      // Hard reload — App.jsx's auth gate now renders the login screen
-      // because session === null + requireAuth is on.
-      window.location.reload();
+      // 3. Force hard redirect to base login screen to reset React state
+      //    completely.
+      window.location.href = window.location.origin;
     } catch (err) {
-      console.error('🔥 Logout Error:', err);
+      console.error('🔥 Critical Logout Failure:', err);
     }
   }
   return (
@@ -137,8 +149,8 @@ export default function Sidebar({
           {isSupabaseConfigured && (
             <button
               type="button"
-              onClick={handleLogout}
-              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-[13px] text-primary-200 hover:bg-white/10 hover:text-white transition-colors"
+              onClick={handleAbsoluteLogout}
+              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-[13px] text-primary-200 hover:bg-white/10 hover:text-white transition-colors cursor-pointer"
             >
               <LogOut size={16} />
               تسجيل الخروج

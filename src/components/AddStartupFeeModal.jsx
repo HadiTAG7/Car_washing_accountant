@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  X, Plus, Pencil, Receipt, Tag, Check, Loader2,
+  X, Plus, Pencil, Receipt, Tag, Check, Loader2, Settings2, Trash2, ArrowRight,
 } from 'lucide-react';
 import { formatCurrency, formatNumber } from '../data/initialData';
 
-// Sentinel value for the synthetic "+ إضافة تصنيف جديد..." option in
-// the category dropdown. Picking it toggles the modal into inline-
-// create mode instead of setting form.category.
-const NEW_CATEGORY_SENTINEL = '__sweater_new_category__';
+// Sentinel value for the synthetic "⚙️ إدارة وتعديل التصنيفات..." option
+// in the category dropdown. Picking it toggles the modal into the
+// inline manager (which combines add + delete) instead of setting
+// form.category.
+const MANAGER_SENTINEL = '__sweater_manage_categories__';
 
 // Generates a stable id for a freshly-created category. `categories.id`
 // is `text primary key`, so we need to supply our own — we use the
@@ -41,32 +42,35 @@ function formatUnitPriceForInput(total, quantity) {
 
 export default function AddStartupFeeModal({
   isOpen, onClose, onAdd, onUpdate, categories = [], onAddCategory,
-  initialValues = null,
+  onDeleteCategory, usedCategoryIds, showToast, initialValues = null,
 }) {
   const editing = Boolean(initialValues?.id);
   const [form, setForm] = useState(EMPTY);
   const [submitting, setSubmitting] = useState(false);
-  // Inline category-create state. `addingCategory` is the boolean
-  // toggle; when true, the <select> swaps for the inline input row.
-  // `categoryBeforeAdd` stashes whichever category was selected before
-  // the toggle so "إلغاء" can restore it cleanly.
-  const [addingCategory,    setAddingCategory]    = useState(false);
-  const [newCategoryLabel,  setNewCategoryLabel]  = useState('');
-  const [newCategoryBusy,   setNewCategoryBusy]   = useState(false);
-  const [newCategoryError,  setNewCategoryError]  = useState('');
-  const [categoryBeforeAdd, setCategoryBeforeAdd] = useState('');
+  // Inline category-manager state. `managerOpen` is the boolean
+  // toggle; when true, the <select> swaps for the manager panel
+  // (existing categories list with delete + new-category input row).
+  // `categoryBeforeManager` stashes whichever category was selected
+  // before the toggle so "إغلاق" can restore it cleanly.
+  const [managerOpen,           setManagerOpen]           = useState(false);
+  const [newCategoryLabel,      setNewCategoryLabel]      = useState('');
+  const [newCategoryBusy,       setNewCategoryBusy]       = useState(false);
+  const [newCategoryError,      setNewCategoryError]      = useState('');
+  const [categoryBeforeManager, setCategoryBeforeManager] = useState('');
+  // Track which category id is mid-delete so its trash icon can swap
+  // for a spinner. Set/clear on the same call.
+  const [deletingCategoryId,    setDeletingCategoryId]    = useState(null);
   const newCategoryInputRef = useRef(null);
 
-  // Auto-focus the new-category input every time we enter inline-add
-  // mode — keeps the keyboard flow snappy after the dropdown click.
+  // Auto-focus the new-category input every time we enter the
+  // manager — keeps the keyboard flow snappy after the dropdown click.
   useEffect(() => {
-    if (addingCategory) {
-      // Defer one frame so the input is in the DOM before .focus().
+    if (managerOpen) {
       const id = requestAnimationFrame(() => newCategoryInputRef.current?.focus());
       return () => cancelAnimationFrame(id);
     }
     return undefined;
-  }, [addingCategory]);
+  }, [managerOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -82,52 +86,52 @@ export default function AddStartupFeeModal({
     } else {
       setForm({ ...EMPTY, category: categories[0]?.id || '' });
     }
-    // Reset inline-add state every time the modal opens — never carry
+    // Reset manager state every time the modal opens — never carry
     // an in-flight typo/error from a previous session into a fresh one.
-    setAddingCategory(false);
+    setManagerOpen(false);
     setNewCategoryLabel('');
     setNewCategoryError('');
     setNewCategoryBusy(false);
+    setDeletingCategoryId(null);
   }, [isOpen, categories, initialValues]);
 
   function handleChange(e) {
-    // The category <select> handles its own toggle to inline-add when
-    // the sentinel option is chosen; the rest of the inputs flow
+    // The category <select> handles its own toggle to the manager
+    // when the sentinel option is chosen; the rest of the inputs flow
     // straight into form state.
-    if (e.target.name === 'category' && e.target.value === NEW_CATEGORY_SENTINEL) {
-      setCategoryBeforeAdd(form.category);
+    if (e.target.name === 'category' && e.target.value === MANAGER_SENTINEL) {
+      setCategoryBeforeManager(form.category);
       setNewCategoryLabel('');
       setNewCategoryError('');
-      setAddingCategory(true);
+      setManagerOpen(true);
       return;
     }
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   }
 
-  function cancelNewCategory() {
-    setAddingCategory(false);
+  function closeManager() {
+    setManagerOpen(false);
     setNewCategoryLabel('');
     setNewCategoryError('');
-    // Restore whatever was selected before the toggle so the form is
-    // never left with a sentinel value as form.category.
-    setForm((prev) => ({ ...prev, category: categoryBeforeAdd }));
+    // Restore whatever was selected before opening the manager so the
+    // form is never left with a sentinel value as form.category.
+    setForm((prev) => ({ ...prev, category: categoryBeforeManager }));
   }
 
   async function saveNewCategory() {
     const label = newCategoryLabel.trim();
     if (!label || newCategoryBusy) return;
-    // Prevent duplicate labels — the categories table likely has no
-    // unique constraint on label (only on id), so a client-side
-    // check is the simplest UX safeguard.
+    // Prevent duplicate labels — the categories table has no unique
+    // constraint on label (only on id), so a client-side check is
+    // the simplest UX safeguard.
     const existing = categories.find(
       (c) => c.label.trim().toLowerCase() === label.toLowerCase(),
     );
     if (existing) {
-      // Auto-select the existing one instead of failing. Matches what
-      // a thoughtful colleague would do — the admin's intent is "use
-      // this category", not necessarily "create a new row".
+      // Auto-select the existing one instead of erroring. Matches the
+      // admin's intent ("use this category") without a duplicate row.
       setForm((prev) => ({ ...prev, category: existing.id }));
-      setAddingCategory(false);
+      setManagerOpen(false);
       setNewCategoryLabel('');
       return;
     }
@@ -140,13 +144,10 @@ export default function AddStartupFeeModal({
     try {
       const id = freshCategoryId();
       await onAddCategory({ id, label });
-      // useCategories refetches synchronously inside addCategory, but
-      // the parent's `categories` prop may not have re-rendered by the
-      // time this resolves. Setting form.category to the new id is
-      // safe either way — the dropdown will show the option as soon as
-      // the next render carries the updated list.
       setForm((prev) => ({ ...prev, category: id }));
-      setAddingCategory(false);
+      // Stay in the manager so the admin can do more housekeeping
+      // (e.g. add several categories, delete an old one) in one pass.
+      // Clear the input so the next add starts clean.
       setNewCategoryLabel('');
     } catch (err) {
       console.error('🔥 Real Supabase Error (categories.insert):', err);
@@ -156,15 +157,56 @@ export default function AddStartupFeeModal({
     }
   }
 
+  async function deleteCategoryInline(cat) {
+    if (!cat || deletingCategoryId) return;
+    // Usage check FIRST — better UX than asking "are you sure?" only
+    // to refuse afterwards. We still gate the destructive call with
+    // window.confirm per spec.
+    const inUse = usedCategoryIds && usedCategoryIds.has(cat.id);
+    if (inUse) {
+      showToast?.(
+        '⚠️ لا يمكن حذف هذا التصنيف لأنه مستخدم حالياً في بعض البنود. قم بتغيير تصنيف البنود أولاً.',
+        'error',
+      );
+      return;
+    }
+    const confirmed = typeof window !== 'undefined'
+      ? window.confirm('هل أنت متأكد من حذف هذا التصنيف نهائياً؟')
+      : true;
+    if (!confirmed) return;
+    if (!onDeleteCategory) {
+      showToast?.('حذف التصنيفات غير متاح في وضع العرض التجريبي.', 'error');
+      return;
+    }
+    setDeletingCategoryId(cat.id);
+    try {
+      await onDeleteCategory(cat.id);
+      // If the deleted category was the modal's current pick (or the
+      // pre-manager pick), clear it so the form doesn't reference a
+      // ghost id after the manager closes.
+      if (form.category === cat.id) {
+        setForm((prev) => ({ ...prev, category: '' }));
+      }
+      if (categoryBeforeManager === cat.id) {
+        setCategoryBeforeManager('');
+      }
+      showToast?.('تم حذف التصنيف من القوائم.', 'success');
+    } catch (err) {
+      console.error('🔥 Real Supabase Error (categories.delete):', err, 'id:', cat.id);
+      showToast?.(err?.message || 'تعذّر حذف التصنيف.', 'error');
+    } finally {
+      setDeletingCategoryId(null);
+    }
+  }
+
   function handleNewCategoryKey(e) {
-    // Enter saves, Escape cancels. Without these the inline form feels
-    // unmoored from the rest of the modal's keyboard flow.
+    // Enter saves the new label; Escape leaves the manager entirely.
     if (e.key === 'Enter') {
       e.preventDefault();
       saveNewCategory();
     } else if (e.key === 'Escape') {
       e.preventDefault();
-      cancelNewCategory();
+      closeManager();
     }
   }
 
@@ -252,60 +294,131 @@ export default function AddStartupFeeModal({
               التصنيف
             </label>
 
-            {addingCategory ? (
-              // Inline create row — replaces the dropdown until the
-              // admin saves the new label or cancels. Matches the
-              // dropdown's outer dimensions so the modal doesn't
-              // visibly reflow during the toggle.
-              <div className="space-y-2">
-                <div className="flex items-stretch gap-2">
-                  <div className="relative flex-1">
-                    <Tag
-                      size={16}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 pointer-events-none"
-                    />
-                    <input
-                      ref={newCategoryInputRef}
-                      type="text"
-                      value={newCategoryLabel}
-                      onChange={(e) => setNewCategoryLabel(e.target.value)}
-                      onKeyDown={handleNewCategoryKey}
-                      placeholder="اكتب اسم التصنيف الجديد..."
-                      disabled={newCategoryBusy}
-                      className="w-full pr-9 pl-4 py-3 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium bg-white dark:bg-slate-800/50 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent transition-colors disabled:opacity-60"
-                    />
-                  </div>
+            {managerOpen ? (
+              // Inline category manager — replaces the dropdown until
+              // the admin clicks "إغلاق". Combines a new-category
+              // input row (top) with a scrollable list of existing
+              // categories carrying delete buttons (bottom). The
+              // outer card uses the same dark tokens as the modal
+              // shell so the swap reads as a focused sub-region, not
+              // a stacked card.
+              <div className="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl p-4 space-y-4">
+                {/* Header */}
+                <div className="flex items-center justify-between gap-3">
+                  <h4 className="inline-flex items-center gap-2 text-sm font-bold text-slate-800 dark:text-slate-200">
+                    <Settings2 size={15} className="text-primary-700 dark:text-primary-400" />
+                    إدارة التصنيفات
+                  </h4>
                   <button
                     type="button"
-                    onClick={saveNewCategory}
-                    disabled={!newCategoryLabel.trim() || newCategoryBusy}
-                    title="حفظ التصنيف الجديد"
-                    aria-label="حفظ التصنيف الجديد"
-                    className="inline-flex items-center justify-center gap-1 bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-400 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white px-3 rounded-xl text-sm font-bold transition-colors shadow-sm shrink-0"
+                    onClick={closeManager}
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary-700 dark:text-primary-400 hover:underline"
+                    title="رجوع إلى اختيار تصنيف للبند"
                   >
-                    {newCategoryBusy
-                      ? <Loader2 size={16} className="animate-spin" />
-                      : <Check size={16} strokeWidth={2.7} />}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={cancelNewCategory}
-                    disabled={newCategoryBusy}
-                    title="إلغاء"
-                    aria-label="إلغاء"
-                    className="inline-flex items-center justify-center bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-60 text-slate-500 dark:text-slate-400 px-3 rounded-xl transition-colors shrink-0"
-                  >
-                    <X size={16} strokeWidth={2.5} />
+                    <ArrowRight size={12} />
+                    إغلاق
                   </button>
                 </div>
-                {newCategoryError && (
-                  <p className="text-[11px] text-red-600 dark:text-red-400 leading-relaxed">
-                    {newCategoryError}
+
+                {/* Existing categories — scroll cap so a long list
+                    doesn't push the rest of the modal off-screen. */}
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">
+                    التصنيفات الحالية
                   </p>
-                )}
-                <p className="text-[11px] text-slate-400 dark:text-slate-500 leading-relaxed">
-                  اضغط Enter للحفظ أو Escape للإلغاء.
-                </p>
+                  {categories.length === 0 ? (
+                    <p className="text-xs text-slate-500 dark:text-slate-400 italic py-2">
+                      — لا توجد تصنيفات بعد —
+                    </p>
+                  ) : (
+                    <ul className="max-h-44 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-700/60 border border-slate-100 dark:border-slate-700/60 rounded-lg">
+                      {categories.map((cat) => {
+                        const inUse  = Boolean(usedCategoryIds?.has(cat.id));
+                        const busy   = deletingCategoryId === cat.id;
+                        return (
+                          <li
+                            key={cat.id}
+                            className="flex items-center justify-between gap-2 px-3 py-2 group hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                          >
+                            <span className="text-sm text-slate-700 dark:text-slate-300 truncate">
+                              {cat.label}
+                              {inUse && (
+                                <span className="mr-2 inline-block text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 align-middle">
+                                  مستخدم
+                                </span>
+                              )}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => deleteCategoryInline(cat)}
+                              disabled={busy}
+                              title={inUse
+                                ? 'هذا التصنيف مستخدم في بعض البنود — لا يمكن حذفه'
+                                : 'حذف هذا التصنيف نهائياً'}
+                              aria-label={`حذف ${cat.label}`}
+                              className={`p-1.5 rounded-lg transition-colors shrink-0 ${
+                                inUse
+                                  ? 'text-slate-300 dark:text-slate-600 cursor-not-allowed'
+                                  : 'text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/15'
+                              } disabled:opacity-60`}
+                            >
+                              {busy
+                                ? <Loader2 size={14} className="animate-spin" />
+                                : <Trash2 size={14} />}
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+
+                {/* Inline add row — kept inside the manager so the
+                    admin can do both ops in one pass without flipping
+                    back and forth. */}
+                <div className="pt-1 border-t border-slate-100 dark:border-slate-700/60">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5 mt-3">
+                    إضافة تصنيف جديد
+                  </p>
+                  <div className="flex items-stretch gap-2">
+                    <div className="relative flex-1">
+                      <Tag
+                        size={16}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 pointer-events-none"
+                      />
+                      <input
+                        ref={newCategoryInputRef}
+                        type="text"
+                        value={newCategoryLabel}
+                        onChange={(e) => setNewCategoryLabel(e.target.value)}
+                        onKeyDown={handleNewCategoryKey}
+                        placeholder="اكتب اسم التصنيف الجديد..."
+                        disabled={newCategoryBusy}
+                        className="w-full pr-9 pl-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium bg-white dark:bg-slate-800/50 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent transition-colors disabled:opacity-60"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={saveNewCategory}
+                      disabled={!newCategoryLabel.trim() || newCategoryBusy}
+                      title="حفظ التصنيف الجديد"
+                      aria-label="حفظ التصنيف الجديد"
+                      className="inline-flex items-center justify-center bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-400 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white px-3 rounded-xl text-sm font-bold transition-colors shadow-sm shrink-0"
+                    >
+                      {newCategoryBusy
+                        ? <Loader2 size={16} className="animate-spin" />
+                        : <Check size={16} strokeWidth={2.7} />}
+                    </button>
+                  </div>
+                  {newCategoryError && (
+                    <p className="mt-1.5 text-[11px] text-red-600 dark:text-red-400 leading-relaxed">
+                      {newCategoryError}
+                    </p>
+                  )}
+                  <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500 leading-relaxed">
+                    اضغط Enter لحفظ التصنيف الجديد، أو Escape لإغلاق المدير.
+                  </p>
+                </div>
               </div>
             ) : (
               <select
@@ -320,13 +433,13 @@ export default function AddStartupFeeModal({
                 {categories.map((cat) => (
                   <option key={cat.id} value={cat.id}>{cat.label}</option>
                 ))}
-                {/* Synthetic "create new" option pinned to the bottom.
-                    Picking it routes through handleChange → toggles the
-                    inline-create row above; the value never actually
-                    lands in form.category. */}
-                {onAddCategory && (
-                  <option value={NEW_CATEGORY_SENTINEL}>
-                    + إضافة تصنيف جديد...
+                {/* Synthetic manager option pinned to the bottom.
+                    Picking it routes through handleChange → opens
+                    the inline manager above; the value never lands
+                    in form.category. */}
+                {(onAddCategory || onDeleteCategory) && (
+                  <option value={MANAGER_SENTINEL}>
+                    ⚙️ إدارة وتعديل التصنيفات...
                   </option>
                 )}
               </select>
@@ -407,8 +520,8 @@ export default function AddStartupFeeModal({
           <div className="flex items-center gap-3 pt-2">
             <button
               type="submit"
-              disabled={!isValid || submitting || addingCategory}
-              title={addingCategory ? 'أكمل إضافة التصنيف أولاً أو ألغِ العملية' : undefined}
+              disabled={!isValid || submitting || managerOpen}
+              title={managerOpen ? 'أغلق مدير التصنيفات أولاً' : undefined}
               className="flex-1 inline-flex items-center justify-center gap-2 bg-primary-800 hover:bg-primary-900 disabled:bg-slate-300 disabled:cursor-not-allowed text-white py-2.5 px-4 rounded-xl text-sm font-semibold transition-colors shadow-sm"
             >
               {editing ? <Pencil size={18} /> : <Plus size={18} />}

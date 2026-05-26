@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   Plus, Trash2, Pencil, Wallet, Receipt, Scale, FileText,
 } from 'lucide-react';
@@ -10,6 +10,7 @@ import {
 import AddStartupFeeModal from './AddStartupFeeModal';
 import LoadingState from './LoadingState';
 import ErrorState, { SetupRequiredCard } from './ErrorState';
+import Toast from './Toast';
 import { useStartupCosts } from '../hooks/useStartupCosts';
 import { useCategories } from '../hooks/useCategories';
 import { isSupabaseConfigured, missingEnvNames } from '../lib/supabaseClient';
@@ -67,12 +68,29 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
     addItem, updateItem, updateActual, updateStatus, deleteItem, refetch,
   } = useStartupCosts();
 
-  const { categories, getCategoryLabel, addCategory } = useCategories();
+  const { categories, getCategoryLabel, addCategory, deleteCategory } = useCategories();
   const { scalingFactor, canMutate } = usePartnerView();
 
   const [localOpen, setLocalOpen]       = useState(false);
   const [editingItem, setEditingItem]   = useState(null);
   const [mutationError, setMutationError] = useState(null);
+  // Toast for inline-manager feedback (e.g. "category in use" warning).
+  // Same shape as PartnersPage so swapping in the shared Toast UI is
+  // pixel-stable across the dashboard.
+  const [toast, setToast] = useState({ open: false, message: '', tone: 'success', duration: 3000 });
+  const showToast = useCallback((message, tone = 'success') => {
+    setToast({ open: true, message, tone, duration: tone === 'error' ? 8000 : 3000 });
+  }, []);
+  const closeToast = useCallback(() => setToast((t) => ({ ...t, open: false })), []);
+
+  // Set of category ids actually referenced by any startup item. The
+  // inline-manager uses this to block deletion of categories still
+  // wired to data. Memoised so the modal doesn't reconcile against a
+  // new Set on every keystroke.
+  const usedCategoryIds = useMemo(
+    () => new Set(items.map((i) => i.category).filter(Boolean)),
+    [items],
+  );
 
   const isModalOpen = localOpen || Boolean(editingItem) || pendingEntry === 'item';
   function openAddModal()        { setEditingItem(null); setLocalOpen(true); }
@@ -303,7 +321,18 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
         onUpdate={handleUpdateItem}
         categories={categories}
         onAddCategory={addCategory}
+        onDeleteCategory={deleteCategory}
+        usedCategoryIds={usedCategoryIds}
+        showToast={showToast}
         initialValues={editingItem}
+      />
+
+      <Toast
+        open={toast.open}
+        message={toast.message}
+        tone={toast.tone}
+        duration={toast.duration}
+        onClose={closeToast}
       />
     </>
   );

@@ -67,7 +67,7 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
     addItem, updateItem, updateActual, updateStatus, deleteItem, refetch,
   } = useStartupCosts();
 
-  const { categories, getCategoryLabel } = useCategories();
+  const { categories, getCategoryLabel, addCategory } = useCategories();
   const { scalingFactor, canMutate } = usePartnerView();
 
   const [localOpen, setLocalOpen]       = useState(false);
@@ -302,6 +302,7 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
         onAdd={handleAddItem}
         onUpdate={handleUpdateItem}
         categories={categories}
+        onAddCategory={addCategory}
         initialValues={editingItem}
       />
     </>

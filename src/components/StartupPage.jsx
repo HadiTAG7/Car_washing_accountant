@@ -119,11 +119,19 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
     try { await updateItem(id, updates); }
     catch (e) { setMutationError(e); throw e; }
   }
-  async function handleUpdateActual(id, next, current, planned) {
-    if (next === current) return;
-    // Pass plannedAmount so the hook derives the new status
-    // atomically (completed when actual ≥ planned, in_progress
-    // otherwise) and writes both columns in a single UPDATE.
+  async function handleUpdateActual(id, next, current, planned, currentStatus) {
+    // Derive what the status SHOULD be for the (possibly unchanged)
+    // amount. We skip the DB write only when nothing would change —
+    // both the amount AND the derived status already match. Checking
+    // the status too makes this self-healing: re-blurring a row whose
+    // amount already equals the plan (saved before this auto-status
+    // logic shipped, so its status is stale) still repairs the badge.
+    const desiredStatus = parseFloat(next) >= parseFloat(planned)
+      ? 'completed'
+      : 'in_progress';
+    if (next === current && desiredStatus === currentStatus) return;
+    // Pass plannedAmount so the hook derives the status atomically
+    // and writes both columns in a single UPDATE.
     try { await updateActual(id, next, planned); }
     catch (e) { setMutationError(e); }
   }
@@ -265,7 +273,7 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
                               onBlur={(e) => {
                                 const next = parseFloat(e.target.value);
                                 const safe = Number.isFinite(next) ? Math.max(0, next) : 0;
-                                handleUpdateActual(i.id, safe, i.actualAmount, i.plannedAmount);
+                                handleUpdateActual(i.id, safe, i.actualAmount, i.plannedAmount, i.status);
                               }}
                               aria-label={`المبلغ الفعلي لـ ${i.itemName}`}
                               className="w-28 px-2 py-1 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-slate-100 font-medium text-left tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-300"

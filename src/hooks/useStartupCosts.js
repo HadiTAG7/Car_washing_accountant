@@ -33,11 +33,30 @@ export function useStartupCosts() {
     await refetch();
   }, [refetch]);
 
-  const updateActual = useCallback(async (id, actualAmount) => {
+  // Inline edit of the actual-amount column. When called with a
+  // plannedAmount the hook ALSO derives the row's status atomically
+  // and sends both fields in one UPDATE — so the table badge flips
+  // from "قيد التنفيذ" to "مكتمل" the moment the input commits, no
+  // separate updateStatus round-trip required.
+  //
+  // Both arguments are coerced via parseFloat so a stringified value
+  // from the input element ("194000") compares numerically, not
+  // lexically, against the planned amount.
+  //
+  // plannedAmount is intentionally optional — callers that only want
+  // to overwrite the amount (without touching status) can omit it and
+  // the existing status stays put.
+  const updateActual = useCallback(async (id, actualAmount, plannedAmount) => {
     if (!isSupabaseConfigured) return null;
+    const actual  = Math.max(0, parseFloat(actualAmount) || 0);
+    const payload = { actual_amount: actual };
+    if (plannedAmount !== undefined) {
+      const planned = Math.max(0, parseFloat(plannedAmount) || 0);
+      payload.status = actual >= planned ? 'completed' : 'in_progress';
+    }
     const { error: err } = await supabase
       .from('startup_costs')
-      .update({ actual_amount: Math.max(0, Number(actualAmount) || 0) })
+      .update(payload)
       .eq('id', id);
     if (err) throw err;
     await refetch();

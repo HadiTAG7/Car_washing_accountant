@@ -119,9 +119,12 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
     try { await updateItem(id, updates); }
     catch (e) { setMutationError(e); throw e; }
   }
-  async function handleUpdateActual(id, next, current) {
+  async function handleUpdateActual(id, next, current, planned) {
     if (next === current) return;
-    try { await updateActual(id, next); }
+    // Pass plannedAmount so the hook derives the new status
+    // atomically (completed when actual ≥ planned, in_progress
+    // otherwise) and writes both columns in a single UPDATE.
+    try { await updateActual(id, next, planned); }
     catch (e) { setMutationError(e); }
   }
   async function handleUpdateStatus(id, status) {
@@ -262,7 +265,7 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
                               onBlur={(e) => {
                                 const next = parseFloat(e.target.value);
                                 const safe = Number.isFinite(next) ? Math.max(0, next) : 0;
-                                handleUpdateActual(i.id, safe, i.actualAmount);
+                                handleUpdateActual(i.id, safe, i.actualAmount, i.plannedAmount);
                               }}
                               aria-label={`المبلغ الفعلي لـ ${i.itemName}`}
                               className="w-28 px-2 py-1 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-slate-100 font-medium text-left tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-300"

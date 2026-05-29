@@ -16,6 +16,61 @@ import { useCategories } from '../hooks/useCategories';
 import { isSupabaseConfigured, missingEnvNames } from '../lib/supabaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 
+// ─── Formatted amount input (thousands separators) ─────────────────────────
+// A text-driven numeric field that reads like "194,000" at rest but lets
+// the admin edit the raw number on focus. Browsers reject non-numeric
+// characters in type="number", so we drive a type="text" + inputMode
+// "decimal" instead and own the formatting manually:
+//   • at rest / on blur  → Intl-formatted via formatNumber (Latin digits)
+//   • on focus           → comma-stripped raw number, select-all
+//   • on commit          → strip commas, parseFloat, clamp ≥ 0
+function FormattedAmountInput({ value, onCommit, ariaLabel, className }) {
+  const [display, setDisplay]  = useState(() => formatNumber(value || 0));
+  const [syncedValue, setSyncedValue] = useState(value);
+  const [focused, setFocused]  = useState(false);
+
+  // Re-sync from the prop when the parent pushes a new value (e.g. after
+  // a refetch), but never clobber what the user is actively typing. This
+  // is the React "adjust state during render" pattern — preferred over a
+  // useEffect+setState, which triggers a cascading-render lint error.
+  // Focus is tracked in state (not a ref) so it's safe to read here.
+  if (value !== syncedValue && !focused) {
+    setSyncedValue(value);
+    setDisplay(formatNumber(value || 0));
+  }
+
+  function handleFocus(e) {
+    setFocused(true);
+    const raw = (value || 0).toString();
+    setDisplay(raw === '0' ? '' : raw);
+    requestAnimationFrame(() => e.target.select?.());
+  }
+  function handleChange(e) {
+    // Permit only digits, commas, and a single decimal point while typing.
+    setDisplay(e.target.value.replace(/[^\d.,]/g, ''));
+  }
+  function handleBlur() {
+    setFocused(false);
+    const parsed = parseFloat(String(display).replace(/,/g, ''));
+    const safe   = Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+    setDisplay(formatNumber(safe));
+    onCommit(safe);
+  }
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      value={display}
+      onFocus={handleFocus}
+      onChange={handleChange}
+      onBlur={handleBlur}
+      aria-label={ariaLabel}
+      className={className}
+    />
+  );
+}
+
 // ─── Status toggle pill (in_progress ↔ completed) ──────────────────────────
 function StatusTogglePill({ status, onChange, disabled }) {
   const isCompleted = status === 'completed';
@@ -222,13 +277,14 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
             <EmptyState onAdd={openAddModal} canMutate={canMutate} />
           ) : (
             <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
-              <table className="w-full min-w-[640px] text-sm">
+              <table className="w-full min-w-[720px] text-sm">
                 <thead>
                   <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
                     <th className="py-3 px-4 whitespace-nowrap">البند</th>
                     <th className="py-3 px-4 whitespace-nowrap">التصنيف</th>
                     <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">المبلغ المخطط</th>
                     <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">المبلغ الفعلي</th>
+                    <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">المتبقي</th>
                     <th className="py-3 px-4 whitespace-nowrap">الحالة</th>
                     <th className="py-3 px-4 whitespace-nowrap text-left w-16">إجراءات</th>
                   </tr>
@@ -242,6 +298,10 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
                     const rowPlanned = i.plannedAmount * scalingFactor;
                     const rowActual  = i.actualAmount  * scalingFactor;
                     const unitPlanned = qty > 0 ? rowPlanned / qty : 0;
+                    // Remaining balance for this row, coherent with the
+                    // scaled planned/actual shown beside it. Clamped at 0
+                    // so an over-spend reads "0 ر.س." not a negative.
+                    const rowRemaining = Math.max(0, rowPlanned - rowActual);
                     return (
                       <tr
                         key={i.id}
@@ -265,24 +325,24 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap text-left align-top">
                           {canMutate ? (
-                            <input
-                              type="number"
-                              min="0"
-                              step="any"
-                              defaultValue={i.actualAmount}
-                              onBlur={(e) => {
-                                const next = parseFloat(e.target.value);
-                                const safe = Number.isFinite(next) ? Math.max(0, next) : 0;
-                                handleUpdateActual(i.id, safe, i.actualAmount, i.plannedAmount, i.status);
-                              }}
-                              aria-label={`المبلغ الفعلي لـ ${i.itemName}`}
-                              className="w-28 px-2 py-1 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-slate-100 font-medium text-left tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-300"
+                            <FormattedAmountInput
+                              value={i.actualAmount}
+                              onCommit={(safe) => handleUpdateActual(i.id, safe, i.actualAmount, i.plannedAmount, i.status)}
+                              ariaLabel={`المبلغ الفعلي لـ ${i.itemName}`}
+                              className="w-28 px-2 py-1 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-slate-100 font-medium text-left tabular-nums bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-300"
                             />
                           ) : (
                             <span className="tabular-nums text-slate-700 dark:text-slate-300 font-medium">
                               {formatCurrency(rowActual)}
                             </span>
                           )}
+                        </td>
+                        <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums align-top">
+                          <span className={rowRemaining > 0
+                            ? 'font-semibold text-amber-600 dark:text-amber-400'
+                            : 'font-medium text-emerald-600 dark:text-emerald-400'}>
+                            {formatCurrency(rowRemaining)}
+                          </span>
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap align-top">
                           <StatusTogglePill

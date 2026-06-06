@@ -43,6 +43,32 @@ export function toStartupCostUpdate(updates = {}) {
   return payload;
 }
 
+// ── startup_cost_entries (sub-ledger per startup item) ────────────────────
+// App-side shape: { id, startupCostId, description, amount, spentDate, notes, createdAt }.
+// One row per receipt/transaction that contributes to the parent's
+// actual_amount. The parent roll-up is kept in sync client-side by the
+// useStartupCostEntries hook (every add/delete also writes startup_costs.actual_amount = SUM).
+export function mapStartupCostEntry(row) {
+  return {
+    id:             row.id,
+    startupCostId:  row.startup_cost_id,
+    description:    row.description || '',
+    amount:         Number(row.amount) || 0,
+    spentDate:      row.spent_date || '',
+    notes:          row.notes || '',
+    createdAt:      row.created_at,
+  };
+}
+export function toStartupCostEntryInsert({ startupCostId, description, amount, spentDate, notes }) {
+  return {
+    startup_cost_id: startupCostId,
+    description:     String(description || '').trim(),
+    amount:          Math.max(0, Number(amount) || 0),
+    spent_date:      spentDate || null,
+    notes:           notes && String(notes).trim() ? String(notes).trim() : null,
+  };
+}
+
 // ── assets ────────────────────────────────────────────────────────────────
 export function mapAsset(row) {
   return {

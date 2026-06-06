@@ -8,6 +8,7 @@ import {
   Card, SectionHeader, StatCard, PrimaryButton,
 } from './UI';
 import AddStartupFeeModal from './AddStartupFeeModal';
+import StartupItemDetailModal from './StartupItemDetailModal';
 import LoadingState from './LoadingState';
 import ErrorState, { SetupRequiredCard } from './ErrorState';
 import Toast from './Toast';
@@ -128,6 +129,10 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
 
   const [localOpen, setLocalOpen]       = useState(false);
   const [editingItem, setEditingItem]   = useState(null);
+  // The item whose sub-ledger is open. The detail modal renders only
+  // when this is non-null. Distinct from `editingItem` (which opens
+  // the legacy "edit name/category/amounts" modal).
+  const [detailItem, setDetailItem]     = useState(null);
   const [mutationError, setMutationError] = useState(null);
   // Toast for inline-manager feedback (e.g. "category in use" warning).
   // Same shape as PartnersPage so swapping in the shared Toast UI is
@@ -308,7 +313,18 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
                         className="border-b border-slate-50 dark:border-slate-800 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
                       >
                         <td className="py-3 px-4 whitespace-nowrap align-top">
-                          <div className="font-medium text-slate-800 dark:text-slate-200">{i.itemName}</div>
+                          {canMutate ? (
+                            <button
+                              type="button"
+                              onClick={() => setDetailItem(i)}
+                              className="font-medium text-slate-800 dark:text-slate-200 hover:text-primary-700 dark:hover:text-primary-400 hover:underline decoration-dotted underline-offset-4 transition-colors text-right"
+                              title="فتح سجل المصاريف التفصيلي"
+                            >
+                              {i.itemName}
+                            </button>
+                          ) : (
+                            <div className="font-medium text-slate-800 dark:text-slate-200">{i.itemName}</div>
+                          )}
                           {qty > 1 && (
                             <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5 tabular-nums">
                               الكمية: {formatNumber(qty)} | سعر الوحدة: {formatCurrency(unitPlanned)}
@@ -396,6 +412,13 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
         usedCategoryIds={usedCategoryIds}
         showToast={showToast}
         initialValues={editingItem}
+      />
+
+      <StartupItemDetailModal
+        isOpen={Boolean(detailItem)}
+        item={detailItem}
+        onClose={() => setDetailItem(null)}
+        onDirty={refetch}
       />
 
       <Toast

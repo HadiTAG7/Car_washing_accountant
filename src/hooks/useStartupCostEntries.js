@@ -22,7 +22,7 @@ export function useStartupCostEntries(parentId) {
   const { data, loading, error, refetch } = useSupabaseQuery(
     () => supabase
       .from('startup_cost_entries')
-      .select('id, startup_cost_id, description, amount, spent_date, notes, created_at')
+      .select('id, startup_cost_id, description, amount, spent_date, notes, invoice_url, created_at')
       .eq('startup_cost_id', parentId)
       .order('spent_date',  { ascending: false })
       .order('created_at',  { ascending: false }),

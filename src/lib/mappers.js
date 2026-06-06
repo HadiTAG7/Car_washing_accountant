@@ -56,16 +56,20 @@ export function mapStartupCostEntry(row) {
     amount:         Number(row.amount) || 0,
     spentDate:      row.spent_date || '',
     notes:          row.notes || '',
+    invoiceUrl:     row.invoice_url || '',
     createdAt:      row.created_at,
   };
 }
-export function toStartupCostEntryInsert({ startupCostId, description, amount, spentDate, notes }) {
+export function toStartupCostEntryInsert({
+  startupCostId, description, amount, spentDate, notes, invoiceUrl,
+}) {
   return {
     startup_cost_id: startupCostId,
     description:     String(description || '').trim(),
     amount:          Math.max(0, Number(amount) || 0),
     spent_date:      spentDate || null,
     notes:           notes && String(notes).trim() ? String(notes).trim() : null,
+    invoice_url:     invoiceUrl && String(invoiceUrl).trim() ? String(invoiceUrl).trim() : null,
   };
 }
 

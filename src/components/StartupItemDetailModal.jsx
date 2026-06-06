@@ -1,11 +1,20 @@
 import { useEffect, useState } from 'react';
 import {
-  X, Plus, Trash2, FileText, Wallet, Calendar, Tag, Loader2, Inbox,
+  X, Plus, Trash2, FileText, Wallet, Calendar, Tag, Loader2, Inbox, Link as LinkIcon,
 } from 'lucide-react';
 import { formatCurrency, formatDate, todayISO } from '../data/initialData';
 import { useStartupCostEntries } from '../hooks/useStartupCostEntries';
 
-const EMPTY_FORM = { description: '', amount: '', spentDate: '', notes: '' };
+const EMPTY_FORM = { description: '', amount: '', spentDate: '', notes: '', invoiceUrl: '' };
+
+// Cheap link detector — anything starting with http:// or https:// is
+// rendered as a clickable anchor in the list. Anything else (the admin
+// pasted a bare drive path, a vendor portal slug, etc.) is preserved
+// verbatim but stays as plain text so we don't generate broken links.
+function isSafeHttpUrl(value) {
+  const s = String(value || '').trim();
+  return /^https?:\/\//i.test(s);
+}
 
 /**
  * Per-item expense ledger. Opens when the admin clicks an item name on
@@ -59,6 +68,7 @@ export default function StartupItemDetailModal({
         amount:      parsedAmount,
         spentDate:   form.spentDate,
         notes:       form.notes.trim(),
+        invoiceUrl:  form.invoiceUrl.trim(),
       });
       setForm({ ...EMPTY_FORM, spentDate: todayISO() });
       onDirty?.(); // tell parent to refetch startup items so totals update
@@ -220,6 +230,27 @@ export default function StartupItemDetailModal({
               />
             </div>
 
+            {/* Invoice URL — full-width row. Optional; we don't
+                validate format because vendor portals + Drive share
+                links vary wildly — we just render as a link when the
+                value starts with http(s):// in the entries list. */}
+            <div className="relative">
+              <LinkIcon
+                size={15}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 pointer-events-none"
+              />
+              <input
+                type="url"
+                name="invoiceUrl"
+                value={form.invoiceUrl}
+                onChange={handleChange}
+                placeholder="رابط الفاتورة (اختياري) — مثال: https://drive.google.com/..."
+                dir="ltr"
+                autoComplete="off"
+                className="w-full pr-9 pl-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-mono bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-colors"
+              />
+            </div>
+
             <button
               type="submit"
               disabled={!isValid || submitting}
@@ -271,11 +302,33 @@ export default function StartupItemDetailModal({
                         <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 leading-snug">
                           {e.description}
                         </p>
-                        <div className="flex items-center gap-2 mt-1 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
+                        <div className="flex items-center gap-2 mt-1 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums flex-wrap">
                           <span className="inline-flex items-center gap-1">
                             <Calendar size={11} />
                             {formatDate(e.spentDate)}
                           </span>
+                          {e.invoiceUrl && (
+                            <>
+                              <span className="text-slate-300 dark:text-slate-600">·</span>
+                              {isSafeHttpUrl(e.invoiceUrl) ? (
+                                <a
+                                  href={e.invoiceUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-primary-700 dark:text-primary-400 hover:underline font-semibold"
+                                  title={e.invoiceUrl}
+                                >
+                                  <LinkIcon size={11} />
+                                  عرض الفاتورة
+                                </a>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-slate-500 dark:text-slate-400 truncate max-w-[200px]" title={e.invoiceUrl}>
+                                  <LinkIcon size={11} />
+                                  {e.invoiceUrl}
+                                </span>
+                              )}
+                            </>
+                          )}
                           {e.notes && (
                             <>
                               <span className="text-slate-300 dark:text-slate-600">·</span>

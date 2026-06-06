@@ -31,6 +31,28 @@ create table if not exists public.startup_costs (
 );
 create index if not exists startup_costs_category_idx on public.startup_costs(category);
 
+-- ─── startup_cost_entries (sub-ledger per startup item) ──────────────────────
+-- One row per receipt/transaction that contributes to a startup_costs
+-- item's actual_amount. The parent roll-up (actual_amount = SUM of its
+-- entries) is kept in sync client-side. `is_tax_invoice` flags a
+-- VAT-inclusive purchase; the 15% recoverable portion is derived on the
+-- client, never stored, so it can't drift from the amount.
+create table if not exists public.startup_cost_entries (
+  id               uuid          primary key default gen_random_uuid(),
+  startup_cost_id  uuid          not null references public.startup_costs(id) on delete cascade,
+  description      text          not null,
+  amount           numeric(12,2) not null default 0 check (amount >= 0),
+  spent_date       date          not null default current_date,
+  notes            text,
+  invoice_url      text,
+  is_tax_invoice   boolean       not null default false,
+  created_at       timestamptz   not null default now()
+);
+create index if not exists startup_cost_entries_parent_idx
+  on public.startup_cost_entries(startup_cost_id);
+create index if not exists startup_cost_entries_parent_date_idx
+  on public.startup_cost_entries(startup_cost_id, spent_date desc);
+
 -- ─── assets ────────────────────────────────────────────────────────────────
 create table if not exists public.assets (
   id                 uuid primary key default gen_random_uuid(),
@@ -330,6 +352,7 @@ create index if not exists temporary_expenses_spent_date_idx on public.temporary
 
 alter table public.categories        enable row level security;
 alter table public.startup_costs     enable row level security;
+alter table public.startup_cost_entries enable row level security;
 alter table public.assets            enable row level security;
 alter table public.vehicles          enable row level security;
 alter table public.maintenance_logs  enable row level security;
@@ -359,6 +382,10 @@ create policy "rw_auth" on public.categories
 
 drop policy if exists "rw_auth" on public.startup_costs;
 create policy "rw_auth" on public.startup_costs
+  for all to public using (true) with check (true);
+
+drop policy if exists "rw_auth" on public.startup_cost_entries;
+create policy "rw_auth" on public.startup_cost_entries
   for all to public using (true) with check (true);
 
 drop policy if exists "rw_auth" on public.assets;

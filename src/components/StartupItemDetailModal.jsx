@@ -1,11 +1,16 @@
 import { useEffect, useState } from 'react';
 import {
-  X, Plus, Trash2, FileText, Wallet, Calendar, Tag, Loader2, Inbox, Link as LinkIcon,
+  X, Plus, Trash2, FileText, Wallet, Calendar, Tag, Loader2, Inbox,
+  Link as LinkIcon, Percent,
 } from 'lucide-react';
-import { formatCurrency, formatDate, todayISO } from '../data/initialData';
+import {
+  formatCurrency, formatDate, todayISO, extractVat, netOfVat,
+} from '../data/initialData';
 import { useStartupCostEntries } from '../hooks/useStartupCostEntries';
 
-const EMPTY_FORM = { description: '', amount: '', spentDate: '', notes: '', invoiceUrl: '' };
+const EMPTY_FORM = {
+  description: '', amount: '', spentDate: '', notes: '', invoiceUrl: '', isTaxInvoice: false,
+};
 
 // Cheap link detector — anything starting with http:// or https:// is
 // rendered as a clickable anchor in the list. Anything else (the admin
@@ -55,7 +60,8 @@ export default function StartupItemDetailModal({
   const isValid       = trimmedDesc.length > 0 && parsedAmount > 0 && Boolean(form.spentDate);
 
   function handleChange(e) {
-    setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+    const { name, type, value, checked } = e.target;
+    setForm((prev) => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
   }
 
   async function handleAdd(e) {
@@ -64,11 +70,12 @@ export default function StartupItemDetailModal({
     setSubmitting(true);
     try {
       await addEntry({
-        description: trimmedDesc,
-        amount:      parsedAmount,
-        spentDate:   form.spentDate,
-        notes:       form.notes.trim(),
-        invoiceUrl:  form.invoiceUrl.trim(),
+        description:  trimmedDesc,
+        amount:       parsedAmount,
+        spentDate:    form.spentDate,
+        notes:        form.notes.trim(),
+        invoiceUrl:   form.invoiceUrl.trim(),
+        isTaxInvoice: form.isTaxInvoice,
       });
       setForm({ ...EMPTY_FORM, spentDate: todayISO() });
       onDirty?.(); // tell parent to refetch startup items so totals update
@@ -251,6 +258,47 @@ export default function StartupItemDetailModal({
               />
             </div>
 
+            {/* Tax-invoice toggle. When on, the amount above is treated
+                as VAT-inclusive and the 15% portion is back-derived. */}
+            <label
+              htmlFor="isTaxInvoice"
+              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border cursor-pointer transition-colors ${
+                form.isTaxInvoice
+                  ? 'border-emerald-300 dark:border-emerald-500/50 bg-emerald-50 dark:bg-emerald-500/15'
+                  : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60'
+              }`}
+            >
+              <input
+                id="isTaxInvoice"
+                type="checkbox"
+                name="isTaxInvoice"
+                checked={form.isTaxInvoice}
+                onChange={handleChange}
+                className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-emerald-600 focus:ring-emerald-400 accent-emerald-600"
+              />
+              <Percent size={14} className={form.isTaxInvoice ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400 dark:text-slate-500'} />
+              <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                فاتورة ضريبية
+                <span className="text-[11px] font-normal text-slate-500 dark:text-slate-400 mr-1">
+                  (المبلغ شامل ضريبة القيمة المضافة 15%)
+                </span>
+              </span>
+            </label>
+
+            {/* Live VAT breakdown — only when taxable AND an amount is set. */}
+            {form.isTaxInvoice && parsedAmount > 0 && (
+              <div className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-emerald-50/60 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/30 text-[12px]">
+                <span className="text-emerald-800 dark:text-emerald-300">
+                  الضريبة المتوقع استردادها:
+                  <span className="font-bold tabular-nums mr-1">{formatCurrency(extractVat(parsedAmount))}</span>
+                </span>
+                <span className="text-slate-600 dark:text-slate-400">
+                  صافي قيمة السلعة:
+                  <span className="font-bold tabular-nums mr-1">{formatCurrency(netOfVat(parsedAmount))}</span>
+                </span>
+              </div>
+            )}
+
             <button
               type="submit"
               disabled={!isValid || submitting}
@@ -307,6 +355,15 @@ export default function StartupItemDetailModal({
                             <Calendar size={11} />
                             {formatDate(e.spentDate)}
                           </span>
+                          {e.isTaxInvoice && (
+                            <>
+                              <span className="text-slate-300 dark:text-slate-600">·</span>
+                              <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400 font-semibold">
+                                <Percent size={11} />
+                                ض.ق.م: {formatCurrency(extractVat(e.amount))}
+                              </span>
+                            </>
+                          )}
                           {e.invoiceUrl && (
                             <>
                               <span className="text-slate-300 dark:text-slate-600">·</span>

@@ -10,6 +10,7 @@ import {
   Handshake,
   HandCoins,
   RefreshCw,
+  Percent,
   Loader2,
 } from 'lucide-react';
 
@@ -23,6 +24,7 @@ import MonthlyExpensesPage from './components/MonthlyExpensesPage';
 import VariableExpensesPage from './components/VariableExpensesPage';
 import WashesPage from './components/WashesPage';
 import FinancialSummaryPage from './components/FinancialSummaryPage';
+import VatRecoveryPage from './components/VatRecoveryPage';
 import BudgetsPage from './components/BudgetsPage';
 import PartnersPage from './components/PartnersPage';
 import PartnerPaymentsPage from './components/PartnerPaymentsPage';
@@ -42,6 +44,7 @@ const TABS = [
   { id: 'variable',  label: 'المصاريف المتغيرة',      icon: Activity    },
   { id: 'washes',    label: 'الغسلات',                icon: Car         },
   { id: 'summary',   label: 'الملخص المالي وصافي الربح', icon: BarChart3 },
+  { id: 'vat',       label: 'الضريبة المستردة',       icon: Percent     },
   { id: 'budgets',   label: 'الرقابة والميزانيات',    icon: Target      },
   { id: 'partners',  label: 'إدارة الشركاء',          icon: Handshake   },
   { id: 'payments',  label: 'المدفوعات الخاصة لكل شريك', icon: HandCoins },
@@ -143,6 +146,7 @@ function AppShell() {
         {activeTab === 'variable'  && <VariableExpensesPage />}
         {activeTab === 'washes'    && <WashesPage />}
         {activeTab === 'summary'   && <FinancialSummaryPage />}
+        {activeTab === 'vat'       && <VatRecoveryPage />}
         {activeTab === 'budgets'   && <BudgetsPage />}
         {activeTab === 'partners'  && <PartnersPage />}
         {activeTab === 'payments'  && <PartnerPaymentsPage />}

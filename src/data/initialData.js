@@ -150,6 +150,22 @@ export function formatNumber(n) {
   return NUM_FMT.format(n || 0);
 }
 
+// ─── VAT (ضريبة القيمة المضافة) ──────────────────────────────────────────────
+// KSA standard rate. Amounts the user enters on a tax invoice are
+// VAT-INCLUSIVE, so the VAT portion is back-derived rather than added on
+// top: for an inclusive total A, VAT = A × r / (1 + r). At 15% a 115
+// invoice yields VAT 15 and a net good value of 100.
+export const VAT_RATE = 0.15;
+export function extractVat(inclusiveAmount, isTaxInvoice = true) {
+  if (!isTaxInvoice) return 0;
+  const a = Number(inclusiveAmount) || 0;
+  return a * VAT_RATE / (1 + VAT_RATE);
+}
+export function netOfVat(inclusiveAmount, isTaxInvoice = true) {
+  const a = Number(inclusiveAmount) || 0;
+  return a - extractVat(a, isTaxInvoice);
+}
+
 // Local-zone ISO (YYYY-MM-DD). Avoids the UTC shift you get from
 // `toISOString()` near midnight in non-UTC timezones. Shared by every
 // modal that pre-fills a "today" date input.

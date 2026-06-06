@@ -319,9 +319,26 @@ export default function StartupItemDetailModal({
             </p>
 
             {error && (
-              <p className="text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/15 border border-red-100 dark:border-red-500/30 rounded-lg px-3 py-2 mb-2">
-                تعذّر تحميل السجل. حاول إغلاق المودال وإعادة فتحه.
-              </p>
+              <div className="text-xs text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-500/15 border border-red-100 dark:border-red-500/30 rounded-lg px-3 py-2.5 mb-2 leading-relaxed">
+                <p className="font-bold mb-1">تعذّر تحميل السجل.</p>
+                {/* Surface the real Supabase error verbatim — most often
+                    "relation startup_cost_entries does not exist" or
+                    "column ... does not exist" when the SQL migration
+                    hasn't been run yet. Showing the message turns this
+                    into a self-diagnosing screen instead of a black box. */}
+                {error?.message && (
+                  <p className="font-mono text-[11px] opacity-80 break-words" dir="ltr">
+                    {error.message}
+                  </p>
+                )}
+                <p className="mt-1.5 text-[11px]">
+                  إن لم تكن قد شغّلت ملف الـ migration{' '}
+                  <code className="bg-red-100 dark:bg-red-500/25 px-1 rounded" dir="ltr">
+                    2026_06_startup_cost_entries_ALL.sql
+                  </code>{' '}
+                  في Supabase SQL Editor، شغّله ثم أعد فتح المودال.
+                </p>
+              </div>
             )}
 
             {loading && entries.length === 0 ? (

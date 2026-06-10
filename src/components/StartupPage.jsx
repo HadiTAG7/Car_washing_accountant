@@ -8,11 +8,12 @@ import {
   Card, SectionHeader, StatCard, PrimaryButton,
 } from './UI';
 import AddStartupFeeModal from './AddStartupFeeModal';
-import StartupItemDetailModal from './StartupItemDetailModal';
+import ExpenseLedgerModal from './ExpenseLedgerModal';
 import LoadingState from './LoadingState';
 import ErrorState, { SetupRequiredCard } from './ErrorState';
 import Toast from './Toast';
 import { useStartupCosts } from '../hooks/useStartupCosts';
+import { useStartupCostEntries } from '../hooks/useStartupCostEntries';
 import { useCategories } from '../hooks/useCategories';
 import { isSupabaseConfigured, missingEnvNames } from '../lib/supabaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
@@ -133,6 +134,9 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
   // when this is non-null. Distinct from `editingItem` (which opens
   // the legacy "edit name/category/amounts" modal).
   const [detailItem, setDetailItem]     = useState(null);
+  // Entries hook lives at page level so the shared ExpenseLedgerModal
+  // stays a pure-UI component; null parentId disables the fetch.
+  const detailLedger = useStartupCostEntries(detailItem?.id ?? null);
   const [mutationError, setMutationError] = useState(null);
   // Toast for inline-manager feedback (e.g. "category in use" warning).
   // Same shape as PartnersPage so swapping in the shared Toast UI is
@@ -414,11 +418,14 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
         initialValues={editingItem}
       />
 
-      <StartupItemDetailModal
+      <ExpenseLedgerModal
         isOpen={Boolean(detailItem)}
-        item={detailItem}
         onClose={() => setDetailItem(null)}
+        title={detailItem ? `سجل مصاريف: ${detailItem.itemName}` : ''}
+        plannedAmount={detailItem?.plannedAmount || 0}
+        ledger={detailLedger}
         onDirty={refetch}
+        migrationFile="2026_06_startup_cost_entries_ALL.sql"
       />
 
       <Toast

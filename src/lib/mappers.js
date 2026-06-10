@@ -75,6 +75,37 @@ export function toStartupCostEntryInsert({
   };
 }
 
+// ── annual_expense_entries (sub-ledger per annual expense) ────────────────
+// Exact mirror of the startup entry mappers with annual_expense_id as the
+// FK. App-side shape matches mapStartupCostEntry so the shared
+// ExpenseLedgerModal renders both without branching.
+export function mapAnnualExpenseEntry(row) {
+  return {
+    id:               row.id,
+    annualExpenseId:  row.annual_expense_id,
+    description:      row.description || '',
+    amount:           Number(row.amount) || 0,
+    spentDate:        row.spent_date || '',
+    notes:            row.notes || '',
+    invoiceUrl:       row.invoice_url || '',
+    isTaxInvoice:     Boolean(row.is_tax_invoice),
+    createdAt:        row.created_at,
+  };
+}
+export function toAnnualExpenseEntryInsert({
+  annualExpenseId, description, amount, spentDate, notes, invoiceUrl, isTaxInvoice,
+}) {
+  return {
+    annual_expense_id: annualExpenseId,
+    description:       String(description || '').trim(),
+    amount:            Math.max(0, Number(amount) || 0),
+    spent_date:        spentDate || null,
+    notes:             notes && String(notes).trim() ? String(notes).trim() : null,
+    invoice_url:       invoiceUrl && String(invoiceUrl).trim() ? String(invoiceUrl).trim() : null,
+    is_tax_invoice:    Boolean(isTaxInvoice),
+  };
+}
+
 // ── assets ────────────────────────────────────────────────────────────────
 export function mapAsset(row) {
   return {
@@ -167,6 +198,9 @@ export function mapAnnualExpense(row) {
     category:      row.category,
     quantity:      clampExpenseQuantity(row.quantity),
     annualCost:    Number(row.annual_cost) || 0,
+    // Ledger roll-up — SUM(annual_expense_entries.amount), maintained by
+    // useAnnualExpenseEntries after every entry mutation.
+    actualAmount:  Number(row.actual_amount) || 0,
     paymentMonth:  row.payment_month != null ? Number(row.payment_month) : null,
     paymentDay:    row.payment_day   != null ? Number(row.payment_day)   : null,
     paymentStatus: clampStatus(row.payment_status),

@@ -297,11 +297,15 @@ create table if not exists public.annual_expense_categories (
 );
 
 -- ─── annual_expenses (Module 2 — recurring fleet expenses) ─────────────────
+-- `actual_amount` is the ledger roll-up: SUM(annual_expense_entries.amount)
+-- maintained client-side after every entry add/delete (alongside an
+-- automatic payment_status flip when the sum reaches annual_cost).
 create table if not exists public.annual_expenses (
   id              uuid primary key default gen_random_uuid(),
   expense_name    text        not null,
   category        text        not null,
   annual_cost     numeric(12,2) not null default 0 check (annual_cost >= 0),
+  actual_amount   numeric(12,2) not null default 0,
   quantity        integer     not null default 1 check (quantity > 0),
   payment_month   integer     check (payment_month is null or (payment_month between 1 and 12)),
   payment_day     integer     check (payment_day   is null or (payment_day   between 1 and 31)),
@@ -319,6 +323,27 @@ drop trigger if exists annual_expenses_touch on public.annual_expenses;
 create trigger annual_expenses_touch
 before update on public.annual_expenses
 for each row execute function public.touch_updated_at();
+
+-- ─── annual_expense_entries (sub-ledger per annual expense) ────────────────
+-- One row per payment/receipt that contributes to an annual_expenses
+-- row's actual_amount. Mirrors startup_cost_entries exactly:
+-- `is_tax_invoice` flags a VAT-inclusive payment; the 15% recoverable
+-- portion is derived on the client, never stored.
+create table if not exists public.annual_expense_entries (
+  id                 uuid          primary key default gen_random_uuid(),
+  annual_expense_id  uuid          not null references public.annual_expenses(id) on delete cascade,
+  description        text          not null,
+  amount             numeric(12,2) not null default 0 check (amount >= 0),
+  spent_date         date          not null default current_date,
+  notes              text,
+  invoice_url        text,
+  is_tax_invoice     boolean       not null default false,
+  created_at         timestamptz   not null default now()
+);
+create index if not exists annual_expense_entries_parent_idx
+  on public.annual_expense_entries(annual_expense_id);
+create index if not exists annual_expense_entries_parent_date_idx
+  on public.annual_expense_entries(annual_expense_id, spent_date desc);
 
 -- ─── temporary_expenses (Module 9 — reimbursable outlays ledger) ──────────
 -- Temporary outlays the business pays now and recovers later (refunds,
@@ -362,6 +387,7 @@ alter table public.partners                    enable row level security;
 alter table public.partner_payments             enable row level security;
 alter table public.annual_expense_categories   enable row level security;
 alter table public.annual_expenses             enable row level security;
+alter table public.annual_expense_entries      enable row level security;
 alter table public.monthly_expense_categories  enable row level security;
 alter table public.monthly_expenses            enable row level security;
 alter table public.variable_expense_categories enable row level security;
@@ -422,6 +448,10 @@ create policy "rw_auth" on public.annual_expense_categories
 
 drop policy if exists "rw_auth" on public.annual_expenses;
 create policy "rw_auth" on public.annual_expenses
+  for all to public using (true) with check (true);
+
+drop policy if exists "rw_auth" on public.annual_expense_entries;
+create policy "rw_auth" on public.annual_expense_entries
   for all to public using (true) with check (true);
 
 drop policy if exists "rw_auth" on public.monthly_expense_categories;

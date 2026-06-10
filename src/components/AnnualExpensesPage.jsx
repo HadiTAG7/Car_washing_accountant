@@ -8,10 +8,12 @@ import {
   Card, SectionHeader, StatCard, PrimaryButton,
 } from './UI';
 import AddAnnualExpenseModal from './AddAnnualExpenseModal';
+import ExpenseLedgerModal from './ExpenseLedgerModal';
 import LoadingState from './LoadingState';
 import ErrorState, { SetupRequiredCard } from './ErrorState';
 import Toast from './Toast';
 import { useAnnualExpenses } from '../hooks/useAnnualExpenses';
+import { useAnnualExpenseEntries } from '../hooks/useAnnualExpenseEntries';
 import { useAnnualExpenseCategories } from '../hooks/useAnnualExpenseCategories';
 import { isSupabaseConfigured, missingEnvNames, describeSupabaseError } from '../lib/supabaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
@@ -101,6 +103,12 @@ export default function AnnualExpensesPage() {
 
   const [localOpen, setLocalOpen]         = useState(false);
   const [editingItem, setEditingItem]     = useState(null);
+  // The expense whose payment sub-ledger is open (click on the expense
+  // name). Distinct from `editingItem` (the edit-fields modal).
+  const [detailItem, setDetailItem]       = useState(null);
+  // Entries hook lives at page level so the shared ExpenseLedgerModal
+  // stays a pure-UI component; null parentId disables the fetch.
+  const detailLedger = useAnnualExpenseEntries(detailItem?.id ?? null);
   const [mutationError, setMutationError] = useState(null);
   const [toast, setToast] = useState({ open: false, message: '', tone: 'success', duration: 3000 });
 
@@ -255,24 +263,44 @@ export default function AnnualExpensesPage() {
             <EmptyState onAdd={openAddModal} canMutate={canMutate} />
           ) : (
             <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
-              <table className="w-full min-w-[640px] text-sm">
+              <table className="w-full min-w-[760px] text-sm">
                 <thead>
                   <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
                     <th className="py-3 px-4 whitespace-nowrap">المصروف</th>
                     <th className="py-3 px-4 whitespace-nowrap">التصنيف</th>
                     <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">التكلفة السنوية</th>
+                    <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">المدفوع</th>
+                    <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">المتبقي</th>
                     <th className="py-3 px-4 whitespace-nowrap">تاريخ الصرف السنوي</th>
                     <th className="py-3 px-4 whitespace-nowrap">الحالة</th>
                     <th className="py-3 px-4 whitespace-nowrap text-left w-20">إجراءات</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((i) => (
+                  {items.map((i) => {
+                    // Ledger-driven figures, scaled like every other money
+                    // figure on the page (admin → ×1).
+                    const rowPaid      = (i.actualAmount || 0) * scalingFactor;
+                    const rowRemaining = Math.max(0, (i.annualCost || 0) - (i.actualAmount || 0)) * scalingFactor;
+                    return (
                     <tr
                       key={i.id}
                       className="border-b border-slate-50 dark:border-slate-800 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
                     >
-                      <td className="py-3 px-4 whitespace-normal break-words min-w-[180px] font-medium text-slate-800 dark:text-slate-200">{i.expenseName}</td>
+                      <td className="py-3 px-4 whitespace-normal break-words min-w-[180px]">
+                        {canMutate ? (
+                          <button
+                            type="button"
+                            onClick={() => setDetailItem(i)}
+                            className="font-medium text-slate-800 dark:text-slate-200 hover:text-primary-700 dark:hover:text-primary-400 hover:underline decoration-dotted underline-offset-4 transition-colors text-right"
+                            title="فتح سجل المصاريف التفصيلي"
+                          >
+                            {i.expenseName}
+                          </button>
+                        ) : (
+                          <span className="font-medium text-slate-800 dark:text-slate-200">{i.expenseName}</span>
+                        )}
+                      </td>
                       <td className="py-3 px-4 whitespace-nowrap">
                         <span className="inline-flex text-[11px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-2 py-1 rounded-md">
                           {getCategoryLabel(i.category)}
@@ -280,6 +308,16 @@ export default function AnnualExpensesPage() {
                       </td>
                       <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums text-slate-700 dark:text-slate-300">
                         {formatCurrency(i.annualCost * scalingFactor)}
+                      </td>
+                      <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums text-slate-700 dark:text-slate-300">
+                        {formatCurrency(rowPaid)}
+                      </td>
+                      <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums">
+                        <span className={rowRemaining > 0
+                          ? 'font-semibold text-amber-600 dark:text-amber-400'
+                          : 'font-medium text-emerald-600 dark:text-emerald-400'}>
+                          {formatCurrency(rowRemaining)}
+                        </span>
                       </td>
                       <td className="py-3 px-4 whitespace-nowrap text-slate-600 dark:text-slate-400">
                         <span className="inline-flex items-center gap-1.5 tabular-nums">
@@ -320,7 +358,8 @@ export default function AnnualExpensesPage() {
                         )}
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -338,6 +377,17 @@ export default function AnnualExpensesPage() {
         categories={categories}
         protectedCategoryLabels={RECURRING_EXPENSE_CATEGORIES.map((c) => c.label)}
         initialValues={editingItem}
+      />
+
+      <ExpenseLedgerModal
+        isOpen={Boolean(detailItem)}
+        onClose={() => setDetailItem(null)}
+        title={detailItem ? `سجل مصاريف: ${detailItem.expenseName}` : ''}
+        plannedAmount={detailItem?.annualCost || 0}
+        plannedLabel="التكلفة السنوية"
+        ledger={detailLedger}
+        onDirty={refetch}
+        migrationFile="2026_06_annual_expense_entries_ALL.sql"
       />
 
       <Toast

@@ -35,24 +35,37 @@ export function useStartupCostEntries(parentId) {
   );
 
   // Recompute SUM(amount) across all entries for this parent and push
-  // it onto startup_costs.actual_amount. Runs after every add/delete so
-  // the inline table cell stays coherent without a manual "refresh"
-  // button. We re-query rather than trust the local `data` snapshot —
-  // the snapshot is one render behind the just-completed mutation.
+  // it onto startup_costs.actual_amount, deriving the status against
+  // budgeted_amount in the same UPDATE (completed when the ledger
+  // covers the plan — same rule the inline-edit path applies). Runs
+  // after every add/delete so the table stays coherent without a
+  // manual "refresh". We re-query rather than trust the local `data`
+  // snapshot — the snapshot is one render behind the mutation.
   async function syncParentTotal() {
     if (!isSupabaseConfigured || !parentId) return;
-    const { data: rows, error: sumErr } = await supabase
-      .from('startup_cost_entries')
-      .select('amount')
-      .eq('startup_cost_id', parentId);
-    if (sumErr) {
-      console.error('🔥 Real Supabase Error (entries.sum):', sumErr);
+    const [{ data: rows, error: sumErr }, { data: parent, error: parentErr }] = await Promise.all([
+      supabase
+        .from('startup_cost_entries')
+        .select('amount')
+        .eq('startup_cost_id', parentId),
+      supabase
+        .from('startup_costs')
+        .select('budgeted_amount')
+        .eq('id', parentId)
+        .single(),
+    ]);
+    if (sumErr || parentErr) {
+      console.error('🔥 Real Supabase Error (entries.sum):', sumErr || parentErr);
       return;
     }
-    const total = (rows || []).reduce((s, r) => s + (Number(r.amount) || 0), 0);
+    const total   = (rows || []).reduce((s, r) => s + (Number(r.amount) || 0), 0);
+    const planned = Number(parent?.budgeted_amount) || 0;
     const { error: upErr } = await supabase
       .from('startup_costs')
-      .update({ actual_amount: total })
+      .update({
+        actual_amount: total,
+        status:        planned > 0 && total >= planned ? 'completed' : 'in_progress',
+      })
       .eq('id', parentId);
     if (upErr) {
       console.error('🔥 Real Supabase Error (startup_costs.sync_total):', upErr);

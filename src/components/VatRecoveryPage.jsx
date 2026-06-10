@@ -11,6 +11,7 @@ import LoadingState from './LoadingState';
 import ErrorState, { SetupRequiredCard } from './ErrorState';
 import { useTaxInvoices } from '../hooks/useTaxInvoices';
 import { useStartupCosts } from '../hooks/useStartupCosts';
+import { useAnnualExpenses } from '../hooks/useAnnualExpenses';
 import { isSupabaseConfigured, missingEnvNames } from '../lib/supabaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 
@@ -19,17 +20,36 @@ function isSafeHttpUrl(value) {
   return /^https?:\/\//i.test(String(value || '').trim());
 }
 
+// Tiny source chip next to the parent item name — tells the admin which
+// page the invoice was logged from.
+const SOURCE_META = {
+  startup: { label: 'تأسيس', cls: 'bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300 border-primary-100 dark:border-primary-500/30' },
+  annual:  { label: 'سنوي',  cls: 'bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-100 dark:border-amber-500/30' },
+};
+function SourceBadge({ source }) {
+  const meta = SOURCE_META[source];
+  if (!meta) return null;
+  return (
+    <span className={`inline-flex text-[10px] font-bold px-1.5 py-0.5 rounded border ${meta.cls}`}>
+      {meta.label}
+    </span>
+  );
+}
+
 export default function VatRecoveryPage() {
   const { invoices, loading, error, refetch } = useTaxInvoices();
   const { items: startupItems } = useStartupCosts();
+  const { items: annualItems }  = useAnnualExpenses();
   const { scalingFactor } = usePartnerView();
 
-  // Resolve startup_cost_id → item name for the "البند الأصلي" column.
+  // Resolve parentId → item name across both sources (uuids can't
+  // collide, so one merged map is enough).
   const itemNameById = useMemo(() => {
     const m = new Map();
     startupItems.forEach((i) => m.set(i.id, i.itemName));
+    annualItems.forEach((i)  => m.set(i.id, i.expenseName));
     return m;
-  }, [startupItems]);
+  }, [startupItems, annualItems]);
 
   // All money figures are scaled by the viewing partner's share for
   // consistency with the rest of the dashboard (admin → ×1).
@@ -141,7 +161,10 @@ export default function VatRecoveryPage() {
                         className="border-b border-slate-50 dark:border-slate-800 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
                       >
                         <td className="py-3 px-4 whitespace-nowrap text-slate-700 dark:text-slate-300">
-                          {itemNameById.get(e.startupCostId) || '—'}
+                          <span className="inline-flex items-center gap-1.5">
+                            {itemNameById.get(e.parentId) || '—'}
+                            <SourceBadge source={e.source} />
+                          </span>
                         </td>
                         <td className="py-3 px-4 whitespace-normal break-words min-w-[160px] font-medium text-slate-800 dark:text-slate-200">
                           {e.description}

@@ -6,7 +6,6 @@ import {
 import {
   formatCurrency, formatDate, todayISO, extractVat, netOfVat,
 } from '../data/initialData';
-import { useStartupCostEntries } from '../hooks/useStartupCostEntries';
 
 const EMPTY_FORM = {
   description: '', amount: '', spentDate: '', notes: '', invoiceUrl: '', isTaxInvoice: false,
@@ -22,36 +21,45 @@ function isSafeHttpUrl(value) {
 }
 
 /**
- * Per-item expense ledger. Opens when the admin clicks an item name on
- * the Startup Fees table. Lists every individual transaction that adds
- * up to the item's actual_amount, plus a form to log a new one.
+ * Generic per-item expense ledger modal — shared by the Startup Fees and
+ * Annual Expenses pages (and any future expense surface that grows a
+ * sub-ledger). The table-specific behavior lives in the entries hook the
+ * PAGE owns; this component is pure UI over its output.
  *
- * Wiring: every add/delete here calls useStartupCostEntries which then
- * pushes the new SUM back onto the parent startup_costs row. The
- * StartupPage refetches its items after the modal closes so the table's
- * "المبلغ الفعلي" and "المتبقي" columns reflect the new total.
+ * Props:
+ *   isOpen / onClose   — standard modal lifecycle
+ *   title              — full header line, e.g. `سجل مصاريف: الدباب`
+ *   plannedAmount      — the parent's planned figure for the summary strip
+ *   plannedLabel       — label over that figure (default "المخطط";
+ *                        annual passes "التكلفة السنوية")
+ *   ledger             — { entries, loading, error, addEntry, deleteEntry }
+ *                        from useStartupCostEntries / useAnnualExpenseEntries
+ *   onDirty            — called after every successful add/delete so the
+ *                        parent page can refetch its items (the hook has
+ *                        already pushed the new SUM onto the parent row)
+ *   migrationFile      — SQL filename shown in the self-diagnosing error
+ *                        banner when the entries table doesn't exist yet
  */
-export default function StartupItemDetailModal({
-  isOpen, onClose, item, onDirty,
+export default function ExpenseLedgerModal({
+  isOpen, onClose, title, plannedAmount = 0, plannedLabel = 'المخطط',
+  ledger, onDirty, migrationFile,
 }) {
-  const {
-    entries, loading, error, addEntry, deleteEntry,
-  } = useStartupCostEntries(isOpen && item?.id ? item.id : null);
+  const { entries, loading, error, addEntry, deleteEntry } = ledger;
 
   const [form, setForm] = useState(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
 
-  // Reset form whenever a different item opens; seed today's date.
+  // Reset form on every open; seed today's date.
   useEffect(() => {
     if (!isOpen) return;
     setForm({ ...EMPTY_FORM, spentDate: todayISO() });
-  }, [isOpen, item?.id]);
+  }, [isOpen]);
 
-  if (!isOpen || !item) return null;
+  if (!isOpen) return null;
 
   const recordedTotal = entries.reduce((s, e) => s + (e.amount || 0), 0);
-  const planned       = item.plannedAmount || 0;
+  const planned       = plannedAmount || 0;
   const remaining     = Math.max(0, planned - recordedTotal);
   const overspent     = recordedTotal > planned && planned > 0;
 
@@ -78,7 +86,7 @@ export default function StartupItemDetailModal({
         isTaxInvoice: form.isTaxInvoice,
       });
       setForm({ ...EMPTY_FORM, spentDate: todayISO() });
-      onDirty?.(); // tell parent to refetch startup items so totals update
+      onDirty?.(); // tell the parent page to refetch its items so totals update
     } finally {
       setSubmitting(false);
     }
@@ -110,7 +118,7 @@ export default function StartupItemDetailModal({
               <FileText size={18} />
             </span>
             <span className="min-w-0">
-              <span className="block">سجل مصاريف: {item.itemName}</span>
+              <span className="block">{title}</span>
               <span className="block text-[11px] font-medium text-slate-500 dark:text-slate-400">
                 أضف المصاريف خطوة بخطوة — الإجمالي يحدّث "المبلغ الفعلي" تلقائياً
               </span>
@@ -130,7 +138,7 @@ export default function StartupItemDetailModal({
           {/* Summary strip */}
           <div className="grid grid-cols-3 gap-3 text-sm">
             <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 rounded-xl px-3 py-2.5">
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">المخطط</p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">{plannedLabel}</p>
               <p className="font-bold text-slate-900 dark:text-slate-100 tabular-nums mt-0.5">
                 {formatCurrency(planned)}
               </p>
@@ -237,10 +245,10 @@ export default function StartupItemDetailModal({
               />
             </div>
 
-            {/* Invoice URL — full-width row. Optional; we don't
-                validate format because vendor portals + Drive share
-                links vary wildly — we just render as a link when the
-                value starts with http(s):// in the entries list. */}
+            {/* Invoice URL — full-width row. Optional; we don't validate
+                format because vendor portals + Drive share links vary
+                wildly — we just render as a link when the value starts
+                with http(s):// in the entries list. */}
             <div className="relative">
               <LinkIcon
                 size={15}
@@ -261,7 +269,7 @@ export default function StartupItemDetailModal({
             {/* Tax-invoice toggle. When on, the amount above is treated
                 as VAT-inclusive and the 15% portion is back-derived. */}
             <label
-              htmlFor="isTaxInvoice"
+              htmlFor="ledgerIsTaxInvoice"
               className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border cursor-pointer transition-colors ${
                 form.isTaxInvoice
                   ? 'border-emerald-300 dark:border-emerald-500/50 bg-emerald-50 dark:bg-emerald-500/15'
@@ -269,7 +277,7 @@ export default function StartupItemDetailModal({
               }`}
             >
               <input
-                id="isTaxInvoice"
+                id="ledgerIsTaxInvoice"
                 type="checkbox"
                 name="isTaxInvoice"
                 checked={form.isTaxInvoice}
@@ -322,8 +330,7 @@ export default function StartupItemDetailModal({
               <div className="text-xs text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-500/15 border border-red-100 dark:border-red-500/30 rounded-lg px-3 py-2.5 mb-2 leading-relaxed">
                 <p className="font-bold mb-1">تعذّر تحميل السجل.</p>
                 {/* Surface the real Supabase error verbatim — most often
-                    "relation startup_cost_entries does not exist" or
-                    "column ... does not exist" when the SQL migration
+                    "relation ... does not exist" when the SQL migration
                     hasn't been run yet. Showing the message turns this
                     into a self-diagnosing screen instead of a black box. */}
                 {error?.message && (
@@ -331,13 +338,15 @@ export default function StartupItemDetailModal({
                     {error.message}
                   </p>
                 )}
-                <p className="mt-1.5 text-[11px]">
-                  إن لم تكن قد شغّلت ملف الـ migration{' '}
-                  <code className="bg-red-100 dark:bg-red-500/25 px-1 rounded" dir="ltr">
-                    2026_06_startup_cost_entries_ALL.sql
-                  </code>{' '}
-                  في Supabase SQL Editor، شغّله ثم أعد فتح المودال.
-                </p>
+                {migrationFile && (
+                  <p className="mt-1.5 text-[11px]">
+                    إن لم تكن قد شغّلت ملف الـ migration{' '}
+                    <code className="bg-red-100 dark:bg-red-500/25 px-1 rounded" dir="ltr">
+                      {migrationFile}
+                    </code>{' '}
+                    في Supabase SQL Editor، شغّله ثم أعد فتح المودال.
+                  </p>
+                )}
               </div>
             )}
 

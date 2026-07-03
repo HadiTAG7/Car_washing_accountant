@@ -164,3 +164,20 @@ html.dark ::-webkit-scrollbar-thumb:hover { background: #475569; }        /* sla
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0);   }
 }
+
+/* ─── Print: isolate the partner statement sheet ──────────────────────────
+   When window.print() fires from PartnerStatementModal, hide everything
+   except the statement sheet so the printout / saved PDF is clean. The
+   sheet itself opts back in via `#partner-statement-sheet`. */
+@media print {
+  body * { visibility: hidden; }
+  #partner-statement-sheet,
+  #partner-statement-sheet * { visibility: visible; }
+  #partner-statement-sheet {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    width: 100%;
+    max-width: none;
+  }
+}

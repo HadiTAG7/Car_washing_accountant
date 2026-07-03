@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import {
+  LayoutDashboard,
   Landmark,
   Repeat,
   Receipt,
@@ -18,6 +19,7 @@ import Sidebar from './components/Sidebar';
 import LoginScreen from './components/LoginScreen';
 import UpdatePasswordScreen from './components/UpdatePasswordScreen';
 import { DemoBanner } from './components/ErrorState';
+import OverviewPage from './components/OverviewPage';
 import StartupPage from './components/StartupPage';
 import AnnualExpensesPage from './components/AnnualExpensesPage';
 import MonthlyExpensesPage from './components/MonthlyExpensesPage';
@@ -38,6 +40,7 @@ import { PartnerViewProvider, usePartnerView } from './contexts/PartnerViewConte
 import PartnerViewBanner from './components/PartnerViewBanner';
 
 const TABS = [
+  { id: 'overview',  label: 'نظرة عامة',              icon: LayoutDashboard },
   { id: 'startup',   label: 'رسوم التأسيس',           icon: Landmark    },
   { id: 'annual',    label: 'المصاريف السنوية',       icon: Repeat      },
   { id: 'monthly',   label: 'المصاريف الشهرية',       icon: Receipt     },
@@ -54,7 +57,7 @@ const TABS = [
 // Inner shell wraps the routed content so it can subscribe to the
 // MobileMenuContext (provider is one level up).
 function AppShell() {
-  const [activeTab, setActiveTab] = useState('startup');
+  const [activeTab, setActiveTab] = useState('overview');
   const { session, loading: authLoading, signOut } = useAuth();
   const { canMutate } = usePartnerView();
 
@@ -135,6 +138,7 @@ function AppShell() {
         <PartnerViewBanner />
         {!isSupabaseConfigured && <DemoBanner missing={missingEnvNames} />}
 
+        {activeTab === 'overview'  && <OverviewPage />}
         {activeTab === 'startup'   && (
           <StartupPage
             pendingEntry={pendingEntry}

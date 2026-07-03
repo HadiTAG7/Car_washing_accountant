@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
-  Plus, Users, UserCheck, Briefcase, Trash2, Pencil, Building2, Coins,
+  Plus, Users, UserCheck, Briefcase, Trash2, Pencil, Building2, Coins, FileText,
 } from 'lucide-react';
 import { formatNumber, formatCurrency, PER_WORKER_FEE } from '../data/initialData';
 import TopBar from './TopBar';
@@ -10,6 +10,7 @@ import {
 } from './UI';
 import AddPartnerModal from './AddPartnerModal';
 import EditPartnerModal from './EditPartnerModal';
+import PartnerStatementModal from './PartnerStatementModal';
 import LoadingState from './LoadingState';
 import ErrorState from './ErrorState';
 import Toast from './Toast';
@@ -44,6 +45,8 @@ export default function PartnersPage() {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPartner, setEditingPartner] = useState(null);
+  // Partner whose printable capital statement is open.
+  const [statementPartner, setStatementPartner] = useState(null);
   const [mutationError, setMutationError] = useState(null);
   const [toast, setToast] = useState({ open: false, message: '', tone: 'success', duration: 3000 });
 
@@ -287,28 +290,41 @@ export default function PartnersPage() {
 
                       {/* 7. إجراءات */}
                       <td className="py-3 px-4 whitespace-nowrap text-left">
-                        {canMutate && (
-                          <div className="inline-flex items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => setEditingPartner(p)}
-                              className="text-slate-400 hover:text-indigo-500 dark:hover:text-indigo-400 transition-colors duration-150 p-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-500/15 cursor-pointer"
-                              aria-label={`تعديل ${p.partnerName}`}
-                              title="تعديل بيانات الشريك"
-                            >
-                              <Pencil size={15} />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDelete(p.id)}
-                              className="text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/15 transition-colors"
-                              aria-label={`حذف ${p.partnerName}`}
-                              title="حذف الشريك"
-                            >
-                              <Trash2 size={15} />
-                            </button>
-                          </div>
-                        )}
+                        <div className="inline-flex items-center gap-1">
+                          {/* Statement: available to everyone (a partner
+                              can print their own even in read-only view). */}
+                          <button
+                            type="button"
+                            onClick={() => setStatementPartner(p)}
+                            className="text-slate-400 dark:text-slate-500 hover:text-primary-700 dark:hover:text-primary-400 p-1.5 rounded-lg hover:bg-primary-50 dark:hover:bg-primary-500/15 transition-colors"
+                            aria-label={`كشف حساب ${p.partnerName}`}
+                            title="كشف حساب الشريك (طباعة / PDF)"
+                          >
+                            <FileText size={15} />
+                          </button>
+                          {canMutate && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => setEditingPartner(p)}
+                                className="text-slate-400 hover:text-indigo-500 dark:hover:text-indigo-400 transition-colors duration-150 p-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-500/15 cursor-pointer"
+                                aria-label={`تعديل ${p.partnerName}`}
+                                title="تعديل بيانات الشريك"
+                              >
+                                <Pencil size={15} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDelete(p.id)}
+                                className="text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/15 transition-colors"
+                                aria-label={`حذف ${p.partnerName}`}
+                                title="حذف الشريك"
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -332,6 +348,12 @@ export default function PartnersPage() {
         onClose={() => setEditingPartner(null)}
         onSave={handleSaveEdit}
         showToast={showToast}
+      />
+
+      <PartnerStatementModal
+        isOpen={Boolean(statementPartner)}
+        partner={statementPartner}
+        onClose={() => setStatementPartner(null)}
       />
 
       <Toast

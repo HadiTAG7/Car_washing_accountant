@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
 import {
-  Wallet, TrendingDown, TrendingUp, Calendar, ListFilter,
+  Wallet, TrendingDown, TrendingUp, Calendar, ListFilter, Download,
 } from 'lucide-react';
 import { formatCurrency } from '../data/initialData';
+import { downloadCsv } from '../lib/exportCsv';
 import TopBar from './TopBar';
 import { Card, SectionHeader, StatCard } from './UI';
 import LoadingState from './LoadingState';
@@ -371,6 +372,30 @@ export default function FinancialSummaryPage() {
               <SectionHeader
                 title={`هيكل قائمة الدخل — ${monthLabel}`}
                 subtitle="بيان رسمي للإيرادات التشغيلية، التكاليف، وصافي الربح للفترة"
+                action={
+                  <button
+                    type="button"
+                    onClick={() => downloadCsv(
+                      `قائمة-الدخل-${selectedMonth}`,
+                      ['البند', 'المبلغ'],
+                      [
+                        ['الإيرادات التشغيلية', revenue.toFixed(2)],
+                        ['التكاليف المتغيرة والعمولات', (-variableTotal).toFixed(2)],
+                        ['مجمل الربح التشغيلي', grossProfit.toFixed(2)],
+                        ['المصاريف الشهرية الثابتة', (-monthlyFixed).toFixed(2)],
+                        ['مخصص المصاريف السنوية الموزعة', (-annualAmortized).toFixed(2)],
+                        ['صافي الربح قبل الرسوم', netProfitBeforeFees.toFixed(2)],
+                        ['رسوم الإدارة (10%)', (-managementFees).toFixed(2)],
+                        ['راتب المشرف (5%)', (-supervisorSalary).toFixed(2)],
+                        ['صافي الربح النهائي', finalNetProfit.toFixed(2)],
+                      ],
+                    )}
+                    className="inline-flex items-center gap-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-2 rounded-lg text-xs font-semibold transition-colors"
+                  >
+                    <Download size={14} />
+                    تصدير CSV
+                  </button>
+                }
               />
               <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
                 <table className="w-full min-w-[640px] text-sm">

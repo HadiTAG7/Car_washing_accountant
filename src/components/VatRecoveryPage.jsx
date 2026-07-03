@@ -1,10 +1,11 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
-  Percent, Receipt, Coins, Link as LinkIcon, FileText,
+  Percent, Receipt, Coins, Link as LinkIcon, FileText, Download, Calendar,
 } from 'lucide-react';
 import {
-  formatCurrency, formatDate, extractVat, netOfVat,
+  formatCurrency, formatDate, formatNumber, extractVat, netOfVat,
 } from '../data/initialData';
+import { downloadCsv } from '../lib/exportCsv';
 import TopBar from './TopBar';
 import { Card, SectionHeader, StatCard } from './UI';
 import LoadingState from './LoadingState';
@@ -42,6 +43,24 @@ export default function VatRecoveryPage() {
   const { items: annualItems }  = useAnnualExpenses();
   const { scalingFactor } = usePartnerView();
 
+  // ZATCA returns are filed per period — let the admin narrow to one
+  // month (YYYY-MM) before totalling / exporting. '' = all periods.
+  const [period, setPeriod] = useState('');
+
+  // Distinct YYYY-MM values present in the data, newest first, for the
+  // period picker.
+  const periods = useMemo(() => {
+    const set = new Set(
+      invoices.map((e) => String(e.spentDate).slice(0, 7)).filter((s) => s.length === 7),
+    );
+    return [...set].sort().reverse();
+  }, [invoices]);
+
+  const filtered = useMemo(
+    () => (period ? invoices.filter((e) => String(e.spentDate).slice(0, 7) === period) : invoices),
+    [invoices, period],
+  );
+
   // Resolve parentId → item name across both sources (uuids can't
   // collide, so one merged map is enough).
   const itemNameById = useMemo(() => {
@@ -55,7 +74,7 @@ export default function VatRecoveryPage() {
   // consistency with the rest of the dashboard (admin → ×1).
   const kpis = useMemo(() => {
     let inclusive = 0, vat = 0, net = 0;
-    invoices.forEach((e) => {
+    filtered.forEach((e) => {
       inclusive += e.amount || 0;
       vat       += extractVat(e.amount, true);
       net       += netOfVat(e.amount, true);
@@ -64,9 +83,30 @@ export default function VatRecoveryPage() {
       inclusive: inclusive * scalingFactor,
       vat:       vat       * scalingFactor,
       net:       net       * scalingFactor,
-      count:     invoices.length,
+      count:     filtered.length,
     };
-  }, [invoices, scalingFactor]);
+  }, [filtered, scalingFactor]);
+
+  function handleExport() {
+    const rows = filtered.map((e) => [
+      itemNameById.get(e.parentId) || '',
+      SOURCE_META[e.source]?.label || e.source,
+      e.description,
+      e.spentDate,
+      ((e.amount || 0) * scalingFactor).toFixed(2),
+      (extractVat(e.amount, true) * scalingFactor).toFixed(2),
+      (netOfVat(e.amount, true) * scalingFactor).toFixed(2),
+      isSafeHttpUrl(e.invoiceUrl) ? e.invoiceUrl : '',
+    ]);
+    // Totals row for the accountant.
+    rows.push(['الإجمالي', '', '', '', kpis.inclusive.toFixed(2), kpis.vat.toFixed(2), kpis.net.toFixed(2), '']);
+    const label = period || 'كل-الفترات';
+    downloadCsv(
+      `الضريبة-المستردة-${label}`,
+      ['البند الأصلي', 'المصدر', 'الوصف', 'التاريخ', 'شامل الضريبة', 'الضريبة 15%', 'الصافي', 'رابط الفاتورة'],
+      rows,
+    );
+  }
 
   return (
     <>
@@ -112,7 +152,7 @@ export default function VatRecoveryPage() {
             iconColor="text-emerald-600 dark:text-emerald-400"
             label="إجمالي الضريبة المتوقع استردادها"
             value={formatCurrency(kpis.vat)}
-            sub={`${kpis.count} ${kpis.count === 1 ? 'فاتورة ضريبية' : 'فاتورة ضريبية'}`}
+            sub={`${formatNumber(kpis.count)} فاتورة ضريبية${period ? ` · ${period}` : ''}`}
           />
           <StatCard
             icon={Receipt}
@@ -136,22 +176,49 @@ export default function VatRecoveryPage() {
         <Card className="p-6">
           <SectionHeader
             title="الفواتير الضريبية"
-            subtitle="كل بند مصروف تأسيسي تم تحديده كفاتورة ضريبية"
+            subtitle={period ? `الفترة: ${period}` : 'كل الفترات'}
+            action={
+              <div className="flex items-center gap-2">
+                {/* Period filter */}
+                <div className="relative">
+                  <Calendar size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 pointer-events-none" />
+                  <select
+                    value={period}
+                    onChange={(e) => setPeriod(e.target.value)}
+                    className="appearance-none pr-8 pl-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-400 tabular-nums"
+                    aria-label="فلترة حسب الفترة"
+                  >
+                    <option value="">كل الفترات</option>
+                    {periods.map((p) => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleExport}
+                  disabled={filtered.length === 0}
+                  className="inline-flex items-center gap-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed text-slate-700 dark:text-slate-200 px-3 py-2 rounded-lg text-xs font-semibold transition-colors"
+                >
+                  <Download size={14} />
+                  تصدير CSV
+                </button>
+              </div>
+            }
           />
 
-          {loading && invoices.length === 0 ? (
+          {loading && filtered.length === 0 ? (
             <LoadingState message="جارٍ تحميل الفواتير الضريبية..." />
-          ) : invoices.length === 0 ? (
+          ) : filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-14 text-center">
               <div className="bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 w-14 h-14 rounded-2xl flex items-center justify-center mb-4">
                 <FileText size={26} />
               </div>
               <p className="text-base font-bold text-slate-800 dark:text-slate-200 mb-1">
-                لا توجد فواتير ضريبية مسجّلة بعد
+                {period ? 'لا توجد فواتير ضريبية في هذه الفترة' : 'لا توجد فواتير ضريبية مسجّلة بعد'}
               </p>
               <p className="text-sm text-slate-500 dark:text-slate-400 max-w-sm">
-                افتح أي بند في صفحة &quot;رسوم التأسيس&quot;، أضف مصروفاً، وفعّل
-                خيار &quot;فاتورة ضريبية&quot; — وسيظهر هنا تلقائياً.
+                {period
+                  ? 'جرّب اختيار فترة أخرى أو "كل الفترات".'
+                  : 'افتح أي بند في صفحة "رسوم التأسيس" أو "المصاريف السنوية"، أضف مصروفاً، وفعّل خيار "فاتورة ضريبية" — وسيظهر هنا تلقائياً.'}
               </p>
             </div>
           ) : (
@@ -169,7 +236,7 @@ export default function VatRecoveryPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {invoices.map((e) => {
+                  {filtered.map((e) => {
                     const inclusive = (e.amount || 0) * scalingFactor;
                     const vat       = extractVat(e.amount, true) * scalingFactor;
                     const net       = netOfVat(e.amount, true) * scalingFactor;

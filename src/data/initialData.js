@@ -72,7 +72,11 @@ const NUM_FMT = new Intl.NumberFormat('ar-SA', { numberingSystem: 'latn' });
 export const PER_WORKER_FEE = 20000;
 
 export function formatCurrency(amount) {
-  return SAR_FMT.format(amount || 0);
+  // Intl's ar-SA currency literal is "ر.س." (trailing period). Thmanyah
+  // Sans' ss01 ligature swaps "ر.س" for the official Saudi Riyal symbol,
+  // which left that period dangling after the glyph ("123 ⃀."). Strip it
+  // so every amount renders a clean symbol.
+  return SAR_FMT.format(amount || 0).replace('ر.س.', 'ر.س');
 }
 export function formatNumber(n) {
   return NUM_FMT.format(n || 0);

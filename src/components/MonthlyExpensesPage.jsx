@@ -6,6 +6,7 @@ import { formatCurrency, formatNumber, MONTHLY_EXPENSE_CATEGORIES } from '../dat
 import TopBar from './TopBar';
 import {
   Card, SectionHeader, StatCard, PrimaryButton,
+  EmptyState as EmptyStateShell,
 } from './UI';
 import AddMonthlyExpenseModal from './AddMonthlyExpenseModal';
 import PaymentStatusPill from './PaymentStatusPill';
@@ -25,22 +26,18 @@ function isMonthlyDueToday(paymentDay) {
 
 function EmptyState({ onAdd, canMutate }) {
   return (
-    <div className="flex flex-col items-center justify-center py-14 text-center">
-      <div className="bg-primary-50 text-primary-700 w-14 h-14 rounded-2xl flex items-center justify-center mb-4">
-        <Receipt size={26} />
-      </div>
-      <p className="text-base font-bold text-slate-800 dark:text-slate-200 mb-1">لا توجد مصاريف شهرية بعد</p>
-      <p className="text-sm text-slate-500 dark:text-slate-400 mb-5 max-w-sm">
-        {canMutate
-          ? 'أضف أول مصروف شهري متكرر لمتابعة التكاليف التشغيلية الجارية.'
-          : 'لم يقم المشرف بتسجيل أي مصروف شهري بعد.'}
-      </p>
-      {canMutate && (
+    <EmptyStateShell
+      icon={Receipt}
+      title="لا توجد مصاريف شهرية بعد"
+      hint={canMutate
+        ? 'أضف أول مصروف شهري متكرر لمتابعة التكاليف التشغيلية الجارية.'
+        : 'لم يقم المشرف بتسجيل أي مصروف شهري بعد.'}
+      action={canMutate ? (
         <PrimaryButton icon={Plus} onClick={onAdd}>
           إضافة مصروف شهري
         </PrimaryButton>
-      )}
-    </div>
+      ) : null}
+    />
   );
 }
 
@@ -177,19 +174,18 @@ export default function MonthlyExpensesPage() {
         )}
 
         {/* ── KPI summary ─────────────────────────────────────────── */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-5">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 sm:gap-5">
           <StatCard
+            className="col-span-2 md:col-span-1"
             icon={Wallet}
-            iconBg="bg-primary-50"
-            iconColor="text-primary-700"
+            tone="primary"
             label="إجمالي المصاريف الشهرية"
             value={formatCurrency(totals.total)}
             sub={`${items.length} ${items.length === 1 ? 'مصروف' : 'مصاريف'}`}
           />
           <StatCard
             icon={CheckCircle2}
-            iconBg="bg-emerald-50"
-            iconColor="text-emerald-600"
+            tone="emerald"
             label="مصاريف مدفوعة"
             value={formatCurrency(totals.paid)}
             sub={
@@ -200,8 +196,7 @@ export default function MonthlyExpensesPage() {
           />
           <StatCard
             icon={Clock}
-            iconBg="bg-amber-50"
-            iconColor="text-amber-600"
+            tone="amber"
             label="مصاريف معلقة"
             value={formatCurrency(totals.pending)}
             sub={

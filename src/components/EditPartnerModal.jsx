@@ -237,7 +237,7 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave, sho
             </div>
             <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
               الرسوم المطلوبة = عدد العمالة × {formatCurrency(PER_WORKER_FEE)}.
-              المبلغ المدفوع يُدار من صفحة «المدفوعات الخاصة لكل شريك» — عدّل السندات هناك.
+              المبلغ المدفوع يُدار من صفحة «مدفوعات الشركاء» — عدّل السندات هناك.
             </p>
           </div>
 

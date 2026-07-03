@@ -7,7 +7,7 @@ import {
 } from '../data/initialData';
 import { downloadCsv } from '../lib/exportCsv';
 import TopBar from './TopBar';
-import { Card, SectionHeader, StatCard } from './UI';
+import { Card, SectionHeader, StatCard, EmptyState } from './UI';
 import LoadingState from './LoadingState';
 import ErrorState, { SetupRequiredCard } from './ErrorState';
 import { useTaxInvoices } from '../hooks/useTaxInvoices';
@@ -147,27 +147,25 @@ export default function VatRecoveryPage() {
         )}
 
         {/* ── KPI summary ──────────────────────────────────── */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-5">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 sm:gap-5">
           <StatCard
+            className="col-span-2 md:col-span-1"
             icon={Percent}
-            iconBg="bg-emerald-50 dark:bg-emerald-500/15"
-            iconColor="text-emerald-600 dark:text-emerald-400"
+            tone="emerald"
             label="إجمالي الضريبة المتوقع استردادها"
             value={formatCurrency(kpis.vat)}
             sub={`${formatNumber(kpis.count)} فاتورة ضريبية${period ? ` · ${period}` : ''}`}
           />
           <StatCard
             icon={Receipt}
-            iconBg="bg-slate-100 dark:bg-slate-800"
-            iconColor="text-slate-700 dark:text-slate-300"
+            tone="slate"
             label="إجمالي الفواتير (شامل الضريبة)"
             value={formatCurrency(kpis.inclusive)}
             sub="مجموع المبالغ المدفوعة فعلياً"
           />
           <StatCard
             icon={Coins}
-            iconBg="bg-primary-50 dark:bg-primary-500/15"
-            iconColor="text-primary-700 dark:text-primary-400"
+            tone="primary"
             label="صافي قيمة السلع (قبل الضريبة)"
             value={formatCurrency(kpis.net)}
             sub="الإجمالي مطروحاً منه الضريبة"
@@ -210,19 +208,13 @@ export default function VatRecoveryPage() {
           {loading && filtered.length === 0 ? (
             <LoadingState message="جارٍ تحميل الفواتير الضريبية..." />
           ) : filtered.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-14 text-center">
-              <div className="bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 w-14 h-14 rounded-2xl flex items-center justify-center mb-4">
-                <FileText size={26} />
-              </div>
-              <p className="text-base font-bold text-slate-800 dark:text-slate-200 mb-1">
-                {period ? 'لا توجد فواتير ضريبية في هذه الفترة' : 'لا توجد فواتير ضريبية مسجّلة بعد'}
-              </p>
-              <p className="text-sm text-slate-500 dark:text-slate-400 max-w-sm">
-                {period
-                  ? 'جرّب اختيار فترة أخرى أو "كل الفترات".'
-                  : 'افتح أي بند في صفحة "رسوم التأسيس" أو "المصاريف السنوية"، أضف مصروفاً، وفعّل خيار "فاتورة ضريبية" — وسيظهر هنا تلقائياً.'}
-              </p>
-            </div>
+            <EmptyState
+              icon={FileText}
+              title={period ? 'لا توجد فواتير ضريبية في هذه الفترة' : 'لا توجد فواتير ضريبية مسجّلة بعد'}
+              hint={period
+                ? 'جرّب اختيار فترة أخرى أو "كل الفترات".'
+                : 'افتح أي بند في صفحة "رسوم التأسيس" أو "المصاريف السنوية"، أضف مصروفاً، وفعّل خيار "فاتورة ضريبية" — وسيظهر هنا تلقائياً.'}
+            />
           ) : (
             <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
               <table className="w-full min-w-[820px] text-sm">

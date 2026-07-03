@@ -292,7 +292,7 @@ function BudgetCard({ budget, allocated, spent, onSaveAmount, onDelete, onEditFu
                 }}
                 onBlur={editing ? commit : undefined}
                 placeholder="0"
-                className="w-full px-1.5 py-1 border border-primary-200 dark:border-primary-500/40 rounded-md bg-white dark:bg-slate-800 text-sm font-extrabold text-slate-900 dark:text-slate-100 tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-300 dark:focus:ring-primary-500/40"
+                className="w-full px-1.5 py-1 border border-primary-200 dark:border-primary-500/40 rounded-md bg-white dark:bg-slate-800 text-sm font-extrabold text-slate-900 dark:text-slate-100 tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400 dark:focus:ring-primary-500/40"
               />
               <button
                 type="button"
@@ -835,27 +835,25 @@ export default function BudgetsPage() {
         )}
 
         {/* Overall KPI row */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-5">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 sm:gap-5">
           <StatCard
+            className="col-span-2 md:col-span-1"
             icon={Target}
-            iconBg="bg-primary-50"
-            iconColor="text-primary-700"
+            tone="primary"
             label="إجمالي الميزانيات المرصودة"
             value={formatCurrency(totals.allocated)}
             sub={`${cards.length} ${cards.length === 1 ? 'بند' : 'بنود'} تحت المراقبة`}
           />
           <StatCard
             icon={TrendingDown}
-            iconBg="bg-slate-100"
-            iconColor="text-slate-700"
+            tone="slate"
             label="إجمالي الصرف الفعلي"
             value={formatCurrency(totals.spent)}
             sub="موزع على كل البنود"
           />
           <StatCard
             icon={Wallet}
-            iconBg={totals.remaining >= 0 ? 'bg-emerald-50' : 'bg-rose-50'}
-            iconColor={totals.remaining >= 0 ? 'text-emerald-600' : 'text-rose-600'}
+            tone={totals.remaining >= 0 ? 'emerald' : 'rose'}
             label={totals.remaining >= 0 ? 'المتبقي الإجمالي' : 'العجز الإجمالي'}
             value={`${totals.remaining >= 0 ? '' : '−'}${formatCurrency(Math.abs(totals.remaining))}`}
             sub="صافي الفرق بين الميزانية والصرف"

@@ -6,6 +6,7 @@ import { formatCurrency, formatDate } from '../data/initialData';
 import TopBar from './TopBar';
 import {
   Card, SectionHeader, StatCard, PrimaryButton,
+  EmptyState,
 } from './UI';
 import AddTemporaryExpenseModal from './AddTemporaryExpenseModal';
 import LoadingState from './LoadingState';
@@ -133,19 +134,17 @@ export default function TemporaryExpensesPage() {
         )}
 
         {/* ── KPI summary ──────────────────────────────────── */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-5">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 sm:gap-5">
           <StatCard
             icon={Coins}
-            iconBg="bg-slate-100 dark:bg-slate-800"
-            iconColor="text-slate-700 dark:text-slate-300"
+            tone="slate"
             label="إجمالي المصروفات المؤقتة"
             value={formatCurrency(kpis.totalAll)}
             sub={`${kpis.countAll} ${kpis.countAll === 1 ? 'سجل مسجّل' : 'سجل مسجّل'}`}
           />
           <StatCard
             icon={CheckCircle2}
-            iconBg="bg-emerald-50 dark:bg-emerald-500/15"
-            iconColor="text-emerald-600 dark:text-emerald-400"
+            tone="emerald"
             label="المبالغ المستردة"
             value={formatCurrency(kpis.totalRecovered)}
             sub={`${kpis.countRecovered} ${kpis.countRecovered === 1 ? 'سجل مكتمل' : 'سجل مكتمل'}`}
@@ -186,24 +185,18 @@ export default function TemporaryExpensesPage() {
           {loading && expenses.length === 0 ? (
             <LoadingState message="جارٍ تحميل سجل المصروفات..." />
           ) : expenses.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-14 text-center">
-              <div className="bg-amber-50 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400 w-14 h-14 rounded-2xl flex items-center justify-center mb-4">
-                <Inbox size={26} />
-              </div>
-              <p className="text-base font-bold text-slate-800 dark:text-slate-200 mb-1">
-                لا توجد مصروفات مؤقتة مسجّلة بعد
-              </p>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mb-5 max-w-sm">
-                {canMutate
-                  ? 'اضغط "إضافة مصروف مؤقت" لتسجيل أول مبلغ مدفوع مؤقتاً وستظهر هنا.'
-                  : 'لم يتم تسجيل أي مصروف مؤقت من قِبَل المشرف بعد.'}
-              </p>
-              {canMutate && (
+            <EmptyState
+              icon={Inbox}
+              title="لا توجد مصروفات مؤقتة مسجّلة بعد"
+              hint={canMutate
+                ? 'اضغط "إضافة مصروف مؤقت" لتسجيل أول مبلغ مدفوع مؤقتاً وستظهر هنا.'
+                : 'لم يتم تسجيل أي مصروف مؤقت من قِبَل المشرف بعد.'}
+              action={canMutate ? (
                 <PrimaryButton icon={Plus} onClick={() => setAddOpen(true)}>
                   إضافة مصروف مؤقت
                 </PrimaryButton>
-              )}
-            </div>
+              ) : null}
+            />
           ) : (
             <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
               <table className="w-full min-w-[820px] text-sm">

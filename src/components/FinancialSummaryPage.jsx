@@ -5,10 +5,11 @@ import {
 import { formatCurrency } from '../data/initialData';
 import { downloadCsv } from '../lib/exportCsv';
 import TopBar from './TopBar';
-import { Card, SectionHeader, StatCard } from './UI';
+import { Card, SectionHeader, StatCard, EmptyState } from './UI';
 import LoadingState from './LoadingState';
 import ErrorState, { SetupRequiredCard } from './ErrorState';
 import FinancialDetailsModal from './FinancialDetailsModal';
+import { LineTrend } from './charts/TrendCharts';
 import { useWashes } from '../hooks/useWashes';
 import { useVariableExpenses } from '../hooks/useVariableExpenses';
 import { useVariableExpenseCategories } from '../hooks/useVariableExpenseCategories';
@@ -220,6 +221,47 @@ export default function FinancialSummaryPage() {
 
   const monthLabel = formatMonthLabel(selectedMonth);
 
+  // ── 6-month trend ending at the selected month ────────────────────────
+  // Re-runs the exact per-month P&L math above for each of the six months
+  // so the chart can never disagree with the statement.
+  const trend = useMemo(() => {
+    const [yy, mm] = selectedMonth.split('-').map(Number);
+    if (!yy || !mm) return null;
+    const fmt = new Intl.DateTimeFormat('ar', { month: 'short', numberingSystem: 'latn' });
+    const months = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(yy, mm - 1 - i, 1);
+      months.push({
+        key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+        label: fmt.format(d),
+      });
+    }
+    const annualPart = annuals.reduce((s, a) => s + (a.annualCost || 0), 0) / 12 * scalingFactor;
+    const rows = months.map(({ key }) => {
+      const rev = washes
+        .filter((w) => w.status === 'مكتملة' && (w.washDate || '').slice(0, 7) === key)
+        .reduce((s, w) => s + (w.quantity || 0) * (w.price || 0), 0) * scalingFactor;
+      const varTotal = variableItemsForMonth({
+        manualItems: variables, categories: varCategories, selectedMonth: key, washes,
+      }).reduce((s, r) => s + (r.totalVariableCost || 0), 0) * scalingFactor;
+      const fixed = monthlies.reduce((s, m) => {
+        if (m.recurrence === 'one_time' && String(m.loggedDate || '').slice(0, 7) !== key) return s;
+        return s + (m.totalMonthlyCost || 0);
+      }, 0) * scalingFactor;
+      const costs = varTotal + fixed + annualPart;
+      const beforeFees = rev - costs;
+      const fees = beforeFees > 0 ? beforeFees * 0.15 : 0;
+      return { revenue: rev, costs, net: beforeFees - fees };
+    });
+    return {
+      months,
+      revenue: rows.map((r) => r.revenue),
+      costs:   rows.map((r) => r.costs),
+      net:     rows.map((r) => r.net),
+      any:     rows.some((r) => r.revenue !== 0 || r.costs !== 0),
+    };
+  }, [selectedMonth, washes, variables, varCategories, monthlies, annuals, scalingFactor]);
+
   const anyError    = washesError || varError || monthlyError || annualError;
   const anyLoading  = washesLoading || varLoading || monthlyLoading || annualLoading;
   const noData      = !washes.length && !variables.length && !monthlies.length && !annuals.length;
@@ -326,7 +368,7 @@ export default function FinancialSummaryPage() {
                 id="period-selector"
                 value={selectedMonth}
                 onChange={(e) => setSelectedMonth(e.target.value)}
-                className="mt-1.5 w-full max-w-xs px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-base font-bold text-slate-900 dark:text-slate-100 tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-300 dark:focus:ring-primary-500/40 transition-colors duration-200"
+                className="mt-1.5 w-full max-w-xs px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-base font-bold text-slate-900 dark:text-slate-100 tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400 dark:focus:ring-primary-500/40 transition-colors duration-200"
               >
                 {availableMonths.map((ym) => (
                   <option key={ym} value={ym}>{formatMonthLabel(ym)}</option>
@@ -344,27 +386,25 @@ export default function FinancialSummaryPage() {
         ) : (
           <>
             {/* ── Top 3 KPI cards ─────────────────────────────────── */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-5">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 sm:gap-5">
               <StatCard
+                className="col-span-2 md:col-span-1"
                 icon={Wallet}
-                iconBg="bg-primary-50"
-                iconColor="text-primary-700"
+                tone="primary"
                 label="إجمالي الإيرادات"
                 value={formatCurrency(revenue)}
                 sub={`إيرادات الغسلات المكتملة لشهر ${monthLabel}`}
               />
               <StatCard
                 icon={TrendingDown}
-                iconBg="bg-slate-100 dark:bg-slate-800"
-                iconColor="text-slate-700 dark:text-slate-300"
+                tone="slate"
                 label="إجمالي تكاليف الشهر"
                 value={formatCurrency(totalCosts)}
                 sub="متغيّرة + شهرية ثابتة + مخصص سنوي"
               />
               <StatCard
                 icon={isProfit ? TrendingUp : TrendingDown}
-                iconBg={isProfit ? 'bg-emerald-50' : 'bg-rose-50'}
-                iconColor={isProfit ? 'text-emerald-600' : 'text-rose-600'}
+                tone={isProfit ? 'emerald' : 'rose'}
                 label="صافي الربح النهائي للشركاء"
                 value={`${isProfit ? '' : '−'}${formatCurrency(Math.abs(finalNetProfit))}`}
                 sub="بعد خصم رسوم الإدارة (10%) وراتب المشرف (5%)"
@@ -468,6 +508,53 @@ export default function FinancialSummaryPage() {
                   </tbody>
                 </table>
               </div>
+            </Card>
+
+            {/* ── 6-month trend ─────────────────────────────────── */}
+            <Card className="p-6">
+              <SectionHeader
+                title="اتجاه ٦ أشهر"
+                subtitle={`الإيرادات مقابل التكاليف وصافي الربح حتى ${monthLabel}`}
+              />
+              {trend?.any ? (
+                <LineTrend
+                  months={trend.months}
+                  formatValue={formatCurrency}
+                  series={[
+                    {
+                      id: 'revenue',
+                      label: 'الإيرادات',
+                      values: trend.revenue,
+                      stroke: 'stroke-[#4f46e5] dark:stroke-[#6366f1]',
+                      dot:    'fill-[#4f46e5] dark:fill-[#6366f1]',
+                      swatch: 'bg-[#4f46e5] dark:bg-[#6366f1]',
+                    },
+                    {
+                      id: 'costs',
+                      label: 'التكاليف',
+                      values: trend.costs,
+                      stroke: 'stroke-[#e63946]',
+                      dot:    'fill-[#e63946]',
+                      swatch: 'bg-[#e63946]',
+                    },
+                    {
+                      id: 'net',
+                      label: 'صافي الربح',
+                      values: trend.net,
+                      stroke: 'stroke-[#059669]',
+                      dot:    'fill-[#059669]',
+                      swatch: 'bg-[#059669]',
+                    },
+                  ]}
+                />
+              ) : (
+                <EmptyState
+                  compact
+                  icon={TrendingUp}
+                  title="لا توجد حركة مالية في آخر ٦ أشهر"
+                  hint="سجّل الغسلات والمصاريف وسيظهر الاتجاه الشهري هنا تلقائياً."
+                />
+              )}
             </Card>
           </>
         )}

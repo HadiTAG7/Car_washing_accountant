@@ -52,11 +52,11 @@ const TABS = [
   { id: 'monthly',   label: 'المصاريف الشهرية',       icon: Receipt     },
   { id: 'variable',  label: 'المصاريف المتغيرة',      icon: Activity    },
   { id: 'washes',    label: 'الغسلات',                icon: Car         },
-  { id: 'summary',   label: 'الملخص المالي وصافي الربح', icon: BarChart3 },
+  { id: 'summary',   label: 'قائمة الدخل',            icon: BarChart3   },
   { id: 'vat',       label: 'الضريبة المستردة',       icon: Percent     },
   { id: 'budgets',   label: 'الرقابة والميزانيات',    icon: Target      },
   { id: 'partners',  label: 'إدارة الشركاء',          icon: Handshake   },
-  { id: 'payments',  label: 'المدفوعات الخاصة لكل شريك', icon: HandCoins },
+  { id: 'payments',  label: 'مدفوعات الشركاء',        icon: HandCoins   },
   { id: 'temporary_expenses', label: 'المصروفات المؤقتة', icon: RefreshCw },
 ];
 
@@ -145,23 +145,28 @@ function AppShell() {
         {!isSupabaseConfigured && <DemoBanner missing={missingEnvNames} />}
 
         <Suspense fallback={<LoadingState message="جارٍ تحميل الصفحة..." />}>
-          {activeTab === 'overview'  && <OverviewPage />}
-          {activeTab === 'startup'   && (
-            <StartupPage
-              pendingEntry={pendingEntry}
-              onClearPendingEntry={clearPendingEntry}
-            />
-          )}
-          {activeTab === 'annual'    && <AnnualExpensesPage />}
-          {activeTab === 'monthly'   && <MonthlyExpensesPage />}
-          {activeTab === 'variable'  && <VariableExpensesPage />}
-          {activeTab === 'washes'    && <WashesPage />}
-          {activeTab === 'summary'   && <FinancialSummaryPage />}
-          {activeTab === 'vat'       && <VatRecoveryPage />}
-          {activeTab === 'budgets'   && <BudgetsPage />}
-          {activeTab === 'partners'  && <PartnersPage />}
-          {activeTab === 'payments'  && <PartnerPaymentsPage />}
-          {activeTab === 'temporary_expenses' && <TemporaryExpensesPage />}
+          {/* key={activeTab} remounts the wrapper per tab so the page-in
+              entrance replays on every switch (no-op under
+              prefers-reduced-motion). */}
+          <div key={activeTab} className="animate-page-in flex-1 flex flex-col">
+            {activeTab === 'overview'  && <OverviewPage />}
+            {activeTab === 'startup'   && (
+              <StartupPage
+                pendingEntry={pendingEntry}
+                onClearPendingEntry={clearPendingEntry}
+              />
+            )}
+            {activeTab === 'annual'    && <AnnualExpensesPage />}
+            {activeTab === 'monthly'   && <MonthlyExpensesPage />}
+            {activeTab === 'variable'  && <VariableExpensesPage />}
+            {activeTab === 'washes'    && <WashesPage />}
+            {activeTab === 'summary'   && <FinancialSummaryPage />}
+            {activeTab === 'vat'       && <VatRecoveryPage />}
+            {activeTab === 'budgets'   && <BudgetsPage />}
+            {activeTab === 'partners'  && <PartnersPage />}
+            {activeTab === 'payments'  && <PartnerPaymentsPage />}
+            {activeTab === 'temporary_expenses' && <TemporaryExpensesPage />}
+          </div>
         </Suspense>
       </div>
 

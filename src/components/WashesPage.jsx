@@ -171,11 +171,11 @@ export default function WashesPage() {
         )}
 
         {/* ── KPI summary ─────────────────────────────────────────── */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-5">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 sm:gap-5">
           <StatCard
+            className="col-span-2 md:col-span-1"
             icon={CheckCircle2}
-            iconBg="bg-emerald-50"
-            iconColor="text-emerald-600"
+            tone="emerald"
             label="إجمالي الغسلات المكتملة"
             value={formatNumber(totals.completed)}
             sub={
@@ -186,16 +186,14 @@ export default function WashesPage() {
           />
           <StatCard
             icon={Wallet}
-            iconBg="bg-primary-50"
-            iconColor="text-primary-700"
+            tone="primary"
             label="إجمالي الإيرادات"
             value={formatCurrency(totals.revenue)}
             sub="عدد الغسلات × سعر الغسلة (للدفعات المكتملة)"
           />
           <StatCard
             icon={CalendarClock}
-            iconBg="bg-amber-50"
-            iconColor="text-amber-600"
+            tone="amber"
             label="غسلات اليوم"
             value={formatNumber(totals.todays)}
             sub="إجمالي الغسلات المسجّلة لتاريخ اليوم"

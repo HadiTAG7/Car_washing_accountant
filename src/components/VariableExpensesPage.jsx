@@ -6,6 +6,7 @@ import { formatCurrency, formatNumber, VARIABLE_EXPENSE_CATEGORIES } from '../da
 import TopBar from './TopBar';
 import {
   Card, SectionHeader, StatCard, PrimaryButton,
+  EmptyState as EmptyStateShell,
 } from './UI';
 import AddVariableExpenseModal from './AddVariableExpenseModal';
 import LoadingState from './LoadingState';
@@ -70,7 +71,7 @@ function PeriodSelectorCard({ value, onChange, options }) {
             id="variable-period"
             value={value}
             onChange={(e) => onChange(e.target.value)}
-            className="mt-1.5 w-full max-w-xs px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-base font-bold text-slate-900 dark:text-slate-100 tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-300 dark:focus:ring-primary-500/40 transition-colors duration-200"
+            className="mt-1.5 w-full max-w-xs px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-base font-bold text-slate-900 dark:text-slate-100 tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400 dark:focus:ring-primary-500/40 transition-colors duration-200"
           >
             {options.map((ym) => (
               <option key={ym} value={ym}>{formatMonthLabel(ym)}</option>
@@ -87,24 +88,18 @@ function PeriodSelectorCard({ value, onChange, options }) {
 
 function EmptyState({ onAdd, monthLabel, canMutate }) {
   return (
-    <div className="flex flex-col items-center justify-center py-14 text-center">
-      <div className="bg-primary-50 text-primary-700 w-14 h-14 rounded-2xl flex items-center justify-center mb-4">
-        <Activity size={26} />
-      </div>
-      <p className="text-base font-bold text-slate-800 dark:text-slate-200 mb-1">
-        لا توجد مصاريف متغيرة مسجّلة لشهر {monthLabel}
-      </p>
-      <p className="text-sm text-slate-500 dark:text-slate-400 mb-5 max-w-sm">
-        {canMutate
-          ? 'سجّل أول مصروف متغير (مستلزمات، حوافز، نقل...) لتبدأ متابعة تكلفة الوحدة لهذا الشهر.'
-          : 'لم يُسجَّل أي مصروف متغير لهذا الشهر بعد.'}
-      </p>
-      {canMutate && (
+    <EmptyStateShell
+      icon={Activity}
+      title={`لا توجد مصاريف متغيرة مسجّلة لشهر ${monthLabel}`}
+      hint={canMutate
+        ? 'سجّل أول مصروف متغير (مستلزمات، حوافز، نقل...) لتبدأ متابعة تكلفة الوحدة لهذا الشهر.'
+        : 'لم يُسجَّل أي مصروف متغير لهذا الشهر بعد.'}
+      action={canMutate ? (
         <PrimaryButton icon={Plus} onClick={onAdd}>
           إضافة مصروف متغير
         </PrimaryButton>
-      )}
-    </div>
+      ) : null}
+    />
   );
 }
 
@@ -269,19 +264,18 @@ export default function VariableExpensesPage() {
         <WashCounterReadout washCount={washCountInMonth} monthLabel={monthLabel} />
 
         {/* ── KPI summary ─────────────────────────────────────────── */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-5">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 sm:gap-5">
           <StatCard
+            className="col-span-2 md:col-span-1"
             icon={Wallet}
-            iconBg="bg-primary-50"
-            iconColor="text-primary-700"
+            tone="primary"
             label="إجمالي المصاريف المتغيرة"
             value={formatCurrency(totals.cost)}
             sub={`${displayedItems.length} ${displayedItems.length === 1 ? 'بند' : 'بنود'} لشهر ${monthLabel}`}
           />
           <StatCard
             icon={Layers}
-            iconBg="bg-emerald-50"
-            iconColor="text-emerald-600"
+            tone="emerald"
             label="عدد الغسلات / الوحدات المدعومة"
             value={formatNumber(totals.units)}
             sub={
@@ -292,8 +286,7 @@ export default function VariableExpensesPage() {
           />
           <StatCard
             icon={Scale}
-            iconBg="bg-amber-50"
-            iconColor="text-amber-600"
+            tone="amber"
             label="متوسط تكلفة الوحدة"
             value={formatCurrency(totals.weightedUnitCost)}
             sub={

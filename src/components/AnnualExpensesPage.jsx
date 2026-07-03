@@ -6,6 +6,7 @@ import { formatCurrency, formatNumber, RECURRING_EXPENSE_CATEGORIES } from '../d
 import TopBar from './TopBar';
 import {
   Card, SectionHeader, StatCard, PrimaryButton,
+  EmptyState as EmptyStateShell,
 } from './UI';
 import AddAnnualExpenseModal from './AddAnnualExpenseModal';
 import ExpenseLedgerModal from './ExpenseLedgerModal';
@@ -29,22 +30,18 @@ function isAnnualDueToday(paymentMonth, paymentDay) {
 
 function EmptyState({ onAdd, canMutate }) {
   return (
-    <div className="flex flex-col items-center justify-center py-14 text-center">
-      <div className="bg-primary-50 text-primary-700 w-14 h-14 rounded-2xl flex items-center justify-center mb-4">
-        <Repeat size={26} />
-      </div>
-      <p className="text-base font-bold text-slate-800 dark:text-slate-200 mb-1">لا توجد مصاريف سنوية بعد</p>
-      <p className="text-sm text-slate-500 dark:text-slate-400 mb-5 max-w-sm">
-        {canMutate
-          ? 'أضف أول مصروف سنوي متكرر لمتابعة التكاليف التشغيلية المستمرة.'
-          : 'لم يقم المشرف بتسجيل أي مصروف سنوي بعد.'}
-      </p>
-      {canMutate && (
+    <EmptyStateShell
+      icon={Repeat}
+      title="لا توجد مصاريف سنوية بعد"
+      hint={canMutate
+        ? 'أضف أول مصروف سنوي متكرر لمتابعة التكاليف التشغيلية المستمرة.'
+        : 'لم يقم المشرف بتسجيل أي مصروف سنوي بعد.'}
+      action={canMutate ? (
         <PrimaryButton icon={Plus} onClick={onAdd}>
           إضافة مصروف سنوي
         </PrimaryButton>
-      )}
-    </div>
+      ) : null}
+    />
   );
 }
 
@@ -182,19 +179,18 @@ export default function AnnualExpensesPage() {
         )}
 
         {/* ── KPI summary ─────────────────────────────────────────── */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-5">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 sm:gap-5">
           <StatCard
+            className="col-span-2 md:col-span-1"
             icon={Wallet}
-            iconBg="bg-primary-50"
-            iconColor="text-primary-700"
+            tone="primary"
             label="إجمالي المصاريف السنوية"
             value={formatCurrency(totals.total)}
             sub={`${items.length} ${items.length === 1 ? 'مصروف' : 'مصاريف'}`}
           />
           <StatCard
             icon={CheckCircle2}
-            iconBg="bg-emerald-50"
-            iconColor="text-emerald-600"
+            tone="emerald"
             label="المصاريف المدفوعة"
             value={formatCurrency(totals.paid)}
             sub={
@@ -205,8 +201,7 @@ export default function AnnualExpensesPage() {
           />
           <StatCard
             icon={Clock}
-            iconBg="bg-amber-50"
-            iconColor="text-amber-600"
+            tone="amber"
             label="مصاريف معلقة"
             value={formatCurrency(totals.pending)}
             sub={

@@ -131,7 +131,7 @@ export default function UpdatePasswordScreen() {
                   minLength={6}
                   autoFocus
                   autoComplete="new-password"
-                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400"
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-400"
                 />
                 <p className="mt-1 text-[11px] text-slate-400">٦ أحرف على الأقل.</p>
               </div>
@@ -148,7 +148,7 @@ export default function UpdatePasswordScreen() {
                   required
                   minLength={6}
                   autoComplete="new-password"
-                  className={`w-full px-4 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400 ${
+                  className={`w-full px-4 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-400 ${
                     confirmPassword && !passwordsMatch
                       ? 'border-red-300'
                       : 'border-slate-200'

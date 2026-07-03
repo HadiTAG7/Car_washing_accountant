@@ -212,7 +212,7 @@ export default function AddPartnerModal({ isOpen, onClose, onAdd, showToast }) {
             </div>
             <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
               الرسوم المطلوبة = عدد العمالة × {formatCurrency(PER_WORKER_FEE)}.
-              المبلغ المدفوع يُدار من صفحة «المدفوعات الخاصة لكل شريك» — سجّل سند قبض هناك بعد إضافة الشريك.
+              المبلغ المدفوع يُدار من صفحة «مدفوعات الشركاء» — سجّل سند قبض هناك بعد إضافة الشريك.
             </p>
           </div>
 

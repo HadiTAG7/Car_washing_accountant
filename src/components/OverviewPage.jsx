@@ -4,13 +4,32 @@ import {
 } from 'lucide-react';
 import { formatCurrency, formatNumber, PER_WORKER_FEE } from '../data/initialData';
 import TopBar from './TopBar';
-import { Card, StatCard, ProgressBar, SectionHeader } from './UI';
+import { Card, StatCard, ProgressBar, SectionHeader, EmptyState } from './UI';
 import LoadingState from './LoadingState';
 import { SetupRequiredCard } from './ErrorState';
+import { ColumnTrend } from './charts/TrendCharts';
 import { usePartners } from '../hooks/usePartners';
+import { usePartnerPayments } from '../hooks/usePartnerPayments';
 import { useStartupCosts } from '../hooks/useStartupCosts';
 import { isSupabaseConfigured, missingEnvNames } from '../lib/supabaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
+
+// Last N months ending at the current one, as { key:'YYYY-MM', label } —
+// Arabic month names, Latin digits (matches the rest of the dashboard).
+function lastMonths(n) {
+  const fmt = new Intl.DateTimeFormat('ar', { month: 'short', numberingSystem: 'latn' });
+  const out = [];
+  const d = new Date();
+  d.setDate(1);
+  for (let i = n - 1; i >= 0; i--) {
+    const m = new Date(d.getFullYear(), d.getMonth() - i, 1);
+    out.push({
+      key: `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, '0')}`,
+      label: fmt.format(m),
+    });
+  }
+  return out;
+}
 
 /**
  * Landing overview — the "where do we stand" screen. Built for the
@@ -24,9 +43,27 @@ import { usePartnerView } from '../contexts/PartnerViewContext';
 export default function OverviewPage() {
   const { partners, loading: pLoading } = usePartners();
   const { items: startupItems, loading: sLoading } = useStartupCosts();
+  const { payments } = usePartnerPayments();
   const {
     scalingFactor, isPartnerView, viewedPartner,
   } = usePartnerView();
+
+  // ── Monthly receipts trend (last 6 months) ───────────────────
+  // Partner view narrows to the viewer's own receipts, mirroring the
+  // capital section's scoping.
+  const receiptsTrend = useMemo(() => {
+    const months = lastMonths(6);
+    const scoped = isPartnerView && viewedPartner
+      ? payments.filter((p) => p.partnerId === viewedPartner.id)
+      : payments;
+    const byMonth = new Map(months.map((m) => [m.key, 0]));
+    scoped.forEach((p) => {
+      const key = String(p.paymentDate || '').slice(0, 7);
+      if (byMonth.has(key)) byMonth.set(key, byMonth.get(key) + (p.amount || 0));
+    });
+    const values = months.map((m) => byMonth.get(m.key));
+    return { months, values, total: values.reduce((s, v) => s + v, 0) };
+  }, [payments, isPartnerView, viewedPartner]);
 
   // ── Capital raise ────────────────────────────────────────────
   const capital = useMemo(() => {
@@ -126,40 +163,59 @@ export default function OverviewPage() {
             </Card>
 
             {/* ── KPI row ──────────────────────────────────────── */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
               <StatCard
                 icon={Coins}
-                iconBg="bg-emerald-50 dark:bg-emerald-500/15"
-                iconColor="text-emerald-600 dark:text-emerald-400"
+                tone="emerald"
                 label="رأس المال المُحصّل"
                 value={formatCurrency(capital.paid)}
                 sub={`المتبقّي ${formatCurrency(capital.remaining)}`}
               />
               <StatCard
                 icon={Landmark}
-                iconBg="bg-primary-50 dark:bg-primary-500/15"
-                iconColor="text-primary-700 dark:text-primary-400"
+                tone="primary"
                 label="إجمالي صرف التأسيس"
                 value={formatCurrency(spend.actual)}
                 sub={`من ${formatCurrency(spend.planned)} مخطط · ${formatNumber(Number(spend.pct.toFixed(0)))}%`}
               />
               <StatCard
                 icon={PiggyBank}
-                iconBg="bg-indigo-50 dark:bg-indigo-500/15"
-                iconColor="text-indigo-600 dark:text-indigo-400"
+                tone="indigo"
                 label="النقد المتبقّي بعد الصرف"
                 value={formatCurrency(capitalOnHand)}
                 sub="المُحصّل ناقص صرف التأسيس"
               />
               <StatCard
                 icon={Receipt}
-                iconBg="bg-amber-50 dark:bg-amber-500/15"
-                iconColor="text-amber-600 dark:text-amber-400"
+                tone="amber"
                 label="بنود التأسيس المكتملة"
                 value={`${formatNumber(spend.completed)} / ${formatNumber(spend.itemCount)}`}
                 sub="بنود أُنجز صرفها بالكامل"
               />
             </div>
+
+            {/* ── Monthly receipts trend ───────────────────────── */}
+            <Card className="p-6">
+              <SectionHeader
+                title="تحصيل رأس المال شهرياً"
+                subtitle={isPartnerView ? 'سنداتك خلال آخر ٦ أشهر' : 'مجموع سندات القبض خلال آخر ٦ أشهر'}
+              />
+              {receiptsTrend.total === 0 ? (
+                <EmptyState
+                  compact
+                  icon={Coins}
+                  title="لا توجد سندات قبض في آخر ٦ أشهر"
+                  hint="سجّل الدفعات من صفحة «مدفوعات الشركاء» وسيظهر الاتجاه الشهري هنا."
+                />
+              ) : (
+                <ColumnTrend
+                  months={receiptsTrend.months}
+                  values={receiptsTrend.values}
+                  formatValue={formatCurrency}
+                  valueName="التحصيل"
+                />
+              )}
+            </Card>
 
             {/* ── Startup spend progress ───────────────────────── */}
             <Card className="p-6">
@@ -187,9 +243,12 @@ export default function OverviewPage() {
                 subtitle={isPartnerView ? undefined : 'مرتّب حسب المُسدَّد'}
               />
               {partnerRows.length === 0 ? (
-                <p className="text-sm text-slate-500 dark:text-slate-400 py-6 text-center">
-                  لا يوجد شركاء مسجّلون بعد.
-                </p>
+                <EmptyState
+                  compact
+                  icon={Users}
+                  title="لا يوجد شركاء مسجّلون بعد"
+                  hint="أضف الشركاء من صفحة «إدارة الشركاء» لعرض توزيع رأس المال هنا."
+                />
               ) : (
                 <div className="space-y-3">
                   {partnerRows.map((p) => (

@@ -7,6 +7,7 @@ import TopBar from './TopBar';
 import {
   Card, SectionHeader, StatCard,
   PrimaryButton,
+  EmptyState,
 } from './UI';
 import AddPartnerModal from './AddPartnerModal';
 import EditPartnerModal from './EditPartnerModal';
@@ -129,43 +130,39 @@ export default function PartnersPage() {
         )}
 
         {/* ── KPI row ─────────────────────────────────────────── */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 sm:gap-5">
+        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-5">
           <StatCard
+            className="col-span-2 lg:col-span-1"
             icon={Briefcase}
-            iconBg="bg-primary-50"
-            iconColor="text-primary-700"
+            tone="primary"
             label="إجمالي الشركاء"
             value={formatNumber(kpis.totalPartners)}
             sub="عدد الشركاء المسجّلين في النظام"
           />
           <StatCard
             icon={Users}
-            iconBg="bg-amber-50"
-            iconColor="text-amber-600"
+            tone="amber"
             label="إجمالي العمالة"
             value={formatNumber(kpis.totalWorkers)}
             sub="مجموع عمالة جميع الشركاء"
           />
           <StatCard
             icon={UserCheck}
-            iconBg="bg-emerald-50"
-            iconColor="text-emerald-600"
+            tone="emerald"
             label="الشركاء النشطين"
             value={formatNumber(kpis.activeCount)}
             sub={`${kpis.totalPartners > 0 ? ((kpis.activeCount / kpis.totalPartners) * 100).toFixed(0) : 0}% من إجمالي الشركاء`}
           />
           <StatCard
             icon={Building2}
-            iconBg="bg-indigo-50"
-            iconColor="text-indigo-600"
+            tone="indigo"
             label="إجمالي قيمة المشروع"
             value={formatCurrency(kpis.totalProjectValue)}
-            sub="القيمة الرأسمالية بناءً على الأسطول"
+            sub="إجمالي رسوم التأسيس المطلوبة من الشركاء"
           />
           <StatCard
             icon={Coins}
-            iconBg="bg-emerald-50"
-            iconColor="text-emerald-600"
+            tone="emerald"
             label="إجمالي المبالغ المدفوعة"
             value={formatCurrency(kpis.totalPaidTillNow)}
             sub="السيولة المحصلة في الخزينة إلى الآن"
@@ -177,7 +174,7 @@ export default function PartnersPage() {
           <SectionHeader
             title="قائمة الشركاء"
             subtitle={canMutate
-              ? 'استخدم زر القلم لتعديل بيانات أي شريك بما فيها المبلغ المدفوع'
+              ? 'زر القلم لتعديل بيانات الشريك، وزر الكشف لطباعة كشف حسابه — المدفوعات تُدار من صفحة مدفوعات الشركاء'
               : 'بياناتك كشريك (للقراءة فقط)'}
             action={canMutate ? (
               <PrimaryButton icon={Plus} onClick={() => setIsModalOpen(true)}>
@@ -211,8 +208,13 @@ export default function PartnersPage() {
                 )}
                 {!loading && partners.length === 0 && !error && (
                   <tr>
-                    <td colSpan={7} className="py-12 text-center text-sm text-slate-400 dark:text-slate-500">
-                      لا يوجد شركاء مسجّلين بعد — اضغط &quot;إضافة شريك جديد&quot; للبدء
+                    <td colSpan={7}>
+                      <EmptyState
+                        compact
+                        icon={Briefcase}
+                        title="لا يوجد شركاء مسجّلين بعد"
+                        hint='اضغط "إضافة شريك جديد" أعلى الجدول لتسجيل أول شريك.'
+                      />
                     </td>
                   </tr>
                 )}

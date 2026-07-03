@@ -8,6 +8,7 @@ import {
 import TopBar from './TopBar';
 import {
   Card, SectionHeader, StatCard, PrimaryButton,
+  EmptyState,
 } from './UI';
 import CategorySelect from './CategorySelect';
 import AddPartnerPaymentModal from './AddPartnerPaymentModal';
@@ -160,7 +161,7 @@ export default function PartnerPaymentsPage() {
   return (
     <>
       <TopBar
-        title="المدفوعات الخاصة لكل شريك"
+        title="مدفوعات الشركاء"
         subtitle="سجل دفعات رأس المال لكل شريك ومتابعة الرصيد المتبقي"
       />
 
@@ -211,11 +212,10 @@ export default function PartnerPaymentsPage() {
         </Card>
 
         {/* ── Per-partner KPI row ────────────────────────────── */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-5">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 sm:gap-5">
           <StatCard
             icon={Building2}
-            iconBg="bg-indigo-50"
-            iconColor="text-indigo-600"
+            tone="indigo"
             label="إجمالي الرسوم المطلوبة"
             value={formatCurrency(required)}
             sub={selectedPartner
@@ -224,8 +224,7 @@ export default function PartnerPaymentsPage() {
           />
           <StatCard
             icon={Coins}
-            iconBg="bg-emerald-50"
-            iconColor="text-emerald-600"
+            tone="emerald"
             label="إجمالي المسدد الفعلي"
             value={formatCurrency(paid)}
             sub={`${partnerPayments.length} ${partnerPayments.length === 1 ? 'دفعة مسجّلة' : 'دفعة مسجّلة'}`}
@@ -277,36 +276,24 @@ export default function PartnerPaymentsPage() {
           {anyLoading && partnerPayments.length === 0 ? (
             <LoadingState message="جارٍ تحميل سجل الدفعات..." />
           ) : !selectedPartnerId ? (
-            <div className="flex flex-col items-center justify-center py-14 text-center">
-              <div className="bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 w-14 h-14 rounded-2xl flex items-center justify-center mb-4">
-                <History size={26} />
-              </div>
-              <p className="text-base font-bold text-slate-800 dark:text-slate-200 mb-1">
-                لا يوجد شركاء مسجّلين بعد
-              </p>
-              <p className="text-sm text-slate-500 dark:text-slate-400 max-w-sm">
-                افتح صفحة &quot;إدارة الشركاء&quot; لإضافة أول شريك ثم ارجع هنا لتسجيل دفعاته.
-              </p>
-            </div>
+            <EmptyState
+              icon={History}
+              title="لا يوجد شركاء مسجّلين بعد"
+              hint='افتح صفحة "إدارة الشركاء" لإضافة أول شريك ثم ارجع هنا لتسجيل دفعاته.'
+            />
           ) : partnerPayments.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-14 text-center">
-              <div className="bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 w-14 h-14 rounded-2xl flex items-center justify-center mb-4">
-                <Wallet size={26} />
-              </div>
-              <p className="text-base font-bold text-slate-800 dark:text-slate-200 mb-1">
-                لا توجد دفعات مسجّلة لهذا الشريك بعد
-              </p>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mb-5 max-w-sm">
-                {canMutate
-                  ? 'اضغط "إضافة دفعة جديدة" لتسجيل أول إيصال لهذا الشريك.'
-                  : 'لم يتم تسجيل أي إيصال لهذا الشريك بعد.'}
-              </p>
-              {canMutate && (
+            <EmptyState
+              icon={Wallet}
+              title="لا توجد دفعات مسجّلة لهذا الشريك بعد"
+              hint={canMutate
+                ? 'اضغط "إضافة دفعة جديدة" لتسجيل أول إيصال لهذا الشريك.'
+                : 'لم يتم تسجيل أي إيصال لهذا الشريك بعد.'}
+              action={canMutate ? (
                 <PrimaryButton icon={Plus} onClick={() => setAddOpen(true)}>
                   إضافة دفعة جديدة
                 </PrimaryButton>
-              )}
-            </div>
+              ) : null}
+            />
           ) : (
             <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
               <table className="w-full min-w-[720px] text-sm">

@@ -165,6 +165,19 @@ html.dark ::-webkit-scrollbar-thumb:hover { background: #475569; }        /* sla
   to   { opacity: 1; transform: translateY(0);   }
 }
 
+/* Tab-switch entrance — the routed page fades in and settles upward.
+   App.jsx keys the wrapper by activeTab so the animation replays on
+   every switch. Ends at `transform: none`, so sticky/fixed descendants
+   are unaffected once the 200ms run completes. */
+@keyframes page-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+.animate-page-in { animation: page-in 200ms ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .animate-page-in { animation: none; }
+}
+
 /* ─── Print: isolate the partner statement sheet ──────────────────────────
    When window.print() fires from PartnerStatementModal, hide everything
    except the statement sheet so the printout / saved PDF is clean. The

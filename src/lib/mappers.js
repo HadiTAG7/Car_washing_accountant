@@ -369,12 +369,10 @@ export function toBudgetUpdate(updates = {}) {
 // NOTE: percentage is purely a client-derived display value
 // (workersCount / totalWorkers * 100). It is intentionally NOT mapped /
 // inserted / updated — the DB table doesn't carry that column.
-function clampPaidAmount(value) {
-  if (value === null || value === undefined || value === '') return 0;
-  const n = Number(value);
-  if (!Number.isFinite(n)) return 0;
-  return Math.max(0, n);
-}
+// NOTE: paid_amount is read-only from the app's perspective — the DB
+// trigger on partner_payments keeps it equal to SUM(receipts), so the
+// insert/update mappers deliberately never write it (a direct write
+// would drift from the receipts ledger until the next receipt).
 
 // Loose UUID validator: 8-4-4-4-12 hex with dashes. Used by the Add /
 // Edit partner modals to gate the "link to Supabase user" field. Returns
@@ -397,19 +395,17 @@ export function mapPartner(row) {
     userId:         row.user_id || null,
   };
 }
-export function toPartnerInsert({ partnerName, workersCount, paidAmount, userId }) {
+export function toPartnerInsert({ partnerName, workersCount, userId }) {
   return {
     partner_name:   partnerName,
     workers_count:  Number(workersCount) || 0,
-    paid_amount:    clampPaidAmount(paidAmount),
     user_id:        clampUserId(userId),
   };
 }
-export function toPartnerUpdate({ partnerName, workersCount, paidAmount, userId }) {
+export function toPartnerUpdate({ partnerName, workersCount, userId }) {
   const payload = {};
   if (partnerName  !== undefined) payload.partner_name  = partnerName;
   if (workersCount !== undefined) payload.workers_count = Number(workersCount) || 0;
-  if (paidAmount   !== undefined) payload.paid_amount   = clampPaidAmount(paidAmount);
   if (userId       !== undefined) payload.user_id       = clampUserId(userId);
   return payload;
 }

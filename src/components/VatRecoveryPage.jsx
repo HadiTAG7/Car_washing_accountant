@@ -93,13 +93,15 @@ export default function VatRecoveryPage() {
       SOURCE_META[e.source]?.label || e.source,
       e.description,
       e.spentDate,
-      ((e.amount || 0) * scalingFactor).toFixed(2),
-      (extractVat(e.amount, true) * scalingFactor).toFixed(2),
-      (netOfVat(e.amount, true) * scalingFactor).toFixed(2),
+      // Amounts as numbers, not strings — the CSV layer's formula-injection
+      // guard neutralizes only text, so numbers keep Excel interpretation.
+      Number(((e.amount || 0) * scalingFactor).toFixed(2)),
+      Number((extractVat(e.amount, true) * scalingFactor).toFixed(2)),
+      Number((netOfVat(e.amount, true) * scalingFactor).toFixed(2)),
       isSafeHttpUrl(e.invoiceUrl) ? e.invoiceUrl : '',
     ]);
     // Totals row for the accountant.
-    rows.push(['الإجمالي', '', '', '', kpis.inclusive.toFixed(2), kpis.vat.toFixed(2), kpis.net.toFixed(2), '']);
+    rows.push(['الإجمالي', '', '', '', Number(kpis.inclusive.toFixed(2)), Number(kpis.vat.toFixed(2)), Number(kpis.net.toFixed(2)), '']);
     const label = period || 'كل-الفترات';
     downloadCsv(
       `الضريبة-المستردة-${label}`,

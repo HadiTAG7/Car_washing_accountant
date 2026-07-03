@@ -37,13 +37,13 @@ do $$
 declare
   t text;
 begin
+  -- (assets / vehicles / maintenance_logs were in this list originally;
+  -- they've since been dropped from the database and schema.sql, so they
+  -- were removed here to keep the file re-runnable.)
   foreach t in array array[
     'categories',
     'startup_costs',
     'startup_cost_entries',
-    'assets',
-    'vehicles',
-    'maintenance_logs',
     'transactions',
     'app_settings',
     'partners',
@@ -63,6 +63,30 @@ begin
     execute format(
       'create policy "rw_auth" on public.%I for all to authenticated using (true) with check (true)',
       t
+    );
+  end loop;
+end $$;
+
+-- ── 1b. Drop every remaining non-authenticated policy ───────────────────
+-- The loop above replaces "rw_auth" but older databases carry policies
+-- under legacy names ("rw_public", "Enable full access for ...",
+-- "categories_public_all", ...) that would silently keep anon access
+-- open. Sweep them generically: any policy on a public-schema table
+-- whose role list is anything other than exactly {authenticated} goes.
+-- Idempotent — a second run finds nothing to drop.
+do $$
+declare
+  p record;
+begin
+  for p in
+    select schemaname, tablename, policyname
+      from pg_policies
+     where schemaname = 'public'
+       and not ('authenticated' = any(roles) and array_length(roles, 1) = 1)
+  loop
+    execute format(
+      'drop policy if exists %I on %I.%I',
+      p.policyname, p.schemaname, p.tablename
     );
   end loop;
 end $$;

@@ -7,7 +7,19 @@
 // Values are quoted and internal quotes doubled per RFC 4180.
 
 function cell(value) {
-  const s = value == null ? '' : String(value);
+  // Numbers are safe by construction — no formula-injection surface, and
+  // prefixing them would break Excel's numeric interpretation.
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return `"${value}"`;
+  }
+  let s = value == null ? '' : String(value);
+  // Formula-injection guard: a TEXT cell starting with =, +, @ or - would
+  // execute as a formula when opened in Excel/Sheets. A leading apostrophe
+  // forces literal-text interpretation. Numeric amounts must be passed as
+  // actual numbers (handled above) to skip this.
+  if (/^[=+@-]/.test(s)) {
+    s = `'${s}`;
+  }
   // Always quote — simplest correct handling for commas, quotes, newlines,
   // and leading digits Excel might reinterpret.
   return `"${s.replace(/"/g, '""')}"`;

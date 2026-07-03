@@ -429,6 +429,7 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
         usedCategoryIds={usedCategoryIds}
         showToast={showToast}
         initialValues={editingItem}
+        isLedgerManaged={Boolean(editingItem && ledgerManagedIds.has(editingItem.id))}
       />
 
       <ExpenseLedgerModal

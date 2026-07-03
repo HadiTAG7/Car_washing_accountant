@@ -9,7 +9,7 @@ import {
 import CreateUserConfirm from './CreateUserConfirm';
 import CreatedCredentials from './CreatedCredentials';
 
-const EMPTY = { partnerName: '', workersCount: '', paidAmount: '', email: '' };
+const EMPTY = { partnerName: '', workersCount: '', email: '' };
 
 export default function EditPartnerModal({ isOpen, partner, onClose, onSave, showToast }) {
   const [form, setForm] = useState(EMPTY);
@@ -33,7 +33,6 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave, sho
     setForm({
       partnerName:  partner.partnerName || '',
       workersCount: String(partner.workersCount ?? ''),
-      paidAmount:   partner.paidAmount ? String(partner.paidAmount) : '',
       email:        '',
     });
     setUnlinkRequested(false);
@@ -51,7 +50,10 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave, sho
   }
 
   const workersCount  = Math.max(0, parseInt(form.workersCount, 10) || 0);
-  const paidAmount    = Math.max(0, parseFloat(form.paidAmount) || 0);
+  // paid_amount is owned by the partner_payments receipts ledger (a DB
+  // trigger keeps it = SUM of receipts) — shown here read-only so the
+  // admin can't write a figure that drifts from the receipts.
+  const paidAmount    = Math.max(0, Number(partner?.paidAmount) || 0);
   const requiredTotal = workersCount * PER_WORKER_FEE;
   const remaining     = Math.max(0, requiredTotal - paidAmount);
   const settled       = workersCount > 0 && remaining === 0;
@@ -68,7 +70,6 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave, sho
     const patch = {
       partnerName:  form.partnerName.trim(),
       workersCount,
-      paidAmount,
     };
     if (resolvedUserId !== undefined) {
       patch.userId = resolvedUserId;
@@ -219,29 +220,24 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave, sho
             </p>
           </div>
 
+          {/* paid_amount is trigger-owned (SUM of receipts) — display only.
+              Receipts are recorded from the per-partner payments page. */}
           <div>
-            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5" htmlFor="paidAmount">
+            <span className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
               المبلغ المدفوع (ر.س)
-            </label>
+            </span>
             <div className="relative">
               <Wallet
                 size={16}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 pointer-events-none"
               />
-              <input
-                id="paidAmount"
-                type="number"
-                name="paidAmount"
-                value={form.paidAmount}
-                onChange={handleChange}
-                placeholder="0"
-                min="0"
-                step="any"
-                className="w-full pr-9 pl-4 py-3 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white font-medium tabular-nums bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-colors"
-              />
+              <div className="w-full pr-9 pl-4 py-3 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-500 dark:text-slate-400 font-medium tabular-nums bg-slate-50 dark:bg-slate-800/60">
+                {formatCurrency(paidAmount)}
+              </div>
             </div>
             <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-              الرسوم المطلوبة = عدد العمالة × {formatCurrency(PER_WORKER_FEE)}. اتركها صفراً إذا لم يدفع بعد.
+              الرسوم المطلوبة = عدد العمالة × {formatCurrency(PER_WORKER_FEE)}.
+              المبلغ المدفوع يُدار من صفحة «المدفوعات الخاصة لكل شريك» — عدّل السندات هناك.
             </p>
           </div>
 

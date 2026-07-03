@@ -43,8 +43,13 @@ function formatUnitPriceForInput(total, quantity) {
 export default function AddStartupFeeModal({
   isOpen, onClose, onAdd, onUpdate, categories = [], onAddCategory,
   onDeleteCategory, usedCategoryIds, showToast, initialValues = null,
+  isLedgerManaged = false,
 }) {
   const editing = Boolean(initialValues?.id);
+  // Items with ledger entries derive actual_amount from SUM(entries) —
+  // the edit modal must not offer a second write path that bypasses
+  // that roll-up (the inline table cell is already locked for these).
+  const lockActual = editing && isLedgerManaged;
   const [form, setForm] = useState(EMPTY);
   const [submitting, setSubmitting] = useState(false);
   // Inline category-manager state. `managerOpen` is the boolean
@@ -232,8 +237,13 @@ export default function AddStartupFeeModal({
         category:      form.category,
         quantity,
         plannedAmount: plannedTotal,
-        actualAmount:  actualTotal,
       };
+      // Ledger-managed items: actual_amount stays owned by the entries
+      // roll-up — omitting the key means toStartupCostUpdate skips the
+      // column entirely.
+      if (!lockActual) {
+        payload.actualAmount = actualTotal;
+      }
       if (editing && onUpdate) {
         await onUpdate(initialValues.id, payload);
       } else if (onAdd) {
@@ -493,10 +503,19 @@ export default function AddStartupFeeModal({
                 placeholder="0"
                 min="0"
                 step="any"
-                className="w-full px-3 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+                disabled={lockActual}
+                title={lockActual ? 'التكلفة الفعلية تُحسب تلقائياً من سجل مصروفات هذا البند' : undefined}
+                className="w-full px-3 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent disabled:bg-slate-50 dark:disabled:bg-slate-800/60 disabled:text-slate-400 dark:disabled:text-slate-500 disabled:cursor-not-allowed"
               />
             </div>
           </div>
+
+          {lockActual && (
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed -mt-2">
+              التكلفة الفعلية لهذا البند تُحسب تلقائياً من سجل المصروفات الخاص به —
+              لتعديلها أضف أو احذف مصروفاً من صفحة تفاصيل البند.
+            </p>
+          )}
 
           <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 rounded-xl p-4 space-y-2 text-sm">
             <div className="flex items-baseline justify-between gap-3">

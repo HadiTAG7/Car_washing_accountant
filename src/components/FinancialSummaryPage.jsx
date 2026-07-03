@@ -49,6 +49,10 @@ function StatementRow({ label, amount, kind = 'minus', tone = 'auto', onClick })
       ? '='
       : '−';
 
+  // `=` alone erases the sign of a losing subtotal/final row — restore
+  // the minus inside the amount so the figure matches the KPI and CSV.
+  const negMark = (isSubtotal || isFinal) && amount < 0 ? '−' : '';
+
   let rowClass = '';
   // Both subtotal kinds share the same slate banner styling — the gross
   // profit subtotal and the expenses tally read as parallel structural
@@ -121,7 +125,7 @@ function StatementRow({ label, amount, kind = 'minus', tone = 'auto', onClick })
         </span>
       </td>
       <td className={`py-3 px-4 whitespace-nowrap text-left tabular-nums ${amountWeight} ${amountClass}`}>
-        {sign}{formatCurrency(Math.abs(amount))}
+        {sign}{negMark}{formatCurrency(Math.abs(amount))}
       </td>
     </tr>
   );
@@ -378,16 +382,22 @@ export default function FinancialSummaryPage() {
                     onClick={() => downloadCsv(
                       `قائمة-الدخل-${selectedMonth}`,
                       ['البند', 'المبلغ'],
+                      // Mirrors the on-screen statement line-for-line (plus
+                      // the pre-fees net, which the screen folds into the
+                      // fee percentages). Amounts are passed as numbers so
+                      // the CSV layer's formula-injection guard (text-only)
+                      // leaves them intact.
                       [
-                        ['الإيرادات التشغيلية', revenue.toFixed(2)],
-                        ['التكاليف المتغيرة والعمولات', (-variableTotal).toFixed(2)],
-                        ['مجمل الربح التشغيلي', grossProfit.toFixed(2)],
-                        ['المصاريف الشهرية الثابتة', (-monthlyFixed).toFixed(2)],
-                        ['مخصص المصاريف السنوية الموزعة', (-annualAmortized).toFixed(2)],
-                        ['صافي الربح قبل الرسوم', netProfitBeforeFees.toFixed(2)],
-                        ['رسوم الإدارة (10%)', (-managementFees).toFixed(2)],
-                        ['راتب المشرف (5%)', (-supervisorSalary).toFixed(2)],
-                        ['صافي الربح النهائي', finalNetProfit.toFixed(2)],
+                        ['الإيرادات التشغيلية', Number(revenue.toFixed(2))],
+                        ['التكاليف المتغيرة والعمولات', Number((-variableTotal).toFixed(2))],
+                        ['مجمل الربح التشغيلي', Number(grossProfit.toFixed(2))],
+                        ['المصاريف الشهرية الثابتة', Number((-monthlyFixed).toFixed(2))],
+                        ['مخصص المصاريف السنوية الموزعة', Number((-annualAmortized).toFixed(2))],
+                        ['إجمالي المصروفات الثابتة والموزعة', Number((-fixedExpensesTotal).toFixed(2))],
+                        ['صافي الربح قبل الرسوم', Number(netProfitBeforeFees.toFixed(2))],
+                        ['رسوم الإدارة (10%)', Number((-managementFees).toFixed(2))],
+                        ['راتب المشرف (5%)', Number((-supervisorSalary).toFixed(2))],
+                        ['صافي الربح النهائي', Number(finalNetProfit.toFixed(2))],
                       ],
                     )}
                     className="inline-flex items-center gap-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-2 rounded-lg text-xs font-semibold transition-colors"

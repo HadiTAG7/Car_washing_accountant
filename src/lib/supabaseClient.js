@@ -276,6 +276,15 @@ export async function createPartnerUser(email) {
   };
 }
 
+// Mirror of the bucket's server-side limits (10MB, image/PDF) so the user
+// gets an immediate Arabic message instead of uploading megabytes only to
+// receive an opaque storage error afterwards.
+const INVOICE_MAX_BYTES = 10 * 1024 * 1024;
+function isAllowedInvoiceType(file) {
+  const t = String(file?.type || '');
+  return t.startsWith('image/') || t === 'application/pdf';
+}
+
 /**
  * Upload an invoice/receipt file to the public 'invoices' storage bucket
  * and return its public URL (to be stored in *_entries.invoice_url).
@@ -283,16 +292,23 @@ export async function createPartnerUser(email) {
  * failure so the caller can surface the error inline.
  *
  * The object key is prefixed by a caller-supplied folder (e.g. the
- * parent item id) + a random-ish suffix from the filename + timestamp
- * to avoid collisions without needing crypto here.
+ * parent item id) + timestamp + a random UUID slice, so two uploads of
+ * the same filename in the same millisecond can't collide (409).
  */
 export async function uploadInvoiceFile(file, folder = 'misc') {
   if (!isSupabaseConfigured) {
     throw new Error('Supabase غير مُهيّأ — لا يمكن رفع الملفات في وضع العرض التجريبي.');
   }
   if (!file) throw new Error('لا يوجد ملف.');
+  if (!isAllowedInvoiceType(file)) {
+    throw new Error('نوع الملف غير مدعوم — يُقبل فقط صور الفواتير (JPG/PNG...) أو ملفات PDF.');
+  }
+  if (file.size > INVOICE_MAX_BYTES) {
+    throw new Error('حجم الملف يتجاوز الحد الأقصى المسموح (10 ميجابايت).');
+  }
   const safeName = String(file.name || 'file').replace(/[^\w.-]/g, '_').slice(-60);
-  const stamp = `${Date.now().toString(36)}-${Math.round(performance.now())}`;
+  const rand = (globalThis.crypto || window.crypto).randomUUID().slice(0, 8);
+  const stamp = `${Date.now().toString(36)}-${rand}`;
   const path = `${folder}/${stamp}-${safeName}`;
   const { error: upErr } = await supabase.storage
     .from('invoices')

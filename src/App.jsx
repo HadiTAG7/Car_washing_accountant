@@ -15,23 +15,29 @@ import {
   Loader2,
 } from 'lucide-react';
 
+import { lazy, Suspense } from 'react';
 import Sidebar from './components/Sidebar';
 import LoginScreen from './components/LoginScreen';
 import UpdatePasswordScreen from './components/UpdatePasswordScreen';
 import { DemoBanner } from './components/ErrorState';
-import OverviewPage from './components/OverviewPage';
-import StartupPage from './components/StartupPage';
-import AnnualExpensesPage from './components/AnnualExpensesPage';
-import MonthlyExpensesPage from './components/MonthlyExpensesPage';
-import VariableExpensesPage from './components/VariableExpensesPage';
-import WashesPage from './components/WashesPage';
-import FinancialSummaryPage from './components/FinancialSummaryPage';
-import VatRecoveryPage from './components/VatRecoveryPage';
-import BudgetsPage from './components/BudgetsPage';
-import PartnersPage from './components/PartnersPage';
-import PartnerPaymentsPage from './components/PartnerPaymentsPage';
-import TemporaryExpensesPage from './components/TemporaryExpensesPage';
+import LoadingState from './components/LoadingState';
 import FinancialEntrySelector from './components/FinancialEntrySelector';
+
+// Route-level code-splitting: each tab's page is its own chunk, loaded on
+// first visit. Trims the initial bundle (recharts, the heavy P&L/budget
+// pages, etc. no longer ship in the first paint) — a real win on mobile.
+const OverviewPage         = lazy(() => import('./components/OverviewPage'));
+const StartupPage          = lazy(() => import('./components/StartupPage'));
+const AnnualExpensesPage   = lazy(() => import('./components/AnnualExpensesPage'));
+const MonthlyExpensesPage  = lazy(() => import('./components/MonthlyExpensesPage'));
+const VariableExpensesPage = lazy(() => import('./components/VariableExpensesPage'));
+const WashesPage           = lazy(() => import('./components/WashesPage'));
+const FinancialSummaryPage = lazy(() => import('./components/FinancialSummaryPage'));
+const VatRecoveryPage      = lazy(() => import('./components/VatRecoveryPage'));
+const BudgetsPage          = lazy(() => import('./components/BudgetsPage'));
+const PartnersPage         = lazy(() => import('./components/PartnersPage'));
+const PartnerPaymentsPage  = lazy(() => import('./components/PartnerPaymentsPage'));
+const TemporaryExpensesPage = lazy(() => import('./components/TemporaryExpensesPage'));
 
 import { useAuth } from './hooks/useAuth';
 import { isSupabaseConfigured, requireAuth, missingEnvNames } from './lib/supabaseClient';
@@ -138,23 +144,25 @@ function AppShell() {
         <PartnerViewBanner />
         {!isSupabaseConfigured && <DemoBanner missing={missingEnvNames} />}
 
-        {activeTab === 'overview'  && <OverviewPage />}
-        {activeTab === 'startup'   && (
-          <StartupPage
-            pendingEntry={pendingEntry}
-            onClearPendingEntry={clearPendingEntry}
-          />
-        )}
-        {activeTab === 'annual'    && <AnnualExpensesPage />}
-        {activeTab === 'monthly'   && <MonthlyExpensesPage />}
-        {activeTab === 'variable'  && <VariableExpensesPage />}
-        {activeTab === 'washes'    && <WashesPage />}
-        {activeTab === 'summary'   && <FinancialSummaryPage />}
-        {activeTab === 'vat'       && <VatRecoveryPage />}
-        {activeTab === 'budgets'   && <BudgetsPage />}
-        {activeTab === 'partners'  && <PartnersPage />}
-        {activeTab === 'payments'  && <PartnerPaymentsPage />}
-        {activeTab === 'temporary_expenses' && <TemporaryExpensesPage />}
+        <Suspense fallback={<LoadingState message="جارٍ تحميل الصفحة..." />}>
+          {activeTab === 'overview'  && <OverviewPage />}
+          {activeTab === 'startup'   && (
+            <StartupPage
+              pendingEntry={pendingEntry}
+              onClearPendingEntry={clearPendingEntry}
+            />
+          )}
+          {activeTab === 'annual'    && <AnnualExpensesPage />}
+          {activeTab === 'monthly'   && <MonthlyExpensesPage />}
+          {activeTab === 'variable'  && <VariableExpensesPage />}
+          {activeTab === 'washes'    && <WashesPage />}
+          {activeTab === 'summary'   && <FinancialSummaryPage />}
+          {activeTab === 'vat'       && <VatRecoveryPage />}
+          {activeTab === 'budgets'   && <BudgetsPage />}
+          {activeTab === 'partners'  && <PartnersPage />}
+          {activeTab === 'payments'  && <PartnerPaymentsPage />}
+          {activeTab === 'temporary_expenses' && <TemporaryExpensesPage />}
+        </Suspense>
       </div>
 
       <FinancialEntrySelector

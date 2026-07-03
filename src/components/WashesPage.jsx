@@ -250,7 +250,10 @@ export default function WashesPage() {
                           {formatNumber(w.quantity)}
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums text-slate-700 dark:text-slate-300 align-top">
-                          {formatCurrency(w.price)}
+                          {/* Scaled like the row total so qty × price =
+                              total stays visibly true in partner view
+                              (same pattern as Startup/Monthly). */}
+                          {formatCurrency(w.price * scalingFactor)}
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums font-bold text-slate-900 dark:text-slate-100 align-top">
                           {formatCurrency(total * scalingFactor)}

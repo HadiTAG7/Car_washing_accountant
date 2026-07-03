@@ -1,7 +1,32 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
 import { mapStartupCostEntry, toStartupCostEntryInsert } from '../lib/mappers';
 import { useSupabaseQuery } from './useSupabaseQuery';
+
+/**
+ * Set of startup_costs ids that have at least one ledger entry. The
+ * Startup page uses this to lock the inline actual-amount input on
+ * ledger-managed rows — otherwise the inline editor and the ledger
+ * roll-up are two writers on the same column, and whichever runs last
+ * silently clobbers the other (e.g. type 90,000 inline, then delete a
+ * ledger entry → sync recomputes from entries and the 90,000 is gone).
+ */
+export function useStartupLedgerParents() {
+  const { data, refetch } = useSupabaseQuery(
+    () => supabase
+      .from('startup_cost_entries')
+      .select('startup_cost_id'),
+    {
+      enabled: isSupabaseConfigured,
+      fallback: [],
+    },
+  );
+  const parentIds = useMemo(
+    () => new Set((data || []).map((r) => r.startup_cost_id)),
+    [data],
+  );
+  return { parentIds, refetch };
+}
 
 /**
  * Sub-ledger for one startup_costs row. Fetches every entry whose

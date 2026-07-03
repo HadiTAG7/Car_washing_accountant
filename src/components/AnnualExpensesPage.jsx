@@ -125,12 +125,22 @@ export default function AnnualExpensesPage() {
   function closeModal()        { setLocalOpen(false); setEditingItem(null); }
 
   const totals = useMemo(() => {
-    let total = 0, paid = 0, pending = 0;
+    let total = 0, paid = 0;
     items.forEach((i) => {
       total += i.annualCost;
-      if (i.paymentStatus === 'paid') paid += i.annualCost;
-      else pending += i.annualCost;
+      // Paid per item is a hybrid of the two workflows:
+      //  • status === 'paid'  → count the full annualCost (covers admins
+      //    who flip the pill manually without itemizing the ledger)
+      //  • otherwise → count the ledger's partial payments (actualAmount),
+      //    capped at annualCost so an over-recorded ledger can't inflate
+      //    the KPI beyond the planned figure.
+      // Before this, a 12,000 expense with 3,000 recorded showed
+      // المدفوع = 0 while its table row showed المدفوع = 3,000.
+      paid += i.paymentStatus === 'paid'
+        ? i.annualCost
+        : Math.min(i.actualAmount || 0, i.annualCost);
     });
+    const pending = Math.max(0, total - paid);
     // Pro-rata: scale aggregates by the viewing partner's share.
     return {
       total:   total   * scalingFactor,

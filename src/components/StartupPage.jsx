@@ -13,7 +13,7 @@ import LoadingState from './LoadingState';
 import ErrorState, { SetupRequiredCard } from './ErrorState';
 import Toast from './Toast';
 import { useStartupCosts } from '../hooks/useStartupCosts';
-import { useStartupCostEntries } from '../hooks/useStartupCostEntries';
+import { useStartupCostEntries, useStartupLedgerParents } from '../hooks/useStartupCostEntries';
 import { useCategories } from '../hooks/useCategories';
 import { isSupabaseConfigured, missingEnvNames } from '../lib/supabaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
@@ -137,6 +137,10 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
   // Entries hook lives at page level so the shared ExpenseLedgerModal
   // stays a pure-UI component; null parentId disables the fetch.
   const detailLedger = useStartupCostEntries(detailItem?.id ?? null);
+  // Which items are ledger-managed. Their inline actual-amount input is
+  // locked (the ledger is the single writer for actual_amount there).
+  const { parentIds: ledgerManagedIds, refetch: refetchLedgerParents } =
+    useStartupLedgerParents();
   const [mutationError, setMutationError] = useState(null);
   // Toast for inline-manager feedback (e.g. "category in use" warning).
   // Same shape as PartnersPage so swapping in the shared Toast UI is
@@ -344,7 +348,7 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
                           {formatCurrency(rowPlanned)}
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap text-left align-top">
-                          {canMutate ? (
+                          {canMutate && !ledgerManagedIds.has(i.id) ? (
                             <FormattedAmountInput
                               value={i.actualAmount}
                               onCommit={(safe) => handleUpdateActual(i.id, safe, i.actualAmount, i.plannedAmount, i.status)}
@@ -352,7 +356,16 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
                               className="w-28 px-2 py-1 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-slate-100 font-medium text-left tabular-nums bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-300"
                             />
                           ) : (
-                            <span className="tabular-nums text-slate-700 dark:text-slate-300 font-medium">
+                            // Ledger-managed rows lock the inline editor:
+                            // actual_amount is owned by the sub-ledger SUM,
+                            // and a manual overwrite here would be silently
+                            // reverted by the next entry add/delete.
+                            <span
+                              className="tabular-nums text-slate-700 dark:text-slate-300 font-medium"
+                              title={canMutate
+                                ? 'يُدار من سجل المصاريف — اضغط اسم البند لتعديل الدفعات'
+                                : undefined}
+                            >
                               {formatCurrency(rowActual)}
                             </span>
                           )}
@@ -424,7 +437,7 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
         title={detailItem ? `سجل مصاريف: ${detailItem.itemName}` : ''}
         plannedAmount={detailItem?.plannedAmount || 0}
         ledger={detailLedger}
-        onDirty={refetch}
+        onDirty={() => { refetch(); refetchLedgerParents(); }}
         migrationFile="2026_06_startup_cost_entries_ALL.sql"
       />
 

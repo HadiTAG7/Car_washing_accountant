@@ -372,7 +372,10 @@ export default function VariableExpensesPage() {
                         </span>
                       </td>
                       <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums text-slate-700 dark:text-slate-300 align-top">
-                        {formatCurrency(i.unitCost)}
+                        {/* Scaled like the row total so qty × unit = total
+                            stays visibly true in partner view (same
+                            pattern as Startup/Monthly). */}
+                        {formatCurrency(i.unitCost * scalingFactor)}
                       </td>
                       <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums font-bold text-slate-900 dark:text-slate-100 align-top">
                         {formatCurrency((i.totalVariableCost || 0) * scalingFactor)}

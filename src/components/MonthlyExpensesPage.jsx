@@ -291,7 +291,7 @@ export default function MonthlyExpensesPage() {
                         <div className="font-medium text-slate-800 dark:text-slate-200">{i.expenseName}</div>
                         {i.quantity > 1 && (
                           <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5 tabular-nums">
-                            الكمية: {formatNumber(i.quantity)} | تكلفة الوحدة: {formatCurrency(i.unitCost)}
+                            الكمية: {formatNumber(i.quantity)} | تكلفة الوحدة: {formatCurrency(i.unitCost * scalingFactor)}
                           </div>
                         )}
                       </td>

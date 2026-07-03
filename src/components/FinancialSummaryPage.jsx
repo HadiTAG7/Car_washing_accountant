@@ -133,7 +133,12 @@ export default function FinancialSummaryPage() {
   const { items: monthlies, loading: monthlyLoading,  error: monthlyError,  refetch: refetchMonthly }  = useMonthlyExpenses();
   const { categories: monthlyCats } = useMonthlyExpenseCategories();
   const { items: annuals,   loading: annualLoading,   error: annualError,   refetch: refetchAnnual }   = useAnnualExpenses();
-  const { scalingFactor } = usePartnerView();
+  // isPartnerView also gates the drill-down modal: its rows are the RAW
+  // company-level records (each row IS what it is — a 200 ر.س wash can't
+  // honestly display as 72 ر.س), so opening it under a scaled headline
+  // would both contradict the statement and leak full-company figures to
+  // a partner. Partners get the scaled statement only.
+  const { scalingFactor, isPartnerView } = usePartnerView();
 
   const [selectedMonth, setSelectedMonth] = useState(todayMonth());
   const [detailCategory, setDetailCategory] = useState(null);
@@ -380,13 +385,13 @@ export default function FinancialSummaryPage() {
                       label="الإيرادات التشغيلية"
                       amount={revenue}
                       kind="plus"
-                      onClick={() => setDetailCategory('revenue')}
+                      onClick={isPartnerView ? undefined : () => setDetailCategory('revenue')}
                     />
                     <StatementRow
                       label="يُخصم منه: التكاليف المتغيرة والعمولات"
                       amount={variableTotal}
                       kind="minus"
-                      onClick={() => setDetailCategory('variable')}
+                      onClick={isPartnerView ? undefined : () => setDetailCategory('variable')}
                     />
                     <StatementRow
                       label="= مجمل الربح التشغيلي"
@@ -397,13 +402,13 @@ export default function FinancialSummaryPage() {
                       label="يُخصم منه: المصاريف التشغيلية الشهرية الثابتة"
                       amount={monthlyFixed}
                       kind="minus"
-                      onClick={() => setDetailCategory('monthly')}
+                      onClick={isPartnerView ? undefined : () => setDetailCategory('monthly')}
                     />
                     <StatementRow
                       label="يُخصم منه: مخصص المصاريف السنوية الموزعة (سنوي ÷ ١٢)"
                       amount={annualAmortized}
                       kind="minus"
-                      onClick={() => setDetailCategory('annual')}
+                      onClick={isPartnerView ? undefined : () => setDetailCategory('annual')}
                     />
                     <StatementRow
                       label="إجمالي المصروفات الثابتة والموزعة"

@@ -43,8 +43,14 @@ export const isSupabaseConfigured = missingEnvNames.length === 0;
 export const urlLooksValid =
   isSupabaseConfigured && /^https?:\/\/[^\s]+$/i.test(supabaseUrl);
 
+// SECURE BY DEFAULT: auth is required unless explicitly disabled with
+// VITE_REQUIRE_AUTH=false. This pairs with the RLS hardening migration
+// (2026_06_rls_authenticated_hardening.sql) that scopes every table
+// policy `to authenticated` — an anonymous visitor would otherwise see
+// a dashboard whose every query fails. Demo mode (no Supabase env) is
+// unaffected: the auth gate only applies when isSupabaseConfigured.
 export const requireAuth =
-  String(import.meta.env.VITE_REQUIRE_AUTH || '').trim() === 'true';
+  String(import.meta.env.VITE_REQUIRE_AUTH || '').trim() !== 'false';
 
 export const supabase = isSupabaseConfigured
   ? createClient(supabaseUrl, supabaseAnonKey, {

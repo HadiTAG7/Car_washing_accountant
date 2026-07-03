@@ -404,83 +404,83 @@ end $$;
 
 drop policy if exists "rw_auth" on public.categories;
 create policy "rw_auth" on public.categories
-  for all to public using (true) with check (true);
+  for all to authenticated using (true) with check (true);
 
 drop policy if exists "rw_auth" on public.startup_costs;
 create policy "rw_auth" on public.startup_costs
-  for all to public using (true) with check (true);
+  for all to authenticated using (true) with check (true);
 
 drop policy if exists "rw_auth" on public.startup_cost_entries;
 create policy "rw_auth" on public.startup_cost_entries
-  for all to public using (true) with check (true);
+  for all to authenticated using (true) with check (true);
 
 drop policy if exists "rw_auth" on public.assets;
 create policy "rw_auth" on public.assets
-  for all to public using (true) with check (true);
+  for all to authenticated using (true) with check (true);
 
 drop policy if exists "rw_auth" on public.vehicles;
 create policy "rw_auth" on public.vehicles
-  for all to public using (true) with check (true);
+  for all to authenticated using (true) with check (true);
 
 drop policy if exists "rw_auth" on public.maintenance_logs;
 create policy "rw_auth" on public.maintenance_logs
-  for all to public using (true) with check (true);
+  for all to authenticated using (true) with check (true);
 
 drop policy if exists "rw_auth" on public.transactions;
 create policy "rw_auth" on public.transactions
-  for all to public using (true) with check (true);
+  for all to authenticated using (true) with check (true);
 
 drop policy if exists "rw_auth" on public.app_settings;
 create policy "rw_auth" on public.app_settings
-  for all to public using (true) with check (true);
+  for all to authenticated using (true) with check (true);
 
 drop policy if exists "rw_auth" on public.partners;
 create policy "rw_auth" on public.partners
-  for all to public using (true) with check (true);
+  for all to authenticated using (true) with check (true);
 
 drop policy if exists "rw_auth" on public.partner_payments;
 create policy "rw_auth" on public.partner_payments
-  for all to public using (true) with check (true);
+  for all to authenticated using (true) with check (true);
 
 drop policy if exists "rw_auth" on public.annual_expense_categories;
 create policy "rw_auth" on public.annual_expense_categories
-  for all to public using (true) with check (true);
+  for all to authenticated using (true) with check (true);
 
 drop policy if exists "rw_auth" on public.annual_expenses;
 create policy "rw_auth" on public.annual_expenses
-  for all to public using (true) with check (true);
+  for all to authenticated using (true) with check (true);
 
 drop policy if exists "rw_auth" on public.annual_expense_entries;
 create policy "rw_auth" on public.annual_expense_entries
-  for all to public using (true) with check (true);
+  for all to authenticated using (true) with check (true);
 
 drop policy if exists "rw_auth" on public.monthly_expense_categories;
 create policy "rw_auth" on public.monthly_expense_categories
-  for all to public using (true) with check (true);
+  for all to authenticated using (true) with check (true);
 
 drop policy if exists "rw_auth" on public.monthly_expenses;
 create policy "rw_auth" on public.monthly_expenses
-  for all to public using (true) with check (true);
+  for all to authenticated using (true) with check (true);
 
 drop policy if exists "rw_auth" on public.variable_expense_categories;
 create policy "rw_auth" on public.variable_expense_categories
-  for all to public using (true) with check (true);
+  for all to authenticated using (true) with check (true);
 
 drop policy if exists "rw_auth" on public.variable_expenses;
 create policy "rw_auth" on public.variable_expenses
-  for all to public using (true) with check (true);
+  for all to authenticated using (true) with check (true);
 
 drop policy if exists "rw_auth" on public.washes;
 create policy "rw_auth" on public.washes
-  for all to public using (true) with check (true);
+  for all to authenticated using (true) with check (true);
 
 drop policy if exists "rw_auth" on public.category_budgets;
 create policy "rw_auth" on public.category_budgets
-  for all to public using (true) with check (true);
+  for all to authenticated using (true) with check (true);
 
 drop policy if exists "rw_auth" on public.temporary_expenses;
 create policy "rw_auth" on public.temporary_expenses
-  for all to public using (true) with check (true);
+  for all to authenticated using (true) with check (true);
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Seed data (idempotent — only inserts when tables are empty)
@@ -1018,3 +1018,58 @@ alter table public.startup_costs
 alter table public.startup_costs
   add  constraint startup_costs_quantity_chk
   check (quantity > 0);
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Functions — admin detection + secure email→UUID lookup
+-- ═══════════════════════════════════════════════════════════════════════════
+-- These previously lived only in migrations
+-- (2026_05_admin_helper_and_secure_rpc.sql), which meant a fresh install
+-- from schema.sql alone was missing the RPC the partner-linking UI calls
+-- (supabase.rpc('get_user_id_by_email')) and broke at runtime.
+
+-- is_admin(): TRUE only for a signed-in user whose id is NOT linked to
+-- any partners.user_id. Anonymous callers are never admin.
+create or replace function public.is_admin()
+returns boolean
+language sql
+security definer
+stable
+set search_path = public, auth
+as $$
+  select
+    auth.uid() is not null
+    and not exists (
+      select 1
+        from public.partners
+       where user_id = auth.uid()
+    );
+$$;
+
+revoke all on function public.is_admin() from public, anon;
+grant execute on function public.is_admin() to authenticated;
+
+-- get_user_id_by_email(): resolves an email to auth.users.id — but only
+-- for admin callers. Non-admins (and no-match lookups) both get NULL, so
+-- the caller can't distinguish "not registered" from "not authorised".
+create or replace function public.get_user_id_by_email(email_search text)
+returns uuid
+language sql
+security definer
+stable
+set search_path = public, auth
+as $$
+  select case
+    when public.is_admin() then (
+      select id
+        from auth.users
+       where lower(email) = lower(trim(email_search))
+       limit 1
+    )
+    else null
+  end;
+$$;
+
+revoke all on function public.get_user_id_by_email(text) from public, anon;
+grant execute on function public.get_user_id_by_email(text) to authenticated;
+
+notify pgrst, 'reload schema';

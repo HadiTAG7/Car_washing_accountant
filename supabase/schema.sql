@@ -1,5 +1,5 @@
 -- ═══════════════════════════════════════════════════════════════════════════
--- Monster Wash — Supabase schema
+-- Sweater (سويتر) — Supabase schema
 -- Run this in the Supabase SQL editor (or `supabase db push`) to create
 -- every table the frontend expects, plus permissive RLS for authenticated
 -- users and a small amount of seed data so the dashboard is populated.

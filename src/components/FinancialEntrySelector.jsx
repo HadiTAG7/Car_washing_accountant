@@ -1,5 +1,9 @@
-import { X, Receipt, Truck } from 'lucide-react';
+import { X, Receipt } from 'lucide-react';
 
+// The 'asset' (أصل رأسمالي) card was removed in the 2026-06 audit: since
+// the assets module was cut, picking it closed the selector and opened
+// nothing — a silent dead-end. Restore alongside a real assets modal if
+// depreciation tracking ever returns.
 const ENTRY_TYPES = [
   {
     id: 'item',
@@ -10,16 +14,6 @@ const ENTRY_TYPES = [
     titleEn: 'One-time Cost',
     description: 'مصاريف تأسيسية غير قابلة للإهلاك تُدفع مرة واحدة فقط',
     examples: 'رسوم قانونية، تراخيص، هوية بصرية',
-  },
-  {
-    id: 'asset',
-    icon: Truck,
-    iconBg: 'bg-primary-50',
-    iconColor: 'text-primary-700',
-    title: 'أصل رأسمالي',
-    titleEn: 'Depreciable Asset',
-    description: 'أصل ثابت ملموس يُستهلك على مدار عمره الإنتاجي',
-    examples: 'شاحنات، مولدات، غسالات ضغط عالي',
   },
 ];
 

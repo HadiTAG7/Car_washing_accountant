@@ -61,13 +61,18 @@ export function useTaxInvoices() {
     });
   }, [startupQ.data, annualQ.data]);
 
-  // NOTE on errors: the annual entries table ships later than startup's —
-  // a "relation does not exist" on one source shouldn't blank the whole
-  // report. Surface the startup error first (older feature, more likely
-  // a real problem); the annual error only when startup is clean.
+  // Per-source errors: the two entry tables ship at different times — a
+  // "relation does not exist" on one source must NOT blank the whole
+  // report while the other loaded fine. `error` (only when BOTH failed)
+  // drives the page-level ErrorState; `sourceErrors` lets the page show
+  // a compact per-source note naming the missing migration instead.
   const loading = startupQ.loading || annualQ.loading;
-  const error   = startupQ.error || annualQ.error || null;
+  const error   = (startupQ.error && annualQ.error) ? startupQ.error : null;
+  const sourceErrors = {
+    startup: startupQ.error || null,
+    annual:  annualQ.error  || null,
+  };
   const refetch = () => { startupQ.refetch(); annualQ.refetch(); };
 
-  return { invoices, loading, error, refetch };
+  return { invoices, loading, error, sourceErrors, refetch };
 }

@@ -67,7 +67,7 @@ function AppShell() {
 
   function handleEntrySelect(type) {
     setShowEntrySelector(false);
-    if (type === 'item' || type === 'asset') {
+    if (type === 'item') {
       setActiveTab('startup');
     }
     setPendingEntry(type);

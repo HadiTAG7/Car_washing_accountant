@@ -59,9 +59,18 @@ export default function Sidebar({
       console.error('Background signout log:', err);
     });
 
-    // 2. Synchronous client wipe. Each storage is wrapped separately so
-    //    a quota / private-mode failure in one doesn't skip the other.
-    try { localStorage.clear();   } catch (err) { console.error('localStorage.clear failed:', err); }
+    // 2. Synchronous, TARGETED client wipe — auth/session state only.
+    //    The previous blanket localStorage.clear() also nuked per-device
+    //    UI prefs that have nothing to do with auth (dark-mode choice,
+    //    hidden budget cards), which reset on every logout. We now
+    //    remove: every Supabase auth token (keys prefixed 'sb-') and
+    //    the admin's simulate-as-partner pick. sessionStorage stays
+    //    fully cleared (nothing persistent lives there).
+    try {
+      Object.keys(localStorage)
+        .filter((k) => k.startsWith('sb-') || k === 'sweater:actingAsPartnerId')
+        .forEach((k) => localStorage.removeItem(k));
+    } catch (err) { console.error('localStorage cleanup failed:', err); }
     try { sessionStorage.clear(); } catch (err) { console.error('sessionStorage.clear failed:', err); }
 
     // 3. Build a destination URL that's *different* from the current

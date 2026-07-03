@@ -37,7 +37,7 @@ function SourceBadge({ source }) {
 }
 
 export default function VatRecoveryPage() {
-  const { invoices, loading, error, refetch } = useTaxInvoices();
+  const { invoices, loading, error, sourceErrors, refetch } = useTaxInvoices();
   const { items: startupItems } = useStartupCosts();
   const { items: annualItems }  = useAnnualExpenses();
   const { scalingFactor } = usePartnerView();
@@ -78,12 +78,30 @@ export default function VatRecoveryPage() {
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
         {!isSupabaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
 
+        {/* Full ErrorState only when BOTH sources failed. A single
+            failed source (usually its migration hasn't run yet) gets a
+            compact amber note below while the healthy source's invoices
+            keep rendering. */}
         {error && (
           <ErrorState
             title="تعذّر تحميل الفواتير الضريبية"
             error={error}
             onRetry={refetch}
           />
+        )}
+        {!error && sourceErrors.startup && (
+          <div className="bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-500/40 text-amber-800 dark:text-amber-300 text-xs px-4 py-2.5 rounded-xl leading-relaxed">
+            تعذّر تحميل فواتير <strong>رسوم التأسيس</strong> — إن لم تكن قد شغّلت{' '}
+            <code className="bg-amber-100 dark:bg-amber-500/25 px-1 rounded" dir="ltr">2026_06_startup_cost_entries_ALL.sql</code>{' '}
+            في Supabase SQL Editor، شغّله ثم حدّث الصفحة. الفواتير السنوية معروضة أدناه.
+          </div>
+        )}
+        {!error && sourceErrors.annual && (
+          <div className="bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-500/40 text-amber-800 dark:text-amber-300 text-xs px-4 py-2.5 rounded-xl leading-relaxed">
+            تعذّر تحميل فواتير <strong>المصاريف السنوية</strong> — إن لم تكن قد شغّلت{' '}
+            <code className="bg-amber-100 dark:bg-amber-500/25 px-1 rounded" dir="ltr">2026_06_annual_expense_entries_ALL.sql</code>{' '}
+            في Supabase SQL Editor، شغّله ثم حدّث الصفحة. فواتير التأسيس معروضة أدناه.
+          </div>
         )}
 
         {/* ── KPI summary ──────────────────────────────────── */}

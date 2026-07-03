@@ -1,5 +1,5 @@
 /**
- * Shared UI primitives for the Monster Wash dashboard.
+ * Shared UI primitives for the Sweater dashboard.
  *
  * Light mode is the default; every container/text/border declares a
  * `dark:` counterpart so flipping `.dark` on <html> propagates cleanly.

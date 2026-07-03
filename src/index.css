@@ -50,7 +50,7 @@
 @theme {
   --font-sans: "Thmanyah Sans", "IBM Plex Sans Arabic", "Tajawal", system-ui, sans-serif;
 
-  /* Deep navy primary — Monster Wash brand */
+  /* Deep navy primary — Sweater brand */
   --color-primary-50:  #eef2ff;
   --color-primary-100: #dfe5f5;
   --color-primary-200: #bcc7e6;
@@ -63,7 +63,7 @@
   --color-primary-900: #101935;
   --color-primary-950: #0a1028;
 
-  /* Crimson accent — Monster Wash logo red */
+  /* Crimson accent — Sweater legacy accent red */
   --color-accent-50:  #fff1f2;
   --color-accent-100: #ffe1e3;
   --color-accent-200: #ffc8cd;

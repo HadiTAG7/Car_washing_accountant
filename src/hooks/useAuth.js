@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
 
-const DEMO_SESSION = { user: { email: 'demo@monster.wash', id: 'demo-user' } };
+const DEMO_SESSION = { user: { email: 'demo@sweater.app', id: 'demo-user' } };
 
 export function useAuth() {
   const [session, setSession] = useState(() =>

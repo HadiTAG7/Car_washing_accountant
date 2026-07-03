@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   X, Plus, Trash2, FileText, Wallet, Calendar, Tag, Loader2, Inbox,
-  Link as LinkIcon, Percent,
+  Link as LinkIcon, Percent, Upload,
 } from 'lucide-react';
 import {
   formatCurrency, formatDate, todayISO, extractVat, netOfVat,
 } from '../data/initialData';
+import { uploadInvoiceFile, isSupabaseConfigured } from '../lib/supabaseClient';
 
 const EMPTY_FORM = {
   description: '', amount: '', spentDate: '', notes: '', invoiceUrl: '', isTaxInvoice: false,
@@ -42,19 +43,41 @@ function isSafeHttpUrl(value) {
  */
 export default function ExpenseLedgerModal({
   isOpen, onClose, title, plannedAmount = 0, plannedLabel = 'المخطط',
-  ledger, onDirty, migrationFile,
+  ledger, onDirty, migrationFile, uploadFolder = 'misc',
 }) {
   const { entries, loading, error, addEntry, deleteEntry } = ledger;
 
   const [form, setForm] = useState(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
 
   // Reset form on every open; seed today's date.
   useEffect(() => {
     if (!isOpen) return;
     setForm({ ...EMPTY_FORM, spentDate: todayISO() });
   }, [isOpen]);
+
+  const fileInputRef = useRef(null);
+
+  async function handleUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadError('');
+    setUploading(true);
+    try {
+      const url = await uploadInvoiceFile(file, uploadFolder);
+      // Drop the public URL straight into the invoice field — it then
+      // flows through the entries list + VAT report as a normal link.
+      setForm((prev) => ({ ...prev, invoiceUrl: url }));
+    } catch (err) {
+      setUploadError(err?.message || 'تعذّر رفع الملف.');
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }
 
   if (!isOpen) return null;
 
@@ -245,26 +268,58 @@ export default function ExpenseLedgerModal({
               />
             </div>
 
-            {/* Invoice URL — full-width row. Optional; we don't validate
-                format because vendor portals + Drive share links vary
-                wildly — we just render as a link when the value starts
-                with http(s):// in the entries list. */}
-            <div className="relative">
-              <LinkIcon
-                size={15}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 pointer-events-none"
-              />
-              <input
-                type="url"
-                name="invoiceUrl"
-                value={form.invoiceUrl}
-                onChange={handleChange}
-                placeholder="رابط الفاتورة (اختياري) — مثال: https://drive.google.com/..."
-                dir="ltr"
-                autoComplete="off"
-                className="w-full pr-9 pl-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-mono bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-colors"
-              />
+            {/* Invoice: paste a link OR upload a file. The upload lands in
+                the 'invoices' bucket and its public URL fills the same
+                field, so both paths flow identically downstream. */}
+            <div className="flex items-stretch gap-2">
+              <div className="relative flex-1">
+                <LinkIcon
+                  size={15}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 pointer-events-none"
+                />
+                <input
+                  type="url"
+                  name="invoiceUrl"
+                  value={form.invoiceUrl}
+                  onChange={handleChange}
+                  placeholder="رابط الفاتورة، أو ارفع ملفاً ←"
+                  dir="ltr"
+                  autoComplete="off"
+                  className="w-full pr-9 pl-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-mono bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-colors"
+                />
+              </div>
+              {isSupabaseConfigured && (
+                <>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*,application/pdf"
+                    onChange={handleUpload}
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploading}
+                    title="رفع صورة/PDF للفاتورة"
+                    className="inline-flex items-center gap-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-60 text-slate-700 dark:text-slate-200 px-3 rounded-xl text-xs font-semibold transition-colors shrink-0"
+                  >
+                    {uploading
+                      ? <Loader2 size={15} className="animate-spin" />
+                      : <Upload size={15} />}
+                    رفع
+                  </button>
+                </>
+              )}
             </div>
+            {uploadError && (
+              <p className="text-[11px] text-red-600 dark:text-red-400 leading-relaxed">{uploadError}</p>
+            )}
+            {form.invoiceUrl && !uploadError && (
+              <p className="text-[11px] text-emerald-600 dark:text-emerald-400 leading-relaxed truncate" dir="ltr">
+                ✓ {form.invoiceUrl}
+              </p>
+            )}
 
             {/* Tax-invoice toggle. When on, the amount above is treated
                 as VAT-inclusive and the 15% portion is back-derived. */}

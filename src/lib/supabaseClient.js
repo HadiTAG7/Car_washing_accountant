@@ -275,3 +275,32 @@ export async function createPartnerUser(email) {
     emailConfirmRequired,
   };
 }
+
+/**
+ * Upload an invoice/receipt file to the public 'invoices' storage bucket
+ * and return its public URL (to be stored in *_entries.invoice_url).
+ * Requires an authenticated session (bucket write policy). Throws on
+ * failure so the caller can surface the error inline.
+ *
+ * The object key is prefixed by a caller-supplied folder (e.g. the
+ * parent item id) + a random-ish suffix from the filename + timestamp
+ * to avoid collisions without needing crypto here.
+ */
+export async function uploadInvoiceFile(file, folder = 'misc') {
+  if (!isSupabaseConfigured) {
+    throw new Error('Supabase غير مُهيّأ — لا يمكن رفع الملفات في وضع العرض التجريبي.');
+  }
+  if (!file) throw new Error('لا يوجد ملف.');
+  const safeName = String(file.name || 'file').replace(/[^\w.-]/g, '_').slice(-60);
+  const stamp = `${Date.now().toString(36)}-${Math.round(performance.now())}`;
+  const path = `${folder}/${stamp}-${safeName}`;
+  const { error: upErr } = await supabase.storage
+    .from('invoices')
+    .upload(path, file, { cacheControl: '3600', upsert: false });
+  if (upErr) {
+    console.error('🔥 Real Supabase Error (storage.upload):', upErr, 'path:', path);
+    throw upErr;
+  }
+  const { data } = supabase.storage.from('invoices').getPublicUrl(path);
+  return data.publicUrl;
+}

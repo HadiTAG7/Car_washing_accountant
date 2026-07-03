@@ -439,6 +439,7 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
         ledger={detailLedger}
         onDirty={() => { refetch(); refetchLedgerParents(); }}
         migrationFile="2026_06_startup_cost_entries_ALL.sql"
+        uploadFolder={detailItem ? `startup/${detailItem.id}` : 'startup'}
       />
 
       <Toast

@@ -362,6 +362,7 @@ export default function AnnualExpensesPage() {
         ledger={detailLedger}
         onDirty={refetch}
         migrationFile="2026_06_annual_expense_entries_ALL.sql"
+        uploadFolder={detailItem ? `annual/${detailItem.id}` : 'annual'}
       />
 
       <Toast

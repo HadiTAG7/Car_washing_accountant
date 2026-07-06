@@ -1,6 +1,7 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Landmark, Wallet, Coins, Users, TrendingUp, PiggyBank, Receipt,
+  DatabaseBackup, Loader2,
 } from 'lucide-react';
 import { formatCurrency, formatNumber, PER_WORKER_FEE } from '../data/initialData';
 import TopBar from './TopBar';
@@ -8,6 +9,8 @@ import { Card, StatCard, ProgressBar, SectionHeader, EmptyState } from './UI';
 import LoadingState from './LoadingState';
 import { SetupRequiredCard } from './ErrorState';
 import { ColumnTrend } from './charts/TrendCharts';
+import Toast from './Toast';
+import { downloadFullBackup } from '../lib/backupZip';
 import { usePartners } from '../hooks/usePartners';
 import { usePartnerPayments } from '../hooks/usePartnerPayments';
 import { useStartupCosts } from '../hooks/useStartupCosts';
@@ -45,7 +48,7 @@ export default function OverviewPage() {
   const { items: startupItems, loading: sLoading } = useStartupCosts();
   const { payments } = usePartnerPayments();
   const {
-    scalingFactor, isPartnerView, viewedPartner,
+    scalingFactor, isPartnerView, viewedPartner, canMutate,
   } = usePartnerView();
 
   // ── Monthly receipts trend (last 6 months) ───────────────────
@@ -64,6 +67,22 @@ export default function OverviewPage() {
     const values = months.map((m) => byMonth.get(m.key));
     return { months, values, total: values.reduce((s, v) => s + v, 0) };
   }, [payments, isPartnerView, viewedPartner]);
+
+  // ── One-click full backup (admin only) ──────────────────────
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [toast, setToast] = useState({ open: false, message: '', tone: 'success' });
+  async function handleBackup() {
+    if (backupBusy) return;
+    setBackupBusy(true);
+    try {
+      await downloadFullBackup();
+      setToast({ open: true, message: '✓ تم تنزيل النسخة الاحتياطية الكاملة (ZIP يضم كل الجداول).', tone: 'success' });
+    } catch (err) {
+      setToast({ open: true, message: err?.message || 'تعذّر إنشاء النسخة الاحتياطية.', tone: 'error' });
+    } finally {
+      setBackupBusy(false);
+    }
+  }
 
   // ── Capital raise ────────────────────────────────────────────
   const capital = useMemo(() => {
@@ -120,6 +139,20 @@ export default function OverviewPage() {
       <TopBar
         title="نظرة عامة"
         subtitle="ملخص رأس المال المُجمّع وصرف التأسيس"
+        actions={canMutate && isSupabaseConfigured ? (
+          <button
+            type="button"
+            onClick={handleBackup}
+            disabled={backupBusy}
+            title="تنزيل نسخة احتياطية كاملة لكل الجداول (ZIP)"
+            className="inline-flex items-center gap-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-60 text-slate-700 dark:text-slate-200 px-3 py-2 rounded-xl text-xs font-semibold transition-colors shrink-0"
+          >
+            {backupBusy
+              ? <Loader2 size={14} className="animate-spin" />
+              : <DatabaseBackup size={14} />}
+            <span className="hidden sm:inline">نسخة احتياطية</span>
+          </button>
+        ) : null}
       />
 
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
@@ -278,6 +311,13 @@ export default function OverviewPage() {
           </>
         )}
       </main>
+
+      <Toast
+        open={toast.open}
+        message={toast.message}
+        tone={toast.tone}
+        onClose={() => setToast((t) => ({ ...t, open: false }))}
+      />
     </>
   );
 }

@@ -6,6 +6,7 @@ import { formatCurrency, PER_WORKER_FEE } from '../data/initialData';
 import {
   lookupUserIdByEmail, createPartnerUser, isValidEmail, isSupabaseConfigured,
 } from '../lib/supabaseClient';
+import { translateAuthError } from '../lib/authErrors';
 import CreateUserConfirm from './CreateUserConfirm';
 import CreatedCredentials from './CreatedCredentials';
 
@@ -127,7 +128,7 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave, sho
         emailConfirmRequired,
       });
     } catch (err) {
-      showToast?.(err?.message || 'تعذّر إنشاء الحساب', 'error');
+      showToast?.(translateAuthError(err, 'تعذّر إنشاء الحساب.'), 'error');
     } finally {
       setCreating(false);
     }

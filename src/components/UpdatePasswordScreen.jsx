@@ -3,6 +3,7 @@ import { KeyRound, Loader2, CheckCircle2 } from 'lucide-react';
 import SweaterLogo from './SweaterLogo';
 import { BRAND } from '../data/initialData';
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
+import { translateAuthError } from '../lib/authErrors';
 
 /**
  * Landing page for the reset-password email link. The reset email
@@ -62,7 +63,7 @@ export default function UpdatePasswordScreen() {
       }
       const { error: err } = await supabase.auth.updateUser({ password });
       if (err) {
-        setError(err.message || 'تعذّر تحديث كلمة المرور.');
+        setError(translateAuthError(err, 'تعذّر تحديث كلمة المرور.'));
         return;
       }
       setSuccess(true);

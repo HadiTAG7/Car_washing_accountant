@@ -5,6 +5,15 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>سويتر | نظام إدارة القيود والشركاء</title>
+    <!-- PWA: installable on phone home screens. theme-color follows the
+         header surface in each scheme. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0f172a" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="سويتر" />
     <!-- Thmanyah Sans is bundled locally under /fonts/thmanyah/. Preload
          the two most-used weights so the first render doesn't flash an
          unstyled fallback. -->

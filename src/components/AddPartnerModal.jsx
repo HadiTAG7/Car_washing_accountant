@@ -4,6 +4,7 @@ import { formatCurrency, PER_WORKER_FEE } from '../data/initialData';
 import {
   lookupUserIdByEmail, createPartnerUser, isValidEmail, isSupabaseConfigured,
 } from '../lib/supabaseClient';
+import { translateAuthError } from '../lib/authErrors';
 import CreateUserConfirm from './CreateUserConfirm';
 import CreatedCredentials from './CreatedCredentials';
 
@@ -101,7 +102,7 @@ export default function AddPartnerModal({ isOpen, onClose, onAdd, showToast }) {
         emailConfirmRequired,
       });
     } catch (err) {
-      showToast?.(err?.message || 'تعذّر إنشاء الحساب', 'error');
+      showToast?.(translateAuthError(err, 'تعذّر إنشاء الحساب.'), 'error');
       // Stay in the confirm sub-state so the admin can retry; the
       // spinner stops via the finally block below.
     } finally {

@@ -342,11 +342,25 @@ create index if not exists temporary_expenses_status_idx     on public.temporary
 create index if not exists temporary_expenses_spent_date_idx on public.temporary_expenses(spent_date);
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- Row-Level Security
--- For an internal financial tool, we enable RLS and grant full access to
--- any authenticated user. If you prefer anonymous read access, swap the
--- policy's `to authenticated` for `to public`.
+-- Row-Level Security — member read / admin write (RBAC)
 -- ═══════════════════════════════════════════════════════════════════════════
+-- Roles:
+--   admin  = user_id listed in public.app_admins (explicit allow-list)
+--   member = admin OR a user linked to a partners row (partners.user_id)
+-- Every business table: SELECT for members, ALL for admins. A freshly
+-- self-registered account that is neither admin nor a linked partner
+-- reads zero rows and cannot write anything.
+-- The is_admin()/is_member() helpers live in the Functions section below.
+
+-- Admin allow-list. ⚠️ Seed at least one admin after a fresh install:
+--   insert into public.app_admins (user_id, note)
+--   select id, 'primary admin' from auth.users where email = '<admin-email>';
+create table if not exists public.app_admins (
+  user_id    uuid primary key references auth.users(id) on delete cascade,
+  note       text,
+  created_at timestamptz not null default now()
+);
+alter table public.app_admins enable row level security;
 
 alter table public.categories        enable row level security;
 alter table public.startup_costs     enable row level security;
@@ -366,79 +380,9 @@ alter table public.washes                      enable row level security;
 alter table public.category_budgets             enable row level security;
 alter table public.temporary_expenses           enable row level security;
 
-do $$ begin
-  -- Drop existing policies first (idempotent)
-  perform 1;
-exception when others then null;
-end $$;
-
-drop policy if exists "rw_auth" on public.categories;
-create policy "rw_auth" on public.categories
-  for all to authenticated using (true) with check (true);
-
-drop policy if exists "rw_auth" on public.startup_costs;
-create policy "rw_auth" on public.startup_costs
-  for all to authenticated using (true) with check (true);
-
-drop policy if exists "rw_auth" on public.startup_cost_entries;
-create policy "rw_auth" on public.startup_cost_entries
-  for all to authenticated using (true) with check (true);
-
-drop policy if exists "rw_auth" on public.transactions;
-create policy "rw_auth" on public.transactions
-  for all to authenticated using (true) with check (true);
-
-drop policy if exists "rw_auth" on public.app_settings;
-create policy "rw_auth" on public.app_settings
-  for all to authenticated using (true) with check (true);
-
-drop policy if exists "rw_auth" on public.partners;
-create policy "rw_auth" on public.partners
-  for all to authenticated using (true) with check (true);
-
-drop policy if exists "rw_auth" on public.partner_payments;
-create policy "rw_auth" on public.partner_payments
-  for all to authenticated using (true) with check (true);
-
-drop policy if exists "rw_auth" on public.annual_expense_categories;
-create policy "rw_auth" on public.annual_expense_categories
-  for all to authenticated using (true) with check (true);
-
-drop policy if exists "rw_auth" on public.annual_expenses;
-create policy "rw_auth" on public.annual_expenses
-  for all to authenticated using (true) with check (true);
-
-drop policy if exists "rw_auth" on public.annual_expense_entries;
-create policy "rw_auth" on public.annual_expense_entries
-  for all to authenticated using (true) with check (true);
-
-drop policy if exists "rw_auth" on public.monthly_expense_categories;
-create policy "rw_auth" on public.monthly_expense_categories
-  for all to authenticated using (true) with check (true);
-
-drop policy if exists "rw_auth" on public.monthly_expenses;
-create policy "rw_auth" on public.monthly_expenses
-  for all to authenticated using (true) with check (true);
-
-drop policy if exists "rw_auth" on public.variable_expense_categories;
-create policy "rw_auth" on public.variable_expense_categories
-  for all to authenticated using (true) with check (true);
-
-drop policy if exists "rw_auth" on public.variable_expenses;
-create policy "rw_auth" on public.variable_expenses
-  for all to authenticated using (true) with check (true);
-
-drop policy if exists "rw_auth" on public.washes;
-create policy "rw_auth" on public.washes
-  for all to authenticated using (true) with check (true);
-
-drop policy if exists "rw_auth" on public.category_budgets;
-create policy "rw_auth" on public.category_budgets
-  for all to authenticated using (true) with check (true);
-
-drop policy if exists "rw_auth" on public.temporary_expenses;
-create policy "rw_auth" on public.temporary_expenses
-  for all to authenticated using (true) with check (true);
+-- NOTE: the policies themselves are created AFTER the Functions
+-- section below (they reference is_admin()/is_member(), which must
+-- exist first on a fresh top-to-bottom run).
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Seed data (idempotent — only inserts when tables are empty)
@@ -918,8 +862,10 @@ alter table public.startup_costs
 -- from schema.sql alone was missing the RPC the partner-linking UI calls
 -- (supabase.rpc('get_user_id_by_email')) and broke at runtime.
 
--- is_admin(): TRUE only for a signed-in user whose id is NOT linked to
--- any partners.user_id. Anonymous callers are never admin.
+-- is_admin(): TRUE only for a signed-in user listed in app_admins.
+-- (Previously "any authenticated user without a partners row", which made
+-- every fresh self-registered account an admin — closed by the RBAC
+-- migration 2026_07_admin_rbac.sql.)
 create or replace function public.is_admin()
 returns boolean
 language sql
@@ -927,17 +873,31 @@ security definer
 stable
 set search_path = public, auth
 as $$
-  select
-    auth.uid() is not null
-    and not exists (
-      select 1
-        from public.partners
-       where user_id = auth.uid()
-    );
+  select auth.uid() is not null and exists (
+    select 1 from public.app_admins a where a.user_id = auth.uid()
+  );
 $$;
 
 revoke all on function public.is_admin() from public, anon;
 grant execute on function public.is_admin() to authenticated;
+
+-- is_member(): admin OR a user linked to a partners row. SECURITY DEFINER
+-- so the partners lookup bypasses partners' own RLS (no recursion).
+create or replace function public.is_member()
+returns boolean
+language sql
+security definer
+stable
+set search_path = public, auth
+as $$
+  select auth.uid() is not null and (
+    exists (select 1 from public.app_admins a where a.user_id = auth.uid())
+    or exists (select 1 from public.partners p where p.user_id = auth.uid())
+  );
+$$;
+
+revoke all on function public.is_member() from public, anon;
+grant execute on function public.is_member() to authenticated;
 
 -- get_user_id_by_email(): resolves an email to auth.users.id — but only
 -- for admin callers. Non-admins (and no-match lookups) both get NULL, so
@@ -962,6 +922,35 @@ $$;
 
 revoke all on function public.get_user_id_by_email(text) from public, anon;
 grant execute on function public.get_user_id_by_email(text) to authenticated;
+
+-- ── RBAC policies (need the helpers above) ─────────────────────────────
+-- app_admins is admin-managed only.
+drop policy if exists "admin_all" on public.app_admins;
+create policy "admin_all" on public.app_admins
+  for all to authenticated
+  using (public.is_admin()) with check (public.is_admin());
+
+-- Business tables: drop the legacy blanket policy, install the pair.
+do $$
+declare t text;
+begin
+  foreach t in array array[
+    'categories','startup_costs','startup_cost_entries','transactions',
+    'app_settings','partners','partner_payments',
+    'annual_expense_categories','annual_expenses','annual_expense_entries',
+    'monthly_expense_categories','monthly_expenses',
+    'variable_expense_categories','variable_expenses',
+    'washes','category_budgets','temporary_expenses'
+  ] loop
+    execute format('drop policy if exists "rw_auth" on public.%I', t);
+    execute format('drop policy if exists "admin_all" on public.%I', t);
+    execute format('drop policy if exists "member_read" on public.%I', t);
+    execute format(
+      'create policy "admin_all" on public.%I for all to authenticated using (public.is_admin()) with check (public.is_admin())', t);
+    execute format(
+      'create policy "member_read" on public.%I for select to authenticated using (public.is_member())', t);
+  end loop;
+end $$;
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Storage — public 'invoices' bucket for invoice/receipt uploads
@@ -993,16 +982,16 @@ create policy "invoices_public_read" on storage.objects
 drop policy if exists "invoices_auth_insert" on storage.objects;
 create policy "invoices_auth_insert" on storage.objects
   for insert to authenticated
-  with check (bucket_id = 'invoices');
+  with check (bucket_id = 'invoices' and public.is_admin());
 
 drop policy if exists "invoices_auth_update" on storage.objects;
 create policy "invoices_auth_update" on storage.objects
   for update to authenticated
-  using (bucket_id = 'invoices');
+  using (bucket_id = 'invoices' and public.is_admin());
 
 drop policy if exists "invoices_auth_delete" on storage.objects;
 create policy "invoices_auth_delete" on storage.objects
   for delete to authenticated
-  using (bucket_id = 'invoices');
+  using (bucket_id = 'invoices' and public.is_admin());
 
 notify pgrst, 'reload schema';

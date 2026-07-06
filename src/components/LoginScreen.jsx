@@ -1,18 +1,22 @@
 import { useState } from 'react';
-import { LogIn, UserPlus, Loader2, Mail, ArrowRight } from 'lucide-react';
+import { LogIn, Loader2, Mail, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import SweaterLogo from './SweaterLogo';
 import { BRAND } from '../data/initialData';
 import { useAuth } from '../hooks/useAuth';
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
+import { translateAuthError } from '../lib/authErrors';
 
 export default function LoginScreen() {
-  const { signIn, signUp } = useAuth();
-  // 'signin' | 'signup' | 'forgot' — `forgot` shows just the email
-  // field + "send reset link" button; success state shows an inline
-  // confirmation note.
+  const { signIn } = useAuth();
+  // 'signin' | 'forgot' — `forgot` shows just the email field + "send
+  // reset link" button; success state shows an inline confirmation note.
+  // There is deliberately NO public signup mode: accounts are provisioned
+  // from inside the app (partner linking) — an open signup form only
+  // invited strangers to create accounts.
   const [mode,     setMode]     = useState('signin');
   const [email,    setEmail]    = useState('');
   const [password, setPassword] = useState('');
+  const [showPw,   setShowPw]   = useState(false);
   const [busy,     setBusy]     = useState(false);
   const [error,    setError]    = useState('');
   const [notice,   setNotice]   = useState('');
@@ -43,7 +47,7 @@ export default function LoginScreen() {
           redirectTo: `${window.location.origin}/update-password`,
         });
         if (err) {
-          setError(err.message || 'تعذّر إرسال رابط إعادة التعيين.');
+          setError(translateAuthError(err, 'تعذّر إرسال رابط إعادة التعيين.'));
         } else {
           setNotice(
             '✓ تم إرسال رابط إعادة التعيين إلى بريدك الإلكتروني. تفقد بريدك (وملف الرسائل غير المرغوب فيها) واتبع الرابط لإعادة ضبط كلمة المرور.',
@@ -58,25 +62,18 @@ export default function LoginScreen() {
     if (!email || !password) return;
     setBusy(true);
     try {
-      const { error: err } = mode === 'signin'
-        ? await signIn(email, password)
-        : await signUp(email, password);
-      if (err) setError(err.message || 'تعذر إتمام الطلب');
-      else if (mode === 'signup') setNotice('تم إنشاء الحساب — تحقق من بريدك لتفعيله.');
+      const { error: err } = await signIn(email, password);
+      if (err) setError(translateAuthError(err, 'تعذّر تسجيل الدخول.'));
     } finally {
       setBusy(false);
     }
   }
 
   // ── Per-mode copy ─────────────────────────────────────────────
-  const heading = mode === 'signin' ? 'تسجيل الدخول'
-                : mode === 'signup' ? 'إنشاء حساب جديد'
-                                    : 'استرجاع كلمة المرور';
+  const heading = mode === 'signin' ? 'تسجيل الدخول' : 'استرجاع كلمة المرور';
   const subheading = mode === 'signin'
     ? 'استخدم بيانات حسابك للوصول إلى لوحة التحكم'
-    : mode === 'signup'
-      ? 'أدخل بيانات الاتصال لإنشاء حساب جديد'
-      : 'أدخل بريدك الإلكتروني وسنرسل لك رابط إعادة تعيين كلمة المرور';
+    : 'أدخل بريدك الإلكتروني وسنرسل لك رابط إعادة تعيين كلمة المرور';
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-800 via-primary-900 to-primary-950 flex items-center justify-center p-4">
@@ -124,26 +121,35 @@ export default function LoginScreen() {
                   <label className="block text-xs font-semibold text-slate-600">
                     كلمة المرور
                   </label>
-                  {mode === 'signin' && (
-                    <button
-                      type="button"
-                      onClick={() => switchMode('forgot')}
-                      className="text-[11px] text-primary-700 font-semibold hover:underline"
-                    >
-                      نسيت كلمة المرور؟
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => switchMode('forgot')}
+                    className="text-[11px] text-primary-700 font-semibold hover:underline"
+                  >
+                    نسيت كلمة المرور؟
+                  </button>
                 </div>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  required
-                  minLength={6}
-                  autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
-                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-400"
-                />
+                <div className="relative">
+                  <input
+                    type={showPw ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    required
+                    minLength={6}
+                    autoComplete="current-password"
+                    className="w-full pr-4 pl-10 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-400"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPw((v) => !v)}
+                    aria-label={showPw ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور'}
+                    title={showPw ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور'}
+                    className="absolute left-2.5 top-1/2 -translate-y-1/2 p-1 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+                  >
+                    {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
               </div>
             )}
 
@@ -167,16 +173,16 @@ export default function LoginScreen() {
                 <><Loader2 size={16} className="animate-spin" /> جارٍ المعالجة...</>
               ) : mode === 'signin' ? (
                 <><LogIn size={16} /> تسجيل الدخول</>
-              ) : mode === 'signup' ? (
-                <><UserPlus size={16} /> إنشاء الحساب</>
               ) : (
                 <><Mail size={16} /> إرسال رابط إعادة التعيين</>
               )}
             </button>
           </form>
 
-          <div className="text-center mt-5 text-xs text-slate-500">
-            {mode === 'forgot' ? (
+          {/* Accounts are created from inside the dashboard (partner
+              linking) — no public self-signup link. */}
+          {mode === 'forgot' && (
+            <div className="text-center mt-5 text-xs text-slate-500">
               <button
                 type="button"
                 onClick={() => switchMode('signin')}
@@ -185,30 +191,8 @@ export default function LoginScreen() {
                 <ArrowRight size={12} />
                 رجوع إلى تسجيل الدخول
               </button>
-            ) : mode === 'signin' ? (
-              <>
-                ليس لديك حساب؟{' '}
-                <button
-                  type="button"
-                  onClick={() => switchMode('signup')}
-                  className="text-primary-700 font-semibold hover:underline"
-                >
-                  إنشاء حساب
-                </button>
-              </>
-            ) : (
-              <>
-                لديك حساب بالفعل؟{' '}
-                <button
-                  type="button"
-                  onClick={() => switchMode('signin')}
-                  className="text-primary-700 font-semibold hover:underline"
-                >
-                  تسجيل الدخول
-                </button>
-              </>
-            )}
-          </div>
+            </div>
+          )}
         </div>
 
         <p className="text-center text-primary-300 text-[11px] mt-6">

@@ -3,6 +3,7 @@ import {
   X, KeyRound, Loader2, CheckCircle2,
 } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
+import { translateAuthError } from '../lib/authErrors';
 
 /**
  * In-app password change — for any signed-in user (admin OR partner)
@@ -50,7 +51,7 @@ export default function ChangePasswordModal({ isOpen, onClose, userEmail }) {
       }
       const { error: err } = await supabase.auth.updateUser({ password });
       if (err) {
-        setError(err.message || 'تعذّر تحديث كلمة المرور.');
+        setError(translateAuthError(err, 'تعذّر تحديث كلمة المرور.'));
         return;
       }
       setSuccess(true);

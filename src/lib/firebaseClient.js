@@ -19,18 +19,34 @@ import {
   collection, query, where, getDocs, doc, setDoc, serverTimestamp,
 } from 'firebase/firestore';
 
-function readEnv(name) {
+// The Firebase web config is a PUBLIC client identifier — Google ships it
+// in the browser bundle by design; access is enforced by Firestore/Storage
+// rules, not by hiding these values. So we embed the project's config as a
+// built-in default: the app works on any host (Vercel included) with no env
+// setup. Env vars still WIN when present, so a fork can point at its own
+// project without touching this file.
+const DEFAULT_CONFIG = {
+  apiKey:            'AIzaSyC-d8DWDYuFQ318DaUOWKBoAXAn0_LgFjM',
+  authDomain:        'gemini-eed4a.firebaseapp.com',
+  projectId:         'gemini-eed4a',
+  storageBucket:     'gemini-eed4a.firebasestorage.app',
+  messagingSenderId: '224622606731',
+  appId:             '1:224622606731:web:9150dc23065cc692bf578e',
+};
+
+function readEnv(name, fallback) {
   const raw = import.meta.env[name];
-  return raw == null ? '' : String(raw).trim();
+  const val = raw == null ? '' : String(raw).trim();
+  return val || fallback;
 }
 
 export const firebaseConfig = {
-  apiKey:            readEnv('VITE_FIREBASE_API_KEY'),
-  authDomain:        readEnv('VITE_FIREBASE_AUTH_DOMAIN'),
-  projectId:         readEnv('VITE_FIREBASE_PROJECT_ID'),
-  storageBucket:     readEnv('VITE_FIREBASE_STORAGE_BUCKET'),
-  messagingSenderId: readEnv('VITE_FIREBASE_MESSAGING_SENDER_ID'),
-  appId:             readEnv('VITE_FIREBASE_APP_ID'),
+  apiKey:            readEnv('VITE_FIREBASE_API_KEY',             DEFAULT_CONFIG.apiKey),
+  authDomain:        readEnv('VITE_FIREBASE_AUTH_DOMAIN',         DEFAULT_CONFIG.authDomain),
+  projectId:         readEnv('VITE_FIREBASE_PROJECT_ID',          DEFAULT_CONFIG.projectId),
+  storageBucket:     readEnv('VITE_FIREBASE_STORAGE_BUCKET',      DEFAULT_CONFIG.storageBucket),
+  messagingSenderId: readEnv('VITE_FIREBASE_MESSAGING_SENDER_ID', DEFAULT_CONFIG.messagingSenderId),
+  appId:             readEnv('VITE_FIREBASE_APP_ID',              DEFAULT_CONFIG.appId),
 };
 
 const REQUIRED = ['apiKey', 'authDomain', 'projectId', 'appId'];

@@ -1,67 +1,42 @@
 import { useCallback } from 'react';
-import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
+import { isFirebaseConfigured } from '../lib/firebaseClient';
+import { fetchRows, insertRow, updateRow, deleteRow, sortBy } from '../lib/firestoreCrud';
 import { mapWash, toWashInsert, toWashUpdate } from '../lib/mappers';
-import { useSupabaseQuery } from './useSupabaseQuery';
+import { useFirestoreQuery } from './useFirestoreQuery';
 
 export function useWashes() {
-  const { data, loading, error, refetch } = useSupabaseQuery(
-    () => supabase
-      .from('washes')
-      // Explicit column list — never `select('*')`.
-      .select('id, biker_name, quantity, price, status, wash_date, created_at, updated_at')
-      .order('wash_date', { ascending: false, nullsFirst: false }),
+  const { data, loading, error, refetch } = useFirestoreQuery(
+    async () => sortBy(await fetchRows('washes'), [{ key: 'wash_date', dir: 'desc' }]),
     {
-      enabled: isSupabaseConfigured,
+      enabled: isFirebaseConfigured,
       map:     mapWash,
     },
   );
 
   const addItem = useCallback(async (item) => {
-    if (!isSupabaseConfigured) return null;
-    const payload = toWashInsert(item);
-    const { error: err } = await supabase
-      .from('washes')
-      .insert(payload);
-    if (err) {
-      console.error('Supabase Wash Insert Error:', err, 'payload:', payload);
-      throw err;
-    }
+    if (!isFirebaseConfigured) return null;
+    await insertRow('washes', toWashInsert(item));
     await refetch();
   }, [refetch]);
 
   const updateItem = useCallback(async (id, updates) => {
-    if (!isSupabaseConfigured) return null;
+    if (!isFirebaseConfigured) return null;
     const payload = toWashUpdate(updates);
     if (Object.keys(payload).length === 0) return null;
-    const { error: err } = await supabase
-      .from('washes')
-      .update(payload)
-      .eq('id', id);
-    if (err) {
-      console.error('Supabase Wash Update Error:', err, 'payload:', payload);
-      throw err;
-    }
+    await updateRow('washes', id, payload);
     await refetch();
   }, [refetch]);
 
   const updateStatus = useCallback(async (id, status) => {
-    if (!isSupabaseConfigured) return null;
+    if (!isFirebaseConfigured) return null;
     const safe = status === 'قيد التنفيذ' ? 'قيد التنفيذ' : 'مكتملة';
-    const { error: err } = await supabase
-      .from('washes')
-      .update({ status: safe })
-      .eq('id', id);
-    if (err) throw err;
+    await updateRow('washes', id, { status: safe });
     await refetch();
   }, [refetch]);
 
   const deleteItem = useCallback(async (id) => {
-    if (!isSupabaseConfigured) return null;
-    const { error: err } = await supabase
-      .from('washes')
-      .delete()
-      .eq('id', id);
-    if (err) throw err;
+    if (!isFirebaseConfigured) return null;
+    await deleteRow('washes', id);
     await refetch();
   }, [refetch]);
 

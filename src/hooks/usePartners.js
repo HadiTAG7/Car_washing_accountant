@@ -1,61 +1,37 @@
 import { useCallback } from 'react';
-import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
+import { isFirebaseConfigured } from '../lib/firebaseClient';
+import { fetchRows, insertRow, updateRow, deleteRow, sortBy } from '../lib/firestoreCrud';
 import { mapPartner, toPartnerInsert, toPartnerUpdate } from '../lib/mappers';
-import { useSupabaseQuery } from './useSupabaseQuery';
+import { useFirestoreQuery } from './useFirestoreQuery';
 
 export function usePartners() {
-  const { data, loading, error, refetch } = useSupabaseQuery(
-    // Explicit column list — never `select('*')`. Notably excludes any
-    // `percentage` column: it's a client-derived value (workers_count /
-    // total_workers × 100) and must never round-trip through the DB.
-    () => supabase
-      .from('partners')
-      .select('id, partner_name, workers_count, paid_amount, contact_number, status, user_id, created_at')
-      .order('partner_name'),
+  const { data, loading, error, refetch } = useFirestoreQuery(
+    async () => sortBy(await fetchRows('partners'), [{ key: 'partner_name' }]),
     {
-      enabled: isSupabaseConfigured,
+      enabled: isFirebaseConfigured,
       map:     mapPartner,
       fallback: [],
     },
   );
 
   const addPartner = useCallback(async (partner) => {
-    if (!isSupabaseConfigured) return null;
-    const payload = toPartnerInsert(partner);
-    const { error: err } = await supabase
-      .from('partners')
-      .insert(payload);
-    if (err) {
-      console.error('🔥 Real Supabase Error (partners.insert):', err, 'payload:', payload);
-      throw err;
-    }
+    if (!isFirebaseConfigured) return null;
+    await insertRow('partners', toPartnerInsert(partner));
     await refetch();
   }, [refetch]);
 
   const updatePartner = useCallback(async (id, patch) => {
-    if (!isSupabaseConfigured) return null;
-    const payload = toPartnerUpdate(patch);
-    const { error: err } = await supabase
-      .from('partners')
-      .update(payload)
-      .eq('id', id);
-    if (err) {
-      console.error('🔥 Real Supabase Error (partners.update):', err, 'id:', id, 'payload:', payload);
-      throw err;
-    }
+    if (!isFirebaseConfigured) return null;
+    await updateRow('partners', id, toPartnerUpdate(patch));
     await refetch();
   }, [refetch]);
 
   const deletePartner = useCallback(async (id) => {
-    if (!isSupabaseConfigured) return null;
-    const { error: err } = await supabase.from('partners').delete().eq('id', id);
-    if (err) {
-      console.error('🔥 Real Supabase Error (partners.delete):', err, 'id:', id);
-      throw err;
-    }
+    if (!isFirebaseConfigured) return null;
+    await deleteRow('partners', id);
     await refetch();
   }, [refetch]);
 
-  const partners = isSupabaseConfigured ? (data ?? []) : (data || []);
+  const partners = isFirebaseConfigured ? (data ?? []) : (data || []);
   return { partners, loading, error, addPartner, updatePartner, deletePartner, refetch };
 }

@@ -1,0 +1,27 @@
+rules_version = '2';
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Sweater (سويتر) — Firebase Storage security rules
+// ═══════════════════════════════════════════════════════════════════════════
+// Invoice/receipt files under invoices/**:
+//   • public READ — the download URLs are pasted into ledgers and CSV
+//     exports and must open without a session; object keys carry a random
+//     UUID slice so they are unguessable.
+//   • admin-only WRITE — mirrors the Firestore admin-write posture, checked
+//     against the /app_admins/{uid} directory.
+//
+// Requires Cloud Storage for Firebase to be enabled on the project
+// (Firebase Console → Build → Storage → Get started; may require the
+// Blaze plan). Until then, invoice upload is disabled and the rest of the
+// app is unaffected.
+// ═══════════════════════════════════════════════════════════════════════════
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /invoices/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null
+        && firestore.exists(/databases/(default)/documents/app_admins/$(request.auth.uid));
+    }
+  }
+}

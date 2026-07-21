@@ -1,32 +1,29 @@
 import { useCallback, useMemo } from 'react';
-import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
+import { isFirebaseConfigured } from '../lib/firebaseClient';
+import { fetchRows, insertRow, deleteRow, sortBy } from '../lib/firestoreCrud';
 import { VARIABLE_EXPENSE_CATEGORIES } from '../data/initialData';
 import { mapVariableExpenseCategory } from '../lib/mappers';
-import { useSupabaseQuery } from './useSupabaseQuery';
+import { useFirestoreQuery } from './useFirestoreQuery';
 
 const FALLBACK = VARIABLE_EXPENSE_CATEGORIES.map((c, i) => ({ ...c, sortOrder: i + 1 }));
 
 export function useVariableExpenseCategories() {
-  const { data, loading, error, refetch } = useSupabaseQuery(
-    () => supabase
-      .from('variable_expense_categories')
-      // Explicit column list — never `select('*')`.
-      .select('id, label, sort_order, is_dynamic')
-      .order('sort_order'),
+  const { data, loading, error, refetch } = useFirestoreQuery(
+    async () => sortBy(await fetchRows('variable_expense_categories'), [{ key: 'sort_order' }]),
     {
-      enabled: isSupabaseConfigured,
+      enabled: isFirebaseConfigured,
       map:     mapVariableExpenseCategory,
       fallback: FALLBACK,
     },
   );
 
   const categories = useMemo(
-    () => (isSupabaseConfigured ? (data ?? []) : (data || FALLBACK)),
+    () => (isFirebaseConfigured ? (data ?? []) : (data || FALLBACK)),
     [data],
   );
 
   const addCategory = useCallback(async ({ label }) => {
-    if (!isSupabaseConfigured) throw new Error('Supabase غير مهيأ');
+    if (!isFirebaseConfigured) throw new Error('Firebase غير مهيأ');
     const trimmed = String(label || '').trim();
     if (!trimmed) throw new Error('اسم التصنيف مطلوب');
 
@@ -36,20 +33,9 @@ export function useVariableExpenseCategories() {
     if (existing) return existing.id;
 
     const maxOrder = categories.reduce((m, c) => Math.max(m, c.sortOrder || 0), 0);
-    const payload = { label: trimmed, sort_order: maxOrder + 1 };
-    console.info('[variable_expense_categories] inserting payload:', payload);
-    const { data: inserted, error: err } = await supabase
-      .from('variable_expense_categories')
-      .insert(payload)
-      .select()
-      .single();
-    if (err) {
-      console.error('Supabase Category Error:', err, 'payload:', payload);
-      throw err;
-    }
-    console.info('[variable_expense_categories] inserted:', inserted);
+    const id = await insertRow('variable_expense_categories', { label: trimmed, sort_order: maxOrder + 1 });
     await refetch();
-    return inserted?.id;
+    return id;
   }, [refetch, categories]);
 
   const getCategoryLabel = useCallback((id) => {
@@ -59,16 +45,9 @@ export function useVariableExpenseCategories() {
   }, [categories]);
 
   const deleteCategory = useCallback(async (id) => {
-    if (!isSupabaseConfigured) throw new Error('Supabase غير مهيأ');
+    if (!isFirebaseConfigured) throw new Error('Firebase غير مهيأ');
     if (!id) return;
-    const { error: err } = await supabase
-      .from('variable_expense_categories')
-      .delete()
-      .eq('id', id);
-    if (err) {
-      console.error('Supabase Category Delete Error:', err);
-      throw err;
-    }
+    await deleteRow('variable_expense_categories', id);
     await refetch();
   }, [refetch]);
 

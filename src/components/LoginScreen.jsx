@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { LogIn, Loader2, Mail, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import SweaterLogo from './SweaterLogo';
 import { BRAND } from '../data/initialData';
+import { sendPasswordResetEmail } from 'firebase/auth';
 import { useAuth } from '../hooks/useAuth';
-import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
+import { auth, isFirebaseConfigured } from '../lib/firebaseClient';
 import { translateAuthError } from '../lib/authErrors';
 
 export default function LoginScreen() {
@@ -36,23 +37,20 @@ export default function LoginScreen() {
       if (!email) return;
       setBusy(true);
       try {
-        if (!isSupabaseConfigured) {
-          setError('Supabase غير مُهيّأ — لا يمكن إرسال رابط إعادة التعيين في وضع العرض التجريبي.');
+        if (!isFirebaseConfigured) {
+          setError('Firebase غير مُهيّأ — لا يمكن إرسال رابط إعادة التعيين في وضع العرض التجريبي.');
           return;
         }
-        const { error: err } = await supabase.auth.resetPasswordForEmail(email, {
-          // The reset email lands the user here; UpdatePasswordScreen
-          // takes over once Supabase JS exchanges the URL hash for a
-          // short-lived recovery session.
-          redirectTo: `${window.location.origin}/update-password`,
+        // Firebase sends its own reset email + hosts the reset page; the
+        // continue URL brings the user back to the app afterwards.
+        await sendPasswordResetEmail(auth, String(email).trim(), {
+          url: `${window.location.origin}/`,
         });
-        if (err) {
-          setError(translateAuthError(err, 'تعذّر إرسال رابط إعادة التعيين.'));
-        } else {
-          setNotice(
-            '✓ تم إرسال رابط إعادة التعيين إلى بريدك الإلكتروني. تفقد بريدك (وملف الرسائل غير المرغوب فيها) واتبع الرابط لإعادة ضبط كلمة المرور.',
-          );
-        }
+        setNotice(
+          '✓ تم إرسال رابط إعادة التعيين إلى بريدك الإلكتروني. تفقد بريدك (وملف الرسائل غير المرغوب فيها) واتبع الرابط لإعادة ضبط كلمة المرور.',
+        );
+      } catch (err) {
+        setError(translateAuthError(err, 'تعذّر إرسال رابط إعادة التعيين.'));
       } finally {
         setBusy(false);
       }

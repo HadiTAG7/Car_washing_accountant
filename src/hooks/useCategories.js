@@ -1,7 +1,8 @@
 import { useCallback } from 'react';
-import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
+import { isFirebaseConfigured } from '../lib/firebaseClient';
+import { fetchRows, insertRow, updateRow, deleteRow, sortBy } from '../lib/firestoreCrud';
 import { CATEGORIES } from '../data/initialData';
-import { useSupabaseQuery } from './useSupabaseQuery';
+import { useFirestoreQuery } from './useFirestoreQuery';
 
 const FALLBACK = CATEGORIES.map((c, i) => ({ ...c, sortOrder: i }));
 
@@ -14,44 +15,34 @@ function mapCategory(row) {
 }
 
 export function useCategories() {
-  const { data, loading, error, refetch } = useSupabaseQuery(
-    () => supabase.from('categories').select('*').order('sort_order'),
+  const { data, loading, error, refetch } = useFirestoreQuery(
+    async () => sortBy(await fetchRows('categories'), [{ key: 'sort_order' }]),
     {
-      enabled: isSupabaseConfigured,
+      enabled: isFirebaseConfigured,
       map:     mapCategory,
       fallback: FALLBACK,
     },
   );
 
-  const categories = isSupabaseConfigured ? (data ?? []) : (data || FALLBACK);
+  const categories = isFirebaseConfigured ? (data ?? []) : (data || FALLBACK);
 
   const addCategory = useCallback(async ({ id, label }) => {
-    if (!isSupabaseConfigured) return null;
+    if (!isFirebaseConfigured) return null;
     const maxOrder = categories.reduce((m, c) => Math.max(m, c.sortOrder), 0);
-    const { error: err } = await supabase
-      .from('categories')
-      .insert({ id, label, sort_order: maxOrder + 1 });
-    if (err) throw err;
+    // `categories.id` is an app-generated slug/UUID → pass it as the doc id.
+    await insertRow('categories', { id, label, sort_order: maxOrder + 1 });
     await refetch();
   }, [refetch, categories]);
 
   const updateCategory = useCallback(async (id, label) => {
-    if (!isSupabaseConfigured) return null;
-    const { error: err } = await supabase
-      .from('categories')
-      .update({ label })
-      .eq('id', id);
-    if (err) throw err;
+    if (!isFirebaseConfigured) return null;
+    await updateRow('categories', id, { label });
     await refetch();
   }, [refetch]);
 
   const deleteCategory = useCallback(async (id) => {
-    if (!isSupabaseConfigured) return null;
-    const { error: err } = await supabase
-      .from('categories')
-      .delete()
-      .eq('id', id);
-    if (err) throw err;
+    if (!isFirebaseConfigured) return null;
+    await deleteRow('categories', id);
     await refetch();
   }, [refetch]);
 

@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import {
   X, KeyRound, Loader2, CheckCircle2,
 } from 'lucide-react';
-import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
+import { updatePassword } from 'firebase/auth';
+import { auth, isFirebaseConfigured } from '../lib/firebaseClient';
 import { translateAuthError } from '../lib/authErrors';
 
 /**
@@ -45,18 +46,20 @@ export default function ChangePasswordModal({ isOpen, onClose, userEmail }) {
     setError('');
     setBusy(true);
     try {
-      if (!isSupabaseConfigured) {
-        setError('Supabase غير مُهيّأ — لا يمكن تغيير كلمة المرور في وضع العرض التجريبي.');
+      if (!isFirebaseConfigured) {
+        setError('Firebase غير مُهيّأ — لا يمكن تغيير كلمة المرور في وضع العرض التجريبي.');
         return;
       }
-      const { error: err } = await supabase.auth.updateUser({ password });
-      if (err) {
-        setError(translateAuthError(err, 'تعذّر تحديث كلمة المرور.'));
+      if (!auth.currentUser) {
+        setError('انتهت الجلسة — أعد تسجيل الدخول ثم حاول مرة أخرى.');
         return;
       }
+      await updatePassword(auth.currentUser, password);
       setSuccess(true);
       // Auto-close after 2s so the user can see the green check.
       setTimeout(() => onClose(), 2000);
+    } catch (err) {
+      setError(translateAuthError(err, 'تعذّر تحديث كلمة المرور.'));
     } finally {
       setBusy(false);
     }

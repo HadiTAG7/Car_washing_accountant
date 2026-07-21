@@ -1,0 +1,52 @@
+rules_version = '2';
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Sweater (سويتر) — Firestore security rules
+// ═══════════════════════════════════════════════════════════════════════════
+// Mirrors the Supabase-era RBAC: members READ, admins WRITE.
+//   admin  = a doc exists at /app_admins/{uid}
+//   member = admin OR a doc exists at /users/{uid}
+//
+// Rules can only get()/exists() known paths (no collection queries), so
+// membership is keyed by uid in the app_admins + users directory
+// collections — populated when accounts are provisioned.
+//
+// Only the app's own collections are governed here; anything else falls
+// through to Firestore's default deny. NOTE: this project also hosts
+// another app ("الجمعيات"); a single ruleset governs the (default)
+// database, so if that app ever uses Firestore its collections must be
+// added here (or the app moved to its own project/database).
+// ═══════════════════════════════════════════════════════════════════════════
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+    function isAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/app_admins/$(request.auth.uid));
+    }
+    function isMember() {
+      return isAdmin()
+        || (signedIn()
+            && exists(/databases/$(database)/documents/users/$(request.auth.uid)));
+    }
+    function isSweaterColl(c) {
+      return c in [
+        'annual_expense_categories', 'annual_expense_entries', 'annual_expenses',
+        'app_admins', 'app_settings', 'auth_users_backup', 'categories',
+        'category_budgets', 'monthly_expense_categories', 'monthly_expenses',
+        'partner_payments', 'partners', 'startup_cost_entries', 'startup_costs',
+        'temporary_expenses', 'transactions', 'users',
+        'variable_expense_categories', 'variable_expenses', 'washes'
+      ];
+    }
+
+    match /{coll}/{doc} {
+      allow read:  if isSweaterColl(coll) && isMember();
+      allow write: if isSweaterColl(coll) && isAdmin();
+    }
+  }
+}

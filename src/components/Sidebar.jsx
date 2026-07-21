@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { LogOut, Plus, X, KeyRound } from 'lucide-react';
 import { BRAND } from '../data/initialData';
 import SweaterLogo from './SweaterLogo';
-import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
+import { signOut as fbSignOut } from 'firebase/auth';
+import { auth, isFirebaseConfigured as isSupabaseConfigured } from '../lib/firebaseClient';
 import ChangePasswordModal from './ChangePasswordModal';
 
 export default function Sidebar({
@@ -55,7 +56,7 @@ export default function Sidebar({
     console.info('[logout] handler fired');
 
     // 1. Detached server call — never awaited, never blocking.
-    supabase.auth.signOut().catch((err) => {
+    fbSignOut(auth).catch((err) => {
       console.error('Background signout log:', err);
     });
 
@@ -68,7 +69,7 @@ export default function Sidebar({
     //    fully cleared (nothing persistent lives there).
     try {
       Object.keys(localStorage)
-        .filter((k) => k.startsWith('sb-') || k === 'sweater:actingAsPartnerId')
+        .filter((k) => k.startsWith('firebase:') || k.startsWith('sb-') || k === 'sweater:actingAsPartnerId')
         .forEach((k) => localStorage.removeItem(k));
     } catch (err) { console.error('localStorage cleanup failed:', err); }
     try { sessionStorage.clear(); } catch (err) { console.error('sessionStorage.clear failed:', err); }

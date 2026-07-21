@@ -1,23 +1,20 @@
 import { useEffect, useState } from 'react';
 import { KeyRound, Loader2, CheckCircle2 } from 'lucide-react';
+import { verifyPasswordResetCode, confirmPasswordReset } from 'firebase/auth';
 import SweaterLogo from './SweaterLogo';
 import { BRAND } from '../data/initialData';
-import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
+import { auth, isFirebaseConfigured } from '../lib/firebaseClient';
 import { translateAuthError } from '../lib/authErrors';
 
 /**
- * Landing page for the reset-password email link. The reset email
- * Supabase generates points at `${SITE_URL}/update-password`, with the
- * recovery token in the URL hash. Because the main supabase client is
- * created with `detectSessionInUrl: true`, by the time this screen
- * mounts the hash has been exchanged for a short-lived recovery
- * session, and `supabase.auth.updateUser({ password })` works without
- * any extra setup.
+ * Firebase password-reset action handler. Firebase's reset email links to
+ * this route with an `oobCode` query param (when the project's action URL
+ * is pointed at the app; the hosted default page also works). On mount we
+ * verify the code to recover the account email; on submit we confirm the
+ * new password with that code.
  *
- * If the user lands here WITHOUT a valid recovery session (typed the
- * URL by hand, expired link, etc.) we still show the form but the
- * underlying call will return a clear "Auth session missing" error,
- * which we surface verbatim.
+ * Reached without a valid code (typed URL, expired link) → we show a
+ * clear "request a new link" note instead of a broken form.
  */
 export default function UpdatePasswordScreen() {
   const [password,        setPassword]        = useState('');
@@ -25,31 +22,25 @@ export default function UpdatePasswordScreen() {
   const [busy,            setBusy]            = useState(false);
   const [error,           setError]           = useState('');
   const [success,         setSuccess]         = useState(false);
+  const [codeEmail,       setCodeEmail]       = useState(null); // verified account email
+  const [codeChecked,     setCodeChecked]     = useState(false);
 
-  // Detect whether Supabase has already exchanged the recovery hash
-  // into a session by the time the screen mounts. If not after a
-  // grace period, we warn the user — typing the URL by hand or an
-  // expired link both land here without a recovery session and the
-  // updateUser call would otherwise fail with a vague message.
-  const [hasRecoverySession, setHasRecoverySession] = useState(false);
+  const oobCode = typeof window !== 'undefined'
+    ? new URLSearchParams(window.location.search).get('oobCode')
+    : null;
+
   useEffect(() => {
-    if (!isSupabaseConfigured) return;
-    // Initial probe.
-    supabase.auth.getSession().then(({ data }) => {
-      setHasRecoverySession(!!data.session);
-    });
-    // Also subscribe in case the hash exchange completes after mount.
-    const { data: sub } = supabase.auth.onAuthStateChange((event, sess) => {
-      if (event === 'PASSWORD_RECOVERY' || sess) {
-        setHasRecoverySession(true);
-      }
-    });
-    return () => sub?.subscription?.unsubscribe?.();
-  }, []);
+    if (!isFirebaseConfigured || !oobCode) { setCodeChecked(true); return; }
+    verifyPasswordResetCode(auth, oobCode)
+      .then((email) => setCodeEmail(email))
+      .catch(() => setCodeEmail(null))
+      .finally(() => setCodeChecked(true));
+  }, [oobCode]);
 
   const passwordsMatch = password.length > 0 && password === confirmPassword;
   const passwordLongEnough = password.length >= 6;
-  const isValid = passwordsMatch && passwordLongEnough;
+  const hasValidCode = Boolean(oobCode && codeEmail);
+  const isValid = passwordsMatch && passwordLongEnough && hasValidCode;
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -57,23 +48,13 @@ export default function UpdatePasswordScreen() {
     setError('');
     setBusy(true);
     try {
-      if (!isSupabaseConfigured) {
-        setError('Supabase غير مُهيّأ — لا يمكن تحديث كلمة المرور في وضع العرض التجريبي.');
-        return;
-      }
-      const { error: err } = await supabase.auth.updateUser({ password });
-      if (err) {
-        setError(translateAuthError(err, 'تعذّر تحديث كلمة المرور.'));
-        return;
-      }
+      await confirmPasswordReset(auth, oobCode, password);
       setSuccess(true);
-      // Sign the recovery session out and bounce to the login screen
-      // so the user can sign in fresh with their new password. The
-      // 2-second hold lets them read the success state.
       setTimeout(() => {
-        supabase.auth.signOut().catch(() => { /* best-effort */ });
         window.location.replace(`${window.location.origin}/?signedOut=${Date.now()}`);
       }, 2000);
+    } catch (err) {
+      setError(translateAuthError(err, 'تعذّر تحديث كلمة المرور.'));
     } finally {
       setBusy(false);
     }
@@ -102,8 +83,9 @@ export default function UpdatePasswordScreen() {
             تعيين كلمة مرور جديدة
           </h2>
           <p className="text-xs text-slate-500 mb-6 leading-relaxed">
-            أدخل كلمة المرور الجديدة لحسابك. بعد الحفظ سيتم نقلك لصفحة
-            تسجيل الدخول مرة أخرى.
+            {codeEmail
+              ? `أدخل كلمة المرور الجديدة للحساب ${codeEmail}. بعد الحفظ سيتم نقلك لصفحة تسجيل الدخول.`
+              : 'أدخل كلمة المرور الجديدة لحسابك. بعد الحفظ سيتم نقلك لصفحة تسجيل الدخول.'}
           </p>
 
           {success ? (
@@ -160,11 +142,10 @@ export default function UpdatePasswordScreen() {
                 )}
               </div>
 
-              {!hasRecoverySession && (
+              {codeChecked && !hasValidCode && (
                 <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs px-3 py-2 rounded-lg leading-relaxed">
-                  لم نتمكن من العثور على جلسة استرجاع سارية. تأكد من فتح
-                  الرابط من رسالة إعادة تعيين كلمة المرور؛ إذا كان الرابط
-                  قديماً، اطلب رابطاً جديداً من صفحة تسجيل الدخول.
+                  الرابط غير صالح أو منتهي الصلاحية. اطلب رابط إعادة تعيين
+                  جديداً من صفحة تسجيل الدخول («نسيت كلمة المرور؟»).
                 </div>
               )}
 

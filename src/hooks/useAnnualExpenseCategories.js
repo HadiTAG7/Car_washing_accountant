@@ -1,7 +1,8 @@
 import { useCallback, useMemo } from 'react';
-import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
+import { isFirebaseConfigured } from '../lib/firebaseClient';
+import { fetchRows, insertRow, deleteRow, sortBy } from '../lib/firestoreCrud';
 import { RECURRING_EXPENSE_CATEGORIES } from '../data/initialData';
-import { useSupabaseQuery } from './useSupabaseQuery';
+import { useFirestoreQuery } from './useFirestoreQuery';
 
 function mapRow(row) {
   return {
@@ -14,49 +15,36 @@ function mapRow(row) {
 const FALLBACK = RECURRING_EXPENSE_CATEGORIES.map((c, i) => ({ ...c, sortOrder: i + 1 }));
 
 export function useAnnualExpenseCategories() {
-  const { data, loading, error, refetch } = useSupabaseQuery(
-    () => supabase.from('annual_expense_categories').select('*').order('sort_order'),
+  const { data, loading, error, refetch } = useFirestoreQuery(
+    async () => sortBy(await fetchRows('annual_expense_categories'), [{ key: 'sort_order' }]),
     {
-      enabled: isSupabaseConfigured,
+      enabled: isFirebaseConfigured,
       map:     mapRow,
       fallback: FALLBACK,
     },
   );
 
   const categories = useMemo(
-    () => (isSupabaseConfigured ? (data ?? []) : (data || FALLBACK)),
+    () => (isFirebaseConfigured ? (data ?? []) : (data || FALLBACK)),
     [data],
   );
 
   const addCategory = useCallback(async ({ label }) => {
-    if (!isSupabaseConfigured) throw new Error('Supabase غير مهيأ');
+    if (!isFirebaseConfigured) throw new Error('Firebase غير مهيأ');
     const trimmed = String(label || '').trim();
     if (!trimmed) throw new Error('اسم التصنيف مطلوب');
 
-    // Reject duplicates by case-insensitive label match.
     const existing = categories.find(
       (c) => String(c.label || '').trim().toLowerCase() === trimmed.toLowerCase(),
     );
     if (existing) return existing.id;
 
     const maxOrder = categories.reduce((m, c) => Math.max(m, c.sortOrder || 0), 0);
-    // Do NOT send `id` — let Supabase generate the UUID via the column's
-    // default (gen_random_uuid). We `.select().single()` to grab the real
-    // UUID it assigned so the caller can auto-select the new category.
-    const payload = { label: trimmed, sort_order: maxOrder + 1 };
-    console.info('[annual_expense_categories] inserting payload:', payload);
-    const { data: inserted, error: err } = await supabase
-      .from('annual_expense_categories')
-      .insert(payload)
-      .select()
-      .single();
-    if (err) {
-      console.error('Supabase Category Error:', err, 'payload:', payload);
-      throw err;
-    }
-    console.info('[annual_expense_categories] inserted:', inserted);
+    // Firestore assigns the id; insertRow returns it so the caller can
+    // auto-select the new category.
+    const id = await insertRow('annual_expense_categories', { label: trimmed, sort_order: maxOrder + 1 });
     await refetch();
-    return inserted?.id;
+    return id;
   }, [refetch, categories]);
 
   const getCategoryLabel = useCallback((id) => {
@@ -65,16 +53,9 @@ export function useAnnualExpenseCategories() {
   }, [categories]);
 
   const deleteCategory = useCallback(async (id) => {
-    if (!isSupabaseConfigured) throw new Error('Supabase غير مهيأ');
+    if (!isFirebaseConfigured) throw new Error('Firebase غير مهيأ');
     if (!id) return;
-    const { error: err } = await supabase
-      .from('annual_expense_categories')
-      .delete()
-      .eq('id', id);
-    if (err) {
-      console.error('Supabase Category Delete Error:', err);
-      throw err;
-    }
+    await deleteRow('annual_expense_categories', id);
     await refetch();
   }, [refetch]);
 

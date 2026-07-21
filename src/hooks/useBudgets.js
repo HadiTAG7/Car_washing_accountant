@@ -1,60 +1,39 @@
 import { useCallback } from 'react';
-import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
+import { isFirebaseConfigured } from '../lib/firebaseClient';
+import { fetchRows, insertRow, updateRow, deleteRow, sortBy } from '../lib/firestoreCrud';
 import {
   mapBudget,
   toBudgetInsert,
   toBudgetUpdate,
 } from '../lib/mappers';
-import { useSupabaseQuery } from './useSupabaseQuery';
+import { useFirestoreQuery } from './useFirestoreQuery';
 
 export function useBudgets() {
-  const { data, loading, error, refetch } = useSupabaseQuery(
-    () => supabase
-      .from('category_budgets')
-      // Explicit column list — never `select('*')`.
-      .select('id, category_label, budget_type, amount')
-      .order('category_label'),
+  const { data, loading, error, refetch } = useFirestoreQuery(
+    async () => sortBy(await fetchRows('category_budgets'), [{ key: 'category_label' }]),
     {
-      enabled: isSupabaseConfigured,
+      enabled: isFirebaseConfigured,
       map:     mapBudget,
     },
   );
 
   const addItem = useCallback(async (item) => {
-    if (!isSupabaseConfigured) return null;
-    const payload = toBudgetInsert(item);
-    const { error: err } = await supabase
-      .from('category_budgets')
-      .insert(payload);
-    if (err) {
-      console.error('Supabase Budget Insert Error:', err, 'payload:', payload);
-      throw err;
-    }
+    if (!isFirebaseConfigured) return null;
+    await insertRow('category_budgets', toBudgetInsert(item));
     await refetch();
   }, [refetch]);
 
   const updateItem = useCallback(async (id, updates) => {
-    if (!isSupabaseConfigured) return null;
+    if (!isFirebaseConfigured) return null;
     const payload = toBudgetUpdate(updates);
     if (Object.keys(payload).length === 0) return null;
-    const { error: err } = await supabase
-      .from('category_budgets')
-      .update(payload)
-      .eq('id', id);
-    if (err) {
-      console.error('Supabase Budget Update Error:', err, 'payload:', payload);
-      throw err;
-    }
+    await updateRow('category_budgets', id, payload);
     await refetch();
   }, [refetch]);
 
   const deleteItem = useCallback(async (id) => {
-    if (!isSupabaseConfigured) return null;
-    const { error: err } = await supabase
-      .from('category_budgets')
-      .delete()
-      .eq('id', id);
-    if (err) throw err;
+    if (!isFirebaseConfigured) return null;
+    await deleteRow('category_budgets', id);
     await refetch();
   }, [refetch]);
 

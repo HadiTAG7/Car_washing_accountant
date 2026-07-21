@@ -4,7 +4,7 @@
 // files; every mainstream unzipper (Windows Explorer, macOS, WinRAR,
 // iOS Files) opens it. UTF-8 filename flag set so Arabic names survive.
 
-import { supabase } from './supabaseClient';
+import { fetchRows } from './firestoreCrud';
 
 // CRC-32 (IEEE 802.3), table-driven.
 const CRC_TABLE = (() => {
@@ -135,9 +135,12 @@ export async function buildFullBackup() {
   const files = [];
   const counts = [];
   for (const table of BACKUP_TABLES) {
-    const { data, error } = await supabase.from(table).select('*');
-    if (error) throw new Error(`تعذّر قراءة جدول ${table}: ${error.message}`);
-    const rows = data ?? [];
+    let rows;
+    try {
+      rows = await fetchRows(table);
+    } catch (err) {
+      throw new Error(`تعذّر قراءة جدول ${table}: ${err?.message || err}`);
+    }
     files.push({ name: `${table}.csv`, text: rowsToCsv(rows) });
     counts.push(`${table}: ${rows.length}`);
   }

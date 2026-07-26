@@ -1,0 +1,11 @@
+{
+  "appId": "com.sweater.erp",
+  "appName": "سويتر",
+  "webDir": "dist",
+  "android": {
+    "allowMixedContent": false
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}

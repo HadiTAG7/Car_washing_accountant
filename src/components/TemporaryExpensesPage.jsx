@@ -149,20 +149,26 @@ export default function TemporaryExpensesPage() {
             value={formatCurrency(kpis.totalRecovered)}
             sub={`${kpis.countRecovered} ${kpis.countRecovered === 1 ? 'سجل مكتمل' : 'سجل مكتمل'}`}
           />
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-amber-200 dark:border-amber-500/40 p-4 sm:p-5 shadow-sm dark:shadow-slate-950/40 ring-1 ring-amber-100 dark:ring-amber-500/20 transition-colors duration-200">
+          {/* Hand-rolled KPI: same shell as <StatCard tone="amber"> but it
+              carries the "⏳ معلق" status chip, which StatCard's `trend`
+              slot can't express (that slot is emerald/rose only). */}
+          <div
+            className="bg-white dark:bg-slate-900 rounded-smallcard border border-slate-100 dark:border-slate-800 p-4 sm:p-5 transition-all duration-200"
+            style={{ boxShadow: 'var(--sw-shadow-card)' }}
+          >
             <div className="flex items-start justify-between">
-              <div className="bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400 w-11 h-11 rounded-xl flex items-center justify-center">
+              <div className="bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 w-10 h-10 sm:w-11 sm:h-11 rounded-control flex items-center justify-center">
                 <Hourglass size={20} strokeWidth={2.2} />
               </div>
-              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md bg-amber-100 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-500/30">
+              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-control bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-100 dark:border-amber-500/30">
                 ⏳ معلق
               </span>
             </div>
-            <p className="text-xs text-amber-700 dark:text-amber-400 font-semibold mt-4 mb-1">المعلق قيد الاسترداد</p>
-            <p className="text-2xl font-extrabold tabular-nums text-amber-700 dark:text-amber-300">
+            <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mt-3 sm:mt-4 mb-1">المعلق قيد الاسترداد</p>
+            <p className="text-xl sm:text-2xl font-extrabold tabular-nums text-slate-900 dark:text-slate-100">
               {formatCurrency(kpis.totalPending)}
             </p>
-            <p className="text-[11px] text-amber-600/80 dark:text-amber-500/80 mt-1">
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5 leading-relaxed">
               {kpis.countPending} {kpis.countPending === 1 ? 'سجل بانتظار الاسترداد' : 'سجل بانتظار الاسترداد'}
             </p>
           </div>
@@ -216,7 +222,7 @@ export default function TemporaryExpensesPage() {
                     return (
                       <tr
                         key={e.id}
-                        className="border-b border-slate-50 dark:border-slate-800 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors group"
+                        className="border-b border-slate-50 dark:border-slate-800/60 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors group"
                       >
                         <td className="py-3 px-4 whitespace-normal break-words text-slate-800 dark:text-slate-200 font-semibold min-w-[180px] leading-relaxed">
                           {e.title}
@@ -234,13 +240,13 @@ export default function TemporaryExpensesPage() {
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap">
                           {isRecovered ? (
-                            <span className="inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-md border bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-100 dark:border-emerald-500/30">
+                            <span className="inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-control border bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-100 dark:border-emerald-500/30">
                               <CheckCircle2 size={12} strokeWidth={2.5} />
                               تم الاسترداد
                             </span>
                           ) : (
                             <div className="inline-flex items-center gap-2">
-                              <span className="inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-md border bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-500/40">
+                              <span className="inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-control border bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-100 dark:border-amber-500/30">
                                 <Hourglass size={12} strokeWidth={2.5} />
                                 ⏳ معلق قيد الاسترداد
                               </span>
@@ -248,7 +254,7 @@ export default function TemporaryExpensesPage() {
                                 <button
                                   type="button"
                                   onClick={() => handleToggle(e)}
-                                  className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-400 text-white transition-colors shadow-sm"
+                                  className="sw-button sw-button--sm bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-400 text-white"
                                   title="تأكيد استرداد هذا المبلغ"
                                   aria-label={`تأكيد استرداد ${e.title}`}
                                 >
@@ -261,14 +267,14 @@ export default function TemporaryExpensesPage() {
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap tabular-nums">
                           {isRecovered ? (
-                            <span className="text-emerald-700 dark:text-emerald-400 font-semibold">
+                            <span className="text-emerald-700 dark:text-emerald-300 font-semibold">
                               {formatDate(e.recoveredDate)}
                             </span>
                           ) : canMutate ? (
                             <button
                               type="button"
                               onClick={() => handleToggle(e)}
-                              className="text-[11px] text-slate-400 dark:text-slate-500 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
+                              className="text-[11px] text-slate-500 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
                               title="تأكيد الاسترداد الآن"
                             >
                               <span className="inline-flex items-center gap-1">
@@ -277,7 +283,7 @@ export default function TemporaryExpensesPage() {
                               </span>
                             </button>
                           ) : (
-                            <span className="text-[11px] text-slate-400 dark:text-slate-500">—</span>
+                            <span className="text-[11px] text-slate-500 dark:text-slate-400">—</span>
                           )}
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap text-left">
@@ -285,7 +291,7 @@ export default function TemporaryExpensesPage() {
                             <button
                               type="button"
                               onClick={() => handleDelete(e)}
-                              className="text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/15 transition-colors md:opacity-0 md:group-hover:opacity-100"
+                              className="sw-tap inline-flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-rose-700 dark:hover:text-rose-300 p-1.5 rounded-control hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
                               aria-label={`حذف ${e.title}`}
                               title="حذف هذا السجل نهائياً"
                             >
@@ -298,7 +304,7 @@ export default function TemporaryExpensesPage() {
                   })}
                 </tbody>
                 <tfoot>
-                  <tr className="border-t-2 border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
+                  <tr className="border-t-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
                     <td className="py-3 px-4 text-right font-bold text-slate-900 dark:text-slate-100">
                       الإجمالي
                     </td>
@@ -306,10 +312,10 @@ export default function TemporaryExpensesPage() {
                       {formatCurrency(kpis.totalAll)}
                     </td>
                     <td colSpan={4} className="py-3 px-4 text-[11px] text-slate-500 dark:text-slate-400">
-                      <span className="text-emerald-700 dark:text-emerald-400 font-semibold tabular-nums">{formatCurrency(kpis.totalRecovered)}</span>
+                      <span className="text-emerald-700 dark:text-emerald-300 font-semibold tabular-nums">{formatCurrency(kpis.totalRecovered)}</span>
                       <span className="mx-1.5">مسترد</span>
-                      <span className="text-slate-300 dark:text-slate-600">·</span>
-                      <span className="text-amber-700 dark:text-amber-400 font-semibold tabular-nums mr-1.5">{formatCurrency(kpis.totalPending)}</span>
+                      <span className="text-slate-500 dark:text-slate-400">·</span>
+                      <span className="text-amber-700 dark:text-amber-300 font-semibold tabular-nums mr-1.5">{formatCurrency(kpis.totalPending)}</span>
                       <span>معلق قيد الاسترداد</span>
                     </td>
                   </tr>

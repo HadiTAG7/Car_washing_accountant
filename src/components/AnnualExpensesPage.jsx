@@ -254,7 +254,7 @@ export default function AnnualExpensesPage() {
                     return (
                     <tr
                       key={i.id}
-                      className="border-b border-slate-50 dark:border-slate-800 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
+                      className="border-b border-slate-50 dark:border-slate-800/60 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors"
                     >
                       <td className="py-3 px-4 whitespace-normal break-words min-w-[180px]">
                         {canMutate ? (
@@ -271,7 +271,7 @@ export default function AnnualExpensesPage() {
                         )}
                       </td>
                       <td className="py-3 px-4 whitespace-nowrap">
-                        <span className="inline-flex text-[11px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-2 py-1 rounded-md">
+                        <span className="inline-flex text-[11px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-2 py-1 rounded-control">
                           {getCategoryLabel(i.category)}
                         </span>
                       </td>
@@ -283,14 +283,14 @@ export default function AnnualExpensesPage() {
                       </td>
                       <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums">
                         <span className={rowRemaining > 0
-                          ? 'font-semibold text-amber-600 dark:text-amber-400'
+                          ? 'font-semibold text-amber-700 dark:text-amber-400'
                           : 'font-medium text-emerald-600 dark:text-emerald-400'}>
                           {formatCurrency(rowRemaining)}
                         </span>
                       </td>
                       <td className="py-3 px-4 whitespace-nowrap text-slate-600 dark:text-slate-400">
                         <span className="inline-flex items-center gap-1.5 tabular-nums">
-                          <CalendarClock size={13} className="text-slate-400 dark:text-slate-500" />
+                          <CalendarClock size={13} className="text-slate-500 dark:text-slate-400" />
                           {formatAnnualPaymentDate(i.paymentMonth, i.paymentDay)}
                         </span>
                       </td>
@@ -308,7 +308,7 @@ export default function AnnualExpensesPage() {
                             <button
                               type="button"
                               onClick={() => openEditModal(i)}
-                              className="text-slate-400 dark:text-slate-500 hover:text-primary-700 p-1.5 rounded-lg hover:bg-primary-50 transition-colors"
+                              className="sw-tap inline-flex items-center justify-center p-1.5 rounded-control text-slate-500 dark:text-slate-400 hover:text-primary-700 dark:hover:text-primary-300 hover:bg-primary-50 dark:hover:bg-primary-500/15 transition-colors"
                               aria-label={`تعديل ${i.expenseName}`}
                               title="تعديل المصروف"
                             >
@@ -317,7 +317,7 @@ export default function AnnualExpensesPage() {
                             <button
                               type="button"
                               onClick={() => handleDelete(i)}
-                              className="text-slate-400 dark:text-slate-500 hover:text-accent-600 p-1.5 rounded-lg hover:bg-accent-50 transition-colors"
+                              className="sw-tap inline-flex items-center justify-center p-1.5 rounded-control text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/15 transition-colors"
                               aria-label={`حذف ${i.expenseName}`}
                               title="حذف المصروف"
                             >

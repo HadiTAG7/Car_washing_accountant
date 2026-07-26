@@ -244,18 +244,18 @@ export default function MonthlyExpensesPage() {
                   {items.map((i) => (
                     <tr
                       key={i.id}
-                      className="border-b border-slate-50 dark:border-slate-800 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
+                      className="border-b border-slate-50 dark:border-slate-800/60 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors"
                     >
                       <td className="py-3 px-4 whitespace-nowrap align-top">
                         <div className="font-medium text-slate-800 dark:text-slate-200">{i.expenseName}</div>
                         {i.quantity > 1 && (
-                          <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5 tabular-nums">
+                          <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 tabular-nums">
                             الكمية: {formatNumber(i.quantity)} | تكلفة الوحدة: {formatCurrency(i.unitCost * scalingFactor)}
                           </div>
                         )}
                       </td>
                       <td className="py-3 px-4 whitespace-nowrap align-top">
-                        <span className="inline-flex text-[11px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-2 py-1 rounded-md">
+                        <span className="inline-flex text-[11px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-2 py-1 rounded-control">
                           {getCategoryLabel(i.categoryId)}
                         </span>
                       </td>
@@ -271,21 +271,25 @@ export default function MonthlyExpensesPage() {
                       <td className="py-3 px-4 whitespace-nowrap text-slate-600 dark:text-slate-400 align-top">
                         {i.recurrence === 'one_time' ? (
                           <div className="flex flex-col gap-1">
-                            <span className="inline-flex items-center gap-1 w-fit px-2 py-0.5 rounded-md border border-accent-200 dark:border-accent-500/40 bg-accent-50 dark:bg-accent-500/15 text-accent-700 dark:text-accent-300 text-[10px] font-bold">
+                            {/* Informational (indigo), not brand: `accent-*`
+                                aliases the brand ramp in the DS, so an orange
+                                chip here was indistinguishable from the
+                                "متكرر شهرياً" chip below. */}
+                            <span className="inline-flex items-center gap-1 w-fit px-2 py-0.5 rounded-control border border-indigo-100 dark:border-indigo-500/30 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold">
                               مرة واحدة
                             </span>
                             <span className="inline-flex items-center gap-1.5 tabular-nums text-[12px]">
-                              <Calendar size={13} className="text-slate-400 dark:text-slate-500" />
+                              <Calendar size={13} className="text-slate-500 dark:text-slate-400" />
                               {formatLoggedDate(i.loggedDate)}
                             </span>
                           </div>
                         ) : (
                           <div className="flex flex-col gap-1">
-                            <span className="inline-flex items-center gap-1 w-fit px-2 py-0.5 rounded-md border border-primary-200 dark:border-primary-500/40 bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300 text-[10px] font-bold">
+                            <span className="inline-flex items-center gap-1 w-fit px-2 py-0.5 rounded-control border border-primary-100 dark:border-primary-500/30 bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300 text-[10px] font-bold">
                               متكرر شهرياً
                             </span>
                             <span className="inline-flex items-center gap-1.5 tabular-nums text-[12px]">
-                              <CalendarClock size={13} className="text-slate-400 dark:text-slate-500" />
+                              <CalendarClock size={13} className="text-slate-500 dark:text-slate-400" />
                               {formatPaymentDay(i.paymentDay)}
                             </span>
                           </div>
@@ -305,7 +309,7 @@ export default function MonthlyExpensesPage() {
                             <button
                               type="button"
                               onClick={() => openEditModal(i)}
-                              className="text-slate-400 dark:text-slate-500 hover:text-primary-700 p-1.5 rounded-lg hover:bg-primary-50 transition-colors"
+                              className="sw-tap inline-flex items-center justify-center p-1.5 rounded-control text-slate-500 dark:text-slate-400 hover:text-primary-700 dark:hover:text-primary-300 hover:bg-primary-50 dark:hover:bg-primary-500/15 transition-colors"
                               aria-label={`تعديل ${i.expenseName}`}
                               title="تعديل المصروف"
                             >
@@ -314,7 +318,7 @@ export default function MonthlyExpensesPage() {
                             <button
                               type="button"
                               onClick={() => handleDelete(i)}
-                              className="text-slate-400 dark:text-slate-500 hover:text-accent-600 p-1.5 rounded-lg hover:bg-accent-50 transition-colors"
+                              className="sw-tap inline-flex items-center justify-center p-1.5 rounded-control text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/15 transition-colors"
                               aria-label={`حذف ${i.expenseName}`}
                               title="حذف المصروف"
                             >

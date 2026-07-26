@@ -9,15 +9,17 @@ export default function PaymentStatusPill({ status, dueToday, onChange, disabled
   const isPaid = status === 'paid';
   const next   = isPaid ? 'pending' : 'paid';
   const dueAndPending = dueToday && !isPaid;
+  // Semantic tones, each with its dark counterpart — the pill sits in a
+  // table row, so an unpaired light tint would glow on the dark theme.
   let classes, dotClass;
   if (isPaid) {
-    classes  = 'bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-emerald-100';
+    classes  = 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-100 dark:border-emerald-500/30 hover:bg-emerald-100 dark:hover:bg-emerald-500/20';
     dotClass = 'bg-emerald-500';
   } else if (dueAndPending) {
-    classes  = 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100';
-    dotClass = 'bg-red-500 animate-pulse';
+    classes  = 'bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-100 dark:border-rose-500/30 hover:bg-rose-100 dark:hover:bg-rose-500/20';
+    dotClass = 'bg-rose-500 animate-pulse';
   } else {
-    classes  = 'bg-amber-50 text-amber-700 border-amber-100 hover:bg-amber-100';
+    classes  = 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-100 dark:border-amber-500/30 hover:bg-amber-100 dark:hover:bg-amber-500/20';
     dotClass = 'bg-amber-500';
   }
   const title = disabled

@@ -1,5 +1,6 @@
 import { AlertTriangle, RefreshCw, Settings2 } from 'lucide-react';
 import { describeSupabaseError, maskedSupabaseUrl } from '../lib/supabaseClient';
+import { SecondaryButton } from './UI';
 
 /**
  * Error banner with an optional retry action.
@@ -11,27 +12,25 @@ export default function ErrorState({ error, onRetry, title = 'تعذّر تحم�
   const url      = maskedSupabaseUrl();
 
   return (
-    <div className="bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/30 rounded-2xl p-5 flex items-start gap-4">
-      <div className="bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-400 w-11 h-11 rounded-xl flex items-center justify-center shrink-0">
+    <div
+      role="alert"
+      className="bg-rose-50 dark:bg-rose-500/10 border border-rose-100 dark:border-rose-500/30 text-rose-700 dark:text-rose-300 rounded-control p-5 flex items-start gap-4"
+    >
+      <div className="bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-300 w-11 h-11 rounded-control flex items-center justify-center shrink-0">
         <AlertTriangle size={20} />
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-bold text-red-900 dark:text-red-200">{title}</p>
-        <p className="text-xs text-red-700 dark:text-red-300 mt-1 leading-relaxed">{message}</p>
+        <p className="text-sm font-bold text-rose-800 dark:text-rose-200">{title}</p>
+        <p className="text-xs text-rose-700 dark:text-rose-300 mt-1 leading-relaxed">{message}</p>
         {url && (
-          <p className="text-[11px] text-red-500 dark:text-red-400 mt-2 font-mono break-all" dir="ltr">
+          <p className="text-[11px] text-rose-600 dark:text-rose-400 mt-2 font-mono break-all" dir="ltr">
             URL: {url}
           </p>
         )}
         {onRetry && (
-          <button
-            onClick={onRetry}
-            type="button"
-            className="mt-3 inline-flex items-center gap-2 bg-white dark:bg-slate-800 border border-red-200 dark:border-red-500/40 hover:bg-red-50 dark:hover:bg-red-500/20 text-red-700 dark:text-red-300 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
-          >
-            <RefreshCw size={13} />
+          <SecondaryButton icon={RefreshCw} onClick={onRetry} className="mt-3">
             إعادة المحاولة
-          </button>
+          </SecondaryButton>
         )}
       </div>
     </div>
@@ -46,7 +45,10 @@ export function DemoBanner({ missing = [] }) {
     ? `المتغيرات المفقودة: ${missing.join('، ')}`
     : 'لم يتم ضبط متغيرات Supabase';
   return (
-    <div className="bg-amber-50 dark:bg-amber-500/10 border-b border-amber-200 dark:border-amber-500/30 text-amber-900 dark:text-amber-300 text-xs px-6 py-2 flex items-center gap-2">
+    <div
+      role="alert"
+      className="bg-amber-50 dark:bg-amber-500/10 border-b border-amber-100 dark:border-amber-500/30 text-amber-700 dark:text-amber-300 text-xs px-6 py-2 flex items-center gap-2"
+    >
       <AlertTriangle size={14} className="shrink-0" />
       <span>
         <strong>وضع العرض التجريبي:</strong> {detail} — البيانات لن تُحفظ.
@@ -61,9 +63,12 @@ export function DemoBanner({ missing = [] }) {
 export function SetupRequiredCard({ missing = [] }) {
   const list = missing.length ? missing : ['VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY'];
   return (
-    <div className="bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-500/40 rounded-2xl p-6 shadow-sm transition-colors duration-200">
+    <div
+      className="bg-white dark:bg-slate-900 border border-amber-100 dark:border-amber-500/30 rounded-card p-6 transition-colors duration-200"
+      style={{ boxShadow: 'var(--sw-shadow-card)' }}
+    >
       <div className="flex items-start gap-4">
-        <div className="bg-amber-50 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400 w-12 h-12 rounded-2xl flex items-center justify-center shrink-0">
+        <div className="bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 w-12 h-12 rounded-control flex items-center justify-center shrink-0">
           <Settings2 size={22} />
         </div>
         <div className="flex-1 min-w-0">
@@ -76,7 +81,7 @@ export function SetupRequiredCard({ missing = [] }) {
             {list.map((name) => (
               <li
                 key={name}
-                className="inline-flex items-center gap-2 bg-slate-900 dark:bg-slate-950 text-amber-300 text-[12px] font-mono px-2.5 py-1 rounded-lg mr-2"
+                className="inline-flex items-center gap-2 bg-slate-900 dark:bg-slate-950 text-amber-300 text-[12px] font-mono px-2.5 py-1 rounded-control mr-2"
               >
                 {name}
               </li>
@@ -94,7 +99,7 @@ export function SetupRequiredCard({ missing = [] }) {
               <strong className="text-slate-800 dark:text-slate-200">للنشر على Vercel:</strong> أضفهما في{' '}
               Project Settings → Environment Variables، ثم أعد النشر.
             </p>
-            <p className="text-slate-500 dark:text-slate-500">
+            <p className="text-slate-500 dark:text-slate-400">
               تجد القيم في لوحة Supabase ضمن Project Settings → API. تأكد من نسخها بدون مسافات أو علامات اقتباس.
             </p>
           </div>

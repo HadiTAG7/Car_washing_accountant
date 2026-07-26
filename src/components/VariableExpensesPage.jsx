@@ -28,21 +28,24 @@ import {
 // ─── Live wash counter readout (driven by the Washes module) ──────────────
 function WashCounterReadout({ washCount, monthLabel }) {
   return (
-    <div className="rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm dark:shadow-slate-950/40 p-5 transition-colors duration-200">
+    <div
+      className="rounded-smallcard border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 transition-colors duration-200"
+      style={{ boxShadow: 'var(--sw-shadow-card)' }}
+    >
       <div className="flex items-start gap-4">
-        <div className="bg-primary-700 dark:bg-primary-600 text-white w-12 h-12 rounded-2xl flex items-center justify-center shrink-0">
+        <div className="bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300 w-11 h-11 sm:w-12 sm:h-12 rounded-control flex items-center justify-center shrink-0">
           <Layers size={22} strokeWidth={2.2} />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-xs text-primary-700 dark:text-primary-300 font-bold tracking-wide">
+          <p className="text-xs font-medium text-slate-500 dark:text-slate-400 tabular-nums">
             إجمالي الغسلات المكتملة — {monthLabel}
           </p>
-          <div className="flex items-baseline gap-3 mt-1">
-            <span className="text-3xl font-extrabold text-slate-900 dark:text-slate-100 tabular-nums">
+          <div className="flex items-baseline flex-wrap gap-x-3 gap-y-1 mt-1">
+            <span className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-slate-100 tabular-nums">
               {formatNumber(washCount)}
             </span>
             <span className="text-sm text-slate-500 dark:text-slate-400">غسلة</span>
-            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary-700 dark:text-primary-300 bg-primary-100 dark:bg-primary-500/20 border border-primary-200 dark:border-primary-500/40 rounded-md px-2 py-0.5">
+            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary-700 dark:text-primary-300 bg-primary-50 dark:bg-primary-500/15 border border-primary-100 dark:border-primary-500/30 rounded-control px-2 py-0.5">
               <Car size={11} strokeWidth={2.5} />
               تلقائي
             </span>
@@ -58,20 +61,23 @@ function WashCounterReadout({ washCount, monthLabel }) {
 
 function PeriodSelectorCard({ value, onChange, options }) {
   return (
-    <div className="rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm dark:shadow-slate-950/40 p-5 transition-colors duration-200">
+    <div
+      className="rounded-smallcard border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 transition-colors duration-200"
+      style={{ boxShadow: 'var(--sw-shadow-card)' }}
+    >
       <div className="flex items-start gap-4">
-        <div className="bg-primary-700 dark:bg-primary-600 text-white w-12 h-12 rounded-2xl flex items-center justify-center shrink-0">
+        <div className="bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300 w-11 h-11 sm:w-12 sm:h-12 rounded-control flex items-center justify-center shrink-0">
           <Calendar size={22} strokeWidth={2.2} />
         </div>
         <div className="flex-1 min-w-0">
-          <label htmlFor="variable-period" className="block text-xs text-primary-700 dark:text-primary-300 font-bold tracking-wide">
+          <label htmlFor="variable-period" className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
             فترة العرض (الشهر)
           </label>
           <select
             id="variable-period"
             value={value}
             onChange={(e) => onChange(e.target.value)}
-            className="mt-1.5 w-full max-w-xs px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-base font-bold text-slate-900 dark:text-slate-100 tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400 dark:focus:ring-primary-500/40 transition-colors duration-200"
+            className="w-full max-w-xs px-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm font-semibold tabular-nums focus:outline-none focus:border-primary-500 transition-colors"
           >
             {options.map((ym) => (
               <option key={ym} value={ym}>{formatMonthLabel(ym)}</option>
@@ -333,12 +339,12 @@ export default function VariableExpensesPage() {
                   {displayedItems.map((i) => (
                     <tr
                       key={i.id}
-                      className={`border-b border-slate-50 dark:border-slate-800 transition-colors ${i.isVirtual ? 'bg-primary-50/30 hover:bg-primary-50/50' : 'hover:bg-slate-50/60 dark:hover:bg-slate-800/40'}`}
+                      className={`border-b border-slate-50 dark:border-slate-800/60 last:border-0 transition-colors ${i.isVirtual ? 'bg-primary-50/60 dark:bg-primary-500/10 hover:bg-primary-50 dark:hover:bg-primary-500/15' : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'}`}
                     >
                       <td className="py-3 px-4 whitespace-normal break-words min-w-[180px] font-medium text-slate-800 dark:text-slate-200 align-top">
                         <div>{i.expenseName}</div>
                         {i.isVirtual && (
-                          <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5 leading-relaxed">
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
                             {i.bikerName
                               ? `محسوب تلقائياً من غسلات ${i.bikerName} لشهر ${monthLabel}`
                               : `محسوب تلقائياً من إجمالي غسلات شهر ${monthLabel}`}
@@ -346,7 +352,7 @@ export default function VariableExpensesPage() {
                         )}
                       </td>
                       <td className="py-3 px-4 whitespace-nowrap align-top">
-                        <span className="inline-flex text-[11px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-2 py-1 rounded-md">
+                        <span className="inline-flex text-[11px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-2 py-1 rounded-control">
                           {getCategoryLabel(i.categoryId)}
                         </span>
                       </td>
@@ -355,7 +361,7 @@ export default function VariableExpensesPage() {
                           <span>{formatNumber(i.quantity)}</span>
                           {i.isVirtual && (
                             <span
-                              className="inline-flex items-center gap-1 bg-primary-50 dark:bg-primary-500/20 text-primary-700 dark:text-primary-300 border border-primary-100 dark:border-primary-500/40 text-[10px] font-bold px-1.5 py-0.5 rounded-md"
+                              className="inline-flex items-center gap-1 bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300 border border-primary-100 dark:border-primary-500/30 text-[10px] font-bold px-1.5 py-0.5 rounded-control"
                               title="يُحسب تلقائياً من عداد الغسلات"
                             >
                               <Activity size={9} strokeWidth={2.5} />
@@ -375,19 +381,19 @@ export default function VariableExpensesPage() {
                       </td>
                       <td className="py-3 px-4 whitespace-nowrap text-slate-600 dark:text-slate-400 align-top">
                         <span className="inline-flex items-center gap-1.5 tabular-nums">
-                          <CalendarClock size={13} className="text-slate-400 dark:text-slate-500" />
+                          <CalendarClock size={13} className="text-slate-500 dark:text-slate-400" />
                           {i.isVirtual ? monthLabel : formatLoggedDate(i.loggedDate)}
                         </span>
                       </td>
                       <td className="py-3 px-4 whitespace-nowrap text-left align-top">
                         {i.isVirtual || !canMutate ? (
-                          <span className="text-slate-300 text-sm">—</span>
+                          <span className="text-slate-300 dark:text-slate-600 text-sm">—</span>
                         ) : (
                           <div className="inline-flex items-center gap-1">
                             <button
                               type="button"
                               onClick={() => openEditModal(i)}
-                              className="text-slate-400 dark:text-slate-500 hover:text-primary-700 p-1.5 rounded-lg hover:bg-primary-50 transition-colors"
+                              className="sw-tap inline-flex items-center justify-center p-1.5 rounded-control text-slate-500 dark:text-slate-400 hover:text-primary-700 dark:hover:text-primary-300 hover:bg-primary-50 dark:hover:bg-primary-500/15 transition-colors"
                               aria-label={`تعديل ${i.expenseName}`}
                               title="تعديل المصروف"
                             >
@@ -396,7 +402,7 @@ export default function VariableExpensesPage() {
                             <button
                               type="button"
                               onClick={() => handleDelete(i)}
-                              className="text-slate-400 dark:text-slate-500 hover:text-accent-600 p-1.5 rounded-lg hover:bg-accent-50 transition-colors"
+                              className="sw-tap inline-flex items-center justify-center p-1.5 rounded-control text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/15 transition-colors"
                               aria-label={`حذف ${i.expenseName}`}
                               title="حذف المصروف"
                             >

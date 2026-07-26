@@ -263,10 +263,13 @@ export default function AddStartupFeeModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm" onClick={onClose} />
 
-      <div className="relative bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-lg mx-4 my-4 max-h-[92vh] overflow-y-auto">
-        <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60">
-          <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-            <span className="bg-accent-50 text-accent-600 w-9 h-9 rounded-xl flex items-center justify-center">
+      <div
+        className="relative bg-white dark:bg-slate-900 rounded-card border border-slate-100 dark:border-slate-800 w-full max-w-lg mx-4 my-4 max-h-[92vh] overflow-y-auto"
+        style={{ boxShadow: 'var(--sw-shadow-overlay)' }}
+      >
+        <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800">
+          <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+            <span className="bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300 w-9 h-9 rounded-control flex items-center justify-center">
               <HeaderIcon size={18} />
             </span>
             {editing ? 'تعديل بند رسوم التأسيس' : 'إضافة رسوم تأسيس'}
@@ -274,7 +277,7 @@ export default function AddStartupFeeModal({
           <button
             type="button"
             onClick={onClose}
-            className="text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:text-slate-300 p-1 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+            className="sw-tap inline-flex items-center justify-center p-1 rounded-control text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
             aria-label="إغلاق"
           >
             <X size={20} />
@@ -295,7 +298,7 @@ export default function AddStartupFeeModal({
               placeholder="مثال: دبابات تنظيف، رسوم التسجيل التجاري"
               autoFocus
               required
-              className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+              className="w-full px-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:border-primary-500 transition-colors"
             />
           </div>
 
@@ -312,17 +315,17 @@ export default function AddStartupFeeModal({
               // outer card uses the same dark tokens as the modal
               // shell so the swap reads as a focused sub-region, not
               // a stacked card.
-              <div className="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl p-4 space-y-4">
+              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-smallcard p-4 space-y-4">
                 {/* Header */}
                 <div className="flex items-center justify-between gap-3">
-                  <h4 className="inline-flex items-center gap-2 text-sm font-bold text-slate-800 dark:text-slate-200">
-                    <Settings2 size={15} className="text-primary-700 dark:text-primary-400" />
+                  <h4 className="inline-flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-slate-100">
+                    <Settings2 size={15} className="text-primary-700 dark:text-primary-300" />
                     إدارة التصنيفات
                   </h4>
                   <button
                     type="button"
                     onClick={closeManager}
-                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary-700 dark:text-primary-400 hover:underline"
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-control text-[11px] font-semibold text-primary-700 dark:text-primary-300 hover:bg-primary-50 dark:hover:bg-primary-500/15 transition-colors"
                     title="رجوع إلى اختيار تصنيف للبند"
                   >
                     <ArrowRight size={12} />
@@ -341,7 +344,7 @@ export default function AddStartupFeeModal({
                       — لا توجد تصنيفات بعد —
                     </p>
                   ) : (
-                    <ul className="max-h-44 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-700/60 border border-slate-100 dark:border-slate-700/60 rounded-lg">
+                    <ul className="max-h-44 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800 border border-slate-100 dark:border-slate-800 rounded-control">
                       {categories.map((cat) => {
                         const inUse  = Boolean(usedCategoryIds?.has(cat.id));
                         const busy   = deletingCategoryId === cat.id;
@@ -353,7 +356,7 @@ export default function AddStartupFeeModal({
                             <span className="text-sm text-slate-700 dark:text-slate-300 truncate">
                               {cat.label}
                               {inUse && (
-                                <span className="mr-2 inline-block text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 align-middle">
+                                <span className="mr-2 inline-block text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 align-middle">
                                   مستخدم
                                 </span>
                               )}
@@ -366,10 +369,10 @@ export default function AddStartupFeeModal({
                                 ? 'هذا التصنيف مستخدم في بعض البنود — لا يمكن حذفه'
                                 : 'حذف هذا التصنيف نهائياً'}
                               aria-label={`حذف ${cat.label}`}
-                              className={`p-1.5 rounded-lg transition-colors shrink-0 ${
+                              className={`sw-tap inline-flex items-center justify-center p-1.5 rounded-control transition-colors shrink-0 ${
                                 inUse
                                   ? 'text-slate-300 dark:text-slate-600 cursor-not-allowed'
-                                  : 'text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/15'
+                                  : 'text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10'
                               } disabled:opacity-60`}
                             >
                               {busy
@@ -386,7 +389,7 @@ export default function AddStartupFeeModal({
                 {/* Inline add row — kept inside the manager so the
                     admin can do both ops in one pass without flipping
                     back and forth. */}
-                <div className="pt-1 border-t border-slate-100 dark:border-slate-700/60">
+                <div className="pt-1 border-t border-slate-100 dark:border-slate-800">
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5 mt-3">
                     إضافة تصنيف جديد
                   </p>
@@ -394,7 +397,7 @@ export default function AddStartupFeeModal({
                     <div className="relative flex-1">
                       <Tag
                         size={16}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 pointer-events-none"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 pointer-events-none"
                       />
                       <input
                         ref={newCategoryInputRef}
@@ -404,7 +407,7 @@ export default function AddStartupFeeModal({
                         onKeyDown={handleNewCategoryKey}
                         placeholder="اكتب اسم التصنيف الجديد..."
                         disabled={newCategoryBusy}
-                        className="w-full pr-9 pl-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium bg-white dark:bg-slate-800/50 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent transition-colors disabled:opacity-60"
+                        className="w-full pr-9 pl-4 py-2.5 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:border-primary-500 transition-colors disabled:opacity-60"
                       />
                     </div>
                     <button
@@ -413,7 +416,7 @@ export default function AddStartupFeeModal({
                       disabled={!newCategoryLabel.trim() || newCategoryBusy}
                       title="حفظ التصنيف الجديد"
                       aria-label="حفظ التصنيف الجديد"
-                      className="inline-flex items-center justify-center bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-400 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white px-3 rounded-xl text-sm font-bold transition-colors shadow-sm shrink-0"
+                      className="sw-tap sw-button sw-button--sm sw-button--primary shrink-0"
                     >
                       {newCategoryBusy
                         ? <Loader2 size={16} className="animate-spin" />
@@ -421,11 +424,11 @@ export default function AddStartupFeeModal({
                     </button>
                   </div>
                   {newCategoryError && (
-                    <p className="mt-1.5 text-[11px] text-red-600 dark:text-red-400 leading-relaxed">
+                    <p role="alert" className="mt-1.5 text-[11px] text-rose-600 dark:text-rose-400 leading-relaxed">
                       {newCategoryError}
                     </p>
                   )}
-                  <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500 leading-relaxed">
+                  <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
                     اضغط Enter لحفظ التصنيف الجديد، أو Escape لإغلاق المدير.
                   </p>
                 </div>
@@ -437,7 +440,7 @@ export default function AddStartupFeeModal({
                 value={form.category}
                 onChange={handleChange}
                 required
-                className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+                className="w-full px-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:border-primary-500 transition-colors"
               >
                 {categories.length === 0 && <option value="">— لا توجد تصنيفات —</option>}
                 {categories.map((cat) => (
@@ -456,7 +459,10 @@ export default function AddStartupFeeModal({
             )}
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          {/* items-end bottom-aligns the three fields: the middle label wraps
+              to two lines on narrow widths, which would otherwise push its
+              input below its neighbours. */}
+          <div className="grid grid-cols-3 gap-3 items-end">
             <div>
               <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5" htmlFor="quantity">
                 الكمية
@@ -470,7 +476,7 @@ export default function AddStartupFeeModal({
                 min="1"
                 step="1"
                 required
-                className="w-full px-3 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+                className="w-full px-3 py-2.5 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm tabular-nums focus:outline-none focus:border-primary-500 transition-colors"
               />
             </div>
             <div>
@@ -487,7 +493,7 @@ export default function AddStartupFeeModal({
                 min="0"
                 step="any"
                 required
-                className="w-full px-3 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+                className="w-full px-3 py-2.5 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm tabular-nums focus:outline-none focus:border-primary-500 transition-colors"
               />
             </div>
             <div>
@@ -505,7 +511,7 @@ export default function AddStartupFeeModal({
                 step="any"
                 disabled={lockActual}
                 title={lockActual ? 'التكلفة الفعلية تُحسب تلقائياً من سجل مصروفات هذا البند' : undefined}
-                className="w-full px-3 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent disabled:bg-slate-50 dark:disabled:bg-slate-800/60 disabled:text-slate-400 dark:disabled:text-slate-500 disabled:cursor-not-allowed"
+                className="w-full px-3 py-2.5 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm tabular-nums focus:outline-none focus:border-primary-500 transition-colors disabled:bg-slate-50 dark:disabled:bg-slate-800 disabled:text-slate-400 dark:disabled:text-slate-500 disabled:cursor-not-allowed"
               />
             </div>
           </div>
@@ -517,9 +523,9 @@ export default function AddStartupFeeModal({
             </p>
           )}
 
-          <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 rounded-xl p-4 space-y-2 text-sm">
+          <div className="bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-smallcard p-4 space-y-2 text-sm">
             <div className="flex items-baseline justify-between gap-3">
-              <span className="text-slate-600 dark:text-slate-400">إجمالي الميزانية المخططة:</span>
+              <span className="text-slate-500 dark:text-slate-400">إجمالي الميزانية المخططة:</span>
               <span className="font-bold text-slate-900 dark:text-slate-100 tabular-nums">
                 {quantity > 0 && plannedUnitPrice > 0
                   ? `${formatNumber(quantity)} × ${formatCurrency(plannedUnitPrice)} = ${formatCurrency(plannedTotal)}`
@@ -527,7 +533,7 @@ export default function AddStartupFeeModal({
               </span>
             </div>
             <div className="flex items-baseline justify-between gap-3">
-              <span className="text-slate-600 dark:text-slate-400">إجمالي التكلفة الفعلية:</span>
+              <span className="text-slate-500 dark:text-slate-400">إجمالي التكلفة الفعلية:</span>
               <span className="font-bold text-slate-900 dark:text-slate-100 tabular-nums">
                 {quantity > 0 && actualUnitPrice > 0
                   ? `${formatNumber(quantity)} × ${formatCurrency(actualUnitPrice)} = ${formatCurrency(actualTotal)}`
@@ -541,7 +547,7 @@ export default function AddStartupFeeModal({
               type="submit"
               disabled={!isValid || submitting || managerOpen}
               title={managerOpen ? 'أغلق مدير التصنيفات أولاً' : undefined}
-              className="flex-1 inline-flex items-center justify-center gap-2 bg-primary-800 hover:bg-primary-900 dark:bg-primary-600 dark:hover:bg-primary-500 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white py-2.5 px-4 rounded-xl text-sm font-semibold transition-colors shadow-sm"
+              className="sw-button sw-button--sm sw-button--primary flex-1"
             >
               {editing ? <Pencil size={18} /> : <Plus size={18} />}
               {submitting
@@ -551,7 +557,7 @@ export default function AddStartupFeeModal({
             <button
               type="button"
               onClick={onClose}
-              className="px-6 py-2.5 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/60 rounded-xl text-sm font-medium transition-colors"
+              className="sw-button sw-button--sm sw-button--secondary"
             >
               إلغاء
             </button>

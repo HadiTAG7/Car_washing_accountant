@@ -15,25 +15,30 @@ import { AlertTriangle, UserPlus, Loader2 } from 'lucide-react';
  */
 export default function CreateUserConfirm({ email, busy, onConfirm, onCancel }) {
   return (
-    <div className="bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-500/40 rounded-xl p-4 space-y-3">
-      <div className="flex items-start gap-2 text-amber-900 dark:text-amber-200 text-sm leading-relaxed">
+    <div
+      className="bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/30 rounded-smallcard p-4 space-y-3"
+      role="alert"
+    >
+      <div className="flex items-start gap-2 text-amber-700 dark:text-amber-300 text-sm leading-relaxed">
         <AlertTriangle size={18} className="shrink-0 mt-0.5" />
         <p className="font-semibold">
           ⚠️ هذا البريد غير مسجل، هل تريد إنشاء حساب تلقائي له الآن وتفعيله؟
         </p>
       </div>
-      <p className="text-[11px] text-amber-700/90 dark:text-amber-300/90 leading-relaxed">
+      <p className="text-[11px] text-amber-700 dark:text-amber-300 leading-relaxed">
         البريد: <span dir="ltr" className="font-mono font-bold">{email}</span>
         <br />
         سيقوم النظام بإنشاء كلمة مرور مؤقتة قوية وعشوائية تظهر لك فور الانتهاء
         — انسخها وسلّمها للشريك ليُغيّرها عند أول تسجيل دخول.
       </p>
       <div className="flex items-center gap-2 pt-1">
+        {/* Warning-toned action: system button geometry with a semantic
+            amber fill — the same pattern the destructive button uses. */}
         <button
           type="button"
           onClick={onConfirm}
           disabled={busy}
-          className="flex-1 inline-flex items-center justify-center gap-2 bg-amber-600 hover:bg-amber-700 dark:bg-amber-500 dark:hover:bg-amber-400 disabled:opacity-60 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm"
+          className="sw-button sw-button--sm flex-1 bg-amber-700 hover:bg-amber-800 dark:bg-amber-600 dark:hover:bg-amber-700 text-white"
         >
           {busy ? (
             <>
@@ -51,7 +56,7 @@ export default function CreateUserConfirm({ email, busy, onConfirm, onCancel }) 
           type="button"
           onClick={onCancel}
           disabled={busy}
-          className="px-4 py-2.5 border border-amber-300 dark:border-amber-500/40 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-500/25 disabled:opacity-60 disabled:cursor-not-allowed rounded-xl text-sm font-semibold transition-colors"
+          className="sw-button sw-button--sm sw-button--secondary"
         >
           إلغاء
         </button>

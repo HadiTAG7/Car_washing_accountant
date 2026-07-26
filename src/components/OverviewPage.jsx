@@ -145,7 +145,7 @@ export default function OverviewPage() {
             onClick={handleBackup}
             disabled={backupBusy}
             title="تنزيل نسخة احتياطية كاملة لكل الجداول (ZIP)"
-            className="inline-flex items-center gap-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-60 text-slate-700 dark:text-slate-200 px-3 py-2 rounded-xl text-xs font-semibold transition-colors shrink-0"
+            className="sw-button sw-button--sm sw-button--secondary sw-tap shrink-0"
           >
             {backupBusy
               ? <Loader2 size={14} className="animate-spin" />
@@ -183,12 +183,12 @@ export default function OverviewPage() {
                   <p className="text-2xl font-extrabold text-emerald-600 dark:text-emerald-400 tabular-nums">
                     {formatNumber(Number(capital.pct.toFixed(1)))}%
                   </p>
-                  <p className="text-[11px] text-slate-400 dark:text-slate-500">مكتمل</p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">مكتمل</p>
                 </div>
               </div>
               <ProgressBar value={capital.paid} max={capital.target || 1} color="emerald" className="h-3" />
               <div className="flex items-center justify-between mt-2 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
-                <span>المتبقّي: <span className="font-bold text-amber-600 dark:text-amber-400">{formatCurrency(capital.remaining)}</span></span>
+                <span>المتبقّي: <span className="font-bold text-amber-700 dark:text-amber-400">{formatCurrency(capital.remaining)}</span></span>
                 {!isPartnerView && (
                   <span>{formatNumber(capital.settledCount)} من {formatNumber(capital.partnerCount)} سدّدوا بالكامل</span>
                 )}
@@ -255,7 +255,7 @@ export default function OverviewPage() {
               <SectionHeader title="تقدّم صرف التأسيس" subtitle="الفعلي مقابل المخطط" />
               <div className="flex items-center justify-between mb-2 text-sm">
                 <span className="tabular-nums text-slate-700 dark:text-slate-300">
-                  {formatCurrency(spend.actual)} <span className="text-slate-400">/</span> {formatCurrency(spend.planned)}
+                  {formatCurrency(spend.actual)} <span className="text-slate-500 dark:text-slate-400">/</span> {formatCurrency(spend.planned)}
                 </span>
                 <span className="tabular-nums font-bold text-slate-500 dark:text-slate-400">
                   {formatNumber(Number(spend.pct.toFixed(0)))}%
@@ -288,9 +288,9 @@ export default function OverviewPage() {
                     <div key={p.id}>
                       <div className="flex items-center justify-between gap-3 mb-1 text-sm">
                         <span className="inline-flex items-center gap-2 font-semibold text-slate-800 dark:text-slate-200 min-w-0">
-                          <Users size={13} className="text-slate-400 dark:text-slate-500 shrink-0" />
+                          <Users size={13} className="text-slate-500 dark:text-slate-400 shrink-0" />
                           <span className="truncate">{p.partnerName}</span>
-                          <span className="text-[10px] font-normal text-slate-400 dark:text-slate-500 tabular-nums shrink-0">
+                          <span className="text-[10px] font-normal text-slate-500 dark:text-slate-400 tabular-nums shrink-0">
                             {formatNumber(p.workersCount)} عامل
                           </span>
                         </span>

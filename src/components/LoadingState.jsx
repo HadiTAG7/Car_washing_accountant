@@ -11,7 +11,7 @@ export default function LoadingState({ message = 'جارٍ تحميل البيا
         {Array.from({ length: rows }).map((_, i) => (
           <div
             key={i}
-            className="h-14 bg-slate-100 dark:bg-slate-800 rounded-xl animate-pulse"
+            className="h-14 bg-slate-100 dark:bg-slate-800 rounded-control animate-pulse"
             style={{ animationDelay: `${i * 80}ms` }}
           />
         ))}

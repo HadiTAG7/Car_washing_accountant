@@ -79,9 +79,9 @@ function StatusTogglePill({ status, onChange, disabled }) {
   const isCompleted = status === 'completed';
   const next        = isCompleted ? 'in_progress' : 'completed';
   const classes = isCompleted
-    ? 'bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-emerald-100'
-    : 'bg-amber-50 text-amber-700 border-amber-100 hover:bg-amber-100';
-  const dot = isCompleted ? 'bg-emerald-500' : 'bg-amber-500';
+    ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-100 dark:border-emerald-500/30 hover:bg-emerald-100 dark:hover:bg-emerald-500/20'
+    : 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-100 dark:border-amber-500/30 hover:bg-amber-100 dark:hover:bg-amber-500/20';
+  const dot = isCompleted ? 'bg-emerald-600' : 'bg-amber-500';
   return (
     <button
       type="button"
@@ -313,7 +313,7 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
                     return (
                       <tr
                         key={i.id}
-                        className="border-b border-slate-50 dark:border-slate-800 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
+                        className="border-b border-slate-50 dark:border-slate-800/60 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors"
                       >
                         <td className="py-3 px-4 whitespace-nowrap align-top">
                           {canMutate ? (
@@ -329,13 +329,13 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
                             <div className="font-medium text-slate-800 dark:text-slate-200">{i.itemName}</div>
                           )}
                           {qty > 1 && (
-                            <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5 tabular-nums">
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 tabular-nums">
                               الكمية: {formatNumber(qty)} | سعر الوحدة: {formatCurrency(unitPlanned)}
                             </div>
                           )}
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap align-top">
-                          <span className="inline-flex text-[11px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-2 py-1 rounded-md">
+                          <span className="inline-flex text-[11px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-2 py-1 rounded-control">
                             {getCategoryLabel(i.category)}
                           </span>
                         </td>
@@ -348,7 +348,7 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
                               value={i.actualAmount}
                               onCommit={(safe) => handleUpdateActual(i.id, safe, i.actualAmount, i.plannedAmount, i.status)}
                               ariaLabel={`المبلغ الفعلي لـ ${i.itemName}`}
-                              className="w-28 px-2 py-1 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-slate-100 font-medium text-left tabular-nums bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-400"
+                              className="w-28 px-2 py-1 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium text-slate-900 dark:text-slate-100 text-left tabular-nums focus:outline-none focus:border-primary-500 transition-colors"
                             />
                           ) : (
                             // Ledger-managed rows lock the inline editor:
@@ -367,7 +367,7 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums align-top">
                           <span className={rowRemaining > 0
-                            ? 'font-semibold text-amber-600 dark:text-amber-400'
+                            ? 'font-semibold text-amber-700 dark:text-amber-400'
                             : 'font-medium text-emerald-600 dark:text-emerald-400'}>
                             {formatCurrency(rowRemaining)}
                           </span>
@@ -385,7 +385,7 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
                               <button
                                 type="button"
                                 onClick={() => openEditModal(i)}
-                                className="text-slate-400 dark:text-slate-500 hover:text-primary-700 p-1.5 rounded-lg hover:bg-primary-50 transition-colors"
+                                className="sw-tap inline-flex items-center justify-center p-1.5 rounded-control text-slate-500 dark:text-slate-400 hover:text-primary-700 dark:hover:text-primary-300 hover:bg-primary-50 dark:hover:bg-primary-500/15 transition-colors"
                                 aria-label={`تعديل ${i.itemName}`}
                                 title="تعديل البند"
                               >
@@ -394,7 +394,7 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
                               <button
                                 type="button"
                                 onClick={() => handleDelete(i.id)}
-                                className="text-slate-400 dark:text-slate-500 hover:text-accent-600 p-1.5 rounded-lg hover:bg-accent-50 transition-colors"
+                                className="sw-tap inline-flex items-center justify-center p-1.5 rounded-control text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/15 transition-colors"
                                 aria-label={`حذف ${i.itemName}`}
                                 title="حذف البند"
                               >

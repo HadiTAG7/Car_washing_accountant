@@ -55,10 +55,13 @@ export default function AddTemporaryExpenseModal({ isOpen, onClose, onAdd }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm" onClick={onClose} />
 
-      <div className="relative bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-lg mx-4 my-4 max-h-[92vh] overflow-y-auto border border-slate-100 dark:border-slate-800">
-        <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60">
-          <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-            <span className="bg-amber-50 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 w-9 h-9 rounded-xl flex items-center justify-center">
+      <div
+        className="relative bg-white dark:bg-slate-900 rounded-card border border-slate-100 dark:border-slate-800 w-full max-w-lg mx-4 my-4 max-h-[92vh] overflow-y-auto"
+        style={{ boxShadow: 'var(--sw-shadow-overlay)' }}
+      >
+        <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800">
+          <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+            <span className="bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300 w-9 h-9 rounded-control flex items-center justify-center shrink-0">
               <RefreshCw size={18} />
             </span>
             <span className="min-w-0">
@@ -71,7 +74,7 @@ export default function AddTemporaryExpenseModal({ isOpen, onClose, onAdd }) {
           <button
             type="button"
             onClick={onClose}
-            className="text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 p-1 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors shrink-0"
+            className="sw-tap flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 p-1 rounded-control hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors shrink-0"
             aria-label="إغلاق"
           >
             <X size={20} />
@@ -87,7 +90,7 @@ export default function AddTemporaryExpenseModal({ isOpen, onClose, onAdd }) {
             <div className="relative">
               <Tag
                 size={16}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 pointer-events-none"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 pointer-events-none"
               />
               <input
                 id="title"
@@ -97,7 +100,7 @@ export default function AddTemporaryExpenseModal({ isOpen, onClose, onAdd }) {
                 onChange={handleChange}
                 placeholder="مثال: تأمين عقد إيجار قابل للاسترداد"
                 required
-                className="w-full pr-9 pl-4 py-3 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white font-medium bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-colors"
+                className="w-full pr-9 pl-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:border-primary-500 transition-colors"
               />
             </div>
           </div>
@@ -111,7 +114,7 @@ export default function AddTemporaryExpenseModal({ isOpen, onClose, onAdd }) {
               <div className="relative">
                 <Wallet
                   size={16}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 pointer-events-none"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 pointer-events-none"
                 />
                 <input
                   id="amount"
@@ -123,7 +126,7 @@ export default function AddTemporaryExpenseModal({ isOpen, onClose, onAdd }) {
                   min="0"
                   step="any"
                   required
-                  className="w-full pr-9 pl-4 py-3 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white font-medium tabular-nums bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-colors"
+                  className="w-full pr-9 pl-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm tabular-nums focus:outline-none focus:border-primary-500 transition-colors"
                 />
               </div>
             </div>
@@ -134,7 +137,7 @@ export default function AddTemporaryExpenseModal({ isOpen, onClose, onAdd }) {
               <div className="relative">
                 <Calendar
                   size={16}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 pointer-events-none"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 pointer-events-none"
                 />
                 <input
                   id="spentDate"
@@ -143,7 +146,7 @@ export default function AddTemporaryExpenseModal({ isOpen, onClose, onAdd }) {
                   value={form.spentDate}
                   onChange={handleChange}
                   required
-                  className="w-full pr-9 pl-4 py-3 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white font-medium tabular-nums bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-colors"
+                  className="w-full pr-9 pl-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm tabular-nums focus:outline-none focus:border-primary-500 transition-colors"
                 />
               </div>
             </div>
@@ -153,12 +156,12 @@ export default function AddTemporaryExpenseModal({ isOpen, onClose, onAdd }) {
           <div>
             <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5" htmlFor="notes">
               ملاحظات
-              <span className="text-[11px] font-normal text-slate-400 dark:text-slate-500 mr-1">— اختياري</span>
+              <span className="text-[11px] font-normal text-slate-500 dark:text-slate-400 mr-1">— اختياري</span>
             </label>
             <div className="relative">
               <FileText
                 size={16}
-                className="absolute right-3 top-3 text-slate-400 dark:text-slate-500 pointer-events-none"
+                className="absolute right-3 top-3 text-slate-500 dark:text-slate-400 pointer-events-none"
               />
               <textarea
                 id="notes"
@@ -167,20 +170,20 @@ export default function AddTemporaryExpenseModal({ isOpen, onClose, onAdd }) {
                 onChange={handleChange}
                 placeholder="مثال: رقم العقد، الجهة المتوقع منها الاسترداد"
                 rows={3}
-                className="w-full pr-9 pl-4 py-3 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white font-medium bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-colors resize-y leading-relaxed"
+                className="w-full pr-9 pl-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:border-primary-500 transition-colors resize-y leading-relaxed"
               />
             </div>
           </div>
 
           {/* Live preview */}
-          <div className="bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/30 rounded-xl p-4 text-sm">
+          <div className="bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/30 text-amber-700 dark:text-amber-300 rounded-smallcard p-4 text-sm">
             <div className="flex items-baseline justify-between gap-3">
-              <span className="text-amber-700 dark:text-amber-300 font-semibold">قيمة هذا المصروف:</span>
-              <span className="font-bold text-amber-900 dark:text-amber-200 tabular-nums">
+              <span className="font-semibold">قيمة هذا المصروف:</span>
+              <span className="font-bold text-amber-800 dark:text-amber-200 tabular-nums">
                 {formatCurrency(amount)}
               </span>
             </div>
-            <p className="text-[11px] text-amber-700/80 dark:text-amber-300/80 mt-2">
+            <p className="text-[11px] mt-2 leading-relaxed">
               سيتم تسجيله بحالة &quot;معلق قيد الاسترداد&quot; — يمكنك تأكيد الاسترداد لاحقاً من الجدول.
             </p>
           </div>
@@ -189,7 +192,7 @@ export default function AddTemporaryExpenseModal({ isOpen, onClose, onAdd }) {
             <button
               type="submit"
               disabled={!isValid || submitting}
-              className="flex-1 inline-flex items-center justify-center gap-2 bg-primary-800 hover:bg-primary-900 dark:bg-primary-600 dark:hover:bg-primary-500 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white py-3 px-4 rounded-xl text-sm font-semibold transition-colors shadow-sm"
+              className="sw-button sw-button--sm sw-button--primary flex-1"
             >
               <Plus size={18} />
               {submitting ? 'جارٍ التسجيل...' : 'تسجيل المصروف'}
@@ -197,7 +200,7 @@ export default function AddTemporaryExpenseModal({ isOpen, onClose, onAdd }) {
             <button
               type="button"
               onClick={onClose}
-              className="px-6 py-3 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl text-sm font-medium transition-colors"
+              className="sw-button sw-button--sm sw-button--secondary"
             >
               إلغاء
             </button>

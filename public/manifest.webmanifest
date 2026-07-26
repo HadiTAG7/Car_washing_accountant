@@ -1,15 +1,15 @@
 {
-  "name": "سويتر — لوحة التحكم المالية",
+  "name": "سويتر | Sweater — لوحة التحكم المالية",
   "short_name": "سويتر",
-  "description": "نظام إدارة القيود والشركاء — امتياز سويتر",
+  "description": "نظام إدارة القيود المالية والشركاء — شركة هادي الغانم",
   "lang": "ar",
   "dir": "rtl",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#431407",
-  "theme_color": "#7c2d12",
+  "background_color": "#f8f9fa",
+  "theme_color": "#ffffff",
   "icons": [
     {
       "src": "/icons/icon-192.png",

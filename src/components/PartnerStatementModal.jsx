@@ -48,16 +48,17 @@ export default function PartnerStatementModal({ isOpen, onClose, partner }) {
 
       <div
         id="partner-statement-sheet"
-        className="relative bg-white dark:bg-slate-900 print:dark:bg-white rounded-2xl print:rounded-none shadow-2xl print:shadow-none w-full max-w-2xl mx-4 my-4 print:m-0 print:max-w-none max-h-[92vh] print:max-h-none overflow-y-auto border border-slate-100 dark:border-slate-800 print:border-0"
+        className="relative bg-white dark:bg-slate-900 print:dark:bg-white rounded-card print:rounded-none w-full max-w-2xl mx-4 my-4 print:m-0 print:max-w-none max-h-[92vh] print:max-h-none overflow-y-auto border border-slate-100 dark:border-slate-800 print:border-0"
+        style={{ boxShadow: 'var(--sw-shadow-overlay)' }}
       >
         {/* Toolbar — screen only */}
-        <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 print:hidden">
-          <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">كشف حساب الشريك</h3>
+        <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 print:hidden">
+          <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">كشف حساب الشريك</h3>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => window.print()}
-              className="inline-flex items-center gap-1.5 bg-primary-800 hover:bg-primary-900 dark:bg-primary-600 dark:hover:bg-primary-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
+              className="sw-button sw-button--sm sw-button--primary"
             >
               <Printer size={14} />
               طباعة / حفظ PDF
@@ -65,7 +66,7 @@ export default function PartnerStatementModal({ isOpen, onClose, partner }) {
             <button
               type="button"
               onClick={onClose}
-              className="text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 p-1 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+              className="sw-tap flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 p-1 rounded-control hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors shrink-0"
               aria-label="إغلاق"
             >
               <X size={20} />
@@ -76,7 +77,7 @@ export default function PartnerStatementModal({ isOpen, onClose, partner }) {
         {/* Statement body */}
         <div className="p-6 sm:p-8 print:p-0 text-slate-900 dark:text-slate-100 print:text-black">
           {/* Header */}
-          <div className="flex items-start justify-between gap-4 pb-5 border-b-2 border-slate-200 dark:border-slate-700 print:border-slate-300">
+          <div className="flex items-start justify-between gap-4 pb-5 border-b-2 border-slate-100 dark:border-slate-800 print:border-slate-300">
             <div>
               <p className="text-xl font-extrabold">{BRAND.nameAr}</p>
               <p className="text-xs text-slate-500 dark:text-slate-400">{BRAND.tagline}</p>
@@ -100,19 +101,19 @@ export default function PartnerStatementModal({ isOpen, onClose, partner }) {
           </div>
 
           {/* Capital summary */}
-          <div className="mt-6 rounded-xl border border-slate-200 dark:border-slate-700 print:border-slate-300 divide-y divide-slate-100 dark:divide-slate-800 print:divide-slate-200 text-sm">
+          <div className="mt-6 rounded-smallcard border border-slate-100 dark:border-slate-800 print:border-slate-300 divide-y divide-slate-100 dark:divide-slate-800 print:divide-slate-200 text-sm overflow-hidden">
             <div className="flex items-center justify-between px-4 py-3">
-              <span className="text-slate-600 dark:text-slate-400">
+              <span className="text-slate-500 dark:text-slate-400">
                 الرسوم المطلوبة
-                <span className="text-[11px] text-slate-400 mr-1 tabular-nums">
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 mr-1 tabular-nums">
                   ({formatNumber(partner.workersCount || 0)} × {formatCurrency(PER_WORKER_FEE)})
                 </span>
               </span>
               <span className="font-bold tabular-nums">{formatCurrency(required)}</span>
             </div>
             <div className="flex items-center justify-between px-4 py-3">
-              <span className="text-slate-600 dark:text-slate-400">المُسدَّد</span>
-              <span className="font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{formatCurrency(paid)}</span>
+              <span className="text-slate-500 dark:text-slate-400">المُسدَّد</span>
+              <span className="font-bold tabular-nums text-emerald-700 dark:text-emerald-400">{formatCurrency(paid)}</span>
             </div>
             <div className={`flex items-center justify-between px-4 py-3 ${settled ? 'bg-emerald-50 dark:bg-emerald-500/10 print:bg-emerald-50' : 'bg-amber-50 dark:bg-amber-500/10 print:bg-amber-50'}`}>
               <span className="font-bold">{settled ? 'الحالة' : 'المتبقّي'}</span>
@@ -125,7 +126,7 @@ export default function PartnerStatementModal({ isOpen, onClose, partner }) {
           {/* Receipts */}
           <div className="mt-6">
             <p className="text-sm font-bold mb-2 flex items-center gap-1.5">
-              <Wallet size={14} className="text-slate-400" />
+              <Wallet size={14} className="text-slate-500 dark:text-slate-400" />
               سجل الدفعات
             </p>
             {rows.length === 0 ? (
@@ -135,7 +136,7 @@ export default function PartnerStatementModal({ isOpen, onClose, partner }) {
             ) : (
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 border-b border-slate-100 dark:border-slate-800">
+                  <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
                     <th className="py-2 px-2">التاريخ</th>
                     <th className="py-2 px-2">الطريقة</th>
                     <th className="py-2 px-2">البيان</th>
@@ -144,9 +145,12 @@ export default function PartnerStatementModal({ isOpen, onClose, partner }) {
                 </thead>
                 <tbody>
                   {rows.map((r) => (
-                    <tr key={r.id} className="border-b border-slate-50 dark:border-slate-800">
-                      <td className="py-2 px-2 tabular-nums text-slate-600 dark:text-slate-400 whitespace-nowrap">{formatDate(r.paymentDate)}</td>
-                      <td className="py-2 px-2 text-slate-600 dark:text-slate-400 whitespace-nowrap">{METHOD_LABEL[r.paymentMethod] || r.paymentMethod}</td>
+                    <tr
+                      key={r.id}
+                      className="border-b border-slate-50 dark:border-slate-800/60 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors"
+                    >
+                      <td className="py-2 px-2 tabular-nums text-slate-500 dark:text-slate-400 whitespace-nowrap">{formatDate(r.paymentDate)}</td>
+                      <td className="py-2 px-2 text-slate-500 dark:text-slate-400 whitespace-nowrap">{METHOD_LABEL[r.paymentMethod] || r.paymentMethod}</td>
                       <td className="py-2 px-2 text-slate-500 dark:text-slate-400">{r.notes || '—'}</td>
                       <td className="py-2 px-2 text-left tabular-nums font-bold">{formatCurrency(r.amount)}</td>
                     </tr>
@@ -156,7 +160,7 @@ export default function PartnerStatementModal({ isOpen, onClose, partner }) {
             )}
           </div>
 
-          <p className="mt-8 text-[10px] text-slate-400 dark:text-slate-500 text-center print:mt-12">
+          <p className="mt-8 text-[10px] text-slate-500 dark:text-slate-400 text-center print:mt-12">
             كشف آلي صادر من نظام {BRAND.nameAr} — {today}
           </p>
         </div>

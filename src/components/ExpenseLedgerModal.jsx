@@ -7,6 +7,7 @@ import {
   formatCurrency, formatDate, todayISO, extractVat, netOfVat,
 } from '../data/initialData';
 import { uploadInvoiceFile, isSupabaseConfigured } from '../lib/supabaseClient';
+import { EmptyState } from './UI';
 
 const EMPTY_FORM = {
   description: '', amount: '', spentDate: '', notes: '', invoiceUrl: '', isTaxInvoice: false,
@@ -133,11 +134,14 @@ export default function ExpenseLedgerModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm" onClick={onClose} />
 
-      <div className="relative bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-2xl mx-4 my-4 max-h-[92vh] overflow-y-auto border border-slate-100 dark:border-slate-800">
+      <div
+        className="relative bg-white dark:bg-slate-900 rounded-card border border-slate-100 dark:border-slate-800 w-full max-w-2xl mx-4 my-4 max-h-[92vh] overflow-y-auto"
+        style={{ boxShadow: 'var(--sw-shadow-overlay)' }}
+      >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60">
-          <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-            <span className="bg-primary-50 dark:bg-primary-500/20 text-primary-700 dark:text-primary-300 w-9 h-9 rounded-xl flex items-center justify-center">
+        <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800">
+          <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+            <span className="bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300 w-9 h-9 rounded-control flex items-center justify-center shrink-0">
               <FileText size={18} />
             </span>
             <span className="min-w-0">
@@ -150,7 +154,7 @@ export default function ExpenseLedgerModal({
           <button
             type="button"
             onClick={onClose}
-            className="text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 p-1 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors shrink-0"
+            className="sw-tap flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 p-1 rounded-control hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors shrink-0"
             aria-label="إغلاق"
           >
             <X size={20} />
@@ -160,28 +164,28 @@ export default function ExpenseLedgerModal({
         <div className="p-5 sm:p-6 space-y-5">
           {/* Summary strip */}
           <div className="grid grid-cols-3 gap-3 text-sm">
-            <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 rounded-xl px-3 py-2.5">
+            <div className="bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-smallcard px-3 py-2.5">
               <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">{plannedLabel}</p>
               <p className="font-bold text-slate-900 dark:text-slate-100 tabular-nums mt-0.5">
                 {formatCurrency(planned)}
               </p>
             </div>
-            <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 rounded-xl px-3 py-2.5">
+            <div className="bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-smallcard px-3 py-2.5">
               <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">المسجّل</p>
               <p className="font-bold text-slate-900 dark:text-slate-100 tabular-nums mt-0.5">
                 {formatCurrency(recordedTotal)}
               </p>
             </div>
-            <div className={`rounded-xl px-3 py-2.5 border ${
+            <div className={`rounded-smallcard px-3 py-2.5 border ${
               overspent
-                ? 'bg-red-50 dark:bg-red-500/15 border-red-200 dark:border-red-500/40'
+                ? 'bg-rose-50 dark:bg-rose-500/10 border-rose-100 dark:border-rose-500/30'
                 : remaining > 0
-                  ? 'bg-amber-50 dark:bg-amber-500/15 border-amber-200 dark:border-amber-500/40'
-                  : 'bg-emerald-50 dark:bg-emerald-500/15 border-emerald-200 dark:border-emerald-500/40'
+                  ? 'bg-amber-50 dark:bg-amber-500/10 border-amber-100 dark:border-amber-500/30'
+                  : 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-100 dark:border-emerald-500/30'
             }`}>
               <p className={`text-[11px] leading-snug ${
                 overspent
-                  ? 'text-red-700 dark:text-red-300'
+                  ? 'text-rose-700 dark:text-rose-300'
                   : remaining > 0
                     ? 'text-amber-700 dark:text-amber-300'
                     : 'text-emerald-700 dark:text-emerald-300'
@@ -190,7 +194,7 @@ export default function ExpenseLedgerModal({
               </p>
               <p className={`font-bold tabular-nums mt-0.5 ${
                 overspent
-                  ? 'text-red-700 dark:text-red-300'
+                  ? 'text-rose-700 dark:text-rose-300'
                   : remaining > 0
                     ? 'text-amber-700 dark:text-amber-300'
                     : 'text-emerald-700 dark:text-emerald-300'
@@ -201,7 +205,7 @@ export default function ExpenseLedgerModal({
           </div>
 
           {/* Add form */}
-          <form onSubmit={handleAdd} className="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl p-4 space-y-3">
+          <form onSubmit={handleAdd} className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-smallcard p-4 space-y-3">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
               إضافة مصروف جديد
             </p>
@@ -211,7 +215,7 @@ export default function ExpenseLedgerModal({
               <div className="relative">
                 <Tag
                   size={15}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 pointer-events-none"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 pointer-events-none"
                 />
                 <input
                   type="text"
@@ -220,13 +224,13 @@ export default function ExpenseLedgerModal({
                   onChange={handleChange}
                   placeholder="مثال: شراء أثاث المطبخ"
                   required
-                  className="w-full pr-9 pl-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-colors"
+                  className="w-full pr-9 pl-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:border-primary-500 transition-colors"
                 />
               </div>
               <div className="relative">
                 <Calendar
                   size={15}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 pointer-events-none"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 pointer-events-none"
                 />
                 <input
                   type="date"
@@ -234,7 +238,7 @@ export default function ExpenseLedgerModal({
                   value={form.spentDate}
                   onChange={handleChange}
                   required
-                  className="w-full pr-9 pl-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium tabular-nums bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-colors"
+                  className="w-full pr-9 pl-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm tabular-nums focus:outline-none focus:border-primary-500 transition-colors"
                 />
               </div>
             </div>
@@ -244,7 +248,7 @@ export default function ExpenseLedgerModal({
               <div className="relative">
                 <Wallet
                   size={15}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 pointer-events-none"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 pointer-events-none"
                 />
                 <input
                   type="number"
@@ -255,7 +259,7 @@ export default function ExpenseLedgerModal({
                   min="0"
                   step="any"
                   required
-                  className="w-full pr-9 pl-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium tabular-nums bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-colors"
+                  className="w-full pr-9 pl-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm tabular-nums focus:outline-none focus:border-primary-500 transition-colors"
                 />
               </div>
               <input
@@ -264,7 +268,7 @@ export default function ExpenseLedgerModal({
                 value={form.notes}
                 onChange={handleChange}
                 placeholder="ملاحظات اختيارية (رقم الفاتورة، الجهة...)"
-                className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-colors"
+                className="w-full px-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:border-primary-500 transition-colors"
               />
             </div>
 
@@ -275,7 +279,7 @@ export default function ExpenseLedgerModal({
               <div className="relative flex-1">
                 <LinkIcon
                   size={15}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 pointer-events-none"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 pointer-events-none"
                 />
                 <input
                   type="url"
@@ -285,7 +289,7 @@ export default function ExpenseLedgerModal({
                   placeholder="رابط الفاتورة، أو ارفع ملفاً ←"
                   dir="ltr"
                   autoComplete="off"
-                  className="w-full pr-9 pl-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-mono bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-colors"
+                  className="w-full pr-9 pl-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm font-mono focus:outline-none focus:border-primary-500 transition-colors"
                 />
               </div>
               {isSupabaseConfigured && (
@@ -302,7 +306,7 @@ export default function ExpenseLedgerModal({
                     onClick={() => fileInputRef.current?.click()}
                     disabled={uploading}
                     title="رفع صورة/PDF للفاتورة"
-                    className="inline-flex items-center gap-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-60 text-slate-700 dark:text-slate-200 px-3 rounded-xl text-xs font-semibold transition-colors shrink-0"
+                    className="sw-button sw-button--sm sw-button--secondary shrink-0"
                   >
                     {uploading
                       ? <Loader2 size={15} className="animate-spin" />
@@ -313,10 +317,10 @@ export default function ExpenseLedgerModal({
               )}
             </div>
             {uploadError && (
-              <p className="text-[11px] text-red-600 dark:text-red-400 leading-relaxed">{uploadError}</p>
+              <p className="text-[11px] text-rose-600 dark:text-rose-400 leading-relaxed" role="alert">{uploadError}</p>
             )}
             {form.invoiceUrl && !uploadError && (
-              <p className="text-[11px] text-emerald-600 dark:text-emerald-400 leading-relaxed truncate" dir="ltr">
+              <p className="text-[11px] text-emerald-700 dark:text-emerald-400 leading-relaxed truncate" dir="ltr" role="status">
                 ✓ {form.invoiceUrl}
               </p>
             )}
@@ -325,10 +329,10 @@ export default function ExpenseLedgerModal({
                 as VAT-inclusive and the 15% portion is back-derived. */}
             <label
               htmlFor="ledgerIsTaxInvoice"
-              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border cursor-pointer transition-colors ${
+              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-control border cursor-pointer transition-colors ${
                 form.isTaxInvoice
-                  ? 'border-emerald-300 dark:border-emerald-500/50 bg-emerald-50 dark:bg-emerald-500/15'
-                  : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60'
+                  ? 'border-emerald-100 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10'
+                  : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700'
               }`}
             >
               <input
@@ -337,10 +341,10 @@ export default function ExpenseLedgerModal({
                 name="isTaxInvoice"
                 checked={form.isTaxInvoice}
                 onChange={handleChange}
-                className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-emerald-600 focus:ring-emerald-400 accent-emerald-600"
+                className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 accent-emerald-600"
               />
-              <Percent size={14} className={form.isTaxInvoice ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400 dark:text-slate-500'} />
-              <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+              <Percent size={14} className={form.isTaxInvoice ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'} />
+              <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">
                 فاتورة ضريبية
                 <span className="text-[11px] font-normal text-slate-500 dark:text-slate-400 mr-1">
                   (المبلغ شامل ضريبة القيمة المضافة 15%)
@@ -350,12 +354,15 @@ export default function ExpenseLedgerModal({
 
             {/* Live VAT breakdown — only when taxable AND an amount is set. */}
             {form.isTaxInvoice && parsedAmount > 0 && (
-              <div className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-emerald-50/60 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/30 text-[12px]">
-                <span className="text-emerald-800 dark:text-emerald-300">
+              <div
+                role="status"
+                className="flex items-center justify-between gap-3 px-3 py-2 rounded-control bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/30 text-[12px]"
+              >
+                <span className="text-emerald-700 dark:text-emerald-300">
                   الضريبة المتوقع استردادها:
                   <span className="font-bold tabular-nums mr-1">{formatCurrency(extractVat(parsedAmount))}</span>
                 </span>
-                <span className="text-slate-600 dark:text-slate-400">
+                <span className="text-slate-500 dark:text-slate-400">
                   صافي قيمة السلعة:
                   <span className="font-bold tabular-nums mr-1">{formatCurrency(netOfVat(parsedAmount))}</span>
                 </span>
@@ -365,7 +372,7 @@ export default function ExpenseLedgerModal({
             <button
               type="submit"
               disabled={!isValid || submitting}
-              className="w-full inline-flex items-center justify-center gap-2 bg-primary-800 hover:bg-primary-900 dark:bg-primary-600 dark:hover:bg-primary-500 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white py-2.5 px-4 rounded-xl text-sm font-semibold transition-colors shadow-sm"
+              className="sw-button sw-button--sm sw-button--primary w-full"
             >
               {submitting ? (
                 <><Loader2 size={16} className="animate-spin" /> جارٍ التسجيل...</>
@@ -382,7 +389,10 @@ export default function ExpenseLedgerModal({
             </p>
 
             {error && (
-              <div className="text-xs text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-500/15 border border-red-100 dark:border-red-500/30 rounded-lg px-3 py-2.5 mb-2 leading-relaxed">
+              <div
+                role="alert"
+                className="text-xs text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-500/10 border border-rose-100 dark:border-rose-500/30 rounded-control px-3 py-2.5 mb-2 leading-relaxed"
+              >
                 <p className="font-bold mb-1">تعذّر تحميل السجل.</p>
                 {/* Surface the real Supabase error verbatim — most often
                     "relation ... does not exist" when the SQL migration
@@ -396,7 +406,7 @@ export default function ExpenseLedgerModal({
                 {migrationFile && (
                   <p className="mt-1.5 text-[11px]">
                     إن لم تكن قد شغّلت ملف الـ migration{' '}
-                    <code className="bg-red-100 dark:bg-red-500/25 px-1 rounded" dir="ltr">
+                    <code className="bg-rose-100 dark:bg-rose-500/20 px-1 rounded-control" dir="ltr">
                       {migrationFile}
                     </code>{' '}
                     في Supabase SQL Editor، شغّله ثم أعد فتح المودال.
@@ -411,15 +421,16 @@ export default function ExpenseLedgerModal({
                 جارٍ التحميل...
               </div>
             ) : entries.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-10 text-center bg-slate-50 dark:bg-slate-800/40 border border-dashed border-slate-200 dark:border-slate-700 rounded-xl">
-                <Inbox size={26} className="text-slate-400 dark:text-slate-500 mb-2" />
-                <p className="text-sm font-bold text-slate-700 dark:text-slate-300">لا توجد مصاريف مسجّلة بعد</p>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-                  استخدم النموذج أعلاه لتسجيل أول مصروف لهذا البند.
-                </p>
+              <div className="border border-slate-100 dark:border-slate-800 rounded-smallcard">
+                <EmptyState
+                  icon={Inbox}
+                  title="لا توجد مصاريف مسجّلة بعد"
+                  hint="استخدم النموذج أعلاه لتسجيل أول مصروف لهذا البند."
+                  compact
+                />
               </div>
             ) : (
-              <ul className="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-100 dark:border-slate-800 rounded-xl overflow-hidden">
+              <ul className="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-100 dark:border-slate-800 rounded-smallcard overflow-hidden">
                 {entries.map((e) => {
                   const busy = deletingId === e.id;
                   return (
@@ -428,7 +439,7 @@ export default function ExpenseLedgerModal({
                       className="flex items-start justify-between gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors"
                     >
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 leading-snug">
+                        <p className="text-sm font-semibold text-slate-900 dark:text-slate-100 leading-snug">
                           {e.description}
                         </p>
                         <div className="flex items-center gap-2 mt-1 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums flex-wrap">
@@ -453,7 +464,7 @@ export default function ExpenseLedgerModal({
                                   href={e.invoiceUrl}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1 text-primary-700 dark:text-primary-400 hover:underline font-semibold"
+                                  className="inline-flex items-center gap-1 text-primary-700 dark:text-primary-300 hover:underline font-semibold"
                                   title={e.invoiceUrl}
                                 >
                                   <LinkIcon size={11} />
@@ -484,7 +495,7 @@ export default function ExpenseLedgerModal({
                         disabled={busy}
                         title="حذف هذا المصروف من السجل"
                         aria-label={`حذف ${e.description}`}
-                        className="text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/15 disabled:opacity-60 transition-colors shrink-0"
+                        className="sw-tap inline-flex items-center justify-center p-1.5 rounded-control text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/15 disabled:opacity-60 transition-colors shrink-0"
                       >
                         {busy
                           ? <Loader2 size={14} className="animate-spin" />

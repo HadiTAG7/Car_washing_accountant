@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { LogIn, Loader2, Mail, ArrowRight, Eye, EyeOff } from 'lucide-react';
-import SweaterLogo from './SweaterLogo';
+import { SweaterWordmark } from './SweaterLogo';
 import { BRAND } from '../data/initialData';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { useAuth } from '../hooks/useAuth';
@@ -87,30 +87,22 @@ export default function LoginScreen() {
     : 'أدخل بريدك الإلكتروني وسنرسل لك رابط إعادة تعيين كلمة المرور';
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary-800 via-primary-900 to-primary-950 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Brand */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-3 mb-4">
-            <div className="w-14 h-14 rounded-2xl overflow-hidden shadow-xl">
-              <SweaterLogo className="w-full h-full" />
-            </div>
-            <div className="text-right">
-              <p className="text-white text-xl font-extrabold tracking-tight">{BRAND.nameAr}</p>
-              <p className="text-primary-300 text-xs">{BRAND.nameEn}</p>
-            </div>
-          </div>
-          <p className="text-primary-200 text-sm">{BRAND.tagline}</p>
+          <SweaterWordmark className="h-12 w-auto mx-auto mb-4" />
+          <p className="text-slate-500 dark:text-slate-400 text-sm">{BRAND.tagline}</p>
         </div>
 
         {/* Card */}
-        <div className="bg-white rounded-2xl shadow-2xl p-7">
-          <h2 className="text-lg font-bold text-slate-800 mb-1">{heading}</h2>
-          <p className="text-xs text-slate-500 mb-6">{subheading}</p>
+        <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 p-7" style={{ borderRadius: 'var(--sw-radius-card)', boxShadow: 'var(--sw-shadow-card)' }}>
+          <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-1">{heading}</h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">{subheading}</p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
                 البريد الإلكتروني
               </label>
               <input
@@ -121,7 +113,7 @@ export default function LoginScreen() {
                 dir="ltr"
                 required
                 autoComplete="email"
-                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-400 text-left"
+                className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:border-primary-500 text-left" style={{ borderRadius: 'var(--sw-radius-control)' }}
               />
             </div>
 
@@ -129,13 +121,13 @@ export default function LoginScreen() {
             {mode !== 'forgot' && (
               <div>
                 <div className="flex items-baseline justify-between mb-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
                     كلمة المرور
                   </label>
                   <button
                     type="button"
                     onClick={() => switchMode('forgot')}
-                    className="text-[11px] text-primary-700 font-semibold hover:underline"
+                    className="text-[11px] text-primary-700 dark:text-primary-300 font-semibold hover:underline"
                   >
                     نسيت كلمة المرور؟
                   </button>
@@ -149,14 +141,14 @@ export default function LoginScreen() {
                     required
                     minLength={6}
                     autoComplete="current-password"
-                    className="w-full pr-4 pl-10 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-400"
+                    className="w-full pr-4 pl-11 py-3 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:border-primary-500" style={{ borderRadius: 'var(--sw-radius-control)' }}
                   />
                   <button
                     type="button"
                     onClick={() => setShowPw((v) => !v)}
                     aria-label={showPw ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور'}
                     title={showPw ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور'}
-                    className="absolute left-2.5 top-1/2 -translate-y-1/2 p-1 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+                    className="sw-tap absolute left-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center justify-center"
                   >
                     {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
@@ -165,12 +157,12 @@ export default function LoginScreen() {
             )}
 
             {error && (
-              <div className="bg-red-50 border border-red-100 text-red-700 text-xs px-3 py-2 rounded-lg">
+              <div className="bg-rose-50 dark:bg-rose-500/10 border border-rose-100 dark:border-rose-500/30 text-rose-700 dark:text-rose-300 text-xs px-3 py-2.5 rounded-lg" role="alert">
                 {error}
               </div>
             )}
             {notice && (
-              <div className="bg-emerald-50 border border-emerald-100 text-emerald-700 text-xs px-3 py-2 rounded-lg leading-relaxed">
+              <div className="bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-xs px-3 py-2.5 rounded-lg leading-relaxed" role="status">
                 {notice}
               </div>
             )}
@@ -178,7 +170,7 @@ export default function LoginScreen() {
             <button
               type="submit"
               disabled={busy}
-              className="w-full bg-primary-800 hover:bg-primary-900 disabled:opacity-60 text-white py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-colors shadow-sm"
+              className="sw-button sw-button--sm sw-button--primary w-full"
             >
               {busy ? (
                 <><Loader2 size={16} className="animate-spin" /> جارٍ المعالجة...</>
@@ -193,11 +185,11 @@ export default function LoginScreen() {
           {/* Accounts are created from inside the dashboard (partner
               linking) — no public self-signup link. */}
           {mode === 'forgot' && (
-            <div className="text-center mt-5 text-xs text-slate-500">
+            <div className="text-center mt-5 text-xs text-slate-500 dark:text-slate-400">
               <button
                 type="button"
                 onClick={() => switchMode('signin')}
-                className="inline-flex items-center gap-1 text-primary-700 font-semibold hover:underline"
+                className="inline-flex items-center gap-1 text-primary-700 dark:text-primary-300 font-semibold hover:underline"
               >
                 <ArrowRight size={12} />
                 رجوع إلى تسجيل الدخول
@@ -206,8 +198,10 @@ export default function LoginScreen() {
           )}
         </div>
 
-        <p className="text-center text-primary-300 text-[11px] mt-6">
-          © {new Date().getFullYear()} {BRAND.nameEn}. جميع الحقوق محفوظة.
+        <p className="text-center text-slate-500 dark:text-slate-400 text-[11px] mt-6 leading-relaxed">
+          © {new Date().getFullYear()} شركة هادي الغانم | Hadi Alghanim Company
+          <br />
+          جميع الحقوق محفوظة.
         </p>
       </div>
     </div>

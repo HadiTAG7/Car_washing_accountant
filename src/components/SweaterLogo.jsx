@@ -1,13 +1,32 @@
 /**
- * Sweater brand mark — a sweater silhouette with a triple-button placket
- * on the franchise's signature orange. Self-contained: the rounded orange
- * background is baked into the SVG so the calling site only needs to set
- * outer dimensions (and optional shadow / clip).
+ * Sweater brand marks.
  *
- * Why inline SVG (not <img>): scales crisp at any DPR, ships zero extra
- * network requests, inherits dark-mode wrappers, and can be color-tuned
- * via CSS later without a new asset.
+ * `SweaterWordmark` renders the OFFICIAL lockup from sweater.sa — the
+ * "SWEATER / سويتر" wordmark beside the garment icon — bundled locally at
+ * /brand/sweater-logo.png so it also resolves inside the offline Android
+ * build, where a remote asset would silently fail to load.
+ *
+ * `SweaterLogo` (default) stays an inline SVG of the icon alone: square
+ * slots (sidebar chip, small badges) need a mark that holds its shape at
+ * 32–56px, where the wide lockup would be illegible. It also ships zero
+ * requests and stays crisp at any DPR.
  */
+
+/** Official horizontal lockup — wordmark + icon. Use where width allows. */
+export function SweaterWordmark({ className = '', title = 'سويتر | Sweater' }) {
+  return (
+    <img
+      src="/brand/sweater-logo.png"
+      alt={title}
+      className={className}
+      width="524"
+      height="216"
+      decoding="async"
+    />
+  );
+}
+
+/** Icon-only mark on the brand orange — for square slots. */
 export default function SweaterLogo({ className = '', title = 'سويتر' }) {
   return (
     <svg
@@ -18,9 +37,8 @@ export default function SweaterLogo({ className = '', title = 'سويتر' }) {
       className={className}
     >
       <title>{title}</title>
-      {/* Brand-orange rounded square — matches the existing rounded-xl
-          radius (≈ 19% on a 64-unit viewBox). */}
-      <rect width="64" height="64" rx="12" fill="#ea580c" />
+      {/* Brand-orange rounded square — --sw-brand-500 from the token layer. */}
+      <rect width="64" height="64" rx="14" fill="#ef5b0c" />
       {/* Sweater silhouette: two shoulder peaks → small neckline V →
           straight body → side-split hem with a central notch. */}
       <path

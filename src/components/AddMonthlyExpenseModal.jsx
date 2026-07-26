@@ -157,10 +157,13 @@ export default function AddMonthlyExpenseModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm" onClick={onClose} />
 
-      <div className="relative bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-lg mx-4 my-4 max-h-[92vh] overflow-y-auto">
-        <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60">
-          <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-            <span className="bg-accent-50 text-accent-600 w-9 h-9 rounded-xl flex items-center justify-center">
+      <div
+        className="relative bg-white dark:bg-slate-900 rounded-card border border-slate-100 dark:border-slate-800 w-full max-w-lg mx-4 my-4 max-h-[92vh] overflow-y-auto"
+        style={{ boxShadow: 'var(--sw-shadow-overlay)' }}
+      >
+        <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800">
+          <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+            <span className="bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300 w-9 h-9 rounded-control flex items-center justify-center">
               <HeaderIcon size={18} />
             </span>
             {editing ? 'تعديل مصروف شهري' : 'إضافة مصروف شهري'}
@@ -168,7 +171,7 @@ export default function AddMonthlyExpenseModal({
           <button
             type="button"
             onClick={onClose}
-            className="text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:text-slate-300 p-1 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+            className="sw-tap inline-flex items-center justify-center p-1 rounded-control text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
             aria-label="إغلاق"
           >
             <X size={20} />
@@ -189,7 +192,7 @@ export default function AddMonthlyExpenseModal({
               placeholder="مثال: إيجار الورشة الشهري"
               autoFocus
               required
-              className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+              className="w-full px-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:border-primary-500 transition-colors"
             />
           </div>
 
@@ -214,7 +217,7 @@ export default function AddMonthlyExpenseModal({
                     setCatError('');
                     setNewCatLabel('');
                   }}
-                  className="inline-flex items-center gap-1.5 px-3 py-2.5 border border-primary-200 bg-primary-50 hover:bg-primary-100 text-primary-700 rounded-xl text-sm font-semibold transition-colors"
+                  className="sw-button sw-button--sm sw-button--secondary shrink-0"
                   title="إضافة تصنيف جديد"
                 >
                   <Plus size={16} />
@@ -236,21 +239,24 @@ export default function AddMonthlyExpenseModal({
                     }}
                     placeholder="اسم التصنيف الجديد"
                     autoFocus
-                    className="flex-1 px-4 py-3 border border-slate-300 bg-white dark:bg-slate-800 rounded-lg text-sm text-slate-900 dark:text-slate-100 font-medium placeholder:text-slate-400 dark:text-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-400"
+                    className="flex-1 px-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:border-primary-500 transition-colors"
                   />
                   <button
                     type="button"
                     onClick={handleSaveNewCategory}
                     disabled={!newCatLabel.trim() || addingCat}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-primary-800 hover:bg-primary-900 dark:bg-primary-600 dark:hover:bg-primary-500 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white rounded-lg text-sm font-semibold shadow-sm transition-colors"
+                    className="sw-button sw-button--sm sw-button--primary shrink-0"
                   >
                     <Check size={16} strokeWidth={2.5} />
                     {addingCat ? '...' : 'حفظ'}
                   </button>
                 </div>
                 {catError && (
-                  <div className="mt-2 flex items-start gap-2 bg-red-50 border border-red-100 rounded-lg px-3 py-2 text-[12px] text-red-700 font-medium leading-relaxed">
-                    <AlertTriangle size={13} className="mt-0.5 shrink-0 text-red-500" />
+                  <div
+                    role="alert"
+                    className="mt-2 flex items-start gap-2 bg-rose-50 dark:bg-rose-500/10 border border-rose-100 dark:border-rose-500/30 rounded-control px-3 py-2 text-[12px] text-rose-700 dark:text-rose-300 font-medium leading-relaxed"
+                  >
+                    <AlertTriangle size={13} className="mt-0.5 shrink-0" />
                     <span className="flex-1 break-words">{catError}</span>
                   </div>
                 )}
@@ -272,7 +278,7 @@ export default function AddMonthlyExpenseModal({
                 min="1"
                 step="1"
                 required
-                className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+                className="w-full px-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm tabular-nums focus:outline-none focus:border-primary-500 transition-colors"
               />
             </div>
             <div>
@@ -289,7 +295,7 @@ export default function AddMonthlyExpenseModal({
                 min="0"
                 step="any"
                 required
-                className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+                className="w-full px-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm tabular-nums focus:outline-none focus:border-primary-500 transition-colors"
               />
             </div>
           </div>
@@ -303,10 +309,10 @@ export default function AddMonthlyExpenseModal({
               <button
                 type="button"
                 onClick={() => selectRecurrence('monthly')}
-                className={`flex items-center justify-center gap-2 px-3 py-3 rounded-xl border text-sm font-semibold transition-colors ${
+                className={`flex items-center justify-center gap-2 px-3 py-3 rounded-control border text-sm font-semibold transition-colors ${
                   !isOneTime
-                    ? 'border-primary-600 bg-primary-50 dark:bg-primary-500/15 text-primary-800 dark:text-primary-300 ring-2 ring-primary-200 dark:ring-primary-500/30'
-                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/60'
+                    ? 'border-primary-500 dark:border-primary-500/40 bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300'
+                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
                 }`}
                 aria-pressed={!isOneTime}
               >
@@ -316,10 +322,10 @@ export default function AddMonthlyExpenseModal({
               <button
                 type="button"
                 onClick={() => selectRecurrence('one_time')}
-                className={`flex items-center justify-center gap-2 px-3 py-3 rounded-xl border text-sm font-semibold transition-colors ${
+                className={`flex items-center justify-center gap-2 px-3 py-3 rounded-control border text-sm font-semibold transition-colors ${
                   isOneTime
-                    ? 'border-accent-600 bg-accent-50 dark:bg-accent-500/15 text-accent-800 dark:text-accent-300 ring-2 ring-accent-200 dark:ring-accent-500/30'
-                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/60'
+                    ? 'border-primary-500 dark:border-primary-500/40 bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300'
+                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
                 }`}
                 aria-pressed={isOneTime}
               >
@@ -347,7 +353,7 @@ export default function AddMonthlyExpenseModal({
                   value={form.loggedDate}
                   onChange={handleChange}
                   required
-                  className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+                  className="w-full px-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm tabular-nums focus:outline-none focus:border-primary-500 transition-colors"
                 />
                 <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
                   سيُحتسب هذا المصروف في الشهر الذي يقع فيه تاريخ الصرف فقط.
@@ -368,7 +374,7 @@ export default function AddMonthlyExpenseModal({
                   max="31"
                   step="1"
                   required
-                  className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+                  className="w-full px-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm tabular-nums focus:outline-none focus:border-primary-500 transition-colors"
                 />
                 <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
                   سيقوم النظام بتذكيرك تلقائياً يوم {paymentDayNum} من كل شهر
@@ -384,7 +390,7 @@ export default function AddMonthlyExpenseModal({
                 name="paymentStatus"
                 value={form.paymentStatus}
                 onChange={handleChange}
-                className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+                className="w-full px-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:border-primary-500 transition-colors"
               >
                 <option value="pending">قيد الانتظار</option>
                 <option value="paid">مدفوع</option>
@@ -393,9 +399,9 @@ export default function AddMonthlyExpenseModal({
           </div>
 
           {/* Live total — quantity × unit cost; label flips with recurrence. */}
-          <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 rounded-xl p-4 text-sm">
+          <div className="bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-smallcard p-4 text-sm">
             <div className="flex items-baseline justify-between gap-3">
-              <span className="text-slate-600 dark:text-slate-400">
+              <span className="text-slate-500 dark:text-slate-400">
                 {isOneTime ? 'إجمالي تكلفة هذه الدفعة:' : 'إجمالي التكلفة الشهرية:'}
               </span>
               <span className="font-bold text-slate-900 dark:text-slate-100 tabular-nums">
@@ -410,7 +416,7 @@ export default function AddMonthlyExpenseModal({
             <button
               type="submit"
               disabled={!isValid || submitting}
-              className="flex-1 inline-flex items-center justify-center gap-2 bg-primary-800 hover:bg-primary-900 dark:bg-primary-600 dark:hover:bg-primary-500 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white py-2.5 px-4 rounded-xl text-sm font-semibold transition-colors shadow-sm"
+              className="sw-button sw-button--sm sw-button--primary flex-1"
             >
               {editing ? <Pencil size={18} /> : <Plus size={18} />}
               {submitting
@@ -420,7 +426,7 @@ export default function AddMonthlyExpenseModal({
             <button
               type="button"
               onClick={onClose}
-              className="px-6 py-2.5 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/60 rounded-xl text-sm font-medium transition-colors"
+              className="sw-button sw-button--sm sw-button--secondary"
             >
               إلغاء
             </button>

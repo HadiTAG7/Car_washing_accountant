@@ -5,7 +5,7 @@ import {
 import { formatCurrency } from '../data/initialData';
 import { downloadCsv } from '../lib/exportCsv';
 import TopBar from './TopBar';
-import { Card, SectionHeader, StatCard, EmptyState } from './UI';
+import { Card, SectionHeader, StatCard, EmptyState, SecondaryButton } from './UI';
 import LoadingState from './LoadingState';
 import ErrorState, { SetupRequiredCard } from './ErrorState';
 import FinancialDetailsModal from './FinancialDetailsModal';
@@ -54,7 +54,13 @@ function StatementRow({ label, amount, kind = 'minus', tone = 'auto', onClick })
   // the minus inside the amount so the figure matches the KPI and CSV.
   const negMark = (isSubtotal || isFinal) && amount < 0 ? '−' : '';
 
-  let rowClass = '';
+  // Plain line items get the standard table hairline. Banner rows (both
+  // subtotals + the final row) are skipped on purpose: they carry their own
+  // coloured `border-t-2`, and a second border-colour utility on the same
+  // element would fight it.
+  let rowClass = (isSubtotal || isExpenseSubtotal || isFinal)
+    ? ''
+    : 'border-b border-slate-50 dark:border-slate-800/60';
   // Both subtotal kinds share the same slate banner styling — the gross
   // profit subtotal and the expenses tally read as parallel structural
   // dividers in the statement.
@@ -118,7 +124,7 @@ function StatementRow({ label, amount, kind = 'minus', tone = 'auto', onClick })
             <ListFilter
               size={13}
               strokeWidth={2.2}
-              className="text-slate-400 dark:text-slate-500 group-hover:text-primary-700 dark:group-hover:text-primary-400 transition-colors shrink-0"
+              className="text-slate-500 dark:text-slate-400 group-hover:text-primary-700 dark:group-hover:text-primary-400 transition-colors shrink-0"
               aria-hidden="true"
             />
           )}
@@ -352,15 +358,18 @@ export default function FinancialSummaryPage() {
         )}
 
         {/* ── Period selector ─────────────────────────────────────── */}
-        <div className="rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm dark:shadow-slate-950/40 p-5 transition-colors duration-200">
+        <div
+          className="rounded-card border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 p-5 transition-colors duration-200"
+          style={{ boxShadow: 'var(--sw-shadow-card)' }}
+        >
           <div className="flex items-start gap-4">
-            <div className="bg-primary-700 dark:bg-primary-600 text-white w-12 h-12 rounded-2xl flex items-center justify-center shrink-0">
+            <div className="bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300 w-12 h-12 rounded-control flex items-center justify-center shrink-0">
               <Calendar size={22} strokeWidth={2.2} />
             </div>
             <div className="flex-1 min-w-0">
               <label
                 htmlFor="period-selector"
-                className="block text-xs text-primary-700 dark:text-primary-300 font-bold tracking-wide"
+                className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5"
               >
                 فترة التقرير (الشهر)
               </label>
@@ -368,7 +377,7 @@ export default function FinancialSummaryPage() {
                 id="period-selector"
                 value={selectedMonth}
                 onChange={(e) => setSelectedMonth(e.target.value)}
-                className="mt-1.5 w-full max-w-xs px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-base font-bold text-slate-900 dark:text-slate-100 tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400 dark:focus:ring-primary-500/40 transition-colors duration-200"
+                className="w-full max-w-xs px-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm font-bold tabular-nums focus:outline-none focus:border-primary-500 transition-colors"
               >
                 {availableMonths.map((ym) => (
                   <option key={ym} value={ym}>{formatMonthLabel(ym)}</option>
@@ -417,8 +426,8 @@ export default function FinancialSummaryPage() {
                 title={`هيكل قائمة الدخل — ${monthLabel}`}
                 subtitle="بيان رسمي للإيرادات التشغيلية، التكاليف، وصافي الربح للفترة"
                 action={
-                  <button
-                    type="button"
+                  <SecondaryButton
+                    icon={Download}
                     onClick={() => downloadCsv(
                       `قائمة-الدخل-${selectedMonth}`,
                       ['البند', 'المبلغ'],
@@ -440,11 +449,9 @@ export default function FinancialSummaryPage() {
                         ['صافي الربح النهائي', Number(finalNetProfit.toFixed(2))],
                       ],
                     )}
-                    className="inline-flex items-center gap-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 py-2 rounded-lg text-xs font-semibold transition-colors"
                   >
-                    <Download size={14} />
                     تصدير CSV
-                  </button>
+                  </SecondaryButton>
                 }
               />
               <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">

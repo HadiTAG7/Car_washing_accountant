@@ -71,10 +71,13 @@ export default function ChangePasswordModal({ isOpen, onClose, userEmail }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm" onClick={onClose} />
 
-      <div className="relative bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-md mx-4 my-4 max-h-[92vh] overflow-y-auto border border-slate-100 dark:border-slate-800">
-        <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60">
-          <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-            <span className="bg-primary-50 dark:bg-primary-500/20 text-primary-700 dark:text-primary-300 w-9 h-9 rounded-xl flex items-center justify-center">
+      <div
+        className="relative bg-white dark:bg-slate-900 rounded-card border border-slate-100 dark:border-slate-800 w-full max-w-md mx-4 my-4 max-h-[92vh] overflow-y-auto"
+        style={{ boxShadow: 'var(--sw-shadow-overlay)' }}
+      >
+        <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800">
+          <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+            <span className="bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300 w-9 h-9 rounded-control flex items-center justify-center shrink-0">
               <KeyRound size={18} />
             </span>
             <span className="min-w-0">
@@ -89,7 +92,7 @@ export default function ChangePasswordModal({ isOpen, onClose, userEmail }) {
           <button
             type="button"
             onClick={onClose}
-            className="text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 p-1 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors shrink-0"
+            className="sw-tap flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 p-1 rounded-control hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors shrink-0"
             aria-label="إغلاق"
           >
             <X size={20} />
@@ -98,7 +101,10 @@ export default function ChangePasswordModal({ isOpen, onClose, userEmail }) {
 
         {success ? (
           <div className="p-5 sm:p-6">
-            <div className="bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-100 dark:border-emerald-500/40 text-emerald-800 dark:text-emerald-200 rounded-xl p-4 text-sm flex items-start gap-2">
+            <div
+              className="bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300 rounded-control p-4 text-sm flex items-start gap-2"
+              role="status"
+            >
               <CheckCircle2 size={18} className="shrink-0 mt-0.5" />
               <div>
                 <p className="font-bold">✓ تم تحديث كلمة المرور بنجاح</p>
@@ -124,9 +130,9 @@ export default function ChangePasswordModal({ isOpen, onClose, userEmail }) {
                 minLength={6}
                 autoFocus
                 autoComplete="new-password"
-                className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-colors"
+                className="w-full px-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:border-primary-500 transition-colors"
               />
-              <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">٦ أحرف على الأقل.</p>
+              <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">٦ أحرف على الأقل.</p>
             </div>
 
             <div>
@@ -142,19 +148,22 @@ export default function ChangePasswordModal({ isOpen, onClose, userEmail }) {
                 required
                 minLength={6}
                 autoComplete="new-password"
-                className={`w-full px-4 py-2.5 border rounded-xl text-sm text-slate-900 dark:text-white bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent transition-colors ${
+                className={`w-full px-4 py-3 rounded-control border bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:border-primary-500 transition-colors ${
                   confirmPassword && !passwordsMatch
-                    ? 'border-red-300 dark:border-red-500/50'
+                    ? 'border-rose-300 dark:border-rose-500/50'
                     : 'border-slate-200 dark:border-slate-700'
                 }`}
               />
               {confirmPassword && !passwordsMatch && (
-                <p className="mt-1 text-[11px] text-red-600 dark:text-red-400">كلمتا المرور غير متطابقتين.</p>
+                <p className="mt-1 text-[11px] text-rose-600 dark:text-rose-400">كلمتا المرور غير متطابقتين.</p>
               )}
             </div>
 
             {error && (
-              <div className="bg-red-50 dark:bg-red-500/15 border border-red-100 dark:border-red-500/40 text-red-700 dark:text-red-300 text-xs px-3 py-2 rounded-lg">
+              <div
+                className="bg-rose-50 dark:bg-rose-500/10 border border-rose-100 dark:border-rose-500/30 text-rose-700 dark:text-rose-300 text-xs px-3 py-2.5 rounded-control leading-relaxed"
+                role="alert"
+              >
                 {error}
               </div>
             )}
@@ -163,7 +172,7 @@ export default function ChangePasswordModal({ isOpen, onClose, userEmail }) {
               <button
                 type="submit"
                 disabled={!isValid || busy}
-                className="flex-1 inline-flex items-center justify-center gap-2 bg-primary-800 hover:bg-primary-900 dark:bg-primary-600 dark:hover:bg-primary-500 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white py-2.5 px-4 rounded-xl text-sm font-semibold transition-colors shadow-sm"
+                className="sw-button sw-button--sm sw-button--primary flex-1"
               >
                 {busy ? (
                   <><Loader2 size={16} className="animate-spin" /> جارٍ الحفظ...</>
@@ -174,7 +183,7 @@ export default function ChangePasswordModal({ isOpen, onClose, userEmail }) {
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2.5 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl text-sm font-medium transition-colors"
+                className="sw-button sw-button--sm sw-button--secondary"
               >
                 إلغاء
               </button>

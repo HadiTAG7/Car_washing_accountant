@@ -33,7 +33,7 @@ export default function AdminPartnerSelector() {
 
   return (
     <div
-      className="hidden md:flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pr-2 pl-1 py-1 shadow-sm"
+      className="hidden md:flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-control pr-2 pl-1 py-1"
       title="محاكاة عرض شريك معيّن"
     >
       <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-500 dark:text-slate-400 pr-1">

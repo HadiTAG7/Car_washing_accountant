@@ -113,19 +113,20 @@ export default function CategorySelect({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={ariaLabel}
-        className="w-full flex items-center justify-between gap-2 px-4 py-3 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 font-medium bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent disabled:opacity-60 disabled:cursor-not-allowed"
+        className="w-full flex items-center justify-between gap-2 px-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm font-medium focus:outline-none focus:border-primary-500 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
       >
         <span className="flex-1 text-right truncate">{displayLabel}</span>
         <ChevronDown
           size={16}
-          className={`shrink-0 text-slate-400 dark:text-slate-500 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+          className={`shrink-0 text-slate-500 dark:text-slate-400 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
         />
       </button>
 
       {open && !empty && (
         <ul
           role="listbox"
-          className="absolute top-full right-0 left-0 mt-1 z-30 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl overflow-hidden max-h-64 overflow-y-auto m-0 p-0 list-none"
+          className="absolute top-full right-0 left-0 mt-1 z-30 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-control overflow-hidden max-h-64 overflow-y-auto m-0 p-0 list-none"
+          style={{ boxShadow: 'var(--sw-shadow-overlay)' }}
         >
           {safeCategories.map((cat) => {
             const active     = cat.id === value;
@@ -139,8 +140,8 @@ export default function CategorySelect({
                   onClick={() => { onChange(cat.id); setOpen(false); }}
                   className={`group relative w-full block px-4 py-2.5 text-right text-sm transition-colors ${
                     active
-                      ? 'bg-primary-50 dark:bg-primary-500/20 text-primary-800 dark:text-primary-200 font-semibold'
-                      : 'text-slate-800 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60'
+                      ? 'bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300 font-semibold'
+                      : 'text-slate-800 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800'
                   } ${canDelete ? 'pl-10' : ''}`}
                 >
                   {cat.label}
@@ -155,7 +156,7 @@ export default function CategorySelect({
                       }}
                       title="حذف هذا التصنيف"
                       aria-label={`حذف التصنيف ${cat.label}`}
-                      className={`absolute left-2 top-1/2 -translate-y-1/2 inline-flex items-center justify-center w-7 h-7 rounded-lg text-rose-500 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/15 hover:scale-110 transition-transform duration-150 ${
+                      className={`sw-tap absolute left-2 top-1/2 -translate-y-1/2 inline-flex items-center justify-center w-7 h-7 rounded-control text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/15 hover:scale-110 transition-transform duration-150 ${
                         isDeleting
                           ? 'opacity-100 cursor-wait'
                           : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100'

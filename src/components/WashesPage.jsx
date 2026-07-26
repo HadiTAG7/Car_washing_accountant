@@ -6,6 +6,7 @@ import { formatCurrency, formatNumber } from '../data/initialData';
 import TopBar from './TopBar';
 import {
   Card, SectionHeader, StatCard, PrimaryButton,
+  EmptyState as UIEmptyState,
 } from './UI';
 import AddWashModal from './AddWashModal';
 import LoadingState from './LoadingState';
@@ -20,9 +21,9 @@ function WashStatusPill({ status, onChange, disabled }) {
   const isCompleted = status === 'مكتملة';
   const next        = isCompleted ? 'قيد التنفيذ' : 'مكتملة';
   const classes = isCompleted
-    ? 'bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-emerald-100'
-    : 'bg-amber-50 text-amber-700 border-amber-100 hover:bg-amber-100';
-  const dot = isCompleted ? 'bg-emerald-500' : 'bg-amber-500';
+    ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-100 dark:border-emerald-500/30 hover:bg-emerald-100 dark:hover:bg-emerald-500/20'
+    : 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-100 dark:border-amber-500/30 hover:bg-amber-100 dark:hover:bg-amber-500/20';
+  const dot = isCompleted ? 'bg-emerald-600' : 'bg-amber-500';
   return (
     <button
       type="button"
@@ -39,24 +40,22 @@ function WashStatusPill({ status, onChange, disabled }) {
   );
 }
 
+// Thin wrapper over the shared EmptyState recipe so this page's "no washes
+// yet" moment looks identical to every other empty table in the app.
 function EmptyState({ onAdd, canMutate }) {
   return (
-    <div className="flex flex-col items-center justify-center py-14 text-center">
-      <div className="bg-emerald-50 text-emerald-600 w-14 h-14 rounded-2xl flex items-center justify-center mb-4">
-        <Car size={26} />
-      </div>
-      <p className="text-base font-bold text-slate-800 dark:text-slate-200 mb-1">لم تُسجَّل أي غسلة بعد</p>
-      <p className="text-sm text-slate-500 dark:text-slate-400 mb-5 max-w-sm">
-        {canMutate
-          ? 'ابدأ بتسجيل أول غسلة. ستظهر تلقائياً في عداد الغسلات داخل تبويب المصاريف المتغيرة.'
-          : 'لم يتم تسجيل أي غسلة من قِبَل المشرف بعد.'}
-      </p>
-      {canMutate && (
+    <UIEmptyState
+      icon={Car}
+      title="لم تُسجَّل أي غسلة بعد"
+      hint={canMutate
+        ? 'ابدأ بتسجيل أول غسلة. ستظهر تلقائياً في عداد الغسلات داخل تبويب المصاريف المتغيرة.'
+        : 'لم يتم تسجيل أي غسلة من قِبَل المشرف بعد.'}
+      action={canMutate ? (
         <PrimaryButton icon={Plus} onClick={onAdd}>
           إضافة غسلة جديدة
         </PrimaryButton>
-      )}
-    </div>
+      ) : null}
+    />
   );
 }
 
@@ -239,7 +238,7 @@ export default function WashesPage() {
                     return (
                       <tr
                         key={w.id}
-                        className="border-b border-slate-50 dark:border-slate-800 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
+                        className="border-b border-slate-50 dark:border-slate-800/60 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors"
                       >
                         <td className="py-3 px-4 whitespace-normal break-words min-w-[180px] font-medium text-slate-800 dark:text-slate-200 align-top">
                           {label}
@@ -256,9 +255,9 @@ export default function WashesPage() {
                         <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums font-bold text-slate-900 dark:text-slate-100 align-top">
                           {formatCurrency(total * scalingFactor)}
                         </td>
-                        <td className="py-3 px-4 whitespace-nowrap text-slate-600 dark:text-slate-400 align-top">
+                        <td className="py-3 px-4 whitespace-nowrap tabular-nums text-slate-600 dark:text-slate-400 align-top">
                           <span className="inline-flex items-center gap-1.5 tabular-nums">
-                            <CalendarClock size={13} className="text-slate-400 dark:text-slate-500" />
+                            <CalendarClock size={13} className="text-slate-500 dark:text-slate-400" />
                             {formatWashDate(w.washDate)}
                           </span>
                         </td>
@@ -275,7 +274,7 @@ export default function WashesPage() {
                               <button
                                 type="button"
                                 onClick={() => openEditModal(w)}
-                                className="text-slate-400 dark:text-slate-500 hover:text-primary-700 p-1.5 rounded-lg hover:bg-primary-50 transition-colors"
+                                className="sw-tap inline-flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-primary-700 dark:hover:text-primary-300 p-1.5 rounded-control hover:bg-primary-50 dark:hover:bg-primary-500/10 transition-colors"
                                 aria-label={`تعديل دفعة ${label}`}
                                 title="تعديل الدفعة"
                               >
@@ -284,7 +283,7 @@ export default function WashesPage() {
                               <button
                                 type="button"
                                 onClick={() => handleDelete(w)}
-                                className="text-slate-400 dark:text-slate-500 hover:text-accent-600 p-1.5 rounded-lg hover:bg-accent-50 transition-colors"
+                                className="sw-tap inline-flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-rose-700 dark:hover:text-rose-300 p-1.5 rounded-control hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors"
                                 aria-label={`حذف دفعة ${label}`}
                                 title="حذف الدفعة"
                               >

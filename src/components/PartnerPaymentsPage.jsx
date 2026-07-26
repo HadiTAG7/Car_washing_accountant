@@ -45,7 +45,7 @@ function MethodPill({ method }) {
   const meta = METHOD_META[method] || METHOD_META.bank_transfer;
   const Icon = meta.icon;
   return (
-    <span className={`inline-flex items-center gap-1.5 text-[11px] font-bold px-2 py-1 rounded-md border ${meta.cls}`}>
+    <span className={`inline-flex items-center gap-1.5 text-[11px] font-bold px-2 py-1 rounded-control border ${meta.cls}`}>
       <Icon size={11} strokeWidth={2.5} />
       {meta.label}
     </span>
@@ -188,7 +188,7 @@ export default function PartnerPaymentsPage() {
         <Card className="p-5 sm:p-6">
           <div className="flex flex-col sm:flex-row sm:items-end gap-4">
             <div className="flex-1 min-w-0">
-              <label className="block text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-2">
+              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
                 اختر الشريك
               </label>
               <div className="flex gap-2">
@@ -229,30 +229,22 @@ export default function PartnerPaymentsPage() {
             value={formatCurrency(paid)}
             sub={`${partnerPayments.length} ${partnerPayments.length === 1 ? 'دفعة مسجّلة' : 'دفعة مسجّلة'}`}
           />
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 p-4 sm:p-5 shadow-sm dark:shadow-slate-950/40 transition-colors duration-200">
-            <div className="flex items-start justify-between">
-              <div className={`w-11 h-11 rounded-xl flex items-center justify-center ${
-                settled
-                  ? 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-400'
-                  : 'bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400'
-              }`}>
-                <Wallet size={20} strokeWidth={2.2} />
-              </div>
-            </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-4 mb-1">المتبقي للاستكمال</p>
-            <p className="text-2xl font-extrabold tabular-nums">
-              {settled ? (
-                <span className="text-emerald-600 dark:text-emerald-400">✓ مسدّد بالكامل</span>
-              ) : (
-                <span className="text-amber-600 dark:text-amber-400">{formatCurrency(balance)}</span>
-              )}
-            </p>
-            <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
-              {settled
-                ? 'الشريك سدّد كامل رسومه المستحقة'
-                : 'الفرق بين المطلوب وما تم تحصيله'}
-            </p>
-          </div>
+          {/* Remaining balance — same StatCard recipe as its two siblings;
+              the tone flips with the settlement state (emerald = paid in
+              full, amber = still due) and the figure keeps that colour. */}
+          <StatCard
+            icon={Wallet}
+            tone={settled ? 'emerald' : 'amber'}
+            label="المتبقي للاستكمال"
+            value={settled ? (
+              <span className="text-emerald-600 dark:text-emerald-400">✓ مسدّد بالكامل</span>
+            ) : (
+              <span className="text-amber-700 dark:text-amber-400">{formatCurrency(balance)}</span>
+            )}
+            sub={settled
+              ? 'الشريك سدّد كامل رسومه المستحقة'
+              : 'الفرق بين المطلوب وما تم تحصيله'}
+          />
         </div>
 
         {/* ── Payment history table ──────────────────────────── */}
@@ -310,7 +302,7 @@ export default function PartnerPaymentsPage() {
                   {partnerPayments.map((p) => (
                     <tr
                       key={p.id}
-                      className="border-b border-slate-50 dark:border-slate-800 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
+                      className="border-b border-slate-50 dark:border-slate-800/60 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors"
                     >
                       <td className="py-3 px-4 whitespace-nowrap tabular-nums text-slate-700 dark:text-slate-300">
                         {formatDate(p.paymentDate)}
@@ -329,7 +321,7 @@ export default function PartnerPaymentsPage() {
                           <button
                             type="button"
                             onClick={() => handleDelete(p)}
-                            className="text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/15 transition-colors"
+                            className="sw-tap inline-flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 p-1.5 rounded-control hover:bg-rose-50 dark:hover:bg-rose-500/15 transition-colors"
                             aria-label={`حذف دفعة ${formatDate(p.paymentDate)}`}
                             title="حذف هذه الدفعة"
                           >

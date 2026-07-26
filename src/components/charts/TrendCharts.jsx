@@ -92,8 +92,8 @@ function Tooltip({ at, children }) {
   return (
     <div
       dir="rtl"
-      className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 dark:text-slate-200 shadow-md whitespace-nowrap"
-      style={{ left, top, marginTop: '-6px' }}
+      className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 dark:text-slate-200 whitespace-nowrap"
+      style={{ left, top, marginTop: '-6px', boxShadow: 'var(--sw-shadow-card-hover)' }}
     >
       {children}
     </div>
@@ -104,19 +104,19 @@ function Tooltip({ at, children }) {
 function DataTable({ head, rows }) {
   return (
     <details className="mt-3 text-xs">
-      <summary className="cursor-pointer select-none text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">
+      <summary className="cursor-pointer select-none text-slate-500 dark:text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">
         عرض البيانات كجدول
       </summary>
       <div className="mt-2 overflow-x-auto">
         <table className="w-full text-[11px]">
           <thead>
-            <tr className="text-right text-slate-500 dark:text-slate-400 border-b border-slate-100 dark:border-slate-800">
+            <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
               {head.map((h) => <th key={h} className="py-1.5 px-2 font-bold whitespace-nowrap">{h}</th>)}
             </tr>
           </thead>
           <tbody>
             {rows.map((r, i) => (
-              <tr key={i} className="border-b border-slate-50 dark:border-slate-800/60 last:border-0">
+              <tr key={i} className="border-b border-slate-50 dark:border-slate-800/60 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
                 {r.map((c, j) => (
                   <td key={j} className={`py-1.5 px-2 whitespace-nowrap ${j === 0 ? 'text-slate-600 dark:text-slate-300' : 'tabular-nums text-slate-700 dark:text-slate-200'}`}>
                     {c}

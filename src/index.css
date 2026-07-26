@@ -1,97 +1,145 @@
 @import "tailwindcss";
+@import "./styles/fonts.css";
+@import "./styles/tokens.css";
 
 /* Class-based dark mode (Tailwind v4 idiom — equivalent to v3's
    `darkMode: 'class'`). Any element nested under `.dark` (or `.dark`
    itself) activates `dark:` variants. We toggle this class on
-   <html> from App.jsx via state persisted in localStorage. */
+   <html> from useDarkMode, which also mirrors it to [data-theme]. */
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* ── Thmanyah Sans (geometric Arabic + Latin) ────────────────────────────
-   Bundled locally under /public/fonts/thmanyah/. Five weights map to the
-   standard CSS keyword weights; Tailwind's font-* utilities pick the
-   closest match. `font-display: swap` keeps text legible during the
-   font fetch (system fallback renders first, then swaps when ready). */
-@font-face {
-  font-family: 'Thmanyah Sans';
-  src: url('/fonts/thmanyah/thmanyahsans-Light.woff2') format('woff2');
-  font-weight: 300;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Thmanyah Sans';
-  src: url('/fonts/thmanyah/thmanyahsans-Regular.woff2') format('woff2');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Thmanyah Sans';
-  src: url('/fonts/thmanyah/thmanyahsans-Medium.woff2') format('woff2');
-  font-weight: 500;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Thmanyah Sans';
-  src: url('/fonts/thmanyah/thmanyahsans-Bold.woff2') format('woff2');
-  font-weight: 700;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Thmanyah Sans';
-  src: url('/fonts/thmanyah/thmanyahsans-Black.woff2') format('woff2');
-  font-weight: 900;
-  font-style: normal;
-  font-display: swap;
-}
+/* ═══════════════════════════════════════════════════════════════════════
+   Tailwind ⇄ Sweater Design System bridge
+   ═══════════════════════════════════════════════════════════════════════
+   These map Tailwind's utility scales onto the design system's values, so
+   the ~1,400 existing `bg-…`, `text-…` and `border-…` usages across the app render
+   DS colours without being rewritten one by one. The token layer
+   (styles/tokens.css) remains the source of truth; this is the adapter.
 
+   Values here are STATIC on purpose. A `var(--sw-…)` that flips between
+   themes would break the `light / dark:` pairs the components rely on
+   (e.g. `bg-white dark:bg-slate-900` must resolve to a real surface in
+   each theme, not to whatever the current theme's token happens to be).
+
+   The neutral ramp is built so one scale serves both roles cleanly:
+     slate-900 #292929 → the DS dark surface AND light-mode near-black
+                          text (14.5:1 on white — far above AA)
+     slate-950 #0b0b0b → the DS dark canvas
+     slate-500 #666666 → the DS secondary text
+     slate-50  #f8f9fa → the DS subtle canvas
+   ═══════════════════════════════════════════════════════════════════════ */
 @theme {
-  --font-sans: "Thmanyah Sans", "IBM Plex Sans Arabic", "Tajawal", system-ui, sans-serif;
+  --font-sans: "IBM Plex Sans Arabic", "Inter", system-ui, sans-serif;
 
-  /* ── Burnt orange primary — matches the Sweater logo (#ea580c) ────────
-     The scale is deliberately DARK-SHIFTED at 800/900: those steps carry
-     the app's chrome (sidebar, primary buttons), and a deep burnt orange
-     stays clearly distinct from the bright amber used for "pending"
-     status — they differ in lightness AND saturation, not just hue, so
-     the two never read as the same colour. 600 is the exact logo orange
-     and drives dark-mode buttons + icon chips. */
-  --color-primary-50:  #fff7ed;
-  --color-primary-100: #ffedd5;
-  --color-primary-200: #fed7aa;
-  --color-primary-300: #fdba74;
-  --color-primary-400: #fb923c;
-  --color-primary-500: #f97316;
-  --color-primary-600: #ea580c; /* logo */
-  --color-primary-700: #d4480c;
-  --color-primary-800: #c2410c; /* light-mode buttons — 5.2:1 on white */
-  --color-primary-900: #7c2d12; /* sidebar — deep espresso orange */
+  /* ── Radii ─────────────────────────────────────────────────────────────
+     Exposed as utilities (rounded-control / rounded-smallcard /
+     rounded-card / rounded-pill) so components spell the system's scale
+     by name instead of approximating it with Tailwind's generic sizes. */
+  --radius-control: 8px;
+  --radius-smallcard: 15px;
+  --radius-card: 20px;
+  --radius-pill: 50px;
+
+  /* ── Neutral ─────────────────────────────────────────────────────── */
+  --color-slate-50:  #f8f9fa;
+  --color-slate-100: #eef0f2;
+  --color-slate-200: #e3e5e8;
+  --color-slate-300: #cdd0d5;
+  --color-slate-400: #9aa0a6;
+  --color-slate-500: #666666;
+  --color-slate-600: #52565c;
+  --color-slate-700: #3f4247;
+  --color-slate-800: #333333;
+  --color-slate-900: #292929;
+  --color-slate-950: #0b0b0b;
+
+  /* ── Brand (primary) — anchored on the published brand ramp ───────── */
+  --color-primary-50:  #fff5f0;
+  --color-primary-100: #ffe8dc;
+  --color-primary-200: #ffcdb4;
+  --color-primary-300: #ffab82;
+  --color-primary-400: #ff6d1f;
+  --color-primary-500: #ef5b0c;
+  --color-primary-600: #d14e09;
+  --color-primary-700: #c74700; /* --sw-action */
+  --color-primary-800: #a83c02;
+  --color-primary-900: #7f2d04;
   --color-primary-950: #431407;
 
-  /* ── Navy accent — the colour the chrome vacated ───────────────────────
-     Reused as the complementary accent so CTAs (the sidebar's "add entry"
-     gradient, the active-tab dot) punch against the orange chrome instead
-     of blending into it, which a red accent would now do. */
-  --color-accent-50:  #eef2ff;
-  --color-accent-100: #dfe5f5;
-  --color-accent-200: #bcc7e6;
-  --color-accent-300: #8b9bcb;
-  --color-accent-400: #5f70a8;
-  --color-accent-500: #3f528a;
-  --color-accent-600: #2a3c70;
-  --color-accent-700: #1f2d5a;
-  --color-accent-800: #172144;
-  --color-accent-900: #101935;
+  /* Accent aliases the brand: the system has one action colour, so a
+     second competing hue would dilute it. */
+  --color-accent-50:  #fff5f0;
+  --color-accent-100: #ffe8dc;
+  --color-accent-200: #ffcdb4;
+  --color-accent-300: #ffab82;
+  --color-accent-400: #ff6d1f;
+  --color-accent-500: #ef5b0c;
+  --color-accent-600: #d14e09;
+  --color-accent-700: #c74700;
+  --color-accent-800: #a83c02;
+  --color-accent-900: #7f2d04;
 
-  /* Dark app surface */
-  --color-app-bg:      #0f172a;
-  --color-app-bg-soft: #111c34;
+  /* ── Success ─────────────────────────────────────────────────────── */
+  --color-emerald-50:  #e7f6ef;
+  --color-emerald-100: #cfeddf;
+  --color-emerald-200: #a2dcc2;
+  --color-emerald-300: #6cc79f;
+  --color-emerald-400: #34a97b;
+  --color-emerald-500: #12905f;
+  --color-emerald-600: #0f7a52;
+  --color-emerald-700: #0c6444;
+  --color-emerald-800: #0a5038;
+  --color-emerald-900: #08402d;
+  --color-green-500:   #12905f;
 
-  /* Neutral surface */
-  --color-surface-50:  #f7f8fb;
-  --color-surface-100: #eef1f6;
-  --color-surface-200: #e3e8f0;
+  /* ── Warning — kept yellow-leaning so it never reads as brand orange */
+  --color-amber-50:  #fdf3e0;
+  --color-amber-100: #fae7c2;
+  --color-amber-200: #f4d089;
+  --color-amber-300: #ecb54c;
+  --color-amber-400: #dfa01f;
+  --color-amber-500: #c98a0a;
+  --color-amber-600: #a97207;
+  --color-amber-700: #8a5a00;
+  --color-amber-800: #6d4700;
+  --color-amber-900: #543700;
+
+  /* ── Danger (rose + red share one ramp) ──────────────────────────── */
+  --color-rose-50:  #fdecea;
+  --color-rose-100: #fbd9d5;
+  --color-rose-200: #f5b3ac;
+  --color-rose-300: #ee8a80;
+  --color-rose-400: #e05a4d;
+  --color-rose-500: #cc3a2c;
+  --color-rose-600: #b3261e;
+  --color-rose-700: #951f19;
+  --color-rose-800: #771914;
+  --color-rose-900: #5c1410;
+  --color-red-50:  #fdecea;
+  --color-red-100: #fbd9d5;
+  --color-red-200: #f5b3ac;
+  --color-red-300: #ee8a80;
+  --color-red-400: #e05a4d;
+  --color-red-500: #cc3a2c;
+  --color-red-600: #b3261e;
+  --color-red-700: #951f19;
+  --color-red-800: #771914;
+  --color-red-900: #5c1410;
+
+  /* ── Info (indigo + sky share one ramp) ──────────────────────────── */
+  --color-indigo-50:  #eaf1fa;
+  --color-indigo-100: #d6e4f5;
+  --color-indigo-200: #adc8ea;
+  --color-indigo-300: #7fa7dc;
+  --color-indigo-400: #4d82c8;
+  --color-indigo-500: #2b63ab;
+  --color-indigo-600: #1f4e8c;
+  --color-indigo-700: #193f71;
+  --color-indigo-800: #143259;
+  --color-indigo-900: #0f2643;
+  --color-sky-50:  #eaf1fa;
+  --color-sky-500: #2b63ab;
+  --color-sky-600: #1f4e8c;
 }
 
 html, body, #root {
@@ -105,92 +153,81 @@ html, body {
 }
 
 body {
-  margin: 0;
   direction: rtl;
-  font-family: "Thmanyah Sans", "IBM Plex Sans Arabic", "Tajawal", system-ui, sans-serif;
-  /* Light theme defaults. The `.dark` class on <html> flips these
-     plus every `dark:` variant on Tailwind-styled elements. */
-  background-color: #f8fafc; /* slate-50 */
-  color: #0f172a;            /* slate-900 */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  font-feature-settings: "kern", "liga", "ss01";
-  transition: background-color 200ms ease, color 200ms ease;
-}
-
-html.dark body {
-  background-color: #020617; /* slate-950 */
-  color: #f1f5f9;            /* slate-100 */
+  transition:
+    background-color var(--sw-duration-standard) var(--sw-ease-standard),
+    color var(--sw-duration-standard) var(--sw-ease-standard);
 }
 
 * {
   box-sizing: border-box;
 }
 
-/* Inputs sit inside white cards on the dark theme — force a high-contrast
-   dark text color so typed values aren't faint against the white field. */
+/* ── Form controls ────────────────────────────────────────────────────
+   Controls inherit the system's control radius and border, so a field
+   looks the same whether a component remembered to style it or not. */
 input, select, textarea {
-  color: #0f172a;
-  transition: background-color 200ms ease, color 200ms ease, border-color 200ms ease;
+  color: var(--sw-text-primary);
+  transition:
+    background-color var(--sw-duration-standard) var(--sw-ease-standard),
+    color var(--sw-duration-standard) var(--sw-ease-standard),
+    border-color var(--sw-duration-standard) var(--sw-ease-standard);
 }
 input::placeholder,
 textarea::placeholder {
-  color: #94a3b8;
+  color: var(--sw-text-muted);
   opacity: 1;
 }
-
-/* Dark-mode input defaults: deep slate background, light text, slate-700
-   border. Components can still override with explicit `dark:` classes. */
 html.dark input,
 html.dark select,
 html.dark textarea {
-  background-color: #1e293b; /* slate-800 */
-  color: #f1f5f9;            /* slate-100 */
-  border-color: #334155;     /* slate-700 */
+  background-color: var(--sw-surface);
+  color: var(--sw-text-primary);
+  border-color: var(--sw-border-subtle);
 }
 html.dark input::placeholder,
 html.dark textarea::placeholder {
-  color: #64748b;            /* slate-500 */
+  color: var(--sw-text-muted);
 }
 
-/* Custom scrollbar — light by default, deeper in dark mode. */
+/* Custom scrollbar, tuned to the neutral ramp. */
 ::-webkit-scrollbar          { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track    { background: transparent; }
-::-webkit-scrollbar-thumb    { background: #cbd5e1; border-radius: 8px; } /* slate-300 */
-::-webkit-scrollbar-thumb:hover { background: #94a3b8; }                  /* slate-400 */
-html.dark ::-webkit-scrollbar-thumb       { background: #334155; }        /* slate-700 */
-html.dark ::-webkit-scrollbar-thumb:hover { background: #475569; }        /* slate-600 */
-
-/* Utility: thin number tabular */
-.tabular-nums { font-variant-numeric: tabular-nums; }
+::-webkit-scrollbar-thumb    { background: #cdd0d5; border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: #9aa0a6; }
+html.dark ::-webkit-scrollbar-thumb       { background: #3f4247; }
+html.dark ::-webkit-scrollbar-thumb:hover { background: #52565c; }
 
 /* LTR wrapper (for charts) */
 .chart-ltr { direction: ltr; }
 
-/* Toast slide-up + fade animation (applied to the inner pill; horizontal
-   centering is handled by the wrapper's -translate-x-1/2). */
+/* Toast slide-up + fade (applied to the inner pill; horizontal centering
+   is handled by the wrapper's -translate-x-1/2). */
 @keyframes toast-in {
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0);   }
 }
 
 /* Tab-switch entrance — the routed page fades in and settles upward.
-   App.jsx keys the wrapper by activeTab so the animation replays on
-   every switch. Ends at `transform: none`, so sticky/fixed descendants
-   are unaffected once the 200ms run completes. */
+   App.jsx keys the wrapper by activeTab so it replays on every switch.
+   Ends at `transform: none`, so sticky/fixed descendants are unaffected
+   once the run completes. */
 @keyframes page-in {
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: none; }
 }
-.animate-page-in { animation: page-in 200ms ease-out; }
+.animate-page-in {
+  animation: page-in var(--sw-duration-standard) var(--sw-ease-entrance);
+}
 @media (prefers-reduced-motion: reduce) {
   .animate-page-in { animation: none; }
 }
 
 /* ─── Print: isolate the partner statement sheet ──────────────────────────
    When window.print() fires from PartnerStatementModal, hide everything
-   except the statement sheet so the printout / saved PDF is clean. The
-   sheet itself opts back in via `#partner-statement-sheet`. */
+   except the statement sheet so the printout / saved PDF is clean. */
 @media print {
   body * { visibility: hidden; }
   #partner-statement-sheet,

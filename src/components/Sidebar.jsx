@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { LogOut, Plus, X, KeyRound } from 'lucide-react';
-import { BRAND } from '../data/initialData';
-import SweaterLogo from './SweaterLogo';
+import { SweaterWordmark } from './SweaterLogo';
 import { signOut as fbSignOut } from 'firebase/auth';
 import { auth, isFirebaseConfigured as isSupabaseConfigured } from '../lib/firebaseClient';
 import ChangePasswordModal from './ChangePasswordModal';
@@ -107,30 +106,25 @@ export default function Sidebar({
         aria-hidden="true"
       />
 
+      {/* Navigation rail. Per the design system the brand colour marks
+          emphasis, not surfaces — so the rail is a calm white / #292929
+          panel and orange appears only on the active item and the CTA. */}
       <aside
-        className={`fixed top-0 right-0 h-screen w-72 md:w-64 bg-primary-900 text-white flex flex-col z-40 shadow-2xl
+        className={`fixed top-0 right-0 h-screen w-72 md:w-64 bg-white dark:bg-slate-900 border-l border-slate-100 dark:border-slate-800 flex flex-col z-40
           transform transition-transform duration-300 ease-out
           ${mobileOpen ? 'translate-x-0' : 'translate-x-full'}
           md:translate-x-0`}
+        style={{ boxShadow: 'var(--sw-shadow-card)' }}
       >
-        {/* Logo / brand + mobile close button */}
-        <div className="px-6 pt-7 pb-6 border-b border-white/10">
+        {/* Official brand lockup + mobile close button */}
+        <div className="px-5 pt-6 pb-5 border-b border-slate-100 dark:border-slate-800">
           <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-xl overflow-hidden shadow-lg">
-                <SweaterLogo className="w-full h-full" />
-              </div>
-              <div className="leading-tight">
-                <div className="text-base font-extrabold tracking-tight">{BRAND.nameAr}</div>
-                <div className="text-[11px] text-primary-300">{BRAND.nameEn}</div>
-              </div>
-            </div>
-
+            <SweaterWordmark className="h-9 w-auto" />
             {/* Close button — mobile only */}
             <button
               type="button"
               onClick={onCloseMobile}
-              className="md:hidden text-primary-200 hover:text-white p-1.5 -m-1.5 rounded-lg hover:bg-white/10 transition-colors"
+              className="sw-tap md:hidden text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 p-1.5 -m-1.5 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center justify-center"
               aria-label="إغلاق القائمة"
             >
               <X size={20} />
@@ -139,11 +133,11 @@ export default function Sidebar({
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto px-3 py-5">
-          <p className="text-[10px] font-semibold text-primary-400 uppercase tracking-widest px-3 mb-2">
+        <nav className="flex-1 overflow-y-auto px-3 py-4">
+          <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest px-3 mb-2">
             القائمة الرئيسية
           </p>
-          <ul className="space-y-1">
+          <ul className="space-y-0.5">
             {tabs.map(({ id, label, icon: Icon }) => {
               const isActive = activeTab === id;
               return (
@@ -151,14 +145,22 @@ export default function Sidebar({
                   <button
                     type="button"
                     onClick={() => onSelectTab(id)}
-                    className={`w-full flex items-center gap-3 px-3.5 py-3 md:py-2.5 rounded-xl text-sm font-semibold transition-all duration-200
+                    aria-current={isActive ? 'page' : undefined}
+                    className={`relative w-full flex items-center gap-3 px-3.5 py-3 md:py-2.5 text-sm font-semibold transition-colors duration-200
                       ${isActive
-                        ? 'bg-white text-primary-900 shadow-lg'
-                        : 'text-primary-100 hover:bg-white/10 hover:text-white'}`}
+                        ? 'bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300'
+                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                    style={{ borderRadius: 'var(--sw-radius-control)', minHeight: 'var(--sw-tap-min)' }}
                   >
-                    <Icon size={18} strokeWidth={isActive ? 2.5 : 2} />
+                    {/* Brand bar marks the active route (RTL: right edge). */}
+                    {isActive && (
+                      <span
+                        className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-primary-500"
+                        style={{ borderRadius: 'var(--sw-radius-round)' }}
+                      />
+                    )}
+                    <Icon size={18} strokeWidth={isActive ? 2.4 : 2} />
                     <span className="flex-1 text-right">{label}</span>
-                    {isActive && <span className="w-1.5 h-1.5 rounded-full bg-accent-500" />}
                   </button>
                 </li>
               );
@@ -166,13 +168,13 @@ export default function Sidebar({
           </ul>
         </nav>
 
-        {/* Financial Entry CTA */}
+        {/* Financial Entry CTA — the system's pill action button */}
         {onAddEntry && (
           <div className="px-4 pb-3">
             <button
               type="button"
               onClick={onAddEntry}
-              className="w-full flex items-center justify-center gap-2 px-3 py-3 rounded-xl bg-gradient-to-l from-accent-500 to-accent-600 hover:from-accent-400 hover:to-accent-500 text-white font-bold text-sm transition-all shadow-lg hover:shadow-xl"
+              className="sw-button sw-button--sm sw-button--primary w-full"
             >
               <Plus size={18} strokeWidth={2.5} />
               إضافة سجل مالي
@@ -181,10 +183,13 @@ export default function Sidebar({
         )}
 
         {/* Footer */}
-        <div className="p-4 border-t border-white/10">
-          <div className="bg-white/5 rounded-xl p-3 mb-3">
-            <p className="text-[11px] text-primary-300 mb-0.5">الحساب الحالي</p>
-            <p className="text-sm font-bold truncate" title={user?.email || 'حساب المدير'}>
+        <div className="p-4 border-t border-slate-100 dark:border-slate-800">
+          <div
+            className="bg-slate-50 dark:bg-slate-800 p-3 mb-2 border border-slate-100 dark:border-slate-700"
+            style={{ borderRadius: 'var(--sw-radius-control)' }}
+          >
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-0.5">الحساب الحالي</p>
+            <p className="text-sm font-bold text-slate-900 dark:text-slate-100 truncate" title={user?.email || 'حساب المدير'}>
               {user?.email || 'حساب المدير'}
             </p>
           </div>
@@ -193,7 +198,7 @@ export default function Sidebar({
               <button
                 type="button"
                 onClick={() => setChangePasswordOpen(true)}
-                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-[13px] text-primary-200 hover:bg-white/10 hover:text-white transition-colors cursor-pointer mb-1"
+                className="w-full min-h-11 flex items-center gap-2 px-3 py-2.5 rounded-control text-[13px] font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100 transition-colors cursor-pointer"
               >
                 <KeyRound size={16} />
                 تغيير كلمة المرور
@@ -201,13 +206,17 @@ export default function Sidebar({
               <button
                 type="button"
                 onClick={handleAbsoluteLogout}
-                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-[13px] text-primary-200 hover:bg-white/10 hover:text-white transition-colors cursor-pointer"
+                className="w-full min-h-11 flex items-center gap-2 px-3 py-2.5 rounded-control text-[13px] font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100 transition-colors cursor-pointer"
               >
                 <LogOut size={16} />
                 تسجيل الخروج
               </button>
             </>
           )}
+          {/* Legal / ownership line — owner name appears here only. */}
+          <p className="mt-3 px-1 text-[10px] leading-relaxed text-slate-500 dark:text-slate-400">
+            © {new Date().getFullYear()} شركة هادي الغانم
+          </p>
         </div>
       </aside>
 

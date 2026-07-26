@@ -5,7 +5,9 @@ import {
 } from 'lucide-react';
 import { formatCurrency } from '../data/initialData';
 import TopBar from './TopBar';
-import { Card, StatCard, PrimaryButton } from './UI';
+import {
+  Card, StatCard, PrimaryButton, SecondaryButton, EmptyState,
+} from './UI';
 import AddBudgetModal from './AddBudgetModal';
 import LoadingState from './LoadingState';
 import ErrorState, { SetupRequiredCard } from './ErrorState';
@@ -140,7 +142,7 @@ function computeBudgetSpend({
 }
 
 function progressColor(pct) {
-  if (pct >= 100) return 'bg-red-500 animate-pulse';
+  if (pct >= 100) return 'bg-rose-500 animate-pulse';
   if (pct >= 70)  return 'bg-amber-500';
   return 'bg-emerald-500';
 }
@@ -156,8 +158,8 @@ function BudgetCard({ budget, allocated, spent, onSaveAmount, onDelete, onEditFu
   const widthPct = Math.min(100, (spent / Math.max(allocated, 1)) * 100);
 
   const typeBadge = budget.budgetType === 'annual'
-    ? 'bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-400 border-primary-100 dark:border-primary-500/30'
-    : 'bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-100 dark:border-amber-500/30';
+    ? 'bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300 border-primary-100 dark:border-primary-500/30'
+    : 'bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-100 dark:border-amber-500/30';
 
   // ── inline edit state ────────────────────────────────────────────────
   // Virtual cards (allocated=0, never persisted) start in always-on edit
@@ -198,11 +200,11 @@ function BudgetCard({ budget, allocated, spent, onSaveAmount, onDelete, onEditFu
   // Visual emphasis: virtual cards (allocated = 0) get a dashed border so
   // they read as "needs a target" instead of "no progress".
   const containerClass = isVirtual && allocated === 0
-    ? 'bg-white dark:bg-slate-900 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-700 p-5 shadow-sm dark:shadow-slate-950/40 transition-all duration-200 flex flex-col gap-4'
-    : 'bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 p-5 shadow-sm dark:shadow-slate-950/40 hover:shadow-md dark:hover:shadow-slate-950/50 transition-all duration-200 flex flex-col gap-4';
+    ? 'bg-white dark:bg-slate-900 rounded-smallcard border-2 border-dashed border-slate-200 dark:border-slate-700 p-5 transition-all duration-200 flex flex-col gap-4'
+    : 'bg-white dark:bg-slate-900 rounded-smallcard border border-slate-100 dark:border-slate-800 p-5 transition-all duration-200 flex flex-col gap-4';
 
   return (
-    <div className={containerClass}>
+    <div className={containerClass} style={{ boxShadow: 'var(--sw-shadow-card)' }}>
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
@@ -210,11 +212,11 @@ function BudgetCard({ budget, allocated, spent, onSaveAmount, onDelete, onEditFu
             {budget.categoryLabel}
           </h3>
           <div className="mt-1.5 flex items-center gap-2 flex-wrap">
-            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] font-semibold ${typeBadge}`}>
+            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-control border text-[11px] font-semibold ${typeBadge}`}>
               {budget.budgetType === 'annual' ? 'سنوية' : 'شهرية'}
             </span>
             {isVirtual && allocated === 0 && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400 text-[11px] font-semibold">
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-control border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[11px] font-semibold">
                 <Sparkles size={10} strokeWidth={2.4} />
                 مكتشَفة تلقائياً
               </span>
@@ -227,7 +229,7 @@ function BudgetCard({ budget, allocated, spent, onSaveAmount, onDelete, onEditFu
               <button
                 type="button"
                 onClick={onEditFull}
-                className="text-slate-400 dark:text-slate-500 hover:text-primary-700 dark:hover:text-primary-400 p-1.5 rounded-lg hover:bg-primary-50 dark:hover:bg-primary-500/10 transition-colors"
+                className="sw-tap inline-flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-primary-700 dark:hover:text-primary-300 p-1.5 rounded-control hover:bg-primary-50 dark:hover:bg-primary-500/10 transition-colors"
                 aria-label={`تعديل ${budget.categoryLabel}`}
                 title="تعديل التصنيف أو النوع"
               >
@@ -238,7 +240,7 @@ function BudgetCard({ budget, allocated, spent, onSaveAmount, onDelete, onEditFu
               <button
                 type="button"
                 onClick={onHide}
-                className="text-accent-500 dark:text-accent-400 hover:text-white hover:bg-accent-600 dark:hover:bg-accent-500 p-1.5 rounded-lg ring-1 ring-accent-200 dark:ring-accent-500/40 transition-colors"
+                className="sw-tap inline-flex items-center justify-center text-rose-600 dark:text-rose-400 hover:text-white hover:bg-rose-600 dark:hover:bg-rose-500 p-1.5 rounded-control ring-1 ring-rose-200 dark:ring-rose-500/40 transition-colors"
                 aria-label={`إخفاء ${budget.categoryLabel}`}
                 title="إخفاء البند من اللوحة"
               >
@@ -248,7 +250,7 @@ function BudgetCard({ budget, allocated, spent, onSaveAmount, onDelete, onEditFu
               <button
                 type="button"
                 onClick={onDelete}
-                className="text-accent-500 dark:text-accent-400 hover:text-white hover:bg-accent-600 dark:hover:bg-accent-500 p-1.5 rounded-lg ring-1 ring-accent-200 dark:ring-accent-500/40 transition-colors"
+                className="sw-tap inline-flex items-center justify-center text-rose-600 dark:text-rose-400 hover:text-white hover:bg-rose-600 dark:hover:bg-rose-500 p-1.5 rounded-control ring-1 ring-rose-200 dark:ring-rose-500/40 transition-colors"
                 aria-label={`حذف ${budget.categoryLabel}`}
                 title="حذف الميزانية"
               >
@@ -262,14 +264,14 @@ function BudgetCard({ budget, allocated, spent, onSaveAmount, onDelete, onEditFu
       {/* Three figures */}
       <div className="grid grid-cols-3 gap-3">
         {/* Allocated — inline editable */}
-        <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 px-3 py-2.5">
+        <div className="rounded-smallcard bg-slate-50 dark:bg-slate-800 px-3 py-2.5">
           <div className="flex items-start justify-between gap-1">
             <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">الميزانية المرصودة</p>
             {canMutate && !showInlineInput && (
               <button
                 type="button"
                 onClick={startEdit}
-                className="text-slate-400 dark:text-slate-500 hover:text-primary-700 dark:hover:text-primary-400 p-0.5 rounded transition-colors"
+                className="sw-tap inline-flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-primary-700 dark:hover:text-primary-300 p-0.5 rounded-control transition-colors"
                 title="تعديل المبلغ"
                 aria-label="تعديل المبلغ"
               >
@@ -292,13 +294,13 @@ function BudgetCard({ budget, allocated, spent, onSaveAmount, onDelete, onEditFu
                 }}
                 onBlur={editing ? commit : undefined}
                 placeholder="0"
-                className="w-full px-1.5 py-1 border border-primary-200 dark:border-primary-500/40 rounded-md bg-white dark:bg-slate-800 text-sm font-extrabold text-slate-900 dark:text-slate-100 tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-400 dark:focus:ring-primary-500/40"
+                className="w-full px-1.5 py-1 border border-slate-200 dark:border-slate-700 rounded-control bg-white dark:bg-slate-800 text-sm font-extrabold text-slate-900 dark:text-slate-100 tabular-nums focus:outline-none focus:border-primary-500 transition-colors"
               />
               <button
                 type="button"
                 onMouseDown={(e) => { e.preventDefault(); commit(); }}
                 disabled={saving}
-                className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white transition-colors shrink-0"
+                className="sw-tap inline-flex items-center justify-center w-6 h-6 rounded-control bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white transition-colors shrink-0"
                 aria-label="حفظ"
                 title="حفظ المبلغ"
               >
@@ -308,7 +310,7 @@ function BudgetCard({ budget, allocated, spent, onSaveAmount, onDelete, onEditFu
                 <button
                   type="button"
                   onMouseDown={(e) => { e.preventDefault(); cancelEdit(); }}
-                  className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600 text-slate-500 dark:text-slate-300 transition-colors shrink-0"
+                  className="sw-tap inline-flex items-center justify-center w-6 h-6 rounded-control bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600 text-slate-500 dark:text-slate-300 transition-colors shrink-0"
                   aria-label="إلغاء"
                 >
                   <X size={12} />
@@ -319,29 +321,29 @@ function BudgetCard({ budget, allocated, spent, onSaveAmount, onDelete, onEditFu
             <button
               type="button"
               onClick={startEdit}
-              className="block text-right w-full text-base font-extrabold text-slate-900 dark:text-slate-100 tabular-nums mt-0.5 hover:text-primary-700 dark:hover:text-primary-400 transition-colors"
+              className="block text-right w-full text-base font-extrabold text-slate-900 dark:text-slate-100 tabular-nums mt-0.5 hover:text-primary-700 dark:hover:text-primary-300 transition-colors"
               title="اضغط للتعديل"
             >
               {formatCurrency(allocated)}
             </button>
           )}
         </div>
-        <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 px-3 py-2.5">
+        <div className="rounded-smallcard bg-slate-50 dark:bg-slate-800 px-3 py-2.5">
           <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">المصروف الفعلي</p>
           <p className="text-base font-extrabold text-slate-900 dark:text-slate-100 tabular-nums mt-0.5">
             {formatCurrency(spent)}
           </p>
         </div>
-        <div className={`rounded-xl px-3 py-2.5 ${overspent
-          ? 'bg-red-50 dark:bg-red-500/15 border border-red-100 dark:border-red-500/30'
-          : 'bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-100 dark:border-emerald-500/30'}`}>
+        <div className={`rounded-smallcard px-3 py-2.5 ${overspent
+          ? 'bg-rose-50 dark:bg-rose-500/10 border border-rose-100 dark:border-rose-500/30'
+          : 'bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/30'}`}>
           <p className={`text-[11px] leading-snug ${overspent
-            ? 'text-red-700 dark:text-red-400'
-            : 'text-emerald-700 dark:text-emerald-400'}`}>
+            ? 'text-rose-700 dark:text-rose-300'
+            : 'text-emerald-700 dark:text-emerald-300'}`}>
             {overspent ? 'العجز عن الميزانية' : 'المتبقي في الميزانية'}
           </p>
           <p className={`text-base font-extrabold tabular-nums mt-0.5 ${overspent
-            ? 'text-red-700 dark:text-red-300'
+            ? 'text-rose-700 dark:text-rose-300'
             : 'text-emerald-700 dark:text-emerald-300'}`}>
             {overspent ? '−' : ''}{formatCurrency(Math.abs(remaining))}
           </p>
@@ -352,12 +354,12 @@ function BudgetCard({ budget, allocated, spent, onSaveAmount, onDelete, onEditFu
       <div className="space-y-1.5">
         <div className="flex items-baseline justify-between text-[11px] font-semibold">
           <span className={`tabular-nums ${isDanger
-            ? 'text-red-700 dark:text-red-400'
+            ? 'text-rose-700 dark:text-rose-300'
             : 'text-slate-600 dark:text-slate-400'}`}>
             {allocated > 0 ? `${pct.toFixed(1)}%` : '— %'}
           </span>
           {isDanger && (
-            <span className="inline-flex items-center gap-1 text-red-700 dark:text-red-400">
+            <span className="inline-flex items-center gap-1 text-rose-700 dark:text-rose-300">
               <AlertTriangle size={11} strokeWidth={2.5} />
               تجاوز الميزانية
             </span>
@@ -380,14 +382,14 @@ function BudgetSection({
   count, allocatedTotal, spentTotal,
 }) {
   const accentChip = accent === 'annual'
-    ? 'bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-400'
-    : 'bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400';
+    ? 'bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300'
+    : 'bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300';
 
   // Vertical accent bar on the right (RTL leading edge) for a strong
   // visual hand-off between the Monthly and Annual rows.
   const accentBar = accent === 'annual'
-    ? 'bg-gradient-to-b from-primary-500 to-primary-700'
-    : 'bg-gradient-to-b from-amber-400 to-amber-600';
+    ? 'bg-primary-500'
+    : 'bg-amber-500';
 
   const countPill = accent === 'annual'
     ? 'bg-primary-100 dark:bg-primary-500/20 text-primary-800 dark:text-primary-300'
@@ -396,12 +398,12 @@ function BudgetSection({
   return (
     <Card className="overflow-hidden">
       {/* Section banner */}
-      <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 px-6 py-5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/30">
+      <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 px-6 py-5 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800">
         {/* RTL: leading-edge accent bar */}
         <div className={`absolute top-3 bottom-3 right-0 w-1 rounded-l-full ${accentBar}`} />
 
         <div className="flex items-start gap-3 min-w-0 flex-1 pr-3">
-          <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${accentChip}`}>
+          <div className={`w-11 h-11 rounded-control flex items-center justify-center shrink-0 ${accentChip}`}>
             {Icon && <Icon size={20} strokeWidth={2.3} />}
           </div>
           <div className="min-w-0 flex-1">
@@ -441,17 +443,12 @@ function BudgetSection({
       {/* Section body */}
       <div className="p-4 sm:p-6">
         {cards.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-10 text-center">
-            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mb-3 ${accentChip}`}>
-              {Icon && <Icon size={20} strokeWidth={2.2} />}
-            </div>
-            <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-              لم تُكتشف تصنيفات حتى الآن
-            </p>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm">
-              أضف أول مصروف في التبويب المعني ليظهر تصنيفه تلقائياً هنا، أو أضف بنداً مخصّصاً.
-            </p>
-          </div>
+          <EmptyState
+            compact
+            icon={Icon}
+            title="لم تُكتشف تصنيفات حتى الآن"
+            hint="أضف أول مصروف في التبويب المعني ليظهر تصنيفه تلقائياً هنا، أو أضف بنداً مخصّصاً."
+          />
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
             {cards}
@@ -815,7 +812,10 @@ export default function BudgetsPage() {
         {/* Hidden-items banner — visible only when the user has dismissed
             at least one auto-discovered card. One click restores them all. */}
         {hiddenKeys.size > 0 && (
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60">
+          <div
+            role="status"
+            className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800"
+          >
             <div className="flex items-center gap-2 text-slate-600 dark:text-slate-300">
               <EyeOff size={16} className="text-slate-500 dark:text-slate-400 shrink-0" />
               <p className="text-sm">
@@ -823,14 +823,13 @@ export default function BudgetsPage() {
                 {' '}بند مخفي من لوحة الميزانيات
               </p>
             </div>
-            <button
-              type="button"
+            <SecondaryButton
+              icon={RotateCcw}
               onClick={handleResetHidden}
-              className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold text-primary-700 dark:text-primary-300 hover:text-white hover:bg-primary-700 dark:hover:bg-primary-600 border border-primary-200 dark:border-primary-500/40 transition-colors shrink-0"
+              className="shrink-0"
             >
-              <RotateCcw size={14} strokeWidth={2.3} />
               إعادة إظهار كافة البنود المخفية
-            </button>
+            </SecondaryButton>
           </div>
         )}
 
@@ -880,7 +879,7 @@ export default function BudgetsPage() {
             {/* Visual divider between the two rows */}
             <div className="relative flex items-center my-2" aria-hidden="true">
               <div className="flex-1 h-px bg-gradient-to-l from-transparent via-slate-200 dark:via-slate-700 to-transparent" />
-              <span className="px-3 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
+              <span className="px-3 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
                 ━ ━ ━
               </span>
               <div className="flex-1 h-px bg-gradient-to-r from-transparent via-slate-200 dark:via-slate-700 to-transparent" />

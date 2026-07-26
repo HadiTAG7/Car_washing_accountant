@@ -10,15 +10,19 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
-    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#431407" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0b0b0b" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="سويتر" />
-    <!-- Thmanyah Sans is bundled locally under /fonts/thmanyah/. Preload
-         the two most-used weights so the first render doesn't flash an
-         unstyled fallback. -->
-    <link rel="preload" href="/fonts/thmanyah/thmanyahsans-Regular.woff2" as="font" type="font/woff2" crossorigin />
-    <link rel="preload" href="/fonts/thmanyah/thmanyahsans-Bold.woff2"    as="font" type="font/woff2" crossorigin />
+    <meta name="description" content="سويتر | Sweater — نظام إدارة القيود المالية والشركاء." />
+    <meta name="author" content="شركة هادي الغانم | Hadi Alghanim Company" />
+    <meta name="application-name" content="سويتر | Sweater" />
+    <!-- Sweater Design System typefaces, self-hosted under
+         /fonts/sweater/. Preload the faces the first paint needs: the
+         Arabic UI text and the Latin numerals. -->
+    <link rel="preload" href="/fonts/sweater/ibm-plex-sans-arabic400-arabic.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/sweater/ibm-plex-sans-arabic600-arabic.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/sweater/inter600-latin.woff2" as="font" type="font/woff2" crossorigin />
     <!-- Dark-mode no-flash: set the `.dark` class on <html> synchronously
          from localStorage (falls back to system preference) BEFORE React
          mounts so the first paint matches the saved theme. -->
@@ -29,7 +33,9 @@
           var prefersDark = stored == null
             ? window.matchMedia('(prefers-color-scheme: dark)').matches
             : stored === 'true';
-          if (prefersDark) document.documentElement.classList.add('dark');
+          var root = document.documentElement;
+          if (prefersDark) root.classList.add('dark');
+          root.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
         } catch (e) { /* localStorage blocked or matchMedia missing */ }
       })();
     </script>

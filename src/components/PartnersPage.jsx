@@ -234,12 +234,12 @@ export default function PartnersPage() {
                   return (
                     <tr
                       key={p.id}
-                      className="border-b border-slate-50 dark:border-slate-800 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
+                      className="border-b border-slate-50 dark:border-slate-800/60 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors"
                     >
                       {/* 1. اسم الشريك */}
                       <td className="py-3 px-4 whitespace-normal break-words min-w-[180px] font-medium text-slate-800 dark:text-slate-200">
                         <div className="flex items-center gap-2">
-                          <span className="bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300 w-8 h-8 rounded-lg flex items-center justify-center shrink-0">
+                          <span className="bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300 w-8 h-8 rounded-control flex items-center justify-center shrink-0">
                             <Briefcase size={14} />
                           </span>
                           <span className="truncate">{p.partnerName}</span>
@@ -254,7 +254,7 @@ export default function PartnersPage() {
                       {/* 3. النسبة — derived on the fly from workers share */}
                       <td className="py-3 px-4 whitespace-nowrap text-center tabular-nums">
                         <span
-                          className="inline-flex items-center gap-1 text-[13px] font-bold px-2.5 py-1 rounded-lg bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300"
+                          className="inline-flex items-center gap-1 text-[13px] font-bold px-2.5 py-1 rounded-control bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300"
                           title="محسوبة تلقائياً حسب عدد العمالة"
                         >
                           {pct.toFixed(1)}%
@@ -275,14 +275,14 @@ export default function PartnersPage() {
                       <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums">
                         {settled ? (
                           <span
-                            className="inline-flex items-center gap-1 text-[13px] font-bold px-2.5 py-1 rounded-lg bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-500/30"
+                            className="inline-flex items-center gap-1 text-[13px] font-bold px-2.5 py-1 rounded-control bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-100 dark:border-emerald-500/30"
                             title="الرصيد مُسدَّد بالكامل"
                           >
                             ✓ مسدّد بالكامل
                           </span>
                         ) : (
                           <span
-                            className="inline-flex items-center gap-1 text-[13px] font-bold px-2.5 py-1 rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-100 dark:border-amber-500/30"
+                            className="inline-flex items-center gap-1 text-[13px] font-bold px-2.5 py-1 rounded-control bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-100 dark:border-amber-500/30"
                             title="مبلغ مستحَق على الشريك"
                           >
                             {formatCurrency(balance)}
@@ -298,7 +298,7 @@ export default function PartnersPage() {
                           <button
                             type="button"
                             onClick={() => setStatementPartner(p)}
-                            className="text-slate-400 dark:text-slate-500 hover:text-primary-700 dark:hover:text-primary-400 p-1.5 rounded-lg hover:bg-primary-50 dark:hover:bg-primary-500/15 transition-colors"
+                            className="sw-tap inline-flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-primary-700 dark:hover:text-primary-400 p-1.5 rounded-control hover:bg-primary-50 dark:hover:bg-primary-500/15 transition-colors"
                             aria-label={`كشف حساب ${p.partnerName}`}
                             title="كشف حساب الشريك (طباعة / PDF)"
                           >
@@ -309,7 +309,7 @@ export default function PartnersPage() {
                               <button
                                 type="button"
                                 onClick={() => setEditingPartner(p)}
-                                className="text-slate-400 hover:text-indigo-500 dark:hover:text-indigo-400 transition-colors duration-150 p-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-500/15 cursor-pointer"
+                                className="sw-tap inline-flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors duration-150 p-1.5 rounded-control hover:bg-indigo-50 dark:hover:bg-indigo-500/15 cursor-pointer"
                                 aria-label={`تعديل ${p.partnerName}`}
                                 title="تعديل بيانات الشريك"
                               >
@@ -318,7 +318,7 @@ export default function PartnersPage() {
                               <button
                                 type="button"
                                 onClick={() => handleDelete(p.id)}
-                                className="text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/15 transition-colors"
+                                className="sw-tap inline-flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 p-1.5 rounded-control hover:bg-rose-50 dark:hover:bg-rose-500/15 transition-colors"
                                 aria-label={`حذف ${p.partnerName}`}
                                 title="حذف الشريك"
                               >

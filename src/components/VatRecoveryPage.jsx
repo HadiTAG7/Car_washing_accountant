@@ -7,7 +7,9 @@ import {
 } from '../data/initialData';
 import { downloadCsv } from '../lib/exportCsv';
 import TopBar from './TopBar';
-import { Card, SectionHeader, StatCard, EmptyState } from './UI';
+import {
+  Card, SectionHeader, StatCard, EmptyState, SecondaryButton,
+} from './UI';
 import LoadingState from './LoadingState';
 import ErrorState, { SetupRequiredCard } from './ErrorState';
 import { useTaxInvoices } from '../hooks/useTaxInvoices';
@@ -31,7 +33,7 @@ function SourceBadge({ source }) {
   const meta = SOURCE_META[source];
   if (!meta) return null;
   return (
-    <span className={`inline-flex text-[10px] font-bold px-1.5 py-0.5 rounded border ${meta.cls}`}>
+    <span className={`inline-flex text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${meta.cls}`}>
       {meta.label}
     </span>
   );
@@ -132,16 +134,16 @@ export default function VatRecoveryPage() {
           />
         )}
         {!error && sourceErrors.startup && (
-          <div className="bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-500/40 text-amber-800 dark:text-amber-300 text-xs px-4 py-2.5 rounded-xl leading-relaxed">
+          <div role="alert" className="bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/30 text-amber-700 dark:text-amber-300 text-xs px-4 py-2.5 rounded-control leading-relaxed">
             تعذّر تحميل فواتير <strong>رسوم التأسيس</strong> — إن لم تكن قد شغّلت{' '}
-            <code className="bg-amber-100 dark:bg-amber-500/25 px-1 rounded" dir="ltr">2026_06_startup_cost_entries_ALL.sql</code>{' '}
+            <code className="bg-amber-100 dark:bg-amber-500/20 px-1 rounded-control" dir="ltr">2026_06_startup_cost_entries_ALL.sql</code>{' '}
             في Supabase SQL Editor، شغّله ثم حدّث الصفحة. الفواتير السنوية معروضة أدناه.
           </div>
         )}
         {!error && sourceErrors.annual && (
-          <div className="bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-500/40 text-amber-800 dark:text-amber-300 text-xs px-4 py-2.5 rounded-xl leading-relaxed">
+          <div role="alert" className="bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/30 text-amber-700 dark:text-amber-300 text-xs px-4 py-2.5 rounded-control leading-relaxed">
             تعذّر تحميل فواتير <strong>المصاريف السنوية</strong> — إن لم تكن قد شغّلت{' '}
-            <code className="bg-amber-100 dark:bg-amber-500/25 px-1 rounded" dir="ltr">2026_06_annual_expense_entries_ALL.sql</code>{' '}
+            <code className="bg-amber-100 dark:bg-amber-500/20 px-1 rounded-control" dir="ltr">2026_06_annual_expense_entries_ALL.sql</code>{' '}
             في Supabase SQL Editor، شغّله ثم حدّث الصفحة. فواتير التأسيس معروضة أدناه.
           </div>
         )}
@@ -181,26 +183,24 @@ export default function VatRecoveryPage() {
               <div className="flex items-center gap-2">
                 {/* Period filter */}
                 <div className="relative">
-                  <Calendar size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 pointer-events-none" />
+                  <Calendar size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 pointer-events-none" />
                   <select
                     value={period}
                     onChange={(e) => setPeriod(e.target.value)}
-                    className="appearance-none pr-8 pl-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-400 tabular-nums"
+                    className="appearance-none h-10 pr-8 pl-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs font-semibold tabular-nums focus:outline-none focus:border-primary-500 transition-colors"
                     aria-label="فلترة حسب الفترة"
                   >
                     <option value="">كل الفترات</option>
                     {periods.map((p) => <option key={p} value={p}>{p}</option>)}
                   </select>
                 </div>
-                <button
-                  type="button"
+                <SecondaryButton
+                  icon={Download}
                   onClick={handleExport}
                   disabled={filtered.length === 0}
-                  className="inline-flex items-center gap-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed text-slate-700 dark:text-slate-200 px-3 py-2 rounded-lg text-xs font-semibold transition-colors"
                 >
-                  <Download size={14} />
                   تصدير CSV
-                </button>
+                </SecondaryButton>
               </div>
             }
           />
@@ -237,7 +237,7 @@ export default function VatRecoveryPage() {
                     return (
                       <tr
                         key={e.id}
-                        className="border-b border-slate-50 dark:border-slate-800 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
+                        className="border-b border-slate-50 dark:border-slate-800/60 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors"
                       >
                         <td className="py-3 px-4 whitespace-nowrap text-slate-700 dark:text-slate-300">
                           <span className="inline-flex items-center gap-1.5">
@@ -248,7 +248,7 @@ export default function VatRecoveryPage() {
                         <td className="py-3 px-4 whitespace-normal break-words min-w-[160px] font-medium text-slate-800 dark:text-slate-200">
                           {e.description}
                           {e.notes && (
-                            <span className="block text-[11px] font-normal text-slate-400 dark:text-slate-500 mt-0.5">
+                            <span className="block text-[11px] font-normal text-slate-500 dark:text-slate-400 mt-0.5">
                               {e.notes}
                             </span>
                           )}
@@ -259,7 +259,7 @@ export default function VatRecoveryPage() {
                         <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums text-slate-700 dark:text-slate-300">
                           {formatCurrency(inclusive)}
                         </td>
-                        <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums font-bold text-emerald-600 dark:text-emerald-400">
+                        <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums font-bold text-emerald-700 dark:text-emerald-300">
                           {formatCurrency(vat)}
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums text-slate-700 dark:text-slate-300">
@@ -271,14 +271,14 @@ export default function VatRecoveryPage() {
                               href={e.invoiceUrl}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 text-primary-700 dark:text-primary-400 hover:underline font-semibold text-[12px]"
+                              className="inline-flex items-center gap-1 text-primary-700 dark:text-primary-300 hover:underline font-semibold text-[12px]"
                               title={e.invoiceUrl}
                             >
                               <LinkIcon size={12} />
                               عرض
                             </a>
                           ) : (
-                            <span className="text-slate-300 dark:text-slate-600">—</span>
+                            <span className="text-slate-500 dark:text-slate-400">—</span>
                           )}
                         </td>
                       </tr>
@@ -286,14 +286,14 @@ export default function VatRecoveryPage() {
                   })}
                 </tbody>
                 <tfoot>
-                  <tr className="border-t-2 border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
+                  <tr className="border-t-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
                     <td colSpan={3} className="py-3 px-4 text-right font-bold text-slate-900 dark:text-slate-100">
                       الإجمالي
                     </td>
                     <td className="py-3 px-4 text-left font-extrabold text-slate-900 dark:text-slate-100 tabular-nums">
                       {formatCurrency(kpis.inclusive)}
                     </td>
-                    <td className="py-3 px-4 text-left font-extrabold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                    <td className="py-3 px-4 text-left font-extrabold text-emerald-700 dark:text-emerald-300 tabular-nums">
                       {formatCurrency(kpis.vat)}
                     </td>
                     <td className="py-3 px-4 text-left font-extrabold text-slate-900 dark:text-slate-100 tabular-nums">

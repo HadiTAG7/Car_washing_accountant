@@ -1,0 +1,347 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   Sweater Design System v1 — token layer (single source of truth)
+   ═══════════════════════════════════════════════════════════════════════
+   Brand:  سويتر | Sweater
+   Owner:  شركة هادي الغانم | Hadi Alghanim Company (legal/metadata only)
+
+   Every colour, space, radius, shadow and motion value the app renders
+   resolves here. Components must reference these variables (directly or
+   through the Tailwind @theme mapping in index.css) instead of hard-coding
+   hex values, so a brand change is a one-file edit.
+
+   Two additions on top of the published system, both required by an
+   accounting UI and both built in the system's idiom:
+     1. Semantic status tokens (success / warning / danger). The published
+        system is a marketing palette and defines none; a ledger must be
+        able to say "paid", "due", "over budget" in colour.
+     2. Admin-density component sizes. The published .sw-button is a
+        marketing CTA (17.6px text, 40px side padding); a data table needs
+        a compact variant. The identity (pill, action colour, shadow,
+        motion) is preserved — only the scale changes.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+:root {
+  color-scheme: light;
+
+  /* ── Brand ─────────────────────────────────────────────────────────── */
+  --sw-brand-400: #ff6d1f;
+  --sw-brand-500: #ef5b0c;
+  --sw-brand-600: #d14e09;
+  --sw-action: #c74700;
+  --sw-brand-soft: #fff5f0;
+  /* Softer still — for large tinted fills (active nav, icon chips) where
+     brand-soft would read as a flat white against the canvas. */
+  --sw-brand-soft-2: #ffe8dc;
+
+  /* ── Surfaces ──────────────────────────────────────────────────────── */
+  --sw-canvas: #ffffff;
+  --sw-canvas-subtle: #f8f9fa;
+  --sw-surface: #ffffff;
+  --sw-surface-raised: #ffffff;
+  --sw-surface-glass: rgb(255 255 255 / 40%);
+
+  /* ── Text ──────────────────────────────────────────────────────────── */
+  --sw-text-primary: #1a1a1a;
+  --sw-text-secondary: #666666;
+  --sw-text-muted: #6e7377;
+  --sw-text-inverse: #ffffff;
+
+  /* ── Borders ───────────────────────────────────────────────────────── */
+  --sw-border-subtle: rgb(26 26 26 / 10%);
+  --sw-border-strong: rgb(26 26 26 / 18%);
+  --sw-border-glass: rgb(255 255 255 / 50%);
+
+  /* ── Semantic status (extension — see header note) ─────────────────────
+     Foreground values are AA-checked against their own soft background
+     and against the canvas, so a status can be a chip or bare text. */
+  --sw-success: #0f7a52;
+  --sw-success-soft: #e7f6ef;
+  --sw-warning: #8a5a00;
+  --sw-warning-soft: #fdf3e0;
+  --sw-danger: #b3261e;
+  --sw-danger-soft: #fdecea;
+  --sw-info: #1f4e8c;
+  --sw-info-soft: #eaf1fa;
+
+  /* ── Typography ────────────────────────────────────────────────────── */
+  --sw-font-ar: "IBM Plex Sans Arabic", system-ui, sans-serif;
+  --sw-font-en: "Inter", system-ui, sans-serif;
+  /* Numerals: Inter first so figures are Inter's, with the Arabic face
+     next so mixed strings ("١٢ ر.س") keep correct Arabic shaping. */
+  --sw-font-num: "Inter", "IBM Plex Sans Arabic", system-ui, sans-serif;
+
+  /* ── Spacing ───────────────────────────────────────────────────────── */
+  --sw-space-1: 4px;
+  --sw-space-2: 8px;
+  --sw-space-3: 12px;
+  --sw-space-4: 16px;
+  --sw-space-5: 20px;
+  --sw-space-6: 24px;
+  --sw-space-8: 32px;
+  --sw-space-10: 40px;
+  --sw-space-12: 48px;
+  --sw-space-16: 64px;
+  --sw-space-20: 80px;
+  --sw-space-24: 96px;
+
+  /* ── Radii ─────────────────────────────────────────────────────────── */
+  --sw-radius-control: 8px;
+  --sw-radius-small-card: 15px;
+  --sw-radius-card: 20px;
+  --sw-radius-pill: 50px;
+  --sw-radius-round: 999px;
+
+  /* ── Elevation ─────────────────────────────────────────────────────── */
+  --sw-shadow-brand: 0 10px 30px rgb(239 91 12 / 10%);
+  --sw-shadow-brand-hover: 0 15px 40px rgb(239 91 12 / 20%);
+  --sw-shadow-cta: 0 5px 20px rgb(239 91 12 / 30%);
+  --sw-shadow-glass:
+    0 8px 32px rgb(0 0 0 / 10%),
+    inset 0 1px 1px rgb(255 255 255 / 90%);
+  /* Neutral elevation for data surfaces — brand-tinted shadows would
+     wash an accounting table in orange. */
+  --sw-shadow-card: 0 1px 2px rgb(26 26 26 / 4%), 0 4px 16px rgb(26 26 26 / 4%);
+  --sw-shadow-card-hover: 0 2px 4px rgb(26 26 26 / 6%), 0 8px 24px rgb(26 26 26 / 8%);
+  --sw-shadow-overlay: 0 24px 64px rgb(26 26 26 / 24%);
+
+  /* ── Motion ────────────────────────────────────────────────────────── */
+  --sw-duration-fast: 150ms;
+  --sw-duration-standard: 300ms;
+  --sw-duration-slow: 500ms;
+  --sw-ease-standard: ease;
+  --sw-ease-entrance: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* ── Layout ────────────────────────────────────────────────────────── */
+  --sw-container: 1224px;
+  --sw-gutter: 20px;
+  --sw-section-space: 80px;
+  --sw-focus: 0 0 0 3px rgb(255 255 255), 0 0 0 6px rgb(199 71 0);
+  --sw-tap-min: 44px;
+}
+
+/* Dark theme. Scoped to BOTH selectors: the published system keys off
+   [data-theme="dark"], while this app has always toggled `.dark` on
+   <html> (and its no-flash inline script still does). Supporting both
+   means neither mechanism can desync the palette. */
+:root[data-theme="dark"],
+html.dark {
+  color-scheme: dark;
+
+  --sw-canvas: #0b0b0b;
+  --sw-canvas-subtle: #0b0b0b;
+  --sw-surface: #292929;
+  --sw-surface-raised: #333333;
+  --sw-surface-glass: rgb(50 50 50 / 57.6%);
+
+  --sw-text-primary: #f5f5f5;
+  --sw-text-secondary: #b0b0b0;
+  --sw-text-muted: #878787;
+  --sw-text-inverse: #0b0b0b;
+
+  --sw-border-subtle: rgb(255 255 255 / 15.3%);
+  --sw-border-strong: rgb(255 255 255 / 26%);
+  --sw-border-glass: rgb(255 255 255 / 30%);
+
+  --sw-action: #ef5b0c;
+  --sw-brand-soft: rgb(239 91 12 / 14%);
+  --sw-brand-soft-2: rgb(239 91 12 / 22%);
+
+  /* Status foregrounds lift for contrast against #0b0b0b / #292929. */
+  --sw-success: #4ade9a;
+  --sw-success-soft: rgb(16 185 129 / 16%);
+  --sw-warning: #fbbf24;
+  --sw-warning-soft: rgb(245 158 11 / 16%);
+  --sw-danger: #ff8a80;
+  --sw-danger-soft: rgb(239 68 68 / 16%);
+  --sw-info: #93b8ea;
+  --sw-info-soft: rgb(59 130 246 / 16%);
+
+  --sw-shadow-card: 0 1px 2px rgb(0 0 0 / 40%), 0 4px 16px rgb(0 0 0 / 32%);
+  --sw-shadow-card-hover: 0 2px 6px rgb(0 0 0 / 48%), 0 10px 28px rgb(0 0 0 / 40%);
+  --sw-shadow-overlay: 0 24px 64px rgb(0 0 0 / 64%);
+  --sw-focus: 0 0 0 3px #0b0b0b, 0 0 0 6px #ff6d1f;
+}
+
+/* ── Base ─────────────────────────────────────────────────────────────── */
+html {
+  font-family: var(--sw-font-ar);
+  background: var(--sw-canvas-subtle);
+  color: var(--sw-text-primary);
+}
+
+html[dir="ltr"] {
+  font-family: var(--sw-font-en);
+}
+
+body {
+  margin: 0;
+  background: var(--sw-canvas-subtle);
+  color: var(--sw-text-primary);
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+/* One visible focus treatment everywhere — the system's ring. */
+:focus-visible {
+  outline: none;
+  box-shadow: var(--sw-focus);
+}
+
+/* ── Layout helpers ───────────────────────────────────────────────────── */
+.sw-container {
+  width: min(calc(100% - (2 * var(--sw-gutter))), var(--sw-container));
+  margin-inline: auto;
+}
+
+.sw-section {
+  padding-block: var(--sw-section-space);
+}
+
+/* ── Buttons ──────────────────────────────────────────────────────────── */
+.sw-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sw-space-2);
+  min-height: var(--sw-tap-min);
+  border: 0;
+  border-radius: var(--sw-radius-pill);
+  padding: 16px 40px;
+  font: 700 17.6px/1.5 var(--sw-font-ar);
+  cursor: pointer;
+  transition:
+    transform var(--sw-duration-fast) var(--sw-ease-standard),
+    background-color var(--sw-duration-standard) var(--sw-ease-standard),
+    box-shadow var(--sw-duration-standard) var(--sw-ease-standard);
+}
+
+html[dir="ltr"] .sw-button {
+  font-family: var(--sw-font-en);
+}
+
+/* Admin density: the same pill identity at data-table scale. */
+.sw-button--sm {
+  min-height: 40px;
+  padding: 8px 18px;
+  font-size: 14px;
+}
+
+.sw-button--primary {
+  background: var(--sw-action);
+  color: #ffffff;
+  box-shadow: var(--sw-shadow-cta);
+}
+
+.sw-button--primary:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--sw-shadow-brand-hover);
+}
+
+.sw-button--primary:active {
+  transform: translateY(0);
+}
+
+.sw-button--secondary {
+  background: var(--sw-surface);
+  color: var(--sw-text-primary);
+  border: 1px solid var(--sw-border-subtle);
+}
+
+.sw-button--secondary:hover {
+  background: var(--sw-canvas-subtle);
+}
+
+.sw-button:disabled,
+.sw-button[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.48;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Icon-only controls stay visually small but keep a full touch target
+   on touch devices (requirement: 44px). */
+@media (pointer: coarse) {
+  .sw-tap {
+    min-width: var(--sw-tap-min);
+    min-height: var(--sw-tap-min);
+  }
+}
+
+/* ── Surfaces ─────────────────────────────────────────────────────────── */
+.sw-card {
+  border: 1px solid var(--sw-border-subtle);
+  border-radius: var(--sw-radius-card);
+  background: var(--sw-surface);
+  padding: 40px;
+}
+
+.sw-card--b2b {
+  border: 2px solid var(--sw-brand-500);
+  box-shadow:
+    0 15px 50px rgb(239 91 12 / 20%),
+    0 0 0 1px rgb(239 91 12 / 10%);
+}
+
+/* Glass is a marketing-surface expression only. It is deliberately NOT
+   used on tables, forms or any accounting screen — translucency over
+   dense figures hurts legibility. Kept for parity with the system. */
+.sw-glass {
+  border: 1px solid var(--sw-border-glass);
+  border-radius: var(--sw-radius-card);
+  background: var(--sw-surface-glass);
+  box-shadow: var(--sw-shadow-glass);
+  backdrop-filter: blur(16px);
+}
+
+/* ── Typography ───────────────────────────────────────────────────────── */
+.sw-display {
+  margin: 0;
+  font-size: 64px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.sw-heading {
+  margin: 0;
+  font-size: 48px;
+  font-weight: 800;
+  line-height: 1.5;
+}
+
+.sw-lead {
+  color: var(--sw-text-secondary);
+  font-size: 24px;
+  line-height: 1.5;
+}
+
+/* Numerals render in Inter with fixed-width figures so columns of money
+   align; Arabic in the same node still shapes with the Arabic face. */
+.tabular-nums,
+.sw-num {
+  font-family: var(--sw-font-num);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 768px) {
+  :root {
+    --sw-section-space: 64px;
+  }
+
+  .sw-display { font-size: 32px; }
+  .sw-heading { font-size: 28.8px; }
+  .sw-lead { font-size: 19.2px; }
+  .sw-button--mobile-full { width: 100%; }
+  .sw-card { padding: 24px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

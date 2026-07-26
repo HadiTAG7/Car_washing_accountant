@@ -258,7 +258,7 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
           />
           <StatCard
             icon={Scale}
-            tone={totals.ok ? 'emerald' : 'accent'}
+            tone={totals.ok ? 'emerald' : 'rose'}
             label={totals.ok ? 'المتبقي من الميزانية' : 'تجاوز الميزانية'}
             value={formatCurrency(Math.abs(totals.variance))}
             sub={totals.ok ? 'ضمن الحدود المخططة' : 'الإنفاق تجاوز المخطط'}

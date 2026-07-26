@@ -50,30 +50,39 @@
 @theme {
   --font-sans: "Thmanyah Sans", "IBM Plex Sans Arabic", "Tajawal", system-ui, sans-serif;
 
-  /* Deep navy primary — Sweater brand */
-  --color-primary-50:  #eef2ff;
-  --color-primary-100: #dfe5f5;
-  --color-primary-200: #bcc7e6;
-  --color-primary-300: #8b9bcb;
-  --color-primary-400: #5f70a8;
-  --color-primary-500: #3f528a;
-  --color-primary-600: #2a3c70;
-  --color-primary-700: #1f2d5a;
-  --color-primary-800: #172144;
-  --color-primary-900: #101935;
-  --color-primary-950: #0a1028;
+  /* ── Burnt orange primary — matches the Sweater logo (#ea580c) ────────
+     The scale is deliberately DARK-SHIFTED at 800/900: those steps carry
+     the app's chrome (sidebar, primary buttons), and a deep burnt orange
+     stays clearly distinct from the bright amber used for "pending"
+     status — they differ in lightness AND saturation, not just hue, so
+     the two never read as the same colour. 600 is the exact logo orange
+     and drives dark-mode buttons + icon chips. */
+  --color-primary-50:  #fff7ed;
+  --color-primary-100: #ffedd5;
+  --color-primary-200: #fed7aa;
+  --color-primary-300: #fdba74;
+  --color-primary-400: #fb923c;
+  --color-primary-500: #f97316;
+  --color-primary-600: #ea580c; /* logo */
+  --color-primary-700: #d4480c;
+  --color-primary-800: #c2410c; /* light-mode buttons — 5.2:1 on white */
+  --color-primary-900: #7c2d12; /* sidebar — deep espresso orange */
+  --color-primary-950: #431407;
 
-  /* Crimson accent — Sweater legacy accent red */
-  --color-accent-50:  #fff1f2;
-  --color-accent-100: #ffe1e3;
-  --color-accent-200: #ffc8cd;
-  --color-accent-300: #ff97a0;
-  --color-accent-400: #f9636f;
-  --color-accent-500: #e63946;
-  --color-accent-600: #c5283a;
-  --color-accent-700: #9f1e2e;
-  --color-accent-800: #7a1722;
-  --color-accent-900: #501018;
+  /* ── Navy accent — the colour the chrome vacated ───────────────────────
+     Reused as the complementary accent so CTAs (the sidebar's "add entry"
+     gradient, the active-tab dot) punch against the orange chrome instead
+     of blending into it, which a red accent would now do. */
+  --color-accent-50:  #eef2ff;
+  --color-accent-100: #dfe5f5;
+  --color-accent-200: #bcc7e6;
+  --color-accent-300: #8b9bcb;
+  --color-accent-400: #5f70a8;
+  --color-accent-500: #3f528a;
+  --color-accent-600: #2a3c70;
+  --color-accent-700: #1f2d5a;
+  --color-accent-800: #172144;
+  --color-accent-900: #101935;
 
   /* Dark app surface */
   --color-app-bg:      #0f172a;

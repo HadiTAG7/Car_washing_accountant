@@ -41,11 +41,24 @@ export default function LoginScreen() {
           setError('Firebase غير مُهيّأ — لا يمكن إرسال رابط إعادة التعيين في وضع العرض التجريبي.');
           return;
         }
-        // Firebase sends its own reset email + hosts the reset page; the
-        // continue URL brings the user back to the app afterwards.
-        await sendPasswordResetEmail(auth, String(email).trim(), {
-          url: `${window.location.origin}/`,
-        });
+        // Firebase sends its own reset email + hosts the reset page. The
+        // continue URL (return-to-app link) only works when this exact
+        // origin is allowlisted in Firebase Auth → Settings → Authorized
+        // domains. A new deployment domain isn't, and Firebase then hard-
+        // fails with auth/unauthorized-continue-uri — locking the user out
+        // of the ONE flow that recovers an account. So the continue URL is
+        // best-effort: on that specific error we retry without it, which
+        // always works (the user lands on Firebase's hosted reset page).
+        const target = String(email).trim();
+        try {
+          await sendPasswordResetEmail(auth, target, { url: `${window.location.origin}/` });
+        } catch (err) {
+          if (err?.code === 'auth/unauthorized-continue-uri') {
+            await sendPasswordResetEmail(auth, target);
+          } else {
+            throw err;
+          }
+        }
         setNotice(
           '✓ تم إرسال رابط إعادة التعيين إلى بريدك الإلكتروني. تفقد بريدك (وملف الرسائل غير المرغوب فيها) واتبع الرابط لإعادة ضبط كلمة المرور.',
         );

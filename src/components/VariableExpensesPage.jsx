@@ -1,8 +1,17 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
   Plus, Trash2, Pencil, Wallet, Layers, Scale, CalendarClock, Activity, Calendar, Car,
+  Percent, Link as LinkIcon,
 } from 'lucide-react';
-import { formatCurrency, formatNumber, VARIABLE_EXPENSE_CATEGORIES } from '../data/initialData';
+import {
+  formatCurrency, formatCurrencyPrecise, formatNumber, extractVat, VARIABLE_EXPENSE_CATEGORIES,
+} from '../data/initialData';
+
+// Only http(s) values become clickable — same guard the ledger and the VAT
+// report use, so a pasted `javascript:` URL can never become a live anchor.
+function isSafeHttpUrl(value) {
+  return /^https?:\/\//i.test(String(value || '').trim());
+}
 import TopBar from './TopBar';
 import {
   Card, SectionHeader, StatCard, PrimaryButton,
@@ -349,6 +358,28 @@ export default function VariableExpensesPage() {
                               ? `محسوب تلقائياً من غسلات ${i.bikerName} لشهر ${monthLabel}`
                               : `محسوب تلقائياً من إجمالي غسلات شهر ${monthLabel}`}
                           </p>
+                        )}
+                        {/* Tax invoice: reclaimable VAT inline + a link to the
+                            invoice, so the row is self-verifying at filing time. */}
+                        {i.isTaxInvoice && (
+                          <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-100 dark:border-emerald-500/30 px-2 py-0.5 rounded-full tabular-nums">
+                              <Percent size={11} />
+                              ض.ق.م: {formatCurrencyPrecise(extractVat(i.totalVariableCost) * scalingFactor)}
+                            </span>
+                            {i.invoiceUrl && isSafeHttpUrl(i.invoiceUrl) && (
+                              <a
+                                href={i.invoiceUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title={i.invoiceUrl}
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary-700 dark:text-primary-300 hover:underline"
+                              >
+                                <LinkIcon size={11} />
+                                الفاتورة
+                              </a>
+                            )}
+                          </div>
                         )}
                       </td>
                       <td className="py-3 px-4 whitespace-nowrap align-top">

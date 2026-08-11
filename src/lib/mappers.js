@@ -278,10 +278,15 @@ export function mapVariableExpense(row) {
     unitCost:          Number(row.unit_cost) || 0,
     totalVariableCost: Number(row.total_variable_cost) || 0,
     loggedDate:        row.logged_date || '',
+    // VAT recovery — same contract as the monthly/startup/annual records:
+    // a flagged cost is VAT-INCLUSIVE and its 15% share is reclaimable.
+    isTaxInvoice:      Boolean(row.is_tax_invoice),
+    invoiceUrl:        row.invoice_url || '',
   };
 }
 export function toVariableExpenseInsert({
   expenseName, categoryId, quantity, unitCost, totalVariableCost, loggedDate,
+  isTaxInvoice, invoiceUrl,
 }) {
   const q  = clampExpenseQuantity(quantity);
   const uc = Math.max(0, Number(unitCost) || 0);
@@ -292,6 +297,8 @@ export function toVariableExpenseInsert({
     unit_cost:           uc,
     total_variable_cost: Math.max(0, Number(totalVariableCost) || q * uc),
     logged_date:         loggedDate || null,
+    is_tax_invoice:      Boolean(isTaxInvoice),
+    invoice_url:         invoiceUrl && String(invoiceUrl).trim() ? String(invoiceUrl).trim() : null,
   };
 }
 export function toVariableExpenseUpdate(updates = {}) {
@@ -302,6 +309,11 @@ export function toVariableExpenseUpdate(updates = {}) {
   if (updates.unitCost          !== undefined) payload.unit_cost           = Math.max(0, Number(updates.unitCost) || 0);
   if (updates.totalVariableCost !== undefined) payload.total_variable_cost = Math.max(0, Number(updates.totalVariableCost) || 0);
   if (updates.loggedDate        !== undefined) payload.logged_date         = updates.loggedDate || null;
+  if (updates.isTaxInvoice       !== undefined) payload.is_tax_invoice      = Boolean(updates.isTaxInvoice);
+  if (updates.invoiceUrl         !== undefined) {
+    const u = String(updates.invoiceUrl || '').trim();
+    payload.invoice_url = u ? u : null;
+  }
   return payload;
 }
 

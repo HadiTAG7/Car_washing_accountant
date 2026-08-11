@@ -2,19 +2,20 @@ import { useMemo } from 'react';
 import { isFirebaseConfigured } from '../lib/firebaseClient';
 import { fetchRows, where } from '../lib/firestoreCrud';
 import {
-  mapStartupCostEntry, mapAnnualExpenseEntry, mapMonthlyExpense,
+  mapStartupCostEntry, mapAnnualExpenseEntry, mapMonthlyExpense, mapVariableExpense,
 } from '../lib/mappers';
 import { useFirestoreQuery } from './useFirestoreQuery';
 
 /**
- * Read-only feed of every record flagged as a tax invoice, across all three
- * sources: startup_cost_entries, annual_expense_entries and monthly_expenses.
+ * Read-only feed of every record flagged as a tax invoice, across all four
+ * sources: startup_cost_entries, annual_expense_entries, monthly_expenses and
+ * variable_expenses.
  * Powers the "الضريبة المستردة" report — the VAT portion is derived on the
  * page, never stored.
  *
  * Each row is normalised to the ledger-entry shape the report expects
  * ({ description, amount, spentDate, invoiceUrl, … }) and tagged with a
- * `source` plus a unified `parentId`. Three single-field queries, merged and
+ * `source` plus a unified `parentId`. Four single-field queries, merged and
  * sorted client-side, so no composite index is needed.
  *
  * Monthly expenses are not ledger entries, so two things are mapped across:
@@ -33,6 +34,11 @@ export function useTaxInvoices() {
   const annualQ = useFirestoreQuery(
     () => fetchRows('annual_expense_entries', [where('is_tax_invoice', '==', true)]),
     { enabled: isFirebaseConfigured, map: mapAnnualExpenseEntry, fallback: [] },
+  );
+
+  const variableQ = useFirestoreQuery(
+    () => fetchRows('variable_expenses', [where('is_tax_invoice', '==', true)]),
+    { enabled: isFirebaseConfigured, map: mapVariableExpense, fallback: [] },
   );
 
   const monthlyQ = useFirestoreQuery(
@@ -60,22 +66,40 @@ export function useTaxInvoices() {
       parentId:    m.id,
       recurring:   m.recurrence !== 'one_time',
     }));
-    return [...startup, ...annual, ...monthly].sort((a, b) => {
+    // Variable expenses are one-off logged events, so they always carry a
+    // real spend date — no recurring special case needed.
+    const variable = (variableQ.data || []).map((v) => ({
+      id:           v.id,
+      description:  v.expenseName,
+      amount:       v.totalVariableCost,
+      spentDate:    v.loggedDate || '',
+      notes:        '',
+      invoiceUrl:   v.invoiceUrl,
+      isTaxInvoice: true,
+      createdAt:    v.loggedDate || '',
+      source:       'variable',
+      parentId:     v.id,
+    }));
+    return [...startup, ...annual, ...monthly, ...variable].sort((a, b) => {
       const byDate = String(b.spentDate).localeCompare(String(a.spentDate));
       return byDate !== 0 ? byDate : String(b.createdAt).localeCompare(String(a.createdAt));
     });
-  }, [startupQ.data, annualQ.data, monthlyQ.data]);
+  }, [startupQ.data, annualQ.data, monthlyQ.data, variableQ.data]);
 
-  const loading = startupQ.loading || annualQ.loading || monthlyQ.loading;
+  const loading = startupQ.loading || annualQ.loading || monthlyQ.loading || variableQ.loading;
   // Page-level error only when EVERY source failed; a single failed source
   // gets a compact per-source note while the healthy ones keep rendering.
-  const error = (startupQ.error && annualQ.error && monthlyQ.error) ? startupQ.error : null;
+  const error = (startupQ.error && annualQ.error && monthlyQ.error && variableQ.error)
+    ? startupQ.error : null;
   const sourceErrors = {
     startup: startupQ.error || null,
     annual:  annualQ.error  || null,
     monthly: monthlyQ.error || null,
+    variable: variableQ.error || null,
   };
-  const refetch = () => { startupQ.refetch(); annualQ.refetch(); monthlyQ.refetch(); };
+  const refetch = () => {
+    startupQ.refetch(); annualQ.refetch(); monthlyQ.refetch(); variableQ.refetch();
+  };
 
   return { invoices, loading, error, sourceErrors, refetch };
 }

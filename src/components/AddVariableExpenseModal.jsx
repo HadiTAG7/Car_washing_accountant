@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
-import { X, Plus, Pencil, Activity, Check, AlertTriangle } from 'lucide-react';
-import { formatCurrency, formatNumber, todayISO } from '../data/initialData';
+import { X, Plus, Pencil, Activity, Check, AlertTriangle, Percent, Link as LinkIcon } from 'lucide-react';
+import {
+  formatCurrency, formatCurrencyPrecise, formatNumber, todayISO, extractVat, netOfVat,
+} from '../data/initialData';
 import CategorySelect from './CategorySelect';
 
 const EMPTY_TEMPLATE = {
@@ -9,6 +11,8 @@ const EMPTY_TEMPLATE = {
   quantity:    '1',
   unitCost:    '',
   loggedDate:  '',
+  isTaxInvoice: false,
+  invoiceUrl:   '',
 };
 
 export default function AddVariableExpenseModal({
@@ -36,6 +40,8 @@ export default function AddVariableExpenseModal({
         quantity:    String(Math.max(1, parseInt(initialValues.quantity, 10) || 1)),
         unitCost:    initialValues.unitCost ? String(initialValues.unitCost) : '',
         loggedDate:  initialValues.loggedDate || '',
+        isTaxInvoice: Boolean(initialValues.isTaxInvoice),
+        invoiceUrl:   initialValues.invoiceUrl || '',
       });
     } else {
       setForm({ ...EMPTY_TEMPLATE, loggedDate: todayISO() });
@@ -54,7 +60,8 @@ export default function AddVariableExpenseModal({
   }, [isOpen, categories]);
 
   function handleChange(e) {
-    setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+    const { name, type, value, checked } = e.target;
+    setForm((prev) => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
   }
 
   // Is the selected category a dynamic rule (auto-quantity from wash counter)?
@@ -90,6 +97,8 @@ export default function AddVariableExpenseModal({
         unitCost,
         totalVariableCost,
         loggedDate:        form.loggedDate || '',
+        isTaxInvoice:      form.isTaxInvoice,
+        invoiceUrl:        form.invoiceUrl.trim(),
       };
       if (editing && onUpdate) {
         await onUpdate(initialValues.id, payload);
@@ -320,6 +329,76 @@ export default function AddVariableExpenseModal({
                   ? `${formatNumber(effectiveQuantity)} × ${formatCurrency(unitCost)} = ${formatCurrency(totalVariableCost)}`
                   : formatCurrency(0)}
               </span>
+            </div>
+          </div>
+
+          {/* ── VAT recovery ────────────────────────────────────────────
+              Same contract as the monthly ledger: a flagged cost is
+              VAT-INCLUSIVE, so the 15% share is back-derived rather than
+              added on top, and the row feeds the "الضريبة المستردة" report. */}
+          <div className="space-y-3">
+            <label
+              htmlFor="variableIsTaxInvoice"
+              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-control border cursor-pointer transition-colors ${
+                form.isTaxInvoice
+                  ? 'border-emerald-100 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10'
+                  : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700'
+              }`}
+            >
+              <input
+                id="variableIsTaxInvoice"
+                type="checkbox"
+                name="isTaxInvoice"
+                checked={form.isTaxInvoice}
+                onChange={handleChange}
+                className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 accent-emerald-600"
+              />
+              <Percent size={14} className={form.isTaxInvoice ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-500 dark:text-slate-400'} />
+              <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                فاتورة ضريبية
+                <span className="text-[11px] font-normal text-slate-500 dark:text-slate-400 mr-1">
+                  (المبلغ شامل ضريبة القيمة المضافة 15%)
+                </span>
+              </span>
+            </label>
+
+            {form.isTaxInvoice && totalVariableCost > 0 && (
+              <div
+                role="status"
+                className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-control bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/30 text-[12px]"
+              >
+                <span className="text-emerald-700 dark:text-emerald-300">
+                  الضريبة المتوقع استردادها:
+                  <span className="font-bold tabular-nums mr-1">{formatCurrencyPrecise(extractVat(totalVariableCost))}</span>
+                </span>
+                <span className="text-slate-500 dark:text-slate-400">
+                  الصافي قبل الضريبة:
+                  <span className="font-bold tabular-nums mr-1">{formatCurrencyPrecise(netOfVat(totalVariableCost))}</span>
+                </span>
+              </div>
+            )}
+
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5" htmlFor="variableInvoiceUrl">
+                رابط الفاتورة
+                <span className="text-[11px] font-normal text-slate-500 dark:text-slate-400 mr-1">(اختياري)</span>
+              </label>
+              <div className="relative">
+                <input
+                  id="variableInvoiceUrl"
+                  type="url"
+                  name="invoiceUrl"
+                  value={form.invoiceUrl}
+                  onChange={handleChange}
+                  placeholder="https://..."
+                  dir="ltr"
+                  className="w-full pr-4 pl-10 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm text-left focus:outline-none focus:border-primary-500 transition-colors"
+                />
+                <LinkIcon size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 pointer-events-none" />
+              </div>
+              <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                الصق رابط الفاتورة للرجوع إليها عند تقديم الإقرار الضريبي.
+              </p>
             </div>
           </div>
 

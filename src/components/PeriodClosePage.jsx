@@ -119,6 +119,16 @@ export default function PeriodClosePage() {
     } finally { setBusy(''); setProgress(null); }
   }
 
+  async function handleSetting(patch) {
+    setBusy('settings');
+    try {
+      await updateSettings(patch, { userId: user?.id });
+      showToast('تم حفظ إعدادات المحاسبة.');
+    } catch (e) {
+      showToast(describeBackendError(e) || e?.message || 'تعذّر الحفظ', 'error');
+    } finally { setBusy(''); }
+  }
+
   async function handleToggleAutoPost(next) {
     setBusy('autopost');
     try {
@@ -244,6 +254,67 @@ export default function PeriodClosePage() {
               <StatCard className="col-span-2 md:col-span-1" icon={Unlock} tone="amber"
                 label="فترات مفتوحة" value={String(periodKeys.length - closedCount)} />
             </div>
+
+            {/* ── إعدادات المحاسبة ───────────────────────────────────
+                Three switches that change what every figure downstream
+                means, so they live in one place rather than being assumed:
+                whether the business is VAT-registered, whether wash prices
+                include the tax, and how often the return is filed. */}
+            <Card className="p-6">
+              <SectionHeader
+                title="إعدادات المحاسبة"
+                subtitle="تحكم في احتساب الضريبة ودورية الإقرار — تنعكس مباشرة على تقرير ضريبة القيمة المضافة والقيود"
+              />
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                    التسجيل الضريبي
+                  </label>
+                  <label className="flex items-center gap-2.5 min-h-touch cursor-pointer select-none">
+                    <input type="checkbox" checked={Boolean(settings.vatRegistered)}
+                      disabled={!canMutate || busy === 'settings'}
+                      onChange={(e) => handleSetting({ vatRegistered: e.target.checked })}
+                      className="w-4 h-4 accent-primary-600" />
+                    <span className="text-sm text-slate-700 dark:text-slate-300">
+                      المنشأة مسجّلة في ضريبة القيمة المضافة
+                    </span>
+                  </label>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed mt-1">
+                    عند إلغائها يُسجَّل كامل مبلغ الغسلة إيراداً بلا ضريبة مخرجات.
+                  </p>
+                </div>
+                <div>
+                  <label htmlFor="wash-price-mode" className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                    سعر الغسلة
+                  </label>
+                  <select id="wash-price-mode" value={settings.washPriceMode}
+                    disabled={!canMutate || busy === 'settings'}
+                    onChange={(e) => handleSetting({ washPriceMode: e.target.value })}
+                    className="w-full min-h-touch px-3 py-2 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-slate-900 dark:text-slate-100">
+                    <option value="inclusive">شامل الضريبة</option>
+                    <option value="exclusive">غير شامل الضريبة</option>
+                  </select>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed mt-1">
+                    «شامل» يستخرج الضريبة من السعر؛ «غير شامل» يضيفها فوقه.
+                  </p>
+                </div>
+                <div>
+                  <label htmlFor="vat-filing" className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                    دورية الإقرار الضريبي
+                  </label>
+                  <select id="vat-filing" value={settings.vatFilingPeriod}
+                    disabled={!canMutate || busy === 'settings'}
+                    onChange={(e) => handleSetting({ vatFilingPeriod: e.target.value })}
+                    className="w-full min-h-touch px-3 py-2 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-slate-900 dark:text-slate-100">
+                    <option value="quarterly">ربع سنوي</option>
+                    <option value="monthly">شهري</option>
+                  </select>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed mt-1">
+                    الإقرار ربع سنوي للتوريدات دون 40 مليون ريال، وشهري فوقها.
+                  </p>
+                </div>
+              </div>
+            </Card>
 
             {/* ── الترحيل التلقائي ───────────────────────────────────
                 Off by default, and switched in exactly one visible place: an

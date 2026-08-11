@@ -5,6 +5,10 @@ import {
 } from '../data/initialData';
 import CategorySelect from './CategorySelect';
 import DateField from './DateField';
+import TaxInvoiceFields from './TaxInvoiceFields';
+import {
+  EMPTY_TAX_INVOICE_FIELDS, readTaxInvoiceFields, submitTaxInvoiceFields,
+} from '../lib/taxInvoiceForm';
 
 const EMPTY_TEMPLATE = {
   expenseName: '',
@@ -14,6 +18,7 @@ const EMPTY_TEMPLATE = {
   loggedDate:  '',
   isTaxInvoice: false,
   invoiceUrl:   '',
+  ...EMPTY_TAX_INVOICE_FIELDS,
 };
 
 export default function AddVariableExpenseModal({
@@ -43,6 +48,7 @@ export default function AddVariableExpenseModal({
         loggedDate:  initialValues.loggedDate || '',
         isTaxInvoice: Boolean(initialValues.isTaxInvoice),
         invoiceUrl:   initialValues.invoiceUrl || '',
+        ...readTaxInvoiceFields(initialValues),
       });
     } else {
       setForm({ ...EMPTY_TEMPLATE, loggedDate: todayISO() });
@@ -100,6 +106,7 @@ export default function AddVariableExpenseModal({
         loggedDate:        form.loggedDate || '',
         isTaxInvoice:      form.isTaxInvoice,
         invoiceUrl:        form.invoiceUrl.trim(),
+        ...submitTaxInvoiceFields(form),
       };
       if (editing && onUpdate) {
         await onUpdate(initialValues.id, payload);
@@ -375,6 +382,17 @@ export default function AddVariableExpenseModal({
                   <span className="font-bold tabular-nums mr-1">{formatCurrencyPrecise(netOfVat(totalVariableCost))}</span>
                 </span>
               </div>
+            )}
+
+            {/* بيانات الفاتورة — what the VAT report checks before deducting. */}
+            {form.isTaxInvoice && (
+              <TaxInvoiceFields
+                form={form}
+                onChange={(next) => setForm((f) => ({ ...f, ...next }))}
+                idPrefix="variable"
+                amount={totalVariableCost}
+                fallbackDate={form.loggedDate}
+              />
             )}
 
             <div>

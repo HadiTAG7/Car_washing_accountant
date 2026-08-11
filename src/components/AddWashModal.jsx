@@ -14,7 +14,17 @@ const EMPTY_TEMPLATE = {
   quantity:   '1',
   price:      '40',
   washDate:   '',
+  // Decides the debit side of the revenue entry: cash, bank, or a
+  // receivable when the sale is on credit.
+  paymentMethod: 'cash',
 };
+
+const PAYMENT_METHOD_OPTIONS = [
+  { value: 'cash',     label: 'نقدي' },
+  { value: 'card',     label: 'مدى / شبكة' },
+  { value: 'transfer', label: 'تحويل بنكي' },
+  { value: 'credit',   label: 'آجل (على الحساب)' },
+];
 
 export default function AddWashModal({
   isOpen, onClose, onAdd, onUpdate, initialValues = null,
@@ -31,6 +41,7 @@ export default function AddWashModal({
         quantity:  String(Math.max(1, parseInt(initialValues.quantity, 10) || 1)),
         price:     initialValues.price ? String(initialValues.price) : '0',
         washDate:  initialValues.washDate || '',
+        paymentMethod: initialValues.paymentMethod || 'cash',
       });
     } else {
       setForm({ ...EMPTY_TEMPLATE, washDate: todayISO() });
@@ -56,6 +67,7 @@ export default function AddWashModal({
         quantity,
         price,
         washDate:  form.washDate || '',
+        paymentMethod: form.paymentMethod || 'cash',
       };
       if (editing && onUpdate) {
         await onUpdate(initialValues.id, payload);
@@ -162,6 +174,27 @@ export default function AddWashModal({
               value={form.washDate}
               onChange={handleChange}
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5" htmlFor="washPaymentMethod">
+              طريقة الدفع
+            </label>
+            <select
+              id="washPaymentMethod"
+              name="paymentMethod"
+              value={form.paymentMethod}
+              onChange={handleChange}
+              className="w-full min-h-touch px-3 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:border-primary-500 transition-colors"
+            >
+              {PAYMENT_METHOD_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+            <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+              تحدّد الحساب المدين في القيد: الصندوق للنقدي، البنك للشبكة والتحويل،
+              والعملاء للآجل.
+            </p>
           </div>
 
           {/* Live batch revenue — quantity × price */}

@@ -27,9 +27,15 @@ import { useFirestoreQuery } from './useFirestoreQuery';
  * Monthly expenses are not ledger entries, so two things are mapped across:
  *   • `amount`    ← total_monthly_cost (the VAT-inclusive figure)
  *   • `spentDate` ← logged_date for one-off rows; a RECURRING row has no
- *     single date, so it carries `recurring: true` and an empty date. The
- *     report treats those as claimable in whichever period is selected,
- *     which is what a monthly VAT return actually does.
+ *     single date, so it carries `recurring: true` and an empty date.
+ *
+ * A dateless recurring row is NOT claimable. It used to be counted once per
+ * month of the return period, which invented invoices nobody had received;
+ * the report now rejects it and says which fields are missing. Deduction
+ * needs a document — see `inputInvoiceEligibility` in vatReturn.js.
+ *
+ * Every source therefore also carries the invoice identity: invoiceNumber,
+ * invoiceDate, supplier and vatDeductible.
  *
  * Once a recurring template has generated dated VOUCHERS, those vouchers are
  * the documents and the template drops out — same double-count guard as the
@@ -99,6 +105,10 @@ export function useTaxInvoices() {
         spentDate:   m.recurrence === 'one_time' ? (m.loggedDate || '') : '',
         notes:       '',
         invoiceUrl:  m.invoiceUrl,
+        invoiceNumber: m.invoiceNumber,
+        invoiceDate:   m.invoiceDate,
+        supplier:      m.supplier,
+        vatDeductible: m.vatDeductible,
         isTaxInvoice: true,
         createdAt:   m.loggedDate || '',
         source:      'monthly',
@@ -115,6 +125,10 @@ export function useTaxInvoices() {
         spentDate:    v.dueDate || '',
         notes:        '',
         invoiceUrl:   v.invoiceUrl || '',
+        invoiceNumber: v.invoiceNumber || '',
+        invoiceDate:   v.invoiceDate || '',
+        supplier:      v.supplier || '',
+        vatDeductible: v.vatDeductible !== false,
         isTaxInvoice: true,
         createdAt:    v.generatedAtIso || v.dueDate || '',
         source:       'monthly',
@@ -129,6 +143,10 @@ export function useTaxInvoices() {
       spentDate:    v.loggedDate || '',
       notes:        '',
       invoiceUrl:   v.invoiceUrl,
+      invoiceNumber: v.invoiceNumber,
+      invoiceDate:   v.invoiceDate,
+      supplier:      v.supplier,
+      vatDeductible: v.vatDeductible,
       isTaxInvoice: true,
       createdAt:    v.loggedDate || '',
       source:       'variable',
@@ -150,6 +168,10 @@ export function useTaxInvoices() {
         spentDate:    String(i.createdAt || '').slice(0, 10),
         notes:        '',
         invoiceUrl:   i.invoiceUrl,
+        invoiceNumber: i.invoiceNumber,
+        invoiceDate:   i.invoiceDate,
+        supplier:      i.supplier,
+        vatDeductible: i.vatDeductible,
         isTaxInvoice: true,
         createdAt:    i.createdAt || '',
         source:       'startup',

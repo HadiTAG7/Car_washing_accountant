@@ -35,7 +35,7 @@ summed directly into a report.
 | المصاريف الشهرية / المتغيرة | Monthly fixed + per-wash variable costs (biker commissions auto-derived from wash logs) |
 | الغسلات | Wash batches (quantity × price) feeding revenue and commissions |
 | قائمة الدخل | Income statement |
-| الضريبة المستردة | Every tax invoice across all four sources, totalled **per quarter** |
+| تقرير ضريبة القيمة المضافة | Output tax, deductible input tax and the net, per filing period |
 | الرقابة والميزانيات | Category budgets with auto-discovery + over/under tracking |
 | إدارة الشركاء / المدفوعات | Partner registry, capital fees, payment receipts |
 | المصروفات المؤقتة | Reimbursable outlays with pending → recovered tracking |
@@ -228,6 +228,44 @@ month.
 
 Optional `start_period` / `end_period` fields bound a template's life; a row
 without them is open-ended, which is how every existing row behaves.
+
+---
+
+## تقرير ضريبة القيمة المضافة
+
+A **report**, not a return: it covers the three headline figures but not every
+field of a ZATCA declaration (zero-rated and exempt supplies, imports,
+corrections of prior periods), so calling it an إقرار would overstate it.
+
+| | |
+|---|---|
+| **ضريبة المخرجات** | From **completed** washes in the period, split per the VAT-registered and price-mode settings. Cross-checked against posted movement on `2100`; a difference means completed washes are not in the books yet, and the page says so. |
+| **ضريبة المدخلات** | Only from purchases that carry a real tax invoice. |
+| **الصافي** | Output − input, labelled payable or refundable. |
+
+### Deduction requires a document
+Input VAT is deducted **only** against a purchase carrying all four of:
+
+`تاريخ الفاتورة` · `رقم الفاتورة` · `اسم المورّد` · `مبلغ الفاتورة`
+
+A recurring cost is **not** evidence that invoices exist. An earlier version
+multiplied a monthly template by three inside a quarter, which invented two
+invoices nobody had received — an overstated reclaim, and the kind an
+assessment reverses with a penalty. That multiplier is gone; the rule is
+enforced in `vatReturn.js` and covered by a regression test.
+
+Rejected purchases are **not** silently dropped. They are listed as
+«غير مؤهلة» with the exact missing fields, the report totals the tax being
+given up for want of a document, and the CSV carries them too — a number
+quietly vanishing from a return is as bad as one quietly appearing in it.
+
+An undated reject appears in **every** period, because it belongs to none.
+
+### Filing frequency is a setting
+Quarterly below the SAR 40m threshold, monthly above it — neither is assumed.
+Set it in **إقفال الفترة → إعدادات المحاسبة**, alongside VAT registration and
+whether wash prices include the tax. The report's periods, labels and totals
+follow it.
 
 ---
 

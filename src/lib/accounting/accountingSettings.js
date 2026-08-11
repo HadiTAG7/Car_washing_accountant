@@ -18,6 +18,10 @@ export const DEFAULT_ACCOUNTING_SETTINGS = {
   autoPost: false,
   vatRegistered: true,
   washPriceMode: 'inclusive',
+  // ZATCA files quarterly below the SAR 40m threshold and monthly above it,
+  // so neither can be assumed — the report reads this rather than hard-coding
+  // a frequency. Quarterly is the common case for a single car wash.
+  vatFilingPeriod: 'quarterly',
 };
 
 export async function fetchAccountingSettings() {
@@ -29,6 +33,8 @@ export async function fetchAccountingSettings() {
     ...(typeof v.autoPost === 'boolean' ? { autoPost: v.autoPost } : {}),
     ...(typeof v.vatRegistered === 'boolean' ? { vatRegistered: v.vatRegistered } : {}),
     ...(v.washPriceMode ? { washPriceMode: v.washPriceMode } : {}),
+    ...(v.vatFilingPeriod === 'monthly' || v.vatFilingPeriod === 'quarterly'
+      ? { vatFilingPeriod: v.vatFilingPeriod } : {}),
   };
 }
 

@@ -9,9 +9,12 @@ import {
 import { uploadInvoiceFile, isFirebaseConfigured } from '../lib/firebaseClient';
 import { EmptyState } from './UI';
 import DateField from './DateField';
+import TaxInvoiceFields from './TaxInvoiceFields';
+import { EMPTY_TAX_INVOICE_FIELDS, submitTaxInvoiceFields } from '../lib/taxInvoiceForm';
 
 const EMPTY_FORM = {
   description: '', amount: '', spentDate: '', notes: '', invoiceUrl: '', isTaxInvoice: false,
+  ...EMPTY_TAX_INVOICE_FIELDS,
 };
 
 // Cheap link detector — anything starting with http:// or https:// is
@@ -109,6 +112,7 @@ export default function ExpenseLedgerModal({
         notes:        form.notes.trim(),
         invoiceUrl:   form.invoiceUrl.trim(),
         isTaxInvoice: form.isTaxInvoice,
+        ...submitTaxInvoiceFields(form),
       });
       setForm({ ...EMPTY_FORM, spentDate: todayISO() });
       onDirty?.(); // tell the parent page to refetch its items so totals update
@@ -366,6 +370,18 @@ export default function ExpenseLedgerModal({
                   <span className="font-bold tabular-nums mr-1">{formatCurrency(netOfVat(parsedAmount))}</span>
                 </span>
               </div>
+            )}
+
+            {/* بيانات الفاتورة — required before the VAT report will
+                deduct this purchase. */}
+            {form.isTaxInvoice && (
+              <TaxInvoiceFields
+                form={form}
+                onChange={(next) => setForm((f) => ({ ...f, ...next }))}
+                idPrefix="ledger"
+                amount={parsedAmount}
+                fallbackDate={form.spentDate}
+              />
             )}
 
             <button

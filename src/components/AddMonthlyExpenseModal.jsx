@@ -3,6 +3,10 @@ import { X, Plus, Pencil, Receipt, Check, AlertTriangle, Repeat, Calendar, Perce
 import { formatCurrency, formatCurrencyPrecise, formatNumber, extractVat, netOfVat } from '../data/initialData';
 import CategorySelect from './CategorySelect';
 import DateField from './DateField';
+import TaxInvoiceFields from './TaxInvoiceFields';
+import {
+  EMPTY_TAX_INVOICE_FIELDS, readTaxInvoiceFields, submitTaxInvoiceFields,
+} from '../lib/taxInvoiceForm';
 
 function todayISO() {
   const d = new Date();
@@ -23,6 +27,7 @@ const EMPTY = {
   loggedDate:    '',
   isTaxInvoice:  false,
   invoiceUrl:    '',
+  ...EMPTY_TAX_INVOICE_FIELDS,
 };
 
 export default function AddMonthlyExpenseModal({
@@ -59,6 +64,7 @@ export default function AddMonthlyExpenseModal({
           : '',
         isTaxInvoice:  Boolean(initialValues.isTaxInvoice),
         invoiceUrl:    initialValues.invoiceUrl || '',
+        ...readTaxInvoiceFields(initialValues),
       });
     } else {
       setForm({ ...EMPTY });
@@ -113,6 +119,7 @@ export default function AddMonthlyExpenseModal({
         paymentStatus:    form.paymentStatus === 'paid' ? 'paid' : 'pending',
         isTaxInvoice:     form.isTaxInvoice,
         invoiceUrl:       form.invoiceUrl.trim(),
+        ...submitTaxInvoiceFields(form),
       };
       if (editing && onUpdate) {
         await onUpdate(initialValues.id, payload);
@@ -464,6 +471,19 @@ export default function AddMonthlyExpenseModal({
                   <span className="font-bold tabular-nums mr-1">{formatCurrencyPrecise(netOfVat(totalMonthlyCost))}</span>
                 </span>
               </div>
+            )}
+
+            {/* بيانات الفاتورة — the fields the VAT report actually checks.
+                Shown only for a tax invoice, because that is the only case
+                where they decide whether the tax is deductible. */}
+            {form.isTaxInvoice && (
+              <TaxInvoiceFields
+                form={form}
+                onChange={(next) => setForm((f) => ({ ...f, ...next }))}
+                idPrefix="monthly"
+                amount={totalMonthlyCost}
+                fallbackDate={form.loggedDate}
+              />
             )}
 
             {/* Invoice reference. A URL keeps the record verifiable without

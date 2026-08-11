@@ -123,15 +123,15 @@ export async function postedDepreciationPeriods() {
 
 // ─── الترحيل ─────────────────────────────────────────────────────────────
 /** The gain/loss accounts only matter on a disposal, so they are made lazily. */
-async function ensureDisposalAccounts({ userId = null } = {}) {
+async function ensureDisposalAccounts() {
   await ensureAccount({
     code: ACC.ASSET_DISPOSAL_GAIN, nameArabic: 'أرباح استبعاد أصول',
     accountType: 'revenue', normalBalance: 'credit', parentId: null, contra: false, active: true,
-  }, { userId });
+  });
   await ensureAccount({
     code: ACC.ASSET_DISPOSAL_LOSS, nameArabic: 'خسائر استبعاد أصول',
     accountType: 'expense', normalBalance: 'debit', parentId: null, contra: false, active: true,
-  }, { userId });
+  });
 }
 
 /**
@@ -165,7 +165,7 @@ export async function postDepreciationForPeriod(periodKey, { userId = null, asse
   }
 
   const built = buildDepreciationEntry(periodKey, list, { createdBy: userId });
-  const res = await postEntry(built, { userId });
+  const res = await postEntry(built);
   return { ...res, periodKey, total, assetCount: rows.length };
 }
 
@@ -236,11 +236,11 @@ export async function disposeAsset(id, {
     );
   }
 
-  await ensureDisposalAccounts({ userId });
+  await ensureDisposalAccounts();
   const built = buildDisposalEntry(asset, {
     disposalDate, proceeds, settlementAccount, createdBy: userId,
   });
-  const res = await postEntry({ entry: built.entry, lines: built.lines }, { userId });
+  const res = await postEntry({ entry: built.entry, lines: built.lines });
 
   await setDoc(doc(db, ASSETS_COL, id), {
     disposalDate: date,

@@ -13,9 +13,12 @@ import {
   connectFirestoreEmulator, collection, doc, getDocs, setDoc, deleteDoc, terminate,
 } from 'firebase/firestore';
 
+import { useServerTransport } from './_serverTransport';
+
 const EMU = process.env.FIRESTORE_EMULATOR_HOST;
 const d = EMU ? describe : describe.skip;
 
+let restoreTransport;
 let db, ledger, auto, ops;
 
 // The manual sweep reads EVERY operational collection, so this suite must
@@ -23,7 +26,7 @@ let db, ledger, auto, ops;
 // posted here and the entry counts stop meaning anything.
 async function wipe() {
   for (const c of ['chart_of_accounts', 'journal_entries', 'journal_lines',
-    'accounting_periods', 'audit_logs', 'counters',
+    'accounting_periods', 'audit_logs', 'counters', 'posting_locks',
     'washes', 'monthly_expenses', 'variable_expenses', 'annual_expense_entries',
     'startup_cost_entries', 'partner_payments', 'partners', 'temporary_expenses',
     'expense_vouchers', 'fixed_assets']) {
@@ -43,12 +46,18 @@ d('الترحيل التلقائي على Firestore الحقيقي', () => {
     db = client.db;
     const [host, port] = EMU.split(':');
     connectFirestoreEmulator(db, host, Number(port));
+    // Ledger writes go through the real server module — the app calls it
+    // as a Cloud Function, which a test cannot.
+    restoreTransport = useServerTransport();
     ledger = await import('../firestoreLedger');
     auto   = await import('../autoPost');
     ops    = await import('../postOperations');
   }, 60_000);
 
-  afterAll(async () => { if (db) await terminate(db); });
+  afterAll(async () => {
+    if (restoreTransport) await restoreTransport();
+    if (db) await terminate(db);
+  });
 
   beforeEach(async () => {
     await wipe();

@@ -103,7 +103,7 @@ export async function collectUnposted({ vatRegistered = true, washPriceMode = 'i
  * must not strand the rest of the backlog.
  */
 export async function postUnposted({
-  userId = null, vatRegistered = true, washPriceMode = 'inclusive', onProgress = null,
+  vatRegistered = true, washPriceMode = 'inclusive', onProgress = null,
 } = {}) {
   const { ready, skipped, partners } = await collectUnposted({ vatRegistered, washPriceMode });
 
@@ -114,7 +114,7 @@ export async function postUnposted({
   for (const p of partners) {
     const code = partnerCapitalCode(p.id);
     if (known.has(code)) continue;
-    await ensureAccount(partnerCapitalAccount(p.id, p.partner_name), { userId });
+    await ensureAccount(partnerCapitalAccount(p.id, p.partner_name));
     known.add(code);
   }
 
@@ -123,7 +123,9 @@ export async function postUnposted({
   for (let i = 0; i < ready.length; i += 1) {
     const item = ready[i];
     try {
-      const res = await postEntry(item.build(), { userId, knownAccountCodes: known });
+      // The server re-reads the chart and re-validates every line; `known`
+      // is used above only to create the accounts that are missing.
+      const res = await postEntry(item.build());
       posted.push({ ...item, ...res });
     } catch (e) {
       failed.push({ ...item, error: e?.message || String(e) });

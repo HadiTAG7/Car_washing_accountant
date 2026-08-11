@@ -11,7 +11,8 @@
     "test": "vitest run --exclude \"**/*.emulator.test.js\"",
     "test:watch": "vitest",
     "test:emulator": "firebase emulators:exec --only firestore --project demo-sweater --config firebase.test.json \"vitest run --testTimeout=120000 --no-file-parallelism ledger.emulator invoicing.emulator assets.emulator recurring.emulator autoPost.emulator\"",
-    "test:rules": "firebase emulators:exec --only firestore --project demo-sweater --config firebase.test.json \"vitest run --testTimeout=120000 rules.emulator\""
+    "test:rules": "firebase emulators:exec --only firestore --project demo-sweater --config firebase.test.json \"vitest run --testTimeout=120000 rules.emulator\"",
+    "test:functions": "firebase emulators:exec --only firestore --project demo-sweater --config firebase.test.json \"vitest run --testTimeout=120000 --dir functions\""
   },
   "dependencies": {
     "@capacitor/android": "^8.4.2",
@@ -32,6 +33,7 @@
     "eslint": "^9.39.4",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
+    "firebase-admin": "^13.10.0",
     "firebase-tools": "^15.26.0",
     "globals": "^17.4.0",
     "lucide-react": "^1.8.0",

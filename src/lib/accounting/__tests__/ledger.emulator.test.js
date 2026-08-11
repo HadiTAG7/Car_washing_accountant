@@ -19,12 +19,15 @@ import {
   query, where, setDoc, deleteDoc, terminate,
 } from 'firebase/firestore';
 
+import { useServerTransport } from './_serverTransport';
+
 const EMU = process.env.FIRESTORE_EMULATOR_HOST;
 const d = EMU ? describe : describe.skip;
 
 // The production module owns the Firestore instance. Rather than substitute
 // it — ES module bindings are read-only — we import it first and point ITS
 // instance at the emulator, so these tests exercise the real code path.
+let restoreTransport;
 let db, ledger, rules, postingRules;
 
 async function wipe() {
@@ -42,12 +45,16 @@ d('طبقة الترحيل على Firestore الحقيقي', () => {
     // Must happen before any other operation on this instance.
     const [host, port] = EMU.split(':');
     connectFirestoreEmulator(db, host, Number(port));
+    // Ledger writes go through the real server module — the app calls it
+    // as a Cloud Function, which a test cannot.
+    restoreTransport = useServerTransport();
     ledger = await import('../firestoreLedger');
     postingRules = await import('../postingRules');
     rules = await import('../journal');
   }, 60_000);
 
   afterAll(async () => {
+    if (restoreTransport) await restoreTransport();
     if (db) await terminate(db);
   });
 
@@ -228,24 +235,43 @@ d('طبقة الترحيل على Firestore الحقيقي', () => {
       id: 'w1', quantity: 1, price: 115, status: 'مكتملة', washDate: '2026-08-11',
     }), { userId: 'u1' });
 
-    // Inject a broken entry the way a bad client would, bypassing postEntry.
+    // Inject a broken entry straight into the database, bypassing the server
+    // entirely — which is the only way one could exist.
     const badRef = doc(collection(db, 'journal_entries'));
     await setDoc(badRef, {
       entryDate: '2026-08-20', periodKey: '2026-08', status: 'posted',
       entryNumber: 999, sourceType: 'manual', description: 'مختل',
+      lines: [
+        { accountId: '1010', debit: 50, credit: 0 },
+        { accountId: '4000', debit: 0, credit: 40 },
+      ],
     });
-    await setDoc(doc(collection(db, 'journal_lines')), { entryId: badRef.id, accountId: '1010', debit: 50, credit: 0 });
-    await setDoc(doc(collection(db, 'journal_lines')), { entryId: badRef.id, accountId: '4000', debit: 0, credit: 40 });
 
-    await expect(ledger.closePeriod('2026-08', { userId: 'u1' })).rejects.toThrow(/غير متوازن/);
+    await expect(ledger.closePeriod('2026-08')).rejects.toThrow(/غير متوازن/);
 
     // Fix it, then the close succeeds.
-    await setDoc(doc(collection(db, 'journal_lines')), { entryId: badRef.id, accountId: '4000', debit: 0, credit: 10 });
-    const closed = await ledger.closePeriod('2026-08', { userId: 'u1' });
+    await setDoc(badRef, {
+      entryDate: '2026-08-20', periodKey: '2026-08', status: 'posted',
+      entryNumber: 999, sourceType: 'manual', description: 'مصحّح',
+      lines: [
+        { accountId: '1010', debit: 50, credit: 0 },
+        { accountId: '4000', debit: 0, credit: 50 },
+      ],
+    });
+    const closed = await ledger.closePeriod('2026-08');
     expect(closed.periodKey).toBe('2026-08');
     const period = await getDoc(doc(db, 'accounting_periods', '2026-08'));
     expect(period.data().status).toBe('closed');
   }, 90_000);
+
+  it('لا يُقفل شهر يحوي قيداً قديماً بلا سطور ولا مجاميع — يُراجَع أولاً', async () => {
+    await ledger.seedChartOfAccounts();
+    await setDoc(doc(collection(db, 'journal_entries')), {
+      entryDate: '2026-08-20', periodKey: '2026-08', status: 'posted',
+      entryNumber: 500, sourceType: 'manual', description: 'صيغة قديمة',
+    });
+    await expect(ledger.closePeriod('2026-08')).rejects.toThrow(/بصيغة قديمة/);
+  }, 60_000);
 
   it('التقارير مبنية على القاعدة الحقيقية تتوازن', async () => {
     await ledger.seedChartOfAccounts({ userId: 'u1' });

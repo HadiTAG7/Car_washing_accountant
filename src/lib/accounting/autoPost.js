@@ -78,8 +78,10 @@ export function autoPostTone(result) {
  *   { status: 'skipped', reason, blocking }   blocking → the user should act
  *   { status: 'failed',  error }
  */
+// `userId` is intentionally absent: the ledger function reads the author
+// from the caller's verified auth token, so a client cannot name one.
 export async function autoPost({
-  kind, id, userId = null, vatRegistered = true, washPriceMode = 'inclusive', ctx = {},
+  kind, id, vatRegistered = true, washPriceMode = 'inclusive', ctx = {},
 }) {
   try {
     const a = adapterFor(kind);
@@ -110,7 +112,9 @@ export async function autoPost({
     }
 
     const built = a.build(row, { vatRegistered, washPriceMode, ...ctx });
-    const res = await postEntry(built, { userId });
+    // The author is taken from the caller's verified token server-side,
+    // so `userId` is not passed: a client cannot post as someone else.
+    const res = await postEntry(built);
     return { status: 'posted', entryId: res.entryId, entryNumber: res.entryNumber };
   } catch (e) {
     return { status: 'failed', error: e?.message || String(e), blocking: true };

@@ -13,16 +13,20 @@ import {
   connectFirestoreEmulator, collection, doc, getDocs, setDoc, deleteDoc, terminate,
 } from 'firebase/firestore';
 
+import { useServerTransport } from './_serverTransport';
+
 const EMU = process.env.FIRESTORE_EMULATOR_HOST;
 const d = EMU ? describe : describe.skip;
 
+let restoreTransport;
 let db, ledger, rec, ops, reports;
 
 const RANGE = { from: '2026-01', through: '2026-03' };
 
 async function wipe() {
   for (const c of ['chart_of_accounts', 'journal_entries', 'journal_lines',
-    'accounting_periods', 'audit_logs', 'counters', 'monthly_expenses', 'expense_vouchers']) {
+    'accounting_periods', 'audit_logs', 'counters', 'posting_locks',
+    'monthly_expenses', 'expense_vouchers']) {
     const snap = await getDocs(collection(db, c));
     await Promise.all(snap.docs.map((s) => deleteDoc(s.ref)));
   }
@@ -52,13 +56,19 @@ d('السندات الدورية على Firestore الحقيقي', () => {
     db = client.db;
     const [host, port] = EMU.split(':');
     connectFirestoreEmulator(db, host, Number(port));
+    // Ledger writes go through the real server module — the app calls it
+    // as a Cloud Function, which a test cannot.
+    restoreTransport = useServerTransport();
     ledger  = await import('../firestoreLedger');
     rec     = await import('../firestoreRecurring');
     ops     = await import('../postOperations');
     reports = await import('../reports');
   }, 60_000);
 
-  afterAll(async () => { if (db) await terminate(db); });
+  afterAll(async () => {
+    if (restoreTransport) await restoreTransport();
+    if (db) await terminate(db);
+  });
 
   beforeEach(async () => {
     await wipe();

@@ -1,11 +1,20 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// طبقة الترحيل على Firestore — atomic ledger writes
+// طبقة الترحيل — reads from Firestore, writes through Cloud Functions
 // ═══════════════════════════════════════════════════════════════════════════
-// Every ledger mutation runs inside a Firestore TRANSACTION. The entry
-// number, the period-closed check, the entry header, its lines and the audit
-// record either all land or none do — a read-then-write from the client
-// could interleave with another device and mint a duplicate entry number or
-// post into a month that was closed a second earlier.
+// READS are direct: the ledger is world-readable to members, and a report
+// needs the whole thing.
+//
+// WRITES all go through the callable functions in functions/. The client used
+// to write the ledger inside a Firestore transaction, which was atomic but
+// not trustworthy: rules have no fold, so no rule could check that an entry
+// balanced, that a `reversed` status named a real mirror entry, or that a
+// released source lock accompanied an actual reversal. A client holding a
+// token could write Dr 100 / Cr 1 straight into the books.
+//
+// Rules now deny every client write to journal_entries, journal_lines,
+// posting_locks, counters/journal, accounting_periods and audit_logs, so the
+// functions are the only door. The signatures below are unchanged, which is
+// why the pages and hooks did not have to move with them.
 //
 // Collections
 //   chart_of_accounts    — one doc per account, doc id = account code
@@ -16,17 +25,29 @@
 //   counters/journal     — { nextNumber } for sequential entry numbers
 // ═══════════════════════════════════════════════════════════════════════════
 
-import {
-  collection, doc, getDoc, getDocs, query, where, runTransaction, serverTimestamp,
-  deleteDoc,
-} from 'firebase/firestore';
-import { db, isFirebaseConfigured } from '../firebaseClient';
+import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
+import { db, isFirebaseConfigured, callLedger } from '../firebaseClient';
+
+// ─── منفذ النداء ─────────────────────────────────────────────────────────
+// Every write below goes through this one function. In the app it is the
+// callable-functions client; the emulator suites swap it for a direct call
+// into `functions/src/ledger.js` running against the same database, so those
+// tests exercise the REAL server logic instead of a mock of it.
+//
+// A seam rather than a mock: there is exactly one, it is named for what it
+// does, and swapping it cannot change what the server checks.
+let transport = callLedger;
+
+/** Test-only. Returns the previous transport so a suite can restore it. */
+export function __setLedgerTransport(fn) {
+  const previous = transport;
+  transport = fn || callLedger;
+  return previous;
+}
+const call = (name, payload) => transport(name, payload);
 import { fetchRows } from '../firestoreCrud';
-import {
-  validateEntry, mutationBlockedReason, buildReversal, normalizeEntry, periodKeyOf,
-} from './journal';
+import { validateEntry, normalizeEntry, periodKeyOf } from './journal';
 import { DEFAULT_CHART_OF_ACCOUNTS, validateChart } from './chartOfAccounts';
-import { closePreflight } from './periods';
 
 export const COL = {
   ACCOUNTS: 'chart_of_accounts',
@@ -97,183 +118,50 @@ export async function fetchLinesOf(entryId) {
   return legacy.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
-// ─── سجل التدقيق ─────────────────────────────────────────────────────────
-/**
- * Appends an audit record. Called INSIDE the caller's transaction so the log
- * cannot survive a rolled-back mutation, nor go missing after a successful
- * one. `before`/`after` are stored only for edits.
- */
-function writeAuditInTx(tx, { action, collectionName, documentId, userId, before = null, after = null, note = '' }) {
-  const ref = doc(collection(db, COL.AUDIT));
-  tx.set(ref, {
-    action,                       // create | update | post | reverse | void | close | seed
-    collectionName,
-    documentId: documentId ?? null,
-    userId: userId ?? null,
-    note,
-    before,
-    after,
-    at: serverTimestamp(),
-    atIso: new Date().toISOString(),
-  });
-  return ref.id;
-}
+// The audit trail is written by the ledger functions, inside the same
+// transaction as the mutation it records — a client that could append here
+// could fabricate the trail that is supposed to police it. Nothing in this
+// file writes audit_logs any more; the rules deny it outright.
 
 // ─── الترحيل ─────────────────────────────────────────────────────────────
 /**
- * Posts one balanced entry.
+ * Posts one balanced entry through the trusted server.
  *
- * Order matters inside a Firestore transaction: every read must happen before
- * the first write, so the counter and the period are read up front.
- *
- * Returns { entryId, entryNumber }. Throws an Arabic Error on any violation.
+ * Returns { entryId, entryNumber, debit, credit }. Throws an Arabic Error
+ * carrying `.problems` when the server refuses it.
  */
-export async function postEntry({ entry, lines }, { userId = null, knownAccountCodes = null } = {}) {
+export async function postEntry({ entry, lines }) {
   requireDb();
+  // A local pass first: it cannot be trusted, but it turns the common
+  // mistakes into an instant message instead of a round trip. The server
+  // re-checks everything and its verdict is the one that counts.
   const normalized = normalizeEntry(entry, lines);
-  const problems = validateEntry(normalized.entry, normalized.lines, { knownAccountCodes });
+  const problems = validateEntry(normalized.entry, normalized.lines);
   if (problems.length) {
     const err = new Error(problems[0]);
     err.problems = problems;
     throw err;
   }
-
-  return runTransaction(db, async (tx) => {
-    // ── reads ──
-    const counterRef = doc(db, COL.COUNTERS, JOURNAL_COUNTER);
-    const counterSnap = await tx.get(counterRef);
-    const periodRef = doc(db, COL.PERIODS, normalized.entry.periodKey);
-    const periodSnap = await tx.get(periodRef);
-
-    if (periodSnap.exists() && periodSnap.data().status === 'closed') {
-      throw new Error(
-        `الفترة ${normalized.entry.periodKey} مقفلة — لا يمكن الترحيل فيها. سجّل التصحيح في فترة مفتوحة.`,
-      );
-    }
-
-    const nextNumber = (counterSnap.exists() ? Number(counterSnap.data().nextNumber) || 1 : 1);
-
-    // ── writes ──
-    const entryRef = doc(collection(db, COL.ENTRIES));
-    tx.set(entryRef, {
-      ...normalized.entry,
-      entryNumber: nextNumber,
-      // Lines live in the entry, so a posted entry has nothing appendable.
-      lines: normalized.lines,
-      lineCount: normalized.lines.length,
-      createdBy: userId ?? normalized.entry.createdBy ?? null,
-      createdAt: serverTimestamp(),
-      postedAt:  normalized.entry.status === 'posted' ? serverTimestamp() : null,
-    });
-    // Locks the operational record this entry came from: once the books
-    // record it, the source can no longer be edited or deleted from a client.
-    // Enforced by the rules, which check for this document's existence.
-    if (normalized.entry.status === 'posted'
-        && normalized.entry.sourceType && normalized.entry.sourceId) {
-      tx.set(doc(db, COL.LOCKS, postingLockId(normalized.entry.sourceType, normalized.entry.sourceId)), {
-        sourceType: normalized.entry.sourceType,
-        sourceId:   normalized.entry.sourceId,
-        entryId:    entryRef.id,
-        entryNumber: nextNumber,
-        lockedBy:   userId ?? null,
-        lockedAt:   serverTimestamp(),
-      });
-    }
-    // Create the period lazily so a month is tracked from its first entry.
-    if (!periodSnap.exists()) {
-      tx.set(periodRef, {
-        periodKey: normalized.entry.periodKey,
-        status: 'open',
-        closedAt: null,
-        closedBy: null,
-        createdAt: serverTimestamp(),
-      });
-    }
-    tx.set(counterRef, { nextNumber: nextNumber + 1, updatedAt: serverTimestamp() }, { merge: true });
-    writeAuditInTx(tx, {
-      action: 'post', collectionName: COL.ENTRIES, documentId: entryRef.id, userId,
-      after: { entryNumber: nextNumber, ...normalized.entry },
-      note: `ترحيل قيد رقم ${nextNumber}`,
-    });
-
-    return { entryId: entryRef.id, entryNumber: nextNumber };
+  // `userId` is deliberately NOT sent: the function reads the caller's uid
+  // from the verified auth token, so a client cannot post as someone else.
+  return call('ledgerPostEntry', {
+    entry: normalized.entry,
+    lines: normalized.lines,
   });
 }
 
 /**
- * Reverses a posted entry: writes the mirror image and marks the original
- * `reversed`. The original's own lines are never touched — the trail must
- * show what was filed and what corrected it.
+ * Reverses a posted entry. The mirror is built ON THE SERVER from the
+ * original's own stored lines, so it balances by construction — the client
+ * has no way to supply an unbalanced "reversal" or to point `reversedBy` at
+ * an entry that does not exist.
  */
-export async function reverseEntry(entryId, { entryDate, description, userId = null } = {}) {
+export async function reverseEntry(entryId, { entryDate, description } = {}) {
   requireDb();
-  const original = await getDoc(doc(db, COL.ENTRIES, entryId));
-  if (!original.exists()) throw new Error('القيد غير موجود.');
-  const entry = { id: original.id, ...original.data() };
-
-  const blocked = mutationBlockedReason(entry, 'reverse');
-  if (blocked) throw new Error(blocked);
-
-  const originalLines = await fetchLinesOf(entryId);
-  const reversal = buildReversal(entry, originalLines, {
+  return call('ledgerReverseEntry', {
+    entryId,
     entryDate: entryDate || new Date().toISOString().slice(0, 10),
-    description,
-    createdBy: userId,
-  });
-
-  return runTransaction(db, async (tx) => {
-    const counterRef  = doc(db, COL.COUNTERS, JOURNAL_COUNTER);
-    const counterSnap = await tx.get(counterRef);
-    const revPeriodRef  = doc(db, COL.PERIODS, reversal.entry.periodKey);
-    const revPeriodSnap = await tx.get(revPeriodRef);
-    const originalRef  = doc(db, COL.ENTRIES, entryId);
-    const originalSnap = await tx.get(originalRef);
-
-    if (!originalSnap.exists()) throw new Error('القيد غير موجود.');
-    if (originalSnap.data().status !== 'posted') throw new Error('لا يمكن عكس قيد غير مُرحّل.');
-    if (revPeriodSnap.exists() && revPeriodSnap.data().status === 'closed') {
-      throw new Error(`الفترة ${reversal.entry.periodKey} مقفلة — اختر تاريخاً في فترة مفتوحة.`);
-    }
-
-    const nextNumber = (counterSnap.exists() ? Number(counterSnap.data().nextNumber) || 1 : 1);
-    const revRef = doc(collection(db, COL.ENTRIES));
-    tx.set(revRef, {
-      ...reversal.entry,
-      entryNumber: nextNumber,
-      lines: reversal.lines,
-      lineCount: reversal.lines.length,
-      createdAt: serverTimestamp(),
-      postedAt:  serverTimestamp(),
-    });
-    // The original is marked, never deleted.
-    tx.update(originalRef, { status: 'reversed', reversedBy: revRef.id, reversedAt: serverTimestamp() });
-    if (!revPeriodSnap.exists()) {
-      tx.set(revPeriodRef, {
-        periodKey: reversal.entry.periodKey, status: 'open',
-        closedAt: null, closedBy: null, createdAt: serverTimestamp(),
-      });
-    }
-    tx.set(counterRef, { nextNumber: nextNumber + 1, updatedAt: serverTimestamp() }, { merge: true });
-    writeAuditInTx(tx, {
-      action: 'reverse', collectionName: COL.ENTRIES, documentId: entryId, userId,
-      before: { status: 'posted' }, after: { status: 'reversed', reversalEntryId: revRef.id },
-      note: `عكس القيد رقم ${entry.entryNumber} بقيد رقم ${nextNumber}`,
-    });
-    return { entryId: revRef.id, entryNumber: nextNumber };
-  }).then(async (result) => {
-    // Releasing the source lock happens AFTER the reversal commits, not
-    // inside it: rules evaluate a transaction against the state before it,
-    // so a rule requiring the entry to already read `reversed` could never
-    // pass from within. Failing to release is the safe direction — the lock
-    // simply stays and the record remains protected.
-    if (entry.sourceType && entry.sourceId) {
-      try {
-        await deleteDoc(doc(db, COL.LOCKS, postingLockId(entry.sourceType, entry.sourceId)));
-      } catch {
-        // Left locked on purpose; correcting it is a deliberate act.
-      }
-    }
-    return result;
+    description: description || null,
   });
 }
 
@@ -283,68 +171,21 @@ export async function reverseEntry(entryId, { entryDate, description, userId = n
  * the UI's check could be seconds stale, and a close is the one action that
  * must not race an in-flight posting.
  */
-export async function closePeriod(periodKey, { userId = null } = {}) {
+export async function closePeriod(periodKey) {
   requireDb();
-  const [entries, lines] = await Promise.all([fetchEntries(), fetchLines()]);
-  const linesByEntry = new Map();
-  for (const l of lines) {
-    if (!linesByEntry.has(l.entryId)) linesByEntry.set(l.entryId, []);
-    linesByEntry.get(l.entryId).push(l);
-  }
-  const pre = closePreflight(periodKey, { entries, linesByEntry });
-  if (!pre.ok) {
-    const err = new Error(pre.problems[0]);
-    err.problems = pre.problems;
-    throw err;
-  }
-
-  return runTransaction(db, async (tx) => {
-    const ref = doc(db, COL.PERIODS, periodKey);
-    const snap = await tx.get(ref);
-    if (snap.exists() && snap.data().status === 'closed') {
-      throw new Error(`الفترة ${periodKey} مقفلة بالفعل.`);
-    }
-    tx.set(ref, {
-      periodKey, status: 'closed',
-      closedAt: serverTimestamp(), closedBy: userId ?? null,
-    }, { merge: true });
-    writeAuditInTx(tx, {
-      action: 'close', collectionName: COL.PERIODS, documentId: periodKey, userId,
-      before: { status: 'open' }, after: { status: 'closed' },
-      note: `إقفال الفترة ${periodKey} — ${pre.entryCount} قيد، إجمالي ${pre.totals.debit.toFixed(2)}`,
-    });
-    return { periodKey, ...pre };
-  });
+  return call('ledgerClosePeriod', { periodKey });
 }
 
 /**
- * Re-opens a closed month. Deliberately separate from closePeriod and always
- * audited: re-opening a filed period is a decision, not a convenience.
+ * Re-opens a closed month. Admin-only and the reason is mandatory, both
+ * enforced by the function — re-opening a filed period is the one action that
+ * can change what a filed month says.
  */
-export async function reopenPeriod(periodKey, { userId = null, reason = '' } = {}) {
+export async function reopenPeriod(periodKey, { reason = '' } = {}) {
   requireDb();
-  // Re-opening a filed period is a decision, and a decision without a stated
-  // reason is indistinguishable from an accident. The rules require the field
-  // too, so this is not merely a client-side courtesy.
   const why = String(reason || '').trim();
   if (!why) throw new Error('سبب إعادة فتح الفترة مطلوب.');
-  return runTransaction(db, async (tx) => {
-    const ref = doc(db, COL.PERIODS, periodKey);
-    const snap = await tx.get(ref);
-    if (!snap.exists() || snap.data().status !== 'closed') {
-      throw new Error(`الفترة ${periodKey} ليست مقفلة.`);
-    }
-    tx.set(ref, {
-      status: 'open', reopenReason: why,
-      reopenedAt: serverTimestamp(), reopenedBy: userId ?? null,
-    }, { merge: true });
-    writeAuditInTx(tx, {
-      action: 'reopen', collectionName: COL.PERIODS, documentId: periodKey, userId,
-      before: { status: 'closed' }, after: { status: 'open', reopenReason: why },
-      note: `إعادة فتح الفترة ${periodKey} — ${why}`,
-    });
-    return { periodKey };
-  });
+  return call('ledgerReopenPeriod', { periodKey, reason: why });
 }
 
 // ─── التهيئة ─────────────────────────────────────────────────────────────
@@ -353,7 +194,7 @@ export async function reopenPeriod(periodKey, { userId = null, reason = '' } = {
  * left exactly as it is, so re-running never overwrites a renamed account or
  * resurrects one that was deactivated.
  */
-export async function seedChartOfAccounts({ userId = null, extraAccounts = [] } = {}) {
+export async function seedChartOfAccounts({ extraAccounts = [] } = {}) {
   requireDb();
   const chart = [...DEFAULT_CHART_OF_ACCOUNTS, ...extraAccounts];
   const problems = validateChart(chart);
@@ -362,49 +203,13 @@ export async function seedChartOfAccounts({ userId = null, extraAccounts = [] } 
     err.problems = problems;
     throw err;
   }
-
-  const existing = new Set((await fetchAccounts()).map((a) => String(a.code)));
-  const toCreate = chart.filter((a) => !existing.has(String(a.code)));
-  if (toCreate.length === 0) return { created: 0, skipped: chart.length };
-
-  // Chunked so one seed never exceeds a transaction's document limit.
-  const CHUNK = 100;
-  for (let i = 0; i < toCreate.length; i += CHUNK) {
-    const slice = toCreate.slice(i, i + CHUNK);
-    await runTransaction(db, async (tx) => {
-      for (const a of slice) {
-        tx.set(doc(db, COL.ACCOUNTS, String(a.code)), {
-          ...a,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-      }
-      writeAuditInTx(tx, {
-        action: 'seed', collectionName: COL.ACCOUNTS, documentId: null, userId,
-        after: { codes: slice.map((a) => a.code) },
-        note: `تهيئة دليل الحسابات — ${slice.length} حساب`,
-      });
-    });
-  }
-  return { created: toCreate.length, skipped: chart.length - toCreate.length };
+  return call('ledgerSeedChart', { accounts: chart });
 }
 
-/** Adds one account (e.g. a new partner's capital sub-account). Idempotent. */
-export async function ensureAccount(account, { userId = null } = {}) {
+/** Adds one account (a partner's capital sub-account, say). Idempotent. */
+export async function ensureAccount(account) {
   requireDb();
-  const ref = doc(db, COL.ACCOUNTS, String(account.code));
-  const snap = await getDoc(ref);
-  if (snap.exists()) return { created: false };
-  return runTransaction(db, async (tx) => {
-    const again = await tx.get(ref);
-    if (again.exists()) return { created: false };
-    tx.set(ref, { ...account, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
-    writeAuditInTx(tx, {
-      action: 'create', collectionName: COL.ACCOUNTS, documentId: String(account.code), userId,
-      after: account, note: `إضافة حساب ${account.code}`,
-    });
-    return { created: true };
-  });
+  return call('ledgerEnsureAccount', { account });
 }
 
 /** Convenience for pages: everything a report needs, in one round trip. */

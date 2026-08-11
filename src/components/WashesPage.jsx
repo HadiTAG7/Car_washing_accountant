@@ -13,7 +13,6 @@ import LoadingState from './LoadingState';
 import ErrorState, { SetupRequiredCard } from './ErrorState';
 import Toast from './Toast';
 import { useWashes } from '../hooks/useWashes';
-import { useAuth } from '../hooks/useAuth';
 import { useAccountingSettings } from '../hooks/useAccountingSettings';
 import { autoPostOnApproval, describeAutoPost, autoPostTone } from '../lib/accounting/autoPost';
 import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
@@ -87,7 +86,6 @@ export default function WashesPage() {
     addItem, updateItem, updateStatus, deleteItem, refetch,
   } = useWashes();
   const { scalingFactor, canMutate } = usePartnerView();
-  const { user } = useAuth();
   const { settings } = useAccountingSettings();
 
   const [localOpen, setLocalOpen]         = useState(false);
@@ -151,7 +149,6 @@ export default function WashesPage() {
       kind: 'wash', id,
       before: { status: before?.status },
       after: { status },
-      userId: user?.id,
       vatRegistered: settings.vatRegistered,
       washPriceMode: settings.washPriceMode,
     });

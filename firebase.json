@@ -6,8 +6,23 @@
     "rules": "storage.rules"
   },
   "emulators": {
-    "firestore": { "port": 8080 },
-    "ui": { "enabled": false },
+    "firestore": {
+      "port": 8080
+    },
+    "ui": {
+      "enabled": false
+    },
     "singleProjectMode": true
-  }
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "ledger",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "test"
+      ]
+    }
+  ]
 }

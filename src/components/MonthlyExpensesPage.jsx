@@ -16,7 +16,6 @@ import ErrorState, { SetupRequiredCard } from './ErrorState';
 import Toast from './Toast';
 import { useMonthlyExpenses } from '../hooks/useMonthlyExpenses';
 import { useMonthlyExpenseCategories } from '../hooks/useMonthlyExpenseCategories';
-import { useAuth } from '../hooks/useAuth';
 import { useAccountingSettings } from '../hooks/useAccountingSettings';
 import { autoPost, describeAutoPost, autoPostTone } from '../lib/accounting/autoPost';
 import { isFirebaseConfigured, missingEnvNames, describeBackendError } from '../lib/firebaseClient';
@@ -83,7 +82,6 @@ export default function MonthlyExpensesPage() {
   } = useMonthlyExpenseCategories();
 
   const { scalingFactor, canMutate } = usePartnerView();
-  const { user } = useAuth();
   const { settings } = useAccountingSettings();
 
   const [localOpen, setLocalOpen]         = useState(false);
@@ -141,7 +139,7 @@ export default function MonthlyExpensesPage() {
     if (before?.paymentStatus === 'paid') return;      // not a transition
     if (!before?.loggedDate) return;                   // recurring template
     const result = await autoPost({
-      kind: 'monthly', id, userId: user?.id, vatRegistered: settings.vatRegistered,
+      kind: 'monthly', id, vatRegistered: settings.vatRegistered,
     });
     if (result.status !== 'skipped' || result.blocking) {
       showToast(describeAutoPost(result), autoPostTone(result));

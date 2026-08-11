@@ -13,13 +13,26 @@ rules_version = '2';
 // Legacy documents without a role are treated as `operator`, so an existing
 // account keeps working after this file ships.
 //
-// Two things the client can NEVER do, whatever its role:
-//   1. write /app_admins — privilege escalation would otherwise be one
-//      client-side write away.
-//   2. amend or delete a POSTED journal entry or any journal line. The only
-//      permitted update is the single reversal transition
-//      (posted → reversed), which is what keeps the audit trail truthful.
-//      Corrections are new entries, never edits.
+// THE LEDGER IS NOT CLIENT-WRITABLE.
+//
+// journal_entries, journal_lines, posting_locks, counters/journal,
+// accounting_periods and audit_logs are READ-ONLY to every client, whatever
+// its role. They are written exclusively by the callable Cloud Functions in
+// functions/, which run with the Admin SDK.
+//
+// This is not belt-and-braces; it is the only way three of the invariants can
+// exist at all. Firestore rules have no loop and no fold, so:
+//   • "debits equal credits" over a list of unknown length is INEXPRESSIBLE —
+//     a client could write Dr 100 / Cr 1 straight into the books;
+//   • "this reversal names a real, balanced mirror entry" is likewise
+//     inexpressible — `reversedBy` could point at nothing;
+//   • "this lock is being released as part of a reversal" cannot be told
+//     apart from "released so I can edit a posted record".
+// A rule can only check shape. Accounting needs arithmetic, so it needs a
+// trusted server.
+//
+// The client can NEVER write /app_admins either: privilege escalation would
+// otherwise be one client-side write away.
 // ═══════════════════════════════════════════════════════════════════════════
 
 service cloud.firestore {
@@ -41,17 +54,6 @@ service cloud.firestore {
     function isOperator()   { return signedIn() && (isAccountant() || role() == 'operator'); }
     function isMember()     { return signedIn() && (hasUserDoc() || isAdminDoc()); }
 
-    // ── حراس على مستوى الخادم ────────────────────────────────────────
-    // A period with no document is OPEN: the posting transaction creates the
-    // month lazily with its first entry, and rules evaluate a transaction
-    // against the state BEFORE it, so requiring the document to exist would
-    // reject the very write that creates it. Only an existing, closed period
-    // blocks.
-    function periodIsOpen(key) {
-      return !exists(/databases/$(database)/documents/accounting_periods/$(key))
-        || get(/databases/$(database)/documents/accounting_periods/$(key)).data.status != 'closed';
-    }
-
     // A source record whose posting lock exists is IN THE BOOKS. The lock is
     // written by the posting transaction, so it is committed before any later
     // attempt to edit the record it protects.
@@ -69,80 +71,50 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // ── القيود اليومية ───────────────────────────────────────────────
+    // ── دفاتر القيد المزدوج — للقراءة فقط من العميل ──────────────────
+    // Written only by `ledgerPostEntry` / `ledgerReverseEntry`, which balance
+    // the entry, derive its period from its date, mint the number atomically
+    // and write the lock and the audit record in the same transaction.
     match /journal_entries/{entryId} {
-      allow read: if isAccountant() || isMember();
-
-      // Nothing posts into a closed month, enforced HERE and not only in the
-      // client: a JavaScript check can be bypassed by anyone holding a token.
-      allow create: if isAccountant()
-        && request.resource.data.status in ['draft', 'posted']
-        && request.resource.data.entryDate is string
-        && request.resource.data.periodKey is string
-        // `is list` on an absent property raises rather than returning false,
-        // so presence is checked first.
-        && 'lines' in request.resource.data
-        && request.resource.data.lines is list
-        && request.resource.data.lines.size() >= 2
-        && periodIsOpen(request.resource.data.periodKey);
-
-      // The ONLY sanctioned update: marking an entry reversed. Everything
-      // else about a posted entry is frozen.
-      allow update: if isAccountant()
-        && resource.data.status == 'posted'
-        && request.resource.data.status == 'reversed'
-        && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['status', 'reversedBy', 'reversedAt']);
-
-      allow delete: if false;
+      allow read:  if isMember();
+      allow write: if false;
     }
 
-    // Legacy collection, FROZEN. Lines now live inside their entry document,
-    // where the reversal-only update rule above makes them unamendable. This
-    // collection stays readable so entries posted before that change still
-    // render, but nothing may be added to it — an appendable line collection
-    // is exactly how a posted entry could be silently unbalanced.
+    // Legacy collection: lines live inside their entry now. Readable so older
+    // entries still render, frozen against every write.
     match /journal_lines/{lineId} {
-      allow read: if isAccountant() || isMember();
-      allow create, update, delete: if false;
+      allow read:  if isMember();
+      allow write: if false;
     }
 
     // ── أقفال الترحيل ────────────────────────────────────────────────
-    // One document per operational record that reached the books. Written by
-    // the posting transaction; removed only when the entry is reversed. A
-    // client that could rewrite these could edit a record the ledger has
-    // already recorded.
+    // One document per operational record that reached the books. Created by
+    // the posting function, deleted ONLY inside the reversal transaction —
+    // which is why no client may touch them: a rule cannot tell a legitimate
+    // release from one made to unlock an edit.
     match /posting_locks/{lockId} {
-      allow read:   if isMember();
-      allow create: if isAccountant();
-      allow update: if false;
-      allow delete: if isAccountant();
+      allow read:  if isMember();
+      allow write: if false;
     }
 
     // ── الفترات المحاسبية ────────────────────────────────────────────
+    // Closing re-reads every entry in the month and re-checks that each one
+    // balances on its own — arithmetic, so it belongs on the server.
+    // `ledgerClosePeriod` does it; `ledgerReopenPeriod` requires an admin and
+    // a written reason.
     match /accounting_periods/{periodKey} {
-      allow read: if isMember();
-      // Created lazily by the posting transaction, always open.
-      allow create: if isAccountant() && request.resource.data.status == 'open';
-
-      // Closing is an accountant's call. RE-OPENING a filed period is not:
-      // it is the one action that can change what a filed month says, so it
-      // needs an admin and a stated reason, and it is audited.
-      allow update: if isAccountant() && (
-        (resource.data.status == 'open' && request.resource.data.status == 'closed')
-        || (resource.data.status == 'closed'
-            && request.resource.data.status == 'open'
-            && isAdmin()
-            && request.resource.data.reopenReason is string
-            && request.resource.data.reopenReason.size() > 0)
-      );
-      allow delete: if false;
+      allow read:  if isMember();
+      allow write: if false;
     }
 
-    // ── عداد أرقام القيود والمستندات ─────────────────────────────────
+    // ── العدّادات ────────────────────────────────────────────────────
+    // The journal counter is minted by the posting function. Document
+    // counters stay client-minted inside a transaction, which is safe for
+    // them: a duplicate invoice number is caught by the sequence-gap audit,
+    // whereas a journal number is the ledger's identity.
     match /counters/{name} {
       allow read:  if isAccountant();
-      allow write: if isAccountant();
+      allow write: if isAccountant() && name != 'journal';
     }
 
     // ── المستندات الضريبية ───────────────────────────────────────────
@@ -209,11 +181,11 @@ service cloud.firestore {
     }
 
     // ── سجل التدقيق ──────────────────────────────────────────────────
-    // Append-only by construction: writers may add, nobody may rewrite.
+    // Written by the ledger functions only. A client that could append here
+    // could fabricate the trail that is supposed to police it.
     match /audit_logs/{logId} {
-      allow read:   if isAdmin() || isAccountant();
-      allow create: if isOperator();
-      allow update, delete: if false;
+      allow read:  if isAdmin() || isAccountant();
+      allow write: if false;
     }
 
     // ── الحسابات والصلاحيات ──────────────────────────────────────────

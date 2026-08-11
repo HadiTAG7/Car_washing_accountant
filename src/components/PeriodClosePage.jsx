@@ -68,7 +68,7 @@ export default function PeriodClosePage() {
   async function handleSeed() {
     setBusy('seed');
     try {
-      const r = await seedChartOfAccounts({ userId: user?.id });
+      const r = await seedChartOfAccounts();
       showToast(r.created > 0
         ? `تمت تهيئة دليل الحسابات — ${r.created} حساب جديد.`
         : 'دليل الحسابات مُهيّأ بالفعل.');
@@ -101,10 +101,7 @@ export default function PeriodClosePage() {
     setBusy('post');
     setProgress({ done: 0, total: pending, label: '' });
     try {
-      const r = await postUnposted({
-        userId: user?.id,
-        onProgress: (p) => setProgress(p),
-      });
+      const r = await postUnposted({ onProgress: (p) => setProgress(p) });
       setScan(null);
       showToast(
         r.failed.length
@@ -186,7 +183,7 @@ export default function PeriodClosePage() {
     if (!ok) return;
     setBusy(key);
     try {
-      await closePeriod(key, { userId: user?.id });
+      await closePeriod(key);
       showToast(`تم إقفال الفترة ${key}.`);
       await refetch();
     } catch (e) {
@@ -207,7 +204,7 @@ export default function PeriodClosePage() {
     if (!reason.trim()) { showToast('سبب إعادة الفتح مطلوب.', 'error'); return; }
     setBusy(key);
     try {
-      await reopenPeriod(key, { userId: user?.id, reason: reason.trim() });
+      await reopenPeriod(key, { reason: reason.trim() });
       showToast(`تمت إعادة فتح الفترة ${key}.`);
       await refetch();
     } catch (e) {

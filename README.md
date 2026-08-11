@@ -136,11 +136,46 @@ Notes that are easy to get wrong, and are handled explicitly:
   `effective_from` date — no percentage is hard-coded, so changing a rate
   cannot silently restate a past period.
 
+### The ledger is not client-writable
+`journal_entries`, `journal_lines`, `posting_locks`, `counters/journal`,
+`accounting_periods` and `audit_logs` are **read-only to every client**,
+whatever its role. They are written exclusively by the callable Cloud
+Functions in `functions/`, which run with the Admin SDK.
+
+This is not defence in depth; it is the only way three invariants can exist at
+all. **Firestore rules have no loop and no fold**, so:
+
+| Invariant | Why a rule cannot express it |
+|---|---|
+| debits = credits | summing a list of unknown length is impossible |
+| a reversal names a real, balanced mirror | a rule cannot read and total another document's lines |
+| a lock release accompanies an actual reversal | a rule cannot tell it from a release made to unlock an edit |
+
+A rule can only check *shape*. Accounting needs *arithmetic*, so it needs a
+trusted server.
+
+The posting function also **derives `periodKey` from `entryDate`** rather than
+trusting the caller — otherwise a July entry could be smuggled past a closed
+July by labelling it August — and rejects dates that do not exist
+(`Date.parse` silently rolls 30 February over to 2 March).
+
+| Function | Role | Does |
+|---|---|---|
+| `ledgerPostEntry` | accountant | validates, balances, derives the period, mints the number, writes entry + lock + audit in one transaction |
+| `ledgerReverseEntry` | accountant | builds the mirror **from the original's own lines**, links both, marks the original, releases the lock |
+| `ledgerClosePeriod` | accountant | re-reads the month and re-checks that every entry balances on its own |
+| `ledgerReopenPeriod` | **admin** | requires a written reason; audited |
+| `ledgerSeedChart` · `ledgerEnsureAccount` | accountant | idempotent chart setup |
+
+The author is taken from the caller's verified token, never from the payload.
+
+> **Deployment:** the app cannot post until these are deployed
+> (`firebase deploy --only functions,firestore:rules`). Cloud Functions
+> require the **Blaze** plan.
+
 ### Atomicity
-Every ledger mutation runs inside a **Firestore transaction**: entry number,
-closed-period check, header, lines and audit record all land or none do. A
-read-then-write from the client could interleave with another device and mint
-a duplicate entry number, or post into a month closed a second earlier.
+Entry number, closed-period check, header, lines, source lock and audit record
+all land or none do.
 
 ---
 
@@ -421,6 +456,9 @@ recurring vouchers for the months you are bringing in → run the sweep → chec
   Firestore emulator: transaction atomicity, concurrent numbering, closed
   periods, reversals, one-invoice-per-source
 - `npm run test:rules` — drives `firestore.rules` itself through every role
+- `npm run test:functions` — the trusted server: balance, derived periods,
+  concurrent numbering, reversal integrity, and a drift check between the
+  client's preview validation and the server's authoritative copy
 
 The emulator suites share one database and reset between tests, so they run
 with `--no-file-parallelism`; `npm test` excludes them.

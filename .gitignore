@@ -32,3 +32,6 @@ android/keystore.properties
 firestore-debug.log
 firebase-debug.log
 .firebase/
+
+# Trusted-server dependencies (installed per-deploy)
+functions/node_modules/

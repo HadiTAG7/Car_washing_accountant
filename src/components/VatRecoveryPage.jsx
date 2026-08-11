@@ -25,6 +25,38 @@ function isSafeHttpUrl(value) {
   return /^https?:\/\//i.test(String(value || '').trim());
 }
 
+// ─── VAT return periods ──────────────────────────────────────────────────
+// ZATCA files QUARTERLY for taxable supplies under SAR 40m (monthly only
+// above that), so the report totals by quarter, not by month.
+const QUARTER_NAMES = ['الأول', 'الثاني', 'الثالث', 'الرابع'];
+const QUARTER_MONTHS = [
+  'يناير – مارس', 'أبريل – يونيو', 'يوليو – سبتمبر', 'أكتوبر – ديسمبر',
+];
+/** '2026-08-11' → '2026-Q3' ('' when the date is missing/invalid). */
+function quarterOf(iso) {
+  const s = String(iso || '');
+  if (s.length < 7) return '';
+  const y = s.slice(0, 4);
+  const m = parseInt(s.slice(5, 7), 10);
+  if (!Number.isFinite(m) || m < 1 || m > 12) return '';
+  return `${y}-Q${Math.floor((m - 1) / 3) + 1}`;
+}
+/** '2026-Q3' → 'الربع الثالث 2026 · يوليو – سبتمبر'. */
+function quarterLabel(q) {
+  const m = /^(\d{4})-Q([1-4])$/.exec(String(q || ''));
+  if (!m) return q;
+  const i = +m[2] - 1;
+  return `الربع ${QUARTER_NAMES[i]} ${m[1]} · ${QUARTER_MONTHS[i]}`;
+}
+/** The quarter containing today, used as the report's default period. */
+function currentQuarter() {
+  const d = new Date();
+  return `${d.getFullYear()}-Q${Math.floor(d.getMonth() / 3) + 1}`;
+}
+// A recurring monthly expense is claimable in each month of the period, so
+// a quarterly return counts it three times.
+const MONTHS_PER_QUARTER = 3;
+
 // Tiny source chip next to the parent item name — tells the admin which
 // page the invoice was logged from.
 const SOURCE_META = {
@@ -52,27 +84,33 @@ export default function VatRecoveryPage() {
   const { scalingFactor } = usePartnerView();
 
   // ZATCA returns are filed per period — let the admin narrow to one
-  // month (YYYY-MM) before totalling / exporting. '' = all periods.
-  const [period, setPeriod] = useState('');
+  // quarter (YYYY-Qn) before totalling / exporting. '' = all periods.
+  // Defaults to the CURRENT quarter: that is the return actually being
+  // prepared, and it is the only view whose totals are directly filable.
+  const [period, setPeriod] = useState(currentQuarter);
 
-  // Distinct YYYY-MM values present in the data, newest first, for the
-  // period picker.
+  // Every quarter present in the data, newest first, plus the current one so
+  // a fresh quarter is selectable before its first invoice is logged.
   const periods = useMemo(() => {
-    const set = new Set(
-      invoices.map((e) => String(e.spentDate).slice(0, 7)).filter((s) => s.length === 7),
-    );
+    const set = new Set(invoices.map((e) => quarterOf(e.spentDate)).filter(Boolean));
+    set.add(currentQuarter());
     return [...set].sort().reverse();
   }, [invoices]);
 
   // A recurring monthly invoice has no single spend date — its VAT is
-  // reclaimable in EVERY return period, so it stays visible whichever month
+  // reclaimable in EVERY return period, so it stays visible whichever quarter
   // is selected. One-off rows filter by their own date as before.
   const filtered = useMemo(
     () => (period
-      ? invoices.filter((e) => e.recurring || String(e.spentDate).slice(0, 7) === period)
+      ? invoices.filter((e) => e.recurring || quarterOf(e.spentDate) === period)
       : invoices),
     [invoices, period],
   );
+
+  // How many times a recurring row counts in the selected view: three within
+  // a quarter, once when no period is chosen (there is no defined span to
+  // multiply across, and over-stating a reclaim is the costlier error).
+  const recurringMultiplier = period ? MONTHS_PER_QUARTER : 1;
 
   // Resolve parentId → item name across both sources (uuids can't
   // collide, so one merged map is enough).
@@ -90,9 +128,11 @@ export default function VatRecoveryPage() {
   const kpis = useMemo(() => {
     let inclusive = 0, vat = 0, net = 0;
     filtered.forEach((e) => {
-      inclusive += e.amount || 0;
-      vat       += extractVat(e.amount, true);
-      net       += netOfVat(e.amount, true);
+      // A recurring monthly invoice is claimed in each month of the quarter.
+      const n = e.recurring ? recurringMultiplier : 1;
+      inclusive += (e.amount || 0) * n;
+      vat       += extractVat(e.amount, true) * n;
+      net       += netOfVat(e.amount, true) * n;
     });
     return {
       inclusive: inclusive * scalingFactor,
@@ -100,27 +140,33 @@ export default function VatRecoveryPage() {
       net:       net       * scalingFactor,
       count:     filtered.length,
     };
-  }, [filtered, scalingFactor]);
+  }, [filtered, scalingFactor, recurringMultiplier]);
 
   function handleExport() {
-    const rows = filtered.map((e) => [
-      itemNameById.get(e.parentId) || '',
-      SOURCE_META[e.source]?.label || e.source,
-      e.description,
-      e.spentDate,
-      // Amounts as numbers, not strings — the CSV layer's formula-injection
-      // guard neutralizes only text, so numbers keep Excel interpretation.
-      Number(((e.amount || 0) * scalingFactor).toFixed(2)),
-      Number((extractVat(e.amount, true) * scalingFactor).toFixed(2)),
-      Number((netOfVat(e.amount, true) * scalingFactor).toFixed(2)),
-      isSafeHttpUrl(e.invoiceUrl) ? e.invoiceUrl : '',
-    ]);
+    const rows = filtered.map((e) => {
+      const n = e.recurring ? recurringMultiplier : 1;
+      return [
+        itemNameById.get(e.parentId) || '',
+        SOURCE_META[e.source]?.label || e.source,
+        e.description,
+        e.recurring ? 'متكرر شهرياً' : e.spentDate,
+        // The count carried into the period, so the accountant can see why a
+        // recurring line totals more than its single-month value.
+        n,
+        // Amounts as numbers, not strings — the CSV layer's formula-injection
+        // guard neutralizes only text, so numbers keep Excel interpretation.
+        Number(((e.amount || 0) * n * scalingFactor).toFixed(2)),
+        Number((extractVat(e.amount, true) * n * scalingFactor).toFixed(2)),
+        Number((netOfVat(e.amount, true) * n * scalingFactor).toFixed(2)),
+        isSafeHttpUrl(e.invoiceUrl) ? e.invoiceUrl : '',
+      ];
+    });
     // Totals row for the accountant.
-    rows.push(['الإجمالي', '', '', '', Number(kpis.inclusive.toFixed(2)), Number(kpis.vat.toFixed(2)), Number(kpis.net.toFixed(2)), '']);
+    rows.push(['الإجمالي', '', '', '', '', Number(kpis.inclusive.toFixed(2)), Number(kpis.vat.toFixed(2)), Number(kpis.net.toFixed(2)), '']);
     const label = period || 'كل-الفترات';
     downloadCsv(
       `الضريبة-المستردة-${label}`,
-      ['البند الأصلي', 'المصدر', 'الوصف', 'التاريخ', 'شامل الضريبة', 'الضريبة 15%', 'الصافي', 'رابط الفاتورة'],
+      ['البند الأصلي', 'المصدر', 'الوصف', 'التاريخ', 'عدد الأشهر', 'شامل الضريبة', 'الضريبة 15%', 'الصافي', 'رابط الفاتورة'],
       rows,
     );
   }
@@ -129,7 +175,7 @@ export default function VatRecoveryPage() {
     <>
       <TopBar
         title="الضريبة المستردة"
-        subtitle="إجمالي ضريبة القيمة المضافة المتوقع استردادها من الفواتير الضريبية"
+        subtitle="الإقرار الضريبي ربع سنوي — إجمالي ضريبة القيمة المضافة المتوقع استردادها"
       />
 
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
@@ -191,7 +237,7 @@ export default function VatRecoveryPage() {
         <Card className="p-6">
           <SectionHeader
             title="الفواتير الضريبية"
-            subtitle={period ? `الفترة: ${period}` : 'كل الفترات'}
+            subtitle={period ? quarterLabel(period) : 'كل الفترات'}
             action={
               <div className="flex items-center gap-2">
                 {/* Period filter */}
@@ -204,7 +250,7 @@ export default function VatRecoveryPage() {
                     aria-label="فلترة حسب الفترة"
                   >
                     <option value="">كل الفترات</option>
-                    {periods.map((p) => <option key={p} value={p}>{p}</option>)}
+                    {periods.map((p) => <option key={p} value={p}>{quarterLabel(p)}</option>)}
                   </select>
                 </div>
                 <SecondaryButton
@@ -244,9 +290,13 @@ export default function VatRecoveryPage() {
                 </thead>
                 <tbody>
                   {filtered.map((e) => {
-                    const inclusive = (e.amount || 0) * scalingFactor;
-                    const vat       = extractVat(e.amount, true) * scalingFactor;
-                    const net       = netOfVat(e.amount, true) * scalingFactor;
+                    // Recurring lines are claimed once per month of the
+                    // period, so the row shows the period total — otherwise
+                    // the column would not add up to the footer.
+                    const times     = e.recurring ? recurringMultiplier : 1;
+                    const inclusive = (e.amount || 0) * times * scalingFactor;
+                    const vat       = extractVat(e.amount, true) * times * scalingFactor;
+                    const net       = netOfVat(e.amount, true) * times * scalingFactor;
                     return (
                       <tr
                         key={e.id}
@@ -270,7 +320,16 @@ export default function VatRecoveryPage() {
                           {/* A recurring monthly invoice has no single spend
                               date — say so instead of rendering an empty cell. */}
                           {e.recurring
-                            ? <span className="text-indigo-700 dark:text-indigo-300 font-semibold">كل شهر</span>
+                            ? (
+                              <span className="text-indigo-700 dark:text-indigo-300 font-semibold">
+                                متكرر شهرياً
+                                {times > 1 && (
+                                  <span className="text-[11px] font-normal text-slate-500 dark:text-slate-400 mr-1 tabular-nums">
+                                    (×{times} أشهر)
+                                  </span>
+                                )}
+                              </span>
+                            )
                             : formatDate(e.spentDate)}
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums text-slate-700 dark:text-slate-300">

@@ -96,8 +96,10 @@ Notes that are easy to get wrong, and are handled explicitly:
 - An unpaid purchase credits **الموردون**, not cash.
 - An advance is an asset until explicitly converted to expense.
 - Startup costs are **capitalised** to fixed assets, not expensed.
-- Partner paid-to-date is **derived** from the capital account balance, not a
-  stored number that can drift from the receipts.
+- Partner paid-to-date is **derived** by summing `partner_payments` — the
+  receipts are the evidence, and `partners.paid_amount` is a cache maintained
+  by a client-side read-then-sum that two devices can disagree on. It is still
+  written for exports; nothing reads it for display.
 - Management/supervisor fees are configured rows in `fee_rules` with an
   `effective_from` date — no percentage is hard-coded, so changing a rate
   cannot silently restate a past period.

@@ -16,6 +16,8 @@ import LoadingState from './LoadingState';
 import ErrorState from './ErrorState';
 import Toast from './Toast';
 import { usePartners } from '../hooks/usePartners';
+import { usePartnerPayments } from '../hooks/usePartnerPayments';
+import { paidByPartner } from '../lib/accounting/partnerTotals';
 import { describeBackendError } from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 
@@ -30,6 +32,11 @@ export default function PartnersPage() {
     refetch,
   } = usePartners();
   const { isPartnerView, viewedPartner, canMutate } = usePartnerView();
+  // Paid-to-date is DERIVED from the receipts, not read off the cached
+  // `partners.paid_amount` aggregate — that field is maintained by a
+  // client-side read-then-sum and can drift from its own evidence.
+  const { payments: partnerPayments } = usePartnerPayments();
+  const paidTotals = useMemo(() => paidByPartner(partnerPayments), [partnerPayments]);
 
   // Partner view filters the page to just the viewed partner's row — they
   // shouldn't see the rest of the fleet's data. Admin (no partner view)
@@ -64,11 +71,10 @@ export default function PartnersPage() {
     // Capital fee × headcount across the entire fleet — the receivable
     // ceiling, in other words.
     const totalProjectValue = totalWorkers * PER_WORKER_FEE;
-    // Cash actually collected from partners so far. Reduce over the
-    // mapped `paidAmount` field (defaults to 0 on null).
-    const totalPaidTillNow  = partners.reduce((s, p) => s + (p.paidAmount || 0), 0);
+    // Cash actually collected, summed from the receipts themselves.
+    const totalPaidTillNow  = partners.reduce((s, p) => s + (paidTotals.get(String(p.id)) || 0), 0);
     return { totalPartners, totalWorkers, activeCount, totalProjectValue, totalPaidTillNow };
-  }, [partners]);
+  }, [partners, paidTotals]);
 
   async function handleAdd(partner) {
     try {
@@ -227,7 +233,7 @@ export default function PartnersPage() {
 
                   // ── Capital & receivable
                   const required = (p.workersCount || 0) * PER_WORKER_FEE;
-                  const paid     = p.paidAmount || 0;
+                  const paid     = paidTotals.get(String(p.id)) || 0;
                   const balance  = Math.max(0, required - paid);
                   const settled  = balance === 0;
 

@@ -452,7 +452,13 @@ export function toBudgetUpdate(updates = {}) {
 // NOTE: percentage is purely a client-derived display value
 // (workersCount / totalWorkers * 100). It is intentionally NOT mapped /
 // inserted / updated — the DB table doesn't carry that column.
-// NOTE: paid_amount is read-only from the app's perspective — the DB
+// NOTE: paid_amount is a CACHE, not the source of truth. The app derives a
+// partner's paid-to-date by summing `partner_payments` (see
+// lib/accounting/partnerTotals.js), because this aggregate is maintained by a
+// client-side read-then-sum and two devices recording receipts at once can
+// write totals that disagree with the receipts themselves. It is still
+// written so exports and backups stay populated; nothing reads it for display.
+// The original note follows: paid_amount is read-only from the app's perspective — the DB
 // trigger on partner_payments keeps it equal to SUM(receipts), so the
 // insert/update mappers deliberately never write it (a direct write
 // would drift from the receipts ledger until the next receipt).

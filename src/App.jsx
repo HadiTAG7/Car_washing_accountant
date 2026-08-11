@@ -17,6 +17,7 @@ import {
   Scale,
   Lock,
   FileText,
+  Boxes,
 } from 'lucide-react';
 
 import { lazy, Suspense } from 'react';
@@ -47,6 +48,7 @@ const GeneralLedgerPage    = lazy(() => import('./components/GeneralLedgerPage')
 const TrialBalancePage     = lazy(() => import('./components/TrialBalancePage'));
 const BalanceSheetPage     = lazy(() => import('./components/BalanceSheetPage'));
 const SalesDocumentsPage   = lazy(() => import('./components/SalesDocumentsPage'));
+const FixedAssetsPage      = lazy(() => import('./components/FixedAssetsPage'));
 const PeriodClosePage      = lazy(() => import('./components/PeriodClosePage'));
 
 import { useAuth } from './hooks/useAuth';
@@ -72,6 +74,7 @@ const TABS = [
   { id: 'trial',     label: 'ميزان المراجعة',          icon: Scale       },
   { id: 'balance',   label: 'المركز المالي',           icon: Landmark    },
   { id: 'documents', label: 'المستندات الضريبية',      icon: FileText    },
+  { id: 'assets',    label: 'الأصول الثابتة',          icon: Boxes       },
   { id: 'periods',   label: 'إقفال الفترة',            icon: Lock        },
 ];
 
@@ -185,6 +188,7 @@ function AppShell() {
             {activeTab === 'trial'     && <TrialBalancePage />}
             {activeTab === 'balance'   && <BalanceSheetPage />}
             {activeTab === 'documents' && <SalesDocumentsPage />}
+            {activeTab === 'assets'    && <FixedAssetsPage />}
             {activeTab === 'periods'   && <PeriodClosePage />}
           </div>
         </Suspense>

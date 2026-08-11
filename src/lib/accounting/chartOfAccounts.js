@@ -43,11 +43,13 @@ export const ACC = {
   PARTNER_CAPITAL:   '3000', // رأس مال الشركاء
   RETAINED_EARNINGS: '3100', // أرباح محتجزة
   WASH_REVENUE:      '4000', // إيرادات غسيل السيارات
+  ASSET_DISPOSAL_GAIN:'4100',// أرباح استبعاد أصول
   BIKER_COMMISSION:  '5000', // عمولات البايكرز
   VARIABLE_COSTS:    '5100', // مواد تشغيل ومصروفات متغيرة
   RENT_MONTHLY:      '5200', // الإيجار والمصروفات الشهرية
   ADMIN_EXPENSES:    '5300', // المصروفات الإدارية
   DEPRECIATION:      '5400', // الإهلاك
+  ASSET_DISPOSAL_LOSS:'5500',// خسائر استبعاد أصول
 };
 
 /**
@@ -77,6 +79,9 @@ export const DEFAULT_CHART_OF_ACCOUNTS = [
 
   // ── الإيرادات ───────────────────────────────────────────────────────
   { code: ACC.WASH_REVENUE,       nameArabic: 'إيرادات غسيل السيارات',          accountType: 'revenue' },
+  // Disposing of an asset is not trading income, so it gets its own account
+  // and never inflates the wash revenue line.
+  { code: ACC.ASSET_DISPOSAL_GAIN, nameArabic: 'أرباح استبعاد أصول',            accountType: 'revenue' },
 
   // ── المصروفات ───────────────────────────────────────────────────────
   { code: ACC.BIKER_COMMISSION,   nameArabic: 'عمولات البايكرز',                accountType: 'expense' },
@@ -84,6 +89,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS = [
   { code: ACC.RENT_MONTHLY,       nameArabic: 'الإيجار والمصروفات الشهرية',     accountType: 'expense' },
   { code: ACC.ADMIN_EXPENSES,     nameArabic: 'المصروفات الإدارية',             accountType: 'expense' },
   { code: ACC.DEPRECIATION,       nameArabic: 'الإهلاك',                        accountType: 'expense' },
+  { code: ACC.ASSET_DISPOSAL_LOSS, nameArabic: 'خسائر استبعاد أصول',            accountType: 'expense' },
 ].map((a) => ({
   parentId: null,
   contra: false,

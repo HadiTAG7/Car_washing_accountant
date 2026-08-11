@@ -16,6 +16,9 @@
 export const SOURCE_TYPES = [
   'wash', 'expense', 'partner_payment', 'temporary_expense',
   'recovery', 'manual', 'adjustment', 'opening',
+  // Period-end and asset movements. `depreciation` carries the period key as
+  // its sourceId, which is what makes re-running a month a no-op.
+  'depreciation', 'disposal',
 ];
 export const ENTRY_STATUSES = ['draft', 'posted', 'reversed'];
 

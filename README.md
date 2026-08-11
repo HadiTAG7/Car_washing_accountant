@@ -43,6 +43,7 @@ summed directly into a report.
 | **ميزان المراجعة** | Per-account debits/credits/balance with an explicit balanced verdict, CSV |
 | **المركز المالي** | Assets = Liabilities + Equity, CSV |
 | **المستندات الضريبية** | Simplified invoices with a sequential number and a Phase-1 QR, credit/debit notes, sequence-gap audit, CSV |
+| **الأصول الثابتة** | Register, straight-line schedules, monthly depreciation entries, disposal, CSV |
 | **إقفال الفترة** | Chart seeding, posting sweep, per-month preflight, close/reopen |
 
 ---
@@ -62,8 +63,9 @@ overwrites an existing account). Document id = account code.
 | 1500 / 1510 | أصول ثابتة / مجمع الإهلاك | asset (1510 contra) |
 | 2000 / 2100 | الموردون / ضريبة مخرجات مستحقة | liability |
 | 3000 / 3100 | رأس مال الشركاء / أرباح محتجزة | equity |
-| 4000 | إيرادات غسيل السيارات | revenue |
+| 4000 / 4100 | إيرادات غسيل السيارات / أرباح استبعاد أصول | revenue |
 | 5000–5400 | عمولات · متغيرة · إيجار · إدارية · إهلاك | expense |
+| 5500 | خسائر استبعاد أصول | expense |
 
 Each partner also gets a capital sub-account `3000-<partnerId>`, created
 automatically on their first posted payment.
@@ -147,6 +149,50 @@ throwing or silently succeeding.
 Phase 2 needs a trusted server: the private key must never reach a browser,
 and the hash chain requires a single serialized issuer. The app is shaped so
 only that one file changes.
+
+---
+
+## الأصول الثابتة — register and depreciation
+
+Capitalising a purchase to 1500 and never depreciating it overstates the
+assets *and* the profit, every month, forever. **الأصول الثابتة** closes that.
+
+**Policy** — straight line, `(cost − salvage) ÷ useful life in months`, on a
+**full-month convention**: an asset bought on the 3rd and one bought on the
+28th both take a full month in the month they enter service. The **last**
+month absorbs the rounding drift, so total depreciation equals the depreciable
+base to the halala and the asset lands exactly on its salvage value.
+
+**The monthly entry** is dated the last day of the month it covers, and
+carries the period key as its `sourceId`:
+
+| | |
+|---|---|
+| مدين | مصروف الإهلاك `5400` — one line per asset |
+| دائن | مجمع الإهلاك `1510` — one line per asset |
+
+Per-asset lines on both sides mean the general ledger for 1510 reads as a
+per-asset history, which is what a fixed-asset note needs.
+
+**Guards that matter**
+- A month already charged is **refused**, not silently repeated. Fixing a
+  posted month is a reversal, like any other entry.
+- A future month is never offered — its expense has not been incurred.
+- Cost, salvage, life and in-service date **freeze** once any of *that
+  asset's* months have been charged; the schedule must not disagree with the
+  ledger. (An unrelated asset having been depreciated does not freeze this
+  one.)
+- **Disposal is blocked** until the asset's depreciation is up to date: the
+  disposal entry debits 1510 by what the schedule says accumulated, so an
+  unposted month would drive that account negative and misstate the gain.
+- An asset back-dated **into an already-posted month** would otherwise be lost
+  — the sweep never revisits a charged month. The page reconciles register
+  against ledger and reports the difference instead.
+- An asset is deactivated or disposed of, never deleted.
+
+**Disposal** posts Dr cash · Dr accumulated · Cr asset at cost, with the
+balancing figure landing on `4100` (gain) or `5500` (loss) — computed, never
+typed.
 
 ---
 
@@ -255,5 +301,8 @@ Release signing reads `android/keystore.properties` (gitignored, along with
   internal working papers.
 - Cloud Storage is not enabled on the project, so invoices are referenced by
   **URL** rather than uploaded.
-- Depreciation accounts exist but no depreciation schedule is computed yet;
-  post it as a manual adjusting entry.
+- Depreciation is **straight line only**. Declining-balance and units-of-
+  production are not implemented.
+- Existing startup-cost rows are not swept into the asset register
+  automatically — `importAssetFromSource` exists and is idempotent, but each
+  asset's useful life is a judgement, so it is entered rather than guessed.

@@ -119,6 +119,16 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // ── سجل الأصول الثابتة ───────────────────────────────────────────
+    // The register drives the depreciation entries, so it is an accountant's
+    // record, not an operator's. An asset is deactivated or disposed of —
+    // never deleted, or the entries that reference it would be orphaned.
+    match /fixed_assets/{assetId} {
+      allow read:   if isMember();
+      allow create, update: if isAccountant();
+      allow delete: if false;
+    }
+
     // ── قواعد الرسوم ─────────────────────────────────────────────────
     match /fee_rules/{ruleId} {
       allow read:  if isMember();

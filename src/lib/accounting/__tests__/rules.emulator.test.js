@@ -196,6 +196,34 @@ d('قواعد أمان Firestore', () => {
     });
   });
 
+  // ── سجل الأصول الثابتة ─────────────────────────────────────────────
+  describe('سجل الأصول سجل محاسبي لا تشغيلي', () => {
+    beforeEach(async () => {
+      await env.withSecurityRulesDisabled(async (c) => {
+        await setDoc(doc(c.firestore(), 'fixed_assets', 'as1'), {
+          name: 'ماكينة', cost: 12000, usefulLifeMonths: 60, inServiceDate: '2026-01-15',
+        });
+      });
+    });
+
+    it('المحاسب يضيف ويعدّل، والمشغّل لا', async () => {
+      await assertSucceeds(setDoc(doc(ctx.acct, 'fixed_assets', 'as2'), {
+        name: 'مكنسة', cost: 3600, usefulLifeMonths: 36, inServiceDate: '2026-03-01',
+      }));
+      await assertFails(setDoc(doc(ctx.op, 'fixed_assets', 'as3'), { name: 'x', cost: 1 }));
+    });
+
+    it('الأعضاء يقرأون السجل', async () => {
+      await assertSucceeds(getDoc(doc(ctx.partner, 'fixed_assets', 'as1')));
+      await assertFails(getDoc(doc(ctx.anon, 'fixed_assets', 'as1')));
+    });
+
+    it('لا يُحذف أصل — يُعطَّل أو يُستبعد', async () => {
+      await assertFails(deleteDoc(doc(ctx.admin, 'fixed_assets', 'as1')));
+      await assertSucceeds(updateDoc(doc(ctx.acct, 'fixed_assets', 'as1'), { active: false }));
+    });
+  });
+
   // ── سجل التدقيق ────────────────────────────────────────────────────
   describe('سجل التدقيق للإضافة فقط', () => {
     beforeEach(async () => {

@@ -3,7 +3,7 @@ import {
   Percent, Receipt, Coins, Link as LinkIcon, FileText, Download, Calendar,
 } from 'lucide-react';
 import {
-  formatCurrency, formatDate, formatNumber, extractVat, netOfVat,
+  formatCurrency, formatCurrencyPrecise, formatDate, formatNumber, extractVat, netOfVat,
 } from '../data/initialData';
 import { downloadCsv } from '../lib/exportCsv';
 import TopBar from './TopBar';
@@ -15,6 +15,7 @@ import ErrorState, { SetupRequiredCard } from './ErrorState';
 import { useTaxInvoices } from '../hooks/useTaxInvoices';
 import { useStartupCosts } from '../hooks/useStartupCosts';
 import { useAnnualExpenses } from '../hooks/useAnnualExpenses';
+import { useMonthlyExpenses } from '../hooks/useMonthlyExpenses';
 import { isSupabaseConfigured, missingEnvNames } from '../lib/supabaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 
@@ -28,6 +29,7 @@ function isSafeHttpUrl(value) {
 const SOURCE_META = {
   startup: { label: 'تأسيس', cls: 'bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300 border-primary-100 dark:border-primary-500/30' },
   annual:  { label: 'سنوي',  cls: 'bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-100 dark:border-amber-500/30' },
+  monthly: { label: 'شهري',  cls: 'bg-indigo-50 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-100 dark:border-indigo-500/30' },
 };
 function SourceBadge({ source }) {
   const meta = SOURCE_META[source];
@@ -43,6 +45,7 @@ export default function VatRecoveryPage() {
   const { invoices, loading, error, sourceErrors, refetch } = useTaxInvoices();
   const { items: startupItems } = useStartupCosts();
   const { items: annualItems }  = useAnnualExpenses();
+  const { items: monthlyItems } = useMonthlyExpenses();
   const { scalingFactor } = usePartnerView();
 
   // ZATCA returns are filed per period — let the admin narrow to one
@@ -58,8 +61,13 @@ export default function VatRecoveryPage() {
     return [...set].sort().reverse();
   }, [invoices]);
 
+  // A recurring monthly invoice has no single spend date — its VAT is
+  // reclaimable in EVERY return period, so it stays visible whichever month
+  // is selected. One-off rows filter by their own date as before.
   const filtered = useMemo(
-    () => (period ? invoices.filter((e) => String(e.spentDate).slice(0, 7) === period) : invoices),
+    () => (period
+      ? invoices.filter((e) => e.recurring || String(e.spentDate).slice(0, 7) === period)
+      : invoices),
     [invoices, period],
   );
 
@@ -69,8 +77,9 @@ export default function VatRecoveryPage() {
     const m = new Map();
     startupItems.forEach((i) => m.set(i.id, i.itemName));
     annualItems.forEach((i)  => m.set(i.id, i.expenseName));
+    monthlyItems.forEach((i) => m.set(i.id, i.expenseName));
     return m;
-  }, [startupItems, annualItems]);
+  }, [startupItems, annualItems, monthlyItems]);
 
   // All money figures are scaled by the viewing partner's share for
   // consistency with the rest of the dashboard (admin → ×1).
@@ -155,7 +164,7 @@ export default function VatRecoveryPage() {
             icon={Percent}
             tone="emerald"
             label="إجمالي الضريبة المتوقع استردادها"
-            value={formatCurrency(kpis.vat)}
+            value={formatCurrencyPrecise(kpis.vat)}
             sub={`${formatNumber(kpis.count)} فاتورة ضريبية${period ? ` · ${period}` : ''}`}
           />
           <StatCard
@@ -254,13 +263,17 @@ export default function VatRecoveryPage() {
                           )}
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap tabular-nums text-slate-600 dark:text-slate-400">
-                          {formatDate(e.spentDate)}
+                          {/* A recurring monthly invoice has no single spend
+                              date — say so instead of rendering an empty cell. */}
+                          {e.recurring
+                            ? <span className="text-indigo-700 dark:text-indigo-300 font-semibold">كل شهر</span>
+                            : formatDate(e.spentDate)}
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums text-slate-700 dark:text-slate-300">
                           {formatCurrency(inclusive)}
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums font-bold text-emerald-700 dark:text-emerald-300">
-                          {formatCurrency(vat)}
+                          {formatCurrencyPrecise(vat)}
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums text-slate-700 dark:text-slate-300">
                           {formatCurrency(net)}

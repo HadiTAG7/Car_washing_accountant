@@ -203,11 +203,17 @@ export function mapMonthlyExpense(row) {
     paymentStatus:    clampStatus(row.payment_status),
     recurrence:       clampRecurrence(row.recurrence),
     loggedDate:       row.logged_date || null,
+    // VAT recovery: when the supplier issued a tax invoice, the stored
+    // cost is VAT-INCLUSIVE and the 15% portion is reclaimable. The
+    // invoice itself is referenced by URL (no upload needed).
+    isTaxInvoice:     Boolean(row.is_tax_invoice),
+    invoiceUrl:       row.invoice_url || '',
   };
 }
 export function toMonthlyExpenseInsert({
   expenseName, categoryId, quantity, unitCost, totalMonthlyCost,
   paymentDay, paymentStatus, recurrence, loggedDate,
+  isTaxInvoice, invoiceUrl,
 }) {
   const q   = clampExpenseQuantity(quantity);
   const uc  = Math.max(0, Number(unitCost) || 0);
@@ -223,6 +229,8 @@ export function toMonthlyExpenseInsert({
     payment_status:     clampStatus(paymentStatus),
     recurrence:         rec,
     logged_date:        rec === 'one_time' ? normalizeLoggedDate(loggedDate) : null,
+    is_tax_invoice:     Boolean(isTaxInvoice),
+    invoice_url:        invoiceUrl && String(invoiceUrl).trim() ? String(invoiceUrl).trim() : null,
   };
 }
 export function toMonthlyExpenseUpdate(updates = {}) {
@@ -236,6 +244,11 @@ export function toMonthlyExpenseUpdate(updates = {}) {
   if (updates.paymentStatus    !== undefined) payload.payment_status     = clampStatus(updates.paymentStatus);
   if (updates.recurrence       !== undefined) payload.recurrence         = clampRecurrence(updates.recurrence);
   if (updates.loggedDate       !== undefined) payload.logged_date        = normalizeLoggedDate(updates.loggedDate);
+  if (updates.isTaxInvoice     !== undefined) payload.is_tax_invoice     = Boolean(updates.isTaxInvoice);
+  if (updates.invoiceUrl       !== undefined) {
+    const u = String(updates.invoiceUrl || '').trim();
+    payload.invoice_url = u ? u : null;
+  }
   // Keep the two recurrence-dependent columns consistent when recurrence
   // flips: a switch to monthly clears logged_date; a switch to one_time
   // clears payment_day. Skip when only one of the pair was edited.

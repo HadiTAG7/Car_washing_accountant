@@ -65,6 +65,16 @@ const SAR_FMT = new Intl.NumberFormat('ar-SA', {
   maximumFractionDigits: 0,
   numberingSystem: 'latn',
 });
+// Tax figures are declared to the halala on a ZATCA return, so VAT amounts
+// get their own two-decimal formatter. General amounts stay rounded — whole
+// riyals keep six-figure totals readable.
+const SAR_FMT_PRECISE = new Intl.NumberFormat('ar-SA', {
+  style: 'currency',
+  currency: 'SAR',
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+  numberingSystem: 'latn',
+});
 const NUM_FMT = new Intl.NumberFormat('ar-SA', { numberingSystem: 'latn' });
 
 // Per-worker corporate capital fee. Each partner owes this × workersCount;
@@ -77,6 +87,10 @@ export function formatCurrency(amount) {
   // which left that period dangling after the glyph ("123 ⃀."). Strip it
   // so every amount renders a clean symbol.
   return SAR_FMT.format(amount || 0).replace('ر.س.', 'ر.س');
+}
+/** Currency with halalas — for VAT figures, which are filed to the fils. */
+export function formatCurrencyPrecise(amount) {
+  return SAR_FMT_PRECISE.format(amount || 0).replace('ر.س.', 'ر.س');
 }
 export function formatNumber(n) {
   return NUM_FMT.format(n || 0);

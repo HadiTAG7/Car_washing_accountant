@@ -3,6 +3,7 @@ import {
   X, Plus, RefreshCw, Wallet, Calendar, FileText, Tag,
 } from 'lucide-react';
 import { formatCurrency, todayISO } from '../data/initialData';
+import DateField from './DateField';
 
 const EMPTY = {
   title:     '',
@@ -139,15 +140,13 @@ export default function AddTemporaryExpenseModal({ isOpen, onClose, onAdd }) {
                   size={16}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 pointer-events-none"
                 />
-                <input
-                  id="spentDate"
-                  type="date"
-                  name="spentDate"
-                  value={form.spentDate}
-                  onChange={handleChange}
-                  required
-                  className="w-full pr-9 pl-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm tabular-nums focus:outline-none focus:border-primary-500 transition-colors"
-                />
+                <DateField
+              id="spentDate"
+              name="spentDate"
+              value={form.spentDate}
+              onChange={handleChange}
+              required
+            />
               </div>
             </div>
           </div>

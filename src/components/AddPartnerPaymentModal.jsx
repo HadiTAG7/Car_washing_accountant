@@ -3,6 +3,7 @@ import {
   X, Plus, Wallet, Calendar, Landmark, Coins, CreditCard, FileText,
 } from 'lucide-react';
 import { formatCurrency, todayISO } from '../data/initialData';
+import DateField from './DateField';
 
 const METHOD_OPTIONS = [
   { id: 'bank_transfer', label: 'تحويل بنكي', icon: Landmark    },
@@ -126,15 +127,13 @@ export default function AddPartnerPaymentModal({
                   size={16}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 pointer-events-none"
                 />
-                <input
-                  id="paymentDate"
-                  type="date"
-                  name="paymentDate"
-                  value={form.paymentDate}
-                  onChange={handleChange}
-                  required
-                  className="w-full pr-9 pl-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm tabular-nums focus:outline-none focus:border-primary-500 transition-colors"
-                />
+                <DateField
+              id="paymentDate"
+              name="paymentDate"
+              value={form.paymentDate}
+              onChange={handleChange}
+              required
+            />
               </div>
             </div>
           </div>

@@ -8,6 +8,7 @@ import {
 } from '../data/initialData';
 import { uploadInvoiceFile, isSupabaseConfigured } from '../lib/supabaseClient';
 import { EmptyState } from './UI';
+import DateField from './DateField';
 
 const EMPTY_FORM = {
   description: '', amount: '', spentDate: '', notes: '', invoiceUrl: '', isTaxInvoice: false,
@@ -232,14 +233,12 @@ export default function ExpenseLedgerModal({
                   size={15}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 pointer-events-none"
                 />
-                <input
-                  type="date"
-                  name="spentDate"
-                  value={form.spentDate}
-                  onChange={handleChange}
-                  required
-                  className="w-full pr-9 pl-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm tabular-nums focus:outline-none focus:border-primary-500 transition-colors"
-                />
+                <DateField
+              name="spentDate"
+              value={form.spentDate}
+              onChange={handleChange}
+              required
+            />
               </div>
             </div>
 

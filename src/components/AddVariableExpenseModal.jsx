@@ -4,6 +4,7 @@ import {
   formatCurrency, formatCurrencyPrecise, formatNumber, todayISO, extractVat, netOfVat,
 } from '../data/initialData';
 import CategorySelect from './CategorySelect';
+import DateField from './DateField';
 
 const EMPTY_TEMPLATE = {
   expenseName: '',
@@ -310,13 +311,11 @@ export default function AddVariableExpenseModal({
             <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5" htmlFor="loggedDate">
               تاريخ التسجيل / الصرف
             </label>
-            <input
+            <DateField
               id="loggedDate"
-              type="date"
               name="loggedDate"
               value={form.loggedDate}
               onChange={handleChange}
-              className="w-full px-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm tabular-nums focus:outline-none focus:border-primary-500 transition-colors"
             />
           </div>
 

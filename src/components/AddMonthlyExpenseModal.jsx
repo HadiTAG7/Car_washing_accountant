@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { X, Plus, Pencil, Receipt, Check, AlertTriangle, Repeat, Calendar, Percent, LinkIcon } from 'lucide-react';
 import { formatCurrency, formatCurrencyPrecise, formatNumber, extractVat, netOfVat } from '../data/initialData';
 import CategorySelect from './CategorySelect';
+import DateField from './DateField';
 
 function todayISO() {
   const d = new Date();
@@ -353,15 +354,13 @@ export default function AddMonthlyExpenseModal({
                 <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5" htmlFor="loggedDate">
                   تاريخ الصرف
                 </label>
-                <input
-                  id="loggedDate"
-                  type="date"
-                  name="loggedDate"
-                  value={form.loggedDate}
-                  onChange={handleChange}
-                  required
-                  className="w-full px-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm tabular-nums focus:outline-none focus:border-primary-500 transition-colors"
-                />
+                <DateField
+              id="loggedDate"
+              name="loggedDate"
+              value={form.loggedDate}
+              onChange={handleChange}
+              required
+            />
                 <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
                   سيُحتسب هذا المصروف في الشهر الذي يقع فيه تاريخ الصرف فقط.
                 </p>

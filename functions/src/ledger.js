@@ -29,7 +29,9 @@
 import {
   normalizeEntry, normalizeLines, validateEntry, totalsOf,
   buildReversalLines, postingLockId, periodKeyOf, round2,
+  isRealDate, isValidPeriodKey,
 } from './invariants.js';
+import { ADAPTERS, legacyLockIdFor } from './posting.js';
 
 export const COL = {
   ACCOUNTS: 'chart_of_accounts',
@@ -40,6 +42,9 @@ export const COL = {
   LOCKS:    'posting_locks',
 };
 const JOURNAL_COUNTER = 'journal';
+const SETTINGS_DOC = 'accounting';
+
+const DEFAULT_SETTINGS = { vatRegistered: true, washPriceMode: 'inclusive' };
 
 /** An error the caller is meant to see, as opposed to a bug. */
 export class LedgerError extends Error {
@@ -74,7 +79,9 @@ function auditRecord({ action, collectionName, documentId, userId, before, after
  * posting at the same instant cannot mint the same number or double-post the
  * same source record.
  */
-export async function postEntry(db, FieldValue, { entry, lines }, { userId = null, checkAccounts = true } = {}) {
+export async function postEntry(db, FieldValue, { entry, lines }, {
+  userId = null, checkAccounts = true, lockKind = null,
+} = {}) {
   const normEntry = normalizeEntry(entry);
   const normLines = normalizeLines(lines);
 
@@ -99,8 +106,10 @@ export async function postEntry(db, FieldValue, { entry, lines }, { userId = nul
   return db.runTransaction(async (tx) => {
     const counterRef = db.collection(COL.COUNTERS).doc(JOURNAL_COUNTER);
     const periodRef  = db.collection(COL.PERIODS).doc(normEntry.periodKey);
-    const lockRef = normEntry.sourceType && normEntry.sourceId
-      ? db.collection(COL.LOCKS).doc(postingLockId(normEntry.sourceType, normEntry.sourceId))
+    // `lockKind` identifies the SOURCE COLLECTION, not the entry's accounting
+    // type — five collections share `sourceType: 'expense'`.
+    const lockRef = lockKind && normEntry.sourceId
+      ? db.collection(COL.LOCKS).doc(postingLockId(lockKind, normEntry.sourceId))
       : null;
 
     // ── reads ──
@@ -148,6 +157,7 @@ export async function postEntry(db, FieldValue, { entry, lines }, { userId = nul
     }
     if (lockRef) {
       tx.set(lockRef, {
+        kind:       lockKind,
         sourceType: normEntry.sourceType,
         sourceId:   normEntry.sourceId,
         entryId:    entryRef.id,
@@ -170,6 +180,131 @@ export async function postEntry(db, FieldValue, { entry, lines }, { userId = nul
   });
 }
 
+/**
+ * Posts a SOURCE RECORD. The caller names it; the server reads it.
+ *
+ * This is the difference between "server authoritative" as a slogan and as a
+ * fact. `postEntry` validates the arithmetic of whatever it is handed, but has
+ * no idea whether those lines describe the wash they claim to — a caller could
+ * send a perfectly balanced 50,000-riyal entry citing a 115-riyal wash and the
+ * books would take it. Here the payload is `{ kind, sourceId }` and nothing
+ * else: the amount, the date, the payment method and the VAT treatment all
+ * come out of the stored document.
+ *
+ * Every read — source, settings, period, lock, counter — happens before the
+ * first write, which a Firestore transaction requires and which also means the
+ * whole decision is made on one consistent snapshot.
+ */
+export async function postSource(db, FieldValue, { kind, sourceId }, { userId = null } = {}) {
+  const adapter = ADAPTERS[String(kind)];
+  if (!adapter) throw new LedgerError(`نوع سجل غير معروف: ${kind}`, { code: 'invalid-argument' });
+  const id = String(sourceId ?? '').trim();
+  // An operational entry without a source id has nothing to be idempotent
+  // against, so it could be posted again and again.
+  if (!id) throw new LedgerError('معرّف السجل المصدر مطلوب.', { code: 'invalid-argument' });
+
+  // The chart is a collection read; taken before the transaction so the
+  // transaction body holds only document reads, in one clean block.
+  const chartSnap = await db.collection(COL.ACCOUNTS).get();
+  const knownAccountCodes = new Set(chartSnap.docs.map((d) => d.id));
+  if (knownAccountCodes.size === 0) {
+    throw new LedgerError('دليل الحسابات غير مُهيّأ — هيّئه قبل الترحيل.');
+  }
+
+  return db.runTransaction(async (tx) => {
+    // ══ reads ══════════════════════════════════════════════════════════
+    const sourceRef   = db.collection(adapter.collection).doc(id);
+    const settingsRef = db.collection('app_settings').doc(SETTINGS_DOC);
+    const lockRef     = db.collection(COL.LOCKS).doc(postingLockId(adapter.lockKind, id));
+    const legacyId    = legacyLockIdFor(kind, id);
+    const legacyRef   = legacyId ? db.collection(COL.LOCKS).doc(legacyId) : null;
+    const counterRef  = db.collection(COL.COUNTERS).doc(JOURNAL_COUNTER);
+
+    const [sourceSnap, settingsSnap, lockSnap, legacySnap, counterSnap] = await Promise.all([
+      tx.get(sourceRef), tx.get(settingsRef), tx.get(lockRef),
+      legacyRef ? tx.get(legacyRef) : Promise.resolve(null),
+      tx.get(counterRef),
+    ]);
+
+    if (!sourceSnap.exists) {
+      throw new LedgerError('السجل المصدر غير موجود.', { code: 'not-found' });
+    }
+    const row = sourceSnap.data();
+    if (adapter.approved && !adapter.approved(row)) {
+      throw new LedgerError(adapter.notApproved || 'السجل غير معتمد للترحيل بعد.');
+    }
+    // Locks written before locks were keyed on the kind still count.
+    const existing = (lockSnap.exists && lockSnap) || (legacySnap?.exists && legacySnap) || null;
+    if (existing) {
+      throw new LedgerError(
+        `سبق ترحيل هذا السجل بالقيد رقم ${existing.data().entryNumber ?? '—'} — لا يُرحّل مرتين.`,
+        { code: 'already-exists' },
+      );
+    }
+
+    const settings = { ...DEFAULT_SETTINGS, ...(settingsSnap.exists ? (settingsSnap.data().value || {}) : {}) };
+    const built = adapter.build(row, id, {
+      vatRegistered: settings.vatRegistered !== false,
+      washPriceMode: settings.washPriceMode || 'inclusive',
+    });
+
+    const normEntry = normalizeEntry(built.entry);
+    const normLines = normalizeLines(built.lines);
+    const problems = validateEntry(normEntry, normLines, { knownAccountCodes });
+    if (problems.length) {
+      throw new LedgerError(problems[0], { code: 'invalid-argument', problems });
+    }
+
+    const periodSnap = await tx.get(db.collection(COL.PERIODS).doc(normEntry.periodKey));
+    if (periodSnap.exists && periodSnap.data().status === 'closed') {
+      throw new LedgerError(
+        `الفترة ${normEntry.periodKey} مقفلة — لا يمكن الترحيل فيها. سجّل التصحيح في فترة مفتوحة.`,
+      );
+    }
+
+    // ══ writes ═════════════════════════════════════════════════════════
+    const totals = totalsOf(normLines);
+    const nextNumber = counterSnap.exists ? (Number(counterSnap.data().nextNumber) || 1) : 1;
+    const entryRef = db.collection(COL.ENTRIES).doc();
+
+    tx.set(entryRef, {
+      ...normEntry,
+      entryNumber: nextNumber,
+      sourceKind: adapter.lockKind,
+      lines: normLines,
+      lineCount: normLines.length,
+      totalDebit: totals.debit,
+      totalCredit: totals.credit,
+      createdBy: userId,
+      createdAt: FieldValue.serverTimestamp(),
+      postedAt: FieldValue.serverTimestamp(),
+    });
+    if (!periodSnap.exists) {
+      tx.set(db.collection(COL.PERIODS).doc(normEntry.periodKey), {
+        periodKey: normEntry.periodKey, status: 'open',
+        closedAt: null, closedBy: null, createdAt: FieldValue.serverTimestamp(),
+      });
+    }
+    tx.set(lockRef, {
+      kind: adapter.lockKind,
+      sourceType: normEntry.sourceType,
+      sourceId: id,
+      entryId: entryRef.id,
+      entryNumber: nextNumber,
+      lockedBy: userId,
+      lockedAt: FieldValue.serverTimestamp(),
+    });
+    tx.set(counterRef, { nextNumber: nextNumber + 1, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+    tx.set(db.collection(COL.AUDIT).doc(), auditRecord({
+      action: 'post', collectionName: COL.ENTRIES, documentId: entryRef.id, userId,
+      after: { entryNumber: nextNumber, kind: adapter.lockKind, sourceId: id, totalDebit: totals.debit },
+      note: `ترحيل ${adapter.lockKind} — قيد رقم ${nextNumber}`,
+    }, FieldValue));
+
+    return { entryId: entryRef.id, entryNumber: nextNumber, kind: adapter.lockKind, ...totals };
+  });
+}
+
 // ─── العكس ───────────────────────────────────────────────────────────────
 /**
  * Reverses a posted entry.
@@ -180,9 +315,18 @@ export async function postEntry(db, FieldValue, { entry, lines }, { userId = nul
  * transaction, which is the only place that release is legitimate.
  */
 export async function reverseEntry(db, FieldValue, entryId, { entryDate, description, userId = null } = {}) {
-  const date = String(entryDate || new Date().toISOString().slice(0, 10)).slice(0, 10);
+  // No default date. A reversal lands in a period and changes what that
+  // period says, so "today" is a decision the caller has to make and own —
+  // silently choosing it for them is how a correction ends up in the wrong
+  // month.
+  const date = String(entryDate ?? '').slice(0, 10);
+  if (!isRealDate(date)) {
+    throw new LedgerError(
+      'تاريخ القيد العكسي مطلوب ويجب أن يكون تاريخاً حقيقياً (YYYY-MM-DD).',
+      { code: 'invalid-argument' },
+    );
+  }
   const periodKey = periodKeyOf(date);
-  if (!periodKey) throw new LedgerError('تاريخ القيد العكسي غير صالح.', { code: 'invalid-argument' });
 
   return db.runTransaction(async (tx) => {
     const originalRef = db.collection(COL.ENTRIES).doc(String(entryId));
@@ -195,11 +339,28 @@ export async function reverseEntry(db, FieldValue, entryId, { entryDate, descrip
 
     if (!originalSnap.exists) throw new LedgerError('القيد غير موجود.', { code: 'not-found' });
     const original = originalSnap.data();
+
+    // The lock is read INSIDE the transaction, so the decision to release it
+    // is made on the same snapshot as everything else.
+    const lockKind = original.sourceKind || original.sourceType;
+    const lockRef = lockKind && original.sourceId
+      ? db.collection(COL.LOCKS).doc(postingLockId(lockKind, original.sourceId))
+      : null;
+    const lockSnap = lockRef ? await tx.get(lockRef) : null;
     if (original.status !== 'posted') {
       throw new LedgerError('لا يمكن عكس قيد غير مُرحّل.');
     }
     if (periodSnap.exists && periodSnap.data().status === 'closed') {
       throw new LedgerError(`الفترة ${periodKey} مقفلة — اختر تاريخاً في فترة مفتوحة.`);
+    }
+
+    // A reversal of a reversal unwinds the correction and leaves two mirror
+    // entries with nothing to say which is live. The way back from a mistaken
+    // reversal is a fresh adjusting entry, which states its own intent.
+    if (original.reversalOf) {
+      throw new LedgerError(
+        'لا يُعكس قيد عكسي — سجّل قيد تسوية جديداً يوضّح التصحيح.',
+      );
     }
 
     const originalLines = Array.isArray(original.lines) ? original.lines : null;
@@ -255,8 +416,17 @@ export async function reverseEntry(db, FieldValue, entryId, { entryDate, descrip
     }
     // Releasing the source lock belongs HERE and nowhere else: the record is
     // free to be corrected precisely because its entry has been reversed.
-    if (original.sourceType && original.sourceId) {
-      tx.delete(db.collection(COL.LOCKS).doc(postingLockId(original.sourceType, original.sourceId)));
+    //
+    // But ONLY if the lock still points at THIS entry. A source can be
+    // corrected and re-posted, and the newer entry then owns the lock —
+    // reversing the older one must not unlock a record the books still hold.
+    if (lockRef && lockSnap?.exists) {
+      if (lockSnap.data().entryId === originalRef.id) {
+        tx.delete(lockRef);
+      }
+      // Otherwise the lock belongs to a later entry and stays exactly as it
+      // is; `lockRetained` tells the caller so, rather than reporting a
+      // release that did not happen.
     }
     tx.set(counterRef, {
       nextNumber: nextNumber + 1, updatedAt: FieldValue.serverTimestamp(),
@@ -268,7 +438,14 @@ export async function reverseEntry(db, FieldValue, entryId, { entryDate, descrip
       note: `عكس القيد رقم ${original.entryNumber} بقيد رقم ${nextNumber}`,
     }, FieldValue));
 
-    return { entryId: revRef.id, entryNumber: nextNumber, reversedEntryId: originalRef.id };
+    return {
+      entryId: revRef.id,
+      entryNumber: nextNumber,
+      reversedEntryId: originalRef.id,
+      // False when the lock belongs to a newer entry for the same source.
+      lockReleased: Boolean(lockRef && lockSnap?.exists && lockSnap.data().entryId === originalRef.id),
+      lockRetained: Boolean(lockRef && lockSnap?.exists && lockSnap.data().entryId !== originalRef.id),
+    };
   });
 }
 
@@ -280,8 +457,8 @@ export async function reverseEntry(db, FieldValue, entryId, { entryDate, descrip
  * errors can cancel out across a month and hide both.
  */
 export async function closePeriod(db, FieldValue, periodKey, { userId = null } = {}) {
-  if (!/^\d{4}-\d{2}$/.test(String(periodKey || ''))) {
-    throw new LedgerError('مفتاح الفترة غير صالح.', { code: 'invalid-argument' });
+  if (!isValidPeriodKey(periodKey)) {
+    throw new LedgerError('مفتاح الفترة غير صالح (المطلوب YYYY-MM بشهر 01–12).', { code: 'invalid-argument' });
   }
   const snap = await db.collection(COL.ENTRIES).where('periodKey', '==', periodKey).get();
   const problems = [];
@@ -333,6 +510,9 @@ export async function closePeriod(db, FieldValue, periodKey, { userId = null } =
 
 /** Re-opens a filed month. Admin-only, and the reason is not optional. */
 export async function reopenPeriod(db, FieldValue, periodKey, { userId = null, reason = '' } = {}) {
+  if (!isValidPeriodKey(periodKey)) {
+    throw new LedgerError('مفتاح الفترة غير صالح (المطلوب YYYY-MM بشهر 01–12).', { code: 'invalid-argument' });
+  }
   const why = String(reason || '').trim();
   if (!why) throw new LedgerError('سبب إعادة فتح الفترة مطلوب.', { code: 'invalid-argument' });
 

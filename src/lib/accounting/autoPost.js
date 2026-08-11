@@ -25,7 +25,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { getRow } from '../firestoreCrud';
-import { postEntry, hasPostedEntryFor, fetchEntries, fetchPeriods } from './firestoreLedger';
+import { postSource, hasPostedEntryFor, fetchEntries, fetchPeriods } from './firestoreLedger';
 import { ADAPTERS, adapterFor, AUTO_POSTABLE_KINDS } from './sourceAdapters';
 import { isPeriodClosed, indexPeriods } from './periods';
 import { periodKeyOf } from './journal';
@@ -80,9 +80,7 @@ export function autoPostTone(result) {
  */
 // `userId` is intentionally absent: the ledger function reads the author
 // from the caller's verified auth token, so a client cannot name one.
-export async function autoPost({
-  kind, id, vatRegistered = true, washPriceMode = 'inclusive', ctx = {},
-}) {
+export async function autoPost({ kind, id }) {
   try {
     const a = adapterFor(kind);
     const row = await getRow(a.collection, id);
@@ -111,10 +109,9 @@ export async function autoPost({
       };
     }
 
-    const built = a.build(row, { vatRegistered, washPriceMode, ...ctx });
-    // The author is taken from the caller's verified token server-side,
-    // so `userId` is not passed: a client cannot post as someone else.
-    const res = await postEntry(built);
+    // The SERVER re-reads this record and builds the entry from it — the
+    // checks above are a fast local filter, not the decision.
+    const res = await postSource(kind, id);
     return { status: 'posted', entryId: res.entryId, entryNumber: res.entryNumber };
   } catch (e) {
     return { status: 'failed', error: e?.message || String(e), blocking: true };

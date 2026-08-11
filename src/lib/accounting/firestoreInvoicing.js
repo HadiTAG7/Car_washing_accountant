@@ -1,12 +1,11 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// إصدار المستندات الضريبية — transactional document numbering
+// المستندات الضريبية — reads here, writes through Cloud Functions
 // ═══════════════════════════════════════════════════════════════════════════
-// An invoice number is not a display detail: it is the identity a tax
-// authority audits against. Two devices issuing at the same second must not
-// receive the same number, and a number must never be skipped by a write that
-// then failed. So numbering happens inside a Firestore TRANSACTION, exactly
-// like the journal counter, and the number, the document and the audit record
-// land together or not at all.
+// An invoice number is the identity a tax authority audits against, so it is
+// minted on the SERVER, inside one transaction with the document, the counter,
+// the source claim and the audit record. The totals are recomputed there from
+// the lines too: a document whose printed total disagrees with its own rows is
+// worse than no document.
 //
 // Collections
 //   sales_documents         — invoices, credit notes and debit notes
@@ -18,15 +17,12 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import {
-  collection, doc, getDoc, getDocs, query, where,
-  runTransaction, serverTimestamp, setDoc,
+  collection, doc, getDoc, getDocs, query, where, serverTimestamp, setDoc,
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../firebaseClient';
+import { callServer as callLedger } from '../ledgerTransport';
 import { fetchRows } from '../firestoreCrud';
-import {
-  DOCUMENT_TYPES, formatDocumentNumber, buildSimplifiedInvoice,
-  buildCreditNote, buildDebitNote, buildZatcaQrPayload, validateQrFields,
-} from './invoicing';
+import { buildCreditNote, buildDebitNote } from './invoicing';
 
 export const DOC_COL = {
   DOCUMENTS: 'sales_documents',
@@ -106,129 +102,54 @@ export async function fetchNotesFor(documentNumber) {
 
 // ─── الإصدار ─────────────────────────────────────────────────────────────
 /**
- * Issues one document: mints its number, attaches the QR payload, and records
- * the source claim — all in a single transaction.
+ * Issues one document through the trusted server.
  *
- * The QR is built BEFORE the transaction opens. A transaction body can be
- * retried by the SDK, and an exception thrown from a retry is harder to read
- * than one thrown up front; more importantly, a malformed VAT number should
- * fail before a counter is touched.
+ * The client used to do this in a Firestore transaction that also wrote
+ * `audit_logs` — which the rules now deny, so the whole transaction failed and
+ * issuing was simply broken. It belongs on the server anyway: the totals are
+ * recomputed from the lines there, and the number, sequence, seller identity
+ * and issuer are all produced there, so none of them can be forged.
  */
-export async function issueDocument(document, { userId = null, allowUnregistered = false } = {}) {
+export async function issueDocument(document, _options = {}) {
   requireDb();
-  if (!DOCUMENT_TYPES.includes(document.type)) {
-    throw new Error(`نوع المستند غير معروف: ${document.type}`);
-  }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(document.issueDate || ''))) {
-    throw new Error('تاريخ إصدار المستند غير صالح.');
-  }
-
-  const taxable = Boolean(document.taxable);
-  // A zero-VAT document carries no QR — the QR is a tax-invoice artefact, and
-  // emitting one for a non-taxable receipt would misrepresent it.
-  let qrPayload = null;
-  if (taxable) {
-    const qrFields = {
-      sellerName: document.seller?.name,
-      vatNumber:  document.seller?.vatNumber,
-      timestamp:  document.timestamp,
-      total:      document.gross,
-      vatAmount:  document.vat,
-    };
-    const problems = validateQrFields(qrFields);
-    if (problems.length && !allowUnregistered) {
-      const err = new Error(problems[0]);
-      err.problems = problems;
-      throw err;
-    }
-    if (!problems.length) qrPayload = buildZatcaQrPayload(qrFields);
-  }
-
-  const year = Number(String(document.issueDate).slice(0, 4));
-  const claim = document.sourceType && document.sourceId
-    ? sourceClaimId(document.sourceType, document.sourceId)
-    : null;
-
-  return runTransaction(db, async (tx) => {
-    // ── reads first, always ──
-    const counterRef = doc(db, DOC_COL.COUNTERS, counterIdFor(document.type, year));
-    const counterSnap = await tx.get(counterRef);
-    const claimRef = claim ? doc(db, DOC_COL.SOURCES, claim) : null;
-    const claimSnap = claimRef ? await tx.get(claimRef) : null;
-
-    if (claimSnap && claimSnap.exists()) {
-      const prev = claimSnap.data();
-      const err = new Error(
-        `سبق إصدار مستند لهذا السجل: ${prev.documentNumber}. استخدم إشعاراً دائناً أو مديناً للتعديل.`,
-      );
-      err.code = 'already_issued';
-      err.documentId = prev.documentId;
-      err.documentNumber = prev.documentNumber;
-      throw err;
-    }
-
-    const sequence = counterSnap.exists() ? Number(counterSnap.data().nextNumber) || 1 : 1;
-    const documentNumber = formatDocumentNumber(document.type, year, sequence);
-
-    // ── writes ──
-    const ref = doc(collection(db, DOC_COL.DOCUMENTS));
-    tx.set(ref, {
-      ...document,
-      documentNumber,
-      sequence,
-      year,
-      status: 'issued',
-      qrPayload,
-      // Stated on the document itself so a reader is never left guessing.
-      zatcaReported: false,
-      issuedBy: userId,
-      issuedAt: serverTimestamp(),
-      createdAt: serverTimestamp(),
-    });
-    tx.set(counterRef, {
-      nextNumber: sequence + 1, type: document.type, year, updatedAt: serverTimestamp(),
-    }, { merge: true });
-    if (claimRef) {
-      tx.set(claimRef, {
-        sourceType: document.sourceType, sourceId: document.sourceId,
-        documentId: ref.id, documentNumber, at: serverTimestamp(),
-      });
-    }
-    tx.set(doc(collection(db, 'audit_logs')), {
-      action: 'issue',
-      collectionName: DOC_COL.DOCUMENTS,
-      documentId: ref.id,
-      userId,
-      before: null,
-      after: { documentNumber, gross: document.gross, vat: document.vat },
-      note: `إصدار ${documentNumber}`,
-      at: serverTimestamp(),
-      atIso: new Date().toISOString(),
-    });
-
-    return { id: ref.id, documentNumber, sequence, year, qrPayload };
+  return callLedger('salesIssueDocument', {
+    type: document.type,
+    issueDate: document.issueDate,
+    issueTime: document.issueTime,
+    priceMode: document.priceMode,
+    customer: document.customer,
+    // Only the description/quantity/unitPrice of each line survive; the
+    // server prices them.
+    lines: (document.lines || []).map((l) => ({
+      description: l.description,
+      quantity: l.quantity,
+      unitPrice: l.unitPrice,
+    })),
+    referenceNumber: document.referenceNumber || null,
+    reason: document.reason || null,
+    sourceType: document.sourceType || null,
+    sourceId: document.sourceId || null,
   });
 }
 
-/** Convenience: build a simplified invoice from lines, then issue it. */
+/** Convenience: issue a simplified invoice straight from its lines. */
 export async function issueSimplifiedInvoice({
   issueDate, issueTime, lines, customer = null, priceMode = 'inclusive',
-  sourceType = null, sourceId = null, seller = null, taxable = null,
-}, options = {}) {
-  const profile = seller || await fetchSellerProfile();
-  const isTaxable = taxable == null ? profile.vatRegistered : Boolean(taxable);
-  const document = buildSimplifiedInvoice({
-    type: 'invoice', issueDate, issueTime, lines, seller: profile, customer,
-    priceMode, taxable: isTaxable, sourceType, sourceId,
+  sourceType = null, sourceId = null,
+}) {
+  // The seller identity and the VAT treatment come from the server's copy of
+  // app_settings/company, so nothing about them is passed here.
+  return issueDocument({
+    type: 'invoice', issueDate, issueTime, lines, customer, priceMode,
+    sourceType, sourceId,
   });
-  return issueDocument(document, options);
 }
 
 /**
- * إشعار دائن — the ONLY way to reduce or cancel an issued invoice. Deleting
- * a document would break the sequence a tax audit walks.
+ * إشعار دائن — the only way to reduce or cancel an issued invoice. Deleting a
+ * document would break the sequence a tax audit walks.
  */
-export async function issueCreditNoteFor(invoiceId, { issueDate, issueTime, lines = null, reason }, options = {}) {
+export async function issueCreditNoteFor(invoiceId, { issueDate, issueTime, lines = null, reason }) {
   requireDb();
   const invoice = await fetchDocument(invoiceId);
   if (!invoice) throw new Error('الفاتورة غير موجودة.');
@@ -236,17 +157,17 @@ export async function issueCreditNoteFor(invoiceId, { issueDate, issueTime, line
   const note = buildCreditNote(invoice, { issueDate, issueTime, lines, reason });
   // A note is its own document with its own sequence; it must not inherit the
   // invoice's source claim or the claim would block the note.
-  return issueDocument({ ...note, sourceType: null, sourceId: null }, options);
+  return issueDocument({ ...note, sourceType: null, sourceId: null });
 }
 
 /** إشعار مدين — raises an already-issued invoice (an undercharge). */
-export async function issueDebitNoteFor(invoiceId, { issueDate, issueTime, lines, reason }, options = {}) {
+export async function issueDebitNoteFor(invoiceId, { issueDate, issueTime, lines, reason }) {
   requireDb();
   const invoice = await fetchDocument(invoiceId);
   if (!invoice) throw new Error('الفاتورة غير موجودة.');
   if (invoice.type !== 'invoice') throw new Error('الإشعار المدين يصدر مقابل فاتورة فقط.');
   const note = buildDebitNote(invoice, { issueDate, issueTime, lines, reason });
-  return issueDocument({ ...note, sourceType: null, sourceId: null }, options);
+  return issueDocument({ ...note, sourceType: null, sourceId: null });
 }
 
 /**
@@ -254,26 +175,10 @@ export async function issueDebitNoteFor(invoiceId, { issueDate, issueTime, lines
  * silently altered — voiding records the intent and the reason, and the
  * accounting effect still has to come from a credit note.
  */
-export async function voidDocument(id, { reason, userId = null } = {}) {
+export async function voidDocument(id, { reason } = {}) {
   requireDb();
   if (!String(reason || '').trim()) throw new Error('سبب الإلغاء مطلوب.');
-  return runTransaction(db, async (tx) => {
-    const ref = doc(db, DOC_COL.DOCUMENTS, id);
-    const snap = await tx.get(ref);
-    if (!snap.exists()) throw new Error('المستند غير موجود.');
-    if (snap.data().status === 'cancelled') throw new Error('المستند ملغى بالفعل.');
-    tx.update(ref, {
-      status: 'cancelled', voidReason: String(reason).trim(),
-      voidedBy: userId, voidedAt: serverTimestamp(),
-    });
-    tx.set(doc(collection(db, 'audit_logs')), {
-      action: 'void', collectionName: DOC_COL.DOCUMENTS, documentId: id, userId,
-      before: { status: snap.data().status }, after: { status: 'cancelled' },
-      note: `إلغاء ${snap.data().documentNumber} — ${reason}`,
-      at: serverTimestamp(), atIso: new Date().toISOString(),
-    });
-    return { id, documentNumber: snap.data().documentNumber };
-  });
+  return callLedger('salesVoidDocument', { documentId: id, reason: String(reason).trim() });
 }
 
 /**

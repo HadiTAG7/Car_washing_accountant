@@ -10,6 +10,7 @@
 import { describe, it, expect } from 'vitest';
 import * as server from '../src/invariants.js';
 import * as client from '../../src/lib/accounting/journal.js';
+import { canPost, OPERATOR_POSTABLE_KINDS } from '../src/posting.js';
 
 const line = (accountId, debit, credit) => ({ accountId, debit, credit });
 
@@ -63,5 +64,48 @@ describe('اتفاق العميل والخادم على ما يُقبل', () => 
     expect(server.validateEntry({ ...base, periodKey: '2026-02' }, lines))
       .toContain('تاريخ القيد غير موجود في التقويم.');
     expect(client.validateEntry({ ...base, periodKey: '2026-02' }, lines)).toEqual([]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// The role decision, written down and tested rather than left implicit in
+// the callable wiring.
+//
+// An operator may post a WASH and nothing else. They already decide when a
+// wash is complete, and auto-posting is meant to fire at that moment; the
+// alternatives were disabling auto-posting for the people who actually use
+// the app, or granting them the accountant role — a far wider grant.
+// ─────────────────────────────────────────────────────────────────────────
+describe('من يملك الترحيل', () => {
+  it('المحاسب والمدير يرحّلان كل شيء، بما فيه القيد اليدوي', () => {
+    for (const role of ['admin', 'accountant']) {
+      expect(canPost(role, 'wash')).toBe(true);
+      expect(canPost(role, 'monthly')).toBe(true);
+      expect(canPost(role, null)).toBe(true);          // manual
+    }
+  });
+
+  it('المشغّل يرحّل الغسلة فقط', () => {
+    expect(canPost('operator', 'wash')).toBe(true);
+    expect(OPERATOR_POSTABLE_KINDS).toEqual(['wash']);
+  });
+
+  it('ولا يرحّل قيداً يدوياً — سطوره تأتي منه هو', () => {
+    expect(canPost('operator', null)).toBe(false);
+    expect(canPost('operator', undefined)).toBe(false);
+  });
+
+  it('ولا مصروفاً ولا دفعة شريك ولا عهدة', () => {
+    for (const kind of ['monthly', 'variable', 'annual', 'startup', 'voucher',
+      'partner_payment', 'temporary_expense', 'recovery']) {
+      expect(canPost('operator', kind), kind).toBe(false);
+    }
+  });
+
+  it('الشريك والزائر لا يرحّلان شيئاً', () => {
+    for (const role of ['partner', 'viewer', '', null, undefined]) {
+      expect(canPost(role, 'wash')).toBe(false);
+      expect(canPost(role, null)).toBe(false);
+    }
   });
 });

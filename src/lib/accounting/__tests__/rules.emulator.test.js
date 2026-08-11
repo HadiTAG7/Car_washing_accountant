@@ -172,10 +172,14 @@ d('قواعد أمان Firestore', () => {
       await assertFails(getDocs(collection(ctx.anon, 'journal_entries')));
     });
 
-    it('عدّاد القيود محجوب عن العميل، وعدّادات المستندات لا', async () => {
+    // Document counters used to stay client-writable. They no longer are:
+    // issuing runs on the server, and a client that could set a counter back
+    // could reissue a number already on a filed document.
+    it('كل العدّادات محجوبة عن العميل — القيود والمستندات', async () => {
       await assertFails(setDoc(doc(ctx.acct, 'counters', 'journal'), { nextNumber: 1 }));
       await assertFails(setDoc(doc(ctx.admin, 'counters', 'journal'), { nextNumber: 9999 }));
-      await assertSucceeds(setDoc(doc(ctx.acct, 'counters', 'documents-invoice-2026'), { nextNumber: 2 }));
+      await assertFails(setDoc(doc(ctx.acct, 'counters', 'documents-invoice-2026'), { nextNumber: 2 }));
+      await assertFails(setDoc(doc(ctx.admin, 'counters', 'documents-invoice-2026'), { nextNumber: 1 }));
     });
 
     it('سجل التدقيق لا يُكتب من العميل — وإلا لأمكن تلفيق الأثر', async () => {
@@ -297,22 +301,23 @@ d('قواعد أمان Firestore', () => {
       await assertFails(updateDoc(doc(ctx.acct, 'sales_documents', 'inv1'), { gross: 1 }));
     });
 
-    it('يُسمح فقط بالإلغاء الموثّق', async () => {
-      await assertSucceeds(updateDoc(doc(ctx.acct, 'sales_documents', 'inv1'), {
+    // Cancelling used to be the one permitted client update. Issuing and
+    // voiding now run on the server — which recomputes the totals from the
+    // lines and mints the number — so no client writes here at all.
+    it('ولا يُلغى من العميل — الإلغاء عبر salesVoidDocument', async () => {
+      await assertFails(updateDoc(doc(ctx.acct, 'sales_documents', 'inv1'), {
         status: 'cancelled', voidReason: 'صدرت بالخطأ', voidedBy: 'acct1', voidedAt: new Date(),
       }));
-    });
-
-    it('ولا يُمرَّر تعديل مخفي مع الإلغاء', async () => {
-      await assertFails(updateDoc(doc(ctx.acct, 'sales_documents', 'inv1'), {
-        status: 'cancelled', voidReason: 'x', vat: 0,
+      await assertFails(updateDoc(doc(ctx.admin, 'sales_documents', 'inv1'), {
+        status: 'cancelled', voidReason: 'من المدير',
       }));
     });
 
-    it('المشغّل لا يُصدر مستنداً ضريبياً', async () => {
-      await assertFails(setDoc(doc(ctx.op, 'sales_documents', 'inv2'), {
-        documentNumber: 'INV-2026-000002', type: 'invoice', status: 'issued',
-      }));
+    it('ولا يُصدره أحد مباشرة — لا مشغّل ولا محاسب ولا مدير', async () => {
+      const forged = { documentNumber: 'INV-2026-000002', type: 'invoice', status: 'issued', gross: 1 };
+      await assertFails(setDoc(doc(ctx.op, 'sales_documents', 'inv2'), forged));
+      await assertFails(setDoc(doc(ctx.acct, 'sales_documents', 'inv3'), forged));
+      await assertFails(setDoc(doc(ctx.admin, 'sales_documents', 'inv4'), forged));
     });
 
     it('لا يُحذف سجل المصدر — وإلا أمكن إصدار فاتورة ثانية لنفس الغسلة', async () => {

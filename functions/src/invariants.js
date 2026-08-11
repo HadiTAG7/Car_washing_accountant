@@ -41,11 +41,23 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
  * happened — and a ledger entry dated to one would sit in the wrong period
  * forever.
  */
-function isRealDate(iso) {
+export function isRealDate(iso) {
   if (!ISO_DATE.test(String(iso || ''))) return false;
   const [y, m, d] = String(iso).split('-').map(Number);
   const dt = new Date(Date.UTC(y, m - 1, d));
   return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
+
+/**
+ * A period key naming a real month. '2026-13' is not one, and neither is
+ * '2026-00' — both would otherwise sail through a `\d{4}-\d{2}` test and
+ * create a period that can never contain an entry.
+ */
+export function isValidPeriodKey(key) {
+  const m = /^(\d{4})-(\d{2})$/.exec(String(key || ''));
+  if (!m) return false;
+  const month = Number(m[2]);
+  return month >= 1 && month <= 12;
 }
 
 /** Server-derived period key. The client never gets to name its own. */
@@ -166,7 +178,13 @@ export function buildReversalLines(lines) {
   }));
 }
 
-/** `wash__abc123` — the lock that marks a source record as being in the books. */
-export function postingLockId(sourceType, sourceId) {
-  return `${sourceType}__${sourceId}`;
+/**
+ * `wash__abc123` — the lock that marks a source record as being in the books.
+ *
+ * Keyed on the record's KIND, not its `sourceType`: five collections post
+ * with `sourceType: 'expense'`, so keying on the type put a monthly expense
+ * and a variable expense in one namespace.
+ */
+export function postingLockId(kind, sourceId) {
+  return `${kind}__${sourceId}`;
 }

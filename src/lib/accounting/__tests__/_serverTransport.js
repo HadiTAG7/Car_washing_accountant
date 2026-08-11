@@ -14,10 +14,11 @@
 import { initializeApp, deleteApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import {
-  postEntry, reverseEntry, closePeriod, reopenPeriod,
+  postEntry, postSource, reverseEntry, closePeriod, reopenPeriod,
   seedChartOfAccounts, ensureAccount,
 } from '../../../../functions/src/ledger.js';
-import { __setLedgerTransport } from '../firestoreLedger';
+import { issueDocument, voidDocument } from '../../../../functions/src/invoicing.js';
+import { __setLedgerTransport } from '../../ledgerTransport';
 import { app as clientApp } from '../../firebaseClient';
 
 let adminApp = null;
@@ -39,8 +40,27 @@ export function useServerTransport(projectId = clientApp?.options?.projectId || 
 
   const previous = __setLedgerTransport(async (name, payload) => {
     switch (name) {
-      case 'ledgerPostEntry':
-        return postEntry(adb, FieldValue, payload, { userId: uid });
+      case 'ledgerPostSource':
+        return postSource(adb, FieldValue, payload, { userId: uid });
+      case 'ledgerPostManual': {
+        // Mirrors the callable's gate exactly, so these suites exercise the
+        // production contract rather than a looser one.
+        const requested = payload.entry?.sourceType;
+        const sourceType = ['manual', 'adjustment', 'opening', 'depreciation', 'disposal']
+          .includes(requested) ? requested : 'manual';
+        const keepsSourceId = sourceType === 'depreciation' || sourceType === 'disposal';
+        return postEntry(adb, FieldValue, {
+          entry: {
+            ...payload.entry, sourceType,
+            sourceId: keepsSourceId ? payload.entry?.sourceId ?? null : null,
+          },
+          lines: payload.lines,
+        }, { userId: uid, lockKind: keepsSourceId ? sourceType : null });
+      }
+      case 'salesIssueDocument':
+        return issueDocument(adb, FieldValue, payload, { userId: uid });
+      case 'salesVoidDocument':
+        return voidDocument(adb, FieldValue, payload, { userId: uid });
       case 'ledgerReverseEntry':
         return reverseEntry(adb, FieldValue, payload.entryId, { ...payload, userId: uid });
       case 'ledgerClosePeriod':

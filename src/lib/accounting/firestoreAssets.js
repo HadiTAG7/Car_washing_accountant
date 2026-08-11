@@ -165,7 +165,8 @@ export async function postDepreciationForPeriod(periodKey, { userId = null, asse
   }
 
   const built = buildDepreciationEntry(periodKey, list, { createdBy: userId });
-  const res = await postEntry(built);
+  // `lockKind: 'depreciation'` keeps the month idempotent server-side.
+  const res = await postEntry(built, { lockKind: 'depreciation' });
   return { ...res, periodKey, total, assetCount: rows.length };
 }
 
@@ -240,7 +241,7 @@ export async function disposeAsset(id, {
   const built = buildDisposalEntry(asset, {
     disposalDate, proceeds, settlementAccount, createdBy: userId,
   });
-  const res = await postEntry({ entry: built.entry, lines: built.lines });
+  const res = await postEntry({ entry: built.entry, lines: built.lines }, { lockKind: 'disposal' });
 
   await setDoc(doc(db, ASSETS_COL, id), {
     disposalDate: date,

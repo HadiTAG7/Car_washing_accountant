@@ -32,7 +32,7 @@ let db, ledger, rules, postingRules;
 
 async function wipe() {
   for (const c of ['chart_of_accounts', 'journal_entries', 'journal_lines',
-    'accounting_periods', 'audit_logs', 'counters', 'posting_locks']) {
+    'accounting_periods', 'audit_logs', 'counters', 'posting_locks', 'washes']) {
     const snap = await getDocs(collection(db, c));
     await Promise.all(snap.docs.map((s) => deleteDoc(s.ref)));
   }
@@ -188,20 +188,37 @@ d('طبقة الترحيل على Firestore الحقيقي', () => {
     expect(await ledger.fetchLines()).toHaveLength(3);
   }, 60_000);
 
-  it('الترحيل يقفل السجل المصدر، والعكس يفكّ القفل', async () => {
-    await ledger.seedChartOfAccounts({ userId: 'u1' });
-    const res = await ledger.postEntry(postingRules.buildWashEntry({
-      id: 'w1', quantity: 1, price: 115, status: 'مكتملة', washDate: '2026-08-11',
-    }), { userId: 'u1' });
+  // Posting a SOURCE goes through `postSource`, which reads the record on the
+  // server. `postEntry` is the manual path and deliberately locks nothing —
+  // a manual entry has no source record to protect.
+  it('ترحيل المصدر يقفل السجل، والعكس يفكّ القفل', async () => {
+    await ledger.seedChartOfAccounts();
+    await setDoc(doc(db, 'washes', 'w1'), {
+      quantity: 1, price: 115, status: 'مكتملة',
+      wash_date: '2026-08-11', payment_method: 'cash',
+    });
+    const res = await ledger.postSource('wash', 'w1');
 
     const lock = await getDoc(doc(db, 'posting_locks', 'wash__w1'));
     expect(lock.exists()).toBe(true);
-    expect(lock.data()).toMatchObject({ sourceType: 'wash', sourceId: 'w1', entryId: res.entryId });
+    expect(lock.data()).toMatchObject({ kind: 'wash', sourceId: 'w1', entryId: res.entryId });
 
-    await ledger.reverseEntry(res.entryId, { entryDate: '2026-09-01', userId: 'u1' });
+    await ledger.reverseEntry(res.entryId, { entryDate: '2026-09-01' });
     // Released, so the record can be corrected and re-posted.
     expect((await getDoc(doc(db, 'posting_locks', 'wash__w1'))).exists()).toBe(false);
   }, 90_000);
+
+  it('القيد اليدوي لا يقفل شيئاً — لا سجل مصدر له', async () => {
+    await ledger.seedChartOfAccounts();
+    await ledger.postEntry({
+      entry: { entryDate: '2026-08-11', sourceType: 'manual', description: 'قيد تسوية' },
+      lines: [
+        { accountId: '1010', debit: 100, credit: 0 },
+        { accountId: '4000', debit: 0, credit: 100 },
+      ],
+    });
+    expect((await getDocs(collection(db, 'posting_locks'))).size).toBe(0);
+  }, 60_000);
 
   it('لا يُعاد فتح فترة بلا سبب', async () => {
     await ledger.seedChartOfAccounts({ userId: 'u1' });

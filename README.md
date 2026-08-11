@@ -161,13 +161,40 @@ July by labelling it August — and rejects dates that do not exist
 
 | Function | Role | Does |
 |---|---|---|
-| `ledgerPostEntry` | accountant | validates, balances, derives the period, mints the number, writes entry + lock + audit in one transaction |
+| `ledgerPostSource` | accountant · **operator for `wash`** | takes `{ kind, sourceId }` and **reads the record itself** — the amount, date, payment method and VAT treatment all come from the stored document |
+| `ledgerPostManual` | accountant | manual / adjusting / period-end entries, the one path where lines still come from the caller |
 | `ledgerReverseEntry` | accountant | builds the mirror **from the original's own lines**, links both, marks the original, releases the lock |
 | `ledgerClosePeriod` | accountant | re-reads the month and re-checks that every entry balances on its own |
 | `ledgerReopenPeriod` | **admin** | requires a written reason; audited |
+| `salesIssueDocument` | accountant | **recomputes the totals from the lines**, mints the number and sequence, takes the seller identity from settings |
+| `salesVoidDocument` | accountant | records the reason; the document is never removed |
 | `ledgerSeedChart` · `ledgerEnsureAccount` | accountant | idempotent chart setup |
 
 The author is taken from the caller's verified token, never from the payload.
+
+### The payload names the record; the server reads it
+`ledgerPostSource` is the difference between "server authoritative" as a
+slogan and as a fact. Validating the *arithmetic* of a client-supplied entry
+still leaves the server with no idea whether those lines describe the wash
+they claim to — a balanced 50,000-riyal entry citing a 115-riyal wash would
+have been accepted. Now the contract is `{ kind, sourceId }` and nothing else.
+
+Locks are keyed on the **kind**, not the source type: five collections post
+with `sourceType: 'expense'`, so keying on the type put a monthly expense and
+a variable expense in one namespace. Legacy `expense__<id>` locks are still
+honoured on read.
+
+**An operator may post a `wash` and nothing else.** They already decide when a
+wash is complete and auto-posting fires at that moment; the alternatives were
+disabling auto-posting for the people who use the app, or granting them the
+accountant role. No manual entries, no expenses, no period close.
+
+### What the server does NOT recompute
+A **depreciation** charge is computed by the client from the asset register
+and posted through `ledgerPostManual`. The server balances it, checks every
+account, derives the period and refuses a closed one — but it does not rebuild
+the schedule. Recomputing the register server-side is the next step, and
+saying so is better than implying otherwise.
 
 > **Deployment:** the app cannot post until these are deployed
 > (`firebase deploy --only functions,firestore:rules`). Cloud Functions
@@ -457,8 +484,10 @@ recurring vouchers for the months you are bringing in → run the sweep → chec
   periods, reversals, one-invoice-per-source
 - `npm run test:rules` — drives `firestore.rules` itself through every role
 - `npm run test:functions` — the trusted server: balance, derived periods,
-  concurrent numbering, reversal integrity, and a drift check between the
-  client's preview validation and the server's authoritative copy
+  concurrent numbering, reversal integrity, invoice issuing, the role gate,
+  a drift check between the client's preview validation and the server's
+  authoritative copy, and a full journey under the **real** `firestore.rules`
+  (callable succeeds → audit present → direct client write denied)
 
 The emulator suites share one database and reset between tests, so they run
 with `--no-file-parallelism`; `npm test` excludes them.

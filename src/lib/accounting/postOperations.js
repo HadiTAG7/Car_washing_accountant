@@ -16,7 +16,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { fetchRows } from '../firestoreCrud';
-import { postEntry, hasPostedEntryFor, fetchEntries, fetchAccounts, ensureAccount } from './firestoreLedger';
+import { postSource, hasPostedEntryFor, fetchEntries, fetchAccounts, ensureAccount } from './firestoreLedger';
 import { ADAPTERS } from './sourceAdapters';
 import { partnerCapitalAccount, partnerCapitalCode } from './chartOfAccounts';
 import { isPeriodClosed, indexPeriods } from './periods';
@@ -28,7 +28,7 @@ import { fetchPeriods } from './firestoreLedger';
  * posted entry yet, and describes WHY anything was skipped — a silent skip
  * in an accounting tool is worse than no feature at all.
  */
-export async function collectUnposted({ vatRegistered = true, washPriceMode = 'inclusive' } = {}) {
+export async function collectUnposted() {
   const [
     entries, periods, washes, monthly, variable, annualEntries, startupEntries,
     payments, partners, temps, vouchers,
@@ -44,7 +44,6 @@ export async function collectUnposted({ vatRegistered = true, washPriceMode = 'i
 
   const ready = [];
   const skipped = [];
-  const buildOpts = { vatRegistered, washPriceMode };
 
   /**
    * One gate for every source, so a record is judged the same way whichever
@@ -68,10 +67,10 @@ export async function collectUnposted({ vatRegistered = true, washPriceMode = 'i
     if (isPeriodClosed(key, periodIndex)) {
       skipped.push({ kind, label, reason: `الفترة ${key} مقفلة` }); return;
     }
-    ready.push({
-      kind, sourceType: a.sourceType, sourceId, date, label,
-      build: () => a.build(row, { ...buildOpts, ...ctx }),
-    });
+    // No `build` any more: the server reads the record and builds the entry.
+    // What the client contributes is the SELECTION — which records are worth
+    // trying — and the reason for every one it skips.
+    ready.push({ kind, sourceType: a.sourceType, sourceId, date, label });
   };
 
   for (const w of washes)         consider('wash', w);
@@ -102,10 +101,8 @@ export async function collectUnposted({ vatRegistered = true, washPriceMode = 'i
  * A failure on one record is recorded and the sweep continues — one bad row
  * must not strand the rest of the backlog.
  */
-export async function postUnposted({
-  vatRegistered = true, washPriceMode = 'inclusive', onProgress = null,
-} = {}) {
-  const { ready, skipped, partners } = await collectUnposted({ vatRegistered, washPriceMode });
+export async function postUnposted({ onProgress = null } = {}) {
+  const { ready, skipped, partners } = await collectUnposted();
 
   // Each partner needs their capital sub-account to exist before the first
   // payment posts against it.
@@ -123,9 +120,7 @@ export async function postUnposted({
   for (let i = 0; i < ready.length; i += 1) {
     const item = ready[i];
     try {
-      // The server re-reads the chart and re-validates every line; `known`
-      // is used above only to create the accounts that are missing.
-      const res = await postEntry(item.build());
+      const res = await postSource(item.kind, item.sourceId);
       posted.push({ ...item, ...res });
     } catch (e) {
       failed.push({ ...item, error: e?.message || String(e) });

@@ -17,9 +17,12 @@ import {
   connectFirestoreEmulator, collection, doc, getDoc, getDocs, deleteDoc, terminate,
 } from 'firebase/firestore';
 
+import { useServerTransport } from './_serverTransport';
+
 const EMU = process.env.FIRESTORE_EMULATOR_HOST;
 const d = EMU ? describe : describe.skip;
 
+let restoreTransport;
 let db, inv, pure;
 
 const SELLER = { name: 'شركة هادي الغانم', vatNumber: '300000000000003', address: 'الرياض', vatRegistered: true };
@@ -38,11 +41,17 @@ d('إصدار المستندات على Firestore الحقيقي', () => {
     db = client.db;
     const [host, port] = EMU.split(':');
     connectFirestoreEmulator(db, host, Number(port));
+    // Issuing runs on the server now — the app calls it as a Cloud Function,
+    // which a test cannot.
+    restoreTransport = useServerTransport();
     inv  = await import('../firestoreInvoicing');
     pure = await import('../invoicing');
   }, 60_000);
 
-  afterAll(async () => { if (db) await terminate(db); });
+  afterAll(async () => {
+    if (restoreTransport) await restoreTransport();
+    if (db) await terminate(db);
+  });
 
   beforeEach(async () => {
     await wipe();

@@ -26,25 +26,10 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
-import { db, isFirebaseConfigured, callLedger } from '../firebaseClient';
+import { db, isFirebaseConfigured } from '../firebaseClient';
+import { callServer as call } from '../ledgerTransport';
 
-// ─── منفذ النداء ─────────────────────────────────────────────────────────
-// Every write below goes through this one function. In the app it is the
-// callable-functions client; the emulator suites swap it for a direct call
-// into `functions/src/ledger.js` running against the same database, so those
-// tests exercise the REAL server logic instead of a mock of it.
-//
-// A seam rather than a mock: there is exactly one, it is named for what it
-// does, and swapping it cannot change what the server checks.
-let transport = callLedger;
 
-/** Test-only. Returns the previous transport so a suite can restore it. */
-export function __setLedgerTransport(fn) {
-  const previous = transport;
-  transport = fn || callLedger;
-  return previous;
-}
-const call = (name, payload) => transport(name, payload);
 import { fetchRows } from '../firestoreCrud';
 import { validateEntry, normalizeEntry, periodKeyOf } from './journal';
 import { DEFAULT_CHART_OF_ACCOUNTS, validateChart } from './chartOfAccounts';
@@ -130,7 +115,31 @@ export async function fetchLinesOf(entryId) {
  * Returns { entryId, entryNumber, debit, credit }. Throws an Arabic Error
  * carrying `.problems` when the server refuses it.
  */
-export async function postEntry({ entry, lines }) {
+/**
+ * Posts a SOURCE RECORD. The payload names it; the server reads it.
+ *
+ * `{ kind, sourceId }` is the whole contract. The amount, the date, the
+ * payment method and the VAT treatment all come out of the stored document on
+ * the server, so a caller cannot post a 50,000-riyal entry citing a
+ * 115-riyal wash.
+ */
+export async function postSource(kind, sourceId) {
+  requireDb();
+  return call('ledgerPostSource', { kind, sourceId });
+}
+
+/**
+ * A manual / adjusting entry, and the period-end entries the register
+ * computes (depreciation, disposal).
+ *
+ * ⚠️ Honest limitation: unlike `postSource`, the LINES here come from the
+ * client. The server still balances them, checks every account against the
+ * chart, derives the period and refuses a closed one — but it does not
+ * recompute a depreciation charge from the asset register. Accountant-only
+ * for that reason, and `lockKind` keeps the idempotency that stops a month
+ * being depreciated twice.
+ */
+export async function postEntry({ entry, lines }, { lockKind = null } = {}) {
   requireDb();
   // A local pass first: it cannot be trusted, but it turns the common
   // mistakes into an instant message instead of a round trip. The server
@@ -144,9 +153,10 @@ export async function postEntry({ entry, lines }) {
   }
   // `userId` is deliberately NOT sent: the function reads the caller's uid
   // from the verified auth token, so a client cannot post as someone else.
-  return call('ledgerPostEntry', {
+  return call('ledgerPostManual', {
     entry: normalized.entry,
     lines: normalized.lines,
+    lockKind,
   });
 }
 

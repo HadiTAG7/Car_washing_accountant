@@ -24,7 +24,7 @@ import Toast from './Toast';
 import { useVariableExpenses } from '../hooks/useVariableExpenses';
 import { useVariableExpenseCategories } from '../hooks/useVariableExpenseCategories';
 import { useWashes } from '../hooks/useWashes';
-import { isSupabaseConfigured, missingEnvNames, describeSupabaseError } from '../lib/supabaseClient';
+import { isFirebaseConfigured, missingEnvNames, describeBackendError } from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 import {
   todayMonth,
@@ -220,8 +220,8 @@ export default function VariableExpensesPage() {
       showToast('تم إضافة التصنيف الجديد بنجاح');
       return newId;
     } catch (e) {
-      console.error('Supabase Category Error:', e, 'label:', label);
-      showToast(describeSupabaseError(e) || 'تعذّر إضافة التصنيف الجديد', 'error');
+      console.error('Firestore Category Error:', e, 'label:', label);
+      showToast(describeBackendError(e) || 'تعذّر إضافة التصنيف الجديد', 'error');
       throw e;
     }
   }
@@ -230,7 +230,7 @@ export default function VariableExpensesPage() {
       await deleteCategory(id);
       showToast('تم حذف التصنيف من القوائم');
     } catch (e) {
-      showToast(describeSupabaseError(e) || 'تعذّر حذف التصنيف', 'error');
+      showToast(describeBackendError(e) || 'تعذّر حذف التصنيف', 'error');
       throw e;
     }
   }
@@ -252,7 +252,7 @@ export default function VariableExpensesPage() {
       />
 
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
-        {!isSupabaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
+        {!isFirebaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
 
         {mutationError && (
           <ErrorState

@@ -24,8 +24,8 @@ import {
   todayMonth, monthOf, variableItemsForMonth,
 } from '../lib/variableExpenseTotals';
 import {
-  isSupabaseConfigured, missingEnvNames, describeSupabaseError as describeError,
-} from '../lib/supabaseClient';
+  isFirebaseConfigured, missingEnvNames, describeBackendError as describeError,
+} from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 
 function thisYear() { return new Date().getFullYear(); }
@@ -791,7 +791,7 @@ export default function BudgetsPage() {
       />
 
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
-        {!isSupabaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
+        {!isFirebaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
 
         {anyError && (
           <ErrorState

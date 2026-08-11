@@ -97,7 +97,7 @@ export default function CreatedCredentials({
           <AlertTriangle size={14} className="shrink-0 mt-0.5" />
           <span>
             <strong>تأكيد البريد مطلوب:</strong> سيستلم الشريك رسالة تفعيل من
-            Supabase. لن يتمكن من تسجيل الدخول قبل النقر على رابط التفعيل.
+            Firebase. لن يتمكن من تسجيل الدخول قبل النقر على رابط التفعيل.
           </span>
         </div>
       )}

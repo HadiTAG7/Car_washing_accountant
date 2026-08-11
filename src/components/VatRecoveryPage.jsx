@@ -17,7 +17,7 @@ import { useStartupCosts } from '../hooks/useStartupCosts';
 import { useAnnualExpenses } from '../hooks/useAnnualExpenses';
 import { useMonthlyExpenses } from '../hooks/useMonthlyExpenses';
 import { useVariableExpenses } from '../hooks/useVariableExpenses';
-import { isSupabaseConfigured, missingEnvNames } from '../lib/supabaseClient';
+import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 
 // Same guard the detail modal uses — only http(s) values become anchors.
@@ -179,7 +179,7 @@ export default function VatRecoveryPage() {
       />
 
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
-        {!isSupabaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
+        {!isFirebaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
 
         {/* Full ErrorState only when BOTH sources failed. A single
             failed source (usually its migration hasn't run yet) gets a
@@ -194,16 +194,14 @@ export default function VatRecoveryPage() {
         )}
         {!error && sourceErrors.startup && (
           <div role="alert" className="bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/30 text-amber-700 dark:text-amber-300 text-xs px-4 py-2.5 rounded-control leading-relaxed">
-            تعذّر تحميل فواتير <strong>رسوم التأسيس</strong> — إن لم تكن قد شغّلت{' '}
-            <code className="bg-amber-100 dark:bg-amber-500/20 px-1 rounded-control" dir="ltr">2026_06_startup_cost_entries_ALL.sql</code>{' '}
-            في Supabase SQL Editor، شغّله ثم حدّث الصفحة. الفواتير السنوية معروضة أدناه.
+            تعذّر تحميل فواتير <strong>رسوم التأسيس</strong> — تحقّق من اتصالك ومن صلاحيات
+            حسابك، ثم حدّث الصفحة. بقية المصادر معروضة أدناه.
           </div>
         )}
         {!error && sourceErrors.annual && (
           <div role="alert" className="bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/30 text-amber-700 dark:text-amber-300 text-xs px-4 py-2.5 rounded-control leading-relaxed">
-            تعذّر تحميل فواتير <strong>المصاريف السنوية</strong> — إن لم تكن قد شغّلت{' '}
-            <code className="bg-amber-100 dark:bg-amber-500/20 px-1 rounded-control" dir="ltr">2026_06_annual_expense_entries_ALL.sql</code>{' '}
-            في Supabase SQL Editor، شغّله ثم حدّث الصفحة. فواتير التأسيس معروضة أدناه.
+            تعذّر تحميل فواتير <strong>المصاريف السنوية</strong> — تحقّق من اتصالك ومن صلاحيات
+            حسابك، ثم حدّث الصفحة. بقية المصادر معروضة أدناه.
           </div>
         )}
 

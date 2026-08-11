@@ -1,52 +1,148 @@
 rules_version = '2';
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Sweater (سويتر) — Firestore security rules
+// سويتر (Sweater) — Firestore security rules
 // ═══════════════════════════════════════════════════════════════════════════
-// Mirrors the Supabase-era RBAC: members READ, admins WRITE.
-//   admin  = a doc exists at /app_admins/{uid}
-//   member = admin OR a doc exists at /users/{uid}
+// Roles live on /users/{uid}.role:
+//   admin      — full operational access, closes periods, manages accounts
+//   accountant — posts and reverses entries, closes periods, reads everything
+//   operator   — records day-to-day operations; cannot touch the ledger
+//   partner    — read-only on operational data and reports
 //
-// Rules can only get()/exists() known paths (no collection queries), so
-// membership is keyed by uid in the app_admins + users directory
-// collections — populated when accounts are provisioned.
+// Membership is /users/{uid}; /app_admins/{uid} additionally marks an admin.
+// Legacy documents without a role are treated as `operator`, so an existing
+// account keeps working after this file ships.
 //
-// Only the app's own collections are governed here; anything else falls
-// through to Firestore's default deny. NOTE: this project also hosts
-// another app ("الجمعيات"); a single ruleset governs the (default)
-// database, so if that app ever uses Firestore its collections must be
-// added here (or the app moved to its own project/database).
+// Two things the client can NEVER do, whatever its role:
+//   1. write /app_admins — privilege escalation would otherwise be one
+//      client-side write away.
+//   2. amend or delete a POSTED journal entry or any journal line. The only
+//      permitted update is the single reversal transition
+//      (posted → reversed), which is what keeps the audit trail truthful.
+//      Corrections are new entries, never edits.
 // ═══════════════════════════════════════════════════════════════════════════
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function signedIn() {
-      return request.auth != null;
+    // ── الهوية والأدوار ──────────────────────────────────────────────
+    function signedIn() { return request.auth != null; }
+    function userDoc()  { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
+    function hasUserDoc() { return exists(/databases/$(database)/documents/users/$(request.auth.uid)); }
+    function isAdminDoc() { return exists(/databases/$(database)/documents/app_admins/$(request.auth.uid)); }
+
+    function role() {
+      return hasUserDoc() && userDoc().keys().hasAny(['role'])
+        ? userDoc().role
+        : (isAdminDoc() ? 'admin' : 'operator');
     }
-    function isAdmin() {
-      return signedIn()
-        && exists(/databases/$(database)/documents/app_admins/$(request.auth.uid));
+    function isAdmin()      { return signedIn() && (isAdminDoc() || role() == 'admin'); }
+    function isAccountant() { return signedIn() && (isAdmin() || role() == 'accountant'); }
+    function isOperator()   { return signedIn() && (isAccountant() || role() == 'operator'); }
+    function isMember()     { return signedIn() && (hasUserDoc() || isAdminDoc()); }
+
+    // ── دليل الحسابات ────────────────────────────────────────────────
+    // Everyone who can see reports needs to resolve account names.
+    match /chart_of_accounts/{code} {
+      allow read:   if isMember();
+      allow create, update: if isAccountant();
+      // An unused account is deactivated (active:false), never deleted — a
+      // deleted account would orphan every line that referenced it.
+      allow delete: if false;
     }
-    function isMember() {
-      return isAdmin()
-        || (signedIn()
-            && exists(/databases/$(database)/documents/users/$(request.auth.uid)));
+
+    // ── القيود اليومية ───────────────────────────────────────────────
+    match /journal_entries/{entryId} {
+      allow read: if isAccountant() || isMember();
+
+      allow create: if isAccountant()
+        && request.resource.data.status in ['draft', 'posted']
+        && request.resource.data.entryDate is string
+        && request.resource.data.periodKey is string;
+
+      // The ONLY sanctioned update: marking an entry reversed. Everything
+      // else about a posted entry is frozen.
+      allow update: if isAccountant()
+        && resource.data.status == 'posted'
+        && request.resource.data.status == 'reversed'
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['status', 'reversedBy', 'reversedAt']);
+
+      allow delete: if false;
     }
-    function isSweaterColl(c) {
+
+    match /journal_lines/{lineId} {
+      allow read:   if isAccountant() || isMember();
+      allow create: if isAccountant();
+      // A line is part of the filed record; it is never amended or removed.
+      allow update, delete: if false;
+    }
+
+    // ── الفترات المحاسبية ────────────────────────────────────────────
+    match /accounting_periods/{periodKey} {
+      allow read: if isMember();
+      // Created lazily by the posting transaction, so an accountant must be
+      // able to create as well as close/reopen.
+      allow create, update: if isAccountant();
+      allow delete: if false;
+    }
+
+    // ── عداد أرقام القيود ────────────────────────────────────────────
+    match /counters/{name} {
+      allow read:  if isAccountant();
+      allow write: if isAccountant();
+    }
+
+    // ── قواعد الرسوم ─────────────────────────────────────────────────
+    match /fee_rules/{ruleId} {
+      allow read:  if isMember();
+      allow write: if isAdmin();
+    }
+
+    // ── سجل التدقيق ──────────────────────────────────────────────────
+    // Append-only by construction: writers may add, nobody may rewrite.
+    match /audit_logs/{logId} {
+      allow read:   if isAdmin() || isAccountant();
+      allow create: if isOperator();
+      allow update, delete: if false;
+    }
+
+    // ── الحسابات والصلاحيات ──────────────────────────────────────────
+    // A user reads their OWN record; only admins list users. Nobody edits
+    // roles from the client — that is a console/server operation.
+    match /users/{uid} {
+      allow get:    if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow list:   if isAdmin();
+      allow create: if isAdmin();
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['email', 'displayName']);
+      allow delete: if false;
+    }
+
+    // Privilege escalation guard: readable by admins for diagnostics,
+    // writable by nobody through a client SDK.
+    match /app_admins/{uid} {
+      allow read:  if isAdmin();
+      allow write: if false;
+    }
+
+    // ── البيانات التشغيلية ───────────────────────────────────────────
+    // Members read; operators and above record day-to-day business.
+    // These stay the operational source of truth — the reports read the
+    // ledger, but the app still works from these collections.
+    function isOperationalColl(c) {
       return c in [
         'annual_expense_categories', 'annual_expense_entries', 'annual_expenses',
-        'app_admins', 'app_settings', 'auth_users_backup', 'categories',
-        'category_budgets', 'monthly_expense_categories', 'monthly_expenses',
-        'partner_payments', 'partners', 'startup_cost_entries', 'startup_costs',
-        'temporary_expenses', 'transactions', 'users',
-        'variable_expense_categories', 'variable_expenses', 'washes'
+        'app_settings', 'auth_users_backup', 'categories', 'category_budgets',
+        'monthly_expense_categories', 'monthly_expenses', 'partner_payments',
+        'partners', 'startup_cost_entries', 'startup_costs', 'temporary_expenses',
+        'transactions', 'variable_expense_categories', 'variable_expenses', 'washes'
       ];
     }
 
     match /{coll}/{doc} {
-      allow read:  if isSweaterColl(coll) && isMember();
-      allow write: if isSweaterColl(coll) && isAdmin();
+      allow read:  if isOperationalColl(coll) && isMember();
+      allow write: if isOperationalColl(coll) && isOperator();
     }
   }
 }

@@ -43,16 +43,21 @@ export default function PartnerViewBanner() {
   // surgical for the project owner.
   const isSelfPartner = !isAdmin && viewedPartner.userId === user?.id;
 
-  const unlinkSql = user?.email
-    ? `update public.partners
-   set user_id = null
- where user_id = (select id from auth.users where email = '${user.email}');`
+  // How to undo the link, on the backend this app actually runs on. There is
+  // no SQL console for Firestore — the field is cleared from the console UI
+  // (or by an admin from the partners page).
+  const unlinkSteps = user?.id
+    ? `Firebase Console ← Firestore Database ← partners
+`
+      + `ابحث عن الصف الذي فيه user_id = ${user.id}
+`
+      + `واحذف قيمة الحقل user_id (اتركه فارغاً).`
     : '';
 
   async function copyUnlinkSql() {
-    if (!unlinkSql) return;
+    if (!unlinkSteps) return;
     try {
-      await navigator.clipboard.writeText(unlinkSql);
+      await navigator.clipboard.writeText(unlinkSteps);
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
     } catch { /* admin can still select + copy manually */ }
@@ -105,11 +110,10 @@ export default function PartnerViewBanner() {
           <div className="bg-white dark:bg-slate-900 border border-indigo-100 dark:border-indigo-500/30 rounded-smallcard p-3 text-[11px] leading-relaxed text-indigo-700 dark:text-indigo-300">
             <p className="font-bold mb-2">
               حسابك ({user?.email}) مربوط بصف الشريك &quot;{viewedPartner.partnerName}&quot;.
-              للرجوع إلى واجهة المدير، شغّل هذا الـ SQL في Supabase Dashboard
-              → SQL Editor:
+              للرجوع إلى واجهة المدير، أزل هذا الربط من Firestore:
             </p>
             <div className="relative bg-slate-900 dark:bg-slate-950 text-slate-100 rounded-control p-3 font-mono text-[11px] leading-relaxed select-all" dir="ltr">
-              <pre className="whitespace-pre-wrap break-words">{unlinkSql}</pre>
+              <pre className="whitespace-pre-wrap break-words">{unlinkSteps}</pre>
               <button
                 type="button"
                 onClick={copyUnlinkSql}

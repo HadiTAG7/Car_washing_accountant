@@ -24,7 +24,7 @@ import Toast from './Toast';
 import { useStartupCosts } from '../hooks/useStartupCosts';
 import { useStartupCostEntries, useStartupLedgerParents } from '../hooks/useStartupCostEntries';
 import { useCategories } from '../hooks/useCategories';
-import { isSupabaseConfigured, missingEnvNames } from '../lib/supabaseClient';
+import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 
 // ─── Formatted amount input (thousands separators) ─────────────────────────
@@ -225,7 +225,7 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
       />
 
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
-        {!isSupabaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
+        {!isFirebaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
 
         {mutationError && (
           <ErrorState

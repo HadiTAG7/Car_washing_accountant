@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
-  Lock, Unlock, ShieldCheck, AlertTriangle, CheckCircle2, Loader2, Database,
+  Lock, Unlock, ShieldCheck, AlertTriangle, CheckCircle2, Loader2, Database, Upload,
 } from 'lucide-react';
 import { formatCurrency } from '../data/initialData';
 import TopBar from './TopBar';
@@ -12,6 +12,7 @@ import { useLedger } from '../hooks/useLedger';
 import { useAuth } from '../hooks/useAuth';
 import { closePreflight, currentPeriodKey } from '../lib/accounting/periods';
 import { closePeriod, reopenPeriod, seedChartOfAccounts } from '../lib/accounting/firestoreLedger';
+import { collectUnposted, postUnposted } from '../lib/accounting/postOperations';
 import { isFirebaseConfigured, missingEnvNames, describeBackendError } from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 
@@ -25,6 +26,9 @@ export default function PeriodClosePage() {
   const { user } = useAuth();
   const { canMutate } = usePartnerView();
   const [busy, setBusy] = useState('');
+  // Result of the last unposted-operations scan / sweep.
+  const [scan, setScan] = useState(null);
+  const [progress, setProgress] = useState(null);
   const [toast, setToast] = useState({ open: false, message: '', tone: 'success', duration: 3000 });
 
   const showToast = useCallback((message, tone = 'success') => {
@@ -62,6 +66,47 @@ export default function PeriodClosePage() {
     } catch (e) {
       showToast(describeBackendError(e) || e?.message || 'تعذّرت التهيئة', 'error');
     } finally { setBusy(''); }
+  }
+
+  async function handleScan() {
+    setBusy('scan');
+    try {
+      const r = await collectUnposted();
+      setScan(r);
+      showToast(r.ready.length
+        ? `${r.ready.length} عملية جاهزة للترحيل.`
+        : 'لا توجد عمليات غير مُرحّلة.');
+    } catch (e) {
+      showToast(describeBackendError(e) || e?.message || 'تعذّر الفحص', 'error');
+    } finally { setBusy(''); }
+  }
+
+  async function handlePostAll() {
+    const pending = scan?.ready?.length || 0;
+    const ok = typeof window === 'undefined' || window.confirm(
+      `ترحيل ${pending} عملية إلى دفتر الأستاذ؟\n\n`
+      + 'العملية آمنة وقابلة للتكرار: أي عملية مُرحّلة مسبقاً تُتجاوز تلقائياً.',
+    );
+    if (!ok) return;
+    setBusy('post');
+    setProgress({ done: 0, total: pending, label: '' });
+    try {
+      const r = await postUnposted({
+        userId: user?.id,
+        onProgress: (p) => setProgress(p),
+      });
+      setScan(null);
+      showToast(
+        r.failed.length
+          ? `تم ترحيل ${r.posted.length} عملية، وفشل ${r.failed.length}.`
+          : `تم ترحيل ${r.posted.length} عملية بنجاح.`,
+        r.failed.length ? 'error' : 'success',
+      );
+      if (r.failed.length) console.error('[posting] failures:', r.failed);
+      await refetch();
+    } catch (e) {
+      showToast(describeBackendError(e) || e?.message || 'تعذّر الترحيل', 'error');
+    } finally { setBusy(''); setProgress(null); }
   }
 
   async function handleClose(key) {
@@ -144,6 +189,83 @@ export default function PeriodClosePage() {
               <StatCard className="col-span-2 md:col-span-1" icon={Unlock} tone="amber"
                 label="فترات مفتوحة" value={String(periodKeys.length - closedCount)} />
             </div>
+
+            {/* ── ترحيل العمليات ─────────────────────────────────────
+                Posting is deliberate, not a side effect of saving a wash: an
+                operator editing a record three times must not mint three
+                entries. The sweep is idempotent — anything already posted is
+                skipped — so it doubles as the migration path for the backlog
+                that predates the ledger. */}
+            <Card className="p-6">
+              <SectionHeader
+                title="ترحيل العمليات إلى دفتر الأستاذ"
+                subtitle="تحويل الغسلات والمصروفات والدفعات والعهد إلى قيود مزدوجة — آمن وقابل للتكرار"
+                action={canMutate ? (
+                  <div className="flex items-center gap-2">
+                    <SecondaryButton icon={busy === 'scan' ? Loader2 : ShieldCheck}
+                      onClick={handleScan} disabled={Boolean(busy)}>
+                      {busy === 'scan' ? 'جارٍ الفحص...' : 'فحص غير المُرحّل'}
+                    </SecondaryButton>
+                    {scan && scan.ready.length > 0 && (
+                      <PrimaryButton icon={busy === 'post' ? Loader2 : Upload}
+                        onClick={handlePostAll} disabled={Boolean(busy)}>
+                        {busy === 'post' ? 'جارٍ الترحيل...' : `ترحيل ${scan.ready.length}`}
+                      </PrimaryButton>
+                    )}
+                  </div>
+                ) : null}
+              />
+              {progress && (
+                <p role="status" className="text-xs text-slate-600 dark:text-slate-300 tabular-nums mb-3">
+                  {progress.done} / {progress.total} — {progress.label}
+                </p>
+              )}
+              {!scan ? (
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                  اضغط «فحص غير المُرحّل» لعرض العمليات التي لم تدخل الدفاتر بعد،
+                  مع سبب استبعاد كل عملية غير مؤهلة.
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-2">
+                      جاهزة للترحيل ({scan.ready.length})
+                    </h4>
+                    {scan.ready.length === 0 ? (
+                      <p className="text-xs text-slate-500 dark:text-slate-400">لا شيء — كل العمليات مُرحّلة.</p>
+                    ) : (
+                      <ul className="space-y-1 max-h-56 overflow-y-auto">
+                        {scan.ready.slice(0, 100).map((r) => (
+                          <li key={`${r.sourceType}-${r.sourceId}`}
+                            className="flex items-baseline justify-between gap-3 text-xs py-1 border-b border-slate-50 dark:border-slate-800/60">
+                            <span className="text-slate-700 dark:text-slate-300 min-w-0 truncate">{r.label}</span>
+                            <span className="tabular-nums text-slate-500 dark:text-slate-400 shrink-0">{r.date}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-2">
+                      مستبعدة ({scan.skipped.length})
+                    </h4>
+                    {scan.skipped.length === 0 ? (
+                      <p className="text-xs text-slate-500 dark:text-slate-400">لا شيء.</p>
+                    ) : (
+                      <ul className="space-y-1 max-h-56 overflow-y-auto">
+                        {scan.skipped.slice(0, 100).map((r, i) => (
+                          <li key={`${r.kind}-${i}`}
+                            className="flex items-baseline justify-between gap-3 text-xs py-1 border-b border-slate-50 dark:border-slate-800/60">
+                            <span className="text-slate-600 dark:text-slate-400 min-w-0 truncate">{r.label || '—'}</span>
+                            <span className="text-slate-500 dark:text-slate-400 shrink-0">{r.reason}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              )}
+            </Card>
 
             <Card className="p-6">
               <SectionHeader title="الفترات المحاسبية"

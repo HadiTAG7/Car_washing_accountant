@@ -16,7 +16,7 @@ import LoadingState from './LoadingState';
 import ErrorState from './ErrorState';
 import Toast from './Toast';
 import { usePartners } from '../hooks/usePartners';
-import { describeSupabaseError } from '../lib/supabaseClient';
+import { describeBackendError } from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 
 export default function PartnersPage() {
@@ -76,9 +76,9 @@ export default function PartnersPage() {
       await addPartner(partner);
       showToast('تم إضافة الشريك بنجاح');
     } catch (e) {
-      console.error('🔥 Real Supabase Error (PartnersPage.handleAdd):', e);
+      console.error('🔥 Firestore Error (PartnersPage.handleAdd):', e);
       setMutationError(e);
-      showToast(describeSupabaseError(e) || e?.message || 'تعذّر إضافة الشريك', 'error');
+      showToast(describeBackendError(e) || e?.message || 'تعذّر إضافة الشريك', 'error');
     }
   }
   async function handleSaveEdit(id, patch) {
@@ -88,9 +88,9 @@ export default function PartnersPage() {
       await updatePartner(id, patch);
       showToast('تم حفظ بيانات الشريك');
     } catch (e) {
-      console.error('🔥 Real Supabase Error (PartnersPage.handleSaveEdit):', e, { id, patch });
+      console.error('🔥 Firestore Error (PartnersPage.handleSaveEdit):', e, { id, patch });
       setMutationError(e);
-      showToast(describeSupabaseError(e) || e?.message || 'تعذّر حفظ التعديلات', 'error');
+      showToast(describeBackendError(e) || e?.message || 'تعذّر حفظ التعديلات', 'error');
       throw e;
     }
   }
@@ -100,9 +100,9 @@ export default function PartnersPage() {
       await deletePartner(id);
       showToast('تم حذف الشريك');
     } catch (e) {
-      console.error('🔥 Real Supabase Error (PartnersPage.handleDelete):', e, { id });
+      console.error('🔥 Firestore Error (PartnersPage.handleDelete):', e, { id });
       setMutationError(e);
-      showToast(describeSupabaseError(e) || e?.message || 'تعذّر حذف الشريك', 'error');
+      showToast(describeBackendError(e) || e?.message || 'تعذّر حذف الشريك', 'error');
     }
   }
 

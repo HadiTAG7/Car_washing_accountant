@@ -14,7 +14,7 @@ import { downloadFullBackup } from '../lib/backupZip';
 import { usePartners } from '../hooks/usePartners';
 import { usePartnerPayments } from '../hooks/usePartnerPayments';
 import { useStartupCosts } from '../hooks/useStartupCosts';
-import { isSupabaseConfigured, missingEnvNames } from '../lib/supabaseClient';
+import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 
 // Last N months ending at the current one, as { key:'YYYY-MM', label } —
@@ -139,7 +139,7 @@ export default function OverviewPage() {
       <TopBar
         title="نظرة عامة"
         subtitle="ملخص رأس المال المُجمّع وصرف التأسيس"
-        actions={canMutate && isSupabaseConfigured ? (
+        actions={canMutate && isFirebaseConfigured ? (
           <button
             type="button"
             onClick={handleBackup}
@@ -156,7 +156,7 @@ export default function OverviewPage() {
       />
 
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
-        {!isSupabaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
+        {!isFirebaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
 
         {loading && partners.length === 0 && startupItems.length === 0 ? (
           <LoadingState message="جارٍ تحميل النظرة العامة..." />

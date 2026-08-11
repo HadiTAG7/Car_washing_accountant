@@ -17,7 +17,7 @@ const MANAGER_SENTINEL = '__sweater_manage_categories__';
 // is `text primary key`, so we need to supply our own — we use the
 // browser's Web Crypto UUID generator (universally available in modern
 // React app contexts; the codebase already relies on it for password
-// generation in supabaseClient.js).
+// generation in firebaseClient.js).
 function freshCategoryId() {
   return (globalThis.crypto || window.crypto).randomUUID();
 }
@@ -163,7 +163,7 @@ export default function AddStartupFeeModal({
       // Clear the input so the next add starts clean.
       setNewCategoryLabel('');
     } catch (err) {
-      console.error('🔥 Real Supabase Error (categories.insert):', err);
+      console.error('🔥 Firestore Error (categories.insert):', err);
       setNewCategoryError(err?.message || 'تعذّر إضافة التصنيف.');
     } finally {
       setNewCategoryBusy(false);
@@ -205,7 +205,7 @@ export default function AddStartupFeeModal({
       }
       showToast?.('تم حذف التصنيف من القوائم.', 'success');
     } catch (err) {
-      console.error('🔥 Real Supabase Error (categories.delete):', err, 'id:', cat.id);
+      console.error('🔥 Firestore Error (categories.delete):', err, 'id:', cat.id);
       showToast?.(err?.message || 'تعذّر حذف التصنيف.', 'error');
     } finally {
       setDeletingCategoryId(null);

@@ -4,8 +4,8 @@ import {
 } from 'lucide-react';
 import { formatCurrency, PER_WORKER_FEE } from '../data/initialData';
 import {
-  lookupUserIdByEmail, createPartnerUser, isValidEmail, isSupabaseConfigured,
-} from '../lib/supabaseClient';
+  lookupUserIdByEmail, createPartnerUser, isValidEmail, isFirebaseConfigured,
+} from '../lib/firebaseClient';
 import { translateAuthError } from '../lib/authErrors';
 import CreateUserConfirm from './CreateUserConfirm';
 import CreatedCredentials from './CreatedCredentials';
@@ -89,7 +89,7 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave, sho
       // "explicit unlink"; a string is a resolved UUID.
       let resolvedUserId;
       if (trimmedEmail) {
-        if (!isSupabaseConfigured) {
+        if (!isFirebaseConfigured) {
           resolvedUserId = undefined;
         } else {
           const found = await lookupUserIdByEmail(trimmedEmail);
@@ -264,7 +264,7 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave, sho
               >
                 <span className="inline-flex items-center gap-1.5">
                   <CheckCircle2 size={12} strokeWidth={2.5} />
-                  هذا الشريك مرتبط حالياً بحساب Supabase
+                  هذا الشريك مرتبط حالياً بحساب Firebase
                 </span>
                 <button
                   type="button"

@@ -6,7 +6,7 @@ import {
 import {
   formatCurrency, formatDate, todayISO, extractVat, netOfVat,
 } from '../data/initialData';
-import { uploadInvoiceFile, isSupabaseConfigured } from '../lib/supabaseClient';
+import { uploadInvoiceFile, isFirebaseConfigured } from '../lib/firebaseClient';
 import { EmptyState } from './UI';
 import DateField from './DateField';
 
@@ -291,7 +291,7 @@ export default function ExpenseLedgerModal({
                   className="w-full pr-9 pl-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm font-mono focus:outline-none focus:border-primary-500 transition-colors"
                 />
               </div>
-              {isSupabaseConfigured && (
+              {isFirebaseConfigured && (
                 <>
                   <input
                     ref={fileInputRef}
@@ -393,7 +393,7 @@ export default function ExpenseLedgerModal({
                 className="text-xs text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-500/10 border border-rose-100 dark:border-rose-500/30 rounded-control px-3 py-2.5 mb-2 leading-relaxed"
               >
                 <p className="font-bold mb-1">تعذّر تحميل السجل.</p>
-                {/* Surface the real Supabase error verbatim — most often
+                {/* Surface the real Firestore error verbatim — most often
                     "relation ... does not exist" when the SQL migration
                     hasn't been run yet. Showing the message turns this
                     into a self-diagnosing screen instead of a black box. */}
@@ -408,7 +408,7 @@ export default function ExpenseLedgerModal({
                     <code className="bg-rose-100 dark:bg-rose-500/20 px-1 rounded-control" dir="ltr">
                       {migrationFile}
                     </code>{' '}
-                    في Supabase SQL Editor، شغّله ثم أعد فتح المودال.
+                    — لم يعد مطلوباً على Firestore؛ تحقّق من صلاحيات حسابك ثم أعد فتح المودال.
                   </p>
                 )}
               </div>

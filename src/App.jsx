@@ -48,7 +48,7 @@ const BalanceSheetPage     = lazy(() => import('./components/BalanceSheetPage'))
 const PeriodClosePage      = lazy(() => import('./components/PeriodClosePage'));
 
 import { useAuth } from './hooks/useAuth';
-import { isSupabaseConfigured, requireAuth, missingEnvNames } from './lib/supabaseClient';
+import { isFirebaseConfigured, requireAuth, missingEnvNames } from './lib/firebaseClient';
 import { MobileMenuProvider, useMobileMenu } from './contexts/MobileMenuContext';
 import { PartnerViewProvider, usePartnerView } from './contexts/PartnerViewContext';
 import PartnerViewBanner from './components/PartnerViewBanner';
@@ -129,7 +129,7 @@ function AppShell() {
   const justSignedOut = typeof window !== 'undefined'
     && new URLSearchParams(window.location.search).has('signedOut');
 
-  const mustAuthenticate = (requireAuth || justSignedOut) && isSupabaseConfigured;
+  const mustAuthenticate = (requireAuth || justSignedOut) && isFirebaseConfigured;
   if (mustAuthenticate && !session) {
     return <LoginScreen />;
   }
@@ -141,7 +141,7 @@ function AppShell() {
         activeTab={activeTab}
         onSelectTab={handleSelectTab}
         user={session?.user}
-        onSignOut={isSupabaseConfigured ? signOut : null}
+        onSignOut={isFirebaseConfigured ? signOut : null}
         // Hide the "+ إضافة سجل مالي" sidebar entrypoint in partner view —
         // a partner has strict read-only access; a simulating admin sees
         // the partner's UX (no shortcut to write).
@@ -154,7 +154,7 @@ function AppShell() {
 
       <div className="min-h-screen md:mr-64 flex flex-col">
         <PartnerViewBanner />
-        {!isSupabaseConfigured && <DemoBanner missing={missingEnvNames} />}
+        {!isFirebaseConfigured && <DemoBanner missing={missingEnvNames} />}
 
         <Suspense fallback={<LoadingState message="جارٍ تحميل الصفحة..." />}>
           {/* key={activeTab} remounts the wrapper per tab so the page-in

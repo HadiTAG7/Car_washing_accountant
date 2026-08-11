@@ -1,15 +1,15 @@
 import { AlertTriangle, RefreshCw, Settings2 } from 'lucide-react';
-import { describeSupabaseError, maskedSupabaseUrl } from '../lib/supabaseClient';
+import { describeBackendError, maskedProjectRef } from '../lib/firebaseClient';
 import { SecondaryButton } from './UI';
 
 /**
  * Error banner with an optional retry action.
- * Pass the raw Supabase error as `error` — we'll unwrap and localize it.
+ * Pass the raw Firestore/Firebase error as `error` — we unwrap and localize it.
  */
 export default function ErrorState({ error, onRetry, title = 'تعذّر تحميل البيانات' }) {
-  const friendly = describeSupabaseError(error);
+  const friendly = describeBackendError(error);
   const message  = friendly || 'حدث خطأ غير متوقع أثناء الاتصال بقاعدة البيانات';
-  const url      = maskedSupabaseUrl();
+  const url      = maskedProjectRef();
 
   return (
     <div
@@ -38,12 +38,12 @@ export default function ErrorState({ error, onRetry, title = 'تعذّر تحم�
 }
 
 /**
- * Small top-of-screen banner shown when Supabase env vars are missing.
+ * Small top-of-screen banner shown when the Firebase env vars are missing.
  */
 export function DemoBanner({ missing = [] }) {
   const detail = missing.length
     ? `المتغيرات المفقودة: ${missing.join('، ')}`
-    : 'لم يتم ضبط متغيرات Supabase';
+    : 'لم يتم ضبط متغيرات Firebase';
   return (
     <div
       role="alert"
@@ -58,10 +58,10 @@ export function DemoBanner({ missing = [] }) {
 }
 
 /**
- * Prominent setup card shown inside the page when Supabase isn't configured.
+ * Prominent setup card shown inside the page when Firebase isn't configured.
  */
 export function SetupRequiredCard({ missing = [] }) {
-  const list = missing.length ? missing : ['VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY'];
+  const list = missing.length ? missing : ['VITE_FIREBASE_API_KEY', 'VITE_FIREBASE_PROJECT_ID'];
   return (
     <div
       className="bg-white dark:bg-slate-900 border border-amber-100 dark:border-amber-500/30 rounded-card p-6 transition-colors duration-200"
@@ -72,7 +72,7 @@ export function SetupRequiredCard({ missing = [] }) {
           <Settings2 size={22} />
         </div>
         <div className="flex-1 min-w-0">
-          <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">إعداد Supabase مطلوب</h3>
+          <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">إعداد Firebase مطلوب</h3>
           <p className="text-sm text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
             لا يمكن للتطبيق الاتصال بقاعدة البيانات لأن متغيرات البيئة التالية غير مضبوطة:
           </p>
@@ -100,7 +100,7 @@ export function SetupRequiredCard({ missing = [] }) {
               Project Settings → Environment Variables، ثم أعد النشر.
             </p>
             <p className="text-slate-500 dark:text-slate-400">
-              تجد القيم في لوحة Supabase ضمن Project Settings → API. تأكد من نسخها بدون مسافات أو علامات اقتباس.
+              تجد القيم في Firebase Console ضمن Project Settings → General → Your apps. تأكد من نسخها بدون مسافات أو علامات اقتباس.
             </p>
           </div>
         </div>

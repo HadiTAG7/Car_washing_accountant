@@ -23,7 +23,7 @@ import {
   listAvailableMonths,
   variableItemsForMonth,
 } from '../lib/variableExpenseTotals';
-import { isSupabaseConfigured, missingEnvNames } from '../lib/supabaseClient';
+import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
 
 // ─── Income statement row ────────────────────────────────────────────────
 // `kind`: 'plus' (revenue) | 'minus' (cost) | 'subtotal' (gross profit)
@@ -347,7 +347,7 @@ export default function FinancialSummaryPage() {
       />
 
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
-        {!isSupabaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
+        {!isFirebaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
 
         {anyError && (
           <ErrorState

@@ -257,7 +257,7 @@ export default function AddVariableExpenseModal({
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5" htmlFor="quantity">
-                الكمية / عدد الغسلات
+                {isRule ? 'عدد الغسلات' : 'الكمية'}
               </label>
               <input
                 id="quantity"
@@ -289,7 +289,7 @@ export default function AddVariableExpenseModal({
             </div>
             <div>
               <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5" htmlFor="unitCost">
-                تكلفة الغسلة / الوحدة (ر.س)
+                {isRule ? 'تكلفة الغسلة (ر.س)' : 'تكلفة الوحدة (ر.س)'}
               </label>
               <input
                 id="unitCost"
@@ -401,6 +401,21 @@ export default function AddVariableExpenseModal({
               </p>
             </div>
           </div>
+
+          {isRule && safeWashCount === 0 && (
+            <div
+              role="alert"
+              className="flex items-start gap-2 px-3 py-2.5 rounded-control bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/30 text-[12px] text-amber-700 dark:text-amber-300 leading-relaxed"
+            >
+              <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+              <span>
+                لا توجد غسلات مكتملة في الشهر المحدد، وهذا التصنيف
+                <strong> يُحسب تلقائياً من عدد الغسلات</strong> — فلا عمولة
+                تُسجَّل بعد. لتسجيل مبلغ لا يعتمد على الغسلات (سلفة أو مبلغ
+                ثابت)، اختر تصنيفاً عادياً بدل تصنيف العمولة.
+              </span>
+            </div>
+          )}
 
           <div className="flex items-center gap-3 pt-2">
             <button

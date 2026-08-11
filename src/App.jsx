@@ -13,6 +13,9 @@ import {
   RefreshCw,
   Percent,
   Loader2,
+  BookOpen,
+  Scale,
+  Lock,
 } from 'lucide-react';
 
 import { lazy, Suspense } from 'react';
@@ -38,6 +41,11 @@ const BudgetsPage          = lazy(() => import('./components/BudgetsPage'));
 const PartnersPage         = lazy(() => import('./components/PartnersPage'));
 const PartnerPaymentsPage  = lazy(() => import('./components/PartnerPaymentsPage'));
 const TemporaryExpensesPage = lazy(() => import('./components/TemporaryExpensesPage'));
+// ── الدفاتر المحاسبية ──────────────────────────────────────────────────
+const GeneralLedgerPage    = lazy(() => import('./components/GeneralLedgerPage'));
+const TrialBalancePage     = lazy(() => import('./components/TrialBalancePage'));
+const BalanceSheetPage     = lazy(() => import('./components/BalanceSheetPage'));
+const PeriodClosePage      = lazy(() => import('./components/PeriodClosePage'));
 
 import { useAuth } from './hooks/useAuth';
 import { isSupabaseConfigured, requireAuth, missingEnvNames } from './lib/supabaseClient';
@@ -58,6 +66,10 @@ const TABS = [
   { id: 'partners',  label: 'إدارة الشركاء',          icon: Handshake   },
   { id: 'payments',  label: 'مدفوعات الشركاء',        icon: HandCoins   },
   { id: 'temporary_expenses', label: 'المصروفات المؤقتة', icon: RefreshCw },
+  { id: 'ledger',    label: 'دفتر الأستاذ',            icon: BookOpen    },
+  { id: 'trial',     label: 'ميزان المراجعة',          icon: Scale       },
+  { id: 'balance',   label: 'المركز المالي',           icon: Landmark    },
+  { id: 'periods',   label: 'إقفال الفترة',            icon: Lock        },
 ];
 
 // Inner shell wraps the routed content so it can subscribe to the
@@ -166,6 +178,10 @@ function AppShell() {
             {activeTab === 'partners'  && <PartnersPage />}
             {activeTab === 'payments'  && <PartnerPaymentsPage />}
             {activeTab === 'temporary_expenses' && <TemporaryExpensesPage />}
+            {activeTab === 'ledger'    && <GeneralLedgerPage />}
+            {activeTab === 'trial'     && <TrialBalancePage />}
+            {activeTab === 'balance'   && <BalanceSheetPage />}
+            {activeTab === 'periods'   && <PeriodClosePage />}
           </div>
         </Suspense>
       </div>

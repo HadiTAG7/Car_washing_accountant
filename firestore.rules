@@ -119,6 +119,17 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // ── سندات المصاريف المتكررة ──────────────────────────────────────
+    // Generated from a monthly template, one per period. The document id is
+    // `<templateId>__<periodKey>`, so re-generating overwrites rather than
+    // duplicates. A voucher is cancelled, never deleted — the gap in a
+    // monthly series is itself information.
+    match /expense_vouchers/{voucherId} {
+      allow read:   if isMember();
+      allow create, update: if isAccountant();
+      allow delete: if false;
+    }
+
     // ── سجل الأصول الثابتة ───────────────────────────────────────────
     // The register drives the depreciation entries, so it is an accountant's
     // record, not an operator's. An asset is deactivated or disposed of —

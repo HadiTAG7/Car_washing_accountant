@@ -196,6 +196,39 @@ d('قواعد أمان Firestore', () => {
     });
   });
 
+  // ── سندات المصاريف المتكررة ────────────────────────────────────────
+  describe('السندات الدورية', () => {
+    beforeEach(async () => {
+      await env.withSecurityRulesDisabled(async (c) => {
+        await setDoc(doc(c.firestore(), 'expense_vouchers', 't1__2026-08'), {
+          templateId: 't1', templateName: 'إيجار', periodKey: '2026-08',
+          dueDate: '2026-08-05', amount: 5000, status: 'active',
+        });
+      });
+    });
+
+    it('المحاسب يولّد ويعدّل، والمشغّل لا', async () => {
+      await assertSucceeds(setDoc(doc(ctx.acct, 'expense_vouchers', 't1__2026-09'), {
+        templateId: 't1', periodKey: '2026-09', dueDate: '2026-09-05', amount: 5000, status: 'active',
+      }));
+      await assertFails(setDoc(doc(ctx.op, 'expense_vouchers', 't1__2026-10'), {
+        templateId: 't1', periodKey: '2026-10', amount: 5000,
+      }));
+    });
+
+    it('لا يُحذف سند — يُلغى', async () => {
+      await assertFails(deleteDoc(doc(ctx.admin, 'expense_vouchers', 't1__2026-08')));
+      await assertSucceeds(updateDoc(doc(ctx.acct, 'expense_vouchers', 't1__2026-08'), {
+        status: 'cancelled', cancelReason: 'المحل مغلق',
+      }));
+    });
+
+    it('الأعضاء يقرأون، والزائر لا', async () => {
+      await assertSucceeds(getDoc(doc(ctx.partner, 'expense_vouchers', 't1__2026-08')));
+      await assertFails(getDoc(doc(ctx.anon, 'expense_vouchers', 't1__2026-08')));
+    });
+  });
+
   // ── سجل الأصول الثابتة ─────────────────────────────────────────────
   describe('سجل الأصول سجل محاسبي لا تشغيلي', () => {
     beforeEach(async () => {

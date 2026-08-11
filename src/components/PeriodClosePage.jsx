@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
   Lock, Unlock, ShieldCheck, AlertTriangle, CheckCircle2, Loader2, Database, Upload,
+  CalendarRange, FilePlus2,
 } from 'lucide-react';
 import { formatCurrency } from '../data/initialData';
 import TopBar from './TopBar';
@@ -13,6 +14,8 @@ import { useAuth } from '../hooks/useAuth';
 import { closePreflight, currentPeriodKey } from '../lib/accounting/periods';
 import { closePeriod, reopenPeriod, seedChartOfAccounts } from '../lib/accounting/firestoreLedger';
 import { collectUnposted, postUnposted } from '../lib/accounting/postOperations';
+import { previewGeneration, generateVouchers } from '../lib/accounting/firestoreRecurring';
+import { addMonths } from '../lib/accounting/depreciation';
 import { isFirebaseConfigured, missingEnvNames, describeBackendError } from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 
@@ -29,6 +32,11 @@ export default function PeriodClosePage() {
   // Result of the last unposted-operations scan / sweep.
   const [scan, setScan] = useState(null);
   const [progress, setProgress] = useState(null);
+  // Recurring-voucher generation: a range, and a preview of what it would create.
+  const [range, setRange] = useState(() => ({
+    from: addMonths(currentPeriodKey(), -2), through: currentPeriodKey(),
+  }));
+  const [genPreview, setGenPreview] = useState(null);
   const [toast, setToast] = useState({ open: false, message: '', tone: 'success', duration: 3000 });
 
   const showToast = useCallback((message, tone = 'success') => {
@@ -107,6 +115,39 @@ export default function PeriodClosePage() {
     } catch (e) {
       showToast(describeBackendError(e) || e?.message || 'تعذّر الترحيل', 'error');
     } finally { setBusy(''); setProgress(null); }
+  }
+
+  async function handlePreviewVouchers() {
+    setBusy('preview');
+    try {
+      const r = await previewGeneration(range);
+      setGenPreview(r);
+      showToast(r.toCreate.length
+        ? `${r.toCreate.length} سند سيُنشأ في المدى المحدد.`
+        : 'لا توجد سندات ناقصة في هذا المدى.');
+    } catch (e) {
+      showToast(describeBackendError(e) || e?.message || 'تعذّر الفحص', 'error');
+    } finally { setBusy(''); }
+  }
+
+  async function handleGenerateVouchers() {
+    const count = genPreview?.toCreate?.length || 0;
+    const ok = typeof window === 'undefined' || window.confirm(
+      `إنشاء ${count} سند من ${range.from} إلى ${range.through}؟\n\n`
+      + 'كل سند يحمل تاريخ استحقاق حقيقي، فيصبح قابلاً للترحيل وللمطالبة بضريبته. '
+      + 'العملية قابلة للتكرار: رقم السند مشتق من المصروف والفترة، فلا يتكرر.',
+    );
+    if (!ok) return;
+    setBusy('generate');
+    try {
+      const r = await generateVouchers({ ...range, userId: user?.id });
+      setGenPreview(null);
+      setScan(null);
+      showToast(`تم إنشاء ${r.created} سند عبر ${r.periods.length} فترة.`);
+      await refetch();
+    } catch (e) {
+      showToast(describeBackendError(e) || e?.message || 'تعذّر الإنشاء', 'error');
+    } finally { setBusy(''); }
   }
 
   async function handleClose(key) {
@@ -189,6 +230,97 @@ export default function PeriodClosePage() {
               <StatCard className="col-span-2 md:col-span-1" icon={Unlock} tone="amber"
                 label="فترات مفتوحة" value={String(periodKeys.length - closedCount)} />
             </div>
+
+            {/* ── سندات المصاريف المتكررة ───────────────────────────
+                A row like "الإيجار 5,000 شهرياً" is a TEMPLATE, not a
+                document: it has no date, so nothing can post it and no VAT
+                claim can be dated to it. Generating one dated voucher per
+                month turns it into ordinary business the rest of the system
+                already knows how to handle. Runs BEFORE the posting sweep,
+                because the sweep is what carries the vouchers into the books. */}
+            <Card className="p-6">
+              <SectionHeader
+                title="سندات المصاريف المتكررة"
+                subtitle="سند مؤرَّخ لكل شهر من كل مصروف متكرر — رقمه مشتق من المصروف والفترة فلا يتكرر"
+                action={canMutate ? (
+                  <div className="flex items-center gap-2">
+                    <SecondaryButton icon={busy === 'preview' ? Loader2 : CalendarRange}
+                      onClick={handlePreviewVouchers} disabled={Boolean(busy)}>
+                      {busy === 'preview' ? 'جارٍ الفحص...' : 'فحص المدى'}
+                    </SecondaryButton>
+                    {genPreview && genPreview.toCreate.length > 0 && (
+                      <PrimaryButton icon={busy === 'generate' ? Loader2 : FilePlus2}
+                        onClick={handleGenerateVouchers} disabled={Boolean(busy)}>
+                        {busy === 'generate' ? 'جارٍ الإنشاء...' : `إنشاء ${genPreview.toCreate.length}`}
+                      </PrimaryButton>
+                    )}
+                  </div>
+                ) : null}
+              />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label htmlFor="gen-from" className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">من فترة</label>
+                  <input id="gen-from" type="month" value={range.from} dir="ltr"
+                    onChange={(e) => { setRange((r) => ({ ...r, from: e.target.value })); setGenPreview(null); }}
+                    className="w-full min-h-touch px-3 py-2 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm tabular-nums text-slate-900 dark:text-slate-100" />
+                </div>
+                <div>
+                  <label htmlFor="gen-through" className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">إلى فترة</label>
+                  <input id="gen-through" type="month" value={range.through} dir="ltr"
+                    onChange={(e) => { setRange((r) => ({ ...r, through: e.target.value })); setGenPreview(null); }}
+                    className="w-full min-h-touch px-3 py-2 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm tabular-nums text-slate-900 dark:text-slate-100" />
+                </div>
+              </div>
+              {!genPreview ? (
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                  اضغط «فحص المدى» لمعاينة السندات الناقصة قبل إنشائها — لا يُنشأ شيء قبل المعاينة.
+                  تاريخ الاستحقاق يُقصَر على آخر يوم في الشهر، فلا يُنتج «31 فبراير».
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-2">
+                      سندات ستُنشأ ({genPreview.toCreate.length})
+                    </h4>
+                    {genPreview.toCreate.length === 0 ? (
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        لا شيء — كل الفترات في المدى مغطّاة بالفعل.
+                      </p>
+                    ) : (
+                      <ul className="space-y-1 max-h-56 overflow-y-auto">
+                        {genPreview.toCreate.slice(0, 100).map((v) => (
+                          <li key={v.id}
+                            className="flex items-baseline justify-between gap-3 text-xs py-1 border-b border-slate-50 dark:border-slate-800/60">
+                            <span className="text-slate-700 dark:text-slate-300 min-w-0 truncate">{v.templateName}</span>
+                            <span className="tabular-nums text-slate-500 dark:text-slate-400 shrink-0">
+                              {v.dueDate} · {formatCurrency(v.amount)}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-2">
+                      مصاريف مستبعدة ({genPreview.skipped.length})
+                    </h4>
+                    {genPreview.skipped.length === 0 ? (
+                      <p className="text-xs text-slate-500 dark:text-slate-400">لا شيء.</p>
+                    ) : (
+                      <ul className="space-y-1 max-h-56 overflow-y-auto">
+                        {genPreview.skipped.map((s) => (
+                          <li key={s.id}
+                            className="flex items-baseline justify-between gap-3 text-xs py-1 border-b border-slate-50 dark:border-slate-800/60">
+                            <span className="text-slate-600 dark:text-slate-400 min-w-0 truncate">{s.name}</span>
+                            <span className="text-slate-500 dark:text-slate-400 shrink-0">{s.reason}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              )}
+            </Card>
 
             {/* ── ترحيل العمليات ─────────────────────────────────────
                 Posting is deliberate, not a side effect of saving a wash: an

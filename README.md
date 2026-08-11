@@ -44,7 +44,7 @@ summed directly into a report.
 | **المركز المالي** | Assets = Liabilities + Equity, CSV |
 | **المستندات الضريبية** | Simplified invoices with a sequential number and a Phase-1 QR, credit/debit notes, sequence-gap audit, CSV |
 | **الأصول الثابتة** | Register, straight-line schedules, monthly depreciation entries, disposal, CSV |
-| **إقفال الفترة** | Chart seeding, posting sweep, per-month preflight, close/reopen |
+| **إقفال الفترة** | Chart seeding, recurring-voucher generation, posting sweep, per-month preflight, close/reopen |
 
 ---
 
@@ -196,6 +196,41 @@ typed.
 
 ---
 
+## السندات الدورية — recurring expenses become documents
+
+A row in `monthly_expenses` with `recurrence: 'monthly'` is a **template**, not
+a document: "the rent is 5,000 a month, due on the 5th". It has no date, so
+nothing can post it and no VAT claim can be dated to it.
+
+**إقفال الفترة → سندات المصاريف المتكررة** generates one dated voucher per
+template per month. After that, everything downstream stops special-casing
+recurrence — the ledger posts it like any other expense, the VAT report claims
+it in the quarter it falls in, and the income statement charges it to its own
+month.
+
+- **Idempotency is structural.** The voucher's document id is
+  `<templateId>__<periodKey>`, so generating twice writes the same document.
+  No counter to race, no "already generated" flag a failed write could leave
+  wrong, and a half-finished sweep is resumed by running it again.
+- **Preview before create.** Nothing is written until the range is scanned and
+  the list shown, and every skipped template says why.
+- **Due dates are clamped to the month** — a template due "on the 31st" gives
+  28 February (29 in a leap year), never `2026-02-31`.
+- **Amounts are copied, not referenced.** Raising the rent next year must not
+  restate last year's vouchers.
+- **An unpaid voucher credits الموردون**, not cash — the whole point of dating
+  it is that the liability exists whether or not it is settled.
+- **A posted voucher is frozen**, and a voucher is cancelled (with a reason)
+  rather than deleted: a gap in a monthly series is itself information.
+- **Double-count guard.** Once a template has vouchers, the VAT report drops
+  the template and counts the vouchers — otherwise the same tax would be
+  claimed twice, once as a real document and once as a ×N estimate.
+
+Optional `start_period` / `end_period` fields bound a template's life; a row
+without them is open-ended, which is how every existing row behaves.
+
+---
+
 ## Setup
 
 ```bash
@@ -258,8 +293,9 @@ backlog: `إقفال الفترة → فحص غير المُرحّل`, then `ت�
 - Posting is sequential (the entry-number counter is one document), and a
   failure on one record is reported without stranding the rest.
 
-Order of operations for a first migration: seed the chart → run the sweep →
-check **ميزان المراجعة** is balanced → close the oldest completed month.
+Order of operations for a first migration: seed the chart → generate the
+recurring vouchers for the months you are bringing in → run the sweep → check
+**ميزان المراجعة** is balanced → close the oldest completed month.
 
 ---
 

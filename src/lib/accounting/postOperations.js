@@ -33,12 +33,14 @@ import { fetchPeriods } from './firestoreLedger';
  */
 export async function collectUnposted({ vatRegistered = true, washPriceMode = 'inclusive' } = {}) {
   const [
-    entries, periods, washes, monthly, variable, annualEntries, startupEntries, payments, partners, temps,
+    entries, periods, washes, monthly, variable, annualEntries, startupEntries,
+    payments, partners, temps, vouchers,
   ] = await Promise.all([
     fetchEntries(), fetchPeriods(),
     fetchRows('washes'), fetchRows('monthly_expenses'), fetchRows('variable_expenses'),
     fetchRows('annual_expense_entries'), fetchRows('startup_cost_entries'),
     fetchRows('partner_payments'), fetchRows('partners'), fetchRows('temporary_expenses'),
+    fetchRows('expense_vouchers'),
   ]);
   const periodIndex = indexPeriods(periods);
   const partnerById = new Map(partners.map((p) => [p.id, p]));
@@ -91,15 +93,40 @@ export async function collectUnposted({ vatRegistered = true, washPriceMode = 'i
     for (const r of rows) {
       const e = toExpense(r);
       // A recurring monthly template has no single spend date — it is not a
-      // document, so there is nothing to post. Its per-period invoices are.
+      // document, so there is nothing to post. Its per-period vouchers are,
+      // and they come through the pass below.
       if (kind === 'monthly' && !e.date) {
-        skipped.push({ kind, label: e.description || '', reason: 'مصروف متكرر بلا تاريخ — يحتاج سنداً مؤرخاً لكل فترة' });
+        skipped.push({
+          kind, label: e.description || '',
+          reason: 'مصروف متكرر بلا تاريخ — ولّد سنداً مؤرخاً لكل فترة',
+        });
         continue;
       }
       consider(kind, 'expense', r.id, e.date,
         () => buildExpenseEntry(e, { expenseAccount: expenseAccountFor(kind), vatRegistered }),
         `${e.description || 'مصروف'} — ${e.date || ''}`);
     }
+  }
+
+  // ── سندات المصاريف المتكررة ───────────────────────────────────────────
+  // Generated from a monthly template, one per period, each with a real due
+  // date — which is what makes a recurring cost postable at all.
+  for (const v of vouchers) {
+    const label = `${v.templateName || 'مصروف شهري'} — ${v.periodKey || ''}`;
+    if (v.status === 'cancelled') {
+      skipped.push({ kind: 'voucher', label, reason: 'سند ملغى' });
+      continue;
+    }
+    consider('voucher', 'expense', v.id, v.dueDate, () => buildExpenseEntry({
+      id: v.id, description: `${v.templateName || 'مصروف شهري'} — ${v.periodKey}`,
+      amount: v.amount, date: v.dueDate,
+      isTaxInvoice: v.isTaxInvoice, invoiceUrl: v.invoiceUrl,
+      paymentMethod: v.paymentMethod || 'cash',
+      // An unpaid voucher credits the supplier, not cash — the whole point of
+      // dating it is that the liability exists whether or not it is settled.
+      paymentStatus: v.paymentStatus === 'paid' ? 'paid' : 'unpaid',
+      supplier: v.supplier, vatDeductible: v.vatDeductible,
+    }, { expenseAccount: expenseAccountFor('monthly'), vatRegistered }), label);
   }
 
   // ── دفعات الشركاء ─────────────────────────────────────────────────────

@@ -30,6 +30,11 @@ import { useFirestoreQuery } from './useFirestoreQuery';
  *     single date, so it carries `recurring: true` and an empty date. The
  *     report treats those as claimable in whichever period is selected,
  *     which is what a monthly VAT return actually does.
+ *
+ * Once a recurring template has generated dated VOUCHERS, those vouchers are
+ * the documents and the template drops out — same double-count guard as the
+ * startup one, for the same reason: a real dated document and a ×N estimate
+ * of the same cost must never both be claimed.
  */
 export function useTaxInvoices() {
   const startupQ = useFirestoreQuery(
@@ -65,6 +70,13 @@ export function useTaxInvoices() {
     { enabled: isFirebaseConfigured, map: mapMonthlyExpense, fallback: [] },
   );
 
+  // Dated vouchers generated from the recurring templates. Once a template
+  // has vouchers, they are the documents — see the double-count guard below.
+  const vouchersQ = useFirestoreQuery(
+    () => fetchRows('expense_vouchers'),
+    { enabled: isFirebaseConfigured, fallback: [] },
+  );
+
   const invoices = useMemo(() => {
     const startup = (startupQ.data || []).map((e) => ({
       ...e, source: 'startup', parentId: e.startupCostId,
@@ -72,19 +84,42 @@ export function useTaxInvoices() {
     const annual = (annualQ.data || []).map((e) => ({
       ...e, source: 'annual', parentId: e.annualExpenseId,
     }));
-    const monthly = (monthlyQ.data || []).map((m) => ({
-      id:          m.id,
-      description: m.expenseName,
-      amount:      m.totalMonthlyCost,
-      spentDate:   m.recurrence === 'one_time' ? (m.loggedDate || '') : '',
-      notes:       '',
-      invoiceUrl:  m.invoiceUrl,
-      isTaxInvoice: true,
-      createdAt:   m.loggedDate || '',
-      source:      'monthly',
-      parentId:    m.id,
-      recurring:   m.recurrence !== 'one_time',
-    }));
+    // Monthly expenses: DOUBLE-COUNT GUARD, the same shape as the startup one
+    // below. A template that has generated dated vouchers is represented by
+    // those vouchers; counting the template as well would claim the same tax
+    // twice — once as a real document and once as a ×N estimate.
+    const voucherRows = (vouchersQ.data || []).filter((v) => v.status !== 'cancelled');
+    const voucheredTemplates = new Set(voucherRows.map((v) => String(v.templateId)));
+    const monthly = (monthlyQ.data || [])
+      .filter((m) => !voucheredTemplates.has(String(m.id)))
+      .map((m) => ({
+        id:          m.id,
+        description: m.expenseName,
+        amount:      m.totalMonthlyCost,
+        spentDate:   m.recurrence === 'one_time' ? (m.loggedDate || '') : '',
+        notes:       '',
+        invoiceUrl:  m.invoiceUrl,
+        isTaxInvoice: true,
+        createdAt:   m.loggedDate || '',
+        source:      'monthly',
+        parentId:    m.id,
+        recurring:   m.recurrence !== 'one_time',
+      }));
+    // Each voucher IS a dated document, so it needs no recurrence estimate.
+    const vouchers = voucherRows
+      .filter((v) => v.isTaxInvoice)
+      .map((v) => ({
+        id:           v.id,
+        description:  `${v.templateName || 'مصروف شهري'} — ${v.periodKey}`,
+        amount:       Number(v.amount) || 0,
+        spentDate:    v.dueDate || '',
+        notes:        '',
+        invoiceUrl:   v.invoiceUrl || '',
+        isTaxInvoice: true,
+        createdAt:    v.generatedAtIso || v.dueDate || '',
+        source:       'monthly',
+        parentId:     v.templateId,
+      }));
     // Variable expenses are one-off logged events, so they always carry a
     // real spend date — no recurring special case needed.
     const variable = (variableQ.data || []).map((v) => ({
@@ -120,14 +155,16 @@ export function useTaxInvoices() {
         source:       'startup',
         parentId:     i.id,
       }));
-    return [...startup, ...startupItems, ...annual, ...monthly, ...variable].sort((a, b) => {
-      const byDate = String(b.spentDate).localeCompare(String(a.spentDate));
-      return byDate !== 0 ? byDate : String(b.createdAt).localeCompare(String(a.createdAt));
-    });
-  }, [startupQ.data, startupItemsQ.data, ledgerParentsQ.data, annualQ.data, monthlyQ.data, variableQ.data]);
+    return [...startup, ...startupItems, ...annual, ...monthly, ...vouchers, ...variable]
+      .sort((a, b) => {
+        const byDate = String(b.spentDate).localeCompare(String(a.spentDate));
+        return byDate !== 0 ? byDate : String(b.createdAt).localeCompare(String(a.createdAt));
+      });
+  }, [startupQ.data, startupItemsQ.data, ledgerParentsQ.data, annualQ.data,
+    monthlyQ.data, vouchersQ.data, variableQ.data]);
 
   const loading = startupQ.loading || startupItemsQ.loading || annualQ.loading
-    || monthlyQ.loading || variableQ.loading;
+    || monthlyQ.loading || vouchersQ.loading || variableQ.loading;
   // Page-level error only when EVERY source failed; a single failed source
   // gets a compact per-source note while the healthy ones keep rendering.
   const error = (startupQ.error && annualQ.error && monthlyQ.error && variableQ.error)
@@ -140,7 +177,7 @@ export function useTaxInvoices() {
   };
   const refetch = () => {
     startupQ.refetch(); startupItemsQ.refetch(); ledgerParentsQ.refetch();
-    annualQ.refetch(); monthlyQ.refetch(); variableQ.refetch();
+    annualQ.refetch(); monthlyQ.refetch(); vouchersQ.refetch(); variableQ.refetch();
   };
 
   return { invoices, loading, error, sourceErrors, refetch };

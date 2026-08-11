@@ -27,3 +27,8 @@ dist-ssr
 android/keystore.properties
 *.keystore
 *.jks
+
+# Firebase emulator artifacts
+firestore-debug.log
+firebase-debug.log
+.firebase/

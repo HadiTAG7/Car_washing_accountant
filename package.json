@@ -8,8 +8,10 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "vitest run --exclude \"**/*.emulator.test.js\"",
+    "test:watch": "vitest",
+    "test:emulator": "firebase emulators:exec --only firestore --project demo-sweater --config firebase.test.json \"vitest run --testTimeout=120000 ledger.emulator\"",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-sweater --config firebase.test.json \"vitest run --testTimeout=120000 rules.emulator\""
   },
   "dependencies": {
     "@capacitor/android": "^8.4.2",
@@ -21,6 +23,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
+    "@firebase/rules-unit-testing": "^5.0.1",
     "@tailwindcss/vite": "^4.2.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
@@ -28,6 +31,7 @@
     "eslint": "^9.39.4",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
+    "firebase-tools": "^15.26.0",
     "globals": "^17.4.0",
     "lucide-react": "^1.8.0",
     "recharts": "^3.8.1",

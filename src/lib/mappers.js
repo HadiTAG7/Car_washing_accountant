@@ -20,9 +20,18 @@ export function mapStartupCost(row) {
     plannedAmount: Number(row.budgeted_amount) || 0,
     actualAmount:  Number(row.actual_amount)   || 0,
     status:        row.status === 'completed' ? 'completed' : 'in_progress',
+    // VAT recovery for items whose spend is entered INLINE. Items managed
+    // by the sub-ledger record VAT per entry instead — counting both would
+    // double the reclaim, so the report ignores the parent flag for them.
+    isTaxInvoice:  Boolean(row.is_tax_invoice),
+    invoiceUrl:    row.invoice_url || '',
+    createdAt:     row.created_at || '',
   };
 }
-export function toStartupCostInsert({ category, itemName, quantity, plannedAmount, actualAmount, status }) {
+export function toStartupCostInsert({
+  category, itemName, quantity, plannedAmount, actualAmount, status,
+  isTaxInvoice, invoiceUrl,
+}) {
   return {
     category,
     item_name:       itemName,
@@ -30,6 +39,8 @@ export function toStartupCostInsert({ category, itemName, quantity, plannedAmoun
     budgeted_amount: Math.max(0, Number(plannedAmount) || 0),
     actual_amount:   Math.max(0, Number(actualAmount)  || 0),
     status:          status === 'completed' ? 'completed' : 'in_progress',
+    is_tax_invoice:  Boolean(isTaxInvoice),
+    invoice_url:     invoiceUrl && String(invoiceUrl).trim() ? String(invoiceUrl).trim() : null,
   };
 }
 export function toStartupCostUpdate(updates = {}) {
@@ -40,6 +51,11 @@ export function toStartupCostUpdate(updates = {}) {
   if (updates.plannedAmount !== undefined) payload.budgeted_amount = Math.max(0, Number(updates.plannedAmount) || 0);
   if (updates.actualAmount  !== undefined) payload.actual_amount   = Math.max(0, Number(updates.actualAmount)  || 0);
   if (updates.status        !== undefined) payload.status          = updates.status === 'completed' ? 'completed' : 'in_progress';
+  if (updates.isTaxInvoice  !== undefined) payload.is_tax_invoice  = Boolean(updates.isTaxInvoice);
+  if (updates.invoiceUrl    !== undefined) {
+    const u = String(updates.invoiceUrl || '').trim();
+    payload.invoice_url = u ? u : null;
+  }
   return payload;
 }
 

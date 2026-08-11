@@ -1,8 +1,16 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
-  Plus, Trash2, Pencil, Wallet, Receipt, Scale, FileText,
+  Plus, Trash2, Pencil, Wallet, Receipt, Scale, FileText, Percent, Link as LinkIcon,
 } from 'lucide-react';
-import { formatCurrency, formatNumber } from '../data/initialData';
+import {
+  formatCurrency, formatCurrencyPrecise, formatNumber, extractVat,
+} from '../data/initialData';
+
+// Only http(s) values become clickable — same guard the ledger and the VAT
+// report use, so a pasted `javascript:` URL can never become a live anchor.
+function isSafeHttpUrl(value) {
+  return /^https?:\/\//i.test(String(value || '').trim());
+}
 import TopBar from './TopBar';
 import {
   Card, SectionHeader, StatCard, PrimaryButton,
@@ -331,6 +339,30 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
                           {qty > 1 && (
                             <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 tabular-nums">
                               الكمية: {formatNumber(qty)} | سعر الوحدة: {formatCurrency(unitPlanned)}
+                            </div>
+                          )}
+                          {/* Item-level tax invoice. Ledger-managed items carry
+                              their VAT on the entries instead, so the chip is
+                              suppressed for them — matching what the report
+                              actually counts. */}
+                          {i.isTaxInvoice && !ledgerManagedIds.has(i.id) && i.actualAmount > 0 && (
+                            <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-100 dark:border-emerald-500/30 px-2 py-0.5 rounded-full tabular-nums">
+                                <Percent size={11} />
+                                ض.ق.م: {formatCurrencyPrecise(extractVat(i.actualAmount) * scalingFactor)}
+                              </span>
+                              {i.invoiceUrl && isSafeHttpUrl(i.invoiceUrl) && (
+                                <a
+                                  href={i.invoiceUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  title={i.invoiceUrl}
+                                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary-700 dark:text-primary-300 hover:underline"
+                                >
+                                  <LinkIcon size={11} />
+                                  الفاتورة
+                                </a>
+                              )}
                             </div>
                           )}
                         </td>

@@ -29,4 +29,12 @@ export default defineConfig([
       ],
     },
   },
+  // Test files execute under Node (vitest), so they legitimately touch
+  // `process` and the vitest globals.
+  {
+    files: ['**/__tests__/**/*.js', '**/*.test.js'],
+    languageOptions: {
+      globals: { ...globals.node },
+    },
+  },
 ])

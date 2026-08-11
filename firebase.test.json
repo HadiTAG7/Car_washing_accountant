@@ -1,8 +1,31 @@
 {
-  "firestore": { "rules": "firestore.test.rules" },
+  "firestore": {
+    "rules": "firestore.test.rules"
+  },
   "emulators": {
-    "firestore": { "port": 8080 },
-    "ui": { "enabled": false },
-    "singleProjectMode": true
-  }
+    "firestore": {
+      "port": 8080
+    },
+    "ui": {
+      "enabled": false
+    },
+    "singleProjectMode": true,
+    "functions": {
+      "port": 5001
+    },
+    "auth": {
+      "port": 9099
+    }
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "ledger",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "test"
+      ]
+    }
+  ]
 }

@@ -120,14 +120,15 @@ d('إصدار المستندات الضريبية على الخادم', () => {
         .rejects.toThrow(/تاريخ إصدار المستند غير صالح/);
       await expect(issue({ type: 'invoice', issueDate: '2026-08-11', lines: [] }))
         .rejects.toThrow(/بلا سطور/);
+      // A zero unit price is caught by the line check, which names the row.
       await expect(issue({
         type: 'invoice', issueDate: '2026-08-11',
         lines: [{ description: 'مجاني', quantity: 1, unitPrice: 0 }],
-      })).rejects.toThrow(/أكبر من صفر/);
+      })).rejects.toThrow(/السطر 1: سعر الوحدة/);
     });
 
     it('الإشعار يحتاج سبباً ومرجعاً', async () => {
-      await expect(issue({ type: 'credit_note', issueDate: '2026-08-11', lines: LINES, referenceNumber: 'INV-2026-000001' }))
+      await expect(issue({ type: 'credit_note', issueDate: '2026-08-11', lines: LINES, referenceDocumentId: 'x' }))
         .rejects.toThrow(/سبب الإشعار مطلوب/);
       await expect(issue({ type: 'credit_note', issueDate: '2026-08-11', lines: LINES, reason: 'إلغاء' }))
         .rejects.toThrow(/يشير إلى فاتورة/);
@@ -137,7 +138,7 @@ d('إصدار المستندات الضريبية على الخادم', () => {
       const inv = await issue({ type: 'invoice', issueDate: '2026-08-11', lines: LINES });
       const crn = await issue({
         type: 'credit_note', issueDate: '2026-08-20', lines: LINES,
-        reason: 'إلغاء', referenceNumber: inv.documentNumber,
+        reason: 'إلغاء', referenceDocumentId: inv.id,
       });
       const next = await issue({ type: 'invoice', issueDate: '2027-01-02', lines: LINES });
       expect(inv.documentNumber).toBe('INV-2026-000001');
@@ -201,6 +202,135 @@ d('إصدار المستندات الضريبية على الخادم', () => {
       const sumNet = Math.round(t.lines.reduce((s, l) => s + l.lineNet, 0) * 100) / 100;
       expect(sumNet).toBe(t.net);
       expect(Math.round((t.net + t.vat) * 100) / 100).toBe(t.gross);
+    });
+  });
+
+  // ═══ الإشعارات: المرجع يُقرأ ولا يُصدَّق ════════════════════════════
+  describe('الإشعار الدائن والمدين', () => {
+    const invoiceOf = () => issue({
+      type: 'invoice', issueDate: '2026-08-11',
+      lines: [{ description: 'غسلة', quantity: 4, unitPrice: 57.5 }],   // 230
+    });
+
+    it('يشتق رقم المرجع من المستند المقروء، لا من الحمولة', async () => {
+      const inv = await invoiceOf();
+      const note = await issue({
+        type: 'credit_note', issueDate: '2026-08-20', reason: 'إرجاع',
+        referenceDocumentId: inv.id,
+        // A forged number in the payload changes nothing.
+        referenceNumber: 'INV-1999-999999',
+        lines: [{ description: 'إرجاع', quantity: 1, unitPrice: 57.5 }],
+      });
+      const saved = (await db.collection(DOC_COL.DOCUMENTS).doc(note.id).get()).data();
+      expect(saved.referenceNumber).toBe(inv.documentNumber);
+      expect(saved.referenceNumber).not.toBe('INV-1999-999999');
+    }, 60_000);
+
+    it('يرفض مرجعاً وهمياً', async () => {
+      await expect(issue({
+        type: 'credit_note', issueDate: '2026-08-20', reason: 'إرجاع',
+        referenceDocumentId: 'لا-يوجد',
+        lines: [{ description: 'إرجاع', quantity: 1, unitPrice: 10 }],
+      })).rejects.toThrow(/الفاتورة المرجعية غير موجودة/);
+    });
+
+    it('ويرفض إشعاراً مقابل إشعار', async () => {
+      const inv = await invoiceOf();
+      const note = await issue({
+        type: 'credit_note', issueDate: '2026-08-20', reason: 'إرجاع',
+        referenceDocumentId: inv.id,
+        lines: [{ description: 'إرجاع', quantity: 1, unitPrice: 57.5 }],
+      });
+      await expect(issue({
+        type: 'credit_note', issueDate: '2026-08-21', reason: 'مرة أخرى',
+        referenceDocumentId: note.id,
+        lines: [{ description: 'إرجاع', quantity: 1, unitPrice: 10 }],
+      })).rejects.toThrow(/فاتورة فقط/);
+    }, 60_000);
+
+    // ── سياسة عدم التجاوز ──
+    it('يرفض إشعاراً دائناً أكبر من الفاتورة الأصلية', async () => {
+      const inv = await invoiceOf();                       // 230
+      await expect(issue({
+        type: 'credit_note', issueDate: '2026-08-20', reason: 'مبالغة',
+        referenceDocumentId: inv.id,
+        lines: [{ description: 'إرجاع', quantity: 10, unitPrice: 57.5 }],   // 575
+      })).rejects.toThrow(/يتجاوز المتبقي من الفاتورة/);
+      expect((await db.collection(DOC_COL.DOCUMENTS).get()).size).toBe(1);
+    }, 60_000);
+
+    it('ويجمع الإشعارات السابقة قبل الحكم', async () => {
+      const inv = await invoiceOf();                       // 230
+      await issue({
+        type: 'credit_note', issueDate: '2026-08-20', reason: 'جزئي',
+        referenceDocumentId: inv.id,
+        lines: [{ description: 'إرجاع', quantity: 2, unitPrice: 57.5 }],    // 115
+      });
+      // 115 remains: this one fits exactly…
+      await issue({
+        type: 'credit_note', issueDate: '2026-08-21', reason: 'الباقي',
+        referenceDocumentId: inv.id,
+        lines: [{ description: 'إرجاع', quantity: 2, unitPrice: 57.5 }],    // 115
+      });
+      // …and nothing is left for a third.
+      await expect(issue({
+        type: 'credit_note', issueDate: '2026-08-22', reason: 'زيادة',
+        referenceDocumentId: inv.id,
+        lines: [{ description: 'إرجاع', quantity: 1, unitPrice: 57.5 }],
+      })).rejects.toThrow(/يتجاوز المتبقي/);
+    }, 90_000);
+
+    it('الإشعار المدين لا يخضع للسقف — فهو يزيد الفاتورة لا يعكسها', async () => {
+      const inv = await invoiceOf();
+      const debit = await issue({
+        type: 'debit_note', issueDate: '2026-08-22', reason: 'فرق سعر',
+        referenceDocumentId: inv.id,
+        lines: [{ description: 'فرق', quantity: 20, unitPrice: 57.5 }],
+      });
+      expect(debit.documentNumber).toBe('DBN-2026-000001');
+    }, 60_000);
+  });
+
+  // ═══ سطور مسمومة ════════════════════════════════════════════════════
+  // `Number(x) || 0` turns NaN into 0 and passes Infinity straight through, so
+  // these would have produced a document totalling Infinity — or one silently
+  // worth nothing.
+  describe('قيم السطور غير الصالحة', () => {
+    const bad = (line) => issue({ type: 'invoice', issueDate: '2026-08-11', lines: [line] });
+
+    it('يرفض Infinity في الكمية أو السعر', async () => {
+      await expect(bad({ description: 'x', quantity: Infinity, unitPrice: 10 }))
+        .rejects.toThrow(/الكمية يجب أن تكون رقماً موجباً/);
+      await expect(bad({ description: 'x', quantity: 1, unitPrice: Infinity }))
+        .rejects.toThrow(/سعر الوحدة يجب أن يكون رقماً موجباً/);
+    });
+
+    it('ويرفض NaN وغير الرقمي', async () => {
+      await expect(bad({ description: 'x', quantity: NaN, unitPrice: 10 }))
+        .rejects.toThrow(/الكمية/);
+      await expect(bad({ description: 'x', quantity: 'كثير', unitPrice: 10 }))
+        .rejects.toThrow(/الكمية/);
+      await expect(bad({ description: 'x', quantity: 1, unitPrice: null }))
+        .rejects.toThrow(/سعر الوحدة/);
+    });
+
+    it('ويرفض السالب والصفر', async () => {
+      await expect(bad({ description: 'x', quantity: -1, unitPrice: 10 }))
+        .rejects.toThrow(/الكمية/);
+      await expect(bad({ description: 'x', quantity: 1, unitPrice: -10 }))
+        .rejects.toThrow(/سعر الوحدة/);
+    });
+
+    it('ويرفض وصفاً فارغاً', async () => {
+      await expect(bad({ description: '   ', quantity: 1, unitPrice: 10 }))
+        .rejects.toThrow(/الوصف مطلوب/);
+    });
+
+    it('ولا يترك أي أثر — لا مستند ولا رقم مستهلك', async () => {
+      await expect(bad({ description: 'x', quantity: 1e308, unitPrice: 1e308 }))
+        .rejects.toThrow();
+      expect((await db.collection(DOC_COL.DOCUMENTS).get()).size).toBe(0);
+      expect((await db.collection(DOC_COL.COUNTERS).doc('documents-invoice-2026').get()).exists).toBe(false);
     });
   });
 });

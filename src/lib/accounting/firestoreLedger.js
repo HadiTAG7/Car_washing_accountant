@@ -230,11 +230,27 @@ export async function fetchLedgerBundle() {
   return { accounts, entries, lines, periods };
 }
 
-/** True when the source record already has a posted (non-reversed) entry. */
-export function hasPostedEntryFor(entries, sourceType, sourceId) {
-  return (entries || []).some(
-    (e) => e.sourceType === sourceType && e.sourceId === sourceId && e.status === 'posted',
-  );
+/**
+ * True when the source record already has a posted (non-reversed) entry.
+ *
+ * Identity is the KIND plus the id, not the accounting source type: five
+ * collections post with `sourceType: 'expense'`, so a monthly expense and a
+ * variable expense sharing a document id would have masked each other — the
+ * first posted would make the second look already-done, and it would never
+ * reach the books.
+ *
+ * Entries written before `sourceKind` existed carry only `sourceType`, so
+ * those fall back to the old comparison. That fallback is deliberately narrow:
+ * it applies only when the stored entry has no kind of its own.
+ */
+export function hasPostedEntryFor(entries, kind, sourceId, sourceType = null) {
+  const id = String(sourceId ?? '');
+  return (entries || []).some((e) => {
+    if (e.status !== 'posted' || String(e.sourceId ?? '') !== id) return false;
+    if (e.sourceKind) return e.sourceKind === kind;
+    // Legacy entry: the best it can say is its source type.
+    return e.sourceType === (sourceType || kind);
+  });
 }
 
 export { periodKeyOf };

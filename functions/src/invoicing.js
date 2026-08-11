@@ -46,6 +46,32 @@ export const counterIdFor = (type, year) => `documents-${type}-${year}`;
 export const sourceClaimId = (sourceType, sourceId) => `${sourceType}__${sourceId}`;
 
 /**
+ * Validates the lines of a document. Returns Arabic problems; empty is good.
+ *
+ * `Number(x) || 0` silently turns Infinity into Infinity and NaN into 0, so a
+ * quantity of `1e999` would have produced a document whose total is `Infinity`
+ * and whose stored fields Firestore rejects halfway through a transaction.
+ * Every figure is checked for finiteness and positivity BEFORE any arithmetic.
+ */
+export function lineProblems(lines) {
+  const rows = Array.isArray(lines) ? lines : [];
+  if (rows.length === 0) return ['المستند بلا سطور.'];
+  const problems = [];
+  rows.forEach((l, i) => {
+    const n = i + 1;
+    if (!String(l?.description ?? '').trim()) problems.push(`السطر ${n}: الوصف مطلوب.`);
+    const q = Number(l?.quantity);
+    const p = Number(l?.unitPrice);
+    if (!Number.isFinite(q) || q <= 0) problems.push(`السطر ${n}: الكمية يجب أن تكون رقماً موجباً.`);
+    if (!Number.isFinite(p) || p <= 0) problems.push(`السطر ${n}: سعر الوحدة يجب أن يكون رقماً موجباً.`);
+    if (Number.isFinite(q) && Number.isFinite(p) && !Number.isFinite(q * p)) {
+      problems.push(`السطر ${n}: قيمة السطر خارج النطاق.`);
+    }
+  });
+  return problems;
+}
+
+/**
  * Totals a document from its LINES, per line.
  *
  * The sum of rounded lines, not a total rounded on its own: a reader adds the
@@ -123,16 +149,21 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
   const issueTime = /^\d{2}:\d{2}(:\d{2})?$/.test(String(input.issueTime || ''))
     ? String(input.issueTime).padEnd(8, ':00').slice(0, 8)
     : '00:00:00';
-  if (!Array.isArray(input.lines) || input.lines.length === 0) {
-    throw new InvoicingError('المستند بلا سطور.', { code: 'invalid-argument' });
-  }
+  const problems = lineProblems(input.lines);
+  if (problems.length) throw new InvoicingError(problems[0], { code: 'invalid-argument' });
+
   const reason = String(input.reason || '').trim();
   if (type !== 'invoice' && !reason) {
     throw new InvoicingError('سبب الإشعار مطلوب.', { code: 'invalid-argument' });
   }
-  const referenceNumber = input.referenceNumber ? String(input.referenceNumber) : null;
-  if (type !== 'invoice' && !referenceNumber) {
-    throw new InvoicingError('الإشعار يجب أن يشير إلى فاتورة.', { code: 'invalid-argument' });
+  // A note names the DOCUMENT it adjusts, not a number. `referenceNumber` from
+  // a caller is just a string: it could name an invoice that does not exist,
+  // or someone else's. The id is read inside the transaction and the number is
+  // derived from what was actually found.
+  const referenceDocumentId = input.referenceDocumentId
+    ? String(input.referenceDocumentId).trim() : '';
+  if (type !== 'invoice' && !referenceDocumentId) {
+    throw new InvoicingError('الإشعار يجب أن يشير إلى فاتورة قائمة.', { code: 'invalid-argument' });
   }
 
   const priceMode = input.priceMode === 'exclusive' ? 'exclusive' : 'inclusive';
@@ -148,10 +179,30 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
       ? db.collection(DOC_COL.SOURCES).doc(sourceClaimId(sourceType, sourceId))
       : null;
 
-    const [settingsSnap, counterSnap, claimSnap] = await Promise.all([
+    const referenceRef = referenceDocumentId
+      ? db.collection(DOC_COL.DOCUMENTS).doc(referenceDocumentId) : null;
+
+    const [settingsSnap, counterSnap, claimSnap, referenceSnap] = await Promise.all([
       tx.get(settingsRef), tx.get(counterRef),
       claimRef ? tx.get(claimRef) : Promise.resolve(null),
+      referenceRef ? tx.get(referenceRef) : Promise.resolve(null),
     ]);
+
+    // ── the reference, read rather than trusted ──
+    let referenceNumber = null;
+    let reference = null;
+    if (referenceRef) {
+      if (!referenceSnap.exists) {
+        throw new InvoicingError('الفاتورة المرجعية غير موجودة.', { code: 'not-found' });
+      }
+      reference = referenceSnap.data();
+      if (reference.type !== 'invoice') {
+        throw new InvoicingError('الإشعار يصدر مقابل فاتورة فقط.', { code: 'invalid-argument' });
+      }
+      // Derived from the document that was found, so a forged
+      // `referenceNumber` in the payload changes nothing.
+      referenceNumber = reference.documentNumber;
+    }
 
     if (claimSnap?.exists) {
       const prev = claimSnap.data();
@@ -172,8 +223,35 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
     const taxable = Boolean(company.vatRegistered && company.vatNumber);
 
     const totals = totalsFromLines(input.lines, { priceMode, taxable });
-    if (!(totals.gross > 0)) {
+    if (!Number.isFinite(totals.gross) || !(totals.gross > 0)) {
       throw new InvoicingError('إجمالي المستند يجب أن يكون أكبر من صفر.', { code: 'invalid-argument' });
+    }
+
+    // ── سياسة عدم تجاوز الأصل ──
+    // A credit note reverses part or all of an invoice, so the credits
+    // against one invoice cannot exceed it. Letting them would turn a
+    // correction into a negative sale — output tax reclaimed on revenue that
+    // was never earned. The check reads what has already been credited rather
+    // than trusting a running total on the invoice.
+    if (type === 'credit_note' && reference) {
+      const priorSnap = await tx.get(
+        db.collection(DOC_COL.DOCUMENTS)
+          .where('type', '==', 'credit_note')
+          .where('referenceNumber', '==', referenceNumber),
+      );
+      const alreadyCredited = priorSnap.docs
+        .filter((x) => x.data().status !== 'cancelled')
+        .reduce((sum, x) => sum + (Number(x.data().gross) || 0), 0);
+      const invoiceGross = Number(reference.gross) || 0;
+      const remaining = round2(invoiceGross - alreadyCredited);
+      if (totals.gross > remaining + 0.005) {
+        throw new InvoicingError(
+          `الإشعار الدائن (${totals.gross.toFixed(2)}) يتجاوز المتبقي من الفاتورة `
+          + `${referenceNumber} (${remaining.toFixed(2)} من ${invoiceGross.toFixed(2)}). `
+          + 'الإشعار يعكس الفاتورة ولا يزيد عليها.',
+          { code: 'failed-precondition' },
+        );
+      }
     }
 
     const timestamp = `${issueDate}T${issueTime}`;

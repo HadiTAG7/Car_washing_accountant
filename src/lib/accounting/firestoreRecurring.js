@@ -101,7 +101,10 @@ export async function generateVouchers({ from, through, userId = null }) {
 /** True when this voucher has already been carried into the ledger. */
 async function isPosted(id) {
   const entries = await fetchEntries();
-  return entries.some((e) => e.sourceType === 'expense' && e.sourceId === id && e.status === 'posted');
+  // Vouchers post with kind 'voucher'; entries written before the kind
+  // existed carry only `sourceType: 'expense'`.
+  return entries.some((e) => e.status === 'posted' && e.sourceId === id
+    && (e.sourceKind ? e.sourceKind === 'voucher' : e.sourceType === 'expense'));
 }
 
 /** Marks a voucher paid (or back to pending) — the ledger side is separate. */
@@ -155,7 +158,8 @@ export async function fetchVoucherBundle() {
     fetchVouchers(), fetchTemplates(), fetchEntries(),
   ]);
   const postedIds = new Set(
-    entries.filter((e) => e.sourceType === 'expense' && e.status === 'posted')
+    entries.filter((e) => e.status === 'posted'
+      && (e.sourceKind ? e.sourceKind === 'voucher' : e.sourceType === 'expense'))
       .map((e) => String(e.sourceId)),
   );
   return {

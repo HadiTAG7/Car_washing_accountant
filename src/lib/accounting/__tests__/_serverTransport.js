@@ -49,11 +49,12 @@ export function useServerTransport(projectId = clientApp?.options?.projectId || 
         const sourceType = ['manual', 'adjustment', 'opening', 'depreciation', 'disposal']
           .includes(requested) ? requested : 'manual';
         const keepsSourceId = sourceType === 'depreciation' || sourceType === 'disposal';
+        const sourceId = String(payload.entry?.sourceId ?? '').trim();
+        if (keepsSourceId && !sourceId) {
+          throw new Error('قيد الإهلاك أو الاستبعاد يحتاج معرّف مصدر — بدونه يمكن تكراره.');
+        }
         return postEntry(adb, FieldValue, {
-          entry: {
-            ...payload.entry, sourceType,
-            sourceId: keepsSourceId ? payload.entry?.sourceId ?? null : null,
-          },
+          entry: { ...payload.entry, sourceType, sourceId: keepsSourceId ? sourceId : null },
           lines: payload.lines,
         }, { userId: uid, lockKind: keepsSourceId ? sourceType : null });
       }

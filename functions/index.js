@@ -133,12 +133,21 @@ export const ledgerPostManual = onCall(OPTS, async (req) => {
   // Only the period-end kinds carry a source id, and it is what keeps a month
   // from being depreciated twice.
   const keepsSourceId = sourceType === 'depreciation' || sourceType === 'disposal';
+  const sourceId = String(req.data?.entry?.sourceId ?? '').trim();
+  // A period-end entry's whole idempotency rests on its source id — the
+  // period key for a depreciation charge, the asset id for a disposal. Without
+  // one there is no lock, so the same month could be depreciated again and
+  // again. Refused BEFORE anything is written.
+  if (keepsSourceId && !sourceId) {
+    throw new HttpsError('invalid-argument',
+      'قيد الإهلاك أو الاستبعاد يحتاج معرّف مصدر — بدونه يمكن تكراره.');
+  }
   try {
     return await postEntry(db, FieldValue, {
       entry: {
         ...req.data?.entry,
         sourceType,
-        sourceId: keepsSourceId ? req.data?.entry?.sourceId ?? null : null,
+        sourceId: keepsSourceId ? sourceId : null,
       },
       lines: req.data?.lines,
     }, { userId: uid, lockKind: keepsSourceId ? sourceType : null });

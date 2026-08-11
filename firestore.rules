@@ -57,8 +57,22 @@ service cloud.firestore {
     // A source record whose posting lock exists is IN THE BOOKS. The lock is
     // written by the posting transaction, so it is committed before any later
     // attempt to edit the record it protects.
-    function notPosted(sourceType, id) {
-      return !exists(/databases/$(database)/documents/posting_locks/$(sourceType + '__' + id));
+    //
+    // Locks are keyed on the record's KIND (`monthly__x`, `variable__x`, …).
+    // They used to be keyed on the accounting source type, which put five
+    // different expense collections in one `expense__x` namespace. Entries
+    // posted before that change still carry the old id, so a record is only
+    // free when NEITHER key exists — checking just one would leave every
+    // expense posted since the change editable, or every expense posted
+    // before it.
+    function notLocked(kind, id) {
+      return !exists(/databases/$(database)/documents/posting_locks/$(kind + '__' + id));
+    }
+    function notPosted(kind, id) {
+      return notLocked(kind, id);
+    }
+    function notPostedExpense(kind, id) {
+      return notLocked(kind, id) && notLocked('expense', id);
     }
 
     // ── دليل الحسابات ────────────────────────────────────────────────
@@ -154,7 +168,12 @@ service cloud.firestore {
     // monthly series is itself information.
     match /expense_vouchers/{voucherId} {
       allow read:   if isMember();
-      allow create, update: if isAccountant();
+      allow create: if isAccountant();
+      // A voucher carried into the books is frozen like any other posted
+      // source: marking it paid or cancelling it after the fact would leave
+      // the entry describing something the voucher no longer says. Reverse
+      // the entry first — that releases the lock — then correct it.
+      allow update: if isAccountant() && notPostedExpense('voucher', voucherId);
       allow delete: if false;
     }
 
@@ -223,22 +242,22 @@ service cloud.firestore {
     match /monthly_expenses/{id} {
       allow read:   if isMember();
       allow create: if isOperator();
-      allow update, delete: if isOperator() && notPosted('expense', id);
+      allow update, delete: if isOperator() && notPostedExpense('monthly', id);
     }
     match /variable_expenses/{id} {
       allow read:   if isMember();
       allow create: if isOperator();
-      allow update, delete: if isOperator() && notPosted('expense', id);
+      allow update, delete: if isOperator() && notPostedExpense('variable', id);
     }
     match /annual_expense_entries/{id} {
       allow read:   if isMember();
       allow create: if isOperator();
-      allow update, delete: if isOperator() && notPosted('expense', id);
+      allow update, delete: if isOperator() && notPostedExpense('annual', id);
     }
     match /startup_cost_entries/{id} {
       allow read:   if isMember();
       allow create: if isOperator();
-      allow update, delete: if isOperator() && notPosted('expense', id);
+      allow update, delete: if isOperator() && notPostedExpense('startup', id);
     }
     // An advance produces two entries — the outlay and its recovery — so both
     // locks have to be clear before the row may change.

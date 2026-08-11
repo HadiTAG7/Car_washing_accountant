@@ -26,7 +26,7 @@ const RANGE = { from: '2026-01', through: '2026-03' };
 async function wipe() {
   for (const c of ['chart_of_accounts', 'journal_entries', 'journal_lines',
     'accounting_periods', 'audit_logs', 'counters', 'posting_locks',
-    'monthly_expenses', 'expense_vouchers']) {
+    'monthly_expenses', 'variable_expenses', 'expense_vouchers']) {
     const snap = await getDocs(collection(db, c));
     await Promise.all(snap.docs.map((s) => deleteDoc(s.ref)));
   }
@@ -188,4 +188,36 @@ d('السندات الدورية على Firestore الحقيقي', () => {
     expect(scan.ready.filter((r) => String(r.sourceId).endsWith('2026-01'))).toHaveLength(0);
     expect(scan.skipped.some((s) => s.reason === 'الفترة 2026-01 مقفلة')).toBe(true);
   }, 120_000);
+
+  // Five collections post with `sourceType: 'expense'`. Before the kind was
+  // recorded on the entry, whichever posted first made the other look
+  // already-done — and it would never have reached the books.
+  it('مصروف شهري ومتغيّر بنفس المعرّف: كلاهما غير مُرحّل، ثم كلٌّ مرة واحدة', async () => {
+    await setDoc(doc(db, 'monthly_expenses', 'same-id'), {
+      expense_name: 'إيجار', total_monthly_cost: 1150,
+      logged_date: '2026-01-05', payment_status: 'paid',
+    });
+    await setDoc(doc(db, 'variable_expenses', 'same-id'), {
+      expense_name: 'مواد', total_variable_cost: 230, logged_date: '2026-01-06',
+    });
+
+    const before = await ops.collectUnposted();
+    const ready = before.ready.filter((r) => r.sourceId === 'same-id');
+    expect(ready.map((r) => r.kind).sort()).toEqual(['monthly', 'variable']);
+
+    const posted = await ops.postUnposted();
+    expect(posted.failed).toEqual([]);
+    const entries = await ledger.fetchEntries();
+    const forId = entries.filter((e) => e.sourceId === 'same-id');
+    expect(forId).toHaveLength(2);
+    expect(forId.map((e) => e.sourceKind).sort()).toEqual(['monthly', 'variable']);
+    // 1150 inclusive → 1000 net on 5200; 230 → 200 net on 5100.
+    expect(forId.find((e) => e.sourceKind === 'monthly').totalDebit).toBe(1150);
+    expect(forId.find((e) => e.sourceKind === 'variable').totalDebit).toBe(230);
+
+    // And a second sweep adds nothing: each is now individually locked.
+    const again = await ops.postUnposted();
+    expect(again.posted).toHaveLength(0);
+    expect((await ledger.fetchEntries()).filter((e) => e.sourceId === 'same-id')).toHaveLength(2);
+  }, 180_000);
 });

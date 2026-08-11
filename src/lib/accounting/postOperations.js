@@ -58,7 +58,9 @@ export async function collectUnposted() {
       return;
     }
     const sourceId = a.sourceId(row);
-    if (hasPostedEntryFor(entries, a.sourceType, sourceId)) {
+    // Identity is the KIND + id. `sourceType` is only the fallback for
+    // entries posted before the kind was recorded.
+    if (hasPostedEntryFor(entries, adapterKey, sourceId, a.sourceType)) {
       skipped.push({ kind, label, reason: 'مُرحّل مسبقاً' }); return;
     }
     const date = a.dateOf(row);

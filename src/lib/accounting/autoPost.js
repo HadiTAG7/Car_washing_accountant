@@ -92,7 +92,7 @@ export async function autoPost({ kind, id }) {
 
     const sourceId = a.sourceId(row);
     const [entries, periods] = await Promise.all([fetchEntries(), fetchPeriods()]);
-    if (hasPostedEntryFor(entries, a.sourceType, sourceId)) {
+    if (hasPostedEntryFor(entries, kind, sourceId, a.sourceType)) {
       // Not an error: the sweep or an earlier approval already did it.
       return { status: 'skipped', reason: 'مُرحّل مسبقاً.', blocking: false };
     }
@@ -137,7 +137,7 @@ export async function autoPostOnApproval({ kind, id, before, after, ...opts }) {
 export function editWarningFor(kind, record, entries) {
   const a = ADAPTERS[kind];
   if (!a || !record) return null;
-  if (!hasPostedEntryFor(entries || [], a.sourceType, a.sourceId(record))) return null;
+  if (!hasPostedEntryFor(entries || [], kind, a.sourceId(record), a.sourceType)) return null;
   return 'هذا السجل مُرحّل إلى الدفاتر. التعديل هنا لا يغيّر القيد المُرحّل — '
        + 'صحّح بقيد عكسي أو قيد تسوية من صفحة دفتر الأستاذ.';
 }

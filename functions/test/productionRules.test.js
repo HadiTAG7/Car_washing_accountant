@@ -43,8 +43,16 @@ const LINES = [{ description: 'غسلة خارجية', quantity: 2, unitPrice: 5
 
 const CHART = [
   { code: '1010', nameArabic: 'الصندوق', accountType: 'asset', normalBalance: 'debit', active: true },
+  { code: '1020', nameArabic: 'البنك', accountType: 'asset', normalBalance: 'debit', active: true },
+  { code: '1200', nameArabic: 'ضريبة مدخلات', accountType: 'asset', normalBalance: 'debit', active: true },
+  { code: '1300', nameArabic: 'عهد', accountType: 'asset', normalBalance: 'debit', active: true },
+  { code: '1500', nameArabic: 'أصول ثابتة', accountType: 'asset', normalBalance: 'debit', active: true },
+  { code: '2000', nameArabic: 'الموردون', accountType: 'liability', normalBalance: 'credit', active: true },
   { code: '2100', nameArabic: 'ضريبة مخرجات', accountType: 'liability', normalBalance: 'credit', active: true },
   { code: '4000', nameArabic: 'إيرادات', accountType: 'revenue', normalBalance: 'credit', active: true },
+  { code: '5100', nameArabic: 'مصروفات متغيرة', accountType: 'expense', normalBalance: 'debit', active: true },
+  { code: '5200', nameArabic: 'مصروفات شهرية', accountType: 'expense', normalBalance: 'debit', active: true },
+  { code: '5300', nameArabic: 'مصروفات إدارية', accountType: 'expense', normalBalance: 'debit', active: true },
 ];
 
 d('رحلة الإنتاج تحت firestore.rules الفعلية', () => {
@@ -172,4 +180,94 @@ d('رحلة الإنتاج تحت firestore.rules الفعلية', () => {
     expect((await adb.collection(COL.LOCKS).doc('wash__w1').get()).exists).toBe(false);
     await updateDoc(doc(ctx.op, 'washes', 'w1'), { price: 230 });
   }, 120_000);
+
+  // ═══ كل نوع مصروف على حدة — لا يكفي اختبار الغسلة ══════════════════
+  // The server writes `monthly__x`, `variable__x`, … while the rules used to
+  // check only `expense__x`. Every expense posted after that change was
+  // editable. One case per collection, because a single passing case for
+  // `wash` said nothing about the other five.
+  describe('كل مجموعة مصروف محميّة بقفلها الجديد', () => {
+    const CASES = [
+      ['monthly_expenses', 'monthly', { expense_name: 'إيجار', total_monthly_cost: 1150, logged_date: '2026-08-05', payment_status: 'paid' }],
+      ['variable_expenses', 'variable', { expense_name: 'مواد', total_variable_cost: 230, logged_date: '2026-08-06' }],
+      ['annual_expense_entries', 'annual', { description: 'ترخيص', amount: 1150, spent_date: '2026-08-07' }],
+      ['startup_cost_entries', 'startup', { description: 'معدات', amount: 2300, spent_date: '2026-08-08' }],
+    ];
+
+    for (const [coll, kind, row] of CASES) {
+      it(`${coll}: قابل للتعديل قبل الترحيل، محميّ بعده`, async () => {
+        await adb.collection(coll).doc('x1').set(row);
+        // Free while it is not in the books.
+        await updateDoc(doc(ctx.op, coll, 'x1'), { note: 'قبل' });
+
+        await postSource(adb, FieldValue, { kind, sourceId: 'x1' }, { userId: 'acct1' });
+        expect((await adb.collection(COL.LOCKS).doc(`${kind}__x1`).get()).exists).toBe(true);
+
+        // Now denied for every role — an entry is immutable, so its source
+        // must be too.
+        await assertFails(updateDoc(doc(ctx.op, coll, 'x1'), { note: 'بعد' }));
+        await assertFails(updateDoc(doc(ctx.acct, coll, 'x1'), { note: 'بعد' }));
+        await assertFails(updateDoc(doc(ctx.admin, coll, 'x1'), { note: 'بعد' }));
+        await assertFails(deleteDoc(doc(ctx.op, coll, 'x1')));
+        await assertFails(deleteDoc(doc(ctx.acct, coll, 'x1')));
+        await assertFails(deleteDoc(doc(ctx.admin, coll, 'x1')));
+      }, 120_000);
+
+      it(`${coll}: القفل القديم expense__<id> ما زال يحمي`, async () => {
+        await adb.collection(coll).doc('legacy1').set(row);
+        // A lock written before locks were keyed on the kind.
+        await adb.collection(COL.LOCKS).doc('expense__legacy1').set({
+          sourceType: 'expense', sourceId: 'legacy1', entryId: 'old', entryNumber: 3,
+        });
+        await assertFails(updateDoc(doc(ctx.op, coll, 'legacy1'), { note: 'x' }));
+        await assertFails(deleteDoc(doc(ctx.admin, coll, 'legacy1')));
+      }, 90_000);
+    }
+
+    it('السند الدوري المُرحَّل مُجمَّد، ولا يُحذف أبداً', async () => {
+      await adb.collection('expense_vouchers').doc('t1__2026-08').set({
+        templateId: 't1', templateName: 'إيجار', periodKey: '2026-08',
+        dueDate: '2026-08-05', amount: 1150, status: 'active', paymentStatus: 'pending',
+      });
+      // Editable before posting.
+      await updateDoc(doc(ctx.acct, 'expense_vouchers', 't1__2026-08'), { paymentStatus: 'paid' });
+
+      await postSource(adb, FieldValue, { kind: 'voucher', sourceId: 't1__2026-08' }, { userId: 'acct1' });
+
+      // Frozen after: marking it paid or cancelling it would leave the entry
+      // describing something the voucher no longer says.
+      await assertFails(updateDoc(doc(ctx.acct, 'expense_vouchers', 't1__2026-08'), { paymentStatus: 'pending' }));
+      await assertFails(updateDoc(doc(ctx.acct, 'expense_vouchers', 't1__2026-08'), {
+        status: 'cancelled', cancelReason: 'تراجع',
+      }));
+      await assertFails(deleteDoc(doc(ctx.admin, 'expense_vouchers', 't1__2026-08')));
+    }, 120_000);
+
+    it('العهدة واستردادها قفلان مستقلان', async () => {
+      await adb.collection('temporary_expenses').doc('t9').set({
+        title: 'عهدة', amount: 500, spent_date: '2026-08-03',
+        status: 'recovered', recovered_date: '2026-08-10', payment_method: 'cash',
+      });
+      await postSource(adb, FieldValue, { kind: 'temporary_expense', sourceId: 't9' }, { userId: 'acct1' });
+      await assertFails(updateDoc(doc(ctx.op, 'temporary_expenses', 't9'), { amount: 1 }));
+      // Both locks now exist and either alone is enough to protect the row.
+      await postSource(adb, FieldValue, { kind: 'recovery', sourceId: 't9' }, { userId: 'acct1' });
+      expect((await adb.collection(COL.LOCKS).doc('temporary_expense__t9').get()).exists).toBe(true);
+      expect((await adb.collection(COL.LOCKS).doc('recovery__t9').get()).exists).toBe(true);
+      await assertFails(deleteDoc(doc(ctx.admin, 'temporary_expenses', 't9')));
+    }, 120_000);
+
+    it('دفعة الشريك المُرحَّلة محميّة', async () => {
+      await adb.collection('chart_of_accounts').doc('3000-p1').set({
+        code: '3000-p1', nameArabic: 'رأس مال — شريك', accountType: 'equity',
+        normalBalance: 'credit', active: true,
+      });
+      await adb.collection('partner_payments').doc('pp9').set({
+        partner_id: 'p1', amount: 20000, payment_date: '2026-08-03', payment_method: 'transfer',
+      });
+      await postSource(adb, FieldValue, { kind: 'partner_payment', sourceId: 'pp9' }, { userId: 'acct1' });
+      await assertFails(updateDoc(doc(ctx.op, 'partner_payments', 'pp9'), { amount: 1 }));
+      await assertFails(deleteDoc(doc(ctx.admin, 'partner_payments', 'pp9')));
+    }, 120_000);
+  });
 });

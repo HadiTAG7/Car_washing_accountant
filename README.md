@@ -96,15 +96,24 @@ readable so pre-existing entries render, and is frozen against
 create/update/delete.
 
 ### A posted source record is locked
-The posting transaction writes `posting_locks/<sourceType>__<sourceId>`. The
-rules refuse update and delete on `washes`, `partner_payments`,
-`monthly_expenses`, `variable_expenses`, `annual_expense_entries`,
-`startup_cost_entries` and `temporary_expenses` while that lock exists — so a
-record in the books cannot be edited behind the ledger's back, whatever the UI
-does or does not render.
+The posting transaction writes `posting_locks/<kind>__<sourceId>` — keyed on
+the record's **kind**, because five collections post with
+`sourceType: 'expense'` and keying on the type put them all in one namespace.
+Entries written before that change carry `expense__<id>`, so the rules check
+**both** keys: checking only one would leave every expense posted since the
+change editable, or every expense posted before it.
 
-Reversing an entry releases the lock, which is what makes a legitimate
-correction possible: reverse, fix, re-post.
+The rules refuse update and delete on `washes`, `partner_payments`,
+`monthly_expenses`, `variable_expenses`, `annual_expense_entries`,
+`startup_cost_entries`, `temporary_expenses` and posted `expense_vouchers`
+while a lock exists — proven per collection, with the legacy key too, in
+`functions/test/productionRules.test.js`.
+
+The client identifies a posted source the same way: `sourceKind` + id, falling
+back to `sourceType` only for entries that predate the kind.
+
+Reversing an entry releases the lock — and only if the lock still names that
+entry, so reversing an older entry cannot unlock a record a newer one holds.
 
 ### Re-opening a closed period
 Closing is an accountant's call. **Re-opening needs an admin and a written
@@ -166,7 +175,7 @@ July by labelling it August — and rejects dates that do not exist
 | `ledgerReverseEntry` | accountant | builds the mirror **from the original's own lines**, links both, marks the original, releases the lock |
 | `ledgerClosePeriod` | accountant | re-reads the month and re-checks that every entry balances on its own |
 | `ledgerReopenPeriod` | **admin** | requires a written reason; audited |
-| `salesIssueDocument` | accountant | **recomputes the totals from the lines**, mints the number and sequence, takes the seller identity from settings |
+| `salesIssueDocument` | accountant | **recomputes the totals from the lines**, mints the number and sequence, takes the seller identity from settings; a note names `referenceDocumentId` and the reference number is **derived from the document read**, never from the payload |
 | `salesVoidDocument` | accountant | records the reason; the document is never removed |
 | `ledgerSeedChart` · `ledgerEnsureAccount` | accountant | idempotent chart setup |
 
@@ -483,6 +492,9 @@ recurring vouchers for the months you are bringing in → run the sweep → chec
   Firestore emulator: transaction atomicity, concurrent numbering, closed
   periods, reversals, one-invoice-per-source
 - `npm run test:rules` — drives `firestore.rules` itself through every role
+- `npm run test:callables` — the callables themselves, through the Functions
+  and Auth emulators with **real signed-in users**, so `callerRole`,
+  `requireAccountant` and `requirePostSource` are exercised rather than assumed
 - `npm run test:functions` — the trusted server: balance, derived periods,
   concurrent numbering, reversal integrity, invoice issuing, the role gate,
   a drift check between the client's preview validation and the server's

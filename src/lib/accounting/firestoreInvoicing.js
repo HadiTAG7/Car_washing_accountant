@@ -125,7 +125,9 @@ export async function issueDocument(document, _options = {}) {
       quantity: l.quantity,
       unitPrice: l.unitPrice,
     })),
-    referenceNumber: document.referenceNumber || null,
+    // The note names the DOCUMENT, not a number: the server reads it and
+    // derives the reference number from what it actually found.
+    referenceDocumentId: document.referenceDocumentId || null,
     reason: document.reason || null,
     sourceType: document.sourceType || null,
     sourceId: document.sourceId || null,
@@ -157,7 +159,9 @@ export async function issueCreditNoteFor(invoiceId, { issueDate, issueTime, line
   const note = buildCreditNote(invoice, { issueDate, issueTime, lines, reason });
   // A note is its own document with its own sequence; it must not inherit the
   // invoice's source claim or the claim would block the note.
-  return issueDocument({ ...note, sourceType: null, sourceId: null });
+  return issueDocument({
+    ...note, referenceDocumentId: invoiceId, sourceType: null, sourceId: null,
+  });
 }
 
 /** إشعار مدين — raises an already-issued invoice (an undercharge). */
@@ -167,7 +171,9 @@ export async function issueDebitNoteFor(invoiceId, { issueDate, issueTime, lines
   if (!invoice) throw new Error('الفاتورة غير موجودة.');
   if (invoice.type !== 'invoice') throw new Error('الإشعار المدين يصدر مقابل فاتورة فقط.');
   const note = buildDebitNote(invoice, { issueDate, issueTime, lines, reason });
-  return issueDocument({ ...note, sourceType: null, sourceId: null });
+  return issueDocument({
+    ...note, referenceDocumentId: invoiceId, sourceType: null, sourceId: null,
+  });
 }
 
 /**

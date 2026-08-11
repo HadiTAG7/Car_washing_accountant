@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronRight, ChevronLeft, Calendar as CalendarIcon } from 'lucide-react';
 
 /**
@@ -66,14 +66,16 @@ export default function DateField({
   const [viewM, setViewM] = useState(parsed?.mo ?? today.mo);
   const wrapRef  = useRef(null);
   const popupRef = useRef(null);
-  // How the panel is presented. An anchored popover is absolutely positioned,
-  // which the modal's `overflow-y-auto` clips once the panel is taller than
-  // the space left below the field — on a phone that hid the last week row
-  // and both footer actions. Below `sm` the panel is therefore a CENTRED
-  // SHEET: `position: fixed` is not clipped by an overflow ancestor (none of
-  // these modals establish a containing block), so it can never be cut off.
+  // The panel is ALWAYS `position: fixed`, never absolute. An absolutely
+  // positioned popover is laid out inside the host modal, so it gets clipped
+  // by that modal's scroll container and can even widen it into a horizontal
+  // scrollbar — which is exactly what happened when a date field sat near the
+  // left edge of the wide ledger modal: two weekday columns were cut off.
+  // Fixed positioning takes the panel out of that box entirely; `pos` is then
+  // computed from the trigger's viewport rect and CLAMPED, so the panel can
+  // never leave the screen in any direction.
   const [asSheet, setAsSheet] = useState(false);
-  const [openUp, setOpenUp]   = useState(false);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
 
   // Re-centre the grid whenever the field's value changes underneath us
   // (e.g. the parent seeds today's date when a modal opens). This is the
@@ -104,23 +106,59 @@ export default function DateField({
     };
   }, [open]);
 
-  // Measured once per open: the panel is ~370px tall, so if the trigger sits
-  // closer than that to the viewport bottom (and has more room above), open
-  // upward instead of into clipped space.
+  // Panel box, in sync with the classes below (w-[19rem], ~405px tall).
+  const PANEL_W = 304;
   const PANEL_H = 405;
+  const GAP     = 8;
+
+  // Anchor to the trigger, then clamp into the viewport. Right edges align
+  // (RTL), the panel drops below the field when there is room and rises above
+  // it otherwise; if neither fits it is pinned to the nearest edge.
+  const placePanel = useCallback(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const r  = el.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    let left = r.right - PANEL_W;
+    left = Math.min(Math.max(GAP, left), vw - PANEL_W - GAP);
+
+    const below = vh - r.bottom;
+    let top;
+    if (below >= PANEL_H + GAP)     top = r.bottom + GAP;
+    else if (r.top >= PANEL_H + GAP) top = r.top - PANEL_H - GAP;
+    else                             top = Math.max(GAP, vh - PANEL_H - GAP);
+
+    setPos({ top, left });
+  }, []);
+
   function toggleOpen() {
     if (disabled) return;
     if (!open) {
+      // Below `sm` the panel is a centred sheet — at that width an anchored
+      // popover is nearly as wide as the screen, so centring reads better
+      // and gives bigger touch targets.
       const sheet = window.innerWidth < 640;
       setAsSheet(sheet);
-      if (!sheet && wrapRef.current) {
-        const r = wrapRef.current.getBoundingClientRect();
-        const below = window.innerHeight - r.bottom;
-        setOpenUp(below < PANEL_H && r.top > below);
-      }
+      if (!sheet) placePanel();
     }
     setOpen((v) => !v);
   }
+
+  // Keep the anchored panel glued to its field while anything scrolls — the
+  // `true` capture flag catches scrolling inside the host modal, not just the
+  // window.
+  useEffect(() => {
+    if (!open || asSheet) return undefined;
+    const onMove = () => placePanel();
+    window.addEventListener('scroll', onMove, true);
+    window.addEventListener('resize', onMove);
+    return () => {
+      window.removeEventListener('scroll', onMove, true);
+      window.removeEventListener('resize', onMove);
+    };
+  }, [open, asSheet, placePanel]);
 
   function emit(next) {
     onChange?.({ target: { name, value: next, type: 'text' } });
@@ -183,10 +221,11 @@ export default function DateField({
         />
       )}
 
-      {/* Sheet backdrop — phones only. Sits above the host modal's z-50. */}
-      {open && asSheet && (
+      {/* Backdrop. Opaque on phones (the panel is a centred sheet), invisible
+          on wider screens where it only catches the dismissing click. */}
+      {open && (
         <div
-          className="fixed inset-0 z-[60] bg-slate-950/60"
+          className={`fixed inset-0 z-[60] ${asSheet ? 'bg-slate-950/60' : ''}`}
           onClick={() => setOpen(false)}
           aria-hidden="true"
         />
@@ -198,14 +237,14 @@ export default function DateField({
           role="dialog"
           aria-modal={asSheet ? 'true' : undefined}
           aria-label="التقويم"
-          className={
+          className={`fixed z-[61] w-[19rem] max-w-[calc(100vw-2rem)] bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-700 rounded-card p-3 ${
+            asSheet ? 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2' : ''
+          }`}
+          style={
             asSheet
-              ? 'fixed z-[61] left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[19rem] max-w-[calc(100vw-2rem)] bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-700 rounded-card p-3'
-              : `absolute z-50 right-0 w-[19rem] max-w-[calc(100vw-2rem)] bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-700 rounded-card p-3 ${
-                openUp ? 'bottom-full mb-2' : 'top-full mt-2'
-              }`
+              ? { boxShadow: 'var(--sw-shadow-overlay)' }
+              : { top: pos.top, left: pos.left, boxShadow: 'var(--sw-shadow-overlay)' }
           }
-          style={{ boxShadow: 'var(--sw-shadow-overlay)' }}
         >
           {/* Month navigation. In RTL the "previous" affordance points
               right, matching the reading direction. */}

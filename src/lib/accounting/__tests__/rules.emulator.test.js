@@ -147,6 +147,55 @@ d('قواعد أمان Firestore', () => {
     });
   });
 
+  // ── المستندات الضريبية ─────────────────────────────────────────────
+  describe('الفاتورة الصادرة لا تُحذف ولا يُعاد ترقيمها', () => {
+    beforeEach(async () => {
+      await env.withSecurityRulesDisabled(async (c) => {
+        const db = c.firestore();
+        await setDoc(doc(db, 'sales_documents', 'inv1'), {
+          documentNumber: 'INV-2026-000001', type: 'invoice', status: 'issued',
+          issueDate: '2026-08-11', sequence: 1, year: 2026, gross: 115, vat: 15,
+        });
+        await setDoc(doc(db, 'sales_document_sources', 'wash__w1'), {
+          sourceType: 'wash', sourceId: 'w1', documentId: 'inv1',
+        });
+      });
+    });
+
+    it('لا يُحذف مستند صادر — ولا من المدير', async () => {
+      await assertFails(deleteDoc(doc(ctx.admin, 'sales_documents', 'inv1')));
+      await assertFails(deleteDoc(doc(ctx.acct, 'sales_documents', 'inv1')));
+    });
+
+    it('لا يُغيَّر رقم المستند ولا مبلغه', async () => {
+      await assertFails(updateDoc(doc(ctx.acct, 'sales_documents', 'inv1'), { documentNumber: 'INV-2026-000009' }));
+      await assertFails(updateDoc(doc(ctx.acct, 'sales_documents', 'inv1'), { gross: 1 }));
+    });
+
+    it('يُسمح فقط بالإلغاء الموثّق', async () => {
+      await assertSucceeds(updateDoc(doc(ctx.acct, 'sales_documents', 'inv1'), {
+        status: 'cancelled', voidReason: 'صدرت بالخطأ', voidedBy: 'acct1', voidedAt: new Date(),
+      }));
+    });
+
+    it('ولا يُمرَّر تعديل مخفي مع الإلغاء', async () => {
+      await assertFails(updateDoc(doc(ctx.acct, 'sales_documents', 'inv1'), {
+        status: 'cancelled', voidReason: 'x', vat: 0,
+      }));
+    });
+
+    it('المشغّل لا يُصدر مستنداً ضريبياً', async () => {
+      await assertFails(setDoc(doc(ctx.op, 'sales_documents', 'inv2'), {
+        documentNumber: 'INV-2026-000002', type: 'invoice', status: 'issued',
+      }));
+    });
+
+    it('لا يُحذف سجل المصدر — وإلا أمكن إصدار فاتورة ثانية لنفس الغسلة', async () => {
+      await assertFails(deleteDoc(doc(ctx.admin, 'sales_document_sources', 'wash__w1')));
+      await assertFails(updateDoc(doc(ctx.acct, 'sales_document_sources', 'wash__w1'), { documentId: 'other' }));
+    });
+  });
+
   // ── سجل التدقيق ────────────────────────────────────────────────────
   describe('سجل التدقيق للإضافة فقط', () => {
     beforeEach(async () => {

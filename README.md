@@ -42,6 +42,7 @@ summed directly into a report.
 | **دفتر الأستاذ** | Per-account movements, running balance, opening/closing, CSV |
 | **ميزان المراجعة** | Per-account debits/credits/balance with an explicit balanced verdict, CSV |
 | **المركز المالي** | Assets = Liabilities + Equity, CSV |
+| **المستندات الضريبية** | Simplified invoices with a sequential number and a Phase-1 QR, credit/debit notes, sequence-gap audit, CSV |
 | **إقفال الفترة** | Chart seeding, posting sweep, per-month preflight, close/reopen |
 
 ---
@@ -104,6 +105,48 @@ Every ledger mutation runs inside a **Firestore transaction**: entry number,
 closed-period check, header, lines and audit record all land or none do. A
 read-then-write from the client could interleave with another device and mint
 a duplicate entry number, or post into a month closed a second earlier.
+
+---
+
+## المستندات الضريبية — invoices and notes
+
+| Series | Prefix | Example |
+|---|---|---|
+| فاتورة | `INV` | `INV-2026-000042` |
+| إشعار دائن | `CRN` | `CRN-2026-000003` |
+| إشعار مدين | `DBN` | `DBN-2026-000001` |
+
+- **Numbering is transactional**, one sequence per type **and** year, minted in
+  the same transaction that writes the document — two tills issuing at the
+  same instant cannot receive the same number.
+- **One document per source record.** A claim doc in `sales_document_sources`
+  is read inside the transaction, so pressing "issue" twice on one wash gives
+  the first number back as an error, never a second invoice.
+- **Nothing is deleted.** An issued number stays spoken for: reduce with a
+  credit note, increase with a debit note, or void with a recorded reason —
+  and voiding is a note about intent, the accounting effect still comes from a
+  credit note. Rules allow exactly one update: `issued → cancelled`.
+- **Every note needs a reason and a reference** to the invoice it adjusts.
+- **Sequence gaps and duplicates are reported** on the page, because a missing
+  invoice number is the first thing an audit asks about.
+- A **QR code** is attached only to a taxable document — printing one on a
+  non-taxable receipt would misrepresent it. It is the Phase-1 TLV/base64
+  payload (tags 1–5: seller, VAT number, timestamp, total, VAT), rendered as
+  inline SVG from a bundled zero-dependency generator so it still works in the
+  offline APK.
+
+### ZATCA — what is and is not implemented
+`src/lib/accounting/zatcaIntegration.js` is the boundary, and it is honest:
+every function returns `{ ok: false, status: 'not_implemented' }` rather than
+throwing or silently succeeding.
+
+| Implemented | Not implemented |
+|---|---|
+| Phase-1 QR payload · sequential numbering · credit/debit notes | Onboarding (CSR/certificates) · invoice hash chain · cryptographic stamp · reporting (B2C) · clearance (B2B) |
+
+Phase 2 needs a trusted server: the private key must never reach a browser,
+and the hash chain requires a single serialized issuer. The app is shaped so
+only that one file changes.
 
 ---
 
@@ -179,9 +222,16 @@ check **ميزان المراجعة** is balanced → close the oldest completed
 - `npm run dev` — Vite dev server
 - `npm run build` — production build to `dist/`
 - `npm run lint` — ESLint
-- `npm test` — vitest (accounting core: balance, VAT, posting rules, ledger,
-  trial balance, period locks, reversal)
+- `npm test` — vitest unit suites (balance, VAT, posting rules, reports,
+  invoicing, QR encoding). No emulator needed.
 - `npm run test:watch` — vitest in watch mode
+- `npm run test:emulator` — ledger + invoicing integration against a real
+  Firestore emulator: transaction atomicity, concurrent numbering, closed
+  periods, reversals, one-invoice-per-source
+- `npm run test:rules` — drives `firestore.rules` itself through every role
+
+The emulator suites share one database and reset between tests, so they run
+with `--no-file-parallelism`; `npm test` excludes them.
 
 ## Android
 
@@ -199,9 +249,10 @@ Release signing reads `android/keystore.properties` (gitignored, along with
 
 ## Known limits
 
-- **ZATCA e-invoicing is NOT integrated.** The data model carries what a
-  simplified B2C invoice needs, but no clearance/reporting call is
-  implemented. Treat the VAT report as an internal working paper.
+- **ZATCA e-invoicing is NOT integrated.** Documents are numbered, carry a
+  Phase-1 QR and behave correctly as accounting records, but nothing is
+  stamped, chained, reported or cleared. Treat them — and the VAT report — as
+  internal working papers.
 - Cloud Storage is not enabled on the project, so invoices are referenced by
   **URL** rather than uploaded.
 - Depreciation accounts exist but no depreciation schedule is computed yet;

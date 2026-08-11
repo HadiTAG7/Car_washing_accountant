@@ -87,10 +87,36 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // ── عداد أرقام القيود ────────────────────────────────────────────
+    // ── عداد أرقام القيود والمستندات ─────────────────────────────────
     match /counters/{name} {
       allow read:  if isAccountant();
       allow write: if isAccountant();
+    }
+
+    // ── المستندات الضريبية ───────────────────────────────────────────
+    // An issued invoice number is the identity a tax audit walks. It is never
+    // deleted and never re-numbered; the only permitted amendment is marking
+    // it cancelled, and the accounting effect of a cancellation still has to
+    // come from a credit note.
+    match /sales_documents/{docId} {
+      allow read: if isMember();
+      allow create: if isAccountant()
+        && request.resource.data.documentNumber is string
+        && request.resource.data.status == 'issued';
+      allow update: if isAccountant()
+        && resource.data.status == 'issued'
+        && request.resource.data.status == 'cancelled'
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['status', 'voidReason', 'voidedBy', 'voidedAt']);
+      allow delete: if false;
+    }
+
+    // Idempotency claims: one source record → one document. A client that
+    // could delete a claim could issue a second invoice for the same wash.
+    match /sales_document_sources/{claimId} {
+      allow read:   if isAccountant();
+      allow create: if isAccountant();
+      allow update, delete: if false;
     }
 
     // ── قواعد الرسوم ─────────────────────────────────────────────────

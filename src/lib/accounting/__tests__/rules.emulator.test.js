@@ -46,13 +46,39 @@ d('قواعد أمان Firestore', () => {
       await setDoc(doc(db, 'users', 'op1'),         { email: 'o@x.com', role: 'operator' });
       await setDoc(doc(db, 'users', 'partner1'),    { email: 'p@x.com', role: 'partner' });
       await setDoc(doc(db, 'app_admins', 'admin1'), { note: 'admin' });
-      // A posted entry to attack in the immutability cases.
+      // A posted entry to attack in the immutability cases. Lines live
+      // INSIDE it now; the legacy row exercises the frozen collection.
       await setDoc(doc(db, 'journal_entries', 'e1'), {
         entryDate: '2026-08-11', periodKey: '2026-08', status: 'posted',
-        entryNumber: 1, sourceType: 'wash', description: 'غسلة',
+        entryNumber: 1, sourceType: 'wash', sourceId: 'w1', description: 'غسلة',
+        lines: [
+          { accountId: '1010', debit: 115, credit: 0 },
+          { accountId: '4000', debit: 0, credit: 115 },
+        ],
       });
       await setDoc(doc(db, 'journal_lines', 'l1'), {
         entryId: 'e1', accountId: '1010', debit: 115, credit: 0,
+      });
+      // A closed month, and an open one to contrast it with.
+      await setDoc(doc(db, 'accounting_periods', '2026-07'), {
+        periodKey: '2026-07', status: 'closed', closedBy: 'acct1',
+      });
+      await setDoc(doc(db, 'accounting_periods', '2026-08'), {
+        periodKey: '2026-08', status: 'open',
+      });
+      // Operational records: w1 is in the books, w2 is not.
+      await setDoc(doc(db, 'washes', 'w1'), { quantity: 1, price: 115, status: 'مكتملة', wash_date: '2026-08-11' });
+      await setDoc(doc(db, 'washes', 'w2'), { quantity: 1, price: 100, status: 'مكتملة', wash_date: '2026-08-12' });
+      await setDoc(doc(db, 'posting_locks', 'wash__w1'), {
+        sourceType: 'wash', sourceId: 'w1', entryId: 'e1', entryNumber: 1,
+      });
+      await setDoc(doc(db, 'partner_payments', 'pp1'), { partner_id: 'p1', amount: 5000 });
+      await setDoc(doc(db, 'posting_locks', 'partner_payment__pp1'), {
+        sourceType: 'partner_payment', sourceId: 'pp1', entryId: 'e1',
+      });
+      await setDoc(doc(db, 'monthly_expenses', 'm1'), { expense_name: 'إيجار', total_monthly_cost: 5000 });
+      await setDoc(doc(db, 'posting_locks', 'expense__m1'), {
+        sourceType: 'expense', sourceId: 'm1', entryId: 'e1',
       });
     });
     ctx.admin   = env.authenticatedContext('admin1').firestore();
@@ -95,6 +121,123 @@ d('قواعد أمان Firestore', () => {
       await assertFails(updateDoc(doc(ctx.acct, 'journal_lines', 'l1'), { debit: 999 }));
       await assertFails(deleteDoc(doc(ctx.admin, 'journal_lines', 'l1')));
     });
+
+    // ── الثغرة التي أُغلقت ──────────────────────────────────────────
+    // `journal_lines` create used to be open to any accountant, with no way
+    // for a rule to check the parent's status: Firestore evaluates a batch
+    // against the state BEFORE it, so "the entry must be a draft" would have
+    // rejected the write that creates the entry itself. A line could
+    // therefore be appended to a posted entry and silently unbalance it.
+    // Lines now live inside the entry, and this collection is frozen.
+    it('لا يُلحَق سطر جديد بقيد مُرحّل — ولا سطر جديد إطلاقاً', async () => {
+      await assertFails(setDoc(doc(ctx.acct, 'journal_lines', 'hack'), {
+        entryId: 'e1', accountId: '1010', debit: 1000000, credit: 0,
+      }));
+      await assertFails(setDoc(doc(ctx.admin, 'journal_lines', 'hack2'), {
+        entryId: 'e1', accountId: '4000', debit: 0, credit: 1,
+      }));
+    });
+
+    it('ولا تُعدَّل سطور القيد من داخل مستنده', async () => {
+      await assertFails(updateDoc(doc(ctx.acct, 'journal_entries', 'e1'), {
+        lines: [{ accountId: '1010', debit: 999999, credit: 0 }],
+      }));
+      // Even bundled with the one permitted transition.
+      await assertFails(updateDoc(doc(ctx.acct, 'journal_entries', 'e1'), {
+        status: 'reversed', reversedBy: 'e9',
+        lines: [{ accountId: '1010', debit: 999999, credit: 0 }],
+      }));
+    });
+
+    it('القيد بلا سطرين على الأقل مرفوض من القواعد نفسها', async () => {
+      await assertFails(setDoc(doc(ctx.acct, 'journal_entries', 'e-thin'), {
+        entryDate: '2026-08-12', periodKey: '2026-08', status: 'posted',
+        entryNumber: 9, sourceType: 'manual', description: 'ناقص',
+        lines: [{ accountId: '1010', debit: 10, credit: 0 }],
+      }));
+    });
+  });
+
+  // ── الفترة المقفلة ─────────────────────────────────────────────────
+  describe('لا ترحيل في فترة مقفلة — على مستوى الخادم', () => {
+    const entryIn = (periodKey, entryDate) => ({
+      entryDate, periodKey, status: 'posted', entryNumber: 5,
+      sourceType: 'manual', description: 'قيد',
+      lines: [
+        { accountId: '1010', debit: 100, credit: 0 },
+        { accountId: '4000', debit: 0, credit: 100 },
+      ],
+    });
+
+    it('يُرفض القيد في الفترة المقفلة ولو كان المُرسِل محاسباً أو مديراً', async () => {
+      await assertFails(setDoc(doc(ctx.acct, 'journal_entries', 'x1'), entryIn('2026-07', '2026-07-15')));
+      await assertFails(setDoc(doc(ctx.admin, 'journal_entries', 'x2'), entryIn('2026-07', '2026-07-20')));
+    });
+
+    it('ويُقبل في فترة مفتوحة', async () => {
+      await assertSucceeds(setDoc(doc(ctx.acct, 'journal_entries', 'x3'), entryIn('2026-08', '2026-08-15')));
+    });
+
+    it('ويُقبل في شهر جديد بلا مستند فترة — تُنشئه المعاملة مفتوحاً', async () => {
+      await assertSucceeds(setDoc(doc(ctx.acct, 'journal_entries', 'x4'), entryIn('2026-09', '2026-09-01')));
+    });
+
+    it('الفترة تُنشأ مفتوحة فقط — لا يُنشئها أحد مقفلة مباشرة', async () => {
+      await assertFails(setDoc(doc(ctx.acct, 'accounting_periods', '2026-10'), {
+        periodKey: '2026-10', status: 'closed',
+      }));
+      await assertSucceeds(setDoc(doc(ctx.acct, 'accounting_periods', '2026-11'), {
+        periodKey: '2026-11', status: 'open',
+      }));
+    });
+
+    it('الإقفال للمحاسب، وإعادة الفتح للمدير وبسبب مكتوب', async () => {
+      await assertSucceeds(updateDoc(doc(ctx.acct, 'accounting_periods', '2026-08'), { status: 'closed' }));
+      // Accountant may not re-open at all.
+      await assertFails(updateDoc(doc(ctx.acct, 'accounting_periods', '2026-07'), { status: 'open', reopenReason: 'تصحيح' }));
+      // Nor may an admin without a reason.
+      await assertFails(updateDoc(doc(ctx.admin, 'accounting_periods', '2026-07'), { status: 'open' }));
+      await assertFails(updateDoc(doc(ctx.admin, 'accounting_periods', '2026-07'), { status: 'open', reopenReason: '' }));
+      // Admin with a reason may.
+      await assertSucceeds(updateDoc(doc(ctx.admin, 'accounting_periods', '2026-07'), {
+        status: 'open', reopenReason: 'فاتورة وصلت متأخرة',
+      }));
+    });
+
+    it('ولا تُحذف فترة أبداً', async () => {
+      await assertFails(deleteDoc(doc(ctx.admin, 'accounting_periods', '2026-08')));
+    });
+  });
+
+  // ── مصادر العمليات المُرحّلة ────────────────────────────────────────
+  describe('لا تعديل ولا حذف لمصدر عملية مُرحّلة', () => {
+    it('الغسلة المُرحّلة محميّة، وغير المُرحّلة قابلة للتعديل', async () => {
+      await assertFails(updateDoc(doc(ctx.op, 'washes', 'w1'), { price: 1 }));
+      await assertFails(deleteDoc(doc(ctx.op, 'washes', 'w1')));
+      // Not even an admin — the entry is immutable, so the source must be too.
+      await assertFails(deleteDoc(doc(ctx.admin, 'washes', 'w1')));
+      await assertSucceeds(updateDoc(doc(ctx.op, 'washes', 'w2'), { price: 120 }));
+      await assertSucceeds(deleteDoc(doc(ctx.op, 'washes', 'w2')));
+    });
+
+    it('دفعة الشريك المُرحّلة محميّة', async () => {
+      await assertFails(updateDoc(doc(ctx.op, 'partner_payments', 'pp1'), { amount: 1 }));
+      await assertFails(deleteDoc(doc(ctx.admin, 'partner_payments', 'pp1')));
+    });
+
+    it('المصروف المُرحّل محميّ', async () => {
+      await assertFails(updateDoc(doc(ctx.op, 'monthly_expenses', 'm1'), { total_monthly_cost: 1 }));
+      await assertFails(deleteDoc(doc(ctx.admin, 'monthly_expenses', 'm1')));
+    });
+
+    it('ولا يُزال القفل إلا من محاسب — ولا يُعاد كتابته أبداً', async () => {
+      await assertFails(updateDoc(doc(ctx.admin, 'posting_locks', 'wash__w1'), { entryId: 'other' }));
+      await assertFails(deleteDoc(doc(ctx.op, 'posting_locks', 'wash__w1')));
+      // The accountant releases it as part of reversing the entry.
+      await assertSucceeds(deleteDoc(doc(ctx.acct, 'posting_locks', 'wash__w1')));
+      // And with the lock gone the record is editable again — reverse, fix, re-post.
+      await assertSucceeds(updateDoc(doc(ctx.op, 'washes', 'w1'), { price: 120 }));
+    });
     it('يُسمح فقط بالانتقال المسموح: مُرحّل ← معكوس', async () => {
       await assertSucceeds(updateDoc(doc(ctx.acct, 'journal_entries', 'e1'), {
         status: 'reversed', reversedBy: 'e2', reversedAt: new Date(),
@@ -112,6 +255,10 @@ d('قواعد أمان Firestore', () => {
     const entry = {
       entryDate: '2026-08-12', periodKey: '2026-08', status: 'posted',
       entryNumber: 2, sourceType: 'manual', description: 'قيد',
+      lines: [
+        { accountId: '1010', debit: 50, credit: 0 },
+        { accountId: '4000', debit: 0, credit: 50 },
+      ],
     };
 
     it('المحاسب يُرحّل، والمشغّل لا', async () => {

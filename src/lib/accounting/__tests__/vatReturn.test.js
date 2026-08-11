@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   periodKeyFor, periodLabel, periodRange, currentPeriodKey,
   inputInvoiceEligibility, claimDateOf, outputTaxFromWashes, outputTaxFromLedger,
-  buildVatReport, availablePeriods,
+  inputTaxFromLedger, postedSourceIds, buildVatReport, availablePeriods,
 } from '../vatReturn';
 
 /** A complete, deductible purchase invoice. */
@@ -55,7 +55,7 @@ describe('أهلية فاتورة المدخلات', () => {
   });
 
   it('تُرفض بلا تاريخ أو رقم أو مورّد أو مبلغ — ويُسمّى الناقص', () => {
-    expect(inputInvoiceEligibility({ ...INVOICE, invoiceDate: '', spentDate: '' }).missing)
+    expect(inputInvoiceEligibility({ ...INVOICE, invoiceDate: '' }).missing)
       .toEqual(['تاريخ الفاتورة']);
     expect(inputInvoiceEligibility({ ...INVOICE, invoiceNumber: '  ' }).missing)
       .toEqual(['رقم الفاتورة']);
@@ -80,10 +80,21 @@ describe('أهلية فاتورة المدخلات', () => {
     expect(inputInvoiceEligibility({ ...INVOICE, vatDeductible: false }).eligible).toBe(false);
   });
 
-  it('تاريخ الصرف يقوم مقام تاريخ الفاتورة عند غيابه', () => {
+  // تاريخ الصرف ليس تاريخ فاتورة: المورّد يصدر الفاتورة في تاريخ، والسداد
+  // قد يقع في فترة أخرى، والخصم يتبع تاريخ الفاتورة لا تاريخ الدفع.
+  it('تاريخ الصرف لا يقوم مقام تاريخ الفاتورة', () => {
     const r = { ...INVOICE, invoiceDate: '', spentDate: '2026-08-04' };
-    expect(inputInvoiceEligibility(r).eligible).toBe(true);
-    expect(claimDateOf(r)).toBe('2026-08-04');
+    expect(inputInvoiceEligibility(r).eligible).toBe(false);
+    expect(inputInvoiceEligibility(r).missing).toEqual(['تاريخ الفاتورة']);
+    expect(claimDateOf(r)).toBe('');
+  });
+
+  it('تاريخ الفاتورة وحده يحدّد فترة الخصم', () => {
+    // Invoiced in March, paid in April → deducted in Q1, not Q2.
+    const r = { ...INVOICE, invoiceDate: '2026-03-28', spentDate: '2026-04-05' };
+    expect(claimDateOf(r)).toBe('2026-03-28');
+    expect(buildVatReport({ inputs: [r], period: '2026-Q1' }).input.count).toBe(1);
+    expect(buildVatReport({ inputs: [r], period: '2026-Q2' }).eligible).toEqual([]);
   });
 });
 
@@ -195,6 +206,56 @@ describe('ضريبة المخرجات من الدفاتر — تحقّق مست�
       washes: [WASH(), WASH({ id: 'w9' })], entries, lines, period: '2026-Q3',
     });
     expect(behind.outputMismatch).toBe(30);      // one wash not posted yet
+  });
+});
+
+describe('مطابقة ضريبة المدخلات مع حساب 1200', () => {
+  const INV = { ...INVOICE, id: 'i1', amount: 1150 };   // 150 tax
+  const entries = [
+    { id: 'e1', status: 'posted', entryDate: '2026-08-03', sourceType: 'expense', sourceId: 'i1' },
+  ];
+  const lines = [
+    // Input VAT is an ASSET: it grows on the DEBIT side.
+    { entryId: 'e1', accountId: '1200', debit: 150, credit: 0 },
+    { entryId: 'e1', accountId: '5100', debit: 1000, credit: 0 },
+  ];
+
+  it('يقرأ الحركة المدينة على 1200 كضريبة موجبة', () => {
+    expect(inputTaxFromLedger(entries, lines, { period: '2026-Q3' }))
+      .toEqual({ tax: 150, available: true });
+  });
+
+  it('يعلن عدم التوفر حين لا حركة — لا يُقرأ صفره كحقيقة', () => {
+    expect(inputTaxFromLedger([], [], { period: '2026-Q3' }))
+      .toEqual({ tax: 0, available: false });
+  });
+
+  it('لا فرق حين يطابق المُطالَب به ما في الدفاتر', () => {
+    const r = buildVatReport({ inputs: [INV], entries, lines, period: '2026-Q3' });
+    expect(r.inputMismatch).toBe(0);
+    expect(r.unpostedEligible).toEqual([]);
+  });
+
+  it('يرصد الفارق ويسمّي الفواتير المؤهلة غير المُرحّلة', () => {
+    const extra = { ...INVOICE, id: 'i2', invoiceNumber: 'S-9', amount: 230 };  // 30 tax
+    const r = buildVatReport({ inputs: [INV, extra], entries, lines, period: '2026-Q3' });
+    expect(r.input.tax).toBe(180);
+    expect(r.ledgerInput.tax).toBe(150);
+    expect(r.inputMismatch).toBe(30);
+    expect(r.unpostedEligible.map((x) => x.id)).toEqual(['i2']);
+    expect(r.unpostedInputTax).toBe(30);
+  });
+
+  it('القيد غير المرحّل لا يُحتسب في رصيد الدفاتر', () => {
+    const draft = [{ id: 'e2', status: 'draft', entryDate: '2026-08-04' }];
+    const draftLines = [{ entryId: 'e2', accountId: '1200', debit: 999, credit: 0 }];
+    expect(inputTaxFromLedger(draft, draftLines, { period: '2026-Q3' }))
+      .toEqual({ tax: 0, available: false });
+  });
+
+  it('يعرف أي المصادر مُرحّلة', () => {
+    expect([...postedSourceIds(entries)]).toEqual(['i1']);
+    expect(postedSourceIds([{ id: 'x', status: 'reversed', sourceId: 'z' }]).size).toBe(0);
   });
 });
 

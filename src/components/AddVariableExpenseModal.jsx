@@ -391,7 +391,7 @@ export default function AddVariableExpenseModal({
                 onChange={(next) => setForm((f) => ({ ...f, ...next }))}
                 idPrefix="variable"
                 amount={totalVariableCost}
-                fallbackDate={form.loggedDate}
+                spendDate={form.loggedDate}
               />
             )}
 

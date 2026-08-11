@@ -77,7 +77,39 @@ automatically on their first posted payment.
   the reversal transition `posted → reversed`.
 - Corrections are reversals or adjusting entries, dated into an **open**
   period — never a back-dated edit.
-- Nothing posts into a closed period.
+- Nothing posts into a closed period — **checked by the rules**, not only by
+  the client.
+
+### Lines live inside their entry
+They used to be their own collection, which left a hole no rule could close:
+`journal_lines` create had to stay open for the posting transaction, and
+Firestore evaluates a batch against the state *before* it, so a rule like "the
+parent must be a draft" would have rejected the very write that creates the
+entry. An accountant could therefore append a line to a posted entry and
+silently unbalance it.
+
+Embedded, the invariant is **structural**: the entry is written once, and the
+only update rules permit is the reversal transition with
+`hasOnly(['status','reversedBy','reversedAt'])`, which cannot touch `lines`.
+There is no separate document left to append to. The old collection stays
+readable so pre-existing entries render, and is frozen against
+create/update/delete.
+
+### A posted source record is locked
+The posting transaction writes `posting_locks/<sourceType>__<sourceId>`. The
+rules refuse update and delete on `washes`, `partner_payments`,
+`monthly_expenses`, `variable_expenses`, `annual_expense_entries`,
+`startup_cost_entries` and `temporary_expenses` while that lock exists — so a
+record in the books cannot be edited behind the ledger's back, whatever the UI
+does or does not render.
+
+Reversing an entry releases the lock, which is what makes a legitimate
+correction possible: reverse, fix, re-post.
+
+### Re-opening a closed period
+Closing is an accountant's call. **Re-opening needs an admin and a written
+reason**, both enforced in the rules (`reopenReason` must be a non-empty
+string), and it is audited.
 
 ### Posting rules
 | Operation | Entry |

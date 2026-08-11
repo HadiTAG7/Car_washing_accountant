@@ -41,6 +41,24 @@ service cloud.firestore {
     function isOperator()   { return signedIn() && (isAccountant() || role() == 'operator'); }
     function isMember()     { return signedIn() && (hasUserDoc() || isAdminDoc()); }
 
+    // ── حراس على مستوى الخادم ────────────────────────────────────────
+    // A period with no document is OPEN: the posting transaction creates the
+    // month lazily with its first entry, and rules evaluate a transaction
+    // against the state BEFORE it, so requiring the document to exist would
+    // reject the very write that creates it. Only an existing, closed period
+    // blocks.
+    function periodIsOpen(key) {
+      return !exists(/databases/$(database)/documents/accounting_periods/$(key))
+        || get(/databases/$(database)/documents/accounting_periods/$(key)).data.status != 'closed';
+    }
+
+    // A source record whose posting lock exists is IN THE BOOKS. The lock is
+    // written by the posting transaction, so it is committed before any later
+    // attempt to edit the record it protects.
+    function notPosted(sourceType, id) {
+      return !exists(/databases/$(database)/documents/posting_locks/$(sourceType + '__' + id));
+    }
+
     // ── دليل الحسابات ────────────────────────────────────────────────
     // Everyone who can see reports needs to resolve account names.
     match /chart_of_accounts/{code} {
@@ -55,10 +73,18 @@ service cloud.firestore {
     match /journal_entries/{entryId} {
       allow read: if isAccountant() || isMember();
 
+      // Nothing posts into a closed month, enforced HERE and not only in the
+      // client: a JavaScript check can be bypassed by anyone holding a token.
       allow create: if isAccountant()
         && request.resource.data.status in ['draft', 'posted']
         && request.resource.data.entryDate is string
-        && request.resource.data.periodKey is string;
+        && request.resource.data.periodKey is string
+        // `is list` on an absent property raises rather than returning false,
+        // so presence is checked first.
+        && 'lines' in request.resource.data
+        && request.resource.data.lines is list
+        && request.resource.data.lines.size() >= 2
+        && periodIsOpen(request.resource.data.periodKey);
 
       // The ONLY sanctioned update: marking an entry reversed. Everything
       // else about a posted entry is frozen.
@@ -71,19 +97,45 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Legacy collection, FROZEN. Lines now live inside their entry document,
+    // where the reversal-only update rule above makes them unamendable. This
+    // collection stays readable so entries posted before that change still
+    // render, but nothing may be added to it — an appendable line collection
+    // is exactly how a posted entry could be silently unbalanced.
     match /journal_lines/{lineId} {
-      allow read:   if isAccountant() || isMember();
+      allow read: if isAccountant() || isMember();
+      allow create, update, delete: if false;
+    }
+
+    // ── أقفال الترحيل ────────────────────────────────────────────────
+    // One document per operational record that reached the books. Written by
+    // the posting transaction; removed only when the entry is reversed. A
+    // client that could rewrite these could edit a record the ledger has
+    // already recorded.
+    match /posting_locks/{lockId} {
+      allow read:   if isMember();
       allow create: if isAccountant();
-      // A line is part of the filed record; it is never amended or removed.
-      allow update, delete: if false;
+      allow update: if false;
+      allow delete: if isAccountant();
     }
 
     // ── الفترات المحاسبية ────────────────────────────────────────────
     match /accounting_periods/{periodKey} {
       allow read: if isMember();
-      // Created lazily by the posting transaction, so an accountant must be
-      // able to create as well as close/reopen.
-      allow create, update: if isAccountant();
+      // Created lazily by the posting transaction, always open.
+      allow create: if isAccountant() && request.resource.data.status == 'open';
+
+      // Closing is an accountant's call. RE-OPENING a filed period is not:
+      // it is the one action that can change what a filed month says, so it
+      // needs an admin and a stated reason, and it is audited.
+      allow update: if isAccountant() && (
+        (resource.data.status == 'open' && request.resource.data.status == 'closed')
+        || (resource.data.status == 'closed'
+            && request.resource.data.status == 'open'
+            && isAdmin()
+            && request.resource.data.reopenReason is string
+            && request.resource.data.reopenReason.size() > 0)
+      );
       allow delete: if false;
     }
 
@@ -183,20 +235,71 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ── المصادر المُرحّلة — محميّة على مستوى الخادم ──────────────────
+    // Once a record is in the books, editing it would leave the operational
+    // row and the immutable entry disagreeing, with nothing in the ledger to
+    // show the change. The corrective path is a reversal or an adjusting
+    // entry, never an edit — and that is enforced here rather than by a
+    // warning in the UI, which a client can simply not render.
+    //
+    // The lock disappears when the entry is reversed, which is what makes a
+    // legitimate correction possible: reverse, fix, re-post.
+    match /washes/{id} {
+      allow read:   if isMember();
+      allow create: if isOperator();
+      allow update, delete: if isOperator() && notPosted('wash', id);
+    }
+    match /partner_payments/{id} {
+      allow read:   if isMember();
+      allow create: if isOperator();
+      allow update, delete: if isOperator() && notPosted('partner_payment', id);
+    }
+    match /monthly_expenses/{id} {
+      allow read:   if isMember();
+      allow create: if isOperator();
+      allow update, delete: if isOperator() && notPosted('expense', id);
+    }
+    match /variable_expenses/{id} {
+      allow read:   if isMember();
+      allow create: if isOperator();
+      allow update, delete: if isOperator() && notPosted('expense', id);
+    }
+    match /annual_expense_entries/{id} {
+      allow read:   if isMember();
+      allow create: if isOperator();
+      allow update, delete: if isOperator() && notPosted('expense', id);
+    }
+    match /startup_cost_entries/{id} {
+      allow read:   if isMember();
+      allow create: if isOperator();
+      allow update, delete: if isOperator() && notPosted('expense', id);
+    }
+    // An advance produces two entries — the outlay and its recovery — so both
+    // locks have to be clear before the row may change.
+    match /temporary_expenses/{id} {
+      allow read:   if isMember();
+      allow create: if isOperator();
+      allow update, delete: if isOperator()
+        && notPosted('temporary_expense', id) && notPosted('recovery', id);
+    }
+
     // ── البيانات التشغيلية ───────────────────────────────────────────
     // Members read; operators and above record day-to-day business.
     // These stay the operational source of truth — the reports read the
     // ledger, but the app still works from these collections.
     function isOperationalColl(c) {
       return c in [
-        'annual_expense_categories', 'annual_expense_entries', 'annual_expenses',
+        'annual_expense_categories', 'annual_expenses',
         'auth_users_backup', 'categories', 'category_budgets',
-        'monthly_expense_categories', 'monthly_expenses', 'partner_payments',
-        'partners', 'startup_cost_entries', 'startup_costs', 'temporary_expenses',
-        'transactions', 'variable_expense_categories', 'variable_expenses', 'washes'
+        'monthly_expense_categories', 'partners', 'startup_costs',
+        'transactions', 'variable_expense_categories'
       ];
     }
 
+    // NOTE: in Firestore every matching rule is evaluated and access is
+    // granted if ANY allows, so a collection protected above must NOT also
+    // appear in this list — the wildcard would hand back what the specific
+    // rule denies.
     match /{coll}/{doc} {
       allow read:  if isOperationalColl(coll) && isMember();
       allow write: if isOperationalColl(coll) && isOperator();

@@ -273,18 +273,76 @@ export default function VatRecoveryPage() {
           />
         </div>
 
-        {report.outputMismatch !== 0 && (
+        {/* ── مطابقة التقرير بالدفاتر ────────────────────────────
+            Both sides get the same treatment: a figure the report claims but
+            the ledger has never seen is a gap worth naming, not averaging. */}
+        {(report.outputMismatch !== 0 || report.inputMismatch !== 0) && (
           <div role="alert" className="flex items-start gap-2.5 bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/30 text-amber-800 dark:text-amber-300 text-xs px-4 py-3 rounded-control leading-relaxed">
             <AlertTriangle size={16} className="shrink-0 mt-0.5" />
-            <span>
-              ضريبة المخرجات المحسوبة من الغسلات{' '}
-              <strong className="tabular-nums">{formatCurrencyPrecise(report.output.tax)}</strong>{' '}
-              لا تطابق المُرحَّل في الدفاتر{' '}
-              <strong className="tabular-nums">{formatCurrencyPrecise(report.ledgerOutput.tax)}</strong>{' '}
-              (الفرق <strong className="tabular-nums">{formatCurrencyPrecise(report.outputMismatch)}</strong>).
-              غالباً توجد غسلات مكتملة لم تُرحَّل بعد — شغّل «إقفال الفترة ← فحص غير المُرحّل».
-            </span>
+            <div className="min-w-0">
+              <p className="font-bold">التقرير لا يطابق الدفاتر — عمليات لم تُرحَّل بعد.</p>
+              {report.outputMismatch !== 0 && (
+                <p className="mt-1">
+                  <span className="font-semibold">المخرجات:</span> من الغسلات{' '}
+                  <strong className="tabular-nums">{formatCurrencyPrecise(report.output.tax)}</strong>{' '}
+                  · في الدفاتر (حساب 2100){' '}
+                  <strong className="tabular-nums">{formatCurrencyPrecise(report.ledgerOutput.tax)}</strong>{' '}
+                  · الفرق{' '}
+                  <strong className="tabular-nums">{formatCurrencyPrecise(report.outputMismatch)}</strong>
+                </p>
+              )}
+              {report.inputMismatch !== 0 && (
+                <p className="mt-1">
+                  <span className="font-semibold">المدخلات:</span> من الفواتير المؤهلة{' '}
+                  <strong className="tabular-nums">{formatCurrencyPrecise(report.input.tax)}</strong>{' '}
+                  · في الدفاتر (حساب 1200){' '}
+                  <strong className="tabular-nums">{formatCurrencyPrecise(report.ledgerInput.tax)}</strong>{' '}
+                  · الفرق{' '}
+                  <strong className="tabular-nums">{formatCurrencyPrecise(report.inputMismatch)}</strong>
+                </p>
+              )}
+              <p className="mt-1">شغّل «إقفال الفترة ← فحص غير المُرحّل ← ترحيل» لتتطابق الأرقام.</p>
+            </div>
           </div>
+        )}
+
+        {/* ── المؤهلة غير المُرحّلة ───────────────────────────────── */}
+        {report.unpostedEligible.length > 0 && (
+          <Card className="p-6">
+            <SectionHeader
+              title="فواتير مؤهلة لم تُرحَّل إلى الدفاتر"
+              subtitle={`${formatNumber(report.unpostedEligible.length)} فاتورة بضريبة ${formatCurrencyPrecise(report.unpostedInputTax * s)} — مطالَب بها في التقرير وغير موجودة في حساب 1200`}
+            />
+            <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
+              <table className="w-full min-w-[620px] text-sm">
+                <thead>
+                  <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
+                    <th className="py-3 px-4 whitespace-nowrap">البند</th>
+                    <th className="py-3 px-4 whitespace-nowrap">المورّد</th>
+                    <th className="py-3 px-4 whitespace-nowrap">تاريخ الفاتورة</th>
+                    <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">الضريبة</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {report.unpostedEligible.map((r) => (
+                    <tr key={r.id} className="border-b border-slate-50 dark:border-slate-800/60 last:border-0">
+                      <td className="py-3 px-4 whitespace-normal break-words min-w-[160px] text-slate-800 dark:text-slate-200">
+                        <span className="inline-flex items-center gap-1.5 font-medium">
+                          {r.description}
+                          <SourceBadge source={r.source} />
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 whitespace-nowrap text-slate-700 dark:text-slate-300">{r.supplier}</td>
+                      <td className="py-3 px-4 whitespace-nowrap tabular-nums text-slate-600 dark:text-slate-400">{formatDate(r.claimDate)}</td>
+                      <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums font-bold text-amber-700 dark:text-amber-300">
+                        {formatCurrencyPrecise(r.tax * s)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
         )}
 
         {/* ── فواتير المدخلات المؤهلة ───────────────────────────── */}

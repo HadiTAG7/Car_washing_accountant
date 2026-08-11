@@ -482,7 +482,7 @@ export default function AddMonthlyExpenseModal({
                 onChange={(next) => setForm((f) => ({ ...f, ...next }))}
                 idPrefix="monthly"
                 amount={totalMonthlyCost}
-                fallbackDate={form.loggedDate}
+                spendDate={form.loggedDate}
               />
             )}
 

@@ -380,7 +380,7 @@ export default function ExpenseLedgerModal({
                 onChange={(next) => setForm((f) => ({ ...f, ...next }))}
                 idPrefix="ledger"
                 amount={parsedAmount}
-                fallbackDate={form.spentDate}
+                spendDate={form.spentDate}
               />
             )}
 

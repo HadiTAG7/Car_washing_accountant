@@ -15,19 +15,19 @@ const INPUT_CLS = 'w-full min-h-touch px-3 py-2 rounded-control border border-sl
  * missing, rather than letting them discover it as a silent absence from
  * the return three months later.
  *
- * `fallbackDate` is the record's own spend date — a purchase logged on the
- * day it happened is already dated, so the invoice-date field is optional
- * when that exists.
+ * `spendDate` is the record's own spend date. It is NOT a substitute for the
+ * invoice date — a purchase paid in April against a March invoice is deducted
+ * in March — so it is offered only as a one-click fill the user chooses,
+ * never as a silent fallback.
  */
 export default function TaxInvoiceFields({
-  form, onChange, idPrefix = 'inv', amount = 0, fallbackDate = '',
+  form, onChange, idPrefix = 'inv', amount = 0, spendDate = '',
 }) {
   const check = inputInvoiceEligibility({
     isTaxInvoice: true,
     amount,
     invoiceNumber: form.invoiceNumber,
     invoiceDate: form.invoiceDate,
-    spentDate: fallbackDate,
     supplier: form.supplier,
     vatDeductible: form.vatDeductible,
   });
@@ -62,6 +62,12 @@ export default function TaxInvoiceFields({
           <DateField name={`${idPrefix}-date`} value={form.invoiceDate}
             onChange={(e) => set({ invoiceDate: e.target.value })}
             ariaLabel="تاريخ الفاتورة" />
+          {spendDate && spendDate !== form.invoiceDate && (
+            <button type="button" onClick={() => set({ invoiceDate: spendDate })}
+              className="mt-1 text-[11px] font-semibold text-primary-700 dark:text-primary-300 hover:underline">
+              نفس تاريخ الصرف ({spendDate})
+            </button>
+          )}
         </div>
       </div>
 
@@ -86,7 +92,8 @@ export default function TaxInvoiceFields({
           <AlertTriangle size={13} className="shrink-0 mt-0.5" />
           <span>
             لن تُخصم ضريبتها حتى تكتمل: <strong>{check.missing.join(' · ')}</strong>.
-            {' '}الخصم يحتاج فاتورة ضريبية فعلية.
+            {' '}الخصم يحتاج فاتورة ضريبية فعلية، وتاريخ الفاتورة هو ما يحدّد
+            فترة الخصم — لا تاريخ الصرف.
           </span>
         </p>
       )}

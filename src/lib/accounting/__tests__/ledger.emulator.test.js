@@ -29,7 +29,7 @@ let db, ledger, rules, postingRules;
 
 async function wipe() {
   for (const c of ['chart_of_accounts', 'journal_entries', 'journal_lines',
-    'accounting_periods', 'audit_logs', 'counters']) {
+    'accounting_periods', 'audit_logs', 'counters', 'posting_locks']) {
     const snap = await getDocs(collection(db, c));
     await Promise.all(snap.docs.map((s) => deleteDoc(s.ref)));
   }
@@ -163,6 +163,54 @@ d('طبقة الترحيل على Firestore الحقيقي', () => {
     }
     for (const v of net.values()) expect(rules.round2(v)).toBe(0);
   }, 60_000);
+
+  it('سطور القيد داخل مستنده — لا مجموعة منفصلة تُلحَق بها سطور', async () => {
+    await ledger.seedChartOfAccounts({ userId: 'u1' });
+    const res = await ledger.postEntry(postingRules.buildWashEntry({
+      id: 'w1', quantity: 2, price: 57.5, status: 'مكتملة', washDate: '2026-08-11',
+    }), { userId: 'u1' });
+
+    const entry = await getDoc(doc(db, 'journal_entries', res.entryId));
+    expect(Array.isArray(entry.data().lines)).toBe(true);
+    expect(entry.data().lines).toHaveLength(3);
+    expect(entry.data().lineCount).toBe(3);
+    // Nothing was written to the legacy collection.
+    expect((await getDocs(collection(db, 'journal_lines'))).size).toBe(0);
+    // And the readers see them all the same.
+    expect(await ledger.fetchLinesOf(res.entryId)).toHaveLength(3);
+    expect(await ledger.fetchLines()).toHaveLength(3);
+  }, 60_000);
+
+  it('الترحيل يقفل السجل المصدر، والعكس يفكّ القفل', async () => {
+    await ledger.seedChartOfAccounts({ userId: 'u1' });
+    const res = await ledger.postEntry(postingRules.buildWashEntry({
+      id: 'w1', quantity: 1, price: 115, status: 'مكتملة', washDate: '2026-08-11',
+    }), { userId: 'u1' });
+
+    const lock = await getDoc(doc(db, 'posting_locks', 'wash__w1'));
+    expect(lock.exists()).toBe(true);
+    expect(lock.data()).toMatchObject({ sourceType: 'wash', sourceId: 'w1', entryId: res.entryId });
+
+    await ledger.reverseEntry(res.entryId, { entryDate: '2026-09-01', userId: 'u1' });
+    // Released, so the record can be corrected and re-posted.
+    expect((await getDoc(doc(db, 'posting_locks', 'wash__w1'))).exists()).toBe(false);
+  }, 90_000);
+
+  it('لا يُعاد فتح فترة بلا سبب', async () => {
+    await ledger.seedChartOfAccounts({ userId: 'u1' });
+    await ledger.postEntry(postingRules.buildWashEntry({
+      id: 'w1', quantity: 1, price: 115, status: 'مكتملة', washDate: '2026-08-11',
+    }), { userId: 'u1' });
+    await ledger.closePeriod('2026-08', { userId: 'u1' });
+
+    await expect(ledger.reopenPeriod('2026-08', { userId: 'u1' })).rejects.toThrow(/سبب/);
+    await expect(ledger.reopenPeriod('2026-08', { userId: 'u1', reason: '   ' })).rejects.toThrow(/سبب/);
+
+    await ledger.reopenPeriod('2026-08', { userId: 'u1', reason: 'فاتورة متأخرة' });
+    const period = await getDoc(doc(db, 'accounting_periods', '2026-08'));
+    expect(period.data().status).toBe('open');
+    expect(period.data().reopenReason).toBe('فاتورة متأخرة');
+  }, 120_000);
 
   it('لا يُعكس قيد مرحّل مرتين', async () => {
     await ledger.seedChartOfAccounts({ userId: 'u1' });

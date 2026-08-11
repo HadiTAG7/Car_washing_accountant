@@ -113,17 +113,20 @@ function isIsoDate(v) { return /^\d{4}-\d{2}-\d{2}$/.test(String(v || '').slice(
 /**
  * Judges one input record. Returns { eligible, missing: [Arabic labels] }.
  *
- * `invoiceDate` falls back to the spend date: a purchase logged on the day it
- * happened carries its date there, and requiring the field twice would reject
- * perfectly good records for a formatting reason.
+ * `invoiceDate` is REQUIRED and has no fallback. The spend date is when money
+ * left the account; the invoice date is when the supplier raised the document,
+ * and they are routinely different — a purchase paid in April against a March
+ * invoice is deducted in March. Substituting one for the other would file the
+ * deduction in the wrong period, which is a misstatement even when the amount
+ * is right. The user enters the date off the invoice, or the tax is not
+ * deducted.
  */
 export function inputInvoiceEligibility(row) {
   const missing = [];
   if (!row?.isTaxInvoice) {
     return { eligible: false, missing: ['غير مُعلَّمة كفاتورة ضريبية'] };
   }
-  const date = row.invoiceDate || row.spentDate;
-  if (!isIsoDate(date)) missing.push('تاريخ الفاتورة');
+  if (!isIsoDate(row.invoiceDate)) missing.push('تاريخ الفاتورة');
   if (!hasText(row.invoiceNumber)) missing.push('رقم الفاتورة');
   if (!hasText(row.supplier)) missing.push('اسم المورّد');
   if (!(Number(row.amount) > 0)) missing.push('مبلغ الفاتورة');
@@ -135,9 +138,13 @@ export function inputInvoiceEligibility(row) {
   return { eligible: missing.length === 0, missing };
 }
 
-/** The date a purchase is claimed on — its invoice date, else its spend date. */
+/**
+ * The date a purchase is claimed on — the INVOICE date, and only that. A row
+ * without one has no claim date at all, which is why it shows in every period
+ * rather than drifting into whichever one its payment happened to fall in.
+ */
 export function claimDateOf(row) {
-  const d = row?.invoiceDate || row?.spentDate || '';
+  const d = row?.invoiceDate || '';
   return isIsoDate(d) ? String(d).slice(0, 10) : '';
 }
 
@@ -167,24 +174,65 @@ export function outputTaxFromWashes(washes, { period, filing = 'quarterly', vatR
   };
 }
 
-/** Output tax already posted to the ledger, as an independent cross-check. */
-export function outputTaxFromLedger(entries, lines, { period, filing = 'quarterly', account = '2100' } = {}) {
-  const postedById = new Map();
+/** Posted entries inside the period, indexed by id. */
+function postedEntriesIn(entries, period, filing) {
+  const map = new Map();
   for (const e of entries || []) {
     if (e.status !== 'posted') continue;
     const date = String(e.entryDate || '').slice(0, 10);
     if (period && periodKeyFor(date, filing) !== period) continue;
-    postedById.set(e.id, e);
+    map.set(e.id, e);
   }
+  return map;
+}
+
+/**
+ * Movement on one VAT account across the posted entries of a period.
+ *
+ * `sign` is +1 for a liability that grows on the credit side (output tax,
+ * 2100) and −1 for an asset that grows on the debit side (input tax, 1200),
+ * so both come back as positive tax figures.
+ *
+ * `available: false` means the account has no posted movement at all — the
+ * caller must not read that as "the ledger says zero", because an empty
+ * ledger and a genuinely nil period are different facts.
+ */
+function ledgerTaxOn(entries, lines, { period, filing, account, sign }) {
+  const posted = postedEntriesIn(entries, period, filing);
   let tax = 0;
   let found = false;
   for (const l of lines || []) {
     if (String(l.accountId) !== String(account)) continue;
-    if (!postedById.has(l.entryId)) continue;
+    if (!posted.has(l.entryId)) continue;
     found = true;
-    tax += (Number(l.credit) || 0) - (Number(l.debit) || 0);
+    tax += sign * ((Number(l.credit) || 0) - (Number(l.debit) || 0));
   }
   return { tax: round2(tax), available: found };
+}
+
+/** ضريبة المخرجات المُرحّلة — a check on the figure derived from the washes. */
+export function outputTaxFromLedger(entries, lines, { period, filing = 'quarterly', account = '2100' } = {}) {
+  return ledgerTaxOn(entries, lines, { period, filing, account, sign: 1 });
+}
+
+/**
+ * ضريبة المدخلات المُرحّلة — the same check on the purchase side.
+ *
+ * Input VAT sits on an ASSET account and grows on the debit side, so the sign
+ * is inverted. Without this, a report could claim deductions the books have
+ * never seen — the mirror of the output-side gap, and just as worth saying.
+ */
+export function inputTaxFromLedger(entries, lines, { period, filing = 'quarterly', account = '1200' } = {}) {
+  return ledgerTaxOn(entries, lines, { period, filing, account, sign: -1 });
+}
+
+/** Source ids that already have a posted entry — used to spot what is not. */
+export function postedSourceIds(entries) {
+  const ids = new Set();
+  for (const e of entries || []) {
+    if (e.status === 'posted' && e.sourceId != null) ids.add(String(e.sourceId));
+  }
+  return ids;
 }
 
 // ─── التقرير ─────────────────────────────────────────────────────────────
@@ -237,6 +285,14 @@ export function buildVatReport({
 
   const output = outputTaxFromWashes(washes, { period, filing, vatRegistered, priceMode: washPriceMode, rate });
   const ledgerOutput = outputTaxFromLedger(entries, lines, { period, filing });
+  const ledgerInput  = inputTaxFromLedger(entries, lines, { period, filing });
+
+  // Eligible purchases the ledger has never seen. These are exactly the rows
+  // that make the two input figures disagree, so the report names them rather
+  // than leaving the user to hunt for the difference.
+  const posted = postedSourceIds(entries);
+  const unpostedEligible = eligible.filter((r) => !posted.has(String(r.id)));
+  const unpostedInputTax = round2(unpostedEligible.reduce((sum, r) => sum + r.tax, 0));
 
   const netTax = round2(output.tax - inputTax);
   return {
@@ -245,11 +301,18 @@ export function buildVatReport({
     vatRegistered,
     output,
     ledgerOutput,
+    ledgerInput,
     // A difference between the operational figure and the posted one means
     // some completed washes have not been carried into the books yet.
     outputMismatch: ledgerOutput.available && Math.abs(round2(ledgerOutput.tax - output.tax)) >= 0.01
       ? round2(output.tax - ledgerOutput.tax)
       : 0,
+    // The same check on the purchase side: claimed here, not in the books.
+    inputMismatch: ledgerInput.available && Math.abs(round2(ledgerInput.tax - inputTax)) >= 0.01
+      ? round2(inputTax - ledgerInput.tax)
+      : 0,
+    unpostedEligible,
+    unpostedInputTax,
     input: { tax: inputTax, gross: inputGross, net: inputNet, count: eligible.length },
     eligible,
     ineligible,

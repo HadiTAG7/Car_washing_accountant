@@ -18,6 +18,7 @@
 
 import {
   collection, doc, getDoc, getDocs, query, where, runTransaction, serverTimestamp,
+  deleteDoc,
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../firebaseClient';
 import { fetchRows } from '../firestoreCrud';
@@ -30,12 +31,41 @@ import { closePreflight } from './periods';
 export const COL = {
   ACCOUNTS: 'chart_of_accounts',
   ENTRIES:  'journal_entries',
-  LINES:    'journal_lines',
+  LINES:    'journal_lines',      // legacy: frozen, read-only (see below)
   PERIODS:  'accounting_periods',
   AUDIT:    'audit_logs',
   COUNTERS: 'counters',
+  LOCKS:    'posting_locks',
 };
 const JOURNAL_COUNTER = 'journal';
+
+/**
+ * Lines live INSIDE their entry document.
+ *
+ * They used to be their own collection, which left a hole no rule could
+ * close: `journal_lines` create had to stay open for the posting transaction,
+ * and Firestore rules evaluate a batch against the state BEFORE it, so a rule
+ * like "the parent must be a draft" would have rejected the very write that
+ * creates the entry. An accountant could therefore append a line to a posted
+ * entry and silently unbalance it.
+ *
+ * Embedded, the invariant is structural instead of enforced: the entry is
+ * written once, and the only update rules permit is the reversal transition
+ * with `hasOnly(['status','reversedBy','reversedAt'])` — which cannot touch
+ * `lines`. There is no separate document to append to.
+ *
+ * The old collection is kept readable so entries posted before this change
+ * still render, and is frozen against create/update/delete in the rules.
+ */
+export function embeddedLinesOf(entry) {
+  const rows = Array.isArray(entry?.lines) ? entry.lines : [];
+  return rows.map((l, i) => ({ ...l, entryId: entry.id, id: `${entry.id}:${i}` }));
+}
+
+/** Lock id for a source record — `wash__abc123`. */
+export function postingLockId(sourceType, sourceId) {
+  return `${sourceType}__${sourceId}`;
+}
 
 function requireDb() {
   if (!isFirebaseConfigured) throw new Error('Firebase غير مُهيّأ — لا يمكن الترحيل.');
@@ -44,13 +74,27 @@ function requireDb() {
 // ─── القراءة ─────────────────────────────────────────────────────────────
 export const fetchAccounts = () => fetchRows(COL.ACCOUNTS);
 export const fetchEntries  = () => fetchRows(COL.ENTRIES);
-export const fetchLines    = () => fetchRows(COL.LINES);
 export const fetchPeriods  = () => fetchRows(COL.PERIODS);
+export const fetchLocks    = () => fetchRows(COL.LOCKS);
+
+/**
+ * Every line in the ledger: the ones embedded in entries, plus the legacy
+ * collection for entries posted before lines moved inside. Both collections
+ * are small, and hiding the seam here keeps every report on one shape.
+ */
+export async function fetchLines() {
+  const [entries, legacy] = await Promise.all([fetchEntries(), fetchRows(COL.LINES)]);
+  return entries.flatMap(embeddedLinesOf).concat(legacy);
+}
 
 /** Lines of one entry — used by the reversal flow and the entry detail view. */
 export async function fetchLinesOf(entryId) {
-  const snap = await getDocs(query(collection(db, COL.LINES), where('entryId', '==', entryId)));
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const snap = await getDoc(doc(db, COL.ENTRIES, entryId));
+  if (snap.exists() && Array.isArray(snap.data().lines)) {
+    return embeddedLinesOf({ id: snap.id, ...snap.data() });
+  }
+  const legacy = await getDocs(query(collection(db, COL.LINES), where('entryId', '==', entryId)));
+  return legacy.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
 // ─── سجل التدقيق ─────────────────────────────────────────────────────────
@@ -114,12 +158,26 @@ export async function postEntry({ entry, lines }, { userId = null, knownAccountC
     tx.set(entryRef, {
       ...normalized.entry,
       entryNumber: nextNumber,
+      // Lines live in the entry, so a posted entry has nothing appendable.
+      lines: normalized.lines,
+      lineCount: normalized.lines.length,
       createdBy: userId ?? normalized.entry.createdBy ?? null,
       createdAt: serverTimestamp(),
       postedAt:  normalized.entry.status === 'posted' ? serverTimestamp() : null,
     });
-    for (const l of normalized.lines) {
-      tx.set(doc(collection(db, COL.LINES)), { ...l, entryId: entryRef.id, createdAt: serverTimestamp() });
+    // Locks the operational record this entry came from: once the books
+    // record it, the source can no longer be edited or deleted from a client.
+    // Enforced by the rules, which check for this document's existence.
+    if (normalized.entry.status === 'posted'
+        && normalized.entry.sourceType && normalized.entry.sourceId) {
+      tx.set(doc(db, COL.LOCKS, postingLockId(normalized.entry.sourceType, normalized.entry.sourceId)), {
+        sourceType: normalized.entry.sourceType,
+        sourceId:   normalized.entry.sourceId,
+        entryId:    entryRef.id,
+        entryNumber: nextNumber,
+        lockedBy:   userId ?? null,
+        lockedAt:   serverTimestamp(),
+      });
     }
     // Create the period lazily so a month is tracked from its first entry.
     if (!periodSnap.exists()) {
@@ -182,12 +240,11 @@ export async function reverseEntry(entryId, { entryDate, description, userId = n
     tx.set(revRef, {
       ...reversal.entry,
       entryNumber: nextNumber,
+      lines: reversal.lines,
+      lineCount: reversal.lines.length,
       createdAt: serverTimestamp(),
       postedAt:  serverTimestamp(),
     });
-    for (const l of reversal.lines) {
-      tx.set(doc(collection(db, COL.LINES)), { ...l, entryId: revRef.id, createdAt: serverTimestamp() });
-    }
     // The original is marked, never deleted.
     tx.update(originalRef, { status: 'reversed', reversedBy: revRef.id, reversedAt: serverTimestamp() });
     if (!revPeriodSnap.exists()) {
@@ -203,6 +260,20 @@ export async function reverseEntry(entryId, { entryDate, description, userId = n
       note: `عكس القيد رقم ${entry.entryNumber} بقيد رقم ${nextNumber}`,
     });
     return { entryId: revRef.id, entryNumber: nextNumber };
+  }).then(async (result) => {
+    // Releasing the source lock happens AFTER the reversal commits, not
+    // inside it: rules evaluate a transaction against the state before it,
+    // so a rule requiring the entry to already read `reversed` could never
+    // pass from within. Failing to release is the safe direction — the lock
+    // simply stays and the record remains protected.
+    if (entry.sourceType && entry.sourceId) {
+      try {
+        await deleteDoc(doc(db, COL.LOCKS, postingLockId(entry.sourceType, entry.sourceId)));
+      } catch {
+        // Left locked on purpose; correcting it is a deliberate act.
+      }
+    }
+    return result;
   });
 }
 
@@ -252,17 +323,25 @@ export async function closePeriod(periodKey, { userId = null } = {}) {
  */
 export async function reopenPeriod(periodKey, { userId = null, reason = '' } = {}) {
   requireDb();
+  // Re-opening a filed period is a decision, and a decision without a stated
+  // reason is indistinguishable from an accident. The rules require the field
+  // too, so this is not merely a client-side courtesy.
+  const why = String(reason || '').trim();
+  if (!why) throw new Error('سبب إعادة فتح الفترة مطلوب.');
   return runTransaction(db, async (tx) => {
     const ref = doc(db, COL.PERIODS, periodKey);
     const snap = await tx.get(ref);
     if (!snap.exists() || snap.data().status !== 'closed') {
       throw new Error(`الفترة ${periodKey} ليست مقفلة.`);
     }
-    tx.set(ref, { status: 'open', reopenedAt: serverTimestamp(), reopenedBy: userId ?? null }, { merge: true });
+    tx.set(ref, {
+      status: 'open', reopenReason: why,
+      reopenedAt: serverTimestamp(), reopenedBy: userId ?? null,
+    }, { merge: true });
     writeAuditInTx(tx, {
       action: 'reopen', collectionName: COL.PERIODS, documentId: periodKey, userId,
-      before: { status: 'closed' }, after: { status: 'open' },
-      note: `إعادة فتح الفترة ${periodKey}${reason ? ` — ${reason}` : ''}`,
+      before: { status: 'closed' }, after: { status: 'open', reopenReason: why },
+      note: `إعادة فتح الفترة ${periodKey} — ${why}`,
     });
     return { periodKey };
   });

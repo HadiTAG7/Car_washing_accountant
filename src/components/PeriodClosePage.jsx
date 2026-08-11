@@ -195,13 +195,19 @@ export default function PeriodClosePage() {
   }
 
   async function handleReopen(key) {
-    const ok = typeof window === 'undefined' || window.confirm(
-      `إعادة فتح الفترة ${key}؟\n\nستُسجَّل العملية في سجل التدقيق باسمك.`,
+    // A reason is required by the rules, not just asked for here: re-opening
+    // a filed period is the one action that can change what a filed month
+    // says, so it needs an admin and a stated why.
+    const reason = typeof window === 'undefined' ? '' : window.prompt(
+      `سبب إعادة فتح الفترة ${key}؟\n\n`
+      + 'العملية مقصورة على المدير وتُسجَّل في سجل التدقيق باسمك مع السبب.',
+      '',
     );
-    if (!ok) return;
+    if (reason == null) return;
+    if (!reason.trim()) { showToast('سبب إعادة الفتح مطلوب.', 'error'); return; }
     setBusy(key);
     try {
-      await reopenPeriod(key, { userId: user?.id, reason: 'إعادة فتح من صفحة الإقفال' });
+      await reopenPeriod(key, { userId: user?.id, reason: reason.trim() });
       showToast(`تمت إعادة فتح الفترة ${key}.`);
       await refetch();
     } catch (e) {

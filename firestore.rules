@@ -119,6 +119,16 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // ── إعدادات التطبيق ──────────────────────────────────────────────
+    // Deliberately NOT in the operational list below: `app_settings/company`
+    // holds the VAT number that goes into every QR code, and
+    // `app_settings/accounting` holds the auto-posting switch. Both are
+    // accounting policy, not day-to-day data.
+    match /app_settings/{key} {
+      allow read:  if isMember();
+      allow write: if isAccountant();
+    }
+
     // ── سندات المصاريف المتكررة ──────────────────────────────────────
     // Generated from a monthly template, one per period. The document id is
     // `<templateId>__<periodKey>`, so re-generating overwrites rather than
@@ -180,7 +190,7 @@ service cloud.firestore {
     function isOperationalColl(c) {
       return c in [
         'annual_expense_categories', 'annual_expense_entries', 'annual_expenses',
-        'app_settings', 'auth_users_backup', 'categories', 'category_budgets',
+        'auth_users_backup', 'categories', 'category_budgets',
         'monthly_expense_categories', 'monthly_expenses', 'partner_payments',
         'partners', 'startup_cost_entries', 'startup_costs', 'temporary_expenses',
         'transactions', 'variable_expense_categories', 'variable_expenses', 'washes'

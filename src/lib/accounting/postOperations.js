@@ -17,10 +17,7 @@
 
 import { fetchRows } from '../firestoreCrud';
 import { postEntry, hasPostedEntryFor, fetchEntries, fetchAccounts, ensureAccount } from './firestoreLedger';
-import {
-  buildWashEntry, buildExpenseEntry, buildPartnerPaymentEntry,
-  buildTemporaryExpenseEntry, buildRecoveryEntry, canPostWash, expenseAccountFor,
-} from './postingRules';
+import { ADAPTERS } from './sourceAdapters';
 import { partnerCapitalAccount, partnerCapitalCode } from './chartOfAccounts';
 import { isPeriodClosed, indexPeriods } from './periods';
 import { periodKeyOf } from './journal';
@@ -47,111 +44,50 @@ export async function collectUnposted({ vatRegistered = true, washPriceMode = 'i
 
   const ready = [];
   const skipped = [];
-  const consider = (kind, sourceType, sourceId, date, build, label) => {
-    if (hasPostedEntryFor(entries, sourceType, sourceId)) {
+  const buildOpts = { vatRegistered, washPriceMode };
+
+  /**
+   * One gate for every source, so a record is judged the same way whichever
+   * pass found it. The adapter decides approval; this decides postability.
+   */
+  const consider = (adapterKey, row, ctx = {}) => {
+    const a = ADAPTERS[adapterKey];
+    const label = a.label(row, ctx);
+    const kind = adapterKey;
+    if (!a.isApproved(row)) {
+      skipped.push({ kind, label, reason: a.notApprovedReason || 'غير معتمد بعد' });
+      return;
+    }
+    const sourceId = a.sourceId(row);
+    if (hasPostedEntryFor(entries, a.sourceType, sourceId)) {
       skipped.push({ kind, label, reason: 'مُرحّل مسبقاً' }); return;
     }
+    const date = a.dateOf(row);
     const key = periodKeyOf(date);
     if (!key) { skipped.push({ kind, label, reason: 'بلا تاريخ صالح' }); return; }
     if (isPeriodClosed(key, periodIndex)) {
       skipped.push({ kind, label, reason: `الفترة ${key} مقفلة` }); return;
     }
-    ready.push({ kind, sourceType, sourceId, date, label, build });
+    ready.push({
+      kind, sourceType: a.sourceType, sourceId, date, label,
+      build: () => a.build(row, { ...buildOpts, ...ctx }),
+    });
   };
 
-  // ── الغسلات — completed only ──────────────────────────────────────────
-  for (const w of washes) {
-    const label = `غسلات ${w.biker_name || ''} ${w.wash_date || ''}`.trim();
-    if (!canPostWash({ status: w.status })) {
-      skipped.push({ kind: 'wash', label, reason: 'غير مكتملة — لا يُعترف بالإيراد بعد' });
-      continue;
-    }
-    consider('wash', 'wash', w.id, w.wash_date, () => buildWashEntry({
-      id: w.id, bikerName: w.biker_name, quantity: w.quantity, price: w.price,
-      status: w.status, washDate: w.wash_date, paymentMethod: w.payment_method || 'cash',
-    }, { vatRegistered, priceMode: w.price_mode || washPriceMode }), label);
-  }
-
-  // ── المصروفات — one builder, four sources ─────────────────────────────
-  const expenseSources = [
-    ['monthly',  monthly,        (r) => ({ id: r.id, description: r.expense_name, amount: r.total_monthly_cost,
-      date: r.logged_date, isTaxInvoice: r.is_tax_invoice, invoiceUrl: r.invoice_url,
-      paymentMethod: r.payment_method, paymentStatus: r.payment_status === 'paid' ? 'paid' : 'unpaid',
-      supplier: r.supplier, invoiceNumber: r.invoice_number, vatDeductible: r.vat_deductible })],
-    ['variable', variable,       (r) => ({ id: r.id, description: r.expense_name, amount: r.total_variable_cost,
-      date: r.logged_date, isTaxInvoice: r.is_tax_invoice, invoiceUrl: r.invoice_url,
-      paymentMethod: r.payment_method, paymentStatus: 'paid',
-      supplier: r.supplier, invoiceNumber: r.invoice_number, vatDeductible: r.vat_deductible })],
-    ['annual',   annualEntries,  (r) => ({ id: r.id, description: r.description, amount: r.amount,
-      date: r.spent_date, isTaxInvoice: r.is_tax_invoice, invoiceUrl: r.invoice_url,
-      paymentMethod: 'cash', paymentStatus: 'paid' })],
-    ['startup',  startupEntries, (r) => ({ id: r.id, description: r.description, amount: r.amount,
-      date: r.spent_date, isTaxInvoice: r.is_tax_invoice, invoiceUrl: r.invoice_url,
-      paymentMethod: 'cash', paymentStatus: 'paid' })],
-  ];
-  for (const [kind, rows, toExpense] of expenseSources) {
-    for (const r of rows) {
-      const e = toExpense(r);
-      // A recurring monthly template has no single spend date — it is not a
-      // document, so there is nothing to post. Its per-period vouchers are,
-      // and they come through the pass below.
-      if (kind === 'monthly' && !e.date) {
-        skipped.push({
-          kind, label: e.description || '',
-          reason: 'مصروف متكرر بلا تاريخ — ولّد سنداً مؤرخاً لكل فترة',
-        });
-        continue;
-      }
-      consider(kind, 'expense', r.id, e.date,
-        () => buildExpenseEntry(e, { expenseAccount: expenseAccountFor(kind), vatRegistered }),
-        `${e.description || 'مصروف'} — ${e.date || ''}`);
-    }
-  }
-
-  // ── سندات المصاريف المتكررة ───────────────────────────────────────────
-  // Generated from a monthly template, one per period, each with a real due
-  // date — which is what makes a recurring cost postable at all.
-  for (const v of vouchers) {
-    const label = `${v.templateName || 'مصروف شهري'} — ${v.periodKey || ''}`;
-    if (v.status === 'cancelled') {
-      skipped.push({ kind: 'voucher', label, reason: 'سند ملغى' });
-      continue;
-    }
-    consider('voucher', 'expense', v.id, v.dueDate, () => buildExpenseEntry({
-      id: v.id, description: `${v.templateName || 'مصروف شهري'} — ${v.periodKey}`,
-      amount: v.amount, date: v.dueDate,
-      isTaxInvoice: v.isTaxInvoice, invoiceUrl: v.invoiceUrl,
-      paymentMethod: v.paymentMethod || 'cash',
-      // An unpaid voucher credits the supplier, not cash — the whole point of
-      // dating it is that the liability exists whether or not it is settled.
-      paymentStatus: v.paymentStatus === 'paid' ? 'paid' : 'unpaid',
-      supplier: v.supplier, vatDeductible: v.vatDeductible,
-    }, { expenseAccount: expenseAccountFor('monthly'), vatRegistered }), label);
-  }
-
-  // ── دفعات الشركاء ─────────────────────────────────────────────────────
+  for (const w of washes)         consider('wash', w);
+  for (const r of monthly)        consider('monthly', r);
+  for (const r of variable)       consider('variable', r);
+  for (const r of annualEntries)  consider('annual', r);
+  for (const r of startupEntries) consider('startup', r);
+  for (const v of vouchers)       consider('voucher', v);
   for (const p of payments) {
-    const partner = partnerById.get(p.partner_id);
-    const label = `دفعة ${partner?.partner_name || ''} ${p.payment_date || ''}`.trim();
-    consider('partner_payment', 'partner_payment', p.id, p.payment_date, () => buildPartnerPaymentEntry({
-      id: p.id, partnerId: p.partner_id, partnerName: partner?.partner_name,
-      amount: p.amount, paymentDate: p.payment_date, paymentMethod: p.payment_method || 'transfer',
-    }), label);
+    consider('partner_payment', p, { partnerName: partnerById.get(p.partner_id)?.partner_name });
   }
-
-  // ── العهد واستردادها ──────────────────────────────────────────────────
+  // An advance and its recovery are two entries from one row, so the same
+  // record goes through two adapters.
   for (const t of temps) {
-    const label = `عهدة ${t.title || ''}`.trim();
-    consider('temporary_expense', 'temporary_expense', t.id, t.spent_date, () => buildTemporaryExpenseEntry({
-      id: t.id, title: t.title, amount: t.amount, spentDate: t.spent_date,
-      paymentMethod: t.payment_method || 'cash',
-    }), label);
-    if (t.status === 'recovered' && t.recovered_date) {
-      consider('recovery', 'recovery', t.id, t.recovered_date, () => buildRecoveryEntry({
-        id: t.id, title: t.title, amount: t.amount, recoveredDate: t.recovered_date,
-        paymentMethod: t.payment_method || 'cash',
-      }), `استرداد ${t.title || ''}`.trim());
-    }
+    consider('temporary_expense', t);
+    if (t.status === 'recovered' && t.recovered_date) consider('recovery', t);
   }
 
   ready.sort((a, b) => String(a.date).localeCompare(String(b.date)));

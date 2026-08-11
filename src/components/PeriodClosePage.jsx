@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
   Lock, Unlock, ShieldCheck, AlertTriangle, CheckCircle2, Loader2, Database, Upload,
-  CalendarRange, FilePlus2,
+  CalendarRange, FilePlus2, Zap,
 } from 'lucide-react';
 import { formatCurrency } from '../data/initialData';
 import TopBar from './TopBar';
@@ -16,6 +16,7 @@ import { closePeriod, reopenPeriod, seedChartOfAccounts } from '../lib/accountin
 import { collectUnposted, postUnposted } from '../lib/accounting/postOperations';
 import { previewGeneration, generateVouchers } from '../lib/accounting/firestoreRecurring';
 import { addMonths } from '../lib/accounting/depreciation';
+import { useAccountingSettings } from '../hooks/useAccountingSettings';
 import { isFirebaseConfigured, missingEnvNames, describeBackendError } from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 
@@ -28,6 +29,7 @@ export default function PeriodClosePage() {
   const { entries, periods, linesByEntry, needsSeeding, loading, error, refetch } = useLedger();
   const { user } = useAuth();
   const { canMutate } = usePartnerView();
+  const { settings, update: updateSettings } = useAccountingSettings();
   const [busy, setBusy] = useState('');
   // Result of the last unposted-operations scan / sweep.
   const [scan, setScan] = useState(null);
@@ -115,6 +117,18 @@ export default function PeriodClosePage() {
     } catch (e) {
       showToast(describeBackendError(e) || e?.message || 'تعذّر الترحيل', 'error');
     } finally { setBusy(''); setProgress(null); }
+  }
+
+  async function handleToggleAutoPost(next) {
+    setBusy('autopost');
+    try {
+      await updateSettings({ autoPost: next }, { userId: user?.id });
+      showToast(next
+        ? 'الترحيل التلقائي مفعّل — ستُرحَّل الغسلة عند إتمامها والمصروف عند سداده.'
+        : 'الترحيل التلقائي موقوف — الترحيل يتم من هذه الصفحة.');
+    } catch (e) {
+      showToast(describeBackendError(e) || e?.message || 'تعذّر الحفظ', 'error');
+    } finally { setBusy(''); }
   }
 
   async function handlePreviewVouchers() {
@@ -230,6 +244,45 @@ export default function PeriodClosePage() {
               <StatCard className="col-span-2 md:col-span-1" icon={Unlock} tone="amber"
                 label="فترات مفتوحة" value={String(periodKeys.length - closedCount)} />
             </div>
+
+            {/* ── الترحيل التلقائي ───────────────────────────────────
+                Off by default, and switched in exactly one visible place: an
+                existing install must not silently start writing entries
+                because the app updated. */}
+            <Card className="p-5">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-4 justify-between">
+                <div className="flex items-start gap-3 min-w-0">
+                  <span className={`w-10 h-10 rounded-control flex items-center justify-center shrink-0 ${
+                    settings.autoPost
+                      ? 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+                  }`}>
+                    <Zap size={18} />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-slate-900 dark:text-slate-100">الترحيل التلقائي عند الاعتماد</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mt-0.5">
+                      يُرحَّل القيد لحظة إتمام الغسلة أو سداد المصروف — لا عند كل حفظ،
+                      بل عند الانتقال إلى الحالة المعتمدة فقط. تُطبَّق نفس الضوابط:
+                      لا تكرار، ولا ترحيل في فترة مقفلة، وأي إخفاق يُعرض ولا يُبتلع.
+                      {settings.autoPost
+                        ? ' تذكّر أن القيد المُرحّل لا يُعدَّل — تعديل السجل بعد الترحيل يحتاج قيداً عكسياً.'
+                        : ' الترحيل يتم يدوياً من «فحص غير المُرحّل» أدناه.'}
+                    </p>
+                  </div>
+                </div>
+                {canMutate && (
+                  <label className="flex items-center gap-2.5 min-h-touch cursor-pointer select-none shrink-0">
+                    <input type="checkbox" checked={Boolean(settings.autoPost)} disabled={busy === 'autopost'}
+                      onChange={(e) => handleToggleAutoPost(e.target.checked)}
+                      className="w-4 h-4 accent-primary-600" />
+                    <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                      {settings.autoPost ? 'مفعّل' : 'موقوف'}
+                    </span>
+                  </label>
+                )}
+              </div>
+            </Card>
 
             {/* ── سندات المصاريف المتكررة ───────────────────────────
                 A row like "الإيجار 5,000 شهرياً" is a TEMPLATE, not a

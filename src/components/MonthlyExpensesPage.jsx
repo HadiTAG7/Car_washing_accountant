@@ -16,6 +16,9 @@ import ErrorState, { SetupRequiredCard } from './ErrorState';
 import Toast from './Toast';
 import { useMonthlyExpenses } from '../hooks/useMonthlyExpenses';
 import { useMonthlyExpenseCategories } from '../hooks/useMonthlyExpenseCategories';
+import { useAuth } from '../hooks/useAuth';
+import { useAccountingSettings } from '../hooks/useAccountingSettings';
+import { autoPost, describeAutoPost, autoPostTone } from '../lib/accounting/autoPost';
 import { isFirebaseConfigured, missingEnvNames, describeBackendError } from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 
@@ -80,6 +83,8 @@ export default function MonthlyExpensesPage() {
   } = useMonthlyExpenseCategories();
 
   const { scalingFactor, canMutate } = usePartnerView();
+  const { user } = useAuth();
+  const { settings } = useAccountingSettings();
 
   const [localOpen, setLocalOpen]         = useState(false);
   const [editingItem, setEditingItem]     = useState(null);
@@ -122,9 +127,25 @@ export default function MonthlyExpensesPage() {
     try { await updateItem(id, updates); showToast('تم حفظ التعديلات'); }
     catch (e) { setMutationError(e); throw e; }
   }
+  /**
+   * Marking a one-off expense مسدَّد is its approval moment. A RECURRING row
+   * is deliberately excluded: it is a template with no date, and its dated
+   * vouchers are what get posted — auto-posting the template here would put a
+   * dateless cost in the books.
+   */
   async function handleUpdateStatus(id, status) {
+    const before = items.find((m) => m.id === id);
     try { await updateStatus(id, status); }
-    catch (e) { setMutationError(e); }
+    catch (e) { setMutationError(e); return; }
+    if (!settings.autoPost || status !== 'paid') return;
+    if (before?.paymentStatus === 'paid') return;      // not a transition
+    if (!before?.loggedDate) return;                   // recurring template
+    const result = await autoPost({
+      kind: 'monthly', id, userId: user?.id, vatRegistered: settings.vatRegistered,
+    });
+    if (result.status !== 'skipped' || result.blocking) {
+      showToast(describeAutoPost(result), autoPostTone(result));
+    }
   }
   async function handleAddCategory(label) {
     try {

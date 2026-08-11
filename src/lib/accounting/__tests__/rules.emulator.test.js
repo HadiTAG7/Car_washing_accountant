@@ -196,6 +196,32 @@ d('قواعد أمان Firestore', () => {
     });
   });
 
+  // ── إعدادات التطبيق ────────────────────────────────────────────────
+  describe('إعدادات المحاسبة سياسة لا بيانات يومية', () => {
+    it('المحاسب يبدّل الترحيل التلقائي، والمشغّل لا', async () => {
+      await assertSucceeds(setDoc(doc(ctx.acct, 'app_settings', 'accounting'), {
+        value: { autoPost: true },
+      }));
+      await assertFails(setDoc(doc(ctx.op, 'app_settings', 'accounting'), {
+        value: { autoPost: false },
+      }));
+    });
+
+    it('المشغّل لا يغيّر الرقم الضريبي — يدخل في كل رمز QR', async () => {
+      await assertFails(setDoc(doc(ctx.op, 'app_settings', 'company'), {
+        value: { vatNumber: '399999999999993' },
+      }));
+    });
+
+    it('الأعضاء يقرأون الإعدادات', async () => {
+      await env.withSecurityRulesDisabled(async (c) => {
+        await setDoc(doc(c.firestore(), 'app_settings', 'company'), { value: { name: 'سويتر' } });
+      });
+      await assertSucceeds(getDoc(doc(ctx.op, 'app_settings', 'company')));
+      await assertFails(getDoc(doc(ctx.anon, 'app_settings', 'company')));
+    });
+  });
+
   // ── سندات المصاريف المتكررة ────────────────────────────────────────
   describe('السندات الدورية', () => {
     beforeEach(async () => {

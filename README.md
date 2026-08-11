@@ -231,6 +231,40 @@ without them is open-ended, which is how every existing row behaves.
 
 ---
 
+## الترحيل التلقائي — posting at the approval moment
+
+Posting stays a *decision*; what this adds is that the decision can be
+expressed where it is actually made — the moment a wash is marked **مكتملة**,
+or a dated expense is marked **مسدَّد**.
+
+Switched in one visible place, **إقفال الفترة → الترحيل التلقائي**, and **off
+by default**: an existing install must not silently start writing entries
+because the app updated.
+
+Three properties make it safe to fire from a UI action:
+
+1. **It fires on a transition**, not on every save. An operator editing a
+   completed wash three times does not mint three entries.
+2. **Same guards as the manual sweep.** Both paths read the same adapters in
+   `sourceAdapters.js` — one definition of "how does this record become an
+   entry" — so idempotency on `sourceType + sourceId`, the closed-period check
+   and the account mapping cannot drift apart. Posting via one path makes the
+   other a no-op.
+3. **It never throws, and never swallows.** The operational save already
+   succeeded, so a ledger failure must not tear down the user's action — but
+   the result is always surfaced as a toast. A closed period or an invalid
+   date comes back as a *blocking* skip shown in red.
+
+The record is **re-read from Firestore** before posting, so what lands in the
+ledger is what was actually stored.
+
+A recurring template is deliberately excluded: it has no date, so its dated
+vouchers are what post. And editing a record that is already in the books
+gets a warning — the posted entry does not follow the edit, so the correction
+is a reversal or an adjusting entry.
+
+---
+
 ## Setup
 
 ```bash
@@ -265,9 +299,13 @@ VITE_FIREBASE_STORAGE_BUCKET, VITE_FIREBASE_MESSAGING_SENDER_ID, VITE_FIREBASE_A
 | Role | Can |
 |---|---|
 | `admin` | everything operational + manage accounts and fee rules, close periods |
-| `accountant` | post/reverse entries, close periods, read everything |
+| `accountant` | post/reverse entries, close periods, issue documents, manage the asset register and accounting settings, read everything |
 | `operator` | record day-to-day operations; **cannot** touch the ledger |
 | `partner` | read-only |
+
+`app_settings` is **not** an operational collection: it holds the VAT number
+printed into every QR code and the auto-posting switch, so it needs an
+accountant.
 
 Two things **no** client can do, whatever the role:
 - write `app_admins` (privilege escalation would be one write away);

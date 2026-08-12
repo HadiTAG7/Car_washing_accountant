@@ -30,6 +30,29 @@ export const SETTINGS_COL = 'app_settings';
 export const SETTINGS_DOC = 'accounting';
 const AUDIT_COL = 'audit_logs';
 const PERIODS_COL = 'accounting_periods';
+const ENTRIES_COL = 'journal_entries';
+const COUNTERS_COL = 'counters';
+const JOURNAL_COUNTER = 'journal';
+
+/**
+ * Entry statuses that are IN the books.
+ *
+ * `reversed` counts. A reversed entry has not left the ledger — its mirror
+ * cancels its amounts, but both are dated documents sitting in a month, and
+ * that month still has to be answerable by the policy record. Treating a
+ * reversal as an erasure would let a baseline be seeded after it.
+ */
+const COUNTED_ENTRY_STATUS = new Set(['posted', 'reversed']);
+
+/**
+ * How many of the oldest entries to look at before giving up on the scan.
+ *
+ * Only entries whose status counts are eligible, so the scan reads a few and
+ * takes the first that qualifies. It is also the read set: an entry inserted
+ * with a date inside this window changes the query's result and aborts the
+ * transaction, which is the second half of the race guard.
+ */
+const EARLIEST_SCAN = 20;
 
 export const DEFAULT_SETTINGS = {
   autoPost: false,
@@ -204,7 +227,7 @@ export async function setTaxPolicy(db, FieldValue, {
  * answerable.
  */
 export async function seedTaxPolicy(db, FieldValue, { baselineFrom, note = null }, {
-  userId = null, role = 'accountant',
+  userId = null, role = 'accountant', onBeforeCommit = null,
 } = {}) {
   if (!isRealPolicyDate(baselineFrom)) {
     throw new TaxPolicyError('تاريخ بداية السياسة مطلوب ويجب أن يكون تاريخاً حقيقياً (YYYY-MM-DD).');
@@ -223,18 +246,40 @@ export async function seedTaxPolicy(db, FieldValue, { baselineFrom, note = null 
   // unanswerable — the books would hold a figure the policy record cannot
   // explain. So the earliest posted entry is read, and a baseline later than
   // it is refused with the date to use instead.
-  const earliest = await earliestEntryDate(db);
-  if (earliest && String(baselineFrom).slice(0, 10) > earliest) {
-    throw new TaxPolicyError(
-      `تاريخ البداية ${baselineFrom} بعد أقدم قيد مُرحّل (${earliest}) — `
-      + 'ذلك يجعل شهراً في الدفاتر بلا سياسة معروفة. ابدأ من تاريخ أقدم قيد أو قبله.',
-      { code: 'failed-precondition' },
-    );
-  }
-
+  //
+  // ── ولماذا القراءة داخل المعاملة ──
+  // That check used to run BEFORE `runTransaction` opened. Between the scan
+  // and the write, a 2024 entry could be posted; the seed had already decided
+  // the books were empty, and it committed a 2026 baseline over a ledger that
+  // now started in 2024. Nothing detected it afterwards — the books simply
+  // held a month the policy record could not explain, and the next posting
+  // into that month was refused for a reason two steps removed from its cause.
+  //
+  // Now the whole decision — read, judge, write, audit — is one transaction on
+  // one snapshot. See `earliestEntryDateIn` for the two reads that make a
+  // concurrent posting collide with it instead of slipping past.
   return db.runTransaction(async (tx) => {
     const ref = db.collection(SETTINGS_COL).doc(SETTINGS_DOC);
-    const current = readSettings(await tx.get(ref));
+    // All reads first, as Firestore requires — and all of them before the
+    // first `tx.set`, so a refusal below leaves NOTHING written: no history,
+    // and no audit record of an attempt that never happened.
+    const [settingsSnap, earliest] = await Promise.all([
+      tx.get(ref), earliestEntryDateIn(db, tx),
+    ]);
+    // A test seam, and named as one: it runs after the reads and before the
+    // writes, so a test can post an older entry mid-transaction and prove the
+    // retry sees it. Nothing in production passes it.
+    if (onBeforeCommit) await onBeforeCommit();
+
+    if (earliest && String(baselineFrom).slice(0, 10) > earliest) {
+      throw new TaxPolicyError(
+        `تاريخ البداية ${baselineFrom} بعد أقدم قيد مُرحّل (${earliest}) — `
+        + 'ذلك يجعل شهراً في الدفاتر بلا سياسة معروفة. ابدأ من تاريخ أقدم قيد أو قبله.',
+        { code: 'failed-precondition' },
+      );
+    }
+
+    const current = readSettings(settingsSnap);
     const history = seedTaxPolicyBaseline(current, baselineFrom, { note });
     const next = { ...current, taxPolicyHistory: history };
     tx.set(ref, { value: next, updatedBy: userId, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
@@ -252,10 +297,65 @@ export async function seedTaxPolicy(db, FieldValue, { baselineFrom, note = null 
   });
 }
 
-/** The date of the oldest posted entry, or null when the books are empty. */
+/**
+ * The date of the oldest entry in the books, read INSIDE a transaction.
+ *
+ * Two reads, and each closes a different half of the race:
+ *
+ *   1. **The guard document.** `counters/journal` is written by every
+ *      transaction that creates an entry, and it carries `earliestEntryDate`
+ *      as a running minimum (see `journalCounterUpdate` in ledger.js). Reading
+ *      it here puts this transaction in DIRECT conflict with any posting in
+ *      flight: Firestore's document-level concurrency then aborts whichever
+ *      commits second, and the retry reads the other's result. This is the
+ *      guarantee; it does not depend on how query conflicts are detected.
+ *
+ *   2. **The ordered scan.** `orderBy('entryDate').limit(N)` — for a ledger
+ *      written before the guard existed, whose counter has no bound recorded.
+ *      A transactional query is part of the read set too, so an older entry
+ *      appearing inside the window aborts this transaction as well.
+ *
+ * The answer is the EARLIER of the two: the guard can only be as old as the
+ * postings that have run since it was introduced, and the scan can only see
+ * what is stored. Neither alone is complete; the minimum of both is.
+ */
+export async function earliestEntryDateIn(db, tx) {
+  const isIso = (d) => /^\d{4}-\d{2}-\d{2}$/.test(String(d || ''));
+
+  const [boundsSnap, scanSnap] = await Promise.all([
+    tx.get(db.collection(COUNTERS_COL).doc(JOURNAL_COUNTER)),
+    tx.get(db.collection(ENTRIES_COL).orderBy('entryDate').limit(EARLIEST_SCAN)),
+  ]);
+
+  const guarded = boundsSnap.exists
+    ? String(boundsSnap.data().earliestEntryDate || '').slice(0, 10) : '';
+
+  let scanned = '';
+  for (const d of scanSnap.docs) {
+    const row = d.data();
+    // A status this ledger does not recognise is not silently counted as a
+    // live entry, and not silently skipped either — it simply is not one of
+    // the two the books define.
+    if (!COUNTED_ENTRY_STATUS.has(String(row.status || 'posted'))) continue;
+    const iso = String(row.entryDate || '').slice(0, 10);
+    if (isIso(iso)) { scanned = iso; break; }
+  }
+
+  const dates = [guarded, scanned].filter(isIso).sort();
+  return dates.length ? dates[0] : null;
+}
+
+/**
+ * The same question outside a transaction, for callers that only look.
+ *
+ * NOT for the seed: a bound read before a transaction opens is a photograph,
+ * and the entry posted after it was taken is exactly the one that breaks the
+ * books.
+ */
 export async function earliestEntryDate(db) {
-  const snap = await db.collection('journal_entries').get();
+  const snap = await db.collection(ENTRIES_COL).get();
   const dates = snap.docs
+    .filter((d) => COUNTED_ENTRY_STATUS.has(String(d.data().status || 'posted')))
     .map((d) => String(d.data().entryDate || '').slice(0, 10))
     .filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x))
     .sort();

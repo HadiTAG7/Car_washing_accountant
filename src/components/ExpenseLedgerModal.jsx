@@ -4,12 +4,14 @@ import {
   Link as LinkIcon, Percent, Upload,
 } from 'lucide-react';
 import {
-  formatCurrency, formatDate, todayISO, extractVat, netOfVat,
+  formatCurrency, formatDate, todayISO, extractVat,
 } from '../data/initialData';
 import { uploadInvoiceFile, isFirebaseConfigured } from '../lib/firebaseClient';
 import { EmptyState } from './UI';
 import DateField from './DateField';
 import TaxInvoiceFields from './TaxInvoiceFields';
+import PurchaseAmountBreakdown from './PurchaseAmountBreakdown';
+import { blockingVatProblems } from '../lib/vatFields';
 import { EMPTY_TAX_INVOICE_FIELDS, submitTaxInvoiceFields } from '../lib/taxInvoiceForm';
 
 const EMPTY_FORM = {
@@ -93,7 +95,13 @@ export default function ExpenseLedgerModal({
 
   const trimmedDesc   = form.description.trim();
   const parsedAmount  = Math.max(0, parseFloat(form.amount) || 0);
-  const isValid       = trimmedDesc.length > 0 && parsedAmount > 0 && Boolean(form.spentDate);
+  // ── أخطاء الضريبة تمنع الحفظ، لا تُعرَض فقط ──
+  // Serves BOTH sub-ledgers — رسوم التأسيس and المصاريف السنوية — so the two
+  // cannot end up with different ideas of what a valid VAT field is.
+  const vatProblems   = form.isTaxInvoice
+    ? blockingVatProblems(form, { amount: parsedAmount }) : [];
+  const isValid       = trimmedDesc.length > 0 && parsedAmount > 0
+    && Boolean(form.spentDate) && vatProblems.length === 0;
 
   function handleChange(e) {
     const { name, type, value, checked } = e.target;
@@ -356,21 +364,7 @@ export default function ExpenseLedgerModal({
             </label>
 
             {/* Live VAT breakdown — only when taxable AND an amount is set. */}
-            {form.isTaxInvoice && parsedAmount > 0 && (
-              <div
-                role="status"
-                className="flex items-center justify-between gap-3 px-3 py-2 rounded-control bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/30 text-[12px]"
-              >
-                <span className="text-emerald-700 dark:text-emerald-300">
-                  الضريبة المتوقع استردادها:
-                  <span className="font-bold tabular-nums mr-1">{formatCurrency(extractVat(parsedAmount))}</span>
-                </span>
-                <span className="text-slate-500 dark:text-slate-400">
-                  صافي قيمة السلعة:
-                  <span className="font-bold tabular-nums mr-1">{formatCurrency(netOfVat(parsedAmount))}</span>
-                </span>
-              </div>
-            )}
+            <PurchaseAmountBreakdown form={form} amount={parsedAmount} />
 
             {/* بيانات الفاتورة — required before the VAT report will
                 deduct this purchase. */}
@@ -380,6 +374,7 @@ export default function ExpenseLedgerModal({
                 onChange={(next) => setForm((f) => ({ ...f, ...next }))}
                 idPrefix="ledger"
                 amount={parsedAmount}
+                problems={vatProblems}
                 spendDate={form.spentDate}
               />
             )}

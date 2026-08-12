@@ -18,6 +18,9 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { round2 } from './journal';
+// The same gate the expense forms use — a template that would generate a
+// voucher nobody can post is refused before it generates twelve of them.
+import { blockingVatProblems } from '../vatFields';
 import { addMonths, periodEndDate } from './depreciation';
 
 export const VOUCHER_STATUSES = ['active', 'cancelled'];
@@ -80,6 +83,14 @@ export function validateTemplate(template) {
       && String(template.endPeriod) < String(template.startPeriod)) {
     problems.push('فترة النهاية قبل فترة البداية.');
   }
+  // ── حقول الضريبة تُفحص قبل التوليد، لا بعد اثني عشر سنداً ──
+  // A template's `vatRate`, `priceMode` and `vatDeductible` are COPIED onto
+  // every voucher it generates, so a broken value is not one bad record — it
+  // is a year of them, each of which then refuses to post. The same function
+  // the expense forms gate on, applied one step earlier.
+  for (const p of blockingVatProblems(template || {}, {
+    amount: Number(template?.totalMonthlyCost) || 0,
+  })) problems.push(p.message);
   return problems;
 }
 
@@ -104,6 +115,16 @@ export function buildVoucher(template, periodKey, { generatedBy = null } = {}) {
     // that stops being a tax invoice must not un-claim what was already filed.
     isTaxInvoice: Boolean(template.isTaxInvoice),
     invoiceUrl: template.invoiceUrl || '',
+    // ── هوية الفاتورة: ما يثبت وما يتغيّر كل شهر ──
+    // The SUPPLIER is a property of the arrangement, so it is copied: the
+    // landlord in March is the landlord in April. The invoice NUMBER and DATE
+    // are properties of one document and are unknowable at generation time —
+    // they arrive with the paper. They stay empty until someone records them,
+    // and until then this voucher recognises no input-VAT asset, exactly as
+    // the VAT report refuses to deduct it. The two must not disagree.
+    supplier: template.supplier || '',
+    invoiceNumber: '',
+    invoiceDate: '',
     // The tax treatment travels with the amount, for the same reason: a
     // template re-rated next year must not restate what a filed voucher
     // claimed. `vatAmount` stays null until the actual invoice arrives — the

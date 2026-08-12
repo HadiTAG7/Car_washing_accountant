@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { X, Plus, Pencil, Activity, Check, AlertTriangle, Percent, Link as LinkIcon } from 'lucide-react';
 import {
-  formatCurrency, formatCurrencyPrecise, formatNumber, todayISO, extractVat, netOfVat,
+  formatCurrency, formatNumber, todayISO,
 } from '../data/initialData';
 import CategorySelect from './CategorySelect';
 import DateField from './DateField';
 import TaxInvoiceFields from './TaxInvoiceFields';
+import PurchaseAmountBreakdown from './PurchaseAmountBreakdown';
+import { blockingVatProblems } from '../lib/vatFields';
 import {
   EMPTY_TAX_INVOICE_FIELDS, readTaxInvoiceFields, submitTaxInvoiceFields,
 } from '../lib/taxInvoiceForm';
@@ -83,11 +85,19 @@ export default function AddVariableExpenseModal({
   const unitCost          = Math.max(0, parseFloat(form.unitCost) || 0);
   const totalVariableCost = effectiveQuantity * unitCost;
 
+  // ── أخطاء الضريبة تمنع الحفظ، لا تُعرَض فقط ──
+  // The panel used to SHOW a bad VAT amount and save it anyway: the tolerant
+  // reader turned −5 into null on its way out, so the record was stored as
+  // though the field had been left empty and the typo left no trace to find.
+  const vatProblems = form.isTaxInvoice
+    ? blockingVatProblems(form, { amount: totalVariableCost }) : [];
+
   const isValid =
     form.expenseName.trim().length > 0 &&
     Boolean(form.categoryId) &&
     (isRule ? safeWashCount > 0 : manualQuantity > 0) &&
-    unitCost > 0;
+    unitCost > 0 &&
+    vatProblems.length === 0;
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -368,21 +378,7 @@ export default function AddVariableExpenseModal({
               </span>
             </label>
 
-            {form.isTaxInvoice && totalVariableCost > 0 && (
-              <div
-                role="status"
-                className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-control bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/30 text-[12px]"
-              >
-                <span className="text-emerald-700 dark:text-emerald-300">
-                  الضريبة المتوقع استردادها:
-                  <span className="font-bold tabular-nums mr-1">{formatCurrencyPrecise(extractVat(totalVariableCost))}</span>
-                </span>
-                <span className="text-slate-500 dark:text-slate-400">
-                  الصافي قبل الضريبة:
-                  <span className="font-bold tabular-nums mr-1">{formatCurrencyPrecise(netOfVat(totalVariableCost))}</span>
-                </span>
-              </div>
-            )}
+            <PurchaseAmountBreakdown form={form} amount={totalVariableCost} />
 
             {/* بيانات الفاتورة — what the VAT report checks before deducting. */}
             {form.isTaxInvoice && (
@@ -392,6 +388,7 @@ export default function AddVariableExpenseModal({
                 idPrefix="variable"
                 amount={totalVariableCost}
                 spendDate={form.loggedDate}
+                problems={vatProblems}
               />
             )}
 

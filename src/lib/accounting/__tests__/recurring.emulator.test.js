@@ -36,7 +36,10 @@ async function seedTemplates() {
   await setDoc(doc(db, 'monthly_expenses', 't1'), {
     expense_name: 'إيجار المحل', total_monthly_cost: 5000, payment_day: 5,
     recurrence: 'monthly', quantity: 1, unit_cost: 5000,
-    is_tax_invoice: true, payment_status: 'pending',
+    // The supplier is a property of the ARRANGEMENT and travels to every
+    // voucher. The invoice number and date are properties of one document and
+    // cannot be known when the voucher is generated.
+    is_tax_invoice: true, payment_status: 'pending', supplier: 'مالك العقار',
   });
   await setDoc(doc(db, 'monthly_expenses', 't2'), {
     expense_name: 'إنترنت', total_monthly_cost: 345, payment_day: 31,
@@ -134,12 +137,55 @@ d('السندات الدورية على Firestore الحقيقي', () => {
     const rentJan = voucherEntries.find((e) => e.sourceId === 't1__2026-01');
     expect(rentJan.entryDate).toBe('2026-01-05');
     const rentLines = await ledger.fetchLinesOf(rentJan.id);
-    // 5000 inclusive → 4347.83 net + 652.17 VAT, credited to the SUPPLIER
-    // because the voucher is unpaid.
-    expect(rentLines.find((l) => l.accountId === '5200').debit).toBe(4347.83);
-    expect(rentLines.find((l) => l.accountId === '1200').debit).toBe(652.17);
+    // ── سند بلا فاتورة بعد: لا أصل ضريبة مدخلات ──
+    // The voucher exists on the due date; the supplier's invoice arrives
+    // later. Until its number and date are recorded, the 1200 line is
+    // withheld and the whole 5,000 is the cost — which is exactly what the
+    // VAT report says about the same voucher. The two used to disagree: the
+    // ledger reclaimed 652.17 and the return refused it, so the reclaim
+    // existed only in the books.
+    expect(rentLines.find((l) => l.accountId === '1200')).toBeUndefined();
+    expect(rentLines.find((l) => l.accountId === '5200').debit).toBe(5000);
     expect(rentLines.find((l) => l.accountId === '2000').credit).toBe(5000);
   }, 180_000);
+
+  it('وبعد تسجيل فاتورة السند تُفصل ضريبة المدخلات', async () => {
+    await rec.generateVouchers({ ...RANGE, userId: 'u1' });
+    // The supplier travelled from the template; the number and date arrive
+    // with the paper, and this is the door they come through.
+    const before = await rec.fetchVoucher('t1__2026-01');
+    expect(before.supplier).toBe('مالك العقار');
+    expect(before.invoiceNumber).toBe('');
+
+    await rec.setVoucherInvoice('t1__2026-01', {
+      invoiceNumber: 'R-2026-01', invoiceDate: '2026-01-05',
+      supplier: 'مالك العقار', vatRate: 0.15, userId: 'u1',
+    });
+
+    const posted = await ops.postUnposted({ userId: 'u1' });
+    expect(posted.failed).toEqual([]);
+    const entries = await ledger.fetchEntries();
+    const rentJan = entries.find((e) => e.sourceId === 't1__2026-01');
+    const lines = await ledger.fetchLinesOf(rentJan.id);
+    // 5000 شامل → 4347.83 صافي + 652.17 ضريبة، دائناً للمورّد لأن السند غير مسدَّد.
+    expect(lines.find((l) => l.accountId === '5200').debit).toBe(4347.83);
+    expect(lines.find((l) => l.accountId === '1200').debit).toBe(652.17);
+    expect(lines.find((l) => l.accountId === '1200').description)
+      .toBe('ضريبة مدخلات 15% — نسبة مثبتة على الفاتورة');
+    expect(lines.find((l) => l.accountId === '2000').credit).toBe(5000);
+  }, 180_000);
+
+  it('ويُرفض مبلغ ضريبة غير صالح على السند بدل تحويله إلى null', async () => {
+    await rec.generateVouchers({ ...RANGE, userId: 'u1' });
+    await expect(rec.setVoucherInvoice('t1__2026-01', {
+      invoiceNumber: 'R-1', invoiceDate: '2026-01-05', supplier: 'م', vatAmount: -5,
+    })).rejects.toThrow(/سالب/);
+    await expect(rec.setVoucherInvoice('t1__2026-01', {
+      invoiceNumber: 'R-1', invoiceDate: '2026-02-30', supplier: 'م',
+    })).rejects.toThrow(/التقويم/);
+    // ولم يُكتب شيء.
+    expect((await rec.fetchVoucher('t1__2026-01')).invoiceNumber).toBe('');
+  }, 120_000);
 
   it('الترحيل مرتين لا يضاعف — نفس السند لا يُرحَّل إلا مرة', async () => {
     await rec.generateVouchers({ ...RANGE, userId: 'u1' });

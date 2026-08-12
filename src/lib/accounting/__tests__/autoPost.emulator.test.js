@@ -166,12 +166,32 @@ d('الترحيل التلقائي على Firestore الحقيقي', () => {
     await setDoc(doc(db, 'monthly_expenses', 'm1'), {
       expense_name: 'صيانة', total_monthly_cost: 230, logged_date: '2026-08-03',
       recurrence: 'one_time', payment_status: 'paid', is_tax_invoice: true,
+      // A COMPLETE tax invoice. Without the number, date and supplier no
+      // input-VAT asset is recognised — the same test the VAT report applies,
+      // so the ledger and the return cannot disagree about the reclaim.
+      invoice_number: 'INV-55', invoice_date: '2026-08-03', supplier: 'ورشة',
+      price_mode: 'inclusive', vat_amount: null, vat_rate: null, vat_deductible: true,
     });
     const r = await auto.autoPost({ kind: 'monthly', id: 'm1', userId: 'u1' });
     expect(r.status).toBe('posted');
     const lines = await ledger.fetchLinesOf(r.entryId);
     expect(lines.find((l) => l.accountId === '5200').debit).toBe(200);
     expect(lines.find((l) => l.accountId === '1200').debit).toBe(30);
+    expect(lines.find((l) => l.accountId === '1010').credit).toBe(230);
+  }, 60_000);
+
+  it('وبفاتورة ضريبية ناقصة الهوية لا يُنشئ أصل ضريبة مدخلات', async () => {
+    await setDoc(doc(db, 'monthly_expenses', 'm1b'), {
+      expense_name: 'صيانة', total_monthly_cost: 230, logged_date: '2026-08-03',
+      recurrence: 'one_time', payment_status: 'paid', is_tax_invoice: true,
+      // مُعلَّمة كفاتورة ضريبية، بلا رقم ولا تاريخ ولا مورّد.
+      price_mode: 'inclusive', vat_amount: null, vat_rate: null, vat_deductible: true,
+    });
+    const r = await auto.autoPost({ kind: 'monthly', id: 'm1b', userId: 'u1' });
+    expect(r.status).toBe('posted');
+    const lines = await ledger.fetchLinesOf(r.entryId);
+    expect(lines.find((l) => l.accountId === '1200')).toBeUndefined();
+    expect(lines.find((l) => l.accountId === '5200').debit).toBe(230);
     expect(lines.find((l) => l.accountId === '1010').credit).toBe(230);
   }, 60_000);
 

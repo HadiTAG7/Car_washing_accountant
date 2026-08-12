@@ -48,6 +48,36 @@ const SETTINGS_DOC = 'accounting';
 
 const DEFAULT_SETTINGS = { vatRegistered: true, washPriceMode: 'inclusive' };
 
+/**
+ * ما يُكتب على عدّاد القيود مع كل ترحيل — including the ledger's OLDEST date.
+ *
+ * `counters/journal` is already read and written by every transaction that
+ * creates an entry, so carrying `earliestEntryDate` on it costs no extra read
+ * and — this is the point — makes the bound move ATOMICALLY with the posting
+ * that moves it.
+ *
+ * `seedTaxPolicy` needs that. It must refuse a baseline later than the oldest
+ * entry, and it used to answer the question with a collection scan taken
+ * BEFORE its transaction opened: an entry posted in the gap was invisible, the
+ * seed was accepted, and a month sat in the books with no policy able to
+ * explain it. Reading this one document inside the seed's transaction puts the
+ * two in direct conflict, so one of them retries and sees the other.
+ *
+ * `min`, never overwrite: posting a 2024 entry today must lower the bound;
+ * posting a 2026 one must leave it alone.
+ */
+function journalCounterUpdate(counterSnap, nextNumber, entryDate, FieldValue) {
+  const iso = String(entryDate || '').slice(0, 10);
+  const known = counterSnap?.exists ? String(counterSnap.data().earliestEntryDate || '') : '';
+  const valid = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d);
+  const earliest = valid(iso) && (!valid(known) || iso < known) ? iso : (valid(known) ? known : null);
+  return {
+    nextNumber: nextNumber + 1,
+    ...(earliest ? { earliestEntryDate: earliest } : {}),
+    updatedAt: FieldValue.serverTimestamp(),
+  };
+}
+
 /** An error the caller is meant to see, as opposed to a bug. */
 export class LedgerError extends Error {
   constructor(message, { code = 'failed-precondition', problems = null } = {}) {
@@ -168,10 +198,9 @@ export async function postEntry(db, FieldValue, { entry, lines }, {
         lockedAt:   FieldValue.serverTimestamp(),
       });
     }
-    tx.set(counterRef, {
-      nextNumber: nextNumber + 1,
-      updatedAt: FieldValue.serverTimestamp(),
-    }, { merge: true });
+    tx.set(counterRef,
+      journalCounterUpdate(counterSnap, nextNumber, normEntry.entryDate, FieldValue),
+      { merge: true });
     tx.set(db.collection(COL.AUDIT).doc(), auditRecord({
       action: 'post', collectionName: COL.ENTRIES, documentId: entryRef.id, userId,
       after: { entryNumber: nextNumber, ...normEntry, totalDebit: totals.debit },
@@ -264,6 +293,12 @@ export async function postSource(db, FieldValue, { kind, sourceId }, { userId = 
       vatRegistered: policy.vatRegistered,
       washPriceMode: policy.washPriceMode,
       vatRate: policy.vatRate,
+      recordDate,
+      // The whole dated record, not one resolved policy. A purchase is taxed
+      // under its INVOICE's date, which is routinely earlier than the day the
+      // money left — a March invoice paid in April is deducted in March, at
+      // March's rate. Only the builder knows which date it needs.
+      policyAt: (d) => taxPolicyAt(d, settings),
     });
 
     const normEntry = normalizeEntry(built.entry);
@@ -293,6 +328,11 @@ export async function postSource(db, FieldValue, { kind, sourceId }, { userId = 
       // reader asking "what was this wash's net revenue?" reads it here rather
       // than re-deriving it from switches that may since have moved.
       taxSnapshot: built.taxSnapshot || null,
+      // The purchase side of the same idea: which of the three sources priced
+      // this invoice, at what rate, against which policy row, and why an input
+      // VAT asset was or was not recognised. Without it, "why is 1200 debited
+      // 5.00 here?" is answered by re-running today's switches over the row.
+      purchaseTaxSnapshot: built.purchaseTaxSnapshot || null,
       lines: normLines,
       lineCount: normLines.length,
       totalDebit: totals.debit,
@@ -316,7 +356,9 @@ export async function postSource(db, FieldValue, { kind, sourceId }, { userId = 
       lockedBy: userId,
       lockedAt: FieldValue.serverTimestamp(),
     });
-    tx.set(counterRef, { nextNumber: nextNumber + 1, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+    tx.set(counterRef,
+      journalCounterUpdate(counterSnap, nextNumber, normEntry.entryDate, FieldValue),
+      { merge: true });
     tx.set(db.collection(COL.AUDIT).doc(), auditRecord({
       action: 'post', collectionName: COL.ENTRIES, documentId: entryRef.id, userId,
       after: { entryNumber: nextNumber, kind: adapter.lockKind, sourceId: id, totalDebit: totals.debit },
@@ -497,9 +539,9 @@ export async function reverseEntry(db, FieldValue, entryId, { entryDate, descrip
       // is; `lockRetained` tells the caller so, rather than reporting a
       // release that did not happen.
     }
-    tx.set(counterRef, {
-      nextNumber: nextNumber + 1, updatedAt: FieldValue.serverTimestamp(),
-    }, { merge: true });
+    tx.set(counterRef,
+      journalCounterUpdate(counterSnap, nextNumber, date, FieldValue),
+      { merge: true });
     tx.set(db.collection(COL.AUDIT).doc(), auditRecord({
       action: 'reverse', collectionName: COL.ENTRIES, documentId: originalRef.id, userId,
       before: { status: 'posted' },

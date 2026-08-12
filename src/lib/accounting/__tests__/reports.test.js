@@ -10,6 +10,15 @@ import { closePreflight, isPeriodClosed, postingBlockedReason, indexPeriods } fr
 
 const CHART = [...DEFAULT_CHART_OF_ACCOUNTS, partnerCapitalAccount('p1', 'هادي')];
 
+// The dated tax policy these fixtures live under. Stated, never assumed: the
+// purchase engine refuses to price an invoice it cannot resolve a policy for
+// rather than falling back on 15%, so a test that wants a 15% deduction has
+// to say so.
+const POLICY = () => ({
+  known: true, vatRegistered: true, washPriceMode: 'inclusive',
+  vatRate: 0.15, effectiveFrom: '2020-07-01',
+});
+
 // ── Tiny in-memory ledger, mirroring the Firestore shapes ────────────────
 function makeLedger() {
   const entries = [], lines = [];
@@ -42,11 +51,15 @@ function seedBusiness() {
     id: 'w2', quantity: 4, price: 57.5, status: 'مكتملة',
     washDate: '2026-08-20', paymentMethod: 'card',
   }));
-  // One deductible purchase.
+  // One deductible purchase. A COMPLETE tax invoice — number, date, supplier
+  // and amount — because an incomplete one recognises no input-VAT asset, by
+  // the same rule the VAT report applies to it.
   led.post(buildExpenseEntry({
     id: 'ex1', description: 'مواد تنظيف', amount: 230, date: '2026-08-10',
     isTaxInvoice: true, paymentMethod: 'cash', paymentStatus: 'paid',
-  }, { expenseAccount: ACC.VARIABLE_COSTS }));
+    invoiceNumber: 'INV-77', invoiceDate: '2026-08-10', supplier: 'مؤسسة النظافة',
+    vatRate: 0.15,
+  }, { expenseAccount: ACC.VARIABLE_COSTS, policyAt: POLICY }));
   return led;
 }
 

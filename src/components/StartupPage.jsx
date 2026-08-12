@@ -3,7 +3,7 @@ import {
   Plus, Trash2, Pencil, Wallet, Receipt, Scale, FileText, Percent, Link as LinkIcon,
 } from 'lucide-react';
 import {
-  formatCurrency, formatCurrencyPrecise, formatNumber, extractVat,
+  formatCurrency, formatNumber,
 } from '../data/initialData';
 
 // Only http(s) values become clickable — same guard the ledger and the VAT
@@ -24,6 +24,9 @@ import Toast from './Toast';
 import { useStartupCosts } from '../hooks/useStartupCosts';
 import { useStartupCostEntries, useStartupLedgerParents } from '../hooks/useStartupCostEntries';
 import { useCategories } from '../hooks/useCategories';
+import PurchaseVatBadge from './PurchaseVatBadge';
+import { useAccountingSettings } from '../hooks/useAccountingSettings';
+import { taxPolicyAt } from '../lib/accounting/taxPolicy';
 import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 
@@ -132,6 +135,12 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
 
   const { categories, getCategoryLabel, addCategory, deleteCategory } = useCategories();
   const { scalingFactor, canMutate } = usePartnerView();
+  const { settings } = useAccountingSettings();
+  // The dated tax record, so a 5%-era invoice is shown at 5% rather than at
+  // today's rate. `useCallback`-free on purpose: `settings` is the only input
+  // and it changes rarely. See docs/AMOUNT_DEFINITION.md.
+  const policyAt = (date) => taxPolicyAt(date, settings);
+
 
   const [localOpen, setLocalOpen]       = useState(false);
   const [editingItem, setEditingItem]   = useState(null);
@@ -347,10 +356,9 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
                               actually counts. */}
                           {i.isTaxInvoice && !ledgerManagedIds.has(i.id) && i.actualAmount > 0 && (
                             <div className="flex flex-wrap items-center gap-2 mt-1.5">
-                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-100 dark:border-emerald-500/30 px-2 py-0.5 rounded-full tabular-nums">
-                                <Percent size={11} />
-                                ض.ق.م: {formatCurrencyPrecise(extractVat(i.actualAmount) * scalingFactor)}
-                              </span>
+                              <PurchaseVatBadge
+                                row={{ ...i, amount: i.actualAmount }}
+                                policyAt={policyAt} scale={scalingFactor} />
                               {i.invoiceUrl && isSafeHttpUrl(i.invoiceUrl) && (
                                 <a
                                   href={i.invoiceUrl}

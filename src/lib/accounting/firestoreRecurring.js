@@ -23,6 +23,11 @@ import { fetchEntries, isLiveSourceEntry } from './firestoreLedger';
 import {
   missingVouchers, ungeneratableTemplates, voucherId, summariseVouchers,
 } from './recurring';
+// The same gate the expense forms use. A voucher's invoice fields reach
+// Firestore through this function instead of a form, and «the form checked it»
+// is not a guarantee about a door the form does not stand in front of.
+import { blockingVatProblems } from '../vatFields';
+import { submitTaxInvoiceFields } from '../taxInvoiceForm';
 
 export const VOUCHERS_COL = 'expense_vouchers';
 
@@ -118,6 +123,54 @@ export async function setVoucherPayment(id, { paymentStatus, paidDate = null, us
   await updateDoc(doc(db, VOUCHERS_COL, id), {
     paymentStatus: paymentStatus === 'paid' ? 'paid' : 'pending',
     paidDate: paymentStatus === 'paid' ? (paidDate || new Date().toISOString().slice(0, 10)) : null,
+    updatedBy: userId,
+    updatedAt: serverTimestamp(),
+  });
+  return { id };
+}
+
+/**
+ * Records the actual invoice against a voucher — number, date, supplier, and
+ * the VAT the supplier wrote on it.
+ *
+ * A voucher is generated before its invoice exists: the rent is due on the
+ * 5th, the paper arrives on the 9th. Until these fields are filled the
+ * voucher carries no deductible input tax — the ledger withholds the 1200
+ * line and the VAT report lists it as غير مؤهلة, which is the same answer
+ * from both, and the point.
+ *
+ * Validated with the SAME function the expense forms use, so a value the form
+ * would refuse cannot be written through this door instead.
+ */
+export async function setVoucherInvoice(id, {
+  invoiceNumber, invoiceDate, supplier,
+  vatAmount = null, vatRate = null, priceMode = 'inclusive',
+  vatDeductible = true, invoiceUrl = null, userId = null,
+} = {}) {
+  requireDb();
+  if (await isPosted(id)) {
+    throw new Error('السند مُرحّل إلى الدفاتر — بيانات فاتورته لا تُعدَّل. سجّل التصحيح بقيد.');
+  }
+  const voucher = await fetchVoucher(id);
+  if (!voucher) throw new Error('السند غير موجود.');
+
+  const form = {
+    isTaxInvoice: voucher.isTaxInvoice === true,
+    invoiceNumber, invoiceDate, supplier, vatAmount, vatRate, priceMode, vatDeductible,
+  };
+  const blocking = blockingVatProblems(form, { amount: Number(voucher.amount) || 0 });
+  if (blocking.length) throw new Error(blocking[0].message);
+
+  const fields = submitTaxInvoiceFields(form);
+  await updateDoc(doc(db, VOUCHERS_COL, id), {
+    invoiceNumber: fields.invoiceNumber,
+    invoiceDate: fields.invoiceDate,
+    supplier: fields.supplier,
+    vatAmount: fields.vatAmount,
+    vatRate: fields.vatRate,
+    priceMode: fields.priceMode,
+    vatDeductible: fields.vatDeductible,
+    ...(invoiceUrl === null ? {} : { invoiceUrl: String(invoiceUrl || '').trim() }),
     updatedBy: userId,
     updatedAt: serverTimestamp(),
   });

@@ -21,6 +21,31 @@ import {
   buildTemporaryExpenseEntry, buildRecoveryEntry, canPostWash, expenseAccountFor,
 } from './postingRules';
 
+/**
+ * The tax fields every purchase carries, read off a RAW row.
+ *
+ * Snake_case for the four client-written collections. Pulled out because the
+ * per-source `toExpense` functions used to list the fields by hand and each
+ * listed a different subset — `vat_amount`, `vat_rate`, `price_mode` and
+ * `invoice_date` reached Firestore and stopped there, so the preview split
+ * every invoice at 15% no matter what the supplier had written on it.
+ */
+export function taxFieldsOf(r) {
+  return {
+    isTaxInvoice: r.is_tax_invoice === true,
+    invoiceUrl: r.invoice_url,
+    invoiceNumber: r.invoice_number,
+    invoiceDate: r.invoice_date,
+    supplier: r.supplier,
+    // `?? null`, never `|| null`: an explicit 0 is a zero-rated supply, a real
+    // answer, and `||` would erase it into "not stated".
+    vatAmount: r.vat_amount ?? null,
+    vatRate: r.vat_rate ?? null,
+    priceMode: r.price_mode || 'inclusive',
+    vatDeductible: r.vat_deductible !== false,
+  };
+}
+
 /** Shared shape for the four expense-like sources. */
 function expenseAdapter({ collection, kind, toExpense, isApproved, notApprovedReason, label }) {
   return {
@@ -32,17 +57,19 @@ function expenseAdapter({ collection, kind, toExpense, isApproved, notApprovedRe
     isApproved: isApproved || (() => true),
     notApprovedReason,
     label,
-    build: (r, { vatRegistered = true } = {}) => buildExpenseEntry(
-      toExpense(r), { expenseAccount: expenseAccountFor(kind), vatRegistered },
+    // `policyAt` carries the dated tax record through to the engine, so the
+    // preview prices a 5%-era invoice at 5% exactly as the server will.
+    build: (r, { policyAt = null } = {}) => buildExpenseEntry(
+      toExpense(r), { expenseAccount: expenseAccountFor(kind), policyAt },
     ),
   };
 }
 
 const monthlyExpense = (r) => ({
   id: r.id, description: r.expense_name, amount: r.total_monthly_cost,
-  date: r.logged_date, isTaxInvoice: r.is_tax_invoice, invoiceUrl: r.invoice_url,
+  date: r.logged_date,
   paymentMethod: r.payment_method, paymentStatus: r.payment_status === 'paid' ? 'paid' : 'unpaid',
-  supplier: r.supplier, invoiceNumber: r.invoice_number, vatDeductible: r.vat_deductible,
+  ...taxFieldsOf(r),
 });
 
 export const ADAPTERS = {
@@ -82,9 +109,9 @@ export const ADAPTERS = {
     kind: 'variable',
     toExpense: (r) => ({
       id: r.id, description: r.expense_name, amount: r.total_variable_cost,
-      date: r.logged_date, isTaxInvoice: r.is_tax_invoice, invoiceUrl: r.invoice_url,
+      date: r.logged_date,
       paymentMethod: r.payment_method, paymentStatus: 'paid',
-      supplier: r.supplier, invoiceNumber: r.invoice_number, vatDeductible: r.vat_deductible,
+      ...taxFieldsOf(r),
     }),
     label: (r) => [r.expense_name || 'مصروف', r.logged_date].filter(Boolean).join(' — '),
   }),
@@ -94,8 +121,9 @@ export const ADAPTERS = {
     kind: 'annual',
     toExpense: (r) => ({
       id: r.id, description: r.description, amount: r.amount,
-      date: r.spent_date, isTaxInvoice: r.is_tax_invoice, invoiceUrl: r.invoice_url,
-      paymentMethod: 'cash', paymentStatus: 'paid',
+      date: r.paid_date || r.spent_date,
+      paymentMethod: r.payment_method || 'cash', paymentStatus: 'paid',
+      ...taxFieldsOf(r),
     }),
     label: (r) => [r.description || 'مصروف', r.spent_date].filter(Boolean).join(' — '),
   }),
@@ -105,8 +133,9 @@ export const ADAPTERS = {
     kind: 'startup',
     toExpense: (r) => ({
       id: r.id, description: r.description, amount: r.amount,
-      date: r.spent_date, isTaxInvoice: r.is_tax_invoice, invoiceUrl: r.invoice_url,
-      paymentMethod: 'cash', paymentStatus: 'paid',
+      date: r.paid_date || r.spent_date,
+      paymentMethod: r.payment_method || 'cash', paymentStatus: 'paid',
+      ...taxFieldsOf(r),
     }),
     label: (r) => [r.description || 'مصروف', r.spent_date].filter(Boolean).join(' — '),
   }),
@@ -115,15 +144,24 @@ export const ADAPTERS = {
   voucher: expenseAdapter({
     collection: 'expense_vouchers',
     kind: 'monthly',       // the expense account is the monthly one
+    // A voucher is written by `buildVoucher`, in camelCase — it never passes
+    // through the snake_case client mappers, so it needs its own reading.
     toExpense: (v) => ({
       id: v.id, description: `${v.templateName || 'مصروف شهري'} — ${v.periodKey}`,
       amount: v.amount, date: v.dueDate,
-      isTaxInvoice: v.isTaxInvoice, invoiceUrl: v.invoiceUrl,
       paymentMethod: v.paymentMethod || 'cash',
       // Unpaid credits the SUPPLIER, not cash: the liability exists from the
       // due date whether or not it has been settled.
       paymentStatus: v.paymentStatus === 'paid' ? 'paid' : 'unpaid',
-      supplier: v.supplier, vatDeductible: v.vatDeductible,
+      isTaxInvoice: v.isTaxInvoice === true,
+      invoiceUrl: v.invoiceUrl,
+      invoiceNumber: v.invoiceNumber,
+      invoiceDate: v.invoiceDate,
+      supplier: v.supplier,
+      vatAmount: v.vatAmount ?? null,
+      vatRate: v.vatRate ?? null,
+      priceMode: v.priceMode || 'inclusive',
+      vatDeductible: v.vatDeductible !== false,
     }),
     isApproved: (v) => v.status !== 'cancelled',
     notApprovedReason: 'سند ملغى',

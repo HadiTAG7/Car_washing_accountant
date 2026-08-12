@@ -1,44 +1,15 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// حقول الضريبة على فاتورة المشتريات — «غير مذكور» ليست صفراً
+// حقول الضريبة على فاتورة المشتريات — نسخة الخادم
 // ═══════════════════════════════════════════════════════════════════════════
-// One definition, in one place, because three places were each deciding it
-// separately and they disagreed — which is how a purchase saved without a
-// stated VAT amount came to read as an explicit zero-VAT purchase in the
-// return.
+// A deliberate twin of src/lib/vatFields.js. The client keeps its copy so the
+// form can refuse a bad value before it is ever sent; this one is the copy
+// that decides, because the UI is not a security boundary — a record can
+// reach Firestore through a direct write, an import, or a client that is
+// simply out of date.
 //
-// The trap is `Number(null) === 0`. It is finite, it is non-negative, and it
-// passes every plausible-looking guard — so `{ vatAmount: null }`, which is
-// exactly what the mapper writes for "the supplier did not state one", was
-// being deducted as a VAT of zero and labelled `source: 'invoice'` as though
-// the supplier had written it. The fallback to the invoice's own rate, and
-// then to the policy in force on its date, never ran.
-//
-// So the three states are named rather than inferred:
-//
-//   null / undefined / '' / whitespace   →  NOT STATED  (fall through)
-//   0 / '0'                              →  an explicit zero (a zero-rated
-//                                           or exempt supply, and a real
-//                                           answer the report must honour)
-//   any other finite non-negative number →  the stated figure
-//
-// `undefined` behaved correctly by accident (`Number(undefined)` is NaN);
-// `null` did not. Accidentally-correct is not a property to rely on.
-//
-// ── قارئان لكل حقل، لا واحد ──
-// `statedVatAmount` is the TOLERANT reader: it answers "what figure should I
-// use", and a value it cannot use comes back as `null` — indistinguishable
-// from "not stated". That is right for reading and wrong for saving, because
-// it turns a typo into silence: −5 was stored as null and the invoice was
-// then priced off the policy as though the user had never typed anything.
-//
-// So each field also has a STRICT reader — `readStatedVatAmount` — which
-// separates the three outcomes: not stated, stated and usable, stated and
-// broken. `validateTaxInvoiceFields` is built on the strict ones and is what
-// both the form and the server posting engine gate on.
-//
-// A twin of this file runs on the server at functions/src/vatFields.js. The
-// two are driven over one battery by functions/test/purchaseTax.test.js — the
-// UI is not a security boundary, so the same rules must hold on both sides.
+// The two are driven over ONE battery in functions/test/purchaseTax.test.js,
+// so a change to either that the other does not make fails a test rather than
+// waiting to be found in a filed return.
 // ═══════════════════════════════════════════════════════════════════════════
 
 /** True when a field carries no answer at all — as opposed to the answer 0. */

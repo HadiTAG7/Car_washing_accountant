@@ -10,7 +10,9 @@
 //   • VAT is only separated when the business is VAT-registered AND the
 //     document qualifies. Otherwise the gross amount lands wholly on the
 //     revenue or expense account — an input tax that cannot be reclaimed is
-//     part of the cost, not a receivable.
+//     part of the cost, not a receivable. On the PURCHASE side that judgement,
+//     and the tax figure itself, come from ./purchaseTax — the same module the
+//     server posts with.
 //   • The cash/bank/receivable side is chosen from the payment method, so an
 //     unpaid invoice becomes a payable rather than a phantom cash movement.
 // ═══════════════════════════════════════════════════════════════════════════
@@ -18,6 +20,9 @@
 import { ACC, partnerCapitalCode } from './chartOfAccounts';
 import { periodKeyOf, round2 } from './journal';
 import { splitVatBalanced } from './vat';
+// The purchase side is not split here: it is decided by the shared engine, so
+// this preview and the server's posting cannot disagree about a reclaim.
+import { resolvePurchaseTax } from './purchaseTax';
 
 /** طرق الدفع. `credit` = آجل (ذمم). */
 export const PAYMENT_METHODS = ['cash', 'card', 'transfer', 'credit'];
@@ -118,40 +123,60 @@ export function buildWashEntry(wash, {
  *   مدين  ضريبة المدخلات          بمبلغ الضريبة   (إن كانت مؤهلة للخصم)
  *   دائن  الصندوق/البنك/المورد    بالإجمالي
  *
- * `vatDeductible` false → the tax is NOT split out: a non-deductible input
- * tax is part of the cost of the thing bought, and showing it as a
- * recoverable asset would overstate both the asset and the reclaim.
+ * ── الضريبة تأتي من الفاتورة، لا من نسبة افتراضية ──
+ * Every figure comes from `resolvePurchaseTax`, the same engine the server
+ * posts with: the amount the supplier wrote, then the rate stamped on the
+ * document, then the policy in force on the INVOICE's date — and a refusal
+ * rather than 15% when none of the three can answer.
+ *
+ * This preview and the server's entry are held identical by the drift battery
+ * in functions/test/purchaseTax.test.js. A preview that promises a reclaim the
+ * ledger will not book is worse than no preview.
+ *
+ * `vatDeductible` false → the tax is NOT split out: a non-deductible input tax
+ * is part of the cost of the thing bought, and showing it as a recoverable
+ * asset would overstate both the asset and the reclaim.
  */
 export function buildExpenseEntry(expense, {
   expenseAccount = ACC.ADMIN_EXPENSES,
-  vatRegistered = true,
+  // The dated policy record. Passing it is what lets a 5%-era invoice keep its
+  // 5%; without it the engine falls back on what the invoice itself states and
+  // recognises no input VAT when it states nothing.
+  policyAt = null,
   createdBy = null,
 } = {}) {
-  const raw    = round2(Number(expense.amount) || 0);
   const method = expense.paymentMethod || 'cash';
   const status = expense.paymentStatus || 'paid';
-  // Deductible only when the business is registered, the document is a tax
-  // invoice, and the purchase itself qualifies.
-  const deductible = Boolean(vatRegistered && expense.isTaxInvoice && expense.vatDeductible !== false);
+  const date = String(expense.date || expense.invoiceDate || '').slice(0, 10);
 
-  const { gross, net, vat } = splitVatBalanced(raw, {
-    mode: expense.priceMode || 'inclusive',
-    taxable: deductible,
-  });
+  const tax = resolvePurchaseTax({
+    amount: expense.amount,
+    priceMode: expense.priceMode,
+    isTaxInvoice: expense.isTaxInvoice === true,
+    vatDeductible: expense.vatDeductible !== false,
+    invoiceNumber: expense.invoiceNumber,
+    invoiceDate: expense.invoiceDate,
+    supplier: expense.supplier,
+    vatAmount: expense.vatAmount ?? null,
+    vatRate: expense.vatRate ?? null,
+    recordDate: date,
+  }, { policyAt });
 
   const lines = [
-    { accountId: expenseAccount, debit: net, credit: 0, description: expense.description || 'مصروف' },
+    { accountId: expenseAccount, debit: tax.net, credit: 0, description: expense.description || 'مصروف' },
   ];
-  if (vat > 0) {
-    lines.push({ accountId: ACC.INPUT_VAT, debit: vat, credit: 0, description: 'ضريبة مدخلات قابلة للاسترداد' });
+  if (tax.vat > 0) {
+    lines.push({
+      accountId: ACC.INPUT_VAT, debit: tax.vat, credit: 0,
+      description: tax.lineDescription,
+    });
   }
   lines.push({
     accountId: settlementAccountForPurchase(method, status),
-    debit: 0, credit: gross,
+    debit: 0, credit: tax.gross,
     description: expense.supplier ? `المورد: ${expense.supplier}` : 'سداد',
   });
 
-  const date = String(expense.date || expense.invoiceDate || '').slice(0, 10);
   const ref  = expense.invoiceNumber ? ` — فاتورة ${expense.invoiceNumber}` : '';
   return {
     entry: {
@@ -165,6 +190,7 @@ export function buildExpenseEntry(expense, {
       reversalOf:  null,
     },
     lines,
+    purchaseTaxSnapshot: tax.snapshot,
   };
 }
 

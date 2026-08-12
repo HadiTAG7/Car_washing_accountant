@@ -19,6 +19,14 @@ function expectPostable({ entry, lines }) {
 const amountOn = (lines, acc, side) =>
   round2(lines.filter((l) => l.accountId === acc).reduce((s, l) => s + (l[side] || 0), 0));
 
+// The dated policy these fixtures live under. Stated, never assumed: the
+// purchase engine refuses to price an invoice whose policy it cannot resolve
+// rather than falling back on 15%, so a 15% deduction has to be asked for.
+const POLICY = () => ({
+  known: true, vatRegistered: true, washPriceMode: 'inclusive',
+  vatRate: 0.15, effectiveFrom: '2020-07-01',
+});
+
 describe('ترحيل الغسلات', () => {
   const wash = {
     id: 'w1', bikerName: 'أحمد', quantity: 2, price: 57.5,
@@ -71,14 +79,18 @@ describe('ترحيل الغسلات', () => {
 });
 
 describe('ترحيل المصروفات', () => {
+  // A COMPLETE tax invoice: number, date, supplier and amount. Anything less
+  // recognises no input-VAT asset — the same test the VAT report applies, so
+  // the ledger and the return cannot disagree.
   const expense = {
     id: 'e1', description: 'زيت محرك', amount: 230, date: '2026-08-11',
     isTaxInvoice: true, paymentMethod: 'cash', paymentStatus: 'paid',
-    supplier: 'مؤسسة الزيت', invoiceNumber: 'INV-9',
+    supplier: 'مؤسسة الزيت', invoiceNumber: 'INV-9', invoiceDate: '2026-08-11',
   };
+  const opts = { expenseAccount: ACC.VARIABLE_COSTS, policyAt: POLICY };
 
   it('فاتورة ضريبية مؤهلة: يفصل ضريبة المدخلات', () => {
-    const out = buildExpenseEntry(expense, { expenseAccount: ACC.VARIABLE_COSTS });
+    const out = buildExpenseEntry(expense, opts);
     expectPostable(out);
     expect(amountOn(out.lines, ACC.VARIABLE_COSTS, 'debit')).toBe(200);
     expect(amountOn(out.lines, ACC.INPUT_VAT, 'debit')).toBe(30);
@@ -86,20 +98,33 @@ describe('ترحيل المصروفات', () => {
   });
 
   it('غير مؤهلة للخصم: كامل المبلغ على المصروف ولا ضريبة مدخلات', () => {
-    const out = buildExpenseEntry({ ...expense, vatDeductible: false }, { expenseAccount: ACC.VARIABLE_COSTS });
+    const out = buildExpenseEntry({ ...expense, vatDeductible: false }, opts);
     expectPostable(out);
     expect(amountOn(out.lines, ACC.VARIABLE_COSTS, 'debit')).toBe(230);
     expect(out.lines.some((l) => l.accountId === ACC.INPUT_VAT)).toBe(false);
   });
 
   it('ليست فاتورة ضريبية: لا فصل للضريبة', () => {
-    const out = buildExpenseEntry({ ...expense, isTaxInvoice: false }, { expenseAccount: ACC.VARIABLE_COSTS });
+    const out = buildExpenseEntry({ ...expense, isTaxInvoice: false }, opts);
     expectPostable(out);
     expect(amountOn(out.lines, ACC.VARIABLE_COSTS, 'debit')).toBe(230);
   });
 
+  // ── هوية ناقصة لا تُنشئ أصلاً ضريبياً ──────────────────────────────
+  it('فاتورة بلا تاريخ أو رقم أو مورّد: لا سطر 1200 مهما كانت السياسة', () => {
+    for (const gap of [{ invoiceDate: '' }, { invoiceNumber: '' }, { supplier: '' }]) {
+      const out = buildExpenseEntry({ ...expense, ...gap }, opts);
+      expectPostable(out);
+      expect(out.lines.some((l) => l.accountId === ACC.INPUT_VAT)).toBe(false);
+      // …and the money that actually moved is still 230.
+      expect(amountOn(out.lines, ACC.CASH, 'credit')).toBe(230);
+      expect(amountOn(out.lines, ACC.VARIABLE_COSTS, 'debit')).toBe(230);
+      expect(out.purchaseTaxSnapshot.noInputVatReason).toBe('incomplete-invoice');
+    }
+  });
+
   it('فاتورة غير مسددة تُقيَّد على الموردين لا على الصندوق', () => {
-    const out = buildExpenseEntry({ ...expense, paymentStatus: 'unpaid' }, { expenseAccount: ACC.VARIABLE_COSTS });
+    const out = buildExpenseEntry({ ...expense, paymentStatus: 'unpaid' }, opts);
     expectPostable(out);
     expect(amountOn(out.lines, ACC.PAYABLE, 'credit')).toBe(230);
     expect(out.lines.some((l) => l.accountId === ACC.CASH)).toBe(false);
@@ -114,7 +139,7 @@ describe('ترحيل المصروفات', () => {
   });
 
   it('ضريبة المدخلات أصل وليست مصروفاً', () => {
-    const out = buildExpenseEntry(expense, { expenseAccount: ACC.VARIABLE_COSTS });
+    const out = buildExpenseEntry(expense, opts);
     const vatLine = out.lines.find((l) => l.accountId === ACC.INPUT_VAT);
     // It sits on the debit side of an ASSET account, so the income statement
     // — which only reads expense accounts — never sees it.
@@ -202,7 +227,10 @@ describe('كل المولّدات تنتج قيوداً صالحة', () => {
   it('لا يوجد سطر يحمل الجانبين، والمجاميع متساوية', () => {
     const built = [
       buildWashEntry({ id: 'w', quantity: 3, price: 33.33, status: 'مكتملة', washDate: '2026-08-01' }),
-      buildExpenseEntry({ id: 'e', amount: 777.77, date: '2026-08-02', isTaxInvoice: true, description: 'x' }),
+      buildExpenseEntry({
+        id: 'e', amount: 777.77, date: '2026-08-02', isTaxInvoice: true, description: 'x',
+        invoiceNumber: 'A-1', invoiceDate: '2026-08-02', supplier: 'مورّد',
+      }, { policyAt: POLICY }),
       buildPartnerPaymentEntry({ id: 'p', partnerId: 'p1', amount: 1234.56, paymentDate: '2026-08-03' }),
       buildTemporaryExpenseEntry({ id: 't', amount: 99.99, spentDate: '2026-08-04', title: 'y' }),
       buildRecoveryEntry({ id: 't', amount: 99.99, recoveredDate: '2026-08-05', title: 'y' }),

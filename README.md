@@ -125,10 +125,39 @@ string), and it is audited.
 | Operation | Entry |
 |---|---|
 | غسلة (مكتملة فقط) | Dr cash/bank/receivable (gross) · Cr revenue (net) · Cr output VAT — under the tax policy in force on the WASH's date, and the split is frozen onto the entry as `taxSnapshot` |
-| مصروف | Dr expense/asset (net) · Dr input VAT *(if deductible)* · Cr cash/bank/**payable** |
+| مصروف | Dr expense/asset (net) · Dr input VAT *(if deductible)* · Cr cash/bank/**payable** — the tax comes from the INVOICE, in a fixed order of priority, and is frozen onto the entry as `purchaseTaxSnapshot` |
 | دفعة شريك | Dr cash/bank · Cr partner capital sub-account |
 | عهدة | Dr advances (an **asset**) · Cr cash/bank |
 | استرداد عهدة | Dr cash/bank · Cr advances |
+
+#### ضريبة المشتريات — where the figure on `1200` comes from
+One engine decides it, and both the server (`functions/src/purchaseTax.js`) and
+the client preview (`src/lib/accounting/purchaseTax.js`) are that engine; a
+drift battery in `functions/test/purchaseTax.test.js` drives the twins over the
+same cases. The priority is:
+
+1. **`vat_amount`** — what the supplier actually wrote. The document is the
+   evidence for the deduction, and their rounding is theirs.
+2. **`vat_rate`** stamped on the invoice — a 2019 document stays at 5% however
+   many times the standard rate moves after it.
+3. **`taxPolicyAt(invoice_date)`** — the policy in force on the INVOICE's date,
+   never today's, and never the payment's.
+
+When none of the three can answer, **the posting is refused**. 15% is not a
+fallback: applying it to a 5%-era invoice reclaims three times what was paid,
+and the books would then hold an assumption that reads later as a fact.
+
+No input-VAT asset is recognised when the purchase is not a tax invoice, is
+marked non-deductible, has an incomplete identity, or falls in a period the
+business was not registered in — in each case the whole gross lands on the
+expense or asset, which is what actually left the bank. These are the same
+four tests the VAT report applies, so the ledger's `1200` movement and the
+report's input tax agree to the halala.
+
+`amount` itself is defined in **[docs/AMOUNT_DEFINITION.md](docs/AMOUNT_DEFINITION.md)**:
+inclusive → it is the gross; exclusive → it is the net and the settlement is
+`amount + VAT`. Every screen, total, entry, report and CSV column reads that
+one definition.
 
 Notes that are easy to get wrong, and are handled explicitly:
 - VAT is separated **only** when the business is registered *and* the document
@@ -500,6 +529,13 @@ given up for want of a document, and the CSV carries them too — a number
 quietly vanishing from a return is as bad as one quietly appearing in it.
 
 An undated reject appears in **every** period, because it belongs to none.
+
+A **voucher** generated from a recurring template starts with no invoice number
+or date — the paper arrives after the due date, and the template cannot supply
+what is different every month. Until they are recorded (إقفال الفترة →
+«فواتير الموردين على السندات») the voucher has no deductible input tax in the
+ledger *or* the report. The supplier IS copied from the template, since that is
+a property of the arrangement rather than of one document.
 
 ### Filing frequency is a setting
 Quarterly below the SAR 40m threshold, monthly above it — neither is assumed.

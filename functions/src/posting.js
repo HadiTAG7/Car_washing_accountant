@@ -18,6 +18,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { round2 } from './invariants.js';
+import { resolvePurchaseTax } from './purchaseTax.js';
 
 export const ACC = {
   CASH: '1010', BANK: '1020', RECEIVABLE: '1100', INPUT_VAT: '1200',
@@ -85,19 +86,47 @@ export function partnerCapitalCode(partnerId) {
   return id ? `${ACC.PARTNER_CAPITAL}-${id}` : ACC.PARTNER_CAPITAL;
 }
 
-function buildExpense(kind, row, id, { vatRegistered }) {
-  const raw = round2(
-    kind === 'monthly' ? row.total_monthly_cost
+/**
+ * The tax fields of an expense row, whichever collection it came from.
+ *
+ * Vouchers are written by the server in camelCase; the four operational
+ * collections are snake_case from the client mappers. Reading them in one
+ * place is what stops a field being carried by four sources and dropped by the
+ * fifth — which is how `vat_amount` reached Firestore and never reached the
+ * ledger.
+ */
+export function purchaseFieldsOf(kind, row) {
+  const camel = kind === 'voucher';
+  return {
+    amount: kind === 'monthly' ? row.total_monthly_cost
       : kind === 'variable' ? row.total_variable_cost
-        : kind === 'voucher' ? row.amount
-          : row.amount,
-  );
-  const date = String(
-    kind === 'monthly' ? row.logged_date
-      : kind === 'variable' ? row.logged_date
-        : kind === 'voucher' ? row.dueDate
-          : row.spent_date,
-  ).slice(0, 10);
+        : row.amount,
+    isTaxInvoice: (camel ? row.isTaxInvoice : row.is_tax_invoice) === true,
+    vatDeductible: (camel ? row.vatDeductible : row.vat_deductible) !== false,
+    invoiceNumber: camel ? row.invoiceNumber : row.invoice_number,
+    invoiceDate: camel ? row.invoiceDate : row.invoice_date,
+    supplier: row.supplier,
+    // `?? null` and never `|| null`: an explicit 0 is a real answer — a
+    // zero-rated or exempt supply — and `||` would erase it into "not stated".
+    vatAmount: (camel ? row.vatAmount : row.vat_amount) ?? null,
+    vatRate: (camel ? row.vatRate : row.vat_rate) ?? null,
+    priceMode: (camel ? row.priceMode : row.price_mode) || 'inclusive',
+  };
+}
+
+/**
+ * مصروف → قيد، بضريبة الفاتورة نفسها لا بنسبة افتراضية.
+ *
+ * Everything about the tax comes from `resolvePurchaseTax`, which reads the
+ * amount the supplier wrote, then the rate stamped on the document, then the
+ * policy in force on the INVOICE's date — and refuses to post when none of the
+ * three can answer, rather than splitting at 15% and calling it a fact.
+ */
+function buildExpense(kind, row, id, { policyAt = null, recordDate = null } = {}) {
+  // The SAME date the poster resolved the policy from. Computing it twice let
+  // the two drift — the voucher adapter read `due_date` while the builder read
+  // `dueDate` — so an entry could be dated one day and taxed under another.
+  const date = String(recordDate || ADAPTERS[kind].dateOf(row) || '').slice(0, 10);
   const description = kind === 'voucher'
     ? `${row.templateName || 'مصروف شهري'} — ${row.periodKey}`
     : (row.expense_name || row.description || 'مصروف');
@@ -108,33 +137,37 @@ function buildExpense(kind, row, id, { vatRegistered }) {
     : kind === 'monthly'
       ? (row.payment_status === 'paid' ? 'paid' : 'unpaid')
       : 'paid';
-  const isTaxInvoice = kind === 'voucher' ? row.isTaxInvoice : row.is_tax_invoice;
-  const vatDeductible = (kind === 'voucher' ? row.vatDeductible : row.vat_deductible) !== false;
-  // A non-deductible input tax is part of the cost, not a receivable.
-  const deductible = Boolean(vatRegistered && isTaxInvoice && vatDeductible);
-  const { gross, net, vat } = splitVat(raw, { taxable: deductible });
+
+  const fields = purchaseFieldsOf(kind, row);
+  const tax = resolvePurchaseTax({ ...fields, recordDate: date }, { policyAt });
 
   const lines = [
-    { accountId: EXPENSE_ACCOUNT[kind] || ACC.ADMIN_EXPENSES, debit: net, credit: 0, description },
+    // The expense or asset takes the NET; a non-deductible tax stays inside it,
+    // because an input tax that cannot be reclaimed is part of the cost of the
+    // thing bought and not a receivable from the Authority.
+    { accountId: EXPENSE_ACCOUNT[kind] || ACC.ADMIN_EXPENSES, debit: tax.net, credit: 0, description },
   ];
-  if (vat > 0) {
-    lines.push({ accountId: ACC.INPUT_VAT, debit: vat, credit: 0, description: 'ضريبة مدخلات قابلة للاسترداد' });
+  if (tax.vat > 0) {
+    // …and the description says WHICH of the three sources priced it.
+    lines.push({
+      accountId: ACC.INPUT_VAT, debit: tax.vat, credit: 0,
+      description: tax.lineDescription,
+    });
   }
-  const supplier = kind === 'voucher' ? row.supplier : row.supplier;
   lines.push({
     accountId: settlementForPurchase(method, paid),
-    debit: 0, credit: gross,
-    description: supplier ? `المورد: ${supplier}` : 'سداد',
+    debit: 0, credit: tax.gross,
+    description: fields.supplier ? `المورد: ${fields.supplier}` : 'سداد',
   });
-  const invoiceNo = kind === 'voucher' ? row.invoiceNumber : row.invoice_number;
   return {
     entry: {
       entryDate: date,
       sourceType: 'expense',
       sourceId: id,
-      description: `${description}${invoiceNo ? ` — فاتورة ${invoiceNo}` : ''}`,
+      description: `${description}${fields.invoiceNumber ? ` — فاتورة ${fields.invoiceNumber}` : ''}`,
     },
     lines,
+    purchaseTaxSnapshot: tax.snapshot,
   };
 }
 
@@ -150,6 +183,11 @@ function buildExpense(kind, row, id, { vatRegistered }) {
 // `dateOf` is the date the record BELONGS to — which is also the date whose
 // tax policy governs it. Posting a July wash in September must file it under
 // July's rules, so the poster resolves the policy from this before building.
+//
+// A purchase has a SECOND date: the one on the supplier's invoice. It governs
+// the input tax, and it is routinely earlier than the payment. So `build`
+// receives `policyAt` — the whole dated record, not one resolved policy — and
+// the purchase engine asks it about the invoice's own day.
 export const ADAPTERS = {
   wash: {
     collection: 'washes',
@@ -211,21 +249,25 @@ export const ADAPTERS = {
   annual: {
     collection: 'annual_expense_entries',
     lockKind: 'annual',
-    dateOf: (r) => String(r.paid_date || r.logged_date || '').slice(0, 10),
+    dateOf: (r) => String(r.paid_date || r.spent_date || r.logged_date || '').slice(0, 10),
     approved: () => true,
     build: (row, id, opts) => buildExpense('annual', row, id, opts),
   },
   startup: {
     collection: 'startup_cost_entries',
     lockKind: 'startup',
-    dateOf: (r) => String(r.paid_date || r.logged_date || '').slice(0, 10),
+    dateOf: (r) => String(r.paid_date || r.spent_date || r.logged_date || '').slice(0, 10),
     approved: () => true,
     build: (row, id, opts) => buildExpense('startup', row, id, opts),
   },
   voucher: {
     collection: 'expense_vouchers',
     lockKind: 'voucher',
-    dateOf: (r) => String(r.due_date || r.logged_date || '').slice(0, 10),
+    // `dueDate`, camelCase: a voucher is written by `buildVoucher`, not by the
+    // snake_case client mappers. Reading `due_date` here returned '' for every
+    // voucher ever generated — which the policy resolver then rejected as an
+    // unreadable date the moment a policy history existed.
+    dateOf: (r) => String(r.dueDate || r.due_date || r.logged_date || '').slice(0, 10),
     approved: (r) => r.status !== 'cancelled',
     notApproved: 'السند ملغى.',
     build: (row, id, opts) => buildExpense('voucher', row, id, opts),

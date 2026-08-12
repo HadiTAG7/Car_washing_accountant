@@ -12,7 +12,30 @@
 // at the first hop and the mapper's round-trip test passed anyway, because it
 // started after the loss.
 
-import { statedVatAmount, statedVatRate, normalizedPriceMode } from './vatFields';
+import {
+  statedVatAmount, statedVatRate, normalizedPriceMode,
+  readStatedVatAmount, readStatedVatRate,
+} from './vatFields';
+
+/**
+ * Reads a stored figure for EDITING — and keeps an unusable one visible.
+ *
+ * The tolerant reader answers "what figure should I use", so a stored −5 or
+ * 1.5 comes back as `null`: indistinguishable from "not stated". That is the
+ * right answer for a report and the wrong one for a form, because the field
+ * would render empty, the user would see nothing wrong, and saving would
+ * write `null` — erasing a bad value instead of correcting it, while the
+ * server still refuses to post the record and says so about a field the form
+ * showed as blank.
+ *
+ * So a value that IS stated but cannot be used is handed back as it was
+ * stored. `validateTaxInvoiceFields` then has something to complain about,
+ * and the save stays blocked until it is fixed.
+ */
+function readForEditing(value, reader) {
+  const r = reader(value);
+  return r.stated && r.value === null ? value : r.value;
+}
 
 export const EMPTY_TAX_INVOICE_FIELDS = {
   invoiceNumber: '',
@@ -34,10 +57,11 @@ export function readTaxInvoiceFields(v = {}) {
     invoiceNumber: v.invoiceNumber || '',
     invoiceDate:   v.invoiceDate || '',
     supplier:      v.supplier || '',
-    // `statedVatAmount` rather than `|| null`: a stored 0 is a real answer and
-    // `0 || null` would throw it away.
-    vatAmount:     statedVatAmount(v.vatAmount),
-    vatRate:       statedVatRate(v.vatRate),
+    // `readForEditing` rather than `|| null`: a stored 0 is a real answer and
+    // `0 || null` would throw it away, while a stored −5 must stay on screen
+    // rather than vanish into "not stated".
+    vatAmount:     readForEditing(v.vatAmount, readStatedVatAmount),
+    vatRate:       readForEditing(v.vatRate, readStatedVatRate),
     priceMode:     normalizedPriceMode(v.priceMode),
     vatDeductible: v.vatDeductible !== false,
   };

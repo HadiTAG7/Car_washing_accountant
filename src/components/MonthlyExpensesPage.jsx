@@ -3,7 +3,7 @@ import {
   Plus, Trash2, Pencil, Wallet, CheckCircle2, Clock, CalendarClock, Calendar, Receipt,
   Percent, Link as LinkIcon,
 } from 'lucide-react';
-import { formatCurrency, formatCurrencyPrecise, formatNumber, extractVat, MONTHLY_EXPENSE_CATEGORIES } from '../data/initialData';
+import { formatCurrency, formatNumber, MONTHLY_EXPENSE_CATEGORIES } from '../data/initialData';
 import TopBar from './TopBar';
 import {
   Card, SectionHeader, StatCard, PrimaryButton,
@@ -17,6 +17,8 @@ import Toast from './Toast';
 import { useMonthlyExpenses } from '../hooks/useMonthlyExpenses';
 import { useMonthlyExpenseCategories } from '../hooks/useMonthlyExpenseCategories';
 import { useAccountingSettings } from '../hooks/useAccountingSettings';
+import PurchaseVatBadge from './PurchaseVatBadge';
+import { taxPolicyAt } from '../lib/accounting/taxPolicy';
 import { autoPost, describeAutoPost, autoPostTone } from '../lib/accounting/autoPost';
 import { isFirebaseConfigured, missingEnvNames, describeBackendError } from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
@@ -82,6 +84,11 @@ export default function MonthlyExpensesPage() {
   } = useMonthlyExpenseCategories();
 
   const { scalingFactor, canMutate } = usePartnerView();
+  // The dated tax record, so a 5%-era invoice is shown at 5% rather than at
+  // today's rate. `useCallback`-free on purpose: `settings` is the only input
+  // and it changes rarely. See docs/AMOUNT_DEFINITION.md.
+  const policyAt = (date) => taxPolicyAt(date, settings);
+
   const { settings } = useAccountingSettings();
 
   const [localOpen, setLocalOpen]         = useState(false);
@@ -285,10 +292,9 @@ export default function MonthlyExpensesPage() {
                             filing time. Only http(s) values become anchors. */}
                         {i.isTaxInvoice && (
                           <div className="flex flex-wrap items-center gap-2 mt-1.5">
-                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-100 dark:border-emerald-500/30 px-2 py-0.5 rounded-full tabular-nums">
-                              <Percent size={11} />
-                              ض.ق.م: {formatCurrencyPrecise(extractVat(i.totalMonthlyCost) * scalingFactor)}
-                            </span>
+                            <PurchaseVatBadge
+                              row={{ ...i, amount: i.totalMonthlyCost, recordDate: i.loggedDate }}
+                              policyAt={policyAt} scale={scalingFactor} />
                             {i.invoiceUrl && isSafeHttpUrl(i.invoiceUrl) && (
                               <a
                                 href={i.invoiceUrl}

@@ -26,6 +26,7 @@ import {
   FILING_PERIOD_LABELS,
 } from '../lib/accounting/vatReturn';
 import { taxPolicyAt } from '../lib/accounting/taxPolicy';
+import { amountRoleOf } from '../lib/accounting/purchaseDisplay';
 import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 
@@ -148,6 +149,15 @@ export default function VatRecoveryPage() {
   const netTax    = report.netTax * s;
 
   function handleExport() {
+    // ── كل عمود يقول ما هو ──
+    // The old export had one money column called «شامل الضريبة» and put the
+    // RAW stored amount into it for the rejected rows. For a record saved
+    // `exclusive` that amount is the NET, so the same column held a gross on
+    // one line and a net on the next with nothing to tell them apart. The
+    // amount now travels in its own column beside the mode that defines it,
+    // and «الإجمالي» means the gross on every line. See
+    // docs/AMOUNT_DEFINITION.md.
+    const roleOf = (r) => amountRoleOf(r).label;
     const rows = report.eligible.map((e) => [
       itemNameById.get(e.parentId) || '',
       SOURCE_META[e.source]?.label || e.source,
@@ -155,23 +165,25 @@ export default function VatRecoveryPage() {
       e.supplier || '',
       e.invoiceNumber || '',
       e.claimDate,
+      roleOf(e),
+      Number(((Number(e.amount) || 0) * s).toFixed(2)),
       Number((e.gross * s).toFixed(2)),
       Number((e.net * s).toFixed(2)),
       Number((e.tax * s).toFixed(2)),
       TAX_SOURCE_LABELS[e.taxSource] || e.taxSource || '',
       isSafeHttpUrl(e.invoiceUrl) ? e.invoiceUrl : '',
     ]);
-    rows.push(['إجمالي ضريبة المدخلات المؤهلة', '', '', '', '', '',
+    rows.push(['إجمالي ضريبة المدخلات المؤهلة', '', '', '', '', '', '', '',
       Number((report.input.gross * s).toFixed(2)),
       Number((report.input.net * s).toFixed(2)),
       Number(inputTax.toFixed(2)), '', '']);
-    rows.push(['ضريبة المخرجات (الغسلات)', '', '', '', '', '',
+    rows.push(['ضريبة المخرجات (الغسلات)', '', '', '', '', '', '', '',
       Number((report.output.gross * s).toFixed(2)),
       Number((report.output.net * s).toFixed(2)),
       Number(outputTax.toFixed(2)), '', '']);
     rows.push([
       netTax >= 0 ? 'صافي الضريبة المستحقة للهيئة' : 'صافي الضريبة المستردة',
-      '', '', '', '', '', '', '', Number(Math.abs(netTax).toFixed(2)), '', '',
+      '', '', '', '', '', '', '', '', '', Number(Math.abs(netTax).toFixed(2)), '', '',
     ]);
     // Rejected invoices travel with the export: an accountant reviewing the
     // period needs to see what was NOT claimed and why.
@@ -179,7 +191,7 @@ export default function VatRecoveryPage() {
       rows.push([
         itemNameById.get(r.parentId) || '', SOURCE_META[r.source]?.label || r.source,
         r.description, r.supplier || '', r.invoiceNumber || '', r.claimDate || '',
-        Number(((Number(r.amount) || 0) * s).toFixed(2)), '', 0, '',
+        roleOf(r), Number(((Number(r.amount) || 0) * s).toFixed(2)), '', '', 0, '',
         `غير مؤهلة — ينقصها: ${r.missing.join('، ')}`,
       ]);
     }
@@ -189,14 +201,15 @@ export default function VatRecoveryPage() {
       rows.push([
         itemNameById.get(r.parentId) || '', SOURCE_META[r.source]?.label || r.source,
         r.description, r.supplier || '', r.invoiceNumber || '', r.claimDate || '',
-        Number(((Number(r.amount) || 0) * s).toFixed(2)), '', '', 'غير محدَّد',
-        `ضريبة غير محدَّدة — ${r.reason}`,
+        roleOf(r), Number(((Number(r.amount) || 0) * s).toFixed(2)), '', '', '',
+        'غير محدَّد', `ضريبة غير محدَّدة — ${r.reason}`,
       ]);
     }
     downloadCsv(
       `تقرير-ضريبة-القيمة-المضافة-${activePeriod || 'كل-الفترات'}`,
       ['البند', 'المصدر', 'الوصف', 'المورّد', 'رقم الفاتورة', 'تاريخ الفاتورة',
-        'شامل الضريبة', 'الصافي', 'الضريبة', 'مصدر الضريبة', 'رابط الفاتورة / ملاحظة'],
+        'وضع المبلغ المسجَّل', 'المبلغ المسجَّل', 'الإجمالي شامل الضريبة',
+        'الصافي قبل الضريبة', 'الضريبة', 'مصدر الضريبة', 'رابط الفاتورة / ملاحظة'],
       rows,
     );
   }
@@ -426,8 +439,13 @@ export default function VatRecoveryPage() {
                     <th className="py-3 px-4 whitespace-nowrap">المورّد</th>
                     <th className="py-3 px-4 whitespace-nowrap">رقم الفاتورة</th>
                     <th className="py-3 px-4 whitespace-nowrap">تاريخ الفاتورة</th>
-                    <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">شامل الضريبة</th>
-                    <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">الصافي</th>
+                    {/* «الإجمالي» always means the gross. What the record
+                        STORES is the gross only in inclusive mode — in
+                        exclusive mode it is the net — so the mode is named
+                        beside it rather than left to the reader.
+                        See docs/AMOUNT_DEFINITION.md. */}
+                    <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">الإجمالي شامل الضريبة</th>
+                    <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">الصافي قبل الضريبة</th>
                     {/* No fixed «15%» in the caption: a 5%-era purchase keeps
                         its own rate, so the number is shown with WHERE it came
                         from rather than a percentage that may contradict it. */}
@@ -451,7 +469,12 @@ export default function VatRecoveryPage() {
                       <td className="py-3 px-4 whitespace-nowrap text-slate-700 dark:text-slate-300">{e.supplier}</td>
                       <td className="py-3 px-4 whitespace-nowrap tabular-nums text-slate-700 dark:text-slate-300" dir="ltr">{e.invoiceNumber}</td>
                       <td className="py-3 px-4 whitespace-nowrap tabular-nums text-slate-600 dark:text-slate-400">{formatDate(e.claimDate)}</td>
-                      <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums text-slate-700 dark:text-slate-300">{formatCurrency(e.gross * s)}</td>
+                      <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums text-slate-700 dark:text-slate-300">
+                        {formatCurrency(e.gross * s)}
+                        <span className="block text-[10px] font-normal text-slate-400 dark:text-slate-500">
+                          المسجَّل {amountRoleOf(e).label}
+                        </span>
+                      </td>
                       <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums text-slate-700 dark:text-slate-300">{formatCurrency(e.net * s)}</td>
                       <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums font-bold text-emerald-700 dark:text-emerald-300">{formatCurrencyPrecise(e.tax * s)}</td>
                       <td className="py-3 px-4 whitespace-nowrap text-[11px] text-slate-500 dark:text-slate-400">
@@ -513,7 +536,7 @@ export default function VatRecoveryPage() {
                   <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
                     <th className="py-3 px-4 whitespace-nowrap">البند</th>
                     <th className="py-3 px-4 whitespace-nowrap">التاريخ</th>
-                    <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">المبلغ</th>
+                    <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">المبلغ المسجَّل</th>
                     <th className="py-3 px-4 whitespace-nowrap">السبب</th>
                   </tr>
                 </thead>
@@ -534,6 +557,9 @@ export default function VatRecoveryPage() {
                       </td>
                       <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums text-slate-700 dark:text-slate-300">
                         {formatCurrency((Number(r.amount) || 0) * s)}
+                        <span className="block text-[10px] font-normal text-slate-400 dark:text-slate-500">
+                          {amountRoleOf(r).label}
+                        </span>
                       </td>
                       <td className="py-3 px-4 text-[11px] leading-relaxed text-amber-800 dark:text-amber-300">
                         {r.reason}
@@ -559,7 +585,7 @@ export default function VatRecoveryPage() {
                   <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
                     <th className="py-3 px-4 whitespace-nowrap">البند</th>
                     <th className="py-3 px-4 whitespace-nowrap">التاريخ</th>
-                    <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">المبلغ</th>
+                    <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">المبلغ المسجَّل</th>
                     <th className="py-3 px-4 whitespace-nowrap">الناقص</th>
                   </tr>
                 </thead>
@@ -580,6 +606,9 @@ export default function VatRecoveryPage() {
                       </td>
                       <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums text-slate-700 dark:text-slate-300">
                         {formatCurrency((Number(r.amount) || 0) * s)}
+                        <span className="block text-[10px] font-normal text-slate-400 dark:text-slate-500">
+                          {amountRoleOf(r).label}
+                        </span>
                       </td>
                       <td className="py-3 px-4 text-[11px] leading-relaxed text-amber-800 dark:text-amber-300">
                         {r.missing.join(' · ')}

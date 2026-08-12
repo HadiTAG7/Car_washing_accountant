@@ -31,6 +31,7 @@ import {
   setTaxPolicy, seedTaxPolicy, setAccountingPreferences,
 } from './src/accountingSettings.js';
 import { TaxPolicyError } from './src/taxPolicy.js';
+import { PurchaseTaxError } from './src/purchaseTax.js';
 import { canPost } from './src/posting.js';
 
 initializeApp();
@@ -99,6 +100,13 @@ function toHttps(e) {
   }
   if (e instanceof TaxPolicyError) {
     return new HttpsError(e.code || 'invalid-argument', e.message);
+  }
+  // A refusal to invent a VAT figure is a message the user must see in full —
+  // it names the invoice and says exactly which of the three sources is
+  // missing. Folding it into 'internal' would show «حاول مرة أخرى» for a
+  // problem retrying cannot fix.
+  if (e instanceof PurchaseTaxError) {
+    return new HttpsError(e.code || 'failed-precondition', e.message, { reason: e.reason });
   }
   // Anything else is a bug: log it in full, tell the caller nothing internal.
   console.error('[ledger] unexpected failure', e);

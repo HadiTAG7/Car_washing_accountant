@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
   Lock, Unlock, ShieldCheck, AlertTriangle, CheckCircle2, Loader2, Database, Upload,
-  CalendarRange, FilePlus2, Zap, Link2,
+  CalendarRange, FilePlus2, Zap, Link2, Receipt,
 } from 'lucide-react';
 import { formatCurrency } from '../data/initialData';
 import TopBar from './TopBar';
@@ -15,7 +15,10 @@ import { useAuth } from '../hooks/useAuth';
 import { closePreflight, currentPeriodKey } from '../lib/accounting/periods';
 import { closePeriod, reopenPeriod, seedChartOfAccounts } from '../lib/accounting/firestoreLedger';
 import { collectUnposted, postUnposted } from '../lib/accounting/postOperations';
-import { previewGeneration, generateVouchers } from '../lib/accounting/firestoreRecurring';
+import {
+  previewGeneration, generateVouchers, fetchVoucherBundle, setVoucherInvoice,
+} from '../lib/accounting/firestoreRecurring';
+import VoucherInvoiceModal from './VoucherInvoiceModal';
 import { linkLegacyInvoices } from '../lib/accounting/firestoreInvoicing';
 import { addMonths } from '../lib/accounting/depreciation';
 import { useAccountingSettings } from '../hooks/useAccountingSettings';
@@ -44,6 +47,13 @@ export default function PeriodClosePage() {
     from: addMonths(currentPeriodKey(), -2), through: currentPeriodKey(),
   }));
   const [genPreview, setGenPreview] = useState(null);
+  // The generated vouchers, and the one whose supplier invoice is being
+  // recorded. A voucher without an invoice number, date and supplier gets no
+  // input-VAT asset — in the ledger AND in the return — so there has to be a
+  // way to record one; the template cannot supply it, since the paper is
+  // per-period.
+  const [vouchers, setVouchers] = useState(null);
+  const [invoiceFor, setInvoiceFor] = useState(null);
   // Legacy invoices with no ledger link: the dry-run plan, then the apply.
   const [legacyPlan, setLegacyPlan] = useState(null);
   // The date a tax-switch change takes effect from. Today by default, because
@@ -245,6 +255,25 @@ export default function PeriodClosePage() {
     } catch (e) {
       showToast(describeBackendError(e) || e?.message || 'تعذّر الفحص', 'error');
     } finally { setBusy(''); }
+  }
+
+  async function handleLoadVouchers() {
+    setBusy('vouchers');
+    try {
+      const b = await fetchVoucherBundle();
+      setVouchers(b.vouchers);
+      showToast(`${b.vouchers.length} سند محمَّل.`);
+    } catch (e) {
+      showToast(describeBackendError(e) || e?.message || 'تعذّر تحميل السندات', 'error');
+    } finally { setBusy(''); }
+  }
+
+  async function handleSaveVoucherInvoice(id, fields) {
+    await setVoucherInvoice(id, { ...fields, userId: user?.id });
+    const b = await fetchVoucherBundle();
+    setVouchers(b.vouchers);
+    setScan(null);
+    showToast('حُفظت بيانات الفاتورة — صار السند مؤهلاً لخصم ضريبته عند الترحيل.');
   }
 
   async function handleGenerateVouchers() {
@@ -629,6 +658,74 @@ export default function PeriodClosePage() {
                   </div>
                 </div>
               )}
+
+              {/* ── فواتير الموردين على السندات ────────────────────
+                  A voucher is created on the due date; the supplier's invoice
+                  arrives later. Until its number, date and supplier are on
+                  the record, the ledger opens no input-VAT account for it and
+                  the VAT report lists it as غير مؤهلة — one rule, stated
+                  twice. This is the only place that rule can be satisfied,
+                  because the paper is per-period and the template has none. */}
+              <div className="mt-5 pt-5 border-t border-slate-100 dark:border-slate-800">
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                      فواتير الموردين على السندات
+                    </h4>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mt-0.5">
+                      سند بلا رقم فاتورة وتاريخ ومورّد لا تُخصم ضريبته — لا في
+                      الدفاتر ولا في التقرير. سجّلها هنا حين تصل الورقة.
+                    </p>
+                  </div>
+                  {canMutate && (
+                    <SecondaryButton icon={busy === 'vouchers' ? Loader2 : Receipt}
+                      onClick={handleLoadVouchers} disabled={Boolean(busy)}>
+                      {busy === 'vouchers' ? 'جارٍ التحميل...' : 'عرض السندات'}
+                    </SecondaryButton>
+                  )}
+                </div>
+                {vouchers && (() => {
+                  // A posted voucher is frozen; a cancelled one is a month
+                  // nobody incurred. Neither can take an invoice.
+                  const open = vouchers.filter((v) => !v.posted && v.status !== 'cancelled'
+                    && v.isTaxInvoice);
+                  const missing = open.filter((v) => !v.invoiceNumber || !v.invoiceDate || !v.supplier);
+                  return open.length === 0 ? (
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      لا توجد سندات ضريبية غير مُرحّلة.
+                    </p>
+                  ) : (
+                    <>
+                      <p className="text-xs text-slate-600 dark:text-slate-300 mb-2">
+                        {missing.length} من {open.length} سنداً ينقصها بيان الفاتورة.
+                      </p>
+                      <ul className="space-y-1 max-h-64 overflow-y-auto">
+                        {open.map((v) => {
+                          const incomplete = !v.invoiceNumber || !v.invoiceDate || !v.supplier;
+                          return (
+                            <li key={v.id}
+                              className="flex items-center justify-between gap-3 text-xs py-1.5 border-b border-slate-50 dark:border-slate-800/60">
+                              <span className="text-slate-700 dark:text-slate-300 min-w-0 truncate">
+                                {v.templateName || 'مصروف شهري'} — {v.periodKey}
+                              </span>
+                              <span className={`shrink-0 ${incomplete
+                                ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-300'}`}>
+                                {incomplete ? 'بلا فاتورة' : `فاتورة ${v.invoiceNumber}`}
+                              </span>
+                              {canMutate && (
+                                <button type="button" onClick={() => setInvoiceFor(v)}
+                                  className="shrink-0 font-semibold text-primary-700 dark:text-primary-300 hover:underline">
+                                  {incomplete ? 'تسجيل الفاتورة' : 'تعديل'}
+                                </button>
+                              )}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </>
+                  );
+                })()}
+              </div>
             </Card>
 
             {/* ── ترحيل العمليات ─────────────────────────────────────
@@ -889,6 +986,10 @@ export default function PeriodClosePage() {
           </>
         )}
       </main>
+
+      <VoucherInvoiceModal
+        voucher={invoiceFor} onClose={() => setInvoiceFor(null)}
+        onSave={handleSaveVoucherInvoice} />
 
       <Toast open={toast.open} message={toast.message} tone={toast.tone}
         duration={toast.duration} onClose={closeToast} />

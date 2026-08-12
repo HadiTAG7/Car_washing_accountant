@@ -48,7 +48,15 @@ export function isRealPolicyDate(iso) {
 
 /** The three fields that decide what a wash's revenue is. */
 export function normalizeTaxPolicy(input = {}, fallback = {}) {
-  const rate = Number(input.vatRate);
+  // `Number(null) === 0` — finite, in range, and it would silently return a
+  // rate of ZERO where the caller meant "not stated, use the fallback". This is
+  // the same trap that made a purchase with no stated VAT amount deduct as a
+  // zero-VAT purchase; see src/lib/vatFields.js. An explicit 0 IS a rate (a
+  // business that is not registered), so the three states are separated by hand
+  // rather than left to coercion.
+  const unstated = (v) => v === null || v === undefined || String(v).trim() === '';
+  const rate = unstated(input.vatRate) ? NaN : Number(input.vatRate);
+  const fallbackRate = unstated(fallback.vatRate) ? NaN : Number(fallback.vatRate);
   const registered = typeof input.vatRegistered === 'boolean'
     ? input.vatRegistered
     : (fallback.vatRegistered !== false);
@@ -59,7 +67,7 @@ export function normalizeTaxPolicy(input = {}, fallback = {}) {
       : (input.washPriceMode === 'inclusive' ? 'inclusive' : (fallback.washPriceMode || 'inclusive')),
     vatRate: Number.isFinite(rate) && rate >= 0 && rate < 1
       ? rate
-      : (Number.isFinite(Number(fallback.vatRate)) ? Number(fallback.vatRate) : DEFAULT_VAT_RATE),
+      : (Number.isFinite(fallbackRate) ? fallbackRate : DEFAULT_VAT_RATE),
   };
 }
 

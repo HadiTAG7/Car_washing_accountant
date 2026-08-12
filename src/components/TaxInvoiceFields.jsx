@@ -1,6 +1,9 @@
 import { FileText, User, Hash, AlertTriangle } from 'lucide-react';
 import DateField from './DateField';
 import { inputInvoiceEligibility } from '../lib/accounting/vatReturn';
+import {
+  statedVatAmount, isUnstated, normalizedPriceMode, taxSourceFor,
+} from '../lib/vatFields';
 
 const INPUT_CLS = 'w-full min-h-touch px-3 py-2 rounded-control border border-slate-200 '
   + 'dark:border-slate-700 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-slate-100 '
@@ -37,23 +40,25 @@ export default function TaxInvoiceFields({
   // The stated amount cannot exceed the invoice it sits on — a VAT of 200 on a
   // 115 purchase is a typo, and letting it through would reclaim money the
   // document does not support.
-  const statedVat = form.vatAmount === '' || form.vatAmount === null || form.vatAmount === undefined
-    ? null : Number(form.vatAmount);
+  const raw = form.vatAmount;
+  const statedVat = statedVatAmount(raw);
   let vatProblem = '';
-  if (statedVat !== null && (!Number.isFinite(statedVat) || statedVat < 0)) {
+  if (!isUnstated(raw) && statedVat === null) {
     vatProblem = 'مبلغ الضريبة يجب أن يكون رقماً موجباً.';
-  } else if (statedVat !== null && (form.priceMode || 'inclusive') === 'inclusive'
+  } else if (statedVat !== null && normalizedPriceMode(form.priceMode) === 'inclusive'
     && Number(amount) > 0 && statedVat > Number(amount) + 0.005) {
     vatProblem = `مبلغ الضريبة أكبر من إجمالي الفاتورة (${Number(amount).toFixed(2)}).`;
   }
 
-  // Which of the three sources will actually be used, said out loud so the
-  // deduction is never a mystery.
-  const taxSourceLabel = statedVat !== null && !vatProblem
-    ? 'مبلغ مكتوب على الفاتورة'
-    : (form.vatRate !== null && form.vatRate !== undefined && form.vatRate !== ''
-      ? 'نسبة مثبتة على الفاتورة'
-      : 'سياسة تاريخ الفاتورة');
+  // Which of the three sources will actually be used, decided by the SAME
+  // function the report uses, so the form cannot promise one thing and the
+  // return do another.
+  const SOURCE_LABEL = {
+    invoice: 'مبلغ مكتوب على الفاتورة',
+    'invoice-rate': 'نسبة مثبتة على الفاتورة',
+    policy: 'سياسة تاريخ الفاتورة',
+  };
+  const taxSourceLabel = SOURCE_LABEL[vatProblem ? 'policy' : taxSourceFor(form)];
 
   return (
     <div className="space-y-3">

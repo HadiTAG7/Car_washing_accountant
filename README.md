@@ -754,8 +754,25 @@ moved was the operational check beside it, and the input side:
   rate stored *on* the invoice; failing that, the rate in force on the
   invoice's date. Today's rate is never the answer for a historical document.
   `vatAmount`, `vatRate`, `priceMode` and `vatDeductible` travel from the shared
-  form through one mapper block to every expense source, so a field cannot be
-  dropped in four places independently.
+  form through `taxInvoiceForm.js` and one mapper block to every expense source,
+  so a field cannot be dropped in four places independently. The helper is the
+  choke point every form funnels through, and it is where the three fields were
+  missing at first: they were added to the UI and to the mapper and not to it,
+  so the journey lost them at the **first** hop while the mapper's round-trip
+  test passed — because that test started after the loss. The suite now starts
+  at a form state and ends at the snake_case payload.
+- **«غير مذكور» ليست صفراً**, and one function decides it: `src/lib/vatFields.js`.
+  `Number(null)` is `0` — finite, non-negative, and past every plausible-looking
+  guard — so a purchase stored with `vatAmount: null`, which is exactly what the
+  mapper writes for "the supplier did not state one", was being deducted as a
+  VAT of **zero** and labelled `source: 'invoice'` as though the supplier had
+  written it. The fallback to the invoice's own rate, and then to the dated
+  policy, never ran. Three modules were each answering the question separately
+  and they disagreed; now `null`/`undefined`/`''` mean *not stated* and fall
+  through, while `0` and `'0'` are an explicit zero — a zero-rated supply, and a
+  real answer the return must honour. The same trap is closed in
+  `normalizeTaxPolicy` and in the stored `taxSnapshot` reads, where an unset
+  rate would have claimed 0% rather than inheriting or falling through.
 - A qualifying invoice whose VAT nobody can determine — no stated amount, no
   rate of its own, and a date the record does not reach — goes to a separate
   **unresolved** list with the reason, shown on the page and in the CSV. It is

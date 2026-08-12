@@ -560,3 +560,87 @@ describe('الفواتير التي لا يمكن تسعير ضريبتها', ()
     expect(report.policyUnconfigured).toBe(true);
   });
 });
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// «غير مذكور» ليست صفراً — الحالة التي كان Number(null) يبتلعها
+// ═══════════════════════════════════════════════════════════════════════════
+// `Number(null) === 0`: finite, non-negative, and past every plausible guard.
+// So a purchase saved with `vatAmount: null` — which is exactly what the
+// mapper writes for "the supplier did not state one" — was deducted as a VAT
+// of ZERO and labelled `source: 'invoice'` as though the supplier had written
+// it, and the fallbacks to the invoice's rate and then to the dated policy
+// never ran. `undefined` was right only by accident (`Number(undefined)` is
+// NaN), which is not a property to rely on.
+describe('مبلغ الضريبة: null مقابل صفر صريح', () => {
+  const ROW = {
+    isTaxInvoice: true,
+    invoiceDate: '2026-08-01',
+    invoiceNumber: 'INV-1',
+    supplier: 'S',
+    amount: 105,
+    vatAmount: null,
+    vatRate: 0.05,
+    priceMode: 'inclusive',
+  };
+
+  it('vatAmount: null ينتقل إلى نسبة الفاتورة — 5 لا صفر', () => {
+    expect(inputInvoiceTax(ROW)).toMatchObject({ vat: 5, source: 'invoice-rate' });
+  });
+
+  it('و"" وundefined مثلها تماماً', () => {
+    expect(inputInvoiceTax({ ...ROW, vatAmount: '' })).toMatchObject({ vat: 5, source: 'invoice-rate' });
+    expect(inputInvoiceTax({ ...ROW, vatAmount: '   ' })).toMatchObject({ vat: 5, source: 'invoice-rate' });
+    expect(inputInvoiceTax({ ...ROW, vatAmount: undefined })).toMatchObject({ vat: 5, source: 'invoice-rate' });
+  });
+
+  it('وصفر صريح — 0 أو "0" — يبقى صفراً من الفاتورة', () => {
+    // A zero-rated or exempt supply. The supplier DID answer, and the answer
+    // was nil; that is not the same as declining to answer.
+    expect(inputInvoiceTax({ ...ROW, vatAmount: 0 })).toMatchObject({ vat: 0, source: 'invoice' });
+    expect(inputInvoiceTax({ ...ROW, vatAmount: '0' })).toMatchObject({ vat: 0, source: 'invoice' });
+  });
+
+  it('وبلا نسبة على الفاتورة ينتقل إلى سياسة تاريخها', () => {
+    const settings = {
+      vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15,
+      taxPolicyHistory: [
+        { effectiveFrom: '2018-01-01', vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.05, baseline: true },
+        { effectiveFrom: '2026-01-01', vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15 },
+      ],
+    };
+    const r = inputInvoiceTax(
+      { ...ROW, vatAmount: null, vatRate: null },
+      { policyAt: (d) => taxPolicyAt(d, settings) },
+    );
+    expect(r).toMatchObject({ source: 'policy' });
+    expect(r.vat).toBeCloseTo(13.7, 1);   // 105 inclusive at 15%
+  });
+
+  it('ومبلغ صريح أكبر من الإجمالي لا يُخصم — ينتقل إلى النسبة', () => {
+    expect(inputInvoiceTax({ ...ROW, vatAmount: 500 })).toMatchObject({ vat: 5, source: 'invoice-rate' });
+  });
+
+  // ── نفس الحالة عبر شكل صف useTaxInvoices إلى التقرير ────────────────
+  it('والصف كما يبنيه useTaxInvoices يُخصم 5 في التقرير لا صفراً', () => {
+    // `useTaxInvoices` normalises every source to `vatAmount: x ?? null`, so
+    // null is the value the report actually receives in production.
+    const row = { ...ROW, id: 'i1', description: 'مواد', source: 'variable', parentId: 'p1' };
+    const report = buildVatReport({ inputs: [row], period: '2026-Q3', filing: 'quarterly' });
+
+    expect(report.input.tax).toBe(5);
+    expect(report.input.count).toBe(1);
+    expect(report.eligible[0].taxSource).toBe('invoice-rate');
+    expect(report.unresolvedCount).toBe(0);
+    // And the net tax the return files moves with it.
+    expect(report.netTax).toBe(-5);
+  });
+
+  it('وصف بصفر صريح يُخصم صفراً من مبلغ الفاتورة', () => {
+    const row = { ...ROW, id: 'i1', vatAmount: 0, description: 'معفاة', source: 'variable', parentId: 'p1' };
+    const report = buildVatReport({ inputs: [row], period: '2026-Q3', filing: 'quarterly' });
+    expect(report.input.tax).toBe(0);
+    expect(report.eligible[0].taxSource).toBe('invoice');
+    expect(report.unresolvedCount).toBe(0);
+  });
+});

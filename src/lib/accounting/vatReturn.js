@@ -21,6 +21,9 @@
 
 import { round2 } from './journal';
 import { splitVatBalanced, VAT_RATE } from './vat';
+// One definition of "stated vs not stated", shared with the mappers and the
+// form — see src/lib/vatFields.js for what went wrong when there were three.
+import { statedVatAmount, statedVatRate, normalizedPriceMode } from '../vatFields';
 
 export const FILING_PERIODS = ['monthly', 'quarterly'];
 export const FILING_PERIOD_LABELS = {
@@ -162,16 +165,23 @@ export function claimDateOf(row) {
  */
 export function inputInvoiceTax(row, { policyAt = null, rate = VAT_RATE } = {}) {
   const amount = round2(Number(row?.amount) || 0);
-  const mode = row?.priceMode === 'exclusive' ? 'exclusive' : 'inclusive';
+  const mode = normalizedPriceMode(row?.priceMode);
 
-  const stated = Number(row?.vatAmount);
-  if (Number.isFinite(stated) && stated >= 0 && stated <= amount) {
+  // `statedVatAmount`, never `Number(...)`. `Number(null)` is 0 — finite,
+  // non-negative, and past every plausible guard — so a purchase saved with
+  // `vatAmount: null`, which is exactly what the mapper writes for "the
+  // supplier did not state one", was deducted as a VAT of ZERO and labelled
+  // `source: 'invoice'` as though the supplier had written it. The fallbacks
+  // below never ran. `undefined` was correct only by accident (`Number(
+  // undefined)` is NaN), and accidentally-correct is not a property.
+  const stated = statedVatAmount(row?.vatAmount);
+  if (stated !== null && stated <= amount) {
     const gross = mode === 'exclusive' ? round2(amount + stated) : amount;
     return { gross, net: round2(gross - stated), vat: round2(stated), source: 'invoice' };
   }
 
-  const onInvoice = Number(row?.vatRate);
-  if (Number.isFinite(onInvoice) && onInvoice >= 0 && onInvoice < 1) {
+  const onInvoice = statedVatRate(row?.vatRate);
+  if (onInvoice !== null) {
     return { ...splitVatBalanced(amount, { mode, taxable: true, rate: onInvoice }), source: 'invoice-rate' };
   }
 
@@ -229,7 +239,7 @@ export function outputTaxFromWashes(washes, {
       continue;
     }
     const s = splitVatBalanced(amount, {
-      mode: w.priceMode || policy.washPriceMode,
+      mode: w.priceMode ? normalizedPriceMode(w.priceMode) : policy.washPriceMode,
       taxable: policy.vatRegistered,
       rate: policy.vatRate,
     });

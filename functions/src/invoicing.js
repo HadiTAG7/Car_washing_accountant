@@ -127,7 +127,10 @@ export function vatLineLabel(rate, { side = 'output' } = {}) {
  */
 export function saleTaxTreatmentOfEntry(entry) {
   const snap = entry?.taxSnapshot;
-  if (snap && Number.isFinite(Number(snap.vatRate))) {
+  // `snap.vatRate != null` first: `Number(null)` is 0, so a snapshot with an
+  // unset rate would claim the sale was 0%-rated instead of falling through
+  // to the lines. Same trap as the purchase-side one in vatFields.js.
+  if (snap && snap.vatRate != null && Number.isFinite(Number(snap.vatRate))) {
     return {
       known: true, source: 'snapshot',
       taxable: Boolean(snap.vatRegistered) && Number(snap.vat) > 0,
@@ -172,7 +175,10 @@ export function saleTaxTreatmentOfEntry(entry) {
  */
 export function referenceTaxTreatment(reference, entry) {
   const snap = reference?.taxSnapshot;
-  if (snap && Number.isFinite(Number(snap.vatRate))) {
+  // `snap.vatRate != null` first: `Number(null)` is 0, so a snapshot with an
+  // unset rate would claim the sale was 0%-rated instead of falling through
+  // to the lines. Same trap as the purchase-side one in vatFields.js.
+  if (snap && snap.vatRate != null && Number.isFinite(Number(snap.vatRate))) {
     return {
       known: true, source: 'reference-snapshot',
       taxable: Boolean(snap.vatRegistered) && Number(snap.vat) > 0,

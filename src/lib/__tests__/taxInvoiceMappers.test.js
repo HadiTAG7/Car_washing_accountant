@@ -47,16 +47,23 @@ describe('كتلة الفاتورة الضريبية ذهاباً وإياباً
   });
 
   // ── "غير مذكور" ليست صفراً ──────────────────────────────────────────
-  it('والمبلغ غير المذكور يبقى null لا صفراً', () => {
+  it('والمبلغ غير المذكور يبقى null لا صفراً — null و"" وundefined', () => {
+    for (const unstated of [null, '', '   ', undefined]) {
+      expect(toTaxInvoiceFields({ ...APP_SHAPE, vatAmount: unstated }).vat_amount).toBeNull();
+      expect(toTaxInvoiceFields({ ...APP_SHAPE, vatRate: unstated }).vat_rate).toBeNull();
+    }
     const row = toTaxInvoiceFields({ ...APP_SHAPE, vatAmount: '', vatRate: '' });
     expect(row.vat_amount).toBeNull();
     expect(row.vat_rate).toBeNull();
     const back = mapTaxInvoiceFields(row);
     expect(back.vatAmount).toBeNull();
     expect(back.vatRate).toBeNull();
-    // …but an explicit zero rate IS an answer: a zero-rated supply.
+    // …but an explicit zero IS an answer: a zero-rated or exempt supply.
     expect(toTaxInvoiceFields({ ...APP_SHAPE, vatRate: 0 }).vat_rate).toBe(0);
+    expect(toTaxInvoiceFields({ ...APP_SHAPE, vatAmount: 0 }).vat_amount).toBe(0);
+    expect(toTaxInvoiceFields({ ...APP_SHAPE, vatAmount: '0' }).vat_amount).toBe(0);
     expect(mapTaxInvoiceFields({ vat_rate: 0 }).vatRate).toBe(0);
+    expect(mapTaxInvoiceFields({ vat_amount: 0 }).vatAmount).toBe(0);
   });
 
   it('وترفض القيم خارج المدى بدل تخزينها', () => {

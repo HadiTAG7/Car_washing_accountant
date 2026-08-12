@@ -88,6 +88,35 @@ describe.each(IMPLEMENTATIONS)('%s — taxPolicyAt', (_name, impl) => {
   });
 });
 
+describe.each(IMPLEMENTATIONS)('%s — normalizeTaxPolicy: null ليست صفراً', (_name, impl) => {
+  // The same `Number(null) === 0` trap that made a purchase with no stated VAT
+  // amount deduct as a zero-VAT purchase. Here it would have silently set a
+  // policy rate of 0% where the caller meant "not stated — inherit".
+  it('نسبة غير مذكورة ترث الاحتياطية، وصفر صريح يبقى صفراً', () => {
+    for (const unstated of [null, undefined, '', '  ']) {
+      expect(impl.normalizeTaxPolicy({ vatRate: unstated }, { vatRate: 0.15 }).vatRate).toBe(0.15);
+    }
+    expect(impl.normalizeTaxPolicy({ vatRate: 0 }, { vatRate: 0.15 }).vatRate).toBe(0);
+    expect(impl.normalizeTaxPolicy({ vatRate: '0' }, { vatRate: 0.15 }).vatRate).toBe(0);
+    expect(impl.normalizeTaxPolicy({ vatRate: 0.05 }, { vatRate: 0.15 }).vatRate).toBe(0.05);
+  });
+
+  it('واحتياطية غير مذكورة تسقط إلى النسبة الافتراضية', () => {
+    expect(impl.normalizeTaxPolicy({}, {}).vatRate).toBe(impl.DEFAULT_VAT_RATE);
+    expect(impl.normalizeTaxPolicy({}, { vatRate: null }).vatRate).toBe(impl.DEFAULT_VAT_RATE);
+  });
+
+  it('وسطر تاريخي بنسبة غير مذكورة يرث بدل أن يصير 0%', () => {
+    const settings = {
+      vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15,
+      taxPolicyHistory: [
+        { effectiveFrom: '2026-01-01', vatRegistered: true, washPriceMode: 'inclusive', vatRate: null },
+      ],
+    };
+    expect(impl.taxPolicyAt('2026-06-01', settings).vatRate).toBe(0.15);
+  });
+});
+
 describe.each(IMPLEMENTATIONS)('%s — أول تغيير يكتب baseline صريحاً', (_name, impl) => {
   const current = { vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15, taxPolicyHistory: [] };
 

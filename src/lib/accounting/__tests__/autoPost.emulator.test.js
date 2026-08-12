@@ -184,4 +184,77 @@ d('الترحيل التلقائي على Firestore الحقيقي', () => {
     expect(r.status).toBe('skipped');
     expect(r.reason).toMatch(/ولّد سنداً مؤرخاً/);
   }, 60_000);
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // صحّح وأعد الترحيل — من مسار العميل نفسه
+  // ═══════════════════════════════════════════════════════════════════════
+  // Not `postSource` directly. The whole failure lived in the CLIENT's reading
+  // of the ledger: after a reversal the lock was gone, so the server would
+  // have accepted a re-post — but `collectUnposted` and `autoPost` both found
+  // the mirror entry (which carried the original's sourceType/sourceId) and
+  // reported "مُرحّل مسبقاً", so nothing ever reached the server. The round
+  // trip below is the only thing that proves the path is open.
+  describe('عكس ثم تصحيح ثم إعادة ترحيل عبر مسار العميل', () => {
+    it('الغسلة تعود قابلة للترحيل بعد العكس وتُرحَّل مرة واحدة', async () => {
+      // ① posted through the client
+      await setDoc(doc(db, 'washes', 'w1'), wash());
+      const first = await auto.autoPost({ kind: 'wash', id: 'w1', userId: 'u1' });
+      expect(first.status).toBe('posted');
+
+      // ...and the client agrees it is done.
+      let collected = await ops.collectUnposted();
+      expect(collected.ready.find((r) => r.sourceId === 'w1')).toBeUndefined();
+      expect(collected.skipped.find((s) => s.kind === 'wash')?.reason).toBe('مُرحّل مسبقاً');
+      expect(await auto.autoPost({ kind: 'wash', id: 'w1', userId: 'u1' }))
+        .toMatchObject({ status: 'skipped', reason: expect.stringMatching(/مُرحّل مسبقاً/) });
+
+      // ② reversed through the client
+      await ledger.reverseEntry(first.entryId, { entryDate: '2026-08-15', userId: 'u1' });
+
+      // ③ the CLIENT now sees it as unposted again — this is the assertion
+      //    that used to fail, and the reason correcting a wash was impossible.
+      const entries = await ledger.fetchEntries();
+      expect(ledger.hasPostedEntryFor(entries, 'wash', 'w1', 'wash')).toBe(false);
+      collected = await ops.collectUnposted();
+      expect(collected.ready.find((r) => r.sourceId === 'w1')).toBeTruthy();
+
+      // ④ corrected and re-posted
+      await setDoc(doc(db, 'washes', 'w1'), wash({ price: 115 }));   // 2 × 115 = 230
+      const second = await auto.autoPost({ kind: 'wash', id: 'w1', userId: 'u1' });
+      expect(second.status).toBe('posted');
+      expect(second.entryId).not.toBe(first.entryId);
+
+      // ⑤ exactly once — a third attempt is refused by the new lock
+      expect(await auto.autoPost({ kind: 'wash', id: 'w1', userId: 'u1' }))
+        .toMatchObject({ status: 'skipped', reason: expect.stringMatching(/مُرحّل مسبقاً/) });
+
+      // ⑥ and the books show 200 of revenue: the first 100 and its mirror
+      //    cancel, the correction stands.
+      const all = await ledger.fetchEntries();
+      expect(all).toHaveLength(3);
+      const lines = await ledger.fetchLines();
+      const byEntry = new Map(all.map((e) => [e.id, e]));
+      const revenue = lines
+        .filter((l) => l.accountId === '4000'
+          && ['posted', 'reversed'].includes(byEntry.get(l.entryId)?.status))
+        .reduce((s, l) => s + (l.credit || 0) - (l.debit || 0), 0);
+      expect(Math.round(revenue * 100) / 100).toBe(200);
+    }, 120_000);
+
+    it('عكس قيد أقدم لا يفتح مصدراً يملكه قيد أحدث', async () => {
+      await setDoc(doc(db, 'washes', 'w1'), wash());
+      const first = await auto.autoPost({ kind: 'wash', id: 'w1', userId: 'u1' });
+      await ledger.reverseEntry(first.entryId, { entryDate: '2026-08-15', userId: 'u1' });
+      const second = await auto.autoPost({ kind: 'wash', id: 'w1', userId: 'u1' });
+      expect(second.status).toBe('posted');
+
+      // The lock now belongs to the second entry. Reversing the FIRST one
+      // again is refused outright (it is no longer posted), so there is no
+      // path by which an old reversal frees a record the books still hold.
+      await expect(ledger.reverseEntry(first.entryId, { entryDate: '2026-08-16', userId: 'u1' }))
+        .rejects.toThrow(/غير مُرحّل/);
+      const entries = await ledger.fetchEntries();
+      expect(ledger.hasPostedEntryFor(entries, 'wash', 'w1', 'wash')).toBe(true);
+    }, 120_000);
+  });
 });

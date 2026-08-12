@@ -17,9 +17,9 @@
 
 import {
   round2, isRealDate, isValidPeriodKey, normalizeTimeOfDay, periodKeyOf,
-  normalizeLines, validateEntry, totalsOf,
+  normalizeLines, validateEntry, totalsOf, postingLockId, MONEY_EPSILON,
 } from './invariants.js';
-import { splitVat, VAT_RATE, ACC, settlementForSale } from './posting.js';
+import { splitVat, VAT_RATE, ACC, settlementForSale, ADAPTERS } from './posting.js';
 
 export const DOC_COL = {
   DOCUMENTS: 'sales_documents',
@@ -29,16 +29,104 @@ export const DOC_COL = {
   SETTINGS:  'app_settings',
   ENTRIES:   'journal_entries',
   PERIODS:   'accounting_periods',
+  LOCKS:     'posting_locks',
 };
 const JOURNAL_COUNTER = 'journal';
+
+// ─── المسارات الثلاثة للإصدار ────────────────────────────────────────────
+/**
+ * Which of the three issuing paths a payload is asking for.
+ *
+ * The old code had one rule — "an invoice never posts, because the wash behind
+ * it was already posted" — and that rule is only true for one of the three
+ * things this function is asked to issue. The documents page issues invoices
+ * from free-typed lines with no wash and no source record at all: under the
+ * old rule those sales never reached the books, so a credit note against one
+ * debited مردودات المبيعات and created NEGATIVE revenue out of nothing.
+ *
+ *   linked      فاتورة لغسلة مُرحّلة — the caller sends `washId` and the server
+ *               reads the wash, its posting lock and its posted entry. The
+ *               invoice DOCUMENTS that entry; it must not create a second one.
+ *   standalone  فاتورة بيع مستقلة — no operational record behind it, so the
+ *               invoice IS the source: document and sales entry are written in
+ *               one transaction.
+ *   note        إشعار دائن/مدين — always posts, and only against an invoice
+ *               that has a real ledger effect to adjust.
+ */
+export const ISSUE_MODES = ['linked', 'standalone', 'note'];
+
+export function issueModeFor(input = {}) {
+  const type = String(input.type || 'invoice');
+  if (type !== 'invoice') return 'note';
+  return String(input.washId ?? '').trim() ? 'linked' : 'standalone';
+}
+
+/** How a standalone sale may be settled. */
+export const SALE_PAYMENT_METHODS = ['cash', 'card', 'transfer', 'credit'];
+export const SALE_PAYMENT_STATUSES = ['paid', 'unpaid'];
+
+/**
+ * The account the money of a sale lands in.
+ *
+ * An UNPAID sale is a receivable whatever instrument was named on it: "sold on
+ * card, not yet collected" is still a balance the customer owes, and debiting
+ * the bank for it would overstate cash.
+ */
+export function saleSettlementAccount(method, paymentStatus) {
+  if (paymentStatus === 'unpaid') return ACC.RECEIVABLE;
+  return settlementForSale(method);
+}
+
+/**
+ * The journal entry a STANDALONE invoice produces.
+ *
+ *   مدين الصندوق/البنك/العميل   بالإجمالي
+ *   دائن إيراد المبيعات          بالصافي
+ *   دائن ضريبة المخرجات          بالضريبة
+ */
+export function buildSaleLines(totals, settlementAccount) {
+  const lines = [
+    { accountId: settlementAccount, debit: totals.gross, credit: 0, description: 'قيمة الفاتورة' },
+    { accountId: ACC.WASH_REVENUE, debit: 0, credit: totals.net, description: 'إيراد مبيعات' },
+  ];
+  if (totals.vat > 0) {
+    lines.push({ accountId: ACC.OUTPUT_VAT, debit: 0, credit: totals.vat, description: 'ضريبة مخرجات 15%' });
+  }
+  return lines;
+}
+
+/**
+ * Reads { net, vat, gross } and the settlement account back OUT of a posted
+ * sales entry.
+ *
+ * The invoice for a wash must print the figures the books already hold, not a
+ * second opinion computed from the same inputs. Anything that is neither
+ * revenue nor output tax is the settlement side, which is what `gross` means
+ * on a sale.
+ */
+export function saleTotalsOfEntry(lines) {
+  let net = 0, vat = 0, gross = 0;
+  let settlementAccount = null;
+  for (const l of lines || []) {
+    const code = String(l?.accountId ?? '');
+    const movement = round2(l?.credit) - round2(l?.debit);
+    if (code === ACC.WASH_REVENUE || code === ACC.SALES_RETURNS) net += movement;
+    else if (code === ACC.OUTPUT_VAT) vat += movement;
+    else {
+      gross += -movement;
+      if (settlementAccount == null) settlementAccount = code;
+    }
+  }
+  return {
+    net: round2(net), vat: round2(vat), gross: round2(gross), settlementAccount,
+  };
+}
 
 /**
  * The journal entry a NOTE produces.
  *
- * An invoice does not get one: the sale it documents was already posted from
- * its wash, and posting it again would double the revenue. A note has no other
- * source — it IS the adjustment — so without an entry it changes nothing at
- * all, which is exactly the state this fixes.
+ * A note has no source record — it IS the adjustment — so without an entry it
+ * changes nothing at all, which is exactly the state this fixes.
  *
  *   إشعار دائن   مدين مردودات المبيعات (بالصافي)
  *                مدين ضريبة المخرجات   (بالضريبة المعكوسة)
@@ -182,18 +270,27 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
   if (!DOCUMENT_TYPES.includes(type)) {
     throw new InvoicingError(`نوع المستند غير معروف: ${type}`, { code: 'invalid-argument' });
   }
-  const issueDate = String(input.issueDate ?? '').slice(0, 10);
-  if (!isRealDate(issueDate)) {
+  const mode = issueModeFor(input);
+  const washId = mode === 'linked' ? String(input.washId).trim() : '';
+
+  // The linked path takes its date from the WASH, so only the two paths that
+  // own a date validate one here.
+  let issueDate = String(input.issueDate ?? '').slice(0, 10);
+  if (mode !== 'linked' && !isRealDate(issueDate)) {
     throw new InvoicingError('تاريخ إصدار المستند غير صالح.', { code: 'invalid-argument' });
   }
   // 25:70 used to sail through a `\d{2}:\d{2}` test and ride into the QR
   // timestamp as a value no reader can parse.
   const issueTime = normalizeTimeOfDay(input.issueTime);
-  const problems = lineProblems(input.lines);
-  if (problems.length) throw new InvoicingError(problems[0], { code: 'invalid-argument' });
+  // On the linked path the lines are BUILT from the wash, so whatever the
+  // caller sent is not merely unused — it never enters the calculation.
+  if (mode !== 'linked') {
+    const problems = lineProblems(input.lines);
+    if (problems.length) throw new InvoicingError(problems[0], { code: 'invalid-argument' });
+  }
 
   const reason = String(input.reason || '').trim();
-  if (type !== 'invoice' && !reason) {
+  if (mode === 'note' && !reason) {
     throw new InvoicingError('سبب الإشعار مطلوب.', { code: 'invalid-argument' });
   }
   // A note names the DOCUMENT it adjusts, not a number. `referenceNumber` from
@@ -202,36 +299,121 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
   // derived from what was actually found.
   const referenceDocumentId = input.referenceDocumentId
     ? String(input.referenceDocumentId).trim() : '';
-  if (type !== 'invoice' && !referenceDocumentId) {
+  if (mode === 'note' && !referenceDocumentId) {
     throw new InvoicingError('الإشعار يجب أن يشير إلى فاتورة قائمة.', { code: 'invalid-argument' });
   }
 
-  const year = Number(issueDate.slice(0, 4));
-  const periodKey = periodKeyOf(issueDate);
-  if (!isValidPeriodKey(periodKey)) {
-    throw new InvoicingError('تاريخ الإصدار لا ينتمي لفترة صالحة.', { code: 'invalid-argument' });
+  // ── فاتورة بيع مستقلة: كيف تحرّكت النقود ──
+  // A standalone invoice creates the sale in the books, so the settlement side
+  // is a fact the caller has to state. Guessing "cash" would put money in a
+  // drawer that never received it.
+  let paymentMethod = null;
+  let paymentStatus = null;
+  if (mode === 'standalone') {
+    paymentMethod = String(input.paymentMethod ?? '').trim();
+    paymentStatus = String(input.paymentStatus ?? '').trim();
+    if (!SALE_PAYMENT_METHODS.includes(paymentMethod)) {
+      throw new InvoicingError(
+        'طريقة السداد مطلوبة لفاتورة بيع مستقلة (نقد / شبكة / تحويل / آجل).',
+        { code: 'invalid-argument' },
+      );
+    }
+    if (!SALE_PAYMENT_STATUSES.includes(paymentStatus)) {
+      throw new InvoicingError(
+        'حالة السداد مطلوبة لفاتورة بيع مستقلة (مسددة أو غير مسددة).',
+        { code: 'invalid-argument' },
+      );
+    }
+    // A wash carries its own revenue into the books the moment it is posted.
+    // Issuing it again down this path would post that revenue a SECOND time,
+    // so the wash path is the only way to invoice one.
+    if (String(input.sourceType ?? '') === 'wash') {
+      throw new InvoicingError(
+        'فاتورة الغسلة تُصدر بإرسال washId — لا تُصدر كفاتورة بيع مستقلة، وإلا تكرر الإيراد.',
+        { code: 'invalid-argument' },
+      );
+    }
   }
 
-  // A note posts a journal entry, so its accounts have to exist. Read before
-  // the transaction: a collection read inside one would be a query, and the
-  // answer cannot change in a way that matters here.
+  // Both a standalone invoice and a note write a journal entry, so their
+  // accounts have to exist. Read before the transaction: a collection read
+  // inside one would be a query, and the answer cannot change in a way that
+  // matters here.
+  const posts = mode !== 'linked';
   let knownAccountCodes = null;
-  if (type !== 'invoice') {
+  if (posts) {
     const chart = await db.collection('chart_of_accounts').get();
     knownAccountCodes = new Set(chart.docs.map((d) => d.id));
     if (knownAccountCodes.size === 0) {
-      throw new InvoicingError('دليل الحسابات غير مُهيّأ — هيّئه قبل إصدار الإشعارات.');
+      throw new InvoicingError('دليل الحسابات غير مُهيّأ — هيّئه قبل إصدار المستندات.');
     }
   }
 
   // Only an INVOICE claims a source record. A note is an adjustment to a
   // document, not a second document for the same wash, so it must not take
   // the claim — that would block the very note that corrects it.
-  const claimType = type === 'invoice' && input.sourceType ? String(input.sourceType) : null;
-  const claimId = type === 'invoice' && input.sourceId ? String(input.sourceId) : null;
+  const claimType = mode === 'linked'
+    ? 'wash'
+    : (mode === 'standalone' && input.sourceType ? String(input.sourceType) : null);
+  const claimId = mode === 'linked'
+    ? washId
+    : (mode === 'standalone' && input.sourceId ? String(input.sourceId) : null);
 
   return db.runTransaction(async (tx) => {
-    // ══ reads ══
+    // ══ reads, phase 1: the wash this invoice documents ══════════════════
+    // Read FIRST, because the invoice's date — and therefore its year, its
+    // counter and its period — all come out of it.
+    let wash = null;
+    let washEntry = null;
+    let linkedEntryId = null;
+    if (mode === 'linked') {
+      // The collection and the lock key come from the SAME adapter the poster
+      // used, so the two cannot drift apart behind a rename.
+      const [washSnap, lockSnap] = await Promise.all([
+        tx.get(db.collection(ADAPTERS.wash.collection).doc(washId)),
+        tx.get(db.collection(DOC_COL.LOCKS).doc(postingLockId(ADAPTERS.wash.lockKind, washId))),
+      ]);
+      if (!washSnap.exists) {
+        throw new InvoicingError('الغسلة غير موجودة.', { code: 'not-found' });
+      }
+      wash = washSnap.data();
+      if (!ADAPTERS.wash.approved(wash)) {
+        throw new InvoicingError('الغسلة غير مكتملة — لا تُصدر لها فاتورة قبل إتمامها.');
+      }
+      // The lock is the server-side truth about whether this wash is in the
+      // books. Without it the invoice would document a sale the ledger has
+      // never heard of, and a credit note against it would then invent
+      // negative revenue.
+      if (!lockSnap.exists) {
+        throw new InvoicingError(
+          'الغسلة غير مُرحّلة إلى الدفاتر — رحّلها أولاً ثم أصدر فاتورتها.',
+        );
+      }
+      linkedEntryId = String(lockSnap.data().entryId || '');
+      const entrySnap = linkedEntryId
+        ? await tx.get(db.collection(DOC_COL.ENTRIES).doc(linkedEntryId)) : null;
+      if (!entrySnap?.exists) {
+        throw new InvoicingError('قيد الغسلة غير موجود — راجع الدفاتر قبل الإصدار.', { code: 'not-found' });
+      }
+      washEntry = entrySnap.data();
+      if (washEntry.status !== 'posted') {
+        throw new InvoicingError(
+          'قيد الغسلة غير مُرحّل — لا تُصدر فاتورة لغسلة بلا أثر محاسبي قائم.',
+        );
+      }
+      issueDate = String(wash.wash_date || '').slice(0, 10);
+      if (!isRealDate(issueDate)) {
+        throw new InvoicingError('تاريخ الغسلة غير صالح — صحّحه قبل إصدار الفاتورة.');
+      }
+    }
+
+    const year = Number(issueDate.slice(0, 4));
+    const periodKey = periodKeyOf(issueDate);
+    if (!isValidPeriodKey(periodKey)) {
+      throw new InvoicingError('تاريخ الإصدار لا ينتمي لفترة صالحة.', { code: 'invalid-argument' });
+    }
+
+    // ══ reads, phase 2 ══════════════════════════════════════════════════
     const settingsRef = db.collection(DOC_COL.SETTINGS).doc('company');
     const counterRef  = db.collection(DOC_COL.COUNTERS).doc(counterIdFor(type, year));
     const claimRef = claimType && claimId
@@ -252,12 +434,13 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
       tx.get(journalCounterRef), tx.get(periodRef),
     ]);
 
-    // A note posts into the books, so its month must be open. Checked here,
-    // before a number is minted.
-    const posts = type !== 'invoice';
+    // Anything that posts into the books needs its month open. Checked here,
+    // before a number is minted. A LINKED invoice posts nothing, so it may be
+    // issued for a wash whose month is already filed — the paper follows the
+    // entry rather than adding to it.
     if (posts && periodSnap.exists && periodSnap.data().status === 'closed') {
       throw new InvoicingError(
-        `الفترة ${periodKey} مقفلة — لا يمكن إصدار إشعار فيها. اختر تاريخاً في فترة مفتوحة.`,
+        `الفترة ${periodKey} مقفلة — لا يمكن الترحيل فيها. اختر تاريخاً في فترة مفتوحة.`,
       );
     }
 
@@ -275,6 +458,36 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
       // Derived from the document that was found, so a forged
       // `referenceNumber` in the payload changes nothing.
       referenceNumber = reference.documentNumber;
+
+      // ── أصل محاسبي حقيقي، لا مجرد ورقة ──
+      // A credit note DEBITS مردودات المبيعات. Against an invoice that never
+      // reached the books that is not a reduction of anything — it is revenue
+      // manufactured with a minus sign, and output tax reclaimed on a sale
+      // the authority was never told about. So the reference has to name an
+      // entry, and that entry has to be live.
+      const referenceEntryId = String(
+        reference.journalEntryId || reference.linkedJournalEntryId || '',
+      ).trim();
+      if (!referenceEntryId) {
+        throw new InvoicingError(
+          `الفاتورة ${referenceNumber} بلا قيد في الدفاتر — لا يُصدر إشعار على فاتورة `
+          + 'بلا أصل محاسبي. رحّل مصدرها أولاً.',
+        );
+      }
+      const referenceEntrySnap = await tx.get(
+        db.collection(DOC_COL.ENTRIES).doc(referenceEntryId),
+      );
+      if (!referenceEntrySnap.exists) {
+        throw new InvoicingError(
+          `قيد الفاتورة ${referenceNumber} غير موجود — راجع الدفاتر قبل إصدار الإشعار.`,
+          { code: 'not-found' },
+        );
+      }
+      if (referenceEntrySnap.data().status !== 'posted') {
+        throw new InvoicingError(
+          `قيد الفاتورة ${referenceNumber} معكوس — صحّح الأصل بدل إصدار إشعار عليه.`,
+        );
+      }
     }
 
     if (claimSnap?.exists) {
@@ -294,30 +507,90 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
       address: String(company.address || ''),
     };
 
-    // ── the tax treatment of a NOTE comes from its invoice ──
-    // A note corrects a document that was issued under the rules of its own
-    // day. If the business de-registered since, a correction to a taxable
-    // invoice still carries that invoice's tax — reading today's setting
-    // would silently drop VAT the authority was already told about. So the
-    // rate, the taxability and the pricing mode are inherited, and any value
-    // the caller sent for them is ignored.
-    const taxable = reference ? Boolean(reference.taxable) : Boolean(company.vatRegistered && company.vatNumber);
+    // ── the tax treatment ──
+    // A NOTE corrects a document issued under the rules of its own day. If the
+    // business de-registered since, a correction to a taxable invoice still
+    // carries that invoice's tax — reading today's setting would silently drop
+    // VAT the authority was already told about. So a note inherits the rate,
+    // the taxability and the pricing mode, and any value the caller sent for
+    // them is ignored.
+    //
+    // A LINKED invoice inherits from its ENTRY for the same reason, one step
+    // further back: whether that sale bore output tax is settled by whether
+    // the entry credits 2100, not by what the settings say today.
+    const entrySale = mode === 'linked' ? saleTotalsOfEntry(washEntry.lines) : null;
+    const taxable = reference
+      ? Boolean(reference.taxable)
+      : mode === 'linked'
+        ? entrySale.vat > 0
+        : Boolean(company.vatRegistered && company.vatNumber);
     const vatRate = reference
       ? (Number.isFinite(Number(reference.vatRate)) ? Number(reference.vatRate) : VAT_RATE)
       : VAT_RATE;
-    const priceMode = reference
+
+    // ── the lines ──
+    // On the linked path they are built from the wash and then CHECKED against
+    // the entry to the halala. Whether the wash was priced VAT-inclusive or
+    // -exclusive is read back out of the entry rather than from settings, so
+    // an administrator who flips the default months later cannot silently
+    // restate an invoice for a sale that was already filed.
+    let documentLines = input.lines;
+    let priceMode = reference
       ? (reference.priceMode === 'exclusive' ? 'exclusive' : 'inclusive')
       : (input.priceMode === 'exclusive' ? 'exclusive' : 'inclusive');
+    if (mode === 'linked') {
+      const quantity = Math.max(0, Number(wash.quantity) || 0);
+      const unitPrice = Math.max(0, Number(wash.price) || 0);
+      const base = round2(quantity * unitPrice);
+      priceMode = Math.abs(base - entrySale.gross) < MONEY_EPSILON
+        ? 'inclusive'
+        : Math.abs(base - entrySale.net) < MONEY_EPSILON
+          ? 'exclusive'
+          : null;
+      if (!priceMode) {
+        throw new InvoicingError(
+          `قيمة الغسلة (${base.toFixed(2)}) لا تطابق قيدها المُرحّل `
+          + `(${entrySale.gross.toFixed(2)}) — اعكس القيد وأعد ترحيله قبل إصدار الفاتورة.`,
+        );
+      }
+      documentLines = [{
+        description: `غسيل سيارات${wash.biker_name ? ` — ${wash.biker_name}` : ''}`,
+        quantity, unitPrice,
+      }];
+      const builtProblems = lineProblems(documentLines);
+      if (builtProblems.length) {
+        throw new InvoicingError(`بيانات الغسلة غير صالحة للفوترة: ${builtProblems[0]}`);
+      }
+    }
+
     const seller = reference?.seller?.vatNumber ? reference.seller : companySeller;
     const customer = reference
       ? (reference.customer || null)
       : (input.customer?.name ? { name: String(input.customer.name).slice(0, 200) } : null);
-    const sourceType = reference ? (reference.sourceType || null) : (input.sourceType ? String(input.sourceType) : null);
-    const sourceId = reference ? null : (input.sourceId ? String(input.sourceId) : null);
+    const sourceType = reference
+      ? (reference.sourceType || null)
+      : mode === 'linked'
+        ? 'wash'
+        : (input.sourceType ? String(input.sourceType) : null);
+    const sourceId = reference
+      ? null
+      : mode === 'linked' ? washId : (input.sourceId ? String(input.sourceId) : null);
 
-    const totals = totalsFromLines(input.lines, { priceMode, taxable, rate: vatRate });
+    const totals = totalsFromLines(documentLines, { priceMode, taxable, rate: vatRate });
     if (!Number.isFinite(totals.gross) || !(totals.gross > 0)) {
       throw new InvoicingError('إجمالي المستند يجب أن يكون أكبر من صفر.', { code: 'invalid-argument' });
+    }
+    // The invoice for a posted wash prints what the BOOKS say. If the two
+    // disagree by so much as a halala the document is refused rather than
+    // issued: a tax invoice that contradicts its own journal entry is the one
+    // thing an audit cannot be told to overlook.
+    if (mode === 'linked'
+      && (Math.abs(totals.gross - entrySale.gross) >= MONEY_EPSILON
+        || Math.abs(totals.vat - entrySale.vat) >= MONEY_EPSILON)) {
+      throw new InvoicingError(
+        `الفاتورة (${totals.gross.toFixed(2)} منها ضريبة ${totals.vat.toFixed(2)}) لا تطابق `
+        + `قيد الغسلة (${entrySale.gross.toFixed(2)} منها ضريبة ${entrySale.vat.toFixed(2)}).`,
+      );
     }
 
     // ── سياسة عدم تجاوز الأصل ──
@@ -361,46 +634,74 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
     const sequence = counterSnap.exists ? (Number(counterSnap.data().nextNumber) || 1) : 1;
     const documentNumber = formatDocumentNumber(type, year, sequence);
 
-    // ── the note's journal entry, built and validated BEFORE any write ──
-    // A note that only writes `sales_documents` changes nothing: revenue and
-    // output tax stay exactly where the invoice left them, and the VAT report
-    // keeps showing the original sale in full. Document and entry are written
-    // in this one transaction, so neither can exist without the other.
+    // ── the journal entry, built and validated BEFORE any write ──
+    // A standalone invoice or a note that only writes `sales_documents`
+    // changes nothing in the books: the sale never appears, or revenue and
+    // output tax stay exactly where the invoice left them. Document and entry
+    // are written in this one transaction, so neither can exist without the
+    // other.
     const ref = db.collection(DOC_COL.DOCUMENTS).doc();
+    // The account the money of THIS document lands in — stored, so a later
+    // note refunds to where the sale was collected rather than guessing.
+    const settlementAccount = mode === 'linked'
+      ? (entrySale.settlementAccount || settlementForSale(wash.payment_method || 'cash'))
+      : mode === 'standalone'
+        ? saleSettlementAccount(paymentMethod, paymentStatus)
+        : null;
     let entryRef = null;
     let entryNumber = null;
-    let noteLines = null;
     if (posts) {
-      // The settlement account is a decision, not a guess: the caller states
-      // how the money moved, and the invoice's own method is the default.
-      const method = String(input.refundMethod || input.paymentMethod
-        || reference?.paymentMethod || 'cash');
-      noteLines = normalizeLines(buildNoteLines(type, totals, settlementForSale(method)));
-      const noteEntry = {
-        entryDate: issueDate,
-        periodKey,
-        sourceType: 'adjustment',
-        sourceId: null,
-        description: `${type === 'credit_note' ? 'إشعار دائن' : 'إشعار مدين'} ${documentNumber}`
-          + `${referenceNumber ? ` على ${referenceNumber}` : ''} — ${reason}`,
-        status: 'posted',
-        reversalOf: null,
-      };
-      const entryProblems = validateEntry(noteEntry, noteLines, { knownAccountCodes });
+      let entryLines;
+      let draftEntry;
+      if (mode === 'standalone') {
+        entryLines = normalizeLines(buildSaleLines(totals, settlementAccount));
+        draftEntry = {
+          entryDate: issueDate,
+          periodKey,
+          // NOT `wash`: this sale has no wash behind it, and typing it as one
+          // would make it indistinguishable from revenue already in the books.
+          sourceType: 'sales_invoice',
+          sourceId: ref.id,
+          description: `فاتورة مبيعات ${documentNumber}`
+            + `${customer?.name ? ` — ${customer.name}` : ''}`,
+          status: 'posted',
+          reversalOf: null,
+        };
+      } else {
+        // The settlement account is a decision, not a guess: the caller states
+        // how the money moved, and the invoice's own account is the default.
+        const method = String(input.refundMethod || input.paymentMethod || '');
+        const noteAccount = method
+          ? settlementForSale(method)
+          : (reference?.settlementAccount
+            || settlementForSale(reference?.paymentMethod || 'cash'));
+        entryLines = normalizeLines(buildNoteLines(type, totals, noteAccount));
+        draftEntry = {
+          entryDate: issueDate,
+          periodKey,
+          sourceType: 'adjustment',
+          sourceId: null,
+          description: `${type === 'credit_note' ? 'إشعار دائن' : 'إشعار مدين'} ${documentNumber}`
+            + `${referenceNumber ? ` على ${referenceNumber}` : ''} — ${reason}`,
+          status: 'posted',
+          reversalOf: null,
+        };
+      }
+      const entryProblems = validateEntry(draftEntry, entryLines, { knownAccountCodes });
       if (entryProblems.length) {
         throw new InvoicingError(entryProblems[0], { code: 'invalid-argument' });
       }
       entryNumber = journalCounterSnap.exists
         ? (Number(journalCounterSnap.data().nextNumber) || 1) : 1;
       entryRef = db.collection(DOC_COL.ENTRIES).doc();
-      const entryTotals = totalsOf(noteLines);
+      const entryTotals = totalsOf(entryLines);
 
       // ══ writes ══
       tx.set(entryRef, {
-        ...noteEntry,
+        ...draftEntry,
         entryNumber,
-        lines: noteLines,
-        lineCount: noteLines.length,
+        lines: entryLines,
+        lineCount: entryLines.length,
         totalDebit: entryTotals.debit,
         totalCredit: entryTotals.credit,
         // The two point at each other, so neither is an orphan.
@@ -423,6 +724,10 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
 
     tx.set(ref, {
       type, status: 'issued',
+      // Which of the three paths issued it. Stored because "does this document
+      // carry its own entry?" is answered differently for each, and reading it
+      // back off the document beats re-deriving it.
+      issueMode: mode,
       documentNumber, sequence, year,
       issueDate, issueTime, timestamp,
       seller, taxable, priceMode,
@@ -432,14 +737,27 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
       referenceNumber, referenceDocumentId: referenceDocumentId || null,
       reason: reason || null,
       sourceType, sourceId,
+      washId: mode === 'linked' ? washId : null,
+      paymentMethod: mode === 'linked'
+        ? (wash.payment_method || null)
+        : (paymentMethod || null),
+      paymentStatus: mode === 'linked' ? 'paid' : (paymentStatus || null),
+      settlementAccount,
       // Stored explicitly rather than assumed to be 15% forever: a rate change
       // must not restate what a filed document said.
       vatRate,
       qrPayload,
       zatcaReported: false,
-      // Null for an invoice, which documents an already-posted wash.
+      // The document's OWN entry — a standalone sale or a note. Null on the
+      // linked path, which documents an entry it did not create.
       journalEntryId: entryRef ? entryRef.id : null,
       journalEntryNumber: entryNumber,
+      // The wash's entry, which this invoice documents rather than owns. The
+      // two are kept apart deliberately: voiding the invoice must never reverse
+      // the wash's entry, and a note reads either one as proof that there is
+      // something real to adjust.
+      linkedJournalEntryId: linkedEntryId || null,
+      linkedJournalEntryNumber: mode === 'linked' ? (washEntry.entryNumber ?? null) : null,
       issuedBy: userId,
       issuedAt: FieldValue.serverTimestamp(),
       createdAt: FieldValue.serverTimestamp(),
@@ -457,17 +775,22 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
       action: 'issue', collectionName: DOC_COL.DOCUMENTS, documentId: ref.id,
       userId, before: null,
       after: {
-        documentNumber, gross: totals.gross, vat: totals.vat,
+        documentNumber, gross: totals.gross, vat: totals.vat, mode,
         journalEntryId: entryRef ? entryRef.id : null,
+        linkedJournalEntryId: linkedEntryId || null,
       },
-      note: `إصدار ${documentNumber}${entryNumber ? ` — قيد رقم ${entryNumber}` : ''}`,
+      note: `إصدار ${documentNumber} (${mode})`
+        + (entryNumber ? ` — قيد رقم ${entryNumber}` : '')
+        + (linkedEntryId ? ` — يوثّق قيد رقم ${washEntry.entryNumber ?? '—'}` : ''),
     }, FieldValue));
 
     return {
       id: ref.id, documentNumber, sequence, year, qrPayload, vatRate,
+      mode,
       net: totals.net, vat: totals.vat, gross: totals.gross,
       journalEntryId: entryRef ? entryRef.id : null,
       journalEntryNumber: entryNumber,
+      linkedJournalEntryId: linkedEntryId || null,
     };
   });
 }
@@ -478,12 +801,23 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
  * Voiding records the intent; the accounting effect still has to come from a
  * credit note. The document itself is never removed — its number stays spoken
  * for, because a gap in a tax series is what an audit asks about.
+ *
+ * `reversalDate` is the date the CORRECTION lands on, and it is required
+ * whenever the document carries an entry of its own. It used to default to the
+ * document's own date, which is exactly the case that has no way out: a July
+ * note, July filed and closed, and the only date the server would accept is
+ * the one inside the closed month. The caller names an open month instead —
+ * and names it explicitly, because a reversal changes what a period says and
+ * silently choosing "today" is how a correction lands in the wrong one.
  */
-export async function voidDocument(db, FieldValue, { documentId, reason, entryDate }, { userId = null } = {}) {
+export async function voidDocument(db, FieldValue, { documentId, reason, reversalDate, entryDate }, { userId = null } = {}) {
   const why = String(reason || '').trim();
   if (!why) throw new InvoicingError('سبب الإلغاء مطلوب.', { code: 'invalid-argument' });
   const id = String(documentId || '').trim();
   if (!id) throw new InvoicingError('معرّف المستند مطلوب.', { code: 'invalid-argument' });
+  // `entryDate` is the old parameter name, kept so an in-flight caller is not
+  // broken; `reversalDate` is what the client sends now.
+  const requestedReversal = String(reversalDate ?? entryDate ?? '').slice(0, 10);
 
   return db.runTransaction(async (tx) => {
     const ref = db.collection(DOC_COL.DOCUMENTS).doc(id);
@@ -498,6 +832,11 @@ export async function voidDocument(db, FieldValue, { documentId, reason, entryDa
     // Cancelling the paper while its entry stays posted would leave revenue
     // and output tax reduced by a note the register says never happened. The
     // entry is REVERSED in this same transaction, so the two move together.
+    //
+    // `journalEntryId` only — never `linkedJournalEntryId`. A wash-linked
+    // invoice documents an entry it did not create; voiding the paper must not
+    // reverse the wash's revenue, which is corrected by reversing that entry
+    // through the ledger.
     let reversalRef = null;
     let reversalNumber = null;
     if (doc.journalEntryId) {
@@ -511,9 +850,16 @@ export async function voidDocument(db, FieldValue, { documentId, reason, entryDa
       if (entry.status !== 'posted') {
         throw new InvoicingError('قيد المستند غير مُرحّل — لا يمكن عكسه.');
       }
-      const date = String(entryDate || '').slice(0, 10) || entry.entryDate;
+      // No fallback to `entry.entryDate`. That default is what made a note in
+      // a closed month impossible to void: the server would insist on the very
+      // date the closed period rejects, and no payload could say otherwise.
+      const date = requestedReversal;
       if (!isRealDate(date)) {
-        throw new InvoicingError('تاريخ العكس غير صالح.', { code: 'invalid-argument' });
+        throw new InvoicingError(
+          'تاريخ القيد العكسي مطلوب ويجب أن يكون تاريخاً حقيقياً (YYYY-MM-DD) — '
+          + 'اختر تاريخاً في فترة مفتوحة.',
+          { code: 'invalid-argument' },
+        );
       }
       const revPeriod = periodKeyOf(date);
       const revPeriodRef = db.collection(DOC_COL.PERIODS).doc(revPeriod);

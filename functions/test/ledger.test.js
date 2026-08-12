@@ -265,6 +265,64 @@ d('الخادم الموثوق للترحيل', () => {
       expect((await db.collection(COL.LOCKS).doc('wash__w1').get()).exists).toBe(false);
     });
 
+    // ── المرآة ليست ترحيلاً للمصدر ──────────────────────────────────
+    // The mirror used to inherit the original's sourceType and sourceId. The
+    // lock was released, so the record was free to correct — but every reader
+    // asking "has this source been posted?" found the MIRROR and said yes, so
+    // it could never actually be re-posted. Reversal was a dead end.
+    it('لا تحمل المرآة هوية المصدر، بل تسجّل ما عكسته', async () => {
+      const orig = await post(WASH());
+      const rev = await reverseEntry(db, FieldValue, orig.entryId, {
+        entryDate: '2026-09-01', userId: 'u1',
+      });
+      const mirror = (await db.collection(COL.ENTRIES).doc(rev.entryId).get()).data();
+
+      expect(mirror.sourceType).toBe('adjustment');
+      expect(mirror.sourceId).toBeNull();
+      expect(mirror.sourceKind).toBeNull();
+      // Nothing is lost: what it reversed is recorded on its own fields.
+      expect(mirror.reversedSourceType).toBe('wash');
+      expect(mirror.reversedSourceId).toBe('w1');
+      expect(mirror.reversalOf).toBe(orig.entryId);
+
+      // Which is what makes re-posting possible: no live entry claims w1 now.
+      const live = (await db.collection(COL.ENTRIES).get()).docs
+        .map((x) => x.data())
+        .filter((e) => e.status === 'posted' && !e.reversalOf && e.sourceId === 'w1');
+      expect(live).toHaveLength(0);
+    }, 60_000);
+
+    it('المصدر يُصحَّح ويُعاد ترحيله مرة واحدة بعد العكس', async () => {
+      const orig = await post(WASH());
+      await reverseEntry(db, FieldValue, orig.entryId, { entryDate: '2026-09-01', userId: 'u1' });
+
+      // The corrected figure posts cleanly — the lock is gone and no mirror
+      // is standing in its way.
+      const again = await post(WASH({
+        lines: [
+          { accountId: '1010', debit: 230, credit: 0, description: 'تحصيل' },
+          { accountId: '4000', debit: 0, credit: 200, description: 'إيراد' },
+          { accountId: '2100', debit: 0, credit: 30, description: 'ضريبة' },
+        ],
+      }));
+      expect(again.entryId).not.toBe(orig.entryId);
+      // ...and only once: the new entry took the lock.
+      await expect(post(WASH())).rejects.toThrow(/سبق ترحيل/);
+
+      // Original + mirror + correction: the pair nets to zero, so the books
+      // show 200 of revenue, not 300 and not 100.
+      const entries = (await db.collection(COL.ENTRIES).get()).docs.map((x) => x.data());
+      expect(entries).toHaveLength(3);
+      let revenue = 0;
+      for (const e of entries) {
+        if (!['posted', 'reversed'].includes(e.status)) continue;
+        for (const l of e.lines || []) {
+          if (l.accountId === '4000') revenue += (l.credit || 0) - (l.debit || 0);
+        }
+      }
+      expect(Math.round(revenue * 100) / 100).toBe(200);
+    }, 90_000);
+
     it('لا يُعكس قيد مرتين ولا قيد غير موجود', async () => {
       const orig = await post(WASH());
       await reverseEntry(db, FieldValue, orig.entryId, { entryDate: '2026-09-01', userId: 'u1' });

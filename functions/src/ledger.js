@@ -386,8 +386,23 @@ export async function reverseEntry(db, FieldValue, entryId, { entryDate, descrip
     tx.set(revRef, {
       entryDate: date,
       periodKey,
-      sourceType: original.sourceType || 'adjustment',
-      sourceId: original.sourceId ?? null,
+      // ── المرآة ليست ترحيلاً للمصدر ──
+      // The mirror used to inherit `sourceType` and `sourceId` from the entry
+      // it cancels, and that made the reversal self-defeating: the lock was
+      // released, so the record was free to be corrected — but every reader
+      // that asks "does this source have a posted entry?" found the MIRROR
+      // and answered yes. The wash could never be re-posted, and the whole
+      // correct-and-re-post path was dead.
+      //
+      // A reversal is an adjustment. What it reverses is recorded in its own
+      // fields, so the audit trail keeps every bit of that information without
+      // the mirror pretending to be a posting of the source.
+      sourceType: 'adjustment',
+      sourceId: null,
+      sourceKind: null,
+      reversedSourceKind: original.sourceKind ?? null,
+      reversedSourceType: original.sourceType ?? null,
+      reversedSourceId:   original.sourceId ?? null,
       description: description
         || `عكس قيد رقم ${original.entryNumber} — ${original.description || ''}`.trim(),
       status: 'posted',

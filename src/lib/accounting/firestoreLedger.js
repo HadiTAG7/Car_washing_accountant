@@ -231,7 +231,7 @@ export async function fetchLedgerBundle() {
 }
 
 /**
- * True when the source record already has a posted (non-reversed) entry.
+ * True when this entry is a LIVE posting of a record of the given kind.
  *
  * Identity is the KIND plus the id, not the accounting source type: five
  * collections post with `sourceType: 'expense'`, so a monthly expense and a
@@ -239,18 +239,31 @@ export async function fetchLedgerBundle() {
  * first posted would make the second look already-done, and it would never
  * reach the books.
  *
+ * A REVERSAL is excluded outright. The mirror of a wash entry is itself a
+ * posted entry, and older mirrors were written carrying the original's
+ * `sourceType`/`sourceId` — so after reversing a wash, the source lock was
+ * released (the record is free to correct) while every reader still saw a
+ * posted entry for it and refused to re-post. The mirror cancels a posting; it
+ * is not one.
+ *
  * Entries written before `sourceKind` existed carry only `sourceType`, so
  * those fall back to the old comparison. That fallback is deliberately narrow:
  * it applies only when the stored entry has no kind of its own.
  */
+export function isLiveSourceEntry(entry, kind, sourceType = null) {
+  if (!entry || entry.status !== 'posted') return false;
+  if (entry.reversalOf) return false;
+  if (entry.sourceKind) return entry.sourceKind === kind;
+  // Legacy entry: the best it can say is its source type.
+  return entry.sourceType === (sourceType || kind);
+}
+
+/** True when the source record already has a live posted entry. */
 export function hasPostedEntryFor(entries, kind, sourceId, sourceType = null) {
   const id = String(sourceId ?? '');
-  return (entries || []).some((e) => {
-    if (e.status !== 'posted' || String(e.sourceId ?? '') !== id) return false;
-    if (e.sourceKind) return e.sourceKind === kind;
-    // Legacy entry: the best it can say is its source type.
-    return e.sourceType === (sourceType || kind);
-  });
+  return (entries || []).some(
+    (e) => String(e.sourceId ?? '') === id && isLiveSourceEntry(e, kind, sourceType),
+  );
 }
 
 export { periodKeyOf };

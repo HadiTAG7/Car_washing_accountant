@@ -12,10 +12,14 @@ import LoadingState from './LoadingState';
 import ErrorState, { SetupRequiredCard } from './ErrorState';
 import Toast from './Toast';
 import QrCode from './QrCode';
+import VoidDocumentModal from './VoidDocumentModal';
 import { useSalesDocuments } from '../hooks/useSalesDocuments';
 import { useAuth } from '../hooks/useAuth';
+import { useWashes } from '../hooks/useWashes';
+import { useLedger } from '../hooks/useLedger';
+import { hasPostedEntryFor } from '../lib/accounting/firestoreLedger';
 import {
-  issueSimplifiedInvoice, issueCreditNoteFor, issueDebitNoteFor,
+  issueSimplifiedInvoice, issueInvoiceForWash, issueCreditNoteFor, issueDebitNoteFor,
   voidDocument, saveSellerProfile,
 } from '../lib/accounting/firestoreInvoicing';
 import {
@@ -51,16 +55,43 @@ export default function SalesDocumentsPage() {
   const { documents, seller, totals, gaps, integrityProblems, loading, error, refetch } = useSalesDocuments();
   const { user } = useAuth();
   const { canMutate } = usePartnerView();
+  const { items: washes, refetch: refetchWashes } = useWashes();
+  const { entries, refetch: refetchLedger } = useLedger();
   const status = useMemo(() => integrationSummary(), []);
 
   const [busy, setBusy] = useState('');
   const [toast, setToast] = useState({ open: false, message: '', tone: 'success', duration: 3000 });
   const [expanded, setExpanded] = useState(null);
+  const [voiding, setVoiding] = useState(null);
 
   const [profile, setProfile] = useState(null);
   const [form, setForm] = useState({
-    issueDate: todayIso(), customer: '', priceMode: 'inclusive', lines: [emptyLine()],
+    issueDate: todayIso(), customer: '', priceMode: 'inclusive',
+    // A standalone invoice CREATES the sale in the books, so the settlement is
+    // an answer the page has to collect. There is no honest default for "which
+    // drawer did this money go into", only a common one.
+    paymentMethod: 'cash', paymentStatus: 'paid',
+    lines: [emptyLine()],
   });
+
+  // ── الغسلات المُرحّلة التي لم تُفوتَر بعد ──
+  // Two separate facts: the wash is in the books (it has a live posted entry),
+  // and no document has been issued against it yet. Both are read here rather
+  // than trusted, and the server checks them again on issue — this list only
+  // decides what to OFFER.
+  const invoicedWashIds = useMemo(
+    () => new Set(documents.filter((d) => d.washId).map((d) => String(d.washId))),
+    [documents],
+  );
+  const invoiceableWashes = useMemo(
+    () => washes
+      .filter((w) => w.status === 'مكتملة'
+        && !invoicedWashIds.has(String(w.id))
+        && hasPostedEntryFor(entries, 'wash', w.id, 'wash'))
+      .sort((a, b) => String(b.washDate).localeCompare(String(a.washDate)))
+      .slice(0, 25),
+    [washes, entries, invoicedWashIds],
+  );
 
   const showToast = useCallback((message, tone = 'success') => {
     setToast({ open: true, message, tone, duration: tone === 'error' ? 8000 : 3000 });
@@ -101,6 +132,8 @@ export default function SalesDocumentsPage() {
         issueDate: form.issueDate,
         issueTime: nowTime(),
         priceMode: form.priceMode,
+        paymentMethod: form.paymentMethod,
+        paymentStatus: form.paymentStatus,
         customer: form.customer.trim() ? { name: form.customer.trim() } : null,
         lines: lines.map((l) => ({
           description: l.description.trim() || 'خدمة غسيل',
@@ -108,11 +141,30 @@ export default function SalesDocumentsPage() {
           unitPrice: Number(l.unitPrice) || 0,
         })),
       }, { userId: user?.id });
-      setForm({ issueDate: todayIso(), customer: '', priceMode: 'inclusive', lines: [emptyLine()] });
-      showToast(`تم إصدار الفاتورة ${res.documentNumber}.`);
-      await refetch();
+      setForm({
+        issueDate: todayIso(), customer: '', priceMode: 'inclusive',
+        paymentMethod: 'cash', paymentStatus: 'paid', lines: [emptyLine()],
+      });
+      showToast(`تم إصدار الفاتورة ${res.documentNumber} وترحيل قيدها رقم ${res.journalEntryNumber}.`);
+      await Promise.all([refetch(), refetchLedger()]);
     } catch (e) {
       showToast(describeBackendError(e) || e?.message || 'تعذّر الإصدار', 'error');
+    } finally { setBusy(''); }
+  }
+
+  /**
+   * Invoicing a wash sends its id and nothing else. The server reads the wash,
+   * its posting lock and its posted entry, prints what the books already say
+   * and creates NO second entry — the wash's revenue is in there once.
+   */
+  async function handleIssueForWash(wash) {
+    setBusy(`wash-${wash.id}`);
+    try {
+      const res = await issueInvoiceForWash(wash.id, { issueTime: nowTime() });
+      showToast(`تم إصدار الفاتورة ${res.documentNumber} للغسلة بلا قيد جديد.`);
+      await Promise.all([refetch(), refetchWashes?.(), refetchLedger()]);
+    } catch (e) {
+      showToast(describeBackendError(e) || e?.message || 'تعذّر إصدار فاتورة الغسلة', 'error');
     } finally { setBusy(''); }
   }
 
@@ -130,23 +182,26 @@ export default function SalesDocumentsPage() {
         ? await issueCreditNoteFor(docRow.id, payload, { userId: user?.id })
         : await issueDebitNoteFor(docRow.id, { ...payload, lines: docRow.lines }, { userId: user?.id });
       showToast(`تم إصدار ${res.documentNumber}.`);
-      await refetch();
+      await Promise.all([refetch(), refetchLedger()]);
     } catch (e) {
       showToast(describeBackendError(e) || e?.message || `تعذّر إصدار ${label}`, 'error');
     } finally { setBusy(''); }
   }
 
-  async function handleVoid(docRow) {
-    const reason = typeof window === 'undefined' ? '' : window.prompt(
-      `سبب إلغاء ${docRow.documentNumber}؟\n\n`
-      + 'الإلغاء يوثّق النية فقط — الأثر المحاسبي يأتي من إشعار دائن.', '',
-    );
-    if (reason == null) return;
+  /**
+   * Voiding goes through a dialog rather than a prompt, because it needs a
+   * DATE as well as a reason: a document whose month has since been closed can
+   * only be reversed in an open one, and a text prompt cannot ask for that.
+   */
+  async function handleVoid({ reason, reversalDate }) {
+    const docRow = voiding;
+    if (!docRow) return;
     setBusy(docRow.id);
     try {
-      await voidDocument(docRow.id, { reason: reason.trim(), userId: user?.id });
+      await voidDocument(docRow.id, { reason, reversalDate, userId: user?.id });
+      setVoiding(null);
       showToast(`تم إلغاء ${docRow.documentNumber}.`);
-      await refetch();
+      await Promise.all([refetch(), refetchLedger()]);
     } catch (e) {
       showToast(describeBackendError(e) || e?.message || 'تعذّر الإلغاء', 'error');
     } finally { setBusy(''); }
@@ -258,8 +313,17 @@ export default function SalesDocumentsPage() {
         {/* ── إصدار فاتورة ─────────────────────────────────────────── */}
         {canMutate && (
           <Card className="p-6">
-            <SectionHeader title="إصدار فاتورة مبسطة"
-              subtitle="يُمنح الرقم داخل معاملة واحدة، فلا يتكرر ولا يُتخطّى" />
+            <SectionHeader title="إصدار فاتورة بيع مستقلة"
+              subtitle="بيع لا يقابله سجل غسلة — الخادم يُنشئ الفاتورة وقيد البيع في معاملة واحدة" />
+            <div className="flex items-start gap-2.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs px-4 py-3 rounded-control leading-relaxed mb-4">
+              <FileText size={16} className="shrink-0 mt-0.5" />
+              <p>
+                هذه الفاتورة هي مصدر البيع نفسه، فتُرحَّل مع إصدارها:
+                مدين {form.paymentStatus === 'unpaid' ? 'ذمم العملاء' : form.paymentMethod === 'cash' ? 'الصندوق' : form.paymentMethod === 'credit' ? 'ذمم العملاء' : 'البنك'} بالإجمالي،
+                دائن الإيراد بالصافي ودائن ضريبة المخرجات.
+                فاتورة غسلة مُرحّلة تُصدر من القائمة أدناه ولا تُنشئ قيداً ثانياً.
+              </p>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
               <div>
                 <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">تاريخ الإصدار</label>
@@ -281,6 +345,34 @@ export default function SalesDocumentsPage() {
                   className="w-full min-h-touch px-3 py-2 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-slate-900 dark:text-slate-100">
                   <option value="inclusive">السعر شامل الضريبة</option>
                   <option value="exclusive">السعر غير شامل الضريبة</option>
+                </select>
+              </div>
+            </div>
+
+            {/* ── السداد: الجانب المدين من القيد ─────────────────────
+                Not cosmetic. These two answer "which account did the money
+                land in", which is the debit of the entry this invoice posts.
+                An unpaid sale is a receivable whatever instrument was named
+                on it, so the status wins over the method. */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+              <div>
+                <label htmlFor="doc-pay-method" className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">طريقة السداد</label>
+                <select id="doc-pay-method" value={form.paymentMethod}
+                  onChange={(e) => setForm((f) => ({ ...f, paymentMethod: e.target.value }))}
+                  className="w-full min-h-touch px-3 py-2 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-slate-900 dark:text-slate-100">
+                  <option value="cash">نقداً — الصندوق</option>
+                  <option value="card">شبكة — البنك</option>
+                  <option value="transfer">تحويل — البنك</option>
+                  <option value="credit">آجل — ذمم العملاء</option>
+                </select>
+              </div>
+              <div>
+                <label htmlFor="doc-pay-status" className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">حالة السداد</label>
+                <select id="doc-pay-status" value={form.paymentStatus}
+                  onChange={(e) => setForm((f) => ({ ...f, paymentStatus: e.target.value }))}
+                  className="w-full min-h-touch px-3 py-2 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-slate-900 dark:text-slate-100">
+                  <option value="paid">محصّلة</option>
+                  <option value="unpaid">غير محصّلة — ذمة على العميل</option>
                 </select>
               </div>
             </div>
@@ -335,6 +427,55 @@ export default function SalesDocumentsPage() {
                   {busy === 'issue' ? 'جارٍ الإصدار...' : 'إصدار'}
                 </PrimaryButton>
               </div>
+            </div>
+          </Card>
+        )}
+
+        {/* ── فواتير الغسلات المُرحّلة ─────────────────────────────────
+            The other path, and the one that must NOT post. Only the wash id
+            travels; the server reads the wash, its posting lock and its posted
+            entry, and prints exactly what the books already say. */}
+        {canMutate && invoiceableWashes.length > 0 && (
+          <Card className="p-6">
+            <SectionHeader
+              title="فواتير غسلات مُرحّلة بانتظار الإصدار"
+              subtitle="الفاتورة توثّق قيد الغسلة القائم ولا تُنشئ قيداً ثانياً — الإيراد مُسجَّل مرة واحدة"
+            />
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[38rem]">
+                <thead>
+                  <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
+                    <th className="py-3 px-4">التاريخ</th>
+                    <th className="py-3 px-4">البايكر</th>
+                    <th className="py-3 px-4 text-center">العدد</th>
+                    <th className="py-3 px-4 text-left">السعر</th>
+                    <th className="py-3 px-4 text-left">الإجمالي</th>
+                    <th className="py-3 px-4 text-left">إجراء</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {invoiceableWashes.map((w) => (
+                    <tr key={w.id} className="border-b border-slate-50 dark:border-slate-800/60 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+                      <td className="py-3 px-4 whitespace-nowrap tabular-nums text-slate-700 dark:text-slate-300">{w.washDate}</td>
+                      <td className="py-3 px-4 text-slate-700 dark:text-slate-300">{w.bikerName || '—'}</td>
+                      <td className="py-3 px-4 text-center tabular-nums text-slate-700 dark:text-slate-300">{w.quantity}</td>
+                      <td className="py-3 px-4 text-left tabular-nums text-slate-700 dark:text-slate-300">{formatCurrencyPrecise(w.price)}</td>
+                      <td className="py-3 px-4 text-left tabular-nums font-bold text-slate-900 dark:text-slate-100">
+                        {formatCurrencyPrecise((w.quantity || 0) * (w.price || 0))}
+                      </td>
+                      <td className="py-3 px-4 text-left whitespace-nowrap">
+                        <SecondaryButton
+                          icon={busy === `wash-${w.id}` ? Loader2 : FileText}
+                          onClick={() => handleIssueForWash(w)}
+                          disabled={Boolean(busy)}
+                        >
+                          {busy === `wash-${w.id}` ? 'جارٍ الإصدار...' : 'إصدار الفاتورة'}
+                        </SecondaryButton>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </Card>
         )}
@@ -417,26 +558,34 @@ export default function SalesDocumentsPage() {
                             <td className="py-3 px-4 text-left whitespace-nowrap">
                               {!canMutate ? (
                                 <span className="text-[11px] text-slate-500 dark:text-slate-400">للعرض فقط</span>
-                              ) : d.type === 'invoice' && !cancelled ? (
+                              ) : cancelled ? (
+                                <span className="text-[11px] text-slate-500 dark:text-slate-400">—</span>
+                              ) : (
                                 <div className="flex items-center justify-end gap-1.5">
-                                  <button type="button" title="إشعار دائن — تخفيض أو إلغاء"
-                                    onClick={() => handleNote(d, 'credit')} disabled={busy === d.id}
-                                    className="min-h-touch min-w-touch flex items-center justify-center rounded-control text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors">
-                                    <CornerUpLeft size={16} />
-                                  </button>
-                                  <button type="button" title="إشعار مدين — زيادة"
-                                    onClick={() => handleNote(d, 'debit')} disabled={busy === d.id}
-                                    className="min-h-touch min-w-touch flex items-center justify-center rounded-control text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">
-                                    <CornerUpRight size={16} />
-                                  </button>
+                                  {d.type === 'invoice' && (
+                                    <>
+                                      <button type="button" title="إشعار دائن — تخفيض أو إلغاء"
+                                        onClick={() => handleNote(d, 'credit')} disabled={busy === d.id}
+                                        className="min-h-touch min-w-touch flex items-center justify-center rounded-control text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors">
+                                        <CornerUpLeft size={16} />
+                                      </button>
+                                      <button type="button" title="إشعار مدين — زيادة"
+                                        onClick={() => handleNote(d, 'debit')} disabled={busy === d.id}
+                                        className="min-h-touch min-w-touch flex items-center justify-center rounded-control text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">
+                                        <CornerUpRight size={16} />
+                                      </button>
+                                    </>
+                                  )}
+                                  {/* A NOTE gets this button too. It has a journal entry of its
+                                      own, so voiding it is the only way to unwind that entry —
+                                      and the dialog asks for the date the reversal lands on,
+                                      which is what makes a note in a closed month recoverable. */}
                                   <button type="button" title="إلغاء المستند"
-                                    onClick={() => handleVoid(d)} disabled={busy === d.id}
+                                    onClick={() => setVoiding(d)} disabled={busy === d.id}
                                     className="min-h-touch min-w-touch flex items-center justify-center rounded-control text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors">
                                     <Ban size={16} />
                                   </button>
                                 </div>
-                              ) : (
-                                <span className="text-[11px] text-slate-500 dark:text-slate-400">—</span>
                               )}
                             </td>
                           </tr>,
@@ -506,6 +655,16 @@ export default function SalesDocumentsPage() {
           </>
         )}
       </main>
+
+      {voiding && (
+        <VoidDocumentModal
+          key={voiding.id}
+          document={voiding}
+          busy={busy === voiding.id}
+          onConfirm={handleVoid}
+          onClose={() => setVoiding(null)}
+        />
+      )}
 
       <Toast open={toast.open} message={toast.message} tone={toast.tone}
         duration={toast.duration} onClose={closeToast} />

@@ -46,14 +46,70 @@ const COMPANY = {
 };
 const LINES = [{ description: 'غسلة خارجية', quantity: 2, unitPrice: 57.5 }];
 
-const issue = (input, opts) => issueDocument(db, FieldValue, input, { userId: 'acct1', ...opts });
+/** The raw call — for the tests that are ABOUT a missing field. */
+const issueRaw = (input, opts) => issueDocument(db, FieldValue, input, { userId: 'acct1', ...opts });
+
+/**
+ * A standalone invoice now creates the sale in the books, so its settlement is
+ * required. Tests that are not about the settlement get the common one; the
+ * ones that are use `issueRaw` and pass (or omit) their own.
+ */
+const issue = (input, opts) => issueRaw({
+  ...(String(input.type || 'invoice') === 'invoice' && !input.washId
+    ? { paymentMethod: 'cash', paymentStatus: 'paid' } : {}),
+  ...input,
+}, opts);
+
+/** 115 gross = 100 revenue + 15 output VAT, with no wash behind it. */
+const invoiceOfStandalone = (over = {}) => issue({
+  type: 'invoice', issueDate: '2026-08-11',
+  paymentMethod: 'cash', paymentStatus: 'paid',
+  lines: [{ description: 'غسلة', quantity: 2, unitPrice: 57.5 }],
+  ...over,
+});
+
+/** Voiding an entry-carrying document needs the date its reversal lands on. */
+const voidDoc = (documentId, extra = {}) => voidDocument(
+  db, FieldValue, { documentId, reason: 'إلغاء', reversalDate: '2026-08-25', ...extra },
+  { userId: 'acct1' },
+);
 
 async function wipe() {
   for (const c of [DOC_COL.DOCUMENTS, DOC_COL.SOURCES, DOC_COL.COUNTERS, DOC_COL.AUDIT,
-    DOC_COL.SETTINGS, COL.ENTRIES, COL.PERIODS, 'chart_of_accounts']) {
+    DOC_COL.SETTINGS, COL.ENTRIES, COL.PERIODS, COL.LOCKS, 'chart_of_accounts', 'washes']) {
     const snap = await db.collection(c).get();
     await Promise.all(snap.docs.map((s) => s.ref.delete()));
   }
+}
+
+/**
+ * A wash that is genuinely in the books: the record, its posting lock and the
+ * entry the lock names, exactly as `postSource` would have left them.
+ */
+async function postedWash(id, { quantity = 2, price = 57.5, taxable = true, date = '2026-08-11',
+  method = 'cash', biker = 'أحمد', entryNumber = 1 } = {}) {
+  const base = Math.round(quantity * price * 100) / 100;
+  const vat = taxable ? Math.round((base - base / 1.15) * 100) / 100 : 0;
+  const net = Math.round((base - vat) * 100) / 100;
+  const lines = [
+    { accountId: method === 'cash' ? '1010' : '1020', debit: base, credit: 0, description: 'تحصيل غسلات' },
+    { accountId: '4000', debit: 0, credit: net, description: 'إيراد غسيل السيارات' },
+  ];
+  if (vat > 0) lines.push({ accountId: '2100', debit: 0, credit: vat, description: 'ضريبة مخرجات 15%' });
+
+  await db.collection('washes').doc(id).set({
+    biker_name: biker, quantity, price, status: 'مكتملة', wash_date: date, payment_method: method,
+  });
+  const entryRef = db.collection(COL.ENTRIES).doc();
+  await entryRef.set({
+    entryDate: date, periodKey: date.slice(0, 7), sourceType: 'wash', sourceId: id,
+    sourceKind: 'wash', description: `غسلات — ${biker}`, status: 'posted', reversalOf: null,
+    entryNumber, lines, lineCount: lines.length, totalDebit: base, totalCredit: base,
+  });
+  await db.collection(COL.LOCKS).doc(`wash__${id}`).set({
+    kind: 'wash', sourceType: 'wash', sourceId: id, entryId: entryRef.id, entryNumber,
+  });
+  return { entryId: entryRef.id, base, net, vat };
 }
 
 d('إصدار المستندات الضريبية على الخادم', () => {
@@ -140,10 +196,12 @@ d('إصدار المستندات الضريبية على الخادم', () => {
       expect(seqs).toEqual([1, 2, 3, 4, 5, 6]);
     }, 60_000);
 
+    // `wash` is not usable here any more — it has its own path — so the claim
+    // is exercised with a source kind that genuinely has no ledger entry.
     it('لا يُصدَر مستندان لنفس السجل المصدر', async () => {
-      await issue({ type: 'invoice', issueDate: '2026-08-11', lines: LINES, sourceType: 'wash', sourceId: 'w1' });
+      await issue({ type: 'invoice', issueDate: '2026-08-11', lines: LINES, sourceType: 'contract', sourceId: 'c1' });
       await expect(issue({
-        type: 'invoice', issueDate: '2026-08-12', lines: LINES, sourceType: 'wash', sourceId: 'w1',
+        type: 'invoice', issueDate: '2026-08-12', lines: LINES, sourceType: 'contract', sourceId: 'c1',
       })).rejects.toThrow(/سبق إصدار مستند/);
       expect((await db.collection(DOC_COL.DOCUMENTS).get()).size).toBe(1);
     });
@@ -204,7 +262,7 @@ d('إصدار المستندات الضريبية على الخادم', () => {
   describe('الإلغاء', () => {
     it('يلغي بسبب ويسجّل التدقيق، ولا يحذف', async () => {
       const res = await issue({ type: 'invoice', issueDate: '2026-08-11', lines: LINES });
-      await voidDocument(db, FieldValue, { documentId: res.id, reason: 'صدرت بالخطأ' }, { userId: 'acct1' });
+      await voidDoc(res.id, { reason: 'صدرت بالخطأ' });
 
       const doc = (await db.collection(DOC_COL.DOCUMENTS).doc(res.id).get()).data();
       expect(doc.status).toBe('cancelled');
@@ -215,13 +273,24 @@ d('إصدار المستندات الضريبية على الخادم', () => {
 
     it('يرفض بلا سبب، ومستنداً مفقوداً، وإلغاءً مكرراً', async () => {
       const res = await issue({ type: 'invoice', issueDate: '2026-08-11', lines: LINES });
-      await expect(voidDocument(db, FieldValue, { documentId: res.id, reason: '  ' }))
-        .rejects.toThrow(/سبب الإلغاء مطلوب/);
-      await expect(voidDocument(db, FieldValue, { documentId: 'ghost', reason: 'x' }))
-        .rejects.toThrow(/غير موجود/);
-      await voidDocument(db, FieldValue, { documentId: res.id, reason: 'خطأ' });
-      await expect(voidDocument(db, FieldValue, { documentId: res.id, reason: 'مرة أخرى' }))
-        .rejects.toThrow(/ملغى بالفعل/);
+      await expect(voidDoc(res.id, { reason: '  ' })).rejects.toThrow(/سبب الإلغاء مطلوب/);
+      await expect(voidDoc('ghost', { reason: 'x' })).rejects.toThrow(/غير موجود/);
+      await voidDoc(res.id, { reason: 'خطأ' });
+      await expect(voidDoc(res.id, { reason: 'مرة أخرى' })).rejects.toThrow(/ملغى بالفعل/);
+    });
+
+    // ── تاريخ العكس مطلوب وصريح ─────────────────────────────────────
+    // The old default — "no date? use the document's own" — is precisely what
+    // left a document in a closed month with no way out.
+    it('يرفض إلغاء مستند ذي قيد بلا تاريخ عكس صريح', async () => {
+      const res = await issue({ type: 'invoice', issueDate: '2026-08-11', lines: LINES });
+      await expect(voidDocument(db, FieldValue, { documentId: res.id, reason: 'خطأ' }))
+        .rejects.toThrow(/تاريخ القيد العكسي مطلوب/);
+      await expect(voidDoc(res.id, { reversalDate: '2026-02-30' }))
+        .rejects.toThrow(/تاريخ القيد العكسي مطلوب/);
+      // Nothing was written by either refusal.
+      const doc = (await db.collection(DOC_COL.DOCUMENTS).doc(res.id).get()).data();
+      expect(doc.status).toBe('issued');
     });
   });
 
@@ -374,10 +443,13 @@ d('إصدار المستندات الضريبية على الخادم', () => {
   // output tax stay where the invoice left them, and the VAT report keeps
   // showing the original sale in full. These prove the entry lands with it.
   describe('الأثر المحاسبي للإشعارات', () => {
-    // 115 gross = 100 revenue + 15 output VAT.
-    const invoiceOf = () => issue({
+    // 115 gross = 100 revenue + 15 output VAT. A STANDALONE invoice: no wash
+    // behind it, so the invoice itself is the source and posts the sale.
+    const invoiceOf = (over = {}) => issue({
       type: 'invoice', issueDate: '2026-08-11',
+      paymentMethod: 'cash', paymentStatus: 'paid',
       lines: [{ description: 'غسلة', quantity: 2, unitPrice: 57.5 }],
+      ...over,
     });
     const creditFor = (inv, over = {}) => issue({
       type: 'credit_note', issueDate: '2026-08-20', reason: 'إرجاع',
@@ -386,11 +458,50 @@ d('إصدار المستندات الضريبية على الخادم', () => {
       ...over,
     });
 
-    it('الفاتورة وحدها لا تُنشئ قيداً — غسلتها مُرحّلة أصلاً', async () => {
+    it('الفاتورة المستقلة تُنشئ فاتورتها وقيد بيعها في معاملة واحدة', async () => {
       const inv = await invoiceOf();
-      expect(inv.journalEntryId).toBeNull();
+      expect(inv.mode).toBe('standalone');
+      expect(inv.journalEntryId).toBeTruthy();
+      expect(inv.linkedJournalEntryId).toBeNull();
+
+      const entry = (await db.collection(COL.ENTRIES).doc(inv.journalEntryId).get()).data();
+      expect(entry.sourceType).toBe('sales_invoice');
+      expect(entry.sourceId).toBe(inv.id);
+      expect(entry.documentId).toBe(inv.id);
+      expect(entry.documentNumber).toBe(inv.documentNumber);
+      // Dr 1010 cash 115 · Cr 4000 revenue 100 · Cr 2100 output tax 15.
+      expect(entry.lines.find((l) => l.accountId === '1010').debit).toBe(115);
+      expect(entry.lines.find((l) => l.accountId === '4000').credit).toBe(100);
+      expect(entry.lines.find((l) => l.accountId === '2100').credit).toBe(15);
+
+      const saved = (await db.collection(DOC_COL.DOCUMENTS).doc(inv.id).get()).data();
+      expect(saved.journalEntryId).toBe(inv.journalEntryId);
+      expect(saved.issueMode).toBe('standalone');
+      expect(await accountMovement(db, '4000')).toBe(100);
+      expect(await accountMovement(db, '2100')).toBe(15);
+    }, 60_000);
+
+    it('البيع غير المحصّل يدين ذمم العملاء لا الصندوق', async () => {
+      const inv = await invoiceOf({ paymentMethod: 'card', paymentStatus: 'unpaid' });
+      const entry = (await db.collection(COL.ENTRIES).doc(inv.journalEntryId).get()).data();
+      // "Sold on card but not collected" is still a balance the customer owes.
+      expect(entry.lines.find((l) => l.accountId === '1100').debit).toBe(115);
+      expect(entry.lines.find((l) => l.accountId === '1020')).toBeUndefined();
+      const saved = (await db.collection(DOC_COL.DOCUMENTS).doc(inv.id).get()).data();
+      expect(saved.settlementAccount).toBe('1100');
+    }, 60_000);
+
+    it('يرفض فاتورة بيع مستقلة بلا طريقة أو حالة سداد', async () => {
+      await expect(issueRaw({
+        type: 'invoice', issueDate: '2026-08-11', lines: LINES,
+      })).rejects.toThrow(/طريقة السداد مطلوبة/);
+      await expect(issueRaw({
+        type: 'invoice', issueDate: '2026-08-11', lines: LINES, paymentMethod: 'cash',
+      })).rejects.toThrow(/حالة السداد مطلوبة/);
+      // Neither refusal consumed a number.
+      expect((await db.collection(DOC_COL.DOCUMENTS).get()).size).toBe(0);
       expect((await db.collection(COL.ENTRIES).get()).size).toBe(0);
-    });
+    }, 60_000);
 
     it('الإشعار الدائن الكامل يصفّر ضريبة المخرجات وصافي الإيراد', async () => {
       const inv = await invoiceOf();
@@ -410,17 +521,24 @@ d('إصدار المستندات الضريبية على الخادم', () => {
       const saved = (await db.collection(DOC_COL.DOCUMENTS).doc(note.id).get()).data();
       expect(saved.journalEntryId).toBe(note.journalEntryId);
 
-      // Against a posted invoice-side entry the movement nets to zero. Here
-      // only the note is posted, so 2100 shows the reversal.
-      expect(await accountMovement(db, '2100')).toBe(-15);
+      // The invoice posted 100 of revenue and 15 of output tax; the note takes
+      // both back. NET zero — which is what "cancelled in full" has to mean.
+      expect(await accountMovement(db, '2100')).toBe(0);
+      expect(await accountMovement(db, '4000')).toBe(100);
       expect(await accountMovement(db, '4010')).toBe(-100);
+      const netRevenue = await accountMovement(db, '4000') + await accountMovement(db, '4010');
+      expect(netRevenue).toBe(0);
+      // And the cash went out again, so the till is level too.
+      expect(await accountMovement(db, '1010')).toBe(0);
     }, 60_000);
 
     it('الإشعار الجزئي يخفض جزئياً', async () => {
       const inv = await invoiceOf();
       await creditFor(inv, { lines: [{ description: 'إرجاع', quantity: 1, unitPrice: 57.5 }] });
-      expect(await accountMovement(db, '2100')).toBe(-7.5);
+      expect(await accountMovement(db, '2100')).toBe(7.5);
       expect(await accountMovement(db, '4010')).toBe(-50);
+      const netRevenue = await accountMovement(db, '4000') + await accountMovement(db, '4010');
+      expect(netRevenue).toBe(50);
     }, 60_000);
 
     it('الإشعار المدين يزيد الإيراد وضريبة المخرجات', async () => {
@@ -435,7 +553,9 @@ d('إصدار المستندات الضريبية على الخادم', () => {
       expect(entry.lines.find((l) => l.accountId === '1020').debit).toBe(23);
       expect(entry.lines.find((l) => l.accountId === '4000').credit).toBe(20);
       expect(entry.lines.find((l) => l.accountId === '2100').credit).toBe(3);
-      expect(await accountMovement(db, '2100')).toBe(3);
+      expect(await accountMovement(db, '2100')).toBe(18);
+      const netRevenue = await accountMovement(db, '4000') + await accountMovement(db, '4010');
+      expect(netRevenue).toBe(120);
     }, 60_000);
 
     it('طريقة الرد تحدّد حساب التسوية — لا تخمين', async () => {
@@ -454,7 +574,7 @@ d('إصدار المستندات الضريبية على الخادم', () => {
 
       expect((await db.collection(DOC_COL.DOCUMENTS).get()).size).toBe(1);   // invoice only
       expect((await db.collection(DOC_COL.COUNTERS).doc('documents-credit_note-2026').get()).exists).toBe(false);
-      expect((await db.collection(COL.ENTRIES).get()).size).toBe(0);
+      expect((await db.collection(COL.ENTRIES).get()).size).toBe(1);         // the invoice's own
     }, 60_000);
 
     it('الفترة المقفلة ترفض الإشعار كاملاً', async () => {
@@ -462,12 +582,11 @@ d('إصدار المستندات الضريبية على الخادم', () => {
       await db.collection(COL.PERIODS).doc('2026-08').set({ periodKey: '2026-08', status: 'closed' });
       await expect(creditFor(inv)).rejects.toThrow(/مقفلة/);
       expect((await db.collection(DOC_COL.DOCUMENTS).get()).size).toBe(1);
-      expect((await db.collection(COL.ENTRIES).get()).size).toBe(0);
+      expect((await db.collection(COL.ENTRIES).get()).size).toBe(1);
     }, 60_000);
 
     it('التزامن لا ينتج مستنداً بلا قيد ولا قيداً بلا مستند', async () => {
-      const inv = await issue({
-        type: 'invoice', issueDate: '2026-08-11',
+      const inv = await invoiceOf({
         lines: [{ description: 'غسلة', quantity: 20, unitPrice: 57.5 }],   // 1150
       });
       const results = await Promise.allSettled(Array.from({ length: 4 }, () =>
@@ -475,17 +594,17 @@ d('إصدار المستندات الضريبية على الخادم', () => {
       const ok = results.filter((r) => r.status === 'fulfilled').map((r) => r.value);
       expect(ok.length).toBeGreaterThan(0);
 
-      const notes = (await db.collection(DOC_COL.DOCUMENTS).get()).docs
-        .map((x) => x.data()).filter((x) => x.type === 'credit_note');
+      const docs = (await db.collection(DOC_COL.DOCUMENTS).get()).docs.map((x) => x.data());
       const entries = (await db.collection(COL.ENTRIES).get()).docs.map((x) => ({ id: x.id, ...x.data() }));
-      // One entry per note, and every entry names a note that exists.
-      expect(entries).toHaveLength(notes.length);
-      for (const n of notes) {
-        expect(n.journalEntryId).toBeTruthy();
+      // Every document that posts has exactly one entry, and every entry names
+      // a document that exists.
+      const posting = docs.filter((x) => x.journalEntryId);
+      expect(entries).toHaveLength(posting.length);
+      for (const n of posting) {
         expect(entries.some((e) => e.id === n.journalEntryId)).toBe(true);
       }
       for (const e of entries) {
-        expect(notes.some((n) => n.journalEntryId === e.id)).toBe(true);
+        expect(posting.some((n) => n.journalEntryId === e.id)).toBe(true);
       }
       // And the journal numbers are unique.
       const numbers = entries.map((e) => e.entryNumber);
@@ -496,19 +615,17 @@ d('إصدار المستندات الضريبية على الخادم', () => {
     it('إلغاء إشعار له قيد يعكس القيد ذرياً', async () => {
       const inv = await invoiceOf();
       const note = await creditFor(inv);
-      expect(await accountMovement(db, '2100')).toBe(-15);
+      expect(await accountMovement(db, '2100')).toBe(0);   // invoice +15, note −15
 
-      const voided = await voidDocument(db, FieldValue, {
-        documentId: note.id, reason: 'صدر بالخطأ', entryDate: '2026-08-25',
-      }, { userId: 'acct1' });
+      const voided = await voidDoc(note.id, { reason: 'صدر بالخطأ', reversalDate: '2026-08-25' });
       expect(voided.reversalEntryId).toBeTruthy();
 
-      // The original entry is marked, the mirror is posted, and the net
-      // effect on 2100 is back to nothing.
+      // The original entry is marked, the mirror is posted, and the note's
+      // effect is undone — so the invoice's own 15 stands again.
       const original = (await db.collection(COL.ENTRIES).doc(note.journalEntryId).get()).data();
       expect(original.status).toBe('reversed');
       expect(original.reversedBy).toBe(voided.reversalEntryId);
-      expect(await accountMovement(db, '2100')).toBe(0);
+      expect(await accountMovement(db, '2100')).toBe(15);
       expect(await accountMovement(db, '4010')).toBe(0);
 
       const saved = (await db.collection(DOC_COL.DOCUMENTS).doc(note.id).get()).data();
@@ -516,24 +633,227 @@ d('إصدار المستندات الضريبية على الخادم', () => {
       expect(saved.reversalEntryId).toBe(voided.reversalEntryId);
     }, 120_000);
 
-    it('وإلغاء فاتورة بلا قيد يبقى إلغاءً بسيطاً', async () => {
-      const inv = await invoiceOf();
-      const voided = await voidDocument(db, FieldValue, {
-        documentId: inv.id, reason: 'خطأ',
-      }, { userId: 'acct1' });
+    it('وإلغاء فاتورة غسلة بلا قيد خاص بها يبقى إلغاءً بسيطاً', async () => {
+      const wash = await postedWash('w-void');
+      const inv = await issue({ type: 'invoice', washId: 'w-void' });
+      expect(inv.journalEntryId).toBeNull();
+
+      const voided = await voidDoc(inv.id, { reason: 'خطأ' });
       expect(voided.reversalEntryId).toBeNull();
-      expect((await db.collection(COL.ENTRIES).get()).size).toBe(0);
+      // Exactly the wash's entry, untouched — voiding the paper must not undo
+      // revenue the washes register still owns.
+      const entries = (await db.collection(COL.ENTRIES).get()).docs;
+      expect(entries).toHaveLength(1);
+      expect(entries[0].id).toBe(wash.entryId);
+      expect(entries[0].data().status).toBe('posted');
     }, 60_000);
 
     it('لا يُلغى الإشعار مرتين ولا يُعكس قيده مرتين', async () => {
       const inv = await invoiceOf();
       const note = await creditFor(inv);
-      await voidDocument(db, FieldValue, { documentId: note.id, reason: 'خطأ' }, { userId: 'acct1' });
-      await expect(voidDocument(db, FieldValue, { documentId: note.id, reason: 'مرة أخرى' }))
-        .rejects.toThrow(/ملغى بالفعل/);
+      await voidDoc(note.id, { reason: 'خطأ' });
+      await expect(voidDoc(note.id, { reason: 'مرة أخرى' })).rejects.toThrow(/ملغى بالفعل/);
       const entries = (await db.collection(COL.ENTRIES).get()).docs.map((x) => x.data());
       expect(entries.filter((e) => e.reversalOf)).toHaveLength(1);
     }, 120_000);
+
+    // ── إلغاء إشعار في فترة مقفلة ─────────────────────────────────────
+    // The gap this closes: a July note, July filed and closed, and the only
+    // date the server would accept was the one inside the closed month.
+    it('إشعار في فترة مقفلة يُلغى بتاريخ عكس في شهر مفتوح', async () => {
+      const inv = await invoiceOf({ issueDate: '2026-07-05' });
+      const note = await creditFor(inv, { issueDate: '2026-07-20' });
+      const original = (await db.collection(COL.ENTRIES).doc(note.journalEntryId).get()).data();
+      expect(original.periodKey).toBe('2026-07');
+
+      await db.collection(COL.PERIODS).doc('2026-07').set({ periodKey: '2026-07', status: 'closed' });
+
+      // Its own month is refused, and says why.
+      await expect(voidDoc(note.id, { reversalDate: '2026-07-31' })).rejects.toThrow(/مقفلة/);
+      // An open month succeeds.
+      const voided = await voidDoc(note.id, { reversalDate: '2026-08-03' });
+      const mirror = (await db.collection(COL.ENTRIES).doc(voided.reversalEntryId).get()).data();
+      expect(mirror.entryDate).toBe('2026-08-03');
+      expect(mirror.periodKey).toBe('2026-08');
+      expect(mirror.reversalOf).toBe(note.journalEntryId);
+
+      // July is untouched: the original still sits in its own closed month
+      // with its own lines, exactly as filed.
+      const after = (await db.collection(COL.ENTRIES).doc(note.journalEntryId).get()).data();
+      expect(after.entryDate).toBe('2026-07-20');
+      expect(after.periodKey).toBe('2026-07');
+      expect(after.status).toBe('reversed');
+      expect(after.lines).toEqual(original.lines);
+    }, 120_000);
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // مساران للإصدار: فاتورة غسلة مُرحّلة · فاتورة بيع مستقلة
+  // ═══════════════════════════════════════════════════════════════════════
+  // The assumption this replaces — "every invoice is for a wash that was
+  // already posted, so no invoice ever posts" — was true of one path only.
+  describe('فاتورة الغسلة المُرحّلة', () => {
+    it('تبني الفاتورة من الغسلة وقيدها ولا تُنشئ قيداً ثانياً', async () => {
+      const wash = await postedWash('w1');
+      const res = await issue({ type: 'invoice', washId: 'w1', issueTime: '09:15:00' });
+
+      expect(res.mode).toBe('linked');
+      expect(res.journalEntryId).toBeNull();
+      expect(res.linkedJournalEntryId).toBe(wash.entryId);
+      expect(res).toMatchObject({ net: 100, vat: 15, gross: 115 });
+
+      const doc = (await db.collection(DOC_COL.DOCUMENTS).doc(res.id).get()).data();
+      expect(doc.issueMode).toBe('linked');
+      expect(doc.washId).toBe('w1');
+      expect(doc.sourceType).toBe('wash');
+      expect(doc.sourceId).toBe('w1');
+      // The date is the WASH's, not the caller's day.
+      expect(doc.issueDate).toBe('2026-08-11');
+      expect(doc.lines).toHaveLength(1);
+      expect(doc.lines[0].quantity).toBe(2);
+      expect(doc.lines[0].unitPrice).toBe(57.5);
+      expect(doc.settlementAccount).toBe('1010');
+
+      // The books are unchanged: one entry, the wash's, and the revenue is in
+      // there exactly once.
+      const entries = (await db.collection(COL.ENTRIES).get()).docs;
+      expect(entries).toHaveLength(1);
+      expect(entries[0].id).toBe(wash.entryId);
+      expect(await accountMovement(db, '4000')).toBe(100);
+      expect(await accountMovement(db, '2100')).toBe(15);
+    }, 60_000);
+
+    it('تتجاهل السطور والتاريخ والمبالغ المُرسَلة لصالح قيمة الغسلة', async () => {
+      await postedWash('w1');
+      const res = await issue({
+        type: 'invoice', washId: 'w1',
+        issueDate: '2020-01-01',                                    // ← ignored
+        priceMode: 'exclusive',                                     // ← ignored
+        lines: [{ description: 'مزوّر', quantity: 500, unitPrice: 999 }], // ← ignored
+        net: 999999, vat: 999999, gross: 999999,                    // ← ignored
+      });
+      expect(res).toMatchObject({ net: 100, vat: 15, gross: 115 });
+      const doc = (await db.collection(DOC_COL.DOCUMENTS).doc(res.id).get()).data();
+      expect(doc.issueDate).toBe('2026-08-11');
+      expect(doc.lines).toHaveLength(1);
+      expect(doc.lines[0].unitPrice).toBe(57.5);
+      expect(doc.priceMode).toBe('inclusive');
+    }, 60_000);
+
+    it('ترفض غسلة غير موجودة، وغير مكتملة، وغير مُرحّلة', async () => {
+      await expect(issue({ type: 'invoice', washId: 'ghost' })).rejects.toThrow(/الغسلة غير موجودة/);
+
+      // Recorded but never posted: no lock, so no invoice.
+      await db.collection('washes').doc('w-unposted').set({
+        biker_name: 'س', quantity: 1, price: 115, status: 'مكتملة',
+        wash_date: '2026-08-12', payment_method: 'cash',
+      });
+      await expect(issue({ type: 'invoice', washId: 'w-unposted' }))
+        .rejects.toThrow(/غير مُرحّلة إلى الدفاتر/);
+
+      // Not finished: revenue is not recognised, so neither is a tax invoice.
+      await db.collection('washes').doc('w-open').set({
+        biker_name: 'س', quantity: 1, price: 115, status: 'قيد التنفيذ',
+        wash_date: '2026-08-12', payment_method: 'cash',
+      });
+      await expect(issue({ type: 'invoice', washId: 'w-open' })).rejects.toThrow(/غير مكتملة/);
+
+      expect((await db.collection(DOC_COL.DOCUMENTS).get()).size).toBe(0);
+    }, 60_000);
+
+    it('ترفض الفاتورة إذا خالفت قيمة الغسلة قيدها المُرحّل', async () => {
+      const wash = await postedWash('w1');
+      // The wash row is edited under a posted entry — the two now disagree.
+      await db.collection('washes').doc('w1').update({ price: 200 });
+      await expect(issue({ type: 'invoice', washId: 'w1' })).rejects.toThrow(/لا تطابق قيدها المُرحّل/);
+      expect((await db.collection(DOC_COL.DOCUMENTS).get()).size).toBe(0);
+      // And the entry is still the only thing in the books.
+      const entries = (await db.collection(COL.ENTRIES).get()).docs;
+      expect(entries).toHaveLength(1);
+      expect(entries[0].id).toBe(wash.entryId);
+    }, 60_000);
+
+    it('لا تُفوتَر الغسلة مرتين', async () => {
+      await postedWash('w1');
+      const first = await issue({ type: 'invoice', washId: 'w1' });
+      expect(first.documentNumber).toBe('INV-2026-000001');
+      await expect(issue({ type: 'invoice', washId: 'w1' }))
+        .rejects.toThrow(/سبق إصدار مستند لهذا السجل/);
+      expect((await db.collection(DOC_COL.DOCUMENTS).get()).size).toBe(1);
+    }, 60_000);
+
+    it('ترفض تمرير غسلة عبر مسار الفاتورة المستقلة', async () => {
+      await postedWash('w1');
+      await expect(issueRaw({
+        type: 'invoice', issueDate: '2026-08-11', lines: LINES,
+        paymentMethod: 'cash', paymentStatus: 'paid',
+        sourceType: 'wash', sourceId: 'w1',      // ← the double-count route
+      })).rejects.toThrow(/تُصدر بإرسال washId/);
+      expect((await db.collection(COL.ENTRIES).get()).size).toBe(1);   // the wash's only
+    }, 60_000);
+
+    it('إشعار دائن على فاتورة غسلة يخفض الإيراد مرة واحدة', async () => {
+      await postedWash('w1');
+      const inv = await issue({ type: 'invoice', washId: 'w1' });
+      await issue({
+        type: 'credit_note', issueDate: '2026-08-20', reason: 'إرجاع',
+        referenceDocumentId: inv.id, refundMethod: 'cash',
+        lines: [{ description: 'إرجاع', quantity: 2, unitPrice: 57.5 }],
+      });
+      // Wash entry +100 revenue +15 tax; note −100 (via 4010) −15. Net zero.
+      const netRevenue = await accountMovement(db, '4000') + await accountMovement(db, '4010');
+      expect(netRevenue).toBe(0);
+      expect(await accountMovement(db, '2100')).toBe(0);
+    }, 90_000);
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // لا إشعار على فاتورة بلا أصل محاسبي
+  // ═══════════════════════════════════════════════════════════════════════
+  describe('الإشعار يتطلب أصلاً محاسبياً قائماً', () => {
+    it('يرفض إشعاراً على فاتورة بلا قيد ولا قيد مرتبط', async () => {
+      // A document written the way the old code left every invoice: paper only.
+      const legacy = db.collection(DOC_COL.DOCUMENTS).doc();
+      await legacy.set({
+        type: 'invoice', status: 'issued', documentNumber: 'INV-2025-000009',
+        sequence: 9, year: 2025, issueDate: '2025-12-01', taxable: true,
+        priceMode: 'inclusive', vatRate: 0.15, net: 100, vat: 15, gross: 115,
+        journalEntryId: null, linkedJournalEntryId: null,
+        seller: { name: COMPANY.name, vatNumber: COMPANY.vatNumber, address: '' },
+      });
+      await expect(issue({
+        type: 'credit_note', issueDate: '2026-08-20', reason: 'إرجاع',
+        referenceDocumentId: legacy.id, refundMethod: 'cash',
+        lines: [{ description: 'إرجاع', quantity: 2, unitPrice: 57.5 }],
+      })).rejects.toThrow(/بلا قيد في الدفاتر/);
+
+      // Nothing was created, so no negative revenue was invented.
+      expect((await db.collection(COL.ENTRIES).get()).size).toBe(0);
+      expect(await accountMovement(db, '4010')).toBe(0);
+    }, 60_000);
+
+    it('يرفض إشعاراً على فاتورة قيدها معكوس', async () => {
+      await postedWash('w1');
+      const inv = await issue({ type: 'invoice', washId: 'w1' });
+      // The wash entry is reversed through the ledger — the invoice now
+      // documents nothing live.
+      await db.collection(COL.ENTRIES).doc(inv.linkedJournalEntryId).update({ status: 'reversed' });
+      await expect(issue({
+        type: 'credit_note', issueDate: '2026-08-20', reason: 'إرجاع',
+        referenceDocumentId: inv.id, refundMethod: 'cash',
+        lines: [{ description: 'إرجاع', quantity: 2, unitPrice: 57.5 }],
+      })).rejects.toThrow(/معكوس/);
+    }, 60_000);
+
+    it('يرفض إشعاراً على فاتورة قيدها مفقود', async () => {
+      const inv = await invoiceOfStandalone();
+      await db.collection(COL.ENTRIES).doc(inv.journalEntryId).delete();
+      await expect(issue({
+        type: 'credit_note', issueDate: '2026-08-20', reason: 'إرجاع',
+        referenceDocumentId: inv.id, refundMethod: 'cash',
+        lines: [{ description: 'إرجاع', quantity: 2, unitPrice: 57.5 }],
+      })).rejects.toThrow(/غير موجود/);
+    }, 60_000);
   });
 
   // ═══ المعالجة الضريبية تأتي من الفاتورة المرجعية ═════════════════════
@@ -569,8 +889,11 @@ d('إصدار المستندات الضريبية على الخادم', () => {
       // attributable to the registration that issued the invoice.
       expect(saved.seller.vatNumber).toBe(COMPANY.vatNumber);
 
-      // (هـ) 2100 and revenue fall by the right amounts
-      expect(await accountMovement(db, '2100')).toBe(-15);
+      // (هـ) the note undoes the invoice exactly: output tax back to zero and
+      // net revenue (4000 less 4010) back to zero, even though the setting
+      // that made the sale taxable no longer says so.
+      expect(await accountMovement(db, '2100')).toBe(0);
+      expect(await accountMovement(db, '4000')).toBe(100);
       expect(await accountMovement(db, '4010')).toBe(-100);
     }, 120_000);
 

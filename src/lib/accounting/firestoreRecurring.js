@@ -19,7 +19,7 @@ import {
 import { db, isFirebaseConfigured } from '../firebaseClient';
 import { fetchRows } from '../firestoreCrud';
 import { mapMonthlyExpense } from '../mappers';
-import { fetchEntries } from './firestoreLedger';
+import { fetchEntries, isLiveSourceEntry } from './firestoreLedger';
 import {
   missingVouchers, ungeneratableTemplates, voucherId, summariseVouchers,
 } from './recurring';
@@ -101,10 +101,12 @@ export async function generateVouchers({ from, through, userId = null }) {
 /** True when this voucher has already been carried into the ledger. */
 async function isPosted(id) {
   const entries = await fetchEntries();
-  // Vouchers post with kind 'voucher'; entries written before the kind
-  // existed carry only `sourceType: 'expense'`.
-  return entries.some((e) => e.status === 'posted' && e.sourceId === id
-    && (e.sourceKind ? e.sourceKind === 'voucher' : e.sourceType === 'expense'));
+  // Vouchers post with kind 'voucher'; entries written before the kind existed
+  // carry only `sourceType: 'expense'`. A reversal is not a posting, so a
+  // voucher whose entry was reversed is editable again — which is the point of
+  // reversing it.
+  return entries.some((e) => String(e.sourceId ?? '') === String(id)
+    && isLiveSourceEntry(e, 'voucher', 'expense'));
 }
 
 /** Marks a voucher paid (or back to pending) — the ledger side is separate. */
@@ -158,8 +160,7 @@ export async function fetchVoucherBundle() {
     fetchVouchers(), fetchTemplates(), fetchEntries(),
   ]);
   const postedIds = new Set(
-    entries.filter((e) => e.status === 'posted'
-      && (e.sourceKind ? e.sourceKind === 'voucher' : e.sourceType === 'expense'))
+    entries.filter((e) => isLiveSourceEntry(e, 'voucher', 'expense'))
       .map((e) => String(e.sourceId)),
   );
   return {

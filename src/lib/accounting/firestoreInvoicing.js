@@ -118,6 +118,11 @@ export async function issueDocument(document, _options = {}) {
     issueTime: document.issueTime,
     priceMode: document.priceMode,
     customer: document.customer,
+    // ── the wash-linked path ──
+    // When this is set the server ignores every money field below: it reads
+    // the wash, its posting lock and its posted entry, and builds the invoice
+    // from those. Nothing sent from here can change what the invoice says.
+    washId: document.washId || null,
     // Only the description/quantity/unitPrice of each line survive; the
     // server prices them.
     lines: (document.lines || []).map((l) => ({
@@ -133,22 +138,47 @@ export async function issueDocument(document, _options = {}) {
     // rather than guessing — cash, bank, or the customer's balance.
     refundMethod: document.refundMethod || null,
     paymentMethod: document.paymentMethod || null,
+    paymentStatus: document.paymentStatus || null,
     sourceType: document.sourceType || null,
     sourceId: document.sourceId || null,
   });
 }
 
-/** Convenience: issue a simplified invoice straight from its lines. */
+/**
+ * فاتورة بيع مستقلة — a sale that exists only as this invoice.
+ *
+ * There is no wash behind it, so the invoice IS the source: the server writes
+ * the document and its sales entry in one transaction. That is why the
+ * settlement is required — an entry has to debit something real, and a sale
+ * whose money the system had to guess at is a cash balance nobody can tie out.
+ */
 export async function issueSimplifiedInvoice({
   issueDate, issueTime, lines, customer = null, priceMode = 'inclusive',
+  paymentMethod = 'cash', paymentStatus = 'paid',
   sourceType = null, sourceId = null,
 }) {
   // The seller identity and the VAT treatment come from the server's copy of
   // app_settings/company, so nothing about them is passed here.
   return issueDocument({
     type: 'invoice', issueDate, issueTime, lines, customer, priceMode,
-    sourceType, sourceId,
+    paymentMethod, paymentStatus, sourceType, sourceId,
   });
+}
+
+/**
+ * فاتورة لغسلة مُرحّلة — the invoice for a wash whose revenue is already in
+ * the books.
+ *
+ * Only the wash id travels. The date, the quantity, the price, the VAT
+ * treatment and the settlement account are all read server-side from the wash
+ * and its posted entry, and the document is refused if the two disagree. No
+ * second sales entry is created: the wash's entry already holds that revenue,
+ * and posting it again would double it.
+ */
+export async function issueInvoiceForWash(washId, { issueTime = null, customer = null } = {}) {
+  requireDb();
+  if (!String(washId || '').trim()) throw new Error('معرّف الغسلة مطلوب.');
+  return issueDocument({ type: 'invoice', washId: String(washId).trim(), issueTime, customer });
 }
 
 /**
@@ -190,11 +220,21 @@ export async function issueDebitNoteFor(invoiceId, {
  * Marks a document void. An ISSUED document is never removed and never
  * silently altered — voiding records the intent and the reason, and the
  * accounting effect still has to come from a credit note.
+ *
+ * `reversalDate` is the date the reversing entry lands on, and it travels
+ * explicitly because a document with an entry cannot be voided without one.
+ * It is NOT the document's own date: a note raised in July, with July closed,
+ * has to be reversed in an open month, and the old behaviour — falling back to
+ * the note's date server-side — made that impossible to express.
  */
-export async function voidDocument(id, { reason } = {}) {
+export async function voidDocument(id, { reason, reversalDate = null } = {}) {
   requireDb();
   if (!String(reason || '').trim()) throw new Error('سبب الإلغاء مطلوب.');
-  return callLedger('salesVoidDocument', { documentId: id, reason: String(reason).trim() });
+  return callLedger('salesVoidDocument', {
+    documentId: id,
+    reason: String(reason).trim(),
+    reversalDate: reversalDate ? String(reversalDate).slice(0, 10) : null,
+  });
 }
 
 /**

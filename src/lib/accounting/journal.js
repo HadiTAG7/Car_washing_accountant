@@ -19,6 +19,10 @@ export const SOURCE_TYPES = [
   // Period-end and asset movements. `depreciation` carries the period key as
   // its sourceId, which is what makes re-running a month a no-op.
   'depreciation', 'disposal',
+  // A sale that exists only as an invoice — no wash record behind it. Kept
+  // distinct from `wash` so a standalone invoice can never be confused with a
+  // wash whose revenue is already in the books.
+  'sales_invoice',
 ];
 export const ENTRY_STATUSES = ['draft', 'posted', 'reversed'];
 

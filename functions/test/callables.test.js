@@ -166,6 +166,7 @@ d('الاستدعاءات الحقيقية عبر محاكي الدوال', () =
       const call = await as('accountant');
       const res = await call('salesIssueDocument')({
         type: 'invoice', issueDate: '2026-08-11', issueTime: '14:30:00',
+        paymentMethod: 'cash', paymentStatus: 'paid',
         lines: [{ description: 'غسلة خارجية', quantity: 2, unitPrice: 57.5 }],
       });
       expect(res.data.documentNumber).toBe('INV-2026-000001');
@@ -174,6 +175,40 @@ d('الاستدعاءات الحقيقية عبر محاكي الدوال', () =
       expect(saved.issuedBy).toBe(uids.accountant);
       // The audit record no client could write.
       expect((await adb.collection('audit_logs').where('action', '==', 'issue').get()).size).toBe(1);
+
+      // A standalone sale posts its own entry, through the same call.
+      expect(res.data.journalEntryId).toBeTruthy();
+      const entry = (await adb.collection('journal_entries').doc(res.data.journalEntryId).get()).data();
+      expect(entry.sourceType).toBe('sales_invoice');
+      expect(entry.createdBy).toBe(uids.accountant);
+    }, 60_000);
+
+    // ── تاريخ العكس يعبر الـcallable ─────────────────────────────────
+    // The callable used to drop `reversalDate` on the floor, so no client
+    // could ever name the month a reversal lands in — which is the whole gap.
+    it('يمرّر تاريخ العكس عند الإلغاء بدل افتراض تاريخ المستند', async () => {
+      const call = await as('accountant');
+      const inv = await call('salesIssueDocument')({
+        type: 'invoice', issueDate: '2026-08-11',
+        paymentMethod: 'cash', paymentStatus: 'paid',
+        lines: [{ description: 'غسلة', quantity: 2, unitPrice: 57.5 }],
+      });
+
+      // Without a date the callable refuses rather than picking one.
+      await expect(call('salesVoidDocument')({ documentId: inv.data.id, reason: 'خطأ' }))
+        .rejects.toSatisfy((e) => /تاريخ القيد العكسي مطلوب/.test(String(e?.message)));
+
+      const voided = await call('salesVoidDocument')({
+        documentId: inv.data.id, reason: 'خطأ', reversalDate: '2026-09-02',
+      });
+      const mirror = (await adb.collection('journal_entries')
+        .doc(voided.data.reversalEntryId).get()).data();
+      expect(mirror.entryDate).toBe('2026-09-02');
+      expect(mirror.periodKey).toBe('2026-09');
+      // The original stays in August, exactly as issued.
+      const original = (await adb.collection('journal_entries').doc(inv.data.journalEntryId).get()).data();
+      expect(original.entryDate).toBe('2026-08-11');
+      expect(original.status).toBe('reversed');
     }, 60_000);
 
     it('ويرحّل المصروف والقيد اليدوي', async () => {

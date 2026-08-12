@@ -194,11 +194,18 @@ export const salesIssueDocument = onCall(OPTS, async (req) => {
   } catch (e) { throw toHttps(e); }
 });
 
+// `reversalDate` is threaded through deliberately. Voiding a note reverses its
+// entry, and that reversal lands in a period — so the caller names the date and
+// owns it. Dropping it here was what left a note in a closed month with no way
+// to be voided at all: the server fell back to the note's own date, which is
+// the one date the closed period refuses.
 export const salesVoidDocument = onCall(OPTS, async (req) => {
   const { uid } = await requireAccountant(req.auth);
   try {
     return await voidDocument(db, FieldValue, {
-      documentId: req.data?.documentId, reason: req.data?.reason,
+      documentId: req.data?.documentId,
+      reason: req.data?.reason,
+      reversalDate: req.data?.reversalDate,
     }, { userId: uid });
   } catch (e) { throw toHttps(e); }
 });

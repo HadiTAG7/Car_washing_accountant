@@ -97,6 +97,7 @@ d('رحلة الإنتاج تحت firestore.rules الفعلية', () => {
     // 1 — the callable path succeeds under the production rules.
     const res = await issueDocument(adb, FieldValue, {
       type: 'invoice', issueDate: '2026-08-11', issueTime: '14:30:00', lines: LINES,
+      paymentMethod: 'cash', paymentStatus: 'paid',
     }, { userId: 'acct1' });
     expect(res.documentNumber).toBe('INV-2026-000001');
     expect(res.gross).toBe(115);
@@ -122,6 +123,7 @@ d('رحلة الإنتاج تحت firestore.rules الفعلية', () => {
   it('عدّاد المستندات لا يُغيَّر من محاسب ولا من مدير', async () => {
     await issueDocument(adb, FieldValue, {
       type: 'invoice', issueDate: '2026-08-11', lines: LINES,
+      paymentMethod: 'cash', paymentStatus: 'paid',
     }, { userId: 'acct1' });
 
     // The counter now sits at 2. Neither role may touch it — a client that
@@ -138,6 +140,7 @@ d('رحلة الإنتاج تحت firestore.rules الفعلية', () => {
   it('الإلغاء عبر الدالة ينجح، وإلغاء العميل المباشر يفشل', async () => {
     const res = await issueDocument(adb, FieldValue, {
       type: 'invoice', issueDate: '2026-08-11', lines: LINES,
+      paymentMethod: 'cash', paymentStatus: 'paid',
     }, { userId: 'acct1' });
 
     // A client trying to cancel it directly is denied...
@@ -147,7 +150,9 @@ d('رحلة الإنتاج تحت firestore.rules الفعلية', () => {
     expect((await adb.collection(DOC_COL.DOCUMENTS).doc(res.id).get()).data().status).toBe('issued');
 
     // ...and the callable does it properly, with an audit record.
-    await voidDocument(adb, FieldValue, { documentId: res.id, reason: 'صدرت بالخطأ' }, { userId: 'acct1' });
+    await voidDocument(adb, FieldValue, {
+      documentId: res.id, reason: 'صدرت بالخطأ', reversalDate: '2026-08-25',
+    }, { userId: 'acct1' });
     const after = (await adb.collection(DOC_COL.DOCUMENTS).doc(res.id).get()).data();
     expect(after.status).toBe('cancelled');
     expect(after.voidReason).toBe('صدرت بالخطأ');

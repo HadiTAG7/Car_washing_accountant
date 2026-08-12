@@ -19,6 +19,11 @@
 export const SOURCE_TYPES = [
   'wash', 'expense', 'partner_payment', 'temporary_expense',
   'recovery', 'manual', 'adjustment', 'opening', 'depreciation', 'disposal',
+  // A sale documented by an invoice that has no operational record behind it —
+  // a counter sale typed straight into the documents page. Its own type,
+  // because it must never be mistaken for a wash: a wash already carries its
+  // revenue into the books, and posting it twice is the whole hazard here.
+  'sales_invoice',
 ];
 
 // Money compares at 2 decimals: 0.1 + 0.2 !== 0.3 in binary floating point,

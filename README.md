@@ -34,7 +34,7 @@ books. Operational tables are never summed directly into a report.
 | المصاريف السنوية | Recurring yearly expenses + per-item payment ledger |
 | المصاريف الشهرية / المتغيرة | Monthly fixed + per-wash variable costs (biker commissions auto-derived from wash logs) |
 | الغسلات | Wash batches (quantity × price) feeding revenue and commissions |
-| قائمة الدخل | Income statement |
+| قائمة الدخل | Income statement, read from the posted journal — plus a reconciliation against the operational registers |
 | تقرير ضريبة القيمة المضافة | Output tax, deductible input tax and the net, per filing period |
 | الرقابة والميزانيات | Category budgets with auto-discovery + over/under tracking |
 | إدارة الشركاء / المدفوعات | Partner registry, capital fees, payment receipts |
@@ -230,6 +230,34 @@ all land or none do.
 - **One document per source record.** A claim doc in `sales_document_sources`
   is read inside the transaction, so pressing "issue" twice on one wash gives
   the first number back as an error, never a second invoice.
+
+### مساران للإصدار — and only one of them posts
+
+An invoice is not always for a wash that is already in the books. The documents
+page issues invoices from free-typed lines with no wash and no source record at
+all, and the old single rule — *"an invoice never posts, because its wash was
+already posted"* — meant those sales never reached the ledger. A credit note
+against one then debited مردودات المبيعات and produced **negative revenue out
+of nothing**, plus output tax reclaimed on a sale the authority was never told
+about. So issuing is split, server-side, into three explicit modes:
+
+| Mode | Client sends | Server does |
+|---|---|---|
+| `linked` — فاتورة غسلة مُرحّلة | `washId` only | Reads the wash, its `posting_locks/wash__<id>` and the posted entry that lock names. Builds the lines, the date and the tax treatment from those, refuses if the invoice and the entry disagree by a halala, stores `linkedJournalEntryId`. **Creates no entry.** |
+| `standalone` — فاتورة بيع مستقلة | lines + `paymentMethod` + `paymentStatus` | Writes the invoice **and** its sales entry in one transaction: Dr cash/bank/receivable (gross) · Cr `4000` (net) · Cr `2100` (VAT). Invoice stores `journalEntryId`, entry stores `documentId`. |
+| `note` — إشعار دائن/مدين | reference + reason + lines | Posts the adjusting entry (below), and only if the reference invoice names a **live** entry. |
+
+Consequences worth stating plainly:
+
+- On the linked path nothing the caller sends about money is used. A forged
+  `lines` array, a different date, an invented total — all ignored in favour of
+  the wash and its entry.
+- A standalone invoice cannot claim `sourceType: 'wash'`. That was the route to
+  posting one wash's revenue twice, so it is refused with the reason.
+- A note is refused unless its invoice carries `journalEntryId` **or**
+  `linkedJournalEntryId` pointing at an entry that still has `status: 'posted'`.
+  An invoice with no accounting original, or one whose entry has been reversed,
+  cannot be credited into negative revenue.
 - **Nothing is deleted.** An issued number stays spoken for: reduce with a
   credit note, increase with a debit note, or void with a recorded reason —
   and voiding is a note about intent, the accounting effect still comes from a
@@ -389,11 +417,13 @@ period and audit record all land or none do. The document stores
 | **إشعار دائن** | Dr `4010` مردودات المبيعات (net) · Dr `2100` (the tax reversed) · Cr cash/bank/customer (gross) |
 | **إشعار مدين** | Dr cash/bank/customer · Cr `4000` (net) · Cr `2100` |
 
-An **invoice** gets no entry: the sale it documents was already posted from its
-wash, and posting it again would double the revenue.
+A **wash-linked invoice** gets no entry: the sale it documents was already
+posted from its wash, and posting it again would double the revenue. A
+**standalone invoice** gets one, because nothing else will ever post it.
 
 The settlement account is not guessed — the caller states `refundMethod` /
-`paymentMethod`, defaulting to the invoice's own.
+`paymentMethod`, defaulting to the account the invoice itself settled to
+(stored as `settlementAccount`, so a refund goes back where the money came in).
 
 ### A note inherits its invoice's tax treatment
 `taxable`, `vatRate`, `priceMode`, the customer and the seller identity all
@@ -410,13 +440,78 @@ Cancelling the paper while its entry stayed posted would leave revenue and
 output tax reduced by a note the register says never happened. `salesVoidDocument`
 **reverses the entry in the same transaction** and links the mirror both ways.
 
+Only the document's **own** entry (`journalEntryId`). Voiding a wash-linked
+invoice reverses nothing: it documents an entry it did not create, and undoing
+the wash's revenue is done by reversing that entry through the ledger.
+
+**`reversalDate` is required and explicit**, and travels UI → client →
+callable → `voidDocument`. It used to default to the document's own date
+server-side, which left one case with no way out at all: a note raised in July,
+July filed and closed, and the only date the server would accept was the one
+the closed period refuses. The void dialog carries a date field for exactly
+this — pick an open month, and the original stays in its own closed month with
+its own lines while the mirror lands where you put it.
+
 ### A reversed entry still counts
 `postedLines` used to keep only `status === 'posted'`, which dropped the
 original of a reversal while keeping its mirror — leaving the account off by
 the full amount, in the wrong direction. Reports now include `posted` **and**
-`reversed`; only `draft` stays out. (Idempotency is a different question: a
-reversed source may be corrected and re-posted, so `hasPostedEntryFor` still
-ignores it.)
+`reversed`; only `draft` stays out.
+
+### …but a mirror is not a posting of its source
+Idempotency is the opposite question, and it had the opposite bug. The mirror
+used to inherit the original's `sourceType` and `sourceId`, so after reversing
+a wash the lock was released — the record was free to correct — while every
+reader asking *"does this source have a posted entry?"* found the **mirror**
+and answered yes. `collectUnposted` reported `مُرحّل مسبقاً`, auto-post
+skipped, and the correction could never be posted. Reversal was a dead end.
+
+Two changes, either of which would do, both applied because old mirrors are
+already in the data:
+
+- `reverseEntry` writes the mirror as `sourceType: 'adjustment'`,
+  `sourceId: null`, `sourceKind: null`, recording what it reversed in
+  `reversedSourceKind` / `reversedSourceType` / `reversedSourceId`.
+- `isLiveSourceEntry` (and `hasPostedEntryFor` through it) ignores any entry
+  carrying `reversalOf`, whatever identity it holds.
+
+`posting_locks` remains the server-side truth; this is what lets the client
+offer the re-post that the server would already have accepted.
+
+---
+
+## قائمة الدخل تقرأ الدفاتر
+
+**قائمة الدخل** used to be summed straight out of `washes`,
+`variable_expenses`, `monthly_expenses` and `annual_expenses`. Every figure on
+it — revenue, gross profit, the management fee, the supervisor's share, the
+six-month trend, the CSV — came from those raw rows.
+
+Which meant a credit note changed nothing. Cancel a 115-riyal sale in full and
+the statement still reported 115 of revenue, still charged 10% of a profit that
+had been given back, and still disagreed with the trial balance, the VAT return
+and the balance sheet — all three of which read the journal. A wash typed in
+but never posted counted too, so the official statement reported revenue the
+books had never recognised.
+
+`src/lib/accounting/monthlyStatement.js` is now the single source for that
+page. It is pure, so the screen, the CSV export, the KPI cards and the trend
+chart all consume the *same object* and cannot drift:
+
+- Revenue comes from `incomeStatement` over posted journal lines, and
+  **net revenue is `4000` less `4010`** — a credit note reduces it because a
+  contra-revenue debit is exactly what the note posts. Returns keep their own
+  line on the face of the statement rather than being netted out of sight.
+- Direct costs (`50xx`/`51xx`) and operating expenses are separated by the
+  chart's own `accountType` / `directCost`, not by which table a row came from.
+- Fees are read from `fee_rules` when configured, falling back to the 10% /
+  5% the statement has always charged, and a losing month charges neither.
+- The partner-view pro-rata factor is applied once, at the end.
+
+The operational registers keep their page and their drill-down, relabelled as
+what they are: **تفاصيل تشغيلية للمطابقة**. When the two disagree the page says
+so, with both numbers and the difference — an unposted wash becomes a task
+("رحّلها من صفحة الغسلات") instead of a silent discrepancy between two screens.
 
 ---
 
@@ -577,3 +672,13 @@ Release signing reads `android/keystore.properties` (gitignored, along with
 - Existing startup-cost rows are not swept into the asset register
   automatically — `importAssetFromSource` exists and is idempotent, but each
   asset's useful life is a judgement, so it is entered rather than guessed.
+- **Invoices issued before the two-path split carry no ledger link.** They
+  have neither `journalEntryId` nor `linkedJournalEntryId`, so a credit note
+  against one is refused with the reason. That is deliberate — crediting an
+  invoice the books never saw would create negative revenue — but it means
+  such an invoice has to be corrected by posting its source first.
+- **قائمة الدخل shows only what has been posted.** A month whose washes are
+  recorded but not swept into the ledger reads as zero revenue there, with the
+  gap named in the reconciliation strip. That is the intended reading of an
+  official statement, not a bug, but it does mean the sweep is now on the
+  critical path for the monthly numbers.

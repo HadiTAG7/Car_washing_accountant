@@ -30,17 +30,13 @@ export function useStartupCosts() {
   // Inline edit of the actual-amount column. When called with a
   // plannedAmount the hook ALSO derives the row's status atomically and
   // writes both fields — so the badge flips the moment the input commits.
-  const updateActual = useCallback(async (id, actualAmount, plannedAmount) => {
-    if (!isFirebaseConfigured) return null;
-    const actual  = Math.max(0, parseFloat(actualAmount) || 0);
-    const payload = { actual_amount: actual };
-    if (plannedAmount !== undefined) {
-      const planned = Math.max(0, parseFloat(plannedAmount) || 0);
-      payload.status = actual >= planned ? 'completed' : 'in_progress';
-    }
-    await updateRow('startup_costs', id, payload);
-    await refetch();
-  }, [refetch]);
+  // ── لا مسار كتابة مباشر لـ actual_amount ──
+  // It is SUM(startup_cost_entries) and nothing else. A direct write had no
+  // spend date, no payment method and no invoice identity behind it, so the
+  // figure it produced could enter the VAT report and could never reach the
+  // ledger — `ADAPTERS.startup` posts entries, not parents. The roll-up in
+  // `useStartupCostEntries.syncParentTotal` is the only writer, and legacy
+  // amounts are converted through `convertStartupParentSpend`.
 
   const updateStatus = useCallback(async (id, status) => {
     if (!isFirebaseConfigured) return null;
@@ -58,7 +54,7 @@ export function useStartupCosts() {
   const items = data ?? [];
   return {
     items, loading, error,
-    addItem, updateItem, updateActual, updateStatus, deleteItem,
+    addItem, updateItem, updateStatus, deleteItem,
     refetch,
   };
 }

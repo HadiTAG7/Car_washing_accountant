@@ -1,0 +1,171 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// رسوم التأسيس: من مبلغ على البند إلى قيد له مستند
+// ═══════════════════════════════════════════════════════════════════════════
+// `startup_costs` began as a PLAN — بند، كمية، مبلغ مخطط. Then an
+// `actual_amount` column was added to it, and a `is_tax_invoice` flag beside
+// that, and the VAT report started reading both. Which produced a record that
+// nothing in the accounting layer could ever post:
+//
+//   • `ADAPTERS.startup` reads `startup_cost_entries`, not `startup_costs`.
+//     There is no server-authoritative path for a parent-level amount, and
+//     there must not be one: the parent has no spend date, no payment method
+//     and no per-document identity — three things a journal entry cannot be
+//     built without.
+//   • So the row entered `input.tax` in the return and could never appear on
+//     `1200` in the books. `inputMismatch` for that item was permanent.
+//   • And the date it was reported under was `created_at` — the day the row
+//     was TYPED. A deduction filed under the day someone opened a form is not
+//     a deduction filed under the invoice's date; the two differ by however
+//     long the paperwork took, and periods are quarters.
+//
+// The fix is not a posting path for the parent. It is to stop the parent
+// being a document at all:
+//
+//   • A new item is a PLAN. `actual_amount` and the tax fields are not
+//     writable on it — the mapper drops them, so no form can reintroduce them.
+//   • Real spend is a `startup_cost_entries` row, which has a date, a payment
+//     method and an invoice identity, and which the `startup` adapter already
+//     posts.
+//   • A legacy parent that still carries an amount is neither deducted nor
+//     discarded: it is listed as REQUIRING CONVERSION, and converting it asks
+//     the user for the facts nobody can infer — the spend date, the payment
+//     method, and the invoice. Nothing is guessed, and `created_at` is never
+//     used as either date.
+//   • The converted entry's id is derived from the parent, so converting
+//     twice writes the same document rather than a second one.
+// ═══════════════════════════════════════════════════════════════════════════
+
+import { blockingVatProblems, isRealCalendarDate } from '../vatFields';
+import { periodKeyOf, round2 } from './journal';
+
+/** `legacy__<parentId>` — the id IS the idempotency key, as with vouchers. */
+export function legacyEntryIdFor(parentId) {
+  return `legacy__${String(parentId ?? '').trim()}`;
+}
+
+/**
+ * Does this parent still hold spend that has never become a document?
+ *
+ * `hasEntries` is the double-count guard: once a sub-ledger entry exists, the
+ * parent's `actual_amount` is a ROLL-UP of those entries, not a figure of its
+ * own, and counting it as well would claim the same money twice.
+ */
+export function startupParentNeedsConversion(item, { hasEntries = false } = {}) {
+  if (!item || hasEntries) return false;
+  return (Number(item.actualAmount) || 0) > 0;
+}
+
+/**
+ * …and does it also carry a tax claim that the return would otherwise take?
+ *
+ * These are the rows that made the report and the ledger disagree, so they are
+ * named separately from the merely-unconverted ones.
+ */
+export function startupParentClaimsVat(item, opts) {
+  return startupParentNeedsConversion(item, opts) && item.isTaxInvoice === true;
+}
+
+/**
+ * What the user must supply before a parent amount can become an entry.
+ *
+ * Every one of these is a fact only they have. The row records what was
+ * budgeted and what was eventually spent; it does not record WHEN, HOW, or
+ * against which document — and inventing any of the three is how a deduction
+ * ends up in the wrong quarter or against no paper at all.
+ */
+export function startupConversionProblems(parent, form = {}, {
+  hasEntries = false, closedPeriods = null,
+} = {}) {
+  const problems = [];
+  const amount = round2(Number(parent?.actualAmount) || 0);
+
+  if (!parent) return ['البند غير موجود.'];
+  if (hasEntries) {
+    problems.push('لهذا البند سجل مصاريف بالفعل — المبلغ الفعلي مجموع قيوده، ولا يُحوَّل مرة أخرى.');
+  }
+  if (!(amount > 0)) {
+    problems.push('لا يوجد مبلغ فعلي على البند ليُحوَّل.');
+  }
+  // The spend date is REQUIRED and never defaulted. `created_at` is the day
+  // the row was typed, which is not the day the money moved and not the day
+  // the invoice was raised.
+  if (!isRealCalendarDate(form.spentDate)) {
+    problems.push('تاريخ الصرف/السداد مطلوب ويجب أن يكون تاريخاً حقيقياً (YYYY-MM-DD).');
+  }
+  if (!['cash', 'card', 'transfer', 'credit'].includes(String(form.paymentMethod || ''))) {
+    problems.push('طريقة الدفع مطلوبة.');
+  }
+  if (form.isTaxInvoice) {
+    if (!isRealCalendarDate(form.invoiceDate)) {
+      problems.push('تاريخ الفاتورة مطلوب — وهو ما يحدّد فترة الخصم، لا تاريخ الصرف.');
+    }
+    if (!String(form.invoiceNumber || '').trim()) problems.push('رقم الفاتورة مطلوب.');
+    if (!String(form.supplier || '').trim()) problems.push('اسم المورّد مطلوب.');
+  }
+  // The same gate every expense form runs, so a value this door would not
+  // accept cannot arrive through it either.
+  for (const p of blockingVatProblems(form, { amount })) problems.push(p.message);
+
+  // A converted entry lands in the ledger on its invoice date and settles on
+  // its spend date. Both months have to be open, or the entry becomes one
+  // nobody can post — a conversion that produces an unpostable record has
+  // only moved the problem.
+  if (closedPeriods) {
+    const months = new Set([
+      isRealCalendarDate(form.spentDate) ? periodKeyOf(form.spentDate) : null,
+      form.isTaxInvoice && isRealCalendarDate(form.invoiceDate) ? periodKeyOf(form.invoiceDate) : null,
+    ].filter(Boolean));
+    for (const m of months) {
+      if (closedPeriods.has(m)) {
+        problems.push(`الفترة ${m} مقفلة — لا يمكن إنشاء قيد فيها. اختر تاريخاً في فترة مفتوحة أو أعد فتحها.`);
+      }
+    }
+  }
+  return problems;
+}
+
+/**
+ * The `startup_cost_entries` row a conversion produces, in app shape.
+ *
+ * The AMOUNT is the parent's own `actual_amount` — the one figure the legacy
+ * record does hold and the only one not being asked for again.
+ */
+export function buildStartupConversionEntry(parent, form = {}) {
+  return {
+    id: legacyEntryIdFor(parent.id),
+    startupCostId: parent.id,
+    description: String(form.description || parent.itemName || 'رسوم تأسيس').trim(),
+    amount: round2(Number(parent.actualAmount) || 0),
+    spentDate: String(form.spentDate || '').slice(0, 10),
+    notes: 'مُحوَّل من مبلغ فعلي كان مسجَّلاً على البند مباشرة',
+    isTaxInvoice: form.isTaxInvoice === true,
+    invoiceUrl: String(form.invoiceUrl ?? parent.invoiceUrl ?? '').trim(),
+    invoiceNumber: String(form.invoiceNumber || '').trim(),
+    invoiceDate: String(form.invoiceDate || '').slice(0, 10),
+    supplier: String(form.supplier || '').trim(),
+    vatAmount: form.vatAmount ?? null,
+    vatRate: form.vatRate ?? null,
+    priceMode: form.priceMode === 'exclusive' ? 'exclusive' : 'inclusive',
+    vatDeductible: form.vatDeductible !== false,
+    paymentMethod: form.paymentMethod,
+  };
+}
+
+/**
+ * Every legacy parent still awaiting conversion, oldest budget first.
+ *
+ * `ledgerParentIds` is the set of items that already have entries; they are
+ * done and are excluded, which is the same guard the VAT report applies.
+ */
+export function pendingStartupConversions(items = [], ledgerParentIds = new Set()) {
+  const has = ledgerParentIds instanceof Set ? ledgerParentIds : new Set(ledgerParentIds || []);
+  return (items || [])
+    .filter((i) => startupParentNeedsConversion(i, { hasEntries: has.has(i.id) }))
+    .map((i) => ({
+      id: i.id,
+      itemName: i.itemName,
+      amount: round2(Number(i.actualAmount) || 0),
+      claimsVat: i.isTaxInvoice === true,
+      invoiceUrl: i.invoiceUrl || '',
+    }));
+}

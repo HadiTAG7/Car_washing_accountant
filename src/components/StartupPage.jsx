@@ -27,6 +27,9 @@ import { useCategories } from '../hooks/useCategories';
 import PurchaseVatBadge from './PurchaseVatBadge';
 import { useAccountingSettings } from '../hooks/useAccountingSettings';
 import { taxPolicyAt } from '../lib/accounting/taxPolicy';
+import { pendingStartupConversions } from '../lib/accounting/startupMigration';
+import { convertStartupParentSpend } from '../lib/accounting/firestoreStartupMigration';
+import StartupConversionModal from './StartupConversionModal';
 import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 
@@ -130,7 +133,7 @@ function EmptyState({ onAdd, canMutate }) {
 export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
   const {
     items, loading, error,
-    addItem, updateItem, updateActual, updateStatus, deleteItem, refetch,
+    addItem, updateItem, updateStatus, deleteItem, refetch,
   } = useStartupCosts();
 
   const { categories, getCategoryLabel, addCategory, deleteCategory } = useCategories();
@@ -155,6 +158,19 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
   // locked (the ledger is the single writer for actual_amount there).
   const { parentIds: ledgerManagedIds, refetch: refetchLedgerParents } =
     useStartupLedgerParents();
+  // ── بنود ما زالت تحمل مبلغاً فعلياً بلا قيد ──
+  // Legacy rows from before the actual amount moved to the sub-ledger. They
+  // are neither deducted nor discarded: the VAT report lists them as awaiting
+  // conversion, and this is where the conversion happens.
+  const [convertItem, setConvertItem] = useState(null);
+  const pendingConversions = useMemo(
+    () => pendingStartupConversions(items, ledgerManagedIds),
+    [items, ledgerManagedIds],
+  );
+  const needsConversionIds = useMemo(
+    () => new Set(pendingConversions.map((p) => p.id)),
+    [pendingConversions],
+  );
   const [mutationError, setMutationError] = useState(null);
   // Toast for inline-manager feedback (e.g. "category in use" warning).
   // Same shape as PartnersPage so swapping in the shared Toast UI is
@@ -200,22 +216,6 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
   async function handleUpdateItem(id, updates) {
     try { await updateItem(id, updates); }
     catch (e) { setMutationError(e); throw e; }
-  }
-  async function handleUpdateActual(id, next, current, planned, currentStatus) {
-    // Derive what the status SHOULD be for the (possibly unchanged)
-    // amount. We skip the DB write only when nothing would change —
-    // both the amount AND the derived status already match. Checking
-    // the status too makes this self-healing: re-blurring a row whose
-    // amount already equals the plan (saved before this auto-status
-    // logic shipped, so its status is stale) still repairs the badge.
-    const desiredStatus = parseFloat(next) >= parseFloat(planned)
-      ? 'completed'
-      : 'in_progress';
-    if (next === current && desiredStatus === currentStatus) return;
-    // Pass plannedAmount so the hook derives the status atomically
-    // and writes both columns in a single UPDATE.
-    try { await updateActual(id, next, planned); }
-    catch (e) { setMutationError(e); }
   }
   async function handleUpdateStatus(id, status) {
     try { await updateStatus(id, status); }
@@ -383,26 +383,30 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
                           {formatCurrency(rowPlanned)}
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap text-left align-top">
-                          {canMutate && !ledgerManagedIds.has(i.id) ? (
-                            <FormattedAmountInput
-                              value={i.actualAmount}
-                              onCommit={(safe) => handleUpdateActual(i.id, safe, i.actualAmount, i.plannedAmount, i.status)}
-                              ariaLabel={`المبلغ الفعلي لـ ${i.itemName}`}
-                              className="w-28 px-2 py-1 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium text-slate-900 dark:text-slate-100 text-left tabular-nums focus:outline-none focus:border-primary-500 transition-colors"
-                            />
-                          ) : (
-                            // Ledger-managed rows lock the inline editor:
-                            // actual_amount is owned by the sub-ledger SUM,
-                            // and a manual overwrite here would be silently
-                            // reverted by the next entry add/delete.
-                            <span
-                              className="tabular-nums text-slate-700 dark:text-slate-300 font-medium"
-                              title={canMutate
-                                ? 'يُدار من سجل المصاريف — اضغط اسم البند لتعديل الدفعات'
-                                : undefined}
+                          {/* ── التكلفة الفعلية تُقرأ ولا تُكتب ──
+                              It is SUM(entries), and every entry carries the
+                              spend date, payment method and invoice identity
+                              that make it postable. A figure typed straight
+                              onto the item has none of the three, so nothing
+                              could ever post it — `ADAPTERS.startup` reads
+                              `startup_cost_entries`, and there is no adapter
+                              for the parent. Rows that still hold a legacy
+                              amount are converted, not edited. */}
+                          <span
+                            className="tabular-nums text-slate-700 dark:text-slate-300 font-medium"
+                            title={canMutate ? 'مجموع سجل المصاريف — اضغط اسم البند لتسجيل دفعة' : undefined}
+                          >
+                            {formatCurrency(rowActual)}
+                          </span>
+                          {needsConversionIds.has(i.id) && (
+                            <button
+                              type="button"
+                              onClick={() => canMutate && setConvertItem(i)}
+                              disabled={!canMutate}
+                              className="block mt-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300 hover:underline disabled:no-underline disabled:opacity-60"
                             >
-                              {formatCurrency(rowActual)}
-                            </span>
+                              يحتاج تحويلاً إلى قيد
+                            </button>
                           )}
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums align-top">
@@ -464,7 +468,6 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
         usedCategoryIds={usedCategoryIds}
         showToast={showToast}
         initialValues={editingItem}
-        isLedgerManaged={Boolean(editingItem && ledgerManagedIds.has(editingItem.id))}
       />
 
       <ExpenseLedgerModal
@@ -476,6 +479,17 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
         onDirty={() => { refetch(); refetchLedgerParents(); }}
         migrationFile="2026_06_startup_cost_entries_ALL.sql"
         uploadFolder={detailItem ? `startup/${detailItem.id}` : 'startup'}
+      />
+
+      <StartupConversionModal
+        item={convertItem}
+        onClose={() => setConvertItem(null)}
+        onConvert={async (id, form) => {
+          await convertStartupParentSpend(id, form, { userId: null });
+          await refetch();
+          await refetchLedgerParents();
+          showToast('تم التحويل — صار المبلغ قيداً في سجل مصاريف البند، وقابلاً للترحيل.');
+        }}
       />
 
       <Toast

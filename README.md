@@ -550,6 +550,22 @@ quietly vanishing from a return is as bad as one quietly appearing in it.
 
 An undated reject appears in **every** period, because it belongs to none.
 
+#### بند تأسيس بمبلغ مسجَّل عليه مباشرة
+`startup_costs` once carried its own `actual_amount` and tax-invoice fields,
+and the report read both — but no adapter posts that collection. A parent has
+no spend date, no payment method and no per-document identity, which is three
+of the things a journal entry cannot be built without, so the row entered the
+return and could never appear on `1200`; `inputMismatch` for it was permanent.
+It was also filed under `created_at` — the day the row was TYPED.
+
+The write path is now closed rather than a posting path opened: a new item is
+a **plan**, real spend is a `startup_cost_entries` row, and `actual_amount` is
+the roll-up of those entries. Legacy rows are listed under **بنود تأسيس تحتاج
+تحويلاً** — out of `input.tax`, never hidden — and converting one asks for the
+spend date, the payment method and the invoice. Nothing is inferred, the entry
+id is derived from the parent so converting twice writes the same document,
+and the parent's tax fields are cleared so the two can never both count.
+
 A **voucher** generated from a recurring template starts with no invoice number
 or date — the paper arrives after the due date, and the template cannot supply
 what is different every month. Until they are recorded (إقفال الفترة →

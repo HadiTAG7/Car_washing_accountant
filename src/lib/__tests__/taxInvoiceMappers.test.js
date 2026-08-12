@@ -14,6 +14,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
+  toStartupCostInsert, toStartupCostUpdate,
   mapTaxInvoiceFields, toTaxInvoiceFields, toTaxInvoiceFieldsUpdate,
   mapStartupCostEntry, toStartupCostEntryInsert,
   mapAnnualExpenseEntry, toAnnualExpenseEntryInsert,
@@ -126,5 +127,52 @@ describe.each([
     const back = mapRow({ id: 'x', ...row });
     expect(back.vatAmount).toBeNull();
     expect(back.vatRate).toBeNull();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// بند التأسيس خطة — لا مبلغ فعلي ولا فاتورة عليه
+// ═══════════════════════════════════════════════════════════════════════════
+// `startup_costs` grew an `actual_amount` and a tax-invoice flag, and the VAT
+// report read both — but nothing could post them: `ADAPTERS.startup` reads
+// `startup_cost_entries`, and a parent-level figure has no spend date, no
+// payment method and no per-document identity. The row entered the return and
+// could never reach `1200`. Closing that hole means closing the write path,
+// not adding a posting path for a record that cannot supply what one needs.
+describe('بند رسوم التأسيس لا يقبل مبلغاً فعلياً ولا فاتورة', () => {
+  const ATTEMPT = {
+    category: 'equipment', itemName: 'ماكينة', quantity: 1, plannedAmount: 1000,
+    // Everything below is the shape that used to be written straight onto the
+    // parent, and none of it survives the mapper any more.
+    actualAmount: 1150, isTaxInvoice: true, invoiceNumber: 'S-77',
+    invoiceDate: '2026-03-10', supplier: 'مؤسسة النور', vatAmount: 150,
+    vatRate: 0.15, priceMode: 'inclusive', vatDeductible: true,
+  };
+
+  it('الإضافة تكتب الخطة فقط', () => {
+    const row = toStartupCostInsert(ATTEMPT);
+    expect(row).toMatchObject({
+      item_name: 'ماكينة', budgeted_amount: 1000, actual_amount: 0, is_tax_invoice: false,
+    });
+    expect(row.invoice_number).toBeNull();
+    expect(row.supplier).toBeNull();
+    expect(row.vat_amount).toBeNull();
+    expect(row.vat_rate).toBeNull();
+  });
+
+  it('والتعديل لا يمسّ المبلغ الفعلي ولا حقول الضريبة إطلاقاً', () => {
+    const patch = toStartupCostUpdate(ATTEMPT);
+    expect(patch).toEqual({
+      category: 'equipment', item_name: 'ماكينة', quantity: 1, budgeted_amount: 1000,
+    });
+    expect('actual_amount' in patch).toBe(false);
+    expect('is_tax_invoice' in patch).toBe(false);
+    expect('vat_amount' in patch).toBe(false);
+  });
+
+  it('ويظل يعدّل ما هو من الخطة', () => {
+    expect(toStartupCostUpdate({ plannedAmount: 500 })).toEqual({ budgeted_amount: 500 });
+    expect(toStartupCostUpdate({ status: 'completed' })).toEqual({ status: 'completed' });
+    expect(toStartupCostUpdate({})).toEqual({});
   });
 });

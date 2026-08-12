@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "test": "vitest run --exclude \"**/*.emulator.test.js\"",
     "test:watch": "vitest",
-    "test:emulator": "firebase emulators:exec --only firestore --project demo-sweater --config firebase.test.json \"vitest run --testTimeout=120000 --no-file-parallelism ledger.emulator invoicing.emulator assets.emulator recurring.emulator autoPost.emulator\"",
+    "test:emulator": "firebase emulators:exec --only firestore --project demo-sweater --config firebase.test.json \"vitest run --testTimeout=120000 --no-file-parallelism ledger.emulator invoicing.emulator assets.emulator recurring.emulator autoPost.emulator startupMigration.emulator\"",
     "test:rules": "firebase emulators:exec --only firestore --project demo-sweater --config firebase.test.json \"vitest run --testTimeout=120000 rules.emulator\"",
     "test:functions": "firebase emulators:exec --only firestore --project demo-sweater --config firebase.test.json \"vitest run --testTimeout=120000 --dir functions --exclude '**/callables.test.js'\"",
     "test:callables": "firebase emulators:exec --only firestore,functions,auth --project demo-sweater --config firebase.test.json \"vitest run --testTimeout=180000 --dir functions callables\""

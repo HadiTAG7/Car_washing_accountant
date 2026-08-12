@@ -464,6 +464,13 @@ export function buildVatReport({
   // Qualifying invoices whose VAT cannot be determined at all. Neither
   // deducted nor forfeited — unresolved, and named.
   const unresolved = [];
+  // ── سجلات لا يمكن ترحيلها أصلاً ──
+  // A `startup_costs` parent carrying its own `actual_amount` is the only
+  // shape of these: no adapter reads that collection, because the parent has
+  // no spend date, no payment method and no invoice identity. Deducting it
+  // would file a claim the books can never show, so it is held here — visible
+  // and totalled — until it is converted into a `startup_cost_entries` row.
+  const needsConversion = [];
 
   // ── الحقيقة التاريخية أولاً ──
   // A purchase already in the books carries the split the server FROZE onto
@@ -475,6 +482,25 @@ export function buildVatReport({
 
   for (const row of inputs) {
     const key = rowSourceKey(row);
+
+    // ── قبل كل شيء: هل هذا السجل قابل للترحيل من حيث المبدأ؟ ──
+    // Checked FIRST, so no later branch can quietly let it into `eligible`.
+    if (row.requiresConversion) {
+      const date = claimDateOf(row);
+      if (period && date && periodKeyFor(date, filing) !== period) continue;
+      const s = inputInvoiceTax(row, { policyAt });
+      needsConversion.push({
+        ...row, sourceKey: key, claimDate: date,
+        amount: round2(Number(row.amount) || 0),
+        // What it WOULD bear once converted, so the user can see the size of
+        // what is waiting. Never added to `input.tax`.
+        pendingTax: s.refused ? null : (s.documentVat ?? 0),
+        reason: 'مبلغ مسجَّل على بند التأسيس مباشرة — يحتاج تحويلاً إلى قيد '
+          + 'في سجل المصاريف بتاريخ صرف وطريقة دفع وبيانات فاتورة قبل أن يُخصم.',
+      });
+      continue;
+    }
+
     const fromLedger = purchaseEntryTax(postedEntries.get(key));
     const s = fromLedger || inputInvoiceTax(row, { policyAt });
     // The claim date is the INVOICE's, and a posted entry states the invoice
@@ -593,6 +619,13 @@ export function buildVatReport({
     // from this report as it stands.
     unresolved,
     unresolvedCount: unresolved.length,
+    // Legacy parent-level startup spend awaiting conversion. Neither deducted
+    // nor hidden: a claim silently vanishing from a return is as bad as one
+    // silently appearing in it.
+    needsConversion,
+    needsConversionCount: needsConversion.length,
+    needsConversionAmount: round2(needsConversion.reduce((sum, r) => sum + (Number(r.amount) || 0), 0)),
+    needsConversionTax: round2(needsConversion.reduce((sum, r) => sum + (Number(r.pendingTax) || 0), 0)),
     unresolvedGross: round2(unresolved.reduce((sum, r) => sum + (r.gross || 0), 0)),
     policyUnconfigured: outputPolicyGap || unresolved.length > 0,
     operationalOutput,

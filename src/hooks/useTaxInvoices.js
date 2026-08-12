@@ -180,6 +180,19 @@ export function useTaxInvoices() {
     const ledgerManaged = new Set(
       (ledgerParentsQ.data || []).map((r) => r.startup_cost_id).filter(Boolean),
     );
+    // ── بند تأسيس يحمل مبلغاً فعلياً بلا قيد فرعي ──
+    // These rows can never be posted: `ADAPTERS.startup` reads
+    // `startup_cost_entries`, and there is no server-authoritative path for a
+    // parent-level amount — the parent has no spend date, no payment method
+    // and no invoice identity, which is three of the things an entry cannot
+    // be built without. They used to be reported as ordinary deductible
+    // purchases dated by `created_at`, the day the ROW WAS TYPED, so the
+    // claim sat in a quarter chosen by when someone opened a form and could
+    // never appear on `1200` at all.
+    //
+    // They are now carried as REQUIRING CONVERSION: shown, totalled, and kept
+    // out of `input.tax` until they become a real entry. `spentDate` is left
+    // empty on purpose — inventing one is the bug, not the fix.
     const startupItems = (startupItemsQ.data || [])
       .filter((i) => !ledgerManaged.has(i.id) && i.actualAmount > 0)
       .map((i) => ({
@@ -187,7 +200,7 @@ export function useTaxInvoices() {
         description:  i.itemName,
         // VAT is reclaimable on money actually paid, never on the plan.
         amount:       i.actualAmount,
-        spentDate:    String(i.createdAt || '').slice(0, 10),
+        spentDate:    '',
         notes:        '',
         invoiceUrl:   i.invoiceUrl,
         invoiceNumber: i.invoiceNumber,
@@ -200,7 +213,10 @@ export function useTaxInvoices() {
         isTaxInvoice: true,
         createdAt:    i.createdAt || '',
         source:       'startup',
-        sourceKind:   'startup',
+        // A kind no adapter answers to — which is the point, and why the
+        // report refuses to treat the row as claimable.
+        sourceKind:   'startup-parent',
+        requiresConversion: true,
         parentId:     i.id,
       }));
     return [...startup, ...startupItems, ...annual, ...monthly, ...vouchers, ...variable]

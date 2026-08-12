@@ -4,7 +4,7 @@ import {
   Percent, Link as LinkIcon, Info,
 } from 'lucide-react';
 import {
-  formatCurrency, formatCurrencyPrecise, formatNumber, extractVat, netOfVat,
+  formatCurrency, formatNumber,
 } from '../data/initialData';
 
 // Sentinel value for the synthetic "⚙️ إدارة وتعديل التصنيفات..." option
@@ -27,9 +27,6 @@ const EMPTY = {
   category:         '',
   quantity:         '1',
   plannedUnitPrice: '',
-  actualUnitPrice:  '',
-  isTaxInvoice:     false,
-  invoiceUrl:       '',
 };
 
 function toPositive(value) {
@@ -48,13 +45,13 @@ function formatUnitPriceForInput(total, quantity) {
 export default function AddStartupFeeModal({
   isOpen, onClose, onAdd, onUpdate, categories = [], onAddCategory,
   onDeleteCategory, usedCategoryIds, showToast, initialValues = null,
-  isLedgerManaged = false,
 }) {
   const editing = Boolean(initialValues?.id);
-  // Items with ledger entries derive actual_amount from SUM(entries) —
-  // the edit modal must not offer a second write path that bypasses
-  // that roll-up (the inline table cell is already locked for these).
-  const lockActual = editing && isLedgerManaged;
+  // ── هذا النموذج للخطة وحدها ──
+  // `actual_amount` is derived from SUM(entries) and the invoice belongs to
+  // an entry, so neither is offered here — a second write path would bypass
+  // the roll-up and, worse, would recreate a parent-level tax claim that
+  // nothing in the ledger can ever post against.
   const [form, setForm] = useState(EMPTY);
   const [submitting, setSubmitting] = useState(false);
   // Inline category-manager state. `managerOpen` is the boolean
@@ -91,8 +88,7 @@ export default function AddStartupFeeModal({
         category:         initialValues.category || categories[0]?.id || '',
         quantity:         String(qty),
         plannedUnitPrice: formatUnitPriceForInput(initialValues.plannedAmount, qty),
-        actualUnitPrice:  formatUnitPriceForInput(initialValues.actualAmount,  qty),
-        isTaxInvoice:     Boolean(initialValues.isTaxInvoice),
+
         invoiceUrl:       initialValues.invoiceUrl || '',
       });
     } else {
@@ -225,9 +221,10 @@ export default function AddStartupFeeModal({
 
   const quantity         = toPositive(form.quantity);
   const plannedUnitPrice = toPositive(form.plannedUnitPrice);
-  const actualUnitPrice  = Math.max(0, parseFloat(form.actualUnitPrice) || 0);
   const plannedTotal     = quantity * plannedUnitPrice;
-  const actualTotal      = quantity * actualUnitPrice;
+  // Read-only: the sub-ledger's roll-up, shown so the form is informative
+  // without being a way to write it.
+  const actualTotal      = Math.max(0, Number(initialValues?.actualAmount) || 0);
 
   const isValid =
     form.itemName.trim().length > 0 &&
@@ -246,16 +243,10 @@ export default function AddStartupFeeModal({
         quantity,
         plannedAmount: plannedTotal,
       };
-      // Ledger-managed items: actual_amount stays owned by the entries
-      // roll-up — omitting the key means toStartupCostUpdate skips the
-      // column entirely.
-      if (!lockActual) {
-        payload.actualAmount = actualTotal;
-        // VAT lives on the sub-ledger for ledger-managed items; writing a
-        // parent flag as well would double the reclaim in the report.
-        payload.isTaxInvoice = form.isTaxInvoice;
-        payload.invoiceUrl   = form.invoiceUrl.trim();
-      }
+      // No `actualAmount`, no tax fields, no invoice: `toStartupCostInsert`
+      // and `toStartupCostUpdate` do not carry them at all any more. The
+      // sub-ledger owns the actual amount, and the invoice belongs to the
+      // entry that has a date to go with it.
       if (editing && onUpdate) {
         await onUpdate(initialValues.id, payload);
       } else if (onAdd) {
@@ -509,31 +500,32 @@ export default function AddStartupFeeModal({
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5" htmlFor="actualUnitPrice">
-                سعر الوحدة الفعلي (ر.س)
-              </label>
-              <input
-                id="actualUnitPrice"
-                type="number"
-                name="actualUnitPrice"
-                value={form.actualUnitPrice}
-                onChange={handleChange}
-                placeholder="0"
-                min="0"
-                step="any"
-                disabled={lockActual}
-                title={lockActual ? 'التكلفة الفعلية تُحسب تلقائياً من سجل مصروفات هذا البند' : undefined}
-                className="w-full px-3 py-2.5 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm tabular-nums focus:outline-none focus:border-primary-500 transition-colors disabled:bg-slate-50 dark:disabled:bg-slate-800 disabled:text-slate-400 dark:disabled:text-slate-500 disabled:cursor-not-allowed"
-              />
+              {/* ── التكلفة الفعلية تُقرأ ولا تُكتب هنا ──
+                  A parent-level amount has no spend date, no payment method
+                  and no invoice identity, so nothing can build a journal entry
+                  from it: `ADAPTERS.startup` reads `startup_cost_entries`, and
+                  there is deliberately no adapter for the parent. Typing a
+                  figure here produced a row that entered the VAT return and
+                  could never reach 1200. Real spend is recorded in the item's
+                  ledger, one document at a time. */}
+              <span className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                التكلفة الفعلية
+              </span>
+              <div className="w-full px-3 py-2.5 rounded-control border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-sm tabular-nums">
+                {formatCurrency(actualTotal)}
+              </div>
             </div>
           </div>
 
-          {lockActual && (
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed -mt-2">
-              التكلفة الفعلية لهذا البند تُحسب تلقائياً من سجل المصروفات الخاص به —
-              لتعديلها أضف أو احذف مصروفاً من صفحة تفاصيل البند.
-            </p>
-          )}
+          <div className="flex items-start gap-2 px-3 py-2.5 rounded-control bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/30 text-[12px] text-indigo-700 dark:text-indigo-300 leading-relaxed">
+            <Info size={14} className="shrink-0 mt-0.5" />
+            <span>
+              التكلفة الفعلية مجموع <strong>سجل مصاريف البند</strong> — يُفتح
+              بالنقر على اسم البند. كل مصروف هناك يحمل تاريخ صرفه وطريقة دفعه
+              وبيانات فاتورته، وهي ما يجعله قابلاً للترحيل ولخصم ضريبته؛ مبلغ
+              مكتوب على البند مباشرةً لا يملك أياً منها.
+            </span>
+          </div>
 
           <div className="bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-smallcard p-4 space-y-2 text-sm">
             <div className="flex items-baseline justify-between gap-3">
@@ -547,102 +539,10 @@ export default function AddStartupFeeModal({
             <div className="flex items-baseline justify-between gap-3">
               <span className="text-slate-500 dark:text-slate-400">إجمالي التكلفة الفعلية:</span>
               <span className="font-bold text-slate-900 dark:text-slate-100 tabular-nums">
-                {quantity > 0 && actualUnitPrice > 0
-                  ? `${formatNumber(quantity)} × ${formatCurrency(actualUnitPrice)} = ${formatCurrency(actualTotal)}`
-                  : `${formatCurrency(0)}`}
+                {formatCurrency(actualTotal)}
               </span>
             </div>
           </div>
-
-          {/* ── VAT recovery ────────────────────────────────────────────
-              Only for items whose actual spend is typed in HERE. An item
-              managed by the sub-ledger records VAT per entry, and counting
-              the parent as well would double the reclaim — so instead of a
-              flag it gets a note pointing at the ledger. */}
-          {lockActual ? (
-            <div className="flex items-start gap-2 px-3 py-2.5 rounded-control bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/30 text-[12px] text-indigo-700 dark:text-indigo-300 leading-relaxed">
-              <Info size={14} className="shrink-0 mt-0.5" />
-              <span>
-                هذا البند تُدار مصاريفه من <strong>سجل المصروفات</strong> — حدّد
-                «فاتورة ضريبية» وأضف رابط الفاتورة على كل قيد هناك، حتى لا
-                تُحتسب الضريبة مرتين.
-              </span>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <label
-                htmlFor="startupIsTaxInvoice"
-                className={`flex items-center gap-2.5 px-3 py-2.5 rounded-control border cursor-pointer transition-colors ${
-                  form.isTaxInvoice
-                    ? 'border-emerald-100 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10'
-                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700'
-                }`}
-              >
-                <input
-                  id="startupIsTaxInvoice"
-                  type="checkbox"
-                  name="isTaxInvoice"
-                  checked={form.isTaxInvoice}
-                  onChange={handleChange}
-                  className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 accent-emerald-600"
-                />
-                <Percent size={14} className={form.isTaxInvoice ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-500 dark:text-slate-400'} />
-                <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                  فاتورة ضريبية
-                  <span className="text-[11px] font-normal text-slate-500 dark:text-slate-400 mr-1">
-                    (التكلفة الفعلية شاملة ضريبة القيمة المضافة 15%)
-                  </span>
-                </span>
-              </label>
-
-              {/* The reclaim is derived from the ACTUAL spend, not the plan —
-                  VAT is only reclaimable on money actually paid. */}
-              {form.isTaxInvoice && actualTotal > 0 && (
-                <div
-                  role="status"
-                  className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-control bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/30 text-[12px]"
-                >
-                  <span className="text-emerald-700 dark:text-emerald-300">
-                    الضريبة المتوقع استردادها:
-                    <span className="font-bold tabular-nums mr-1">{formatCurrencyPrecise(extractVat(actualTotal))}</span>
-                  </span>
-                  <span className="text-slate-500 dark:text-slate-400">
-                    الصافي قبل الضريبة:
-                    <span className="font-bold tabular-nums mr-1">{formatCurrencyPrecise(netOfVat(actualTotal))}</span>
-                  </span>
-                </div>
-              )}
-              {form.isTaxInvoice && actualTotal <= 0 && (
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed px-1">
-                  أدخل <strong>سعر الوحدة الفعلي</strong> لحساب الضريبة — لا تُسترد
-                  الضريبة إلا على مبلغ مدفوع فعلاً.
-                </p>
-              )}
-
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5" htmlFor="startupInvoiceUrl">
-                  رابط الفاتورة
-                  <span className="text-[11px] font-normal text-slate-500 dark:text-slate-400 mr-1">(اختياري)</span>
-                </label>
-                <div className="relative">
-                  <input
-                    id="startupInvoiceUrl"
-                    type="url"
-                    name="invoiceUrl"
-                    value={form.invoiceUrl}
-                    onChange={handleChange}
-                    placeholder="https://..."
-                    dir="ltr"
-                    className="w-full pr-4 pl-10 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm text-left focus:outline-none focus:border-primary-500 transition-colors"
-                  />
-                  <LinkIcon size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 pointer-events-none" />
-                </div>
-                <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                  الصق رابط الفاتورة للرجوع إليها عند تقديم الإقرار الضريبي.
-                </p>
-              </div>
-            </div>
-          )}
 
           <div className="flex items-center gap-3 pt-2">
             <button

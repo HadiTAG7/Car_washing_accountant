@@ -201,6 +201,16 @@ export default function VatRecoveryPage() {
     }
     // Unresolved invoices travel too. They are NOT zero-VAT purchases and must
     // not read as if they were — the export says which they are and why.
+    // Rows that cannot be posted as they stand travel with the export too: a
+    // claim waiting on a conversion is not a claim that vanished.
+    for (const r of report.needsConversion) {
+      rows.push([
+        itemNameById.get(r.parentId) || '', SOURCE_META[r.source]?.label || r.source,
+        r.description, r.supplier || '', r.invoiceNumber || '', r.claimDate || '',
+        roleOf(r), Number(((Number(r.amount) || 0) * s).toFixed(2)), '', '', 0, 'بانتظار التحويل',
+        `غير مُطالَب به — ${r.reason}`,
+      ]);
+    }
     for (const r of report.unresolved) {
       rows.push([
         itemNameById.get(r.parentId) || '', SOURCE_META[r.source]?.label || r.source,
@@ -219,7 +229,8 @@ export default function VatRecoveryPage() {
   }
 
   const anyRows = report.eligible.length > 0 || report.ineligible.length > 0
-    || report.unresolved.length > 0 || report.output.count > 0;
+    || report.unresolved.length > 0 || report.needsConversion.length > 0
+    || report.output.count > 0;
 
   return (
     <>
@@ -567,6 +578,70 @@ export default function VatRecoveryPage() {
                       </td>
                       <td className="py-3 px-4 text-[11px] leading-relaxed text-amber-800 dark:text-amber-300">
                         {r.reason}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        )}
+
+        {/* ── بنود تأسيس تنتظر التحويل ──────────────────────────
+            A `startup_costs` parent carrying its own `actual_amount` has no
+            spend date, no payment method and no per-document identity, so no
+            adapter can post it — it used to enter the return anyway, dated by
+            `created_at`, and could never appear on 1200. It is held here
+            instead: visible, totalled, and out of the claim until it becomes
+            a real sub-ledger entry. */}
+        {report.needsConversionCount > 0 && (
+          <Card className="p-6">
+            <SectionHeader
+              title="بنود تأسيس تحتاج تحويلاً قبل الخصم"
+              subtitle="مبالغ مسجَّلة على البند مباشرة — بلا تاريخ صرف ولا طريقة دفع ولا فاتورة، فلا تُرحَّل ولا تُخصم"
+            />
+            <div role="note" className="flex items-start gap-2.5 bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/30 text-amber-800 dark:text-amber-300 text-xs px-4 py-3 rounded-control leading-relaxed mb-4">
+              <AlertTriangle size={15} className="shrink-0 mt-0.5" />
+              <span>
+                هذه المبالغ <strong>غير محتسبة</strong> في ضريبة المدخلات أعلاه.
+                حوّل كلًّا منها إلى قيد في سجل مصاريف بنده من صفحة
+                <strong className="mx-1">رسوم التأسيس</strong> — يُطلب حينها تاريخ
+                الصرف وطريقة الدفع وبيانات الفاتورة، وهي ما يجعلها قابلة للترحيل
+                وللخصم. مجموع ما ينتظر:
+                <strong className="mx-1 tabular-nums">{formatCurrency(report.needsConversionAmount * s)}</strong>
+                وضريبته المقدّرة
+                <strong className="mx-1 tabular-nums">{formatCurrencyPrecise(report.needsConversionTax * s)}</strong>.
+              </span>
+            </div>
+            <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
+              <table className="w-full min-w-[560px] text-sm">
+                <thead>
+                  <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
+                    <th className="py-3 px-4 whitespace-nowrap">البند</th>
+                    <th className="py-3 px-4 whitespace-nowrap">تاريخ الفاتورة</th>
+                    <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">المبلغ المسجَّل</th>
+                    <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">ضريبة منتظرة</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {report.needsConversion.map((r) => (
+                    <tr key={r.sourceKey} className="border-b border-slate-50 dark:border-slate-800/60 last:border-0">
+                      <td className="py-3 px-4 whitespace-normal break-words min-w-[160px] text-slate-800 dark:text-slate-200">
+                        <span className="inline-flex items-center gap-1.5 font-medium">
+                          {r.description}
+                          <SourceBadge source={r.source} />
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 whitespace-nowrap tabular-nums text-slate-600 dark:text-slate-400">
+                        {r.claimDate ? formatDate(r.claimDate) : (
+                          <span className="text-amber-700 dark:text-amber-300 font-semibold">بلا تاريخ</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums text-slate-700 dark:text-slate-300">
+                        {formatCurrency((Number(r.amount) || 0) * s)}
+                      </td>
+                      <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums text-amber-700 dark:text-amber-300">
+                        {r.pendingTax === null ? 'غير محدَّدة' : formatCurrencyPrecise(r.pendingTax * s)}
                       </td>
                     </tr>
                   ))}

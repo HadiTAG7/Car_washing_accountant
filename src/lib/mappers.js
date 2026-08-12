@@ -31,17 +31,34 @@ export function mapStartupCost(row) {
     createdAt:     row.created_at || '',
   };
 }
+// ── البند خطة، والصرف مستند ──────────────────────────────────────────────
+// `actual_amount` and the tax-invoice block are NOT writable here, and that
+// is the whole fix rather than a style preference. A parent-level amount has
+// no spend date, no payment method and no invoice identity, so nothing can
+// build a journal entry from it — `ADAPTERS.startup` reads
+// `startup_cost_entries`, and there is deliberately no adapter for the
+// parent. A row that could enter the VAT return and could never reach `1200`
+// left `inputMismatch` permanently open for that item.
+//
+// So a new item is a PLAN: name, category, quantity, budget. Real spend is a
+// `startup_cost_entries` row, which carries all three missing facts, and the
+// parent's `actual_amount` becomes the roll-up of those entries — written by
+// `syncParentTotal`, not by a form. Legacy rows that still hold their own
+// amount are converted through `convertStartupParentSpend`, which asks for
+// what the record does not contain. See src/lib/accounting/startupMigration.js.
 export function toStartupCostInsert({
-  category, itemName, quantity, plannedAmount, actualAmount, status, ...taxInvoice
+  category, itemName, quantity, plannedAmount, status,
 }) {
   return {
     category,
     item_name:       itemName,
     quantity:        clampQuantity(quantity),
     budgeted_amount: Math.max(0, Number(plannedAmount) || 0),
-    actual_amount:   Math.max(0, Number(actualAmount)  || 0),
+    // Always zero on insert. The sub-ledger owns this column from here on.
+    actual_amount:   0,
     status:          status === 'completed' ? 'completed' : 'in_progress',
-    ...toTaxInvoiceFields(taxInvoice),
+    // A plan is not a document, so it carries no invoice and no tax claim.
+    ...toTaxInvoiceFields({ isTaxInvoice: false }),
   };
 }
 export function toStartupCostUpdate(updates = {}) {
@@ -50,9 +67,9 @@ export function toStartupCostUpdate(updates = {}) {
   if (updates.itemName      !== undefined) payload.item_name       = updates.itemName;
   if (updates.quantity      !== undefined) payload.quantity        = clampQuantity(updates.quantity);
   if (updates.plannedAmount !== undefined) payload.budgeted_amount = Math.max(0, Number(updates.plannedAmount) || 0);
-  if (updates.actualAmount  !== undefined) payload.actual_amount   = Math.max(0, Number(updates.actualAmount)  || 0);
   if (updates.status        !== undefined) payload.status          = updates.status === 'completed' ? 'completed' : 'in_progress';
-  Object.assign(payload, toTaxInvoiceFieldsUpdate(updates));
+  // `actualAmount` and the tax fields are deliberately absent: the sub-ledger
+  // roll-up writes the first directly, and the second belongs to an entry.
   return payload;
 }
 

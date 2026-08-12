@@ -795,3 +795,62 @@ describe('تصادم المعرّفات بين المجموعات', () => {
     expect(purchaseEntryTax(entries[1])).toBeNull();
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// سجل لا يستطيع أحد ترحيله لا يدخل الإقرار
+// ═══════════════════════════════════════════════════════════════════════════
+// A `startup_costs` parent carrying its own `actual_amount` is the only shape
+// of this. No adapter reads that collection — the parent has no spend date, no
+// payment method and no per-document identity — so the row could enter
+// `input.tax` and could never appear on `1200`. `inputMismatch` for it was
+// permanent, and the date it was filed under was `created_at`: the day the row
+// was typed.
+describe('بنود التأسيس التي تحتاج تحويلاً', () => {
+  const PARENT = (over = {}) => ({
+    id: 'p1', description: 'ماكينة', amount: 1150, isTaxInvoice: true,
+    invoiceNumber: 'S-77', invoiceDate: '2026-08-03', supplier: 'مورّد',
+    vatAmount: 150, vatRate: null, priceMode: 'inclusive', vatDeductible: true,
+    spentDate: '', source: 'startup', sourceKind: 'startup-parent',
+    requiresConversion: true, parentId: 'p1', ...over,
+  });
+
+  it('لا يدخل eligible ولا input.tax، ويُعرض في قائمة التحويل بسببه', () => {
+    const r = buildVatReport({ inputs: [PARENT()], period: '2026-Q3' });
+    expect(r.eligible).toEqual([]);
+    expect(r.input.tax).toBe(0);
+    expect(r.ineligible).toEqual([]);
+    expect(r.unresolved).toEqual([]);
+    expect(r.needsConversionCount).toBe(1);
+    expect(r.needsConversionAmount).toBe(1150);
+    expect(r.needsConversionTax).toBe(150);
+    expect(r.needsConversion[0].reason).toMatch(/يحتاج تحويلاً/);
+  });
+
+  it('ولا يدخل unpostedEligible — فهو ليس مؤهلاً بعد أصلاً', () => {
+    const r = buildVatReport({ inputs: [PARENT()], period: '2026-Q3' });
+    expect(r.unpostedEligible).toEqual([]);
+    expect(r.unpostedInputTax).toBe(0);
+    expect(r.inputMismatch).toBe(0);
+  });
+
+  it('والقيد الفرعي المقابل يُخصم عادياً — الفرق أن له تاريخاً ومستنداً', () => {
+    const entry = {
+      ...PARENT({ id: 'e1', sourceKind: 'startup', spentDate: '2026-08-05' }),
+      requiresConversion: false,
+    };
+    const r = buildVatReport({ inputs: [entry], period: '2026-Q3' });
+    expect(r.input.tax).toBe(150);
+    expect(r.needsConversionCount).toBe(0);
+  });
+
+  it('ولا يُحتسبان معاً حتى لو وصل الاثنان', () => {
+    const entry = {
+      ...PARENT({ id: 'e1', sourceKind: 'startup', spentDate: '2026-08-05' }),
+      requiresConversion: false,
+    };
+    const r = buildVatReport({ inputs: [entry, PARENT()], period: '2026-Q3' });
+    expect(r.input.tax).toBe(150);            // NOT 300
+    expect(r.eligible).toHaveLength(1);
+    expect(r.needsConversionCount).toBe(1);
+  });
+});

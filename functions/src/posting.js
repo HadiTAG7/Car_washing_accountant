@@ -115,18 +115,41 @@ export function purchaseFieldsOf(kind, row) {
 }
 
 /**
- * مصروف → قيد، بضريبة الفاتورة نفسها لا بنسبة افتراضية.
+ * مصروف → إثبات الفاتورة، ثم السداد إن اختلف تاريخه.
  *
- * Everything about the tax comes from `resolvePurchaseTax`, which reads the
- * amount the supplier wrote, then the rate stamped on the document, then the
- * policy in force on the INVOICE's date — and refuses to post when none of the
- * three can answer, rather than splitting at 15% and calling it a fact.
+ * ── لماذا قيدان أحياناً ──
+ * ضريبة المدخلات تُطالَب في فترة **تاريخ الفاتورة**، والنقد يخرج يوم الدفع.
+ * حين يختلف اليومان — فاتورة 31 مارس تُدفع 2 أبريل — لا يمكن لقيد واحد أن
+ * يحمل التاريخين. القيد الواحد كان مؤرَّخاً بيوم الدفع، فوقع الحساب 1200 في
+ * أبريل بينما يطالب التقرير بضريبته في مارس:
+ *
+ *     Q1: تقرير 15 · دفاتر 0        Q2: تقرير 0 · دفاتر 15
+ *
+ * وهي مطابقة لا تُغلق أبداً. وتأريخ القيد كله بيوم الفاتورة يحلّ الضريبة
+ * ويكسر النقد: الصندوق يتحرك في مارس بينما المال خرج في أبريل.
+ *
+ * فالتصميم هو المحاسبة العادية على أساس الاستحقاق، لا حيلة تأريخ:
+ *
+ *   إثبات الفاتورة — بتاريخ الفاتورة:
+ *     مدين  المصروف/الأصل   بالصافي
+ *     مدين  1200            بالضريبة القابلة للخصم
+ *     دائن  2000 الموردون   بالإجمالي
+ *
+ *   السداد — بتاريخ الدفع الفعلي:
+ *     مدين  2000 الموردون   بالإجمالي
+ *     دائن  الصندوق/البنك   بالإجمالي
+ *
+ * ويُدمَج القيدان في واحد حين يقع اليومان في اليوم نفسه، لأن الذمة تنشأ
+ * وتُسدَّد في اللحظة ذاتها فلا تصف شيئاً — وهو الوضع الغالب، فلا يتغيّر شكل
+ * ما كان يُكتب. غير المسدَّد لا سداد له أصلاً: تبقى الذمة قائمة، كما كانت.
+ *
+ * كل ما يخص الضريبة من `resolvePurchaseTax`.
  */
 function buildExpense(kind, row, id, { policyAt = null, recordDate = null } = {}) {
   // The SAME date the poster resolved the policy from. Computing it twice let
   // the two drift — the voucher adapter read `due_date` while the builder read
   // `dueDate` — so an entry could be dated one day and taxed under another.
-  const date = String(recordDate || ADAPTERS[kind].dateOf(row) || '').slice(0, 10);
+  const settlementDate = String(recordDate || ADAPTERS[kind].dateOf(row) || '').slice(0, 10);
   const description = kind === 'voucher'
     ? `${row.templateName || 'مصروف شهري'} — ${row.periodKey}`
     : (row.expense_name || row.description || 'مصروف');
@@ -139,7 +162,19 @@ function buildExpense(kind, row, id, { policyAt = null, recordDate = null } = {}
       : 'paid';
 
   const fields = purchaseFieldsOf(kind, row);
-  const tax = resolvePurchaseTax({ ...fields, recordDate: date }, { policyAt });
+  const tax = resolvePurchaseTax({ ...fields, recordDate: settlementDate }, { policyAt });
+
+  // The supplier's document dates the liability and the deduction. Without one
+  // — a purchase with no tax invoice — the record's own date is all there is.
+  const accrualDate = isRealPurchaseDate(fields.invoiceDate)
+    ? String(fields.invoiceDate).slice(0, 10)
+    : settlementDate;
+  const ref = fields.invoiceNumber ? ` — فاتورة ${fields.invoiceNumber}` : '';
+  const supplierLabel = fields.supplier ? `المورد: ${fields.supplier}` : 'سداد';
+  // Split only when the two days differ AND the money actually moved. An
+  // unpaid purchase has no settlement to date, and a same-day one would net a
+  // payable against itself for no reader's benefit.
+  const split = paid === 'paid' && accrualDate !== settlementDate;
 
   const lines = [
     // The expense or asset takes the NET; a non-deductible tax stays inside it,
@@ -155,20 +190,49 @@ function buildExpense(kind, row, id, { policyAt = null, recordDate = null } = {}
     });
   }
   lines.push({
-    accountId: settlementForPurchase(method, paid),
+    accountId: split ? ACC.PAYABLE : settlementForPurchase(method, paid),
     debit: 0, credit: tax.gross,
-    description: fields.supplier ? `المورد: ${fields.supplier}` : 'سداد',
+    description: supplierLabel,
   });
-  return {
+
+  const built = {
     entry: {
-      entryDate: date,
+      entryDate: accrualDate,
       sourceType: 'expense',
       sourceId: id,
-      description: `${description}${fields.invoiceNumber ? ` — فاتورة ${fields.invoiceNumber}` : ''}`,
+      description: `${description}${ref}`,
     },
     lines,
     purchaseTaxSnapshot: tax.snapshot,
   };
+  if (!split) return built;
+
+  built.settlement = {
+    entry: {
+      entryDate: settlementDate,
+      sourceType: 'expense',
+      sourceId: id,
+      description: `سداد ${description}${ref}`,
+    },
+    lines: [
+      { accountId: ACC.PAYABLE, debit: tax.gross, credit: 0, description: supplierLabel },
+      {
+        accountId: settlementForPurchase(method, 'paid'),
+        debit: 0, credit: tax.gross,
+        description: `سداد ${accrualDate}`,
+      },
+    ],
+  };
+  return built;
+}
+
+/** A date that exists — `Date.parse` rolls 2026-02-30 over to 2 March. */
+function isRealPurchaseDate(iso) {
+  const s = String(iso || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const [y, m, d] = s.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
 }
 
 /**

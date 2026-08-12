@@ -23,7 +23,12 @@ import { round2 } from './journal';
 import { splitVatBalanced, VAT_RATE } from './vat';
 // One definition of "stated vs not stated", shared with the mappers and the
 // form — see src/lib/vatFields.js for what went wrong when there were three.
-import { statedVatAmount, statedVatRate, normalizedPriceMode } from '../vatFields';
+import { normalizedPriceMode } from '../vatFields';
+// ── قرار واحد للدفاتر وللإقرار ──
+// The report does NOT re-implement the priority (stated amount → invoice rate
+// → dated policy), the registration test or the deductibility test. It calls
+// the same engine the server posts with; a second copy is a second answer.
+import { resolvePurchaseTax } from './purchaseTax';
 
 export const FILING_PERIODS = ['monthly', 'quarterly'];
 export const FILING_PERIOD_LABELS = {
@@ -152,47 +157,103 @@ export function claimDateOf(row) {
 }
 
 /**
- * The VAT on one purchase invoice, in order of authority.
+ * ضريبة فاتورة مشتريات واحدة — من المحرك المشترك، لا من نسخة ثانية منه.
  *
- *   1. The amount the SUPPLIER wrote on the document. A tax invoice states its
- *      own VAT; recomputing it from a rate is second-guessing the paper the
- *      deduction rests on, and a supplier's rounding is theirs to make.
- *   2. Failing that, the rate stored ON the invoice — a 5%-era purchase keeps
- *      its 5% however many times the standard rate has moved since.
- *   3. Failing that, the rate in force on the INVOICE's date.
+ * ── لماذا لم تبقَ هذه الدالة تحسب بنفسها ──
+ * كانت تعيد ترتيب الأولوية نفسه (مبلغ ← نسبة ← سياسة) بكودها الخاص، فصار
+ * القرار في مكانين: `resolvePurchaseTax` تقرّر ما يُكتب في الدفاتر، وهذه
+ * تقرّر ما يُقدَّم في الإقرار. واختلفا فعلاً في ثلاث نقاط على الأقل:
  *
- * Today's rate is never the answer for a historical document.
+ *   • التسجيل الضريبي بتاريخ الفاتورة لم يكن يُفحص هنا إطلاقاً، فمنشأة غير
+ *     مسجّلة في مارس كانت تخصم ضريبة فاتورة مارس في التقرير بينما يرفض
+ *     الخادم فتح حساب 1200 لها.
+ *   • `stated !== null && stated <= amount` كان يتجاهل مبلغاً غير صالح
+ *     بصمت ثم يسقط إلى النسبة — فيُخصم رقم لم يقله المستند.
+ *   • «غير قابلة للخصم» كانت تُقاس بفحص منفصل قد يوافق المحرك وقد لا يوافقه.
+ *
+ * الآن الدالة غلاف رقيق: تنادي المحرك، وتترجم رفضه إلى سبب معروض. القرار
+ * واحد، ومكانه واحد.
  */
-export function inputInvoiceTax(row, { policyAt = null, rate = VAT_RATE } = {}) {
-  const amount = round2(Number(row?.amount) || 0);
-  const mode = normalizedPriceMode(row?.priceMode);
-
-  // `statedVatAmount`, never `Number(...)`. `Number(null)` is 0 — finite,
-  // non-negative, and past every plausible guard — so a purchase saved with
-  // `vatAmount: null`, which is exactly what the mapper writes for "the
-  // supplier did not state one", was deducted as a VAT of ZERO and labelled
-  // `source: 'invoice'` as though the supplier had written it. The fallbacks
-  // below never ran. `undefined` was correct only by accident (`Number(
-  // undefined)` is NaN), and accidentally-correct is not a property.
-  const stated = statedVatAmount(row?.vatAmount);
-  if (stated !== null && stated <= amount) {
-    const gross = mode === 'exclusive' ? round2(amount + stated) : amount;
-    return { gross, net: round2(gross - stated), vat: round2(stated), source: 'invoice' };
+export function inputInvoiceTax(row, { policyAt = null } = {}) {
+  try {
+    const r = resolvePurchaseTax(purchaseInputOf(row), { policyAt });
+    return {
+      gross: r.gross, net: r.net, vat: r.vat,
+      documentVat: r.documentVat,
+      source: r.deductible ? r.source : 'not-deductible',
+      deductible: r.deductible,
+      noInputVatReason: r.noInputVatReason,
+      missing: r.missing,
+      refused: null,
+    };
+  } catch (e) {
+    // ── الرفض لا يصير صفراً ──
+    // A figure nobody can determine is not a zero-VAT purchase. Returning 0
+    // here would file a deduction of nothing and call it correct; the caller
+    // puts the row in `unresolved` and prints this reason beside it.
+    return {
+      gross: null, net: null, vat: 0, documentVat: null,
+      source: 'unresolved', deductible: false, noInputVatReason: null,
+      missing: [], refused: e?.message || 'تعذّر تحديد ضريبة الفاتورة.',
+    };
   }
-
-  const onInvoice = statedVatRate(row?.vatRate);
-  if (onInvoice !== null) {
-    return { ...splitVatBalanced(amount, { mode, taxable: true, rate: onInvoice }), source: 'invoice-rate' };
-  }
-
-  const date = claimDateOf(row);
-  const policy = policyAt ? policyAt(date) : null;
-  if (policy && !policy.known) {
-    return { gross: amount, net: amount, vat: 0, source: 'unknown-policy' };
-  }
-  const effective = policy?.vatRate ?? rate;
-  return { ...splitVatBalanced(amount, { mode, taxable: true, rate: effective }), source: policy ? 'policy' : 'default' };
 }
+
+/** The app-shaped purchase row, in the engine's own vocabulary. */
+function purchaseInputOf(row = {}) {
+  return {
+    amount: row.amount,
+    priceMode: row.priceMode,
+    isTaxInvoice: row.isTaxInvoice !== false,
+    vatDeductible: row.vatDeductible !== false,
+    invoiceNumber: row.invoiceNumber,
+    invoiceDate: row.invoiceDate,
+    supplier: row.supplier,
+    vatAmount: row.vatAmount ?? null,
+    vatRate: row.vatRate ?? null,
+    recordDate: row.spentDate || row.invoiceDate || '',
+  };
+}
+
+/**
+ * ما سجّله القيد المُرحّل فعلاً عن ضريبة مشترياته.
+ *
+ * `purchaseTaxSnapshot` is what the server froze at posting: the figure, its
+ * source, the policy row it was resolved against, and why an input-VAT asset
+ * was or was not opened. For a posted purchase this is not *a* source of
+ * truth, it is *the* one — re-deriving the split from the raw row would let a
+ * policy edited next year restate a return already filed.
+ *
+ * Returns null when the source has no live entry, and the caller then prices
+ * the row with the engine instead.
+ */
+export function purchaseEntryTax(entry) {
+  const snap = entry?.purchaseTaxSnapshot;
+  if (!snap || !Number.isFinite(Number(snap.gross))) return null;
+  const deductible = snap.deductible === true;
+  return {
+    gross: round2(snap.gross),
+    net: round2(snap.net),
+    vat: deductible ? round2(snap.vat) : 0,
+    documentVat: Number.isFinite(Number(snap.documentVat)) ? round2(snap.documentVat) : null,
+    source: deductible ? snap.source : 'not-deductible',
+    deductible,
+    noInputVatReason: snap.noInputVatReason || null,
+    missing: [],
+    refused: null,
+    claimDate: snap.invoiceDate || '',
+    posted: true,
+  };
+}
+
+/** Why a purchase bears no deductible input tax, in words a user reads. */
+export const NO_INPUT_VAT_LABEL = {
+  'not-tax-invoice': 'ليست فاتورة ضريبية',
+  'not-deductible': 'مُستبعدة من الخصم صراحةً',
+  'not-registered': 'المنشأة غير مسجّلة ضريبياً بتاريخ الفاتورة',
+  'incomplete-invoice': 'بيانات الفاتورة ناقصة',
+  'zero-rated': 'توريد بضريبة صفرية',
+};
 
 // ─── ضريبة المخرجات ──────────────────────────────────────────────────────
 /**
@@ -334,13 +395,51 @@ export function inputTaxFromLedger(entries, lines, { period, filing = 'quarterly
   return ledgerTaxOn(entries, lines, { period, filing, account, sign: -1 });
 }
 
-/** Source ids that already have a posted entry — used to spot what is not. */
-export function postedSourceIds(entries) {
-  const ids = new Set();
+/**
+ * `kind__id` — the only key that identifies a source record.
+ *
+ * `sourceId` alone does not. Five collections post with `sourceType:
+ * 'expense'`, their ids are independent, and a monthly expense whose id
+ * happens to match a variable one would then be reported as posted the moment
+ * the OTHER was. The ledger has keyed its locks this way since the collision
+ * was found there; the report was still keyed on the bare id.
+ */
+export function sourceKeyOf(kind, id) {
+  return `${String(kind || 'expense')}__${String(id ?? '')}`;
+}
+
+/** The key for a report row, from the explicit kind its feed tagged it with. */
+export function rowSourceKey(row) {
+  return sourceKeyOf(row?.sourceKind || row?.source, row?.id);
+}
+
+/** Source keys that already have a live posted entry. */
+export function postedSourceKeys(entries) {
+  const keys = new Set();
   for (const e of entries || []) {
-    if (e.status === 'posted' && e.sourceId != null) ids.add(String(e.sourceId));
+    if (e.status !== 'posted' || e.sourceId == null) continue;
+    // A reversal mirror is an adjustment, not a posting of its source.
+    if (e.reversalOf) continue;
+    keys.add(sourceKeyOf(e.sourceKind || e.sourceType, e.sourceId));
   }
-  return ids;
+  return keys;
+}
+
+/**
+ * The live posted entry per source key, for reading its frozen snapshot.
+ *
+ * The ACCRUAL only: a purchase settled on a different day writes a second
+ * entry for the payment, and that one carries no `purchaseTaxSnapshot`
+ * precisely so a reader summing snapshots cannot count the deduction twice.
+ */
+export function postedPurchaseEntries(entries) {
+  const byKey = new Map();
+  for (const e of entries || []) {
+    if (e.status !== 'posted' || e.sourceId == null || e.reversalOf) continue;
+    if (e.settlementOf) continue;
+    byKey.set(sourceKeyOf(e.sourceKind || e.sourceType, e.sourceId), e);
+  }
+  return byKey;
 }
 
 // ─── التقرير ─────────────────────────────────────────────────────────────
@@ -366,48 +465,85 @@ export function buildVatReport({
   // deducted nor forfeited — unresolved, and named.
   const unresolved = [];
 
+  // ── الحقيقة التاريخية أولاً ──
+  // A purchase already in the books carries the split the server FROZE onto
+  // its entry. That is what was posted and what a later reader must see, so
+  // it wins over re-pricing the raw row: a policy corrected next year must not
+  // restate a return already filed. Only an unposted purchase is priced now,
+  // and then by the same engine the posting would have used.
+  const postedEntries = postedPurchaseEntries(entries);
+
   for (const row of inputs) {
-    const date = claimDateOf(row);
-    const { eligible: ok, missing } = inputInvoiceEligibility(row);
+    const key = rowSourceKey(row);
+    const fromLedger = purchaseEntryTax(postedEntries.get(key));
+    const s = fromLedger || inputInvoiceTax(row, { policyAt });
+    // The claim date is the INVOICE's, and a posted entry states the invoice
+    // date it was actually posted under.
+    const date = (fromLedger?.claimDate && isIsoDate(fromLedger.claimDate))
+      ? fromLedger.claimDate : claimDateOf(row);
     const outsidePeriod = Boolean(period) && Boolean(date) && periodKeyFor(date, filing) !== period;
 
-    if (ok) {
-      // An eligible row always has a usable date — it is one of the
-      // requirements — so period filtering is unambiguous.
+    // ── الرفض لا يُخصم ولا يُهمَل ──
+    if (s.refused) {
       if (outsidePeriod) continue;
-      const s = inputInvoiceTax(row, { policyAt, rate });
-      // ── لا تُخصم بصفر صامت ──
-      // A qualifying invoice whose tax nobody can determine — no stated
-      // amount, no rate of its own, and a date the policy record does not
-      // reach — is NOT a zero-VAT purchase. Putting it in `eligible` with
-      // tax 0 files a deduction of nothing and calls it correct. It goes to
-      // its own list, with what is missing said out loud.
-      if (s.source === 'unknown-policy') {
-        unresolved.push({
-          ...row, claimDate: date, gross: s.gross,
-          reason: 'السياسة التاريخية غير مهيأة ولا يوجد مبلغ ضريبة مثبت على الفاتورة',
-        });
-        continue;
-      }
-      eligible.push({ ...row, claimDate: date, gross: s.gross, net: s.net, tax: s.vat, taxSource: s.source });
+      unresolved.push({
+        ...row, sourceKey: key, claimDate: date,
+        // The RECORDED amount, which is a fact — only the split is unknown.
+        // It is what the report totals as «قيمة الفواتير غير المحدَّدة», so a
+        // null here would report the exposure as nothing.
+        gross: round2(Number(row.amount) || 0),
+        reason: s.refused,
+      });
       continue;
     }
 
-    // A reject with a date belongs to that date's period. A reject WITHOUT
-    // one belongs to no period at all, so it is shown in every view: an
-    // invoice that can never be claimed anywhere must not disappear just
-    // because a period is selected — that silence is what let a dateless
-    // recurring cost be multiplied by three in the first place.
+    // ── deductible:false لا يدخل eligible ولا input.tax ──
+    // Whatever the reason — not registered on the invoice's date, excluded by
+    // hand, an incomplete document — the row is listed with that reason and
+    // its tax is NOT claimed. A zero-rated supply is the one case that is
+    // genuinely eligible and simply bears no tax.
+    if (!s.deductible && s.noInputVatReason !== 'zero-rated') {
+      if (outsidePeriod) continue;
+      const missing = s.missing?.length
+        ? s.missing
+        : [NO_INPUT_VAT_LABEL[s.noInputVatReason] || 'غير مؤهلة للخصم'];
+      ineligible.push({
+        ...row, sourceKey: key, claimDate: date, missing,
+        noInputVatReason: s.noInputVatReason || null,
+        // What the document bore, so the report can total the tax being given
+        // up rather than showing the loss as nothing.
+        documentVat: s.documentVat ?? 0,
+        posted: Boolean(fromLedger),
+      });
+      continue;
+    }
+
+    // A dateless purchase can never be claimed in any period, so it is shown
+    // in every view rather than vanishing when one is selected — that silence
+    // is what let a dateless recurring cost be multiplied by three.
+    if (!date) {
+      ineligible.push({
+        ...row, sourceKey: key, claimDate: '', missing: ['تاريخ الفاتورة'],
+        noInputVatReason: 'incomplete-invoice', documentVat: s.documentVat ?? 0,
+        posted: Boolean(fromLedger),
+      });
+      continue;
+    }
     if (outsidePeriod) continue;
-    ineligible.push({ ...row, claimDate: date, missing });
+    eligible.push({
+      ...row, sourceKey: key, claimDate: date,
+      gross: s.gross, net: s.net, tax: s.vat, taxSource: s.source,
+      posted: Boolean(fromLedger),
+    });
   }
 
   const inputTax = round2(eligible.reduce((sum, r) => sum + r.tax, 0));
   const inputGross = round2(eligible.reduce((sum, r) => sum + r.gross, 0));
   const inputNet = round2(eligible.reduce((sum, r) => sum + r.net, 0));
-  const forfeitedTax = round2(ineligible.reduce(
-    (sum, r) => sum + inputInvoiceTax(r, { policyAt, rate }).vat, 0,
-  ));
+  // What the rejected documents bore, so the report can say what is being
+  // given up. `documentVat` is the figure the engine already resolved for each
+  // one — not a second pricing pass that might disagree with the first.
+  const forfeitedTax = round2(ineligible.reduce((sum, r) => sum + (Number(r.documentVat) || 0), 0));
 
   // ── ضريبة المخرجات: الدفاتر هي المصدر ──
   // The posted movement on 2100 already contains everything: the washes that
@@ -439,8 +575,8 @@ export function buildVatReport({
   // Eligible purchases the ledger has never seen. These are exactly the rows
   // that make the two input figures disagree, so the report names them rather
   // than leaving the user to hunt for the difference.
-  const posted = postedSourceIds(entries);
-  const unpostedEligible = eligible.filter((r) => !posted.has(String(r.id)));
+  const posted = postedSourceKeys(entries);
+  const unpostedEligible = eligible.filter((r) => !posted.has(r.sourceKey));
   const unpostedInputTax = round2(unpostedEligible.reduce((sum, r) => sum + r.tax, 0));
 
   const netTax = round2(output.tax - inputTax);

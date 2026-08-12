@@ -207,3 +207,42 @@ export function buildReversalLines(lines) {
 export function postingLockId(kind, sourceId) {
   return `${kind}__${sourceId}`;
 }
+
+/**
+ * ما يُكتب على عدّاد القيود مع كل ترحيل — including the ledger's OLDEST date.
+ *
+ * `counters/journal` is already read and written by every transaction that
+ * creates an entry, so carrying `earliestEntryDate` on it costs no extra read
+ * and — this is the point — makes the bound move ATOMICALLY with the posting
+ * that moves it.
+ *
+ * It lives HERE, in the module both writers import, because the guarantee is
+ * only as good as its least careful caller. `ledger.js` used it and
+ * `invoicing.js` did not: issuing a standalone invoice, voiding a document and
+ * correcting one all create entries, and all three advanced `nextNumber` while
+ * leaving `earliestEntryDate` untouched. A 2019 standalone invoice therefore
+ * never lowered the bound, and `seedTaxPolicy` could accept a 2026 baseline
+ * over books that began in 2019 — the exact hole the guard exists to close,
+ * left open on three of the six paths that can open it.
+ *
+ * `seedTaxPolicy` needs that. It must refuse a baseline later than the oldest
+ * entry, and it used to answer the question with a collection scan taken
+ * BEFORE its transaction opened: an entry posted in the gap was invisible, the
+ * seed was accepted, and a month sat in the books with no policy able to
+ * explain it. Reading this one document inside the seed's transaction puts the
+ * two in direct conflict, so one of them retries and sees the other.
+ *
+ * `min`, never overwrite: posting a 2024 entry today must lower the bound;
+ * posting a 2026 one must leave it alone.
+ */
+export function journalCounterUpdate(counterSnap, nextNumber, entryDate, FieldValue) {
+  const iso = String(entryDate || '').slice(0, 10);
+  const known = counterSnap?.exists ? String(counterSnap.data().earliestEntryDate || '') : '';
+  const valid = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d);
+  const earliest = valid(iso) && (!valid(known) || iso < known) ? iso : (valid(known) ? known : null);
+  return {
+    nextNumber: nextNumber + 1,
+    ...(earliest ? { earliestEntryDate: earliest } : {}),
+    updatedAt: FieldValue.serverTimestamp(),
+  };
+}

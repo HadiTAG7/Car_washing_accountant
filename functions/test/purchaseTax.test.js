@@ -21,7 +21,9 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { initializeApp, deleteApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
-import { postSource, seedChartOfAccounts, COL } from '../src/ledger.js';
+import {
+  postSource, reverseEntry, closePeriod, seedChartOfAccounts, COL,
+} from '../src/ledger.js';
 import { ADAPTERS } from '../src/posting.js';
 import {
   resolvePurchaseTax, PurchaseTaxError, PURCHASE_TAX_SOURCE, NO_INPUT_VAT,
@@ -99,7 +101,8 @@ const SOURCES = {
   monthly: (amount, o = {}) => ['monthly_expenses', {
     expense_name: 'إيجار', category_id: null, quantity: 1, unit_cost: amount,
     total_monthly_cost: amount, recurrence: 'one_time',
-    logged_date: o.recordDate || '2026-03-15', payment_status: 'paid',
+    logged_date: o.recordDate || '2026-03-15',
+    payment_status: o.paymentStatus === 'unpaid' ? 'pending' : 'paid',
     ...TAX_FIELDS(o),
   }],
   variable: (amount, o = {}) => ['variable_expenses', {
@@ -120,7 +123,7 @@ const SOURCES = {
   voucher: (amount, o = {}) => ['expense_vouchers', {
     templateId: 't1', templateName: 'إيجار', periodKey: '2026-03',
     dueDate: o.recordDate || '2026-03-15', quantity: 1, unitCost: amount, amount,
-    status: 'active', paymentStatus: 'paid',
+    status: 'active', paymentStatus: o.paymentStatus === 'unpaid' ? 'pending' : 'paid',
     isTaxInvoice: o.isTaxInvoice !== false,
     invoiceNumber: 'invoiceNumber' in o ? o.invoiceNumber : 'INV-100',
     invoiceDate: 'invoiceDate' in o ? o.invoiceDate : '2026-03-10',
@@ -147,17 +150,31 @@ async function post(kind, amount, o = {}) {
   const res = await postSource(db, FieldValue, { kind, sourceId: id }, { userId: 'u1' });
   const snap = await db.collection(COL.ENTRIES).doc(res.entryId).get();
   const entry = snap.data();
-  const on = (code, side) => Math.round(entry.lines
+  // A purchase whose invoice and payment fall on different days posts TWO
+  // entries. The assertions below read them together, because "what did this
+  // purchase do to the books" is a question about the pair.
+  const settlementEntry = res.settlementEntryId
+    ? (await db.collection(COL.ENTRIES).doc(res.settlementEntryId).get()).data()
+    : null;
+  const allLines = [...entry.lines, ...(settlementEntry?.lines || [])];
+  const on = (code, side) => Math.round(allLines
     .filter((l) => String(l.accountId) === code)
     .reduce((s, l) => s + (Number(l[side]) || 0), 0) * 100) / 100;
   return {
+    res,
     entry,
-    lines: entry.lines,
+    settlementEntry,
+    lines: allLines,
+    accrualLines: entry.lines,
     snapshot: entry.purchaseTaxSnapshot,
     inputVat: on('1200', 'debit'),
     expense: on(EXPENSE_ACCOUNT[kind], 'debit'),
-    settlement: on('1010', 'credit') + on('2000', 'credit') + on('1020', 'credit'),
-    vatLine: entry.lines.find((l) => String(l.accountId) === '1200') || null,
+    // What the purchase ultimately settled against. With a split, the payable
+    // is debited and credited by the same figure and nets to nothing, so the
+    // cash side is what remains.
+    settlement: on('1010', 'credit') + on('2000', 'credit') + on('1020', 'credit')
+      - on('2000', 'debit'),
+    vatLine: allLines.find((l) => String(l.accountId) === '1200') || null,
   };
 }
 
@@ -412,8 +429,12 @@ d('محرك ضريبة المشتريات عبر postSource الحقيقي', () 
   // ═══ السند يُؤرَّخ بـ dueDate، لا بحقل غير موجود ═════════════════════
   it('السند المتكرر يُقرأ تاريخه من dueDate فيُحلّ سياسته', async () => {
     await policy(KSA_HISTORY);
+    // Invoice 10 March, due 20 March: the accrual carries the invoice's date
+    // and the payment carries the due date. Reading `due_date` here returned
+    // '' for every voucher ever generated, so neither date was right.
     const r = await post('voucher', 115, { recordDate: '2026-03-20' });
-    expect(r.entry.entryDate).toBe('2026-03-20');
+    expect(r.entry.entryDate).toBe('2026-03-10');
+    expect(r.settlementEntry.entryDate).toBe('2026-03-20');
     expect(ADAPTERS.voucher.dateOf({ dueDate: '2026-03-20' })).toBe('2026-03-20');
   });
 });
@@ -589,5 +610,277 @@ describe('resolvePurchaseTax — القواعد بذاتها', () => {
       .toBe('ضريبة مدخلات 5% — نسبة مثبتة على الفاتورة');
     expect(inputVatLineDescription({ source: 'policy', rate: 0.15, policyEffectiveFrom: '2020-07-01' }))
       .toBe('ضريبة مدخلات 15% — سياسة 2020-07-01');
+  });
+});
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// الدفاتر والتقرير على قرار واحد
+// ═══════════════════════════════════════════════════════════════════════════
+// `functions/src/posting.js` used the shared engine and
+// `src/lib/accounting/vatReturn.js` did not: it kept its own copy of the
+// priority, never looked at `vatRegistered` on the invoice's date at all, and
+// never read the `purchaseTaxSnapshot` the server had frozen onto the entry.
+// So the two could — and did — answer the same question differently, and the
+// report was the one a return gets filed from.
+//
+// These drive BOTH sides of each case from the same records.
+d('الدفاتر والتقرير يقولان الشيء نفسه', () => {
+  beforeAll(async () => {
+    app = initializeApp({ projectId: 'demo-sweater-vat-parity' }, 'vat-parity-test');
+    db = getFirestore(app);
+  }, 60_000);
+  afterAll(async () => { if (app) await deleteApp(app); });
+  beforeEach(async () => {
+    await wipe();
+    await seedChartOfAccounts(db, FieldValue, CHART, { userId: 'u1' });
+  }, 60_000);
+
+  /** The report, built from what is actually in Firestore. */
+  async function report({ rows, history, period = '', filing = 'quarterly' }) {
+    const { buildVatReport } = await import('../../src/lib/accounting/vatReturn.js');
+    const { taxPolicyAt } = await import('../../src/lib/accounting/taxPolicy.js');
+    const snap = await db.collection(COL.ENTRIES).get();
+    const entries = snap.docs.map((x) => ({ id: x.id, ...x.data() }));
+    const lines = entries.flatMap((e) => (e.lines || []).map((l, i) => ({ ...l, id: `${e.id}-${i}`, entryId: e.id })));
+    return buildVatReport({
+      inputs: rows, entries, lines, period, filing,
+      policyAt: (date) => taxPolicyAt(date, { taxPolicyHistory: history }),
+    });
+  }
+
+  /** The report row for a purchase, in the shape `useTaxInvoices` produces. */
+  const ROW = (id, kind, over = {}) => ({
+    id, sourceKind: kind, source: kind, parentId: id,
+    description: 'مواد', isTaxInvoice: true, amount: 115,
+    invoiceNumber: 'INV-100', invoiceDate: '2026-03-10', supplier: 'مؤسسة النور',
+    vatAmount: null, vatRate: null, priceMode: 'inclusive', vatDeductible: true,
+    ...over,
+  });
+
+  // ═══ غير مسجّل بتاريخ الفاتورة ═══════════════════════════════════════
+  const NOT_REGISTERED = [{
+    effectiveFrom: '2026-01-01', vatRegistered: false,
+    washPriceMode: 'inclusive', vatRate: 0.15, baseline: true,
+  }];
+
+  it('منشأة غير مسجّلة بتاريخ الفاتورة: لا 1200 في الدفاتر ولا خصم في التقرير', async () => {
+    await policy(NOT_REGISTERED);
+    // amount=115 · vatAmount=15 · inclusive · invoiceDate=2026-03-10
+    const posted = await post('variable', 115, { vatAmount: 15 });
+
+    // ── الخادم ──
+    expect(posted.lines.some((l) => String(l.accountId) === '1200')).toBe(false);
+    expect(posted.expense).toBe(115);
+    expect(posted.settlement).toBe(115);
+    expect(posted.snapshot).toMatchObject({
+      deductible: false, noInputVatReason: 'not-registered', vat: 0, documentVat: 15,
+    });
+
+    // ── التقرير، على السجل نفسه ──
+    const r = await report({
+      rows: [ROW('variable-x', 'variable', { vatAmount: 15 })],
+      history: NOT_REGISTERED, period: '2026-Q1',
+    });
+    expect(r.eligible).toHaveLength(0);
+    expect(r.input.tax).toBe(0);
+    expect(r.ineligible).toHaveLength(1);
+    expect(r.ineligible[0].noInputVatReason).toBe('not-registered');
+    expect(r.ineligible[0].missing).toEqual(['المنشأة غير مسجّلة ضريبياً بتاريخ الفاتورة']);
+    // …وما فُقد يُقال: 15 دُفعت للمورّد ولا تُستردّ.
+    expect(r.forfeitedTax).toBe(15);
+  });
+
+  // ═══ سياسة غير معروفة مع مبلغ مكتوب ══════════════════════════════════
+  const LATE_BASELINE = [{
+    effectiveFrom: '2026-06-01', vatRegistered: true,
+    washPriceMode: 'inclusive', vatRate: 0.15, baseline: true,
+  }];
+
+  it('سياسة غير معروفة ومبلغ مكتوب: الخادم يرفض والتقرير يعرضها unresolved ولا يخصم 15', async () => {
+    await policy(LATE_BASELINE);
+    // The PAYMENT falls inside the recorded policy — so the poster's outer
+    // guard passes and the refusal comes from the engine, on the INVOICE's
+    // date, which is the boundary being tested.
+    // ── الخادم ──
+    await expect(post('variable', 115, {
+      vatAmount: 15, invoiceDate: '2026-03-10', recordDate: '2026-06-15',
+    })).rejects.toThrow(/التسجيل الضريبي/);
+    expect((await db.collection(COL.ENTRIES).get()).size).toBe(0);
+    expect((await db.collection(COL.LOCKS).get()).size).toBe(0);
+
+    // ── التقرير ──
+    const r = await report({
+      rows: [ROW('variable-y', 'variable', { vatAmount: 15, spentDate: '2026-06-15' })],
+      history: LATE_BASELINE, period: '2026-Q1',
+    });
+    expect(r.input.tax).toBe(0);
+    expect(r.eligible).toHaveLength(0);
+    expect(r.unresolvedCount).toBe(1);
+    expect(r.unresolved[0].reason).toMatch(/التسجيل الضريبي/);
+    expect(r.policyUnconfigured).toBe(true);
+  });
+
+  // ═══ التقرير يقرأ اللقطة المُثبَّتة، لا السجل الخام ═══════════════════
+  it('التقرير يقرأ purchaseTaxSnapshot من القيد الحي — فتغيير السجل بعده لا يحرّك الإقرار', async () => {
+    await policy(KSA_HISTORY);
+    const posted = await post('variable', 105, { vatRate: 0.05 });
+    expect(posted.inputVat).toBe(5);
+    const id = posted.entry.sourceId;
+
+    // The operational row is then edited to claim 15% — as a user might, or a
+    // migration. The FILED figure must not move: it is what the books hold.
+    const rows = [ROW(id, 'variable', { amount: 105, vatRate: 0.15, invoiceDate: '2026-03-10' })];
+    const r = await report({ rows, history: KSA_HISTORY, period: '2026-Q1' });
+    expect(r.eligible).toHaveLength(1);
+    expect(r.eligible[0].posted).toBe(true);
+    expect(r.input.tax).toBe(5);              // NOT 13.70
+    expect(r.ledgerInput.tax).toBe(5);
+    expect(r.inputMismatch).toBe(0);
+  });
+
+  // ═══ فاتورة مارس مدفوعة في أبريل ═════════════════════════════════════
+  // The invariant the split exists for: the report's tax for a period equals
+  // the movement on 1200 in that same period, while the cash still moves on
+  // the day it actually moved.
+  it('فاتورة 2026-03-31 مدفوعة 2026-04-02: الضريبة والدفاتر كلاهما في Q1، والنقد في Q2', async () => {
+    await policy(KSA_HISTORY);
+    const posted = await post('variable', 115, {
+      invoiceDate: '2026-03-31', recordDate: '2026-04-02', vatAmount: 15,
+    });
+
+    // قيدان: إثبات الفاتورة في مارس، والسداد في أبريل.
+    expect(posted.entry.entryDate).toBe('2026-03-31');
+    expect(posted.entry.periodKey).toBe('2026-03');
+    expect(posted.settlementEntry.entryDate).toBe('2026-04-02');
+    expect(posted.settlementEntry.periodKey).toBe('2026-04');
+    // الضريبة والمصروف والذمة في مارس.
+    const march = posted.accrualLines;
+    expect(march.find((l) => l.accountId === '1200').debit).toBe(15);
+    expect(march.find((l) => l.accountId === '5100').debit).toBe(100);
+    expect(march.find((l) => l.accountId === '2000').credit).toBe(115);
+    // والنقد في أبريل — لا يتحرك الصندوق في مارس.
+    const april = posted.settlementEntry.lines;
+    expect(april.find((l) => l.accountId === '2000').debit).toBe(115);
+    expect(april.find((l) => l.accountId === '1010').credit).toBe(115);
+    expect(march.some((l) => l.accountId === '1010')).toBe(false);
+
+    const rows = [ROW(posted.entry.sourceId, 'variable', {
+      amount: 115, vatAmount: 15, invoiceDate: '2026-03-31', spentDate: '2026-04-02',
+    })];
+    const q1 = await report({ rows, history: KSA_HISTORY, period: '2026-Q1' });
+    const q2 = await report({ rows, history: KSA_HISTORY, period: '2026-Q2' });
+
+    // ── الثابت المطلوب ──
+    expect(q1.input.tax).toBe(15);
+    expect(q1.ledgerInput.tax).toBe(15);      // كان 0 — والفارق هو الثغرة كلها
+    expect(q1.inputMismatch).toBe(0);
+    expect(q2.input.tax).toBe(0);
+    expect(q2.ledgerInput.tax).toBe(0);       // كان 15
+    expect(q2.inputMismatch).toBe(0);
+  });
+
+  it('وحين يقع التاريخان في اليوم نفسه يبقى قيد واحد كما كان', async () => {
+    await policy(KSA_HISTORY);
+    const posted = await post('variable', 115, {
+      invoiceDate: '2026-03-15', recordDate: '2026-03-15', vatAmount: 15,
+    });
+    expect(posted.settlementEntry).toBeNull();
+    expect(posted.res.settlementEntryId).toBeUndefined();
+    expect(posted.accrualLines.find((l) => l.accountId === '1010').credit).toBe(115);
+  });
+
+  it('والمصروف غير المسدَّد يبقى ذمةً بلا قيد سداد', async () => {
+    await policy(KSA_HISTORY);
+    const posted = await post('monthly', 115, {
+      invoiceDate: '2026-03-31', recordDate: '2026-04-02', vatAmount: 15,
+      paymentStatus: 'unpaid',
+    });
+    expect(posted.settlementEntry).toBeNull();
+    expect(posted.accrualLines.find((l) => l.accountId === '2000').credit).toBe(115);
+  });
+
+  // ═══ الإقفال والعكس والقفل مع قيدين ══════════════════════════════════
+  it('فترة السداد المقفلة تمنع الترحيل كله — لا نصف عملية في الدفاتر', async () => {
+    await policy(KSA_HISTORY);
+    await db.collection(COL.PERIODS).doc('2026-04').set({ periodKey: '2026-04', status: 'closed' });
+    await expect(post('variable', 115, {
+      invoiceDate: '2026-03-31', recordDate: '2026-04-02', vatAmount: 15,
+    })).rejects.toThrow(/الفترة 2026-04 مقفلة/);
+    // ولا قيد إثبات وحده، ولا قفل.
+    expect((await db.collection(COL.ENTRIES).get()).size).toBe(0);
+    expect((await db.collection(COL.LOCKS).get()).size).toBe(0);
+  });
+
+  it('وفترة الفاتورة المقفلة تمنعه كذلك', async () => {
+    await policy(KSA_HISTORY);
+    await db.collection(COL.PERIODS).doc('2026-03').set({ periodKey: '2026-03', status: 'closed' });
+    await expect(post('variable', 115, {
+      invoiceDate: '2026-03-31', recordDate: '2026-04-02', vatAmount: 15,
+    })).rejects.toThrow(/الفترة 2026-03 مقفلة/);
+    expect((await db.collection(COL.ENTRIES).get()).size).toBe(0);
+  });
+
+  it('وعكس قيد الفاتورة يعكس معه قيد السداد ويفكّ القفل مرة واحدة', async () => {
+    await policy(KSA_HISTORY);
+    const posted = await post('variable', 115, {
+      invoiceDate: '2026-03-31', recordDate: '2026-04-02', vatAmount: 15,
+    });
+    const lockId = (await db.collection(COL.LOCKS).get()).docs[0].id;
+    expect(lockId).toBe(`variable__${posted.entry.sourceId}`);
+
+    const rev = await reverseEntry(db, FieldValue, posted.res.entryId, {
+      entryDate: '2026-05-01', userId: 'u1',
+    });
+    expect(rev.lockReleased).toBe(true);
+    expect(rev.reversedSettlementEntryId).toBe(posted.res.settlementEntryId);
+
+    const all = (await db.collection(COL.ENTRIES).get()).docs.map((x) => ({ id: x.id, ...x.data() }));
+    // Both originals reversed, both mirrors written — a payment standing
+    // against a liability that no longer exists would be a permanent debit on
+    // 2000 that nothing explains.
+    expect(all.filter((e) => e.status === 'reversed')).toHaveLength(2);
+    expect(all.filter((e) => e.reversalOf)).toHaveLength(2);
+    const net = (code) => Math.round(all
+      .filter((e) => e.status === 'posted' || e.status === 'reversed')
+      .flatMap((e) => e.lines || [])
+      .filter((l) => String(l.accountId) === code)
+      .reduce((s, l) => s + (Number(l.debit) || 0) - (Number(l.credit) || 0), 0) * 100) / 100;
+    expect(net('1200')).toBe(0);
+    expect(net('2000')).toBe(0);
+    expect(net('1010')).toBe(0);
+    expect(net('5100')).toBe(0);
+
+    // …والسجل صار حراً لإعادة الترحيل.
+    expect((await db.collection(COL.LOCKS).get()).size).toBe(0);
+  });
+
+  it('وعكس قيد السداد وحده مسموح ولا يفكّ قفل الفاتورة', async () => {
+    await policy(KSA_HISTORY);
+    const posted = await post('variable', 115, {
+      invoiceDate: '2026-03-31', recordDate: '2026-04-02', vatAmount: 15,
+    });
+    const rev = await reverseEntry(db, FieldValue, posted.res.settlementEntryId, {
+      entryDate: '2026-05-01', userId: 'u1',
+    });
+    // A payment made in error while the invoice still stands.
+    expect(rev.lockReleased).toBe(false);
+    expect(rev.lockRetained).toBe(true);
+    expect((await db.collection(COL.LOCKS).get()).size).toBe(1);
+    // ثم عكس الفاتورة لا يحاول عكس سداد معكوس بالفعل.
+    const second = await reverseEntry(db, FieldValue, posted.res.entryId, {
+      entryDate: '2026-05-01', userId: 'u1',
+    });
+    expect(second.reversedSettlementEntryId).toBeUndefined();
+    expect(second.lockReleased).toBe(true);
+  });
+
+  it('وإقفال مارس ينجح بقيد الفاتورة وحده — الشهران متوازنان كلٌّ بذاته', async () => {
+    await policy(KSA_HISTORY);
+    await post('variable', 115, {
+      invoiceDate: '2026-03-31', recordDate: '2026-04-02', vatAmount: 15,
+    });
+    await expect(closePeriod(db, FieldValue, '2026-03', { userId: 'u1' })).resolves.toBeTruthy();
+    await expect(closePeriod(db, FieldValue, '2026-04', { userId: 'u1' })).resolves.toBeTruthy();
   });
 });

@@ -16,8 +16,6 @@
     "test:callables": "firebase emulators:exec --only firestore,functions,auth --project demo-sweater --config firebase.test.json \"vitest run --testTimeout=180000 --dir functions callables\""
   },
   "dependencies": {
-    "@capacitor/android": "^8.4.2",
-    "@capacitor/cli": "^8.4.2",
     "@capacitor/core": "^8.4.2",
     "firebase": "^12.16.0",
     "qrcode-generator": "^2.0.4",
@@ -25,6 +23,8 @@
     "react-dom": "^19.2.4"
   },
   "devDependencies": {
+    "@capacitor/android": "^8.4.2",
+    "@capacitor/cli": "^8.4.2",
     "@eslint/js": "^9.39.4",
     "@firebase/rules-unit-testing": "^5.0.1",
     "@tailwindcss/vite": "^4.2.2",
@@ -34,7 +34,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
     "eslint": "^9.39.4",
-    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-hooks": "7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "firebase-admin": "^13.10.0",
     "firebase-tools": "^15.26.0",

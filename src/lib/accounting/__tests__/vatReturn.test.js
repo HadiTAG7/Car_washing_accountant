@@ -2,16 +2,25 @@ import { describe, it, expect } from 'vitest';
 import {
   periodKeyFor, periodLabel, periodRange, currentPeriodKey,
   inputInvoiceEligibility, claimDateOf, outputTaxFromWashes, outputTaxFromLedger,
-  inputTaxFromLedger, postedSourceIds, buildVatReport, availablePeriods,
-  inputInvoiceTax, washEntryTax,
+  inputTaxFromLedger, postedSourceKeys, sourceKeyOf, buildVatReport, availablePeriods,
+  inputInvoiceTax, washEntryTax, purchaseEntryTax,
 } from '../vatReturn';
 import { taxPolicyAt } from '../taxPolicy';
 
-/** A complete, deductible purchase invoice. */
+/**
+ * A complete, deductible purchase invoice — WITH its own rate stated.
+ *
+ * It used to state neither an amount nor a rate and rely on the report
+ * defaulting to 15%. That default is gone: the engine refuses to price a
+ * document nothing can price rather than assuming the current standard rate,
+ * so a fixture that wants 15% now says 15% — which is also what every record
+ * saved through the form carries.
+ */
 const INVOICE = {
   id: 'i1', description: 'مواد تنظيف', amount: 1150, isTaxInvoice: true,
   invoiceNumber: 'S-4417', invoiceDate: '2026-08-03', supplier: 'مؤسسة النور',
-  source: 'variable', parentId: 'p1',
+  vatAmount: null, vatRate: 0.15, priceMode: 'inclusive',
+  source: 'variable', sourceKind: 'variable', parentId: 'p1',
 };
 
 const WASH = (over = {}) => ({
@@ -109,7 +118,8 @@ describe('المصروف المتكرر لا يُضرب في عدد أشهر ا�
   const RECURRING = {
     id: 'm1', description: 'إيجار المحل', amount: 5000, isTaxInvoice: true,
     spentDate: '', invoiceNumber: '', supplier: '', recurring: true,
-    source: 'monthly', parentId: 'm1',
+    vatAmount: null, vatRate: 0.15, priceMode: 'inclusive',
+    source: 'monthly', sourceKind: 'monthly', parentId: 'm1',
   };
 
   it('لا يُخصم شيء من مصروف متكرر بلا فاتورة', () => {
@@ -214,7 +224,13 @@ describe('ضريبة المخرجات من الدفاتر — تحقّق مست�
 describe('مطابقة ضريبة المدخلات مع حساب 1200', () => {
   const INV = { ...INVOICE, id: 'i1', amount: 1150 };   // 150 tax
   const entries = [
-    { id: 'e1', status: 'posted', entryDate: '2026-08-03', sourceType: 'expense', sourceId: 'i1' },
+    // `sourceKind` is what `postSource` writes, and it is what identifies the
+    // COLLECTION the record came from. Without it a variable expense and a
+    // monthly one with the same id are the same record to every reader.
+    {
+      id: 'e1', status: 'posted', entryDate: '2026-08-03',
+      sourceType: 'expense', sourceKind: 'variable', sourceId: 'i1',
+    },
   ];
   const lines = [
     // Input VAT is an ASSET: it grows on the DEBIT side.
@@ -256,8 +272,11 @@ describe('مطابقة ضريبة المدخلات مع حساب 1200', () => {
   });
 
   it('يعرف أي المصادر مُرحّلة', () => {
-    expect([...postedSourceIds(entries)]).toEqual(['i1']);
-    expect(postedSourceIds([{ id: 'x', status: 'reversed', sourceId: 'z' }]).size).toBe(0);
+    // The KEY is `kind__id`, never the bare id — five collections post with
+    // `sourceType: 'expense'` and their ids are independent.
+    expect([...postedSourceKeys(entries)]).toEqual(['variable__i1']);
+    expect(postedSourceKeys([{ id: 'x', status: 'reversed', sourceId: 'z' }]).size).toBe(0);
+    expect(sourceKeyOf('voucher', 't1__2026-01')).toBe('voucher__t1__2026-01');
   });
 });
 
@@ -427,12 +446,12 @@ describe('فحص المخرجات التشغيلي يتبع تاريخه', () =>
 
 describe('ضريبة المدخلات من الفاتورة نفسها', () => {
   it('المبلغ الصريح على الفاتورة يسبق كل نسبة', () => {
-    const r = inputInvoiceTax({ ...INVOICE, amount: 1150, vatAmount: 143.75 });
-    expect(r).toMatchObject({ gross: 1150, net: 1006.25, vat: 143.75, source: 'invoice' });
+    const r = inputInvoiceTax({ ...INVOICE, amount: 1150, vatAmount: 143.75, vatRate: null });
+    expect(r).toMatchObject({ gross: 1150, net: 1006.25, vat: 143.75, source: 'invoice-amount' });
   });
 
   it('ثم النسبة المثبتة على الفاتورة — 5% تبقى 5%', () => {
-    const r = inputInvoiceTax({ ...INVOICE, amount: 105, vatRate: 0.05 });
+    const r = inputInvoiceTax({ ...INVOICE, amount: 105, vatRate: 0.05, vatAmount: null });
     expect(r).toMatchObject({ net: 100, vat: 5, source: 'invoice-rate' });
   });
 
@@ -445,7 +464,7 @@ describe('ضريبة المدخلات من الفاتورة نفسها', () => {
       ],
     };
     const r = inputInvoiceTax(
-      { ...INVOICE, amount: 105, invoiceDate: '2020-03-01' },
+      { ...INVOICE, amount: 105, invoiceDate: '2020-03-01', vatRate: null },
       { policyAt: (d) => taxPolicyAt(d, settings) },
     );
     expect(r).toMatchObject({ net: 100, vat: 5, source: 'policy' });
@@ -457,10 +476,12 @@ describe('ضريبة المدخلات من الفاتورة نفسها', () => {
       taxPolicyHistory: [{ effectiveFrom: '2026-01-01', vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15, baseline: true }],
     };
     const r = inputInvoiceTax(
-      { ...INVOICE, amount: 115, invoiceDate: '2025-06-01' },
+      { ...INVOICE, amount: 115, invoiceDate: '2025-06-01', vatRate: null },
       { policyAt: (d) => taxPolicyAt(d, settings) },
     );
-    expect(r).toMatchObject({ vat: 0, source: 'unknown-policy' });
+    // Not «a zero-VAT purchase»: a REFUSAL, carrying the engine's own reason.
+    expect(r).toMatchObject({ vat: 0, gross: null, source: 'unresolved' });
+    expect(r.refused).toMatch(/تعذّر تحديد ضريبة الفاتورة/);
   });
 
   it('والتقرير يحافظ على مبلغ ضريبة فاتورة بنسبة تاريخية مختلفة', () => {
@@ -488,48 +509,68 @@ describe('الفواتير التي لا يمكن تسعير ضريبتها', ()
 
   it('فاتورة قبل الـbaseline بلا حقول ضريبية تظهر unresolved لا eligible', () => {
     const report = buildVatReport({
-      inputs: [{ ...INVOICE, id: 'old', amount: 115, invoiceDate: '2025-06-01' }],
+      inputs: [{ ...INVOICE, id: 'old', amount: 115, vatRate: null, invoiceDate: '2025-06-01' }],
       period: '2025-Q2', filing: 'quarterly', policyAt,
     });
     expect(report.eligible).toHaveLength(0);
     expect(report.unresolvedCount).toBe(1);
     expect(report.unresolvedGross).toBe(115);
-    expect(report.unresolved[0].reason).toMatch(/السياسة التاريخية غير مهيأة/);
+    // The engine's own words, carried through verbatim — the report does not
+    // paraphrase a refusal it did not make.
+    expect(report.unresolved[0].reason).toMatch(/تعذّر تحديد ضريبة الفاتورة/);
+    expect(report.unresolved[0].reason).toMatch(/ولا تُفترض 15%/);
     // Not deducted, and not silently deducted as zero either.
     expect(report.input.tax).toBe(0);
     expect(report.input.count).toBe(0);
     expect(report.policyUnconfigured).toBe(true);
   });
 
-  it('ونفسها بمبلغ ضريبة صريح تُخصم كما هي', () => {
+  // ── المبلغ المكتوب لا يرفع الجهل بالتسجيل ──
+  // The stated amount answers "how much tax is on the paper". It does not
+  // answer "were we registered that month", and only a registered business
+  // may reclaim. With the record not reaching that date BOTH the ledger and
+  // the report must refuse — deducting 5 on one side while the server refuses
+  // to open 1200 on the other is the disagreement this whole module exists to
+  // remove.
+  it('ومبلغ ضريبة صريح قبل الـbaseline لا يُخصم — التسجيل نفسه مجهول', () => {
     const report = buildVatReport({
-      inputs: [{ ...INVOICE, id: 'old', amount: 115, vatAmount: 5, invoiceDate: '2025-06-01' }],
+      inputs: [{ ...INVOICE, id: 'old', amount: 115, vatAmount: 5, vatRate: null, invoiceDate: '2025-06-01' }],
       period: '2025-Q2', filing: 'quarterly', policyAt,
     });
-    expect(report.unresolvedCount).toBe(0);
-    expect(report.input.tax).toBe(5);
-    expect(report.eligible[0].taxSource).toBe('invoice');
-    expect(report.policyUnconfigured).toBe(false);
+    expect(report.eligible).toHaveLength(0);
+    expect(report.input.tax).toBe(0);
+    expect(report.unresolvedCount).toBe(1);
+    expect(report.unresolved[0].reason).toMatch(/التسجيل الضريبي/);
   });
 
-  it('وبنسبة مثبتة تُخصم بها', () => {
+  it('ونسبة مثبتة قبل الـbaseline كذلك', () => {
     const report = buildVatReport({
-      inputs: [{ ...INVOICE, id: 'old', amount: 105, vatRate: 0.05, invoiceDate: '2025-06-01' }],
+      inputs: [{ ...INVOICE, id: 'old', amount: 105, vatRate: 0.05, vatAmount: null, invoiceDate: '2025-06-01' }],
       period: '2025-Q2', filing: 'quarterly', policyAt,
+    });
+    expect(report.input.tax).toBe(0);
+    expect(report.unresolvedCount).toBe(1);
+  });
+
+  it('…وكلاهما يُخصم فور أن تغطّي السياسة تاريخ الفاتورة', () => {
+    const inside = { ...INVOICE, id: 'new', amount: 115, vatAmount: 5, vatRate: null, invoiceDate: '2026-08-03' };
+    const report = buildVatReport({
+      inputs: [inside], period: '2026-Q3', filing: 'quarterly', policyAt,
     });
     expect(report.unresolvedCount).toBe(0);
     expect(report.input.tax).toBe(5);
-    expect(report.eligible[0].taxSource).toBe('invoice-rate');
+    expect(report.eligible[0].taxSource).toBe('invoice-amount');
+    expect(report.policyUnconfigured).toBe(false);
   });
 
   it('والمبلغ الصريح يتغلب على النسبة المثبتة', () => {
     // 115 at 15% would be 15; the supplier wrote 5, and the supplier is right.
     const report = buildVatReport({
-      inputs: [{ ...INVOICE, id: 'x', amount: 115, vatAmount: 5, vatRate: 0.15, invoiceDate: '2026-08-03' }],
+      inputs: [{ ...INVOICE, id: 'x', amount: 115, vatAmount: 5, vatRate: null, invoiceDate: '2026-08-03' }],
       period: '2026-Q3', filing: 'quarterly', policyAt,
     });
     expect(report.input.tax).toBe(5);
-    expect(report.eligible[0].taxSource).toBe('invoice');
+    expect(report.eligible[0].taxSource).toBe('invoice-amount');
   });
 
   it('وفاتورة 5% تبقى 5% بعد تغيير السياسة إلى 15%', () => {
@@ -553,7 +594,7 @@ describe('الفواتير التي لا يمكن تسعير ضريبتها', ()
     // No washes at all, so the output side has nothing to say — the gap is
     // entirely on the purchase side, and the flag still has to raise it.
     const report = buildVatReport({
-      inputs: [{ ...INVOICE, id: 'old', amount: 115, invoiceDate: '2025-06-01' }],
+      inputs: [{ ...INVOICE, id: 'old', amount: 115, vatRate: null, invoiceDate: '2025-06-01' }],
       washes: [], period: '2025-Q2', filing: 'quarterly', policyAt,
     });
     expect(report.unknownPolicyWashes).toBe(0);
@@ -597,8 +638,12 @@ describe('مبلغ الضريبة: null مقابل صفر صريح', () => {
   it('وصفر صريح — 0 أو "0" — يبقى صفراً من الفاتورة', () => {
     // A zero-rated or exempt supply. The supplier DID answer, and the answer
     // was nil; that is not the same as declining to answer.
-    expect(inputInvoiceTax({ ...ROW, vatAmount: 0 })).toMatchObject({ vat: 0, source: 'invoice' });
-    expect(inputInvoiceTax({ ...ROW, vatAmount: '0' })).toMatchObject({ vat: 0, source: 'invoice' });
+    // Zero-rated: eligible in every respect, and simply bearing no tax — so
+    // no input-VAT asset is opened and the source says why.
+    expect(inputInvoiceTax({ ...ROW, vatAmount: 0, vatRate: null }))
+      .toMatchObject({ vat: 0, gross: 105, net: 105, noInputVatReason: 'zero-rated' });
+    expect(inputInvoiceTax({ ...ROW, vatAmount: '0', vatRate: null }))
+      .toMatchObject({ vat: 0, noInputVatReason: 'zero-rated' });
   });
 
   it('وبلا نسبة على الفاتورة ينتقل إلى سياسة تاريخها', () => {
@@ -617,8 +662,14 @@ describe('مبلغ الضريبة: null مقابل صفر صريح', () => {
     expect(r.vat).toBeCloseTo(13.7, 1);   // 105 inclusive at 15%
   });
 
-  it('ومبلغ صريح أكبر من الإجمالي لا يُخصم — ينتقل إلى النسبة', () => {
-    expect(inputInvoiceTax({ ...ROW, vatAmount: 500 })).toMatchObject({ vat: 5, source: 'invoice-rate' });
+  // ── القيمة الفاسدة تُرفض، ولا يُسقَط عنها إلى النسبة ──
+  // Falling through to the rate looked forgiving and was not: it deducted a
+  // figure the document does not state while the supplier's own — wrong —
+  // number sat in the record unexamined. It is a data error, and it is said.
+  it('ومبلغ صريح أكبر من إجمالي فاتورة شاملة يُرفض ولا يُتجاهل', () => {
+    const r = inputInvoiceTax({ ...ROW, vatAmount: 500 });
+    expect(r).toMatchObject({ vat: 0, source: 'unresolved' });
+    expect(r.refused).toMatch(/أكبر من إجمالي الفاتورة/);
   });
 
   // ── نفس الحالة عبر شكل صف useTaxInvoices إلى التقرير ────────────────
@@ -637,10 +688,110 @@ describe('مبلغ الضريبة: null مقابل صفر صريح', () => {
   });
 
   it('وصف بصفر صريح يُخصم صفراً من مبلغ الفاتورة', () => {
-    const row = { ...ROW, id: 'i1', vatAmount: 0, description: 'معفاة', source: 'variable', parentId: 'p1' };
+    const row = {
+      ...ROW, id: 'i1', vatAmount: 0, vatRate: null, description: 'معفاة',
+      source: 'variable', sourceKind: 'variable', parentId: 'p1',
+    };
     const report = buildVatReport({ inputs: [row], period: '2026-Q3', filing: 'quarterly' });
     expect(report.input.tax).toBe(0);
-    expect(report.eligible[0].taxSource).toBe('invoice');
+    // Eligible in every respect and simply bearing no tax — deducted, at zero,
+    // rather than rejected for a fault it does not have.
+    expect(report.eligible).toHaveLength(1);
+    expect(report.eligible[0].gross).toBe(105);
     expect(report.unresolvedCount).toBe(0);
+  });
+});
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// هوية المصدر: kind__id، لا id وحده
+// ═══════════════════════════════════════════════════════════════════════════
+// Five collections post with `sourceType: 'expense'` and their ids are
+// generated independently, so two records in different collections can share
+// one. `postedSourceIds` keyed on the bare id, which meant posting EITHER of
+// them marked BOTH as posted — the unposted one dropped out of
+// `unpostedEligible`, and the very list whose job is to explain the gap
+// between the claim and the ledger hid the row causing it.
+describe('تصادم المعرّفات بين المجموعات', () => {
+  const AT = (over = {}) => ({
+    isTaxInvoice: true, amount: 115, invoiceNumber: 'INV-1',
+    invoiceDate: '2026-08-03', supplier: 'مورّد',
+    vatAmount: 15, vatRate: null, priceMode: 'inclusive', ...over,
+  });
+  /** A live posted entry for one source, as `postSource` writes it. */
+  const entryFor = (kind, id) => ({
+    id: `e-${kind}`, status: 'posted', entryDate: '2026-08-03',
+    sourceType: 'expense', sourceKind: kind, sourceId: id,
+    purchaseTaxSnapshot: {
+      isTaxInvoice: true, vatDeductible: true, invoiceDate: '2026-08-03',
+      priceMode: 'inclusive', vatRate: null, vatAmount: 15,
+      net: 100, vat: 15, gross: 115, documentVat: 15,
+      source: 'invoice-amount', deductible: true, noInputVatReason: null,
+    },
+  });
+
+  it('شهري ومتغيّر بنفس المعرّف: ترحيل المتغيّر وحده لا يُخفي الشهري', () => {
+    const rows = [
+      { ...AT(), id: 'x1', source: 'monthly', sourceKind: 'monthly', parentId: 'x1' },
+      { ...AT(), id: 'x1', source: 'variable', sourceKind: 'variable', parentId: 'x1' },
+    ];
+    const entries = [entryFor('variable', 'x1')];
+    const r = buildVatReport({ inputs: rows, entries, lines: [], period: '2026-Q3' });
+
+    expect(r.eligible).toHaveLength(2);
+    // The monthly one is still waiting for the books, and the report says so.
+    expect(r.unpostedEligible.map((x) => x.sourceKey)).toEqual(['monthly__x1']);
+    expect(r.unpostedInputTax).toBe(15);
+    expect([...postedSourceKeys(entries)]).toEqual(['variable__x1']);
+  });
+
+  it('وسند دوري وقالبه بنفس المعرّف: السند voucher لا monthly', () => {
+    // `buildVoucher` derives the voucher id from the template's, so a template
+    // id CAN appear as a voucher id in another collection. Tagging the voucher
+    // `monthly` — the badge it wears — made the two one record.
+    const rows = [
+      { ...AT(), id: 't1', source: 'monthly', sourceKind: 'monthly', parentId: 't1' },
+      { ...AT(), id: 't1', source: 'voucher', sourceKind: 'voucher', parentId: 't1' },
+    ];
+    const entries = [entryFor('voucher', 't1')];
+    const r = buildVatReport({ inputs: rows, entries, lines: [], period: '2026-Q3' });
+    expect(r.unpostedEligible.map((x) => x.sourceKey)).toEqual(['monthly__t1']);
+    expect(sourceKeyOf('voucher', 't1')).not.toBe(sourceKeyOf('monthly', 't1'));
+  });
+
+  it('واللقطة تُقرأ للمصدر الصحيح وحده', () => {
+    // The monthly row claims 5% and has no entry; the variable row is posted
+    // at 15% and frozen. Keying on the bare id would hand the monthly row the
+    // variable row's snapshot and report 15 for both.
+    const rows = [
+      { ...AT({ amount: 105, vatAmount: 5 }), id: 'x1', source: 'monthly', sourceKind: 'monthly', parentId: 'x1' },
+      { ...AT(), id: 'x1', source: 'variable', sourceKind: 'variable', parentId: 'x1' },
+    ];
+    const r = buildVatReport({
+      inputs: rows, entries: [entryFor('variable', 'x1')], lines: [], period: '2026-Q3',
+    });
+    const byKey = Object.fromEntries(r.eligible.map((x) => [x.sourceKey, x]));
+    expect(byKey['monthly__x1'].tax).toBe(5);
+    expect(byKey['monthly__x1'].posted).toBe(false);
+    expect(byKey['variable__x1'].tax).toBe(15);
+    expect(byKey['variable__x1'].posted).toBe(true);
+  });
+
+  it('وقيد السداد لا يحمل لقطة، فلا يُحتسب الخصم مرتين', () => {
+    // The payment half of a split purchase carries `settlementOf` and a null
+    // snapshot precisely so a reader summing snapshots cannot count it.
+    const entries = [
+      entryFor('variable', 'x1'),
+      {
+        id: 'e-pay', status: 'posted', entryDate: '2026-09-02',
+        sourceType: 'expense', sourceKind: 'variable', sourceId: 'x1',
+        settlementOf: 'e-variable', purchaseTaxSnapshot: null,
+      },
+    ];
+    const rows = [{ ...AT(), id: 'x1', source: 'variable', sourceKind: 'variable', parentId: 'x1' }];
+    const r = buildVatReport({ inputs: rows, entries, lines: [], period: '2026-Q3' });
+    expect(r.eligible).toHaveLength(1);
+    expect(r.input.tax).toBe(15);
+    expect(purchaseEntryTax(entries[1])).toBeNull();
   });
 });

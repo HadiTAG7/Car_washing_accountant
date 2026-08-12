@@ -50,6 +50,10 @@ const SOURCE_META = {
   annual:  { label: 'سنوي',  cls: 'bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-100 dark:border-amber-500/30' },
   monthly: { label: 'شهري',  cls: 'bg-indigo-50 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-100 dark:border-indigo-500/30' },
   variable:{ label: 'متغيّر', cls: 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700' },
+  // A generated voucher is its own kind — it posts through its own adapter,
+  // is keyed `voucher__<id>`, and carries a real invoice date the template it
+  // came from never had.
+  voucher: { label: 'سند',   cls: 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-100 dark:border-emerald-500/30' },
 };
 function SourceBadge({ source }) {
   const meta = SOURCE_META[source];

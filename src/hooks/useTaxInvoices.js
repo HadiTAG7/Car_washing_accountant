@@ -84,11 +84,17 @@ export function useTaxInvoices() {
   );
 
   const invoices = useMemo(() => {
+    // ── `sourceKind` صريح، لا مشتق من التسمية المعروضة ──
+    // The ledger keys a posted record by `kind__id`, because five collections
+    // share `sourceType: 'expense'` and their ids are independent. The report
+    // has to ask the same question with the same key, so every row states the
+    // adapter kind that posts it — `voucher` for a generated voucher, NOT
+    // `monthly`, which is only the badge it wears.
     const startup = (startupQ.data || []).map((e) => ({
-      ...e, source: 'startup', parentId: e.startupCostId,
+      ...e, source: 'startup', sourceKind: 'startup', parentId: e.startupCostId,
     }));
     const annual = (annualQ.data || []).map((e) => ({
-      ...e, source: 'annual', parentId: e.annualExpenseId,
+      ...e, source: 'annual', sourceKind: 'annual', parentId: e.annualExpenseId,
     }));
     // Monthly expenses: DOUBLE-COUNT GUARD, the same shape as the startup one
     // below. A template that has generated dated vouchers is represented by
@@ -115,6 +121,7 @@ export function useTaxInvoices() {
         isTaxInvoice: true,
         createdAt:   m.loggedDate || '',
         source:      'monthly',
+        sourceKind:  'monthly',
         parentId:    m.id,
         recurring:   m.recurrence !== 'one_time',
       }));
@@ -137,7 +144,12 @@ export function useTaxInvoices() {
         vatDeductible: v.vatDeductible !== false,
         isTaxInvoice: true,
         createdAt:    v.generatedAtIso || v.dueDate || '',
-        source:       'monthly',
+        // The badge says «سند» and the KEY says `voucher` — the adapter that
+        // posts it. Tagging a voucher `monthly` made it collide in the posted
+        // set with the template it came from, whose id is a different id in a
+        // different collection.
+        source:       'voucher',
+        sourceKind:   'voucher',
         parentId:     v.templateId,
       }));
     // Variable expenses are one-off logged events, so they always carry a
@@ -159,6 +171,7 @@ export function useTaxInvoices() {
       isTaxInvoice: true,
       createdAt:    v.loggedDate || '',
       source:       'variable',
+      sourceKind:   'variable',
       parentId:     v.id,
     }));
     // Startup items: DOUBLE-COUNT GUARD. An item managed by the sub-ledger
@@ -187,6 +200,7 @@ export function useTaxInvoices() {
         isTaxInvoice: true,
         createdAt:    i.createdAt || '',
         source:       'startup',
+        sourceKind:   'startup',
         parentId:     i.id,
       }));
     return [...startup, ...startupItems, ...annual, ...monthly, ...vouchers, ...variable]

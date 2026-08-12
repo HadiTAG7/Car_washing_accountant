@@ -28,6 +28,7 @@ import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { initializeApp, deleteApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { postEntry, seedChartOfAccounts, COL } from '../src/ledger.js';
+import { issueDocument, voidDocument } from '../src/invoicing.js';
 import { seedTaxPolicy, earliestEntryDateIn } from '../src/accountingSettings.js';
 
 const EMU = process.env.FIRESTORE_EMULATOR_HOST;
@@ -40,7 +41,7 @@ const CHART = [
   { code: '4000', nameArabic: 'إيرادات', accountType: 'revenue', normalBalance: 'credit', active: true },
 ];
 
-const WIPE = [...Object.values(COL), 'app_settings'];
+const WIPE = [...Object.values(COL), 'app_settings', 'sales_documents', 'sales_document_sources'];
 async function wipe() {
   for (const c of WIPE) {
     const snap = await db.collection(c).get();
@@ -250,4 +251,119 @@ d('سباق تهيئة السياسة الضريبية', () => {
     await expect(seedTaxPolicy(db, FieldValue, { baselineFrom: '2026-01-01' }, { userId: 'u1' }))
       .rejects.toThrow(/2024-02-02/);
   }, 90_000);
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // كل مسار يُنشئ قيداً يحرّك الحد — لا مسار الترحيل وحده
+  // ═══════════════════════════════════════════════════════════════════════
+  // `accountingSettings.js` claimed `counters/journal` was written by every
+  // transaction that creates an entry. It was not: `invoicing.js` advanced
+  // `nextNumber` on three paths — issuing a standalone invoice or a note,
+  // voiding a document, and correcting a wash invoice — and left
+  // `earliestEntryDate` untouched on all three. A 2019 standalone invoice
+  // therefore never lowered the bound, and the seed's guard had nothing to
+  // collide with.
+  const CHART_FULL = [
+    ...CHART,
+    { code: '1200', nameArabic: 'ضريبة مدخلات', accountType: 'asset', normalBalance: 'debit', active: true },
+    { code: '2100', nameArabic: 'ضريبة مخرجات', accountType: 'liability', normalBalance: 'credit', active: true },
+    { code: '1100', nameArabic: 'العملاء', accountType: 'asset', normalBalance: 'debit', active: true },
+    { code: '4010', nameArabic: 'مردودات المبيعات', accountType: 'revenue', normalBalance: 'debit', active: true },
+  ];
+  const counter = async () => (await db.collection(COL.COUNTERS).doc('journal').get()).data() || {};
+
+  /** The seller identity every issued document is stamped with. */
+  async function seedCompany() {
+    await seedChartOfAccounts(db, FieldValue, CHART_FULL, { userId: 'u1' });
+    await db.collection('app_settings').doc('company').set({
+      value: {
+        name: 'شركة هادي الغانم', vatNumber: '300000000000003',
+        address: 'الرياض', vatRegistered: true,
+      },
+    });
+    await db.collection('app_settings').doc('accounting').set({
+      value: { vatRegistered: true, washPriceMode: 'inclusive' },
+    });
+  }
+
+  /** A standalone sales invoice, dated as given, through the real issuer. */
+  const issueOn = (date, over = {}) => issueDocument(db, FieldValue, {
+    type: 'invoice', issueDate: date,
+    customer: { name: 'عميل' }, paymentMethod: 'cash', paymentStatus: 'paid',
+    lines: [{ description: 'غسيل', quantity: 1, unitPrice: 115 }],
+    ...over,
+  }, { userId: 'u1' });
+
+  it('إصدار فاتورة مستقلة يحرّك earliestEntryDate كما يحرّكه الترحيل', async () => {
+    await seedCompany();
+    await postEntry(db, FieldValue, {
+      entry: { entryDate: '2026-05-01', sourceType: 'manual', description: 'ق' },
+      lines: [
+        { accountId: '1010', debit: 100, credit: 0, description: 'ن' },
+        { accountId: '4000', debit: 0, credit: 100, description: 'إ' },
+      ],
+    }, { userId: 'u1' });
+    expect((await counter()).earliestEntryDate).toBe('2026-05-01');
+
+    const before = (await counter()).nextNumber;
+    await issueOn('2019-03-04');
+    const after = await counter();
+    // The bound came DOWN with it — it used to stay at 2026-05-01 while a
+    // 2019 entry sat in the books.
+    expect(after.earliestEntryDate).toBe('2019-03-04');
+    expect(after.nextNumber).toBe(before + 1);
+  }, 120_000);
+
+  it('وإلغاء مستند بتاريخ عكس أقدم يحرّكه كذلك', async () => {
+    await seedCompany();
+    const doc = await issueOn('2026-05-04');
+    expect((await counter()).earliestEntryDate).toBe('2026-05-04');
+
+    const before = (await counter()).nextNumber;
+    await voidDocument(db, FieldValue, {
+      documentId: doc.id, reason: 'أُلغيت بالاتفاق', reversalDate: '2026-02-02',
+    }, { userId: 'u1' });
+    const after = await counter();
+    expect(after.earliestEntryDate).toBe('2026-02-02');
+    expect(after.nextNumber).toBe(before + 1);
+  }, 120_000);
+
+  it('وفاتورة مستقلة أقدم تصل أثناء البذرة: تُعاد المعاملة وتُرفض', async () => {
+    await seedCompany();
+    const raceIn = once(() => arriveOn('2019-03-04'));
+    await expect(seedTaxPolicy(
+      db, FieldValue, { baselineFrom: '2026-01-01' },
+      { userId: 'u1', onBeforeCommit: raceIn },
+    )).rejects.toThrow(/بعد أقدم قيد مُرحّل \(2019-03-04\)/);
+    expect(raceIn.runs()).toBeGreaterThan(1);
+    expect((await settings()).taxPolicyHistory ?? []).toHaveLength(0);
+    expect(await audits()).toHaveLength(0);
+  }, 120_000);
+
+  it('وإصدار حقيقي أثناء المعاملة يُجهضها — الحارس يصطدم به', async () => {
+    await seedCompany();
+    // The racer is the REAL issuer, so what is proven is the collision: the
+    // seed read `counters/journal`, the issuance wrote it, and Firestore
+    // aborted the seed rather than letting it commit on a snapshot that no
+    // longer described the books. (The emulator retries at a read time that
+    // still predates a nested transaction's commit, so the REFUSAL itself is
+    // proven above with a direct write — see `arriveOn`.)
+    const raceIn = once(() => issueOn('2019-03-04'));
+    await seedTaxPolicy(
+      db, FieldValue, { baselineFrom: '2018-01-01' },
+      { userId: 'u1', onBeforeCommit: raceIn },
+    ).catch(() => {});
+    expect(raceIn.runs()).toBeGreaterThan(1);
+  }, 120_000);
+
+  it('والعدّاد لا يفقد nextNumber ولا earliestEntryDate تحت ترحيلات متزامنة', async () => {
+    await seedCompany();
+    const dates = ['2026-01-05', '2024-07-09', '2026-03-11', '2022-02-02', '2026-08-08'];
+    await Promise.all(dates.map((d, i) => postOn(d, i)));
+    const c = await counter();
+    // Five entries, five numbers, no collisions — and the bound is the oldest.
+    expect(c.nextNumber).toBe(6);
+    expect(c.earliestEntryDate).toBe('2022-02-02');
+    const numbers = (await db.collection(COL.ENTRIES).get()).docs.map((x) => x.data().entryNumber).sort();
+    expect(numbers).toEqual([1, 2, 3, 4, 5]);
+  }, 120_000);
 });

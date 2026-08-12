@@ -23,6 +23,7 @@ import { splitVatBalanced } from './vat';
 // The purchase side is not split here: it is decided by the shared engine, so
 // this preview and the server's posting cannot disagree about a reclaim.
 import { resolvePurchaseTax } from './purchaseTax';
+import { isRealCalendarDate } from '../vatFields';
 
 /** طرق الدفع. `credit` = آجل (ذمم). */
 export const PAYMENT_METHODS = ['cash', 'card', 'transfer', 'credit'];
@@ -162,6 +163,18 @@ export function buildExpenseEntry(expense, {
     recordDate: date,
   }, { policyAt });
 
+  // ── إثبات الفاتورة ثم السداد ──
+  // Same rule as the server: the input tax is claimed in the INVOICE's period
+  // and the cash moves on the day it moved. When the two days differ, that is
+  // two entries, and a preview that showed one would promise a period the
+  // ledger will not use. See docs/AMOUNT_DEFINITION.md and `buildExpense` in
+  // functions/src/posting.js.
+  const accrualDate = isRealCalendarDate(expense.invoiceDate)
+    ? String(expense.invoiceDate).slice(0, 10)
+    : date;
+  const split = status !== 'unpaid' && accrualDate !== date;
+  const supplierLabel = expense.supplier ? `المورد: ${expense.supplier}` : 'سداد';
+
   const lines = [
     { accountId: expenseAccount, debit: tax.net, credit: 0, description: expense.description || 'مصروف' },
   ];
@@ -172,16 +185,16 @@ export function buildExpenseEntry(expense, {
     });
   }
   lines.push({
-    accountId: settlementAccountForPurchase(method, status),
+    accountId: split ? ACC.PAYABLE : settlementAccountForPurchase(method, status),
     debit: 0, credit: tax.gross,
-    description: expense.supplier ? `المورد: ${expense.supplier}` : 'سداد',
+    description: supplierLabel,
   });
 
   const ref  = expense.invoiceNumber ? ` — فاتورة ${expense.invoiceNumber}` : '';
-  return {
+  const built = {
     entry: {
-      entryDate:   date,
-      periodKey:   periodKeyOf(date),
+      entryDate:   accrualDate,
+      periodKey:   periodKeyOf(accrualDate),
       sourceType:  'expense',
       sourceId:    expense.id ?? null,
       description: `${expense.description || 'مصروف'}${ref}`,
@@ -192,6 +205,29 @@ export function buildExpenseEntry(expense, {
     lines,
     purchaseTaxSnapshot: tax.snapshot,
   };
+  if (!split) return built;
+
+  built.settlement = {
+    entry: {
+      entryDate:   date,
+      periodKey:   periodKeyOf(date),
+      sourceType:  'expense',
+      sourceId:    expense.id ?? null,
+      description: `سداد ${expense.description || 'مصروف'}${ref}`,
+      status:      'posted',
+      createdBy,
+      reversalOf:  null,
+    },
+    lines: [
+      { accountId: ACC.PAYABLE, debit: tax.gross, credit: 0, description: supplierLabel },
+      {
+        accountId: settlementAccountForPurchase(method, 'paid'),
+        debit: 0, credit: tax.gross,
+        description: `سداد ${accrualDate}`,
+      },
+    ],
+  };
+  return built;
 }
 
 /** Maps an operational expense kind onto its expense account. */

@@ -208,6 +208,18 @@ export function resolvePurchaseTax(input = {}, { policyAt = null } = {}) {
     : String(input.recordDate ?? '').slice(0, 10);
   const policy = policyAt ? policyAt(policyDate) : null;
   const policyKnown = Boolean(policy && policy.known);
+  // ── «لم يُستشر سجل» ليست «سجل لا يغطي هذا التاريخ» ──
+  // A caller that passes no `policyAt` at all has no dated record to consult —
+  // the pre-versioning state, which `taxPolicyAt` itself labels `unversioned`
+  // and answers for every date. Registration is then taken as it stands, and
+  // the only rules left are the ones the document states.
+  //
+  // A caller that DOES pass one and gets `known: false` is a different fact: a
+  // record exists and it does not reach this date. Registration is genuinely
+  // unknown there, and guessing it either way books an assumption. Collapsing
+  // the two made every purchase unpriceable for a caller with no settings, and
+  // separating them is what keeps the refusal meaningful.
+  const registrationKnown = policyAt ? policyKnown : true;
 
   // ── ما تحمله الفاتورة من ضريبة ──
   let documentVat = null;
@@ -255,7 +267,7 @@ export function resolvePurchaseTax(input = {}, { policyAt = null } = {}) {
     deductible = false; noInputVatReason = NO_INPUT_VAT.INCOMPLETE_INVOICE;
   } else if (policyKnown && policy.vatRegistered === false) {
     deductible = false; noInputVatReason = NO_INPUT_VAT.NOT_REGISTERED;
-  } else if (policyKnown) {
+  } else if (registrationKnown) {
     deductible = true;
   }
 

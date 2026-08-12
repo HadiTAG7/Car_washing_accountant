@@ -18,6 +18,7 @@
 import {
   round2, isRealDate, isValidPeriodKey, normalizeTimeOfDay, periodKeyOf,
   normalizeLines, validateEntry, totalsOf, postingLockId, MONEY_EPSILON,
+  journalCounterUpdate,
 } from './invariants.js';
 import { splitVat, VAT_RATE, ACC, settlementForSale, ADAPTERS } from './posting.js';
 import { taxPolicyAt } from './taxPolicy.js';
@@ -956,9 +957,13 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
           createdAt: FieldValue.serverTimestamp(),
         });
       }
-      tx.set(journalCounterRef, {
-        nextNumber: entryNumber + 1, updatedAt: FieldValue.serverTimestamp(),
-      }, { merge: true });
+      // …including `earliestEntryDate`. This path creates a journal entry, so
+      // it moves the ledger's oldest date exactly as a posting does — and a
+      // standalone invoice dated before the recorded baseline is precisely the
+      // case that used to slip past `seedTaxPolicy`.
+      tx.set(journalCounterRef,
+        journalCounterUpdate(journalCounterSnap, entryNumber, draftEntry.entryDate, FieldValue),
+        { merge: true });
     }
 
     tx.set(ref, {
@@ -1242,9 +1247,9 @@ export async function voidDocument(db, FieldValue, { documentId, reason, reversa
           createdAt: FieldValue.serverTimestamp(),
         });
       }
-      tx.set(counterRef, {
-        nextNumber: reversalNumber + 1, updatedAt: FieldValue.serverTimestamp(),
-      }, { merge: true });
+      tx.set(counterRef,
+        journalCounterUpdate(counterSnap, reversalNumber, date, FieldValue),
+        { merge: true });
     }
 
     // A cancelled document no longer holds its source record. The claim is
@@ -1438,9 +1443,9 @@ export async function correctLinkedInvoice(db, FieldValue, { documentId, reason,
         createdAt: FieldValue.serverTimestamp(),
       });
     }
-    tx.set(counterRef, {
-      nextNumber: reversalNumber + 1, updatedAt: FieldValue.serverTimestamp(),
-    }, { merge: true });
+    tx.set(counterRef,
+      journalCounterUpdate(counterSnap, reversalNumber, date, FieldValue),
+      { merge: true });
 
     // The lock is released only when it still belongs to the entry being
     // reversed. A wash corrected and re-posted already has a newer entry

@@ -29,7 +29,7 @@
 import {
   normalizeEntry, normalizeLines, validateEntry, totalsOf,
   buildReversalLines, postingLockId, periodKeyOf, round2,
-  isRealDate, isValidPeriodKey,
+  isRealDate, isValidPeriodKey, journalCounterUpdate,
 } from './invariants.js';
 import { ADAPTERS, legacyLockIdFor } from './posting.js';
 import { taxPolicyAt } from './taxPolicy.js';
@@ -47,36 +47,6 @@ const JOURNAL_COUNTER = 'journal';
 const SETTINGS_DOC = 'accounting';
 
 const DEFAULT_SETTINGS = { vatRegistered: true, washPriceMode: 'inclusive' };
-
-/**
- * ما يُكتب على عدّاد القيود مع كل ترحيل — including the ledger's OLDEST date.
- *
- * `counters/journal` is already read and written by every transaction that
- * creates an entry, so carrying `earliestEntryDate` on it costs no extra read
- * and — this is the point — makes the bound move ATOMICALLY with the posting
- * that moves it.
- *
- * `seedTaxPolicy` needs that. It must refuse a baseline later than the oldest
- * entry, and it used to answer the question with a collection scan taken
- * BEFORE its transaction opened: an entry posted in the gap was invisible, the
- * seed was accepted, and a month sat in the books with no policy able to
- * explain it. Reading this one document inside the seed's transaction puts the
- * two in direct conflict, so one of them retries and sees the other.
- *
- * `min`, never overwrite: posting a 2024 entry today must lower the bound;
- * posting a 2026 one must leave it alone.
- */
-function journalCounterUpdate(counterSnap, nextNumber, entryDate, FieldValue) {
-  const iso = String(entryDate || '').slice(0, 10);
-  const known = counterSnap?.exists ? String(counterSnap.data().earliestEntryDate || '') : '';
-  const valid = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d);
-  const earliest = valid(iso) && (!valid(known) || iso < known) ? iso : (valid(known) ? known : null);
-  return {
-    nextNumber: nextNumber + 1,
-    ...(earliest ? { earliestEntryDate: earliest } : {}),
-    updatedAt: FieldValue.serverTimestamp(),
-  };
-}
 
 /** An error the caller is meant to see, as opposed to a bug. */
 export class LedgerError extends Error {
@@ -308,17 +278,44 @@ export async function postSource(db, FieldValue, { kind, sourceId }, { userId = 
       throw new LedgerError(problems[0], { code: 'invalid-argument', problems });
     }
 
-    const periodSnap = await tx.get(db.collection(COL.PERIODS).doc(normEntry.periodKey));
-    if (periodSnap.exists && periodSnap.data().status === 'closed') {
-      throw new LedgerError(
-        `الفترة ${normEntry.periodKey} مقفلة — لا يمكن الترحيل فيها. سجّل التصحيح في فترة مفتوحة.`,
-      );
+    // ── قيد السداد، حين يختلف يوم الدفع عن يوم الفاتورة ──
+    // A purchase then produces TWO entries: the supplier's invoice on its own
+    // date (expense + input VAT against a payable), and the payment on the day
+    // the money actually left. One entry cannot carry two dates, and choosing
+    // either one alone puts a real figure in the wrong period — the VAT in the
+    // payment's month, or the cash in the invoice's.
+    const settlement = built.settlement
+      ? {
+        entry: normalizeEntry(built.settlement.entry),
+        lines: normalizeLines(built.settlement.lines),
+      }
+      : null;
+    if (settlement) {
+      const sp = validateEntry(settlement.entry, settlement.lines, { knownAccountCodes });
+      if (sp.length) throw new LedgerError(sp[0], { code: 'invalid-argument', problems: sp });
+    }
+
+    // Both periods are read, and BOTH must be open: half a purchase in the
+    // books is worse than none, and committing the accrual into an open March
+    // while April is closed would leave a payable nobody can ever settle.
+    const periodKeys = settlement && settlement.entry.periodKey !== normEntry.periodKey
+      ? [normEntry.periodKey, settlement.entry.periodKey]
+      : [normEntry.periodKey];
+    const periodRefs = periodKeys.map((k) => db.collection(COL.PERIODS).doc(k));
+    const periodSnaps = await Promise.all(periodRefs.map((r) => tx.get(r)));
+    for (const [i, snap] of periodSnaps.entries()) {
+      if (snap.exists && snap.data().status === 'closed') {
+        throw new LedgerError(
+          `الفترة ${periodKeys[i]} مقفلة — لا يمكن الترحيل فيها. سجّل التصحيح في فترة مفتوحة.`,
+        );
+      }
     }
 
     // ══ writes ═════════════════════════════════════════════════════════
     const totals = totalsOf(normLines);
     const nextNumber = counterSnap.exists ? (Number(counterSnap.data().nextNumber) || 1) : 1;
     const entryRef = db.collection(COL.ENTRIES).doc();
+    const settlementRef = settlement ? db.collection(COL.ENTRIES).doc() : null;
 
     tx.set(entryRef, {
       ...normEntry,
@@ -333,6 +330,9 @@ export async function postSource(db, FieldValue, { kind, sourceId }, { userId = 
       // VAT asset was or was not recognised. Without it, "why is 1200 debited
       // 5.00 here?" is answered by re-running today's switches over the row.
       purchaseTaxSnapshot: built.purchaseTaxSnapshot || null,
+      // Names the payment entry that belongs to this one, so a reader — and
+      // the reversal — can find the other half rather than infer it.
+      settlementEntryId: settlementRef ? settlementRef.id : null,
       lines: normLines,
       lineCount: normLines.length,
       totalDebit: totals.debit,
@@ -341,31 +341,83 @@ export async function postSource(db, FieldValue, { kind, sourceId }, { userId = 
       createdAt: FieldValue.serverTimestamp(),
       postedAt: FieldValue.serverTimestamp(),
     });
-    if (!periodSnap.exists) {
-      tx.set(db.collection(COL.PERIODS).doc(normEntry.periodKey), {
-        periodKey: normEntry.periodKey, status: 'open',
-        closedAt: null, closedBy: null, createdAt: FieldValue.serverTimestamp(),
+    let settlementTotals = null;
+    if (settlement) {
+      settlementTotals = totalsOf(settlement.lines);
+      tx.set(settlementRef, {
+        ...settlement.entry,
+        entryNumber: nextNumber + 1,
+        sourceKind: adapter.lockKind,
+        taxSnapshot: null,
+        // The payment carries no tax of its own — it moves an existing
+        // liability. Recording a snapshot here would double-count the
+        // deduction for any reader that sums snapshots.
+        purchaseTaxSnapshot: null,
+        settlementOf: entryRef.id,
+        lines: settlement.lines,
+        lineCount: settlement.lines.length,
+        totalDebit: settlementTotals.debit,
+        totalCredit: settlementTotals.credit,
+        createdBy: userId,
+        createdAt: FieldValue.serverTimestamp(),
+        postedAt: FieldValue.serverTimestamp(),
       });
+    }
+    for (const [i, snap] of periodSnaps.entries()) {
+      if (!snap.exists) {
+        tx.set(periodRefs[i], {
+          periodKey: periodKeys[i], status: 'open',
+          closedAt: null, closedBy: null, createdAt: FieldValue.serverTimestamp(),
+        });
+      }
     }
     tx.set(lockRef, {
       kind: adapter.lockKind,
       sourceType: normEntry.sourceType,
       sourceId: id,
+      // The lock names the ACCRUAL: it is the entry the source became, and the
+      // one whose reversal frees the record.
       entryId: entryRef.id,
       entryNumber: nextNumber,
+      settlementEntryId: settlementRef ? settlementRef.id : null,
       lockedBy: userId,
       lockedAt: FieldValue.serverTimestamp(),
     });
     tx.set(counterRef,
-      journalCounterUpdate(counterSnap, nextNumber, normEntry.entryDate, FieldValue),
+      journalCounterUpdate(
+        counterSnap, settlement ? nextNumber + 1 : nextNumber,
+        // The EARLIER of the two dates — the bound is a minimum, and the
+        // accrual is usually but not always the older one (a prepayment is
+        // settled before its invoice is dated).
+        settlement && settlement.entry.entryDate < normEntry.entryDate
+          ? settlement.entry.entryDate : normEntry.entryDate,
+        FieldValue,
+      ),
       { merge: true });
     tx.set(db.collection(COL.AUDIT).doc(), auditRecord({
       action: 'post', collectionName: COL.ENTRIES, documentId: entryRef.id, userId,
-      after: { entryNumber: nextNumber, kind: adapter.lockKind, sourceId: id, totalDebit: totals.debit },
-      note: `ترحيل ${adapter.lockKind} — قيد رقم ${nextNumber}`,
+      after: {
+        entryNumber: nextNumber, kind: adapter.lockKind, sourceId: id,
+        totalDebit: totals.debit,
+        ...(settlement ? {
+          settlementEntryNumber: nextNumber + 1,
+          settlementDate: settlement.entry.entryDate,
+        } : {}),
+      },
+      note: `ترحيل ${adapter.lockKind} — قيد رقم ${nextNumber}`
+        + (settlement ? ` وقيد سداد رقم ${nextNumber + 1} بتاريخ ${settlement.entry.entryDate}` : ''),
     }, FieldValue));
 
-    return { entryId: entryRef.id, entryNumber: nextNumber, kind: adapter.lockKind, ...totals };
+    return {
+      entryId: entryRef.id,
+      entryNumber: nextNumber,
+      kind: adapter.lockKind,
+      ...totals,
+      ...(settlement ? {
+        settlementEntryId: settlementRef.id,
+        settlementEntryNumber: nextNumber + 1,
+      } : {}),
+    };
   });
 }
 
@@ -411,6 +463,19 @@ export async function reverseEntry(db, FieldValue, entryId, { entryDate, descrip
       ? db.collection(COL.LOCKS).doc(postingLockId(lockKind, original.sourceId))
       : null;
     const lockSnap = lockRef ? await tx.get(lockRef) : null;
+    // ── النصف الآخر من المشتريات ──
+    // A purchase whose invoice and payment fall on different days is TWO
+    // entries: the accrual (expense + input VAT against a payable) and the
+    // settlement (payable against cash). Reversing the accrual alone would
+    // leave the payment standing against a liability that no longer exists —
+    // a permanent debit balance on 2000 that nothing explains. So the pair
+    // moves together, in this transaction, and the caller is told.
+    const settlementSnap = original.settlementEntryId
+      ? await tx.get(db.collection(COL.ENTRIES).doc(String(original.settlementEntryId)))
+      : null;
+    const settlement = settlementSnap?.exists ? settlementSnap.data() : null;
+    const reverseSettlement = Boolean(settlement && settlement.status === 'posted');
+
     if (original.status !== 'posted') {
       throw new LedgerError('لا يمكن عكس قيد غير مُرحّل.');
     }
@@ -476,8 +541,23 @@ export async function reverseEntry(db, FieldValue, entryId, { entryDate, descrip
       throw new LedgerError('القيد الأصلي غير متوازن — لا يمكن بناء عكس صحيح له.');
     }
 
+    // The settlement mirror is built the same way — from the stored lines, so
+    // it is balanced by construction.
+    let settlementRevLines = null;
+    if (reverseSettlement) {
+      const lines = Array.isArray(settlement.lines) ? settlement.lines : null;
+      if (!lines || lines.length < 2) {
+        throw new LedgerError(
+          'قيد السداد المرتبط بصيغة قديمة لا تحمل سطوره داخله — اعكسه يدوياً أولاً.',
+        );
+      }
+      settlementRevLines = buildReversalLines(lines);
+    }
+
     const nextNumber = counterSnap.exists ? (Number(counterSnap.data().nextNumber) || 1) : 1;
+    const settlementRevNumber = reverseSettlement ? nextNumber + 1 : null;
     const revRef = db.collection(COL.ENTRIES).doc();
+    const settlementRevRef = reverseSettlement ? db.collection(COL.ENTRIES).doc() : null;
 
     tx.set(revRef, {
       entryDate: date,
@@ -519,6 +599,35 @@ export async function reverseEntry(db, FieldValue, entryId, { entryDate, descrip
       reversedBy: revRef.id,
       reversedAt: FieldValue.serverTimestamp(),
     });
+    if (reverseSettlement) {
+      const st = totalsOf(settlementRevLines);
+      tx.set(settlementRevRef, {
+        entryDate: date,
+        periodKey,
+        sourceType: 'adjustment',
+        sourceId: null,
+        sourceKind: null,
+        reversedSourceKind: settlement.sourceKind ?? null,
+        reversedSourceType: settlement.sourceType ?? null,
+        reversedSourceId: settlement.sourceId ?? null,
+        description: `عكس قيد سداد رقم ${settlement.entryNumber} — ${settlement.description || ''}`.trim(),
+        status: 'posted',
+        reversalOf: settlementSnap.id,
+        entryNumber: settlementRevNumber,
+        lines: settlementRevLines,
+        lineCount: settlementRevLines.length,
+        totalDebit: st.debit,
+        totalCredit: st.credit,
+        createdBy: userId,
+        createdAt: FieldValue.serverTimestamp(),
+        postedAt: FieldValue.serverTimestamp(),
+      });
+      tx.update(settlementSnap.ref, {
+        status: 'reversed',
+        reversedBy: settlementRevRef.id,
+        reversedAt: FieldValue.serverTimestamp(),
+      });
+    }
     if (!periodSnap.exists) {
       tx.set(periodRef, {
         periodKey, status: 'open', closedAt: null, closedBy: null,
@@ -540,19 +649,28 @@ export async function reverseEntry(db, FieldValue, entryId, { entryDate, descrip
       // release that did not happen.
     }
     tx.set(counterRef,
-      journalCounterUpdate(counterSnap, nextNumber, date, FieldValue),
+      journalCounterUpdate(counterSnap, settlementRevNumber ?? nextNumber, date, FieldValue),
       { merge: true });
     tx.set(db.collection(COL.AUDIT).doc(), auditRecord({
       action: 'reverse', collectionName: COL.ENTRIES, documentId: originalRef.id, userId,
       before: { status: 'posted' },
-      after: { status: 'reversed', reversalEntryId: revRef.id },
-      note: `عكس القيد رقم ${original.entryNumber} بقيد رقم ${nextNumber}`,
+      after: {
+        status: 'reversed', reversalEntryId: revRef.id,
+        ...(reverseSettlement ? { settlementReversalEntryId: settlementRevRef.id } : {}),
+      },
+      note: `عكس القيد رقم ${original.entryNumber} بقيد رقم ${nextNumber}`
+        + (reverseSettlement ? ` ومعه قيد السداد رقم ${settlement.entryNumber} بقيد رقم ${settlementRevNumber}` : ''),
     }, FieldValue));
 
     return {
       entryId: revRef.id,
       entryNumber: nextNumber,
       reversedEntryId: originalRef.id,
+      ...(reverseSettlement ? {
+        settlementReversalEntryId: settlementRevRef.id,
+        settlementReversalNumber: settlementRevNumber,
+        reversedSettlementEntryId: settlementSnap.id,
+      } : {}),
       // False when the lock belongs to a newer entry for the same source.
       lockReleased: Boolean(lockRef && lockSnap?.exists && lockSnap.data().entryId === originalRef.id),
       lockRetained: Boolean(lockRef && lockSnap?.exists && lockSnap.data().entryId !== originalRef.id),

@@ -125,7 +125,8 @@ string), and it is audited.
 | Operation | Entry |
 |---|---|
 | غسلة (مكتملة فقط) | Dr cash/bank/receivable (gross) · Cr revenue (net) · Cr output VAT — under the tax policy in force on the WASH's date, and the split is frozen onto the entry as `taxSnapshot` |
-| مصروف | Dr expense/asset (net) · Dr input VAT *(if deductible)* · Cr cash/bank/**payable** — the tax comes from the INVOICE, in a fixed order of priority, and is frozen onto the entry as `purchaseTaxSnapshot` |
+| مصروف — إثبات الفاتورة (بتاريخ الفاتورة) | Dr expense/asset (net) · Dr input VAT *(if deductible)* · Cr **الموردون** — the tax comes from the INVOICE, in a fixed order of priority, and is frozen onto the entry as `purchaseTaxSnapshot` |
+| مصروف — السداد (بتاريخ الدفع) | Dr **الموردون** · Cr cash/bank — written only when the payment falls on a different day; same-day purchases stay one entry |
 | دفعة شريك | Dr cash/bank · Cr partner capital sub-account |
 | عهدة | Dr advances (an **asset**) · Cr cash/bank |
 | استرداد عهدة | Dr cash/bank · Cr advances |
@@ -158,6 +159,25 @@ report's input tax agree to the halala.
 inclusive → it is the gross; exclusive → it is the net and the settlement is
 `amount + VAT`. Every screen, total, entry, report and CSV column reads that
 one definition.
+
+#### فاتورة مارس مدفوعة في أبريل
+The input tax is claimed in the **invoice's** period and the cash moves on the
+day it moved, so a purchase whose two dates differ is **two entries** — the
+supplier's invoice against a payable, then the payment against cash. A single
+entry could only put one of the two figures in the right month; dated at the
+payment it left `1200` in April while the return claimed it in March, and
+dated at the invoice it moved the cash a month early. The pair reverses
+together, and the settlement carries no snapshot of its own so no reader can
+count the deduction twice.
+
+#### التقرير يقرأ الدفاتر أولاً
+A purchase already posted is reported from the `purchaseTaxSnapshot` frozen on
+its entry — not re-priced from the raw row, which would let a policy corrected
+next year restate a return already filed. Only an unposted purchase is priced,
+and then by the same engine. Sources are matched on **`kind__id`**, never the
+bare id: five collections post with `sourceType: 'expense'` and their ids are
+independent, so the bare id made a monthly expense and a variable one with the
+same id a single record.
 
 Notes that are easy to get wrong, and are handled explicitly:
 - VAT is separated **only** when the business is registered *and* the document

@@ -485,7 +485,7 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
         item={convertItem}
         onClose={() => setConvertItem(null)}
         onConvert={async (id, form) => {
-          await convertStartupParentSpend(id, form, { userId: null });
+          await convertStartupParentSpend(id, form);
           await refetch();
           await refetchLedgerParents();
           showToast('تم التحويل — صار المبلغ قيداً في سجل مصاريف البند، وقابلاً للترحيل.');

@@ -265,10 +265,26 @@ service cloud.firestore {
       allow create: if isOperator();
       allow update, delete: if isOperator() && notPostedExpense('annual', id);
     }
+    // ── سجل مصاريف بند التأسيس — للقراءة فقط من العميل ──────────────
+    // Every entry here is a purchase document: it carries the spend date, the
+    // payment method and the invoice identity that make it postable, and its
+    // amount is summed into the parent's `actual_amount`. Three things a rule
+    // cannot do, and all three are needed on every write:
+    //
+    //   • RE-SUM the siblings. A roll-up over a list of unknown length has no
+    //     expression in rules — there is no fold — so `actual_amount` would be
+    //     whatever the client last claimed it was.
+    //   • Re-derive `status` from that sum against the budget.
+    //   • Check the posting lock AND recompute the parent in ONE atomic step.
+    //     A rule can see a lock; it cannot make the lock check and the parent
+    //     update happen together, so a delete could clear an entry and leave
+    //     the parent's total describing a row that no longer exists.
+    //
+    // So the client reads and the server writes: `startupAddEntry`,
+    // `startupDeleteEntry` and `startupConvertLegacySpend` in functions/.
     match /startup_cost_entries/{id} {
-      allow read:   if isMember();
-      allow create: if isOperator();
-      allow update, delete: if isOperator() && notPostedExpense('startup', id);
+      allow read:  if isMember();
+      allow write: if false;
     }
     // An advance produces two entries — the outlay and its recovery — so both
     // locks have to be clear before the row may change.
@@ -279,6 +295,70 @@ service cloud.firestore {
         && notPosted('temporary_expense', id) && notPosted('recovery', id);
     }
 
+    // ── بنود رسوم التأسيس — خطة يكتبها العميل، وصرفٌ يكتبه الخادم ────
+    // `startup_costs` used to sit in the operational wildcard, so an operator
+    // could write EVERY field on it — including `actual_amount` and the whole
+    // tax-invoice block. That is exactly the state the accounting fix removed
+    // from the UI, and leaving it writable meant one direct write restored it:
+    // a parent-level amount with an invoice on it enters the VAT report and
+    // can never reach `1200`, because no adapter posts this collection and no
+    // adapter can (the parent has no spend date, no payment method and no
+    // per-document identity).
+    //
+    // Rules are a permissive UNION, so the exclusion had to come OFF the
+    // wildcard list rather than be denied in a rule beside it — a second
+    // matching `allow` would hand back everything this one withholds.
+    //
+    // What a client may write is the PLAN. What it may not write is anything
+    // the ledger or the return reads.
+    function startupPlanFields() {
+      return ['category', 'item_name', 'quantity', 'budgeted_amount', 'status'];
+    }
+    // The columns the server owns. `actual_amount` is SUM(entries),
+    // `converted_*` is the migration's own record, and the tax block belongs
+    // to an entry that has a date to go with it.
+    function startupServerFields() {
+      return [
+        'actual_amount', 'is_tax_invoice', 'invoice_number', 'invoice_date',
+        'supplier', 'vat_amount', 'vat_rate', 'price_mode', 'vat_deductible',
+        'invoice_url', 'converted_at', 'converted_by',
+      ];
+    }
+    function startupCreateIsPlanOnly() {
+      // A new item starts at zero with no document attached to it. Stated as
+      // an explicit shape rather than an absence, so a client cannot create
+      // the row and then "correct" it into a spend record.
+      return request.resource.data.get('actual_amount', 0) == 0
+        && request.resource.data.get('is_tax_invoice', false) == false
+        && request.resource.data.get('invoice_number', null) == null
+        && request.resource.data.get('invoice_date', null) == null
+        && request.resource.data.get('supplier', null) == null
+        && request.resource.data.get('vat_amount', null) == null
+        && request.resource.data.get('vat_rate', null) == null
+        && !request.resource.data.keys().hasAny(['converted_at', 'converted_by']);
+    }
+    function startupUpdateTouchesPlanOnly() {
+      // `affectedKeys` is the diff, so an unchanged server column is fine —
+      // what is refused is CHANGING one. `hasOnly` also rejects a field
+      // nobody has heard of, which is how a new server-owned column would
+      // otherwise arrive writable by default.
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(startupPlanFields())
+        // Stated twice on purpose: `hasOnly` already excludes them, and this
+        // says so by name, so adding a column to `startupPlanFields()` by
+        // mistake cannot quietly open one of these.
+        && !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(startupServerFields());
+    }
+    match /startup_costs/{id} {
+      allow read:   if isMember();
+      allow create: if isOperator() && startupCreateIsPlanOnly();
+      allow update: if isOperator() && startupUpdateTouchesPlanOnly();
+      // Deleting a plan that has entries would orphan them; the sub-ledger is
+      // emptied first, through the server.
+      allow delete: if isOperator();
+    }
+
     // ── البيانات التشغيلية ───────────────────────────────────────────
     // Members read; operators and above record day-to-day business.
     // These stay the operational source of truth — the reports read the
@@ -287,7 +367,7 @@ service cloud.firestore {
       return c in [
         'annual_expense_categories', 'annual_expenses',
         'auth_users_backup', 'categories', 'category_budgets',
-        'monthly_expense_categories', 'partners', 'startup_costs',
+        'monthly_expense_categories', 'partners',
         'transactions', 'variable_expense_categories'
       ];
     }

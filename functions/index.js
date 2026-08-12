@@ -32,6 +32,9 @@ import {
 } from './src/accountingSettings.js';
 import { TaxPolicyError } from './src/taxPolicy.js';
 import { PurchaseTaxError } from './src/purchaseTax.js';
+import {
+  addStartupEntry, deleteStartupEntry, convertLegacyStartupSpend, StartupCostError,
+} from './src/startupCosts.js';
 import { canPost } from './src/posting.js';
 
 initializeApp();
@@ -79,6 +82,18 @@ async function requirePostSource(auth, kind) {
     'ترحيل هذا النوع مقصور على المحاسب أو المدير.');
 }
 
+/**
+ * Recording a startup spend document is operational work — the same people who
+ * record every other expense. A `partner` is read-only and is refused here.
+ */
+async function requireStartupWriter(auth) {
+  const role = await callerRole(auth);
+  if (role === 'partner') {
+    throw new HttpsError('permission-denied', 'حساب الشريك للاطلاع فقط.');
+  }
+  return { uid: auth.uid, role };
+}
+
 async function requireAdmin(auth) {
   const role = await callerRole(auth);
   if (role !== 'admin') {
@@ -105,6 +120,9 @@ function toHttps(e) {
   // it names the invoice and says exactly which of the three sources is
   // missing. Folding it into 'internal' would show «حاول مرة أخرى» for a
   // problem retrying cannot fix.
+  if (e instanceof StartupCostError) {
+    return new HttpsError(e.code || 'failed-precondition', e.message);
+  }
   if (e instanceof PurchaseTaxError) {
     return new HttpsError(e.code || 'failed-precondition', e.message, { reason: e.reason });
   }
@@ -322,5 +340,59 @@ export const ledgerEnsureAccount = onCall(OPTS, async (req) => {
   const { uid } = await requireAccountant(req.auth);
   try {
     return await ensureAccount(db, FieldValue, req.data?.account, { userId: uid });
+  } catch (e) { throw toHttps(e); }
+});
+
+// ─── سجل مصاريف بند التأسيس ──────────────────────────────────────────────
+/**
+ * `startup_cost_entries` is denied to every client in the rules, so these are
+ * the only door into it — and `startup_costs` accepts nothing from a client
+ * beyond the PLAN.
+ *
+ * The reason is not tidiness. Three things every write here needs are
+ * inexpressible in a rule: re-summing the sibling entries into the parent's
+ * `actual_amount` (rules have no fold), re-deriving `status` from that sum,
+ * and doing the posting-lock check and the parent update in ONE atomic step.
+ * A rule can see a lock; it cannot make the check and the recompute happen
+ * together, so a delete could clear an entry and leave the parent's total
+ * describing a row that is gone.
+ *
+ * The role comes from the verified token in every case — `req.auth.uid` read
+ * back out of Firestore — never from the payload, and neither does the
+ * roll-up or the total.
+ */
+export const startupAddEntry = onCall(OPTS, async (req) => {
+  const { uid, role } = await requireStartupWriter(req.auth);
+  try {
+    return await addStartupEntry(db, FieldValue, {
+      parentId: req.data?.parentId, entry: req.data?.entry,
+    }, { userId: uid, role });
+  } catch (e) { throw toHttps(e); }
+});
+
+export const startupDeleteEntry = onCall(OPTS, async (req) => {
+  const { uid, role } = await requireStartupWriter(req.auth);
+  try {
+    return await deleteStartupEntry(db, FieldValue, {
+      entryId: req.data?.entryId,
+    }, { userId: uid, role });
+  } catch (e) { throw toHttps(e); }
+});
+
+/**
+ * Migrating a legacy parent-level amount is accountant-or-admin work.
+ *
+ * It decides which period a deduction is claimed in — the invoice's, chosen by
+ * hand from a record that never held one. An operator recording today's spend
+ * has no business back-dating a document into a quarter that may already have
+ * been filed, and the role gate is the place that says so rather than a note
+ * in a UI nobody has to use.
+ */
+export const startupConvertLegacySpend = onCall(OPTS, async (req) => {
+  const { uid, role } = await requireAccountant(req.auth);
+  try {
+    return await convertLegacyStartupSpend(db, FieldValue, {
+      parentId: req.data?.parentId, form: req.data?.form,
+    }, { userId: uid, role });
   } catch (e) { throw toHttps(e); }
 });

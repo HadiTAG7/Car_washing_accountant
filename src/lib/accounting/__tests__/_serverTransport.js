@@ -24,6 +24,9 @@ import { runLegacyInvoiceLinks } from '../../../../functions/src/legacyLinks.js'
 import {
   setTaxPolicy, seedTaxPolicy, setAccountingPreferences,
 } from '../../../../functions/src/accountingSettings.js';
+import {
+  addStartupEntry, deleteStartupEntry, convertLegacyStartupSpend,
+} from '../../../../functions/src/startupCosts.js';
 import { __setLedgerTransport } from '../../ledgerTransport';
 import { app as clientApp } from '../../firebaseClient';
 
@@ -64,6 +67,15 @@ export function useServerTransport(projectId = clientApp?.options?.projectId || 
           lines: payload.lines,
         }, { userId: uid, lockKind: keepsSourceId ? sourceType : null });
       }
+      // `startup_cost_entries` is denied to every client in the rules, so the
+      // sub-ledger goes through the server like the ledger does. The suites
+      // run as an accountant, which is what the conversion requires.
+      case 'startupAddEntry':
+        return addStartupEntry(adb, FieldValue, payload, { userId: uid, role: 'accountant' });
+      case 'startupDeleteEntry':
+        return deleteStartupEntry(adb, FieldValue, payload, { userId: uid, role: 'accountant' });
+      case 'startupConvertLegacySpend':
+        return convertLegacyStartupSpend(adb, FieldValue, payload, { userId: uid, role: 'accountant' });
       case 'salesIssueDocument':
         return issueDocument(adb, FieldValue, payload, { userId: uid });
       case 'salesVoidDocument':

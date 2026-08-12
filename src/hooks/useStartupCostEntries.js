@@ -1,9 +1,8 @@
 import { useCallback, useMemo } from 'react';
 import { isFirebaseConfigured } from '../lib/firebaseClient';
-import {
-  fetchRows, getRow, insertRow, deleteRow, updateRow, sortBy, where,
-} from '../lib/firestoreCrud';
-import { mapStartupCostEntry, toStartupCostEntryInsert } from '../lib/mappers';
+import { fetchRows, sortBy, where } from '../lib/firestoreCrud';
+import { mapStartupCostEntry } from '../lib/mappers';
+import { callServer } from '../lib/ledgerTransport';
 import { useFirestoreQuery } from './useFirestoreQuery';
 
 /**
@@ -42,38 +41,27 @@ export function useStartupCostEntries(parentId) {
     },
   );
 
-  // Recompute SUM(amount) across all entries and push it onto the parent's
-  // actual_amount + derived status. Re-queries rather than trusting the
-  // local snapshot (one render behind the mutation).
-  async function syncParentTotal() {
-    if (!isFirebaseConfigured || !parentId) return;
-    const [rows, parent] = await Promise.all([
-      fetchRows('startup_cost_entries', [where('startup_cost_id', '==', parentId)]),
-      getRow('startup_costs', parentId),
-    ]);
-    const total   = rows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
-    const planned = Number(parent?.budgeted_amount) || 0;
-    await updateRow('startup_costs', parentId, {
-      actual_amount: total,
-      status:        planned > 0 && total >= planned ? 'completed' : 'in_progress',
-    });
-  }
-
+  // ── الإضافة والحذف على الخادم ──
+  // `startup_cost_entries` is denied to every client in the rules, so these
+  // go through callables. The roll-up onto the parent used to happen HERE —
+  // a re-query, a client-side sum, and a second write — which is three things
+  // a rule cannot protect: the total was whatever this code last computed, it
+  // was not atomic with the entry it described, and a posted entry could be
+  // deleted out from under its journal entry. All three now happen inside one
+  // server transaction that reads the siblings transactionally.
   const addEntry = useCallback(async (entry) => {
     if (!isFirebaseConfigured) return null;
-    await insertRow('startup_cost_entries', toStartupCostEntryInsert({ ...entry, startupCostId: parentId }));
-    await syncParentTotal();
+    const res = await callServer('startupAddEntry', { parentId, entry });
     await refetch();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    return res;
   }, [refetch, parentId]);
 
   const deleteEntry = useCallback(async (id) => {
     if (!isFirebaseConfigured) return null;
-    await deleteRow('startup_cost_entries', id);
-    await syncParentTotal();
+    const res = await callServer('startupDeleteEntry', { entryId: id });
     await refetch();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refetch, parentId]);
+    return res;
+  }, [refetch]);
 
   const entries = isFirebaseConfigured ? (data ?? []) : (data || []);
   return { entries, loading, error, addEntry, deleteEntry, refetch };

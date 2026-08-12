@@ -20,7 +20,7 @@
  */
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { initializeTestEnvironment, assertFails } from '@firebase/rules-unit-testing';
+import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
 import { doc, setDoc, updateDoc, deleteDoc, getDoc, getDocs, collection } from 'firebase/firestore';
 import { initializeApp, deleteApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
@@ -196,7 +196,10 @@ d('رحلة الإنتاج تحت firestore.rules الفعلية', () => {
       ['monthly_expenses', 'monthly', { expense_name: 'إيجار', total_monthly_cost: 1150, logged_date: '2026-08-05', payment_status: 'paid' }],
       ['variable_expenses', 'variable', { expense_name: 'مواد', total_variable_cost: 230, logged_date: '2026-08-06' }],
       ['annual_expense_entries', 'annual', { description: 'ترخيص', amount: 1150, spent_date: '2026-08-07' }],
-      ['startup_cost_entries', 'startup', { description: 'معدات', amount: 2300, spent_date: '2026-08-08' }],
+      // `startup_cost_entries` is NOT here any more: it is denied to every
+      // client outright, before posting as well as after, because its writes
+      // need a roll-up onto the parent that a rule cannot compute. Its own
+      // case is below.
     ];
 
     for (const [coll, kind, row] of CASES) {
@@ -217,7 +220,41 @@ d('رحلة الإنتاج تحت firestore.rules الفعلية', () => {
         await assertFails(deleteDoc(doc(ctx.acct, coll, 'x1')));
         await assertFails(deleteDoc(doc(ctx.admin, coll, 'x1')));
       }, 120_000);
+    }
 
+    // ── سجل مصاريف التأسيس: مغلق تماماً، لا «حرّ ثم محميّ» ─────────────
+    // The other four are free until their posting lock exists. This one is
+    // never free: every write re-sums the siblings into the parent's
+    // `actual_amount` and re-derives its status, and rules have no fold — so
+    // a client write would leave the total as whatever it last claimed. It
+    // goes through `startupAddEntry` / `startupDeleteEntry`.
+    it('startup_cost_entries: مغلق أمام كل عميل قبل الترحيل وبعده', async () => {
+      await adb.collection('startup_costs').doc('sp1').set({
+        category: 'equipment', item_name: 'معدات', quantity: 1,
+        budgeted_amount: 2000, actual_amount: 0, status: 'in_progress',
+      });
+      await adb.collection('startup_cost_entries').doc('x1').set({
+        startup_cost_id: 'sp1', description: 'معدات', amount: 2300, spent_date: '2026-08-08',
+      });
+      for (const db of [ctx.op, ctx.acct, ctx.admin]) {
+        await assertFails(updateDoc(doc(db, 'startup_cost_entries', 'x1'), { note: 'قبل' }));
+        await assertFails(deleteDoc(doc(db, 'startup_cost_entries', 'x1')));
+        await assertFails(setDoc(doc(db, 'startup_cost_entries', 'x2'), {
+          startup_cost_id: 'sp1', description: 'أخرى', amount: 1, spent_date: '2026-08-09',
+        }));
+      }
+      // …والقراءة سليمة، والترحيل يعمل كالمعتاد.
+      await assertSucceeds(getDoc(doc(ctx.op, 'startup_cost_entries', 'x1')));
+      await postSource(adb, FieldValue, { kind: 'startup', sourceId: 'x1' }, { userId: 'acct1' });
+      expect((await adb.collection(COL.LOCKS).doc('startup__x1').get()).exists).toBe(true);
+
+      // والبند نفسه: الخطة تُعدَّل، والأعمدة التي يملكها الخادم لا.
+      await assertSucceeds(updateDoc(doc(ctx.op, 'startup_costs', 'sp1'), { item_name: 'معدات ثقيلة' }));
+      await assertFails(updateDoc(doc(ctx.op, 'startup_costs', 'sp1'), { actual_amount: 9999 }));
+      await assertFails(updateDoc(doc(ctx.admin, 'startup_costs', 'sp1'), { is_tax_invoice: true }));
+    }, 120_000);
+
+    for (const [coll, kind, row] of CASES) {   // eslint-disable-line no-unused-vars
       it(`${coll}: القفل القديم expense__<id> ما زال يحمي`, async () => {
         await adb.collection(coll).doc('legacy1').set(row);
         // A lock written before locks were keyed on the kind.

@@ -501,4 +501,93 @@ d('قواعد أمان Firestore', () => {
       await assertFails(deleteDoc(doc(ctx.admin, 'chart_of_accounts', '1010')));
     });
   });
+
+  // ── بنود رسوم التأسيس: خطة للعميل، وصرفٌ للخادم ─────────────────────
+  // `startup_costs` sat in the operational wildcard, so an operator could
+  // write EVERY field on it — `actual_amount` and the whole tax-invoice block
+  // included. The accounting fix removed those from the forms, and a form is
+  // not a boundary: one direct write restored a parent-level amount with an
+  // invoice on it, which enters the VAT return and can never reach `1200`,
+  // because no adapter posts this collection and none can.
+  describe('رسوم التأسيس', () => {
+    beforeEach(async () => {
+      await env.withSecurityRulesDisabled(async (c) => {
+        const db = c.firestore();
+        await setDoc(doc(db, 'startup_costs', 's1'), {
+          category: 'equipment', item_name: 'ماكينة', quantity: 1,
+          budgeted_amount: 1000, actual_amount: 0, status: 'in_progress',
+          is_tax_invoice: false,
+        });
+        await setDoc(doc(db, 'startup_cost_entries', 'se1'), {
+          startup_cost_id: 's1', description: 'دفعة', amount: 500,
+          spent_date: '2026-08-01', is_tax_invoice: false,
+        });
+      });
+    });
+
+    // ═══ ١ ═══════════════════════════════════════════════════════════
+    it('١ — المشغّل لا يكتب actual_amount ولا أي حقل ضريبي على البند', async () => {
+      const ref = doc(ctx.op, 'startup_costs', 's1');
+      await assertFails(updateDoc(ref, { actual_amount: 1150 }));
+      await assertFails(updateDoc(ref, { is_tax_invoice: true }));
+      await assertFails(updateDoc(ref, { invoice_number: 'S-77' }));
+      await assertFails(updateDoc(ref, { invoice_date: '2026-03-10' }));
+      await assertFails(updateDoc(ref, { supplier: 'مورّد' }));
+      await assertFails(updateDoc(ref, { vat_amount: 150 }));
+      await assertFails(updateDoc(ref, { vat_rate: 0.15 }));
+      await assertFails(updateDoc(ref, { price_mode: 'exclusive' }));
+      await assertFails(updateDoc(ref, { vat_deductible: false }));
+      await assertFails(updateDoc(ref, { converted_at: '2026-08-20' }));
+      await assertFails(updateDoc(ref, { converted_by: 'op1' }));
+      // …ولا تهريبها مع تعديل مشروع.
+      await assertFails(updateDoc(ref, { item_name: 'ماكينة أخرى', actual_amount: 1150 }));
+    });
+
+    // ═══ ٢ ═══════════════════════════════════════════════════════════
+    it('٢ — والمدير لا يتجاوزها بكتابة عميل مباشرة', async () => {
+      // Not a hierarchy: the ban is on the CLIENT, whoever is holding it. The
+      // server writes these columns because only the server can re-sum the
+      // siblings and check the posting lock atomically — a rule has no fold.
+      const ref = doc(ctx.admin, 'startup_costs', 's1');
+      await assertFails(updateDoc(ref, { actual_amount: 1150 }));
+      await assertFails(updateDoc(ref, { is_tax_invoice: true, vat_amount: 150 }));
+      await assertFails(setDoc(doc(ctx.admin, 'startup_costs', 's2'), {
+        category: 'equipment', item_name: 'رفّاعة', quantity: 1,
+        budgeted_amount: 1000, actual_amount: 1150, status: 'completed',
+        is_tax_invoice: true, invoice_number: 'S-9',
+      }));
+    });
+
+    // ═══ ٣ ═══════════════════════════════════════════════════════════
+    it('٣ — إنشاء خطة نظيفة وتعديل اسمها وميزانيتها ينجح', async () => {
+      await assertSucceeds(setDoc(doc(ctx.op, 'startup_costs', 's3'), {
+        category: 'equipment', item_name: 'خرطوم', quantity: 2,
+        budgeted_amount: 300, actual_amount: 0, status: 'in_progress',
+        is_tax_invoice: false, invoice_number: null, invoice_date: null,
+        supplier: null, vat_amount: null, vat_rate: null,
+        price_mode: 'inclusive', vat_deductible: true,
+      }));
+      await assertSucceeds(updateDoc(doc(ctx.op, 'startup_costs', 's1'), {
+        item_name: 'ماكينة ضغط', budgeted_amount: 1200, quantity: 2,
+        category: 'equipment', status: 'completed',
+      }));
+      // …والقراءة سليمة لكل عضو، بما فيهم الشريك.
+      await assertSucceeds(getDoc(doc(ctx.partner, 'startup_costs', 's1')));
+      await assertSucceeds(getDoc(doc(ctx.partner, 'startup_cost_entries', 'se1')));
+      // والشريك للاطلاع فقط.
+      await assertFails(updateDoc(doc(ctx.partner, 'startup_costs', 's1'), { item_name: 'x' }));
+      await assertFails(getDoc(doc(ctx.anon, 'startup_costs', 's1')));
+    });
+
+    // ═══ ٤ ═══════════════════════════════════════════════════════════
+    it('٤ — سجل المصاريف مغلق أمام كل عميل: إنشاء وتعديل وحذف', async () => {
+      for (const [name, db] of [['المشغّل', ctx.op], ['المحاسب', ctx.acct], ['المدير', ctx.admin]]) {
+        await assertFails(setDoc(doc(db, 'startup_cost_entries', `x-${name}`), {
+          startup_cost_id: 's1', description: 'دفعة', amount: 100, spent_date: '2026-08-02',
+        }));
+        await assertFails(updateDoc(doc(db, 'startup_cost_entries', 'se1'), { amount: 999 }));
+        await assertFails(deleteDoc(doc(db, 'startup_cost_entries', 'se1')));
+      }
+    });
+  });
 });

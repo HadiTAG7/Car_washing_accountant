@@ -33,10 +33,16 @@
 //     used as either date.
 //   • The converted entry's id is derived from the parent, so converting
 //     twice writes the same document rather than a second one.
+//
+// A deliberate twin of src/lib/accounting/startupMigration.js. The client copy
+// lets a form say what is missing before it sends; this one is the copy that
+// DECIDES, because `startup_cost_entries` is closed to client writes and every
+// change now arrives through the callables in ./startupCosts.js. The two are
+// driven over one battery in functions/test/startupCosts.test.js.
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { blockingVatProblems, isRealCalendarDate } from '../vatFields';
-import { periodKeyOf, round2 } from './journal';
+import { blockingVatProblems, isRealCalendarDate } from './vatFields.js';
+import { periodKeyOf, round2 } from './invariants.js';
 
 /** `legacy__<parentId>` — the id IS the idempotency key, as with vouchers. */
 export function legacyEntryIdFor(parentId) {

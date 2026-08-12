@@ -46,6 +46,10 @@ const CHART = [
   { code: '2100', nameArabic: 'ضريبة مخرجات', accountType: 'liability', normalBalance: 'credit', active: true },
   { code: '4000', nameArabic: 'إيرادات', accountType: 'revenue', normalBalance: 'credit', active: true },
   { code: '5200', nameArabic: 'مصروفات شهرية', accountType: 'expense', normalBalance: 'debit', active: true },
+  // Startup spend is CAPITALISED, so it debits the fixed-asset account rather
+  // than an expense one — and its input VAT needs 1200 like any purchase.
+  { code: '1200', nameArabic: 'ضريبة مدخلات', accountType: 'asset', normalBalance: 'debit', active: true },
+  { code: '1500', nameArabic: 'أصول ثابتة', accountType: 'asset', normalBalance: 'debit', active: true },
 ];
 
 /** Signs in as one of the seeded users and returns a callable factory. */
@@ -93,7 +97,7 @@ d('الاستدعاءات الحقيقية عبر محاكي الدوال', () =
     for (const c of ['users', 'app_admins', 'chart_of_accounts', 'journal_entries',
       'posting_locks', 'counters', 'audit_logs', 'accounting_periods',
       'sales_documents', 'sales_document_sources', 'app_settings',
-      'washes', 'monthly_expenses']) {
+      'washes', 'monthly_expenses', 'startup_costs', 'startup_cost_entries']) {
       const snap = await adb.collection(c).get();
       await Promise.all(snap.docs.map((s) => s.ref.delete()));
     }
@@ -112,6 +116,15 @@ d('الاستدعاءات الحقيقية عبر محاكي الدوال', () =
     });
     await adb.collection('monthly_expenses').doc('m1').set({
       expense_name: 'إيجار', total_monthly_cost: 1150, logged_date: '2026-08-05', payment_status: 'paid',
+    });
+    // A legacy startup item: an amount and an invoice typed onto the PARENT,
+    // which no adapter can post and the rules no longer let a client write.
+    await adb.collection('startup_costs').doc('sp1').set({
+      category: 'equipment', item_name: 'ماكينة ضغط', quantity: 1,
+      budgeted_amount: 1000, actual_amount: 1150, status: 'completed',
+      is_tax_invoice: true, invoice_number: 'S-77', invoice_date: '2026-08-03',
+      supplier: 'مؤسسة النور', vat_amount: 150, price_mode: 'inclusive',
+      vat_deductible: true, created_at: '2026-08-20T09:00:00.000Z',
     });
     await signOut(auth).catch(() => {});
   }, 120_000);
@@ -592,5 +605,94 @@ d('الاستدعاءات الحقيقية عبر محاكي الدوال', () =
       expect(entry.sourceId).toBeNull();
       expect((await adb.collection('posting_locks').get()).size).toBe(0);
     }, 60_000);
+  });
+
+  // ═══ سجل مصاريف التأسيس عبر الاستدعاء ═══════════════════════════════
+  // The rules deny `startup_cost_entries` to every client and deny the
+  // parent's `actual_amount` and tax block to every client, so these three
+  // callables are the ONLY door. What matters here is the part a unit test
+  // cannot reach: the role comes from the verified token.
+  describe('سجل مصاريف التأسيس', () => {
+    const ENTRY = {
+      description: 'دفعة', amount: 400, spentDate: '2026-08-04',
+      paymentMethod: 'cash', isTaxInvoice: false,
+    };
+    const FORM = {
+      spentDate: '2026-08-04', paymentMethod: 'cash', isTaxInvoice: true,
+      invoiceNumber: 'S-77', invoiceDate: '2026-08-03', supplier: 'مؤسسة النور',
+      vatAmount: 150, vatRate: null, priceMode: 'inclusive', vatDeductible: true,
+    };
+
+    it('المشغّل يسجّل مصروفاً، والخادم يشتقّ المجموع', async () => {
+      const call = await as('operator');
+      const res = await call('startupAddEntry')({ parentId: 'sp1', entry: ENTRY });
+      expect(res.data).toMatchObject({ actualAmount: 400 });
+      const parent = (await adb.collection('startup_costs').doc('sp1').get()).data();
+      expect(parent.actual_amount).toBe(400);
+    }, 60_000);
+
+    it('والشريك مرفوض في الإضافة والحذف والتحويل', async () => {
+      const call = await as('partner');
+      await expectDenied(call('startupAddEntry')({ parentId: 'sp1', entry: ENTRY }));
+      await expectDenied(call('startupDeleteEntry')({ entryId: 'x' }));
+      await expectDenied(call('startupConvertLegacySpend')({ parentId: 'sp1', form: FORM }));
+    }, 60_000);
+
+    it('والمشغّل مرفوض في ترحيل البيانات القديمة — الفترة قرار محاسبي', async () => {
+      const call = await as('operator');
+      await expectDenied(call('startupConvertLegacySpend')({ parentId: 'sp1', form: FORM }));
+      expect((await adb.collection('startup_cost_entries').get()).size).toBe(0);
+    }, 60_000);
+
+    it('وغير المسجَّل الدخول مرفوض', async () => {
+      await signOut(auth).catch(() => {});
+      const anon = (name) => httpsCallable(fns, name);
+      await expectDenied(anon('startupAddEntry')({ parentId: 'sp1', entry: ENTRY }));
+      await expectDenied(anon('startupConvertLegacySpend')({ parentId: 'sp1', form: FORM }));
+    }, 60_000);
+
+    it('وحساب بلا وثيقة مستخدم مرفوض — الدور يُقرأ من Firestore لا من الحمولة', async () => {
+      await adb.collection('users').doc(uids.operator).delete();
+      const call = await as('operator');
+      await expectDenied(call('startupAddEntry')({
+        // The payload claims a role and a userId; neither is read.
+        parentId: 'sp1', entry: ENTRY, role: 'admin', userId: uids.admin,
+      }));
+    }, 60_000);
+
+    it('والمحاسب يحوّل البند القديم مرة واحدة، والتدقيق يحمل هوية التوكن', async () => {
+      const call = await as('accountant');
+      const first = await call('startupConvertLegacySpend')({ parentId: 'sp1', form: FORM });
+      expect(first.data).toMatchObject({ id: 'legacy__sp1', created: true });
+      const second = await call('startupConvertLegacySpend')({ parentId: 'sp1', form: FORM });
+      expect(second.data.created).toBe(false);
+      expect((await adb.collection('startup_cost_entries').get()).size).toBe(1);
+
+      const parent = (await adb.collection('startup_costs').doc('sp1').get()).data();
+      expect(parent.is_tax_invoice).toBe(false);
+      expect(parent.actual_amount).toBe(1150);
+
+      const audit = (await adb.collection('audit_logs')
+        .where('action', '==', 'startup-convert-legacy').get()).docs.map((x) => x.data());
+      expect(audit).toHaveLength(1);
+      expect(audit[0].userId).toBe(uids.accountant);
+      expect(audit[0].before).toMatchObject({ actualAmount: 1150, isTaxInvoice: true });
+      expect(audit[0].after).toMatchObject({ actualAmount: 1150, entryCount: 1, role: 'accountant' });
+    }, 90_000);
+
+    it('والمصروف المُرحّل لا يُحذف عبر الاستدعاء', async () => {
+      const acct = await as('accountant');
+      const added = await acct('startupAddEntry')({
+        parentId: 'sp1',
+        entry: {
+          ...ENTRY, amount: 1150, isTaxInvoice: true, invoiceNumber: 'S-9',
+          invoiceDate: '2026-08-03', supplier: 'مورّد', vatAmount: 150,
+        },
+      });
+      await acct('ledgerPostSource')({ kind: 'startup', sourceId: added.data.id });
+      await expect(acct('startupDeleteEntry')({ entryId: added.data.id }))
+        .rejects.toThrow(/مُرحّل بالقيد رقم/);
+      expect((await adb.collection('startup_cost_entries').get()).size).toBe(1);
+    }, 90_000);
   });
 });

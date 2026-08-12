@@ -558,13 +558,23 @@ of the things a journal entry cannot be built without, so the row entered the
 return and could never appear on `1200`; `inputMismatch` for it was permanent.
 It was also filed under `created_at` — the day the row was TYPED.
 
-The write path is now closed rather than a posting path opened: a new item is
-a **plan**, real spend is a `startup_cost_entries` row, and `actual_amount` is
-the roll-up of those entries. Legacy rows are listed under **بنود تأسيس تحتاج
+The write path is now closed **in the database**, not only in the forms: the
+rules take `startup_costs` out of the operational wildcard and let a client
+write the PLAN columns alone, and `startup_cost_entries` is denied to every
+client outright. Three things every write there needs are inexpressible in a
+rule — re-summing the siblings into `actual_amount` (rules have no fold),
+re-deriving `status` from that sum, and doing the posting-lock check and the
+parent update in ONE atomic step — so `startupAddEntry`, `startupDeleteEntry`
+and `startupConvertLegacySpend` are the only door, each reading the parent and
+its entries inside the transaction. A new item is a **plan**, real spend is a
+`startup_cost_entries` row, and `actual_amount` is the roll-up of those
+entries, computed on the server and never taken from the client. Legacy rows are listed under **بنود تأسيس تحتاج
 تحويلاً** — out of `input.tax`, never hidden — and converting one asks for the
 spend date, the payment method and the invoice. Nothing is inferred, the entry
 id is derived from the parent so converting twice writes the same document,
 and the parent's tax fields are cleared so the two can never both count.
+Migrating history is **accountant-or-admin**: it decides which quarter a
+deduction is claimed in, which is not an operator's call.
 
 A **voucher** generated from a recurring template starts with no invoice number
 or date — the paper arrives after the due date, and the template cannot supply

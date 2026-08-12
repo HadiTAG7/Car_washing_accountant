@@ -58,16 +58,48 @@ function readSettings(snap) {
 const periodKeyOf = (iso) => String(iso || '').slice(0, 7);
 
 /**
- * Does this change reach into a month that has already been closed?
+ * The latest closed month, read INSIDE a transaction.
  *
- * `effectiveFrom` in or before the latest closed month means the policy that
- * month was filed under is being rewritten. The dates are read from
- * `accounting_periods` rather than assumed.
+ * `effectiveFrom` in or before it means the policy that month was filed under
+ * is being rewritten. Firestore counts a transactional query in the read set,
+ * so a period closed mid-flight aborts the transaction and the retry sees it.
  */
+async function latestClosedPeriodIn(db, tx) {
+  const snap = await tx.get(db.collection(PERIODS_COL).where('status', '==', 'closed'));
+  const keys = snap.docs.map((d) => d.data().periodKey || d.id).filter(Boolean).sort();
+  return keys.length ? keys[keys.length - 1] : null;
+}
+
+/** The same question outside a transaction, for callers that only look. */
 export async function latestClosedPeriod(db) {
   const snap = await db.collection(PERIODS_COL).where('status', '==', 'closed').get();
   const keys = snap.docs.map((d) => d.data().periodKey || d.id).filter(Boolean).sort();
   return keys.length ? keys[keys.length - 1] : null;
+}
+
+/**
+ * Refuses a change that rewrites a filed month unless an admin says why.
+ *
+ * Shared by the policy change and the baseline seed, so the two cannot drift
+ * into different answers about the same month.
+ */
+function gateRetroactive({ effectiveFrom, closedThrough, role, reason, what }) {
+  const retroactive = Boolean(closedThrough) && periodKeyOf(effectiveFrom) <= closedThrough;
+  if (!retroactive) return false;
+  if (role !== 'admin') {
+    throw new TaxPolicyError(
+      `${what} بتاريخ ${effectiveFrom} يقع في فترة مقفلة (آخر فترة مقفلة ${closedThrough}) — `
+      + 'تغيير سياسة شهر مُقفل يعيد كتابة ما قُدِّم، ويحتاج مديراً وسبباً مكتوباً.',
+      { code: 'permission-denied' },
+    );
+  }
+  if (!String(reason || '').trim()) {
+    throw new TaxPolicyError(
+      `${what} في فترة مقفلة يحتاج سبباً مكتوباً — يُقرأ في المراجعة.`,
+      { code: 'failed-precondition' },
+    );
+  }
+  return true;
 }
 
 /**
@@ -81,7 +113,7 @@ export async function latestClosedPeriod(db) {
 export async function setTaxPolicy(db, FieldValue, {
   vatRegistered, washPriceMode, vatRate,
   effectiveFrom, baselineFrom = null, baselineNote = null, reason = null,
-}, { userId = null, role = 'accountant', today = null } = {}) {
+}, { userId = null, role = 'accountant', today = null, onBeforeCommit = null } = {}) {
   if (!isRealPolicyDate(effectiveFrom)) {
     throw new TaxPolicyError('تاريخ سريان السياسة الضريبية مطلوب ويجب أن يكون تاريخاً حقيقياً (YYYY-MM-DD).');
   }
@@ -99,36 +131,33 @@ export async function setTaxPolicy(db, FieldValue, {
     throw new TaxPolicyError('منشأة مسجّلة بنسبة صفر — إمّا ألغِ التسجيل أو أدخل النسبة.');
   }
   const why = String(reason || '').trim();
-
-  // Read OUTSIDE the transaction: a query is not allowed inside one here, and
-  // the closed-period set is re-checked below against the same snapshot the
-  // write uses for everything that can race.
-  const closedThrough = await latestClosedPeriod(db);
-  const retroactive = Boolean(closedThrough) && periodKeyOf(effectiveFrom) <= closedThrough;
-  if (retroactive) {
-    if (role !== 'admin') {
-      throw new TaxPolicyError(
-        `تاريخ السريان ${effectiveFrom} يقع في فترة مقفلة (آخر فترة مقفلة ${closedThrough}) — `
-        + 'تغيير سياسة شهر مُقفل يعيد كتابة ما قُدِّم، ويحتاج مديراً وسبباً مكتوباً.',
-        { code: 'permission-denied' },
-      );
-    }
-    if (!why) {
-      throw new TaxPolicyError(
-        'تغيير سياسة فترة مقفلة يحتاج سبباً مكتوباً — يُقرأ في المراجعة.',
-        { code: 'failed-precondition' },
-      );
-    }
-  }
-
   const asOf = isRealPolicyDate(today) ? today : new Date().toISOString().slice(0, 10);
 
   return db.runTransaction(async (tx) => {
     const ref = db.collection(SETTINGS_COL).doc(SETTINGS_DOC);
-    // Re-read INSIDE the transaction. Two tabs saving at once would otherwise
-    // each merge onto the copy they loaded, and one policy row would vanish
-    // with nothing to show it ever existed.
-    const current = readSettings(await tx.get(ref));
+    // Both reads INSIDE the transaction, and that is the point of this shape.
+    //
+    // The settings, because two tabs saving at once would otherwise each merge
+    // onto the copy they loaded and one policy row would vanish with nothing
+    // to show it ever existed.
+    //
+    // The closed periods, because reading them beforehand makes the answer a
+    // photograph: a period closed between the photograph and the commit, and
+    // the accountant's change sails into a month that was filed while it was
+    // in flight. Firestore counts a transactional query in the read set, so
+    // closing a period mid-flight aborts this and the retry sees it closed —
+    // and the refusal and the write are then made on ONE snapshot.
+    const [settingsSnap, closedThrough] = await Promise.all([
+      tx.get(ref), latestClosedPeriodIn(db, tx),
+    ]);
+    const current = readSettings(settingsSnap);
+    const retroactive = gateRetroactive({
+      effectiveFrom, closedThrough, role, reason: why, what: 'تغيير السياسة الضريبية',
+    });
+    // A test seam, and named as one: it runs after the reads and before the
+    // writes, so a test can close a period mid-transaction and prove the retry
+    // sees it. Nothing in production passes it.
+    if (onBeforeCommit) await onBeforeCommit();
 
     const history = withTaxPolicyChange(
       current,
@@ -174,7 +203,35 @@ export async function setTaxPolicy(db, FieldValue, {
  * running on unversioned settings, and the one that makes every earlier month
  * answerable.
  */
-export async function seedTaxPolicy(db, FieldValue, { baselineFrom, note = null }, { userId = null } = {}) {
+export async function seedTaxPolicy(db, FieldValue, { baselineFrom, note = null }, {
+  userId = null, role = 'accountant',
+} = {}) {
+  if (!isRealPolicyDate(baselineFrom)) {
+    throw new TaxPolicyError('تاريخ بداية السياسة مطلوب ويجب أن يكون تاريخاً حقيقياً (YYYY-MM-DD).');
+  }
+
+  // ── لماذا لا يحتاج السَّقْف حارساً كالتغيير ──
+  // Seeding changes no figure. Before it, `taxPolicyAt(anything)` already
+  // returned the current values for every date — as an unlabelled assumption.
+  // After it, every date on or after the baseline resolves to those SAME
+  // values, and only the dates before it change: from a silently-assumed
+  // number to a declared gap. A closed month is therefore untouched, and
+  // gating on it would be theatre.
+  //
+  // The real hazard is the opposite one, and it IS gated: a baseline set
+  // AFTER an entry that has already been posted makes that entry's month
+  // unanswerable — the books would hold a figure the policy record cannot
+  // explain. So the earliest posted entry is read, and a baseline later than
+  // it is refused with the date to use instead.
+  const earliest = await earliestEntryDate(db);
+  if (earliest && String(baselineFrom).slice(0, 10) > earliest) {
+    throw new TaxPolicyError(
+      `تاريخ البداية ${baselineFrom} بعد أقدم قيد مُرحّل (${earliest}) — `
+      + 'ذلك يجعل شهراً في الدفاتر بلا سياسة معروفة. ابدأ من تاريخ أقدم قيد أو قبله.',
+      { code: 'failed-precondition' },
+    );
+  }
+
   return db.runTransaction(async (tx) => {
     const ref = db.collection(SETTINGS_COL).doc(SETTINGS_DOC);
     const current = readSettings(await tx.get(ref));
@@ -184,14 +241,25 @@ export async function seedTaxPolicy(db, FieldValue, { baselineFrom, note = null 
     tx.set(db.collection(AUDIT_COL).doc(), {
       action: 'tax-policy', collectionName: SETTINGS_COL, documentId: SETTINGS_DOC, userId,
       before: { historyLength: 0 },
-      after: { baselineFrom, historyLength: 1, ...history[0] },
-      note: `تهيئة السجل التاريخي للسياسة الضريبية من ${baselineFrom}`
+      after: { baselineFrom, historyLength: 1, role, ...history[0] },
+      note: `تهيئة السجل التاريخي للسياسة الضريبية من ${baselineFrom} — `
+        + 'لا يغيّر أي رقم مُرحّل؛ يحوّل ما قبله من افتراض صامت إلى فجوة معلنة'
         + (note ? ` — ${note}` : ''),
       at: FieldValue.serverTimestamp(),
       atIso: new Date().toISOString(),
     });
     return next;
   });
+}
+
+/** The date of the oldest posted entry, or null when the books are empty. */
+export async function earliestEntryDate(db) {
+  const snap = await db.collection('journal_entries').get();
+  const dates = snap.docs
+    .map((d) => String(d.data().entryDate || '').slice(0, 10))
+    .filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x))
+    .sort();
+  return dates.length ? dates[0] : null;
 }
 
 /**

@@ -146,7 +146,7 @@ describe.each(IMPLEMENTATIONS)('%s — أول تغيير يكتب baseline صر�
 describe.each(IMPLEMENTATIONS)('%s — التغييرات اللاحقة', (_name, impl) => {
   const settled = { vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15, taxPolicyHistory: [HISTORY[0]] };
 
-  it('لا تُسجّل شيئاً إذا لم تتغير حقول الضريبة', () => {
+  it('لا تُسجّل شيئاً إذا كان التاريخ يرث السياسة نفسها', () => {
     const next = impl.withTaxPolicyChange(settled, { ...settled, autoPost: true }, '2026-08-01');
     expect(next).toEqual([HISTORY[0]]);
   });
@@ -187,6 +187,115 @@ describe.each(IMPLEMENTATIONS)('%s — التغييرات اللاحقة', (_nam
 
   it('والحقول المسطّحة قبل الـbaseline لا تُخترع', () => {
     expect(impl.currentPolicyFields(HISTORY, '2025-06-01')).toBeNull();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// قرار إضافة السطر: يُقاس على ما سيسري في تاريخه، لا على إعداد اليوم
+// ═══════════════════════════════════════════════════════════════════════════
+// The comparison used to be `proposed` against the CURRENT flat fields, which
+// silently dropped two whole classes of legitimate change: a future row
+// returning to an earlier policy, and a historical correction to a policy that
+// happens to match today.
+describe.each(IMPLEMENTATIONS)('%s — السطر يُقاس بما يسبقه', (_name, impl) => {
+  const settled = (rows) => ({
+    vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15, taxPolicyHistory: rows,
+  });
+
+  it('inclusive اليوم → exclusive سبتمبر → inclusive أكتوبر: السطر يُحفظ', () => {
+    const rows = [
+      { effectiveFrom: '2026-01-01', vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15, baseline: true },
+      { effectiveFrom: '2026-09-01', vatRegistered: true, washPriceMode: 'exclusive', vatRate: 0.15 },
+    ];
+    // Today is August, so the flat fields read `inclusive` — and the October
+    // row matches them. The old comparison dropped it for that reason and the
+    // transition simply disappeared.
+    const next = impl.withTaxPolicyChange(
+      settled(rows),
+      { vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15 },
+      '2026-10-01',
+    );
+    expect(next.map((h) => h.effectiveFrom)).toEqual(['2026-01-01', '2026-09-01', '2026-10-01']);
+    const after = { taxPolicyHistory: next };
+    expect(impl.taxPolicyAt('2026-08-15', after).washPriceMode).toBe('inclusive');
+    expect(impl.taxPolicyAt('2026-09-15', after).washPriceMode).toBe('exclusive');
+    expect(impl.taxPolicyAt('2026-10-15', after).washPriceMode).toBe('inclusive');
+    // …and today's flat fields did not move.
+    expect(impl.currentPolicyFields(next, '2026-08-15')).toMatchObject({ washPriceMode: 'inclusive' });
+  });
+
+  it('و5% يناير → 15% يوليو → تصحيح مارس إلى 15% رغم أنها نسبة اليوم', () => {
+    const rows = [
+      { effectiveFrom: '2026-01-01', vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.05, baseline: true },
+      { effectiveFrom: '2026-07-01', vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15 },
+    ];
+    const next = impl.withTaxPolicyChange(
+      { ...settled(rows), vatRate: 0.15 },
+      { vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15 },
+      '2026-03-01',
+    );
+    expect(next.map((h) => h.effectiveFrom)).toEqual(['2026-01-01', '2026-03-01', '2026-07-01']);
+    const after = { taxPolicyHistory: next };
+    expect(impl.taxPolicyAt('2026-02-15', after).vatRate).toBe(0.05);
+    expect(impl.taxPolicyAt('2026-03-15', after).vatRate).toBe(0.15);
+  });
+
+  it('وتعديل سطر موجود في التاريخ نفسه يُقاس بما قبله لا بنفسه', () => {
+    const rows = [
+      { effectiveFrom: '2026-01-01', vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15, baseline: true },
+      { effectiveFrom: '2026-09-01', vatRegistered: true, washPriceMode: 'exclusive', vatRate: 0.15 },
+    ];
+    // Correcting September to 5%: still a real transition from January.
+    const edited = impl.withTaxPolicyChange(
+      settled(rows), { vatRegistered: true, washPriceMode: 'exclusive', vatRate: 0.05 }, '2026-09-01',
+    );
+    expect(edited).toHaveLength(2);
+    expect(impl.taxPolicyAt('2026-09-15', { taxPolicyHistory: edited })).toMatchObject({ vatRate: 0.05 });
+
+    // …and correcting it BACK to January's policy removes the transition,
+    // because there is no longer one to describe.
+    const undone = impl.withTaxPolicyChange(
+      settled(rows), { vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15 }, '2026-09-01',
+    );
+    expect(undone.map((h) => h.effectiveFrom)).toEqual(['2026-01-01']);
+    expect(impl.taxPolicyAt('2026-09-15', { taxPolicyHistory: undone }).washPriceMode).toBe('inclusive');
+  });
+
+  it('وسياسة مطابقة فعلاً لما سيسري لا تضيف سطراً عديم الأثر', () => {
+    const rows = [
+      { effectiveFrom: '2026-01-01', vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15, baseline: true },
+    ];
+    const next = impl.withTaxPolicyChange(
+      settled(rows), { vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15 }, '2026-08-01',
+    );
+    expect(next).toEqual(rows);
+  });
+
+  it('وسطر أسبق من الـbaseline يصبح هو الـbaseline، وواحد فقط', () => {
+    const rows = [
+      { effectiveFrom: '2026-01-01', vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15, baseline: true },
+    ];
+    const next = impl.withTaxPolicyChange(
+      settled(rows), { vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.05 }, '2025-06-01',
+    );
+    expect(next.map((h) => h.effectiveFrom)).toEqual(['2025-06-01', '2026-01-01']);
+    expect(next.filter((h) => h.baseline)).toHaveLength(1);
+    expect(next[0].baseline).toBe(true);
+    expect(next[1].baseline).toBeUndefined();
+  });
+
+  it('ولا يُترك تاريخان متكرران مهما تكرر التعديل', () => {
+    let rows = [
+      { effectiveFrom: '2026-01-01', vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15, baseline: true },
+    ];
+    for (const rate of [0.05, 0.15, 0.05]) {
+      rows = impl.withTaxPolicyChange(settled(rows), {
+        vatRegistered: true, washPriceMode: 'inclusive', vatRate: rate,
+      }, '2026-09-01');
+    }
+    expect(new Set(rows.map((h) => h.effectiveFrom)).size).toBe(rows.length);
+    expect(rows.map((h) => h.effectiveFrom)).toEqual(['2026-01-01', '2026-09-01']);
+    expect(rows[1].vatRate).toBe(0.05);
   });
 });
 

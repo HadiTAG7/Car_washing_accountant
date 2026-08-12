@@ -104,6 +104,14 @@ export function buildVoucher(template, periodKey, { generatedBy = null } = {}) {
     // that stops being a tax invoice must not un-claim what was already filed.
     isTaxInvoice: Boolean(template.isTaxInvoice),
     invoiceUrl: template.invoiceUrl || '',
+    // The tax treatment travels with the amount, for the same reason: a
+    // template re-rated next year must not restate what a filed voucher
+    // claimed. `vatAmount` stays null until the actual invoice arrives — the
+    // supplier writes it, not the template.
+    vatAmount: null,
+    vatRate: template.vatRate ?? null,
+    priceMode: template.priceMode || 'inclusive',
+    vatDeductible: template.vatDeductible !== false,
     paymentStatus: 'pending',
     paidDate: null,
     status: 'active',

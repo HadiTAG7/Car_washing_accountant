@@ -352,6 +352,9 @@ export function buildVatReport({
 } = {}) {
   const eligible = [];
   const ineligible = [];
+  // Qualifying invoices whose VAT cannot be determined at all. Neither
+  // deducted nor forfeited — unresolved, and named.
+  const unresolved = [];
 
   for (const row of inputs) {
     const date = claimDateOf(row);
@@ -363,6 +366,19 @@ export function buildVatReport({
       // requirements — so period filtering is unambiguous.
       if (outsidePeriod) continue;
       const s = inputInvoiceTax(row, { policyAt, rate });
+      // ── لا تُخصم بصفر صامت ──
+      // A qualifying invoice whose tax nobody can determine — no stated
+      // amount, no rate of its own, and a date the policy record does not
+      // reach — is NOT a zero-VAT purchase. Putting it in `eligible` with
+      // tax 0 files a deduction of nothing and calls it correct. It goes to
+      // its own list, with what is missing said out loud.
+      if (s.source === 'unknown-policy') {
+        unresolved.push({
+          ...row, claimDate: date, gross: s.gross,
+          reason: 'السياسة التاريخية غير مهيأة ولا يوجد مبلغ ضريبة مثبت على الفاتورة',
+        });
+        continue;
+      }
       eligible.push({ ...row, claimDate: date, gross: s.gross, net: s.net, tax: s.vat, taxSource: s.source });
       continue;
     }
@@ -402,7 +418,8 @@ export function buildVatReport({
   // …unless the operational figure could not be computed either, because the
   // period predates the policy record. A number derived from today's switches
   // for a month nobody described is worse than no number: it looks filed.
-  const policyGap = operationalOutput.unknownPolicy > 0 && !ledgerOutput.available;
+  const outputPolicyGap = operationalOutput.unknownPolicy > 0 && !ledgerOutput.available;
+  const policyGap = outputPolicyGap;
   const output = ledgerOutput.available
     ? { ...operationalOutput, tax: ledgerOutput.tax, source: 'ledger' }
     : policyGap
@@ -425,7 +442,13 @@ export function buildVatReport({
     // Completed washes in the period whose date predates the policy record.
     // The page shows «السياسة التاريخية غير مهيأة» rather than a figure.
     unknownPolicyWashes: operationalOutput.unknownPolicy,
-    policyUnconfigured: policyGap,
+    // Purchases in the period the record cannot price either. `policyUnconfigured`
+    // covers BOTH sides: a gap on either one means the period cannot be filed
+    // from this report as it stands.
+    unresolved,
+    unresolvedCount: unresolved.length,
+    unresolvedGross: round2(unresolved.reduce((sum, r) => sum + (r.gross || 0), 0)),
+    policyUnconfigured: outputPolicyGap || unresolved.length > 0,
     operationalOutput,
     ledgerOutput,
     ledgerInput,

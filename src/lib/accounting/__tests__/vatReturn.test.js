@@ -472,3 +472,91 @@ describe('ضريبة المدخلات من الفاتورة نفسها', () => {
     expect(report.eligible[0].taxSource).toBe('invoice-rate');
   });
 });
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// لا تختفي ضريبة قابلة للخصم بصفر صامت
+// ═══════════════════════════════════════════════════════════════════════════
+describe('الفواتير التي لا يمكن تسعير ضريبتها', () => {
+  const SETTINGS = {
+    vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15,
+    taxPolicyHistory: [
+      { effectiveFrom: '2026-01-01', vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15, baseline: true },
+    ],
+  };
+  const policyAt = (d) => taxPolicyAt(d, SETTINGS);
+
+  it('فاتورة قبل الـbaseline بلا حقول ضريبية تظهر unresolved لا eligible', () => {
+    const report = buildVatReport({
+      inputs: [{ ...INVOICE, id: 'old', amount: 115, invoiceDate: '2025-06-01' }],
+      period: '2025-Q2', filing: 'quarterly', policyAt,
+    });
+    expect(report.eligible).toHaveLength(0);
+    expect(report.unresolvedCount).toBe(1);
+    expect(report.unresolvedGross).toBe(115);
+    expect(report.unresolved[0].reason).toMatch(/السياسة التاريخية غير مهيأة/);
+    // Not deducted, and not silently deducted as zero either.
+    expect(report.input.tax).toBe(0);
+    expect(report.input.count).toBe(0);
+    expect(report.policyUnconfigured).toBe(true);
+  });
+
+  it('ونفسها بمبلغ ضريبة صريح تُخصم كما هي', () => {
+    const report = buildVatReport({
+      inputs: [{ ...INVOICE, id: 'old', amount: 115, vatAmount: 5, invoiceDate: '2025-06-01' }],
+      period: '2025-Q2', filing: 'quarterly', policyAt,
+    });
+    expect(report.unresolvedCount).toBe(0);
+    expect(report.input.tax).toBe(5);
+    expect(report.eligible[0].taxSource).toBe('invoice');
+    expect(report.policyUnconfigured).toBe(false);
+  });
+
+  it('وبنسبة مثبتة تُخصم بها', () => {
+    const report = buildVatReport({
+      inputs: [{ ...INVOICE, id: 'old', amount: 105, vatRate: 0.05, invoiceDate: '2025-06-01' }],
+      period: '2025-Q2', filing: 'quarterly', policyAt,
+    });
+    expect(report.unresolvedCount).toBe(0);
+    expect(report.input.tax).toBe(5);
+    expect(report.eligible[0].taxSource).toBe('invoice-rate');
+  });
+
+  it('والمبلغ الصريح يتغلب على النسبة المثبتة', () => {
+    // 115 at 15% would be 15; the supplier wrote 5, and the supplier is right.
+    const report = buildVatReport({
+      inputs: [{ ...INVOICE, id: 'x', amount: 115, vatAmount: 5, vatRate: 0.15, invoiceDate: '2026-08-03' }],
+      period: '2026-Q3', filing: 'quarterly', policyAt,
+    });
+    expect(report.input.tax).toBe(5);
+    expect(report.eligible[0].taxSource).toBe('invoice');
+  });
+
+  it('وفاتورة 5% تبقى 5% بعد تغيير السياسة إلى 15%', () => {
+    const row = { ...INVOICE, id: 'r', amount: 105, vatRate: 0.05, invoiceDate: '2026-08-03' };
+    const before = buildVatReport({ inputs: [row], period: '2026-Q3', policyAt });
+    const changed = {
+      ...SETTINGS,
+      taxPolicyHistory: [
+        ...SETTINGS.taxPolicyHistory,
+        { effectiveFrom: '2026-09-01', vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15 },
+      ],
+    };
+    const after = buildVatReport({
+      inputs: [row], period: '2026-Q3', policyAt: (d) => taxPolicyAt(d, changed),
+    });
+    expect(after.input.tax).toBe(before.input.tax);
+    expect(after.input.tax).toBe(5);
+  });
+
+  it('وpolicyUnconfigured يشمل فجوة المدخلات وحدها', () => {
+    // No washes at all, so the output side has nothing to say — the gap is
+    // entirely on the purchase side, and the flag still has to raise it.
+    const report = buildVatReport({
+      inputs: [{ ...INVOICE, id: 'old', amount: 115, invoiceDate: '2025-06-01' }],
+      washes: [], period: '2025-Q2', filing: 'quarterly', policyAt,
+    });
+    expect(report.unknownPolicyWashes).toBe(0);
+    expect(report.policyUnconfigured).toBe(true);
+  });
+});

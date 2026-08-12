@@ -194,7 +194,35 @@ function normalizeIsoDate(value) {
   const s = String(value);
   return s.length >= 10 ? s.slice(0, 10) : s;
 }
-/** Reads the tax-invoice block off a raw row. */
+/**
+ * A stored VAT amount, or null — never a silent zero.
+ *
+ * `Number('')` is 0, which is exactly the confusion this field exists to
+ * avoid: "the supplier did not state a VAT amount" and "the supplier stated
+ * zero" are different facts, and only the second is a deduction of nothing.
+ */
+function normalizeVatAmount(value) {
+  if (value === '' || value === null || value === undefined) return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : null;
+}
+/** A stored rate as a fraction, or null. 0 is a real answer; '' is not. */
+function normalizeVatRate(value) {
+  if (value === '' || value === null || value === undefined) return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 && n < 1 ? n : null;
+}
+
+/**
+ * Reads the tax-invoice block off a raw row.
+ *
+ * `vatAmount`, `vatRate` and `priceMode` are what let a purchase keep its own
+ * tax. Without them the report had to derive VAT from a rate — and the only
+ * rate it had was today's, so a 5%-era invoice was reclaimed at 15% the moment
+ * the standard rate moved. A tax invoice states its own VAT; that figure is
+ * the deduction, and second-guessing it from a percentage is how a reclaim
+ * stops matching the paper it rests on.
+ */
 export function mapTaxInvoiceFields(row) {
   return {
     isTaxInvoice:  Boolean(row.is_tax_invoice),
@@ -202,6 +230,14 @@ export function mapTaxInvoiceFields(row) {
     invoiceNumber: row.invoice_number || '',
     invoiceDate:   row.invoice_date || '',
     supplier:      row.supplier || '',
+    // The VAT the SUPPLIER wrote on the document. Null means "not stated",
+    // which is a different fact from "zero".
+    vatAmount:     normalizeVatAmount(row.vat_amount),
+    // The rate the document was raised at, when it is known but the amount is
+    // not — a 2019 invoice keeps its 5% however many times the rate moves.
+    vatRate:       normalizeVatRate(row.vat_rate),
+    // Whether `amount` already contains the tax.
+    priceMode:     row.price_mode === 'exclusive' ? 'exclusive' : 'inclusive',
     // Absent means "deductible if everything else checks out"; only an
     // explicit false excludes the tax from the claim.
     vatDeductible: row.vat_deductible === false ? false : true,
@@ -211,7 +247,7 @@ export function mapTaxInvoiceFields(row) {
 /** Writes the same block back, for an insert. */
 export function toTaxInvoiceFields({
   isTaxInvoice, invoiceUrl, invoiceNumber, invoiceDate, supplier,
-  vatDeductible, paymentMethod,
+  vatAmount, vatRate, priceMode, vatDeductible, paymentMethod,
 } = {}) {
   return {
     is_tax_invoice: Boolean(isTaxInvoice),
@@ -219,6 +255,9 @@ export function toTaxInvoiceFields({
     invoice_number: trimOrNull(invoiceNumber),
     invoice_date:   normalizeIsoDate(invoiceDate),
     supplier:       trimOrNull(supplier),
+    vat_amount:     normalizeVatAmount(vatAmount),
+    vat_rate:       normalizeVatRate(vatRate),
+    price_mode:     priceMode === 'exclusive' ? 'exclusive' : 'inclusive',
     vat_deductible: vatDeductible === false ? false : true,
     payment_method: clampExpensePaymentMethod(paymentMethod),
   };
@@ -231,6 +270,9 @@ export function toTaxInvoiceFieldsUpdate(updates = {}) {
   if (updates.invoiceNumber !== undefined) payload.invoice_number = trimOrNull(updates.invoiceNumber);
   if (updates.invoiceDate   !== undefined) payload.invoice_date   = normalizeIsoDate(updates.invoiceDate);
   if (updates.supplier      !== undefined) payload.supplier       = trimOrNull(updates.supplier);
+  if (updates.vatAmount     !== undefined) payload.vat_amount     = normalizeVatAmount(updates.vatAmount);
+  if (updates.vatRate       !== undefined) payload.vat_rate       = normalizeVatRate(updates.vatRate);
+  if (updates.priceMode     !== undefined) payload.price_mode     = updates.priceMode === 'exclusive' ? 'exclusive' : 'inclusive';
   if (updates.vatDeductible !== undefined) payload.vat_deductible = updates.vatDeductible === false ? false : true;
   if (updates.paymentMethod !== undefined) payload.payment_method = clampExpensePaymentMethod(updates.paymentMethod);
   return payload;

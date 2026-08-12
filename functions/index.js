@@ -285,12 +285,12 @@ export const accountingSetTaxPolicy = onCall(OPTS, async (req) => {
 
 /** تهيئة السجل التاريخي بلا تغيير — "this has applied since the books began". */
 export const accountingSeedTaxPolicy = onCall(OPTS, async (req) => {
-  const { uid } = await requireAccountant(req.auth);
+  const { uid, role } = await requireAccountant(req.auth);
   try {
     return await seedTaxPolicy(db, FieldValue, {
       baselineFrom: req.data?.baselineFrom,
       note: req.data?.note ?? null,
-    }, { userId: uid });
+    }, { userId: uid, role });
   } catch (e) { throw toHttps(e); }
 });
 

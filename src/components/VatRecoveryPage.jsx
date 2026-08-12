@@ -29,6 +29,14 @@ import { taxPolicyAt } from '../lib/accounting/taxPolicy';
 import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 
+/** Where a deducted VAT figure actually came from — shown, never inferred. */
+const TAX_SOURCE_LABELS = {
+  invoice: 'مبلغ الفاتورة',
+  'invoice-rate': 'نسبة الفاتورة',
+  policy: 'سياسة تاريخ الفاتورة',
+  default: 'النسبة الافتراضية',
+};
+
 // Same guard the detail modal uses — only http(s) values become anchors.
 function isSafeHttpUrl(value) {
   return /^https?:\/\//i.test(String(value || '').trim());
@@ -150,19 +158,20 @@ export default function VatRecoveryPage() {
       Number((e.gross * s).toFixed(2)),
       Number((e.net * s).toFixed(2)),
       Number((e.tax * s).toFixed(2)),
+      TAX_SOURCE_LABELS[e.taxSource] || e.taxSource || '',
       isSafeHttpUrl(e.invoiceUrl) ? e.invoiceUrl : '',
     ]);
     rows.push(['إجمالي ضريبة المدخلات المؤهلة', '', '', '', '', '',
       Number((report.input.gross * s).toFixed(2)),
       Number((report.input.net * s).toFixed(2)),
-      Number(inputTax.toFixed(2)), '']);
+      Number(inputTax.toFixed(2)), '', '']);
     rows.push(['ضريبة المخرجات (الغسلات)', '', '', '', '', '',
       Number((report.output.gross * s).toFixed(2)),
       Number((report.output.net * s).toFixed(2)),
-      Number(outputTax.toFixed(2)), '']);
+      Number(outputTax.toFixed(2)), '', '']);
     rows.push([
       netTax >= 0 ? 'صافي الضريبة المستحقة للهيئة' : 'صافي الضريبة المستردة',
-      '', '', '', '', '', '', '', Number(Math.abs(netTax).toFixed(2)), '',
+      '', '', '', '', '', '', '', Number(Math.abs(netTax).toFixed(2)), '', '',
     ]);
     // Rejected invoices travel with the export: an accountant reviewing the
     // period needs to see what was NOT claimed and why.
@@ -170,20 +179,30 @@ export default function VatRecoveryPage() {
       rows.push([
         itemNameById.get(r.parentId) || '', SOURCE_META[r.source]?.label || r.source,
         r.description, r.supplier || '', r.invoiceNumber || '', r.claimDate || '',
-        Number(((Number(r.amount) || 0) * s).toFixed(2)), '', 0,
+        Number(((Number(r.amount) || 0) * s).toFixed(2)), '', 0, '',
         `غير مؤهلة — ينقصها: ${r.missing.join('، ')}`,
+      ]);
+    }
+    // Unresolved invoices travel too. They are NOT zero-VAT purchases and must
+    // not read as if they were — the export says which they are and why.
+    for (const r of report.unresolved) {
+      rows.push([
+        itemNameById.get(r.parentId) || '', SOURCE_META[r.source]?.label || r.source,
+        r.description, r.supplier || '', r.invoiceNumber || '', r.claimDate || '',
+        Number(((Number(r.amount) || 0) * s).toFixed(2)), '', '', 'غير محدَّد',
+        `ضريبة غير محدَّدة — ${r.reason}`,
       ]);
     }
     downloadCsv(
       `تقرير-ضريبة-القيمة-المضافة-${activePeriod || 'كل-الفترات'}`,
       ['البند', 'المصدر', 'الوصف', 'المورّد', 'رقم الفاتورة', 'تاريخ الفاتورة',
-        'شامل الضريبة', 'الصافي', 'الضريبة 15%', 'رابط الفاتورة / ملاحظة'],
+        'شامل الضريبة', 'الصافي', 'الضريبة', 'مصدر الضريبة', 'رابط الفاتورة / ملاحظة'],
       rows,
     );
   }
 
   const anyRows = report.eligible.length > 0 || report.ineligible.length > 0
-    || report.output.count > 0;
+    || report.unresolved.length > 0 || report.output.count > 0;
 
   return (
     <>
@@ -409,7 +428,11 @@ export default function VatRecoveryPage() {
                     <th className="py-3 px-4 whitespace-nowrap">تاريخ الفاتورة</th>
                     <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">شامل الضريبة</th>
                     <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">الصافي</th>
-                    <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">الضريبة (15%)</th>
+                    {/* No fixed «15%» in the caption: a 5%-era purchase keeps
+                        its own rate, so the number is shown with WHERE it came
+                        from rather than a percentage that may contradict it. */}
+                    <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">الضريبة</th>
+                    <th className="py-3 px-4 whitespace-nowrap">مصدر الضريبة</th>
                     <th className="py-3 px-4 whitespace-nowrap">الفاتورة</th>
                   </tr>
                 </thead>
@@ -431,6 +454,9 @@ export default function VatRecoveryPage() {
                       <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums text-slate-700 dark:text-slate-300">{formatCurrency(e.gross * s)}</td>
                       <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums text-slate-700 dark:text-slate-300">{formatCurrency(e.net * s)}</td>
                       <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums font-bold text-emerald-700 dark:text-emerald-300">{formatCurrencyPrecise(e.tax * s)}</td>
+                      <td className="py-3 px-4 whitespace-nowrap text-[11px] text-slate-500 dark:text-slate-400">
+                        {TAX_SOURCE_LABELS[e.taxSource] || e.taxSource || '—'}
+                      </td>
                       <td className="py-3 px-4 whitespace-nowrap">
                         {isSafeHttpUrl(e.invoiceUrl) ? (
                           <a href={e.invoiceUrl} target="_blank" rel="noopener noreferrer"
@@ -459,6 +485,66 @@ export default function VatRecoveryPage() {
             </div>
           )}
         </Card>
+
+        {/* ── فواتير مؤهلة بضريبة غير محدَّدة ─────────────────────
+            These qualify on every field the deduction needs, but nobody can
+            say what their VAT is: no amount on the paper, no rate of their
+            own, and a date the policy record does not reach. Putting them in
+            `eligible` with tax 0 would file a deduction of nothing and call it
+            correct — a deductible tax vanishing in silence is exactly as bad
+            as one appearing from nowhere. */}
+        {report.unresolved.length > 0 && (
+          <Card className="p-6">
+            <SectionHeader
+              title="فواتير بضريبة غير محدَّدة"
+              subtitle="مؤهلة للخصم لكن مبلغ ضريبتها غير معروف — لم تُخصم ولم تُحتسب صفراً"
+            />
+            <div className="flex items-start gap-2.5 bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/30 text-amber-800 dark:text-amber-300 text-xs px-4 py-3 rounded-control leading-relaxed mb-4">
+              <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+              <p>
+                {formatNumber(report.unresolvedCount)} فاتورة بإجمالي{' '}
+                {formatCurrency(report.unresolvedGross * s)}. أدخل مبلغ الضريبة المكتوب عليها
+                أو نسبتها، أو هيّئ السجل التاريخي للسياسة الضريبية من «إقفال الفترة».
+              </p>
+            </div>
+            <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
+              <table className="w-full min-w-[640px] text-sm">
+                <thead>
+                  <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
+                    <th className="py-3 px-4 whitespace-nowrap">البند</th>
+                    <th className="py-3 px-4 whitespace-nowrap">التاريخ</th>
+                    <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">المبلغ</th>
+                    <th className="py-3 px-4 whitespace-nowrap">السبب</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {report.unresolved.map((r) => (
+                    <tr key={r.id} className="border-b border-slate-50 dark:border-slate-800/60 last:border-0">
+                      <td className="py-3 px-4 whitespace-normal break-words min-w-[160px] text-slate-800 dark:text-slate-200">
+                        <span className="inline-flex items-center gap-1.5 font-medium">
+                          {r.description}
+                          <SourceBadge source={r.source} />
+                        </span>
+                        <span className="block text-[11px] font-normal text-slate-500 dark:text-slate-400 mt-0.5">
+                          {itemNameById.get(r.parentId) || '—'}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 whitespace-nowrap tabular-nums text-slate-600 dark:text-slate-400">
+                        {r.claimDate ? formatDate(r.claimDate) : '—'}
+                      </td>
+                      <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums text-slate-700 dark:text-slate-300">
+                        {formatCurrency((Number(r.amount) || 0) * s)}
+                      </td>
+                      <td className="py-3 px-4 text-[11px] leading-relaxed text-amber-800 dark:text-amber-300">
+                        {r.reason}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        )}
 
         {/* ── الفواتير غير المؤهلة ──────────────────────────────── */}
         {report.ineligible.length > 0 && (

@@ -161,6 +161,32 @@ export function saleTaxTreatmentOfEntry(entry) {
   return { known: false, reason: 'المعالجة الضريبية غير قابلة للاشتقاق من سطور القيد' };
 }
 
+/**
+ * The tax treatment a NOTE must inherit from the invoice it corrects.
+ *
+ * Three sources, in order of authority, and no fourth: the invoice's own
+ * frozen `taxSnapshot`; the entry's; the entry's lines, derived and verified.
+ * `reference.vatRate` is deliberately NOT one of them on its own — a stored
+ * rate that the entry does not reproduce is a rate that disagrees with the
+ * books, and a correction has to follow the books.
+ */
+export function referenceTaxTreatment(reference, entry) {
+  const snap = reference?.taxSnapshot;
+  if (snap && Number.isFinite(Number(snap.vatRate))) {
+    return {
+      known: true, source: 'reference-snapshot',
+      taxable: Boolean(snap.vatRegistered) && Number(snap.vat) > 0,
+      vatRate: Number(snap.vatRate),
+      priceMode: snap.washPriceMode === 'exclusive' ? 'exclusive' : 'inclusive',
+    };
+  }
+  const fromEntry = saleTaxTreatmentOfEntry(entry);
+  if (fromEntry.known) {
+    return { ...fromEntry, source: `reference-entry-${fromEntry.source}` };
+  }
+  return { known: false, reason: fromEntry.reason || 'لا لقطة ضريبية ولا قيد قابل للاشتقاق' };
+}
+
 export function saleTotalsOfEntry(lines) {
   let net = 0, vat = 0, gross = 0;
   let settlementAccount = null;
@@ -552,6 +578,7 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
     // ── the reference, read rather than trusted ──
     let referenceNumber = null;
     let reference = null;
+    let referenceEntry = null;
     if (referenceRef) {
       if (!referenceSnap.exists) {
         throw new InvoicingError('الفاتورة المرجعية غير موجودة.', { code: 'not-found' });
@@ -597,6 +624,7 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
           `قيد الفاتورة ${referenceNumber} معكوس — صحّح الأصل بدل إصدار إشعار عليه.`,
         );
       }
+      referenceEntry = referenceEntrySnap.data();
     }
 
     // ── المطالبة بالسجل المصدر ──
@@ -665,11 +693,41 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
     let taxable;
     let vatRate;
     let entryTreatment = null;
+    let referenceTreatment = null;
     let policyEffectiveFrom = null;
     if (reference) {
-      taxable = Boolean(reference.taxable);
-      vatRate = Number.isFinite(Number(reference.vatRate)) ? Number(reference.vatRate) : VAT_RATE;
-      policyEffectiveFrom = reference.taxPolicyEffectiveFrom || null;
+      // ── لا تُفترض 15% لإشعار على فاتورة قديمة ──
+      // `reference.vatRate ?? VAT_RATE` was a 15% assumption wearing a
+      // fallback: a legacy invoice carries no rate, so a note on a 5%-era sale
+      // would have been raised at 15% — reclaiming output tax that was never
+      // charged. The treatment is RECOVERED instead: the invoice's own frozen
+      // snapshot first, then its entry's, then derived from the entry's lines
+      // and verified. If none of the three can answer, the note is refused.
+      const recovered = referenceTaxTreatment(reference, referenceEntry);
+      if (!recovered.known) {
+        throw new InvoicingError(
+          `المعالجة الضريبية للفاتورة ${referenceNumber} غير معروفة (${recovered.reason}) — `
+          + 'لا تُفترض نسبة. راجع الفاتورة وقيدها قبل إصدار الإشعار.',
+        );
+      }
+      // …and the invoice has to agree with the entry it names. A document
+      // whose printed tax differs from the entry behind it cannot be the basis
+      // for a correction to either.
+      const entrySaleOfRef = saleTotalsOfEntry(referenceEntry?.lines);
+      if (Math.abs(entrySaleOfRef.gross - round2(reference.gross)) >= MONEY_EPSILON
+        || Math.abs(entrySaleOfRef.vat - round2(reference.vat)) >= MONEY_EPSILON) {
+        throw new InvoicingError(
+          `الفاتورة ${referenceNumber} (${round2(reference.gross).toFixed(2)} منها ضريبة `
+          + `${round2(reference.vat).toFixed(2)}) لا تطابق قيدها `
+          + `(${entrySaleOfRef.gross.toFixed(2)} منها ضريبة ${entrySaleOfRef.vat.toFixed(2)}) — `
+          + 'راجعها قبل إصدار الإشعار.',
+        );
+      }
+      taxable = recovered.taxable;
+      vatRate = recovered.vatRate;
+      referenceTreatment = recovered;
+      policyEffectiveFrom = reference.taxPolicyEffectiveFrom
+        || reference.taxSnapshot?.effectiveFrom || null;
     } else if (mode === 'linked') {
       entryTreatment = saleTaxTreatmentOfEntry(washEntry);
       if (!entryTreatment.known) {
@@ -703,7 +761,8 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
     // silently restate an invoice for a sale that was already filed.
     let documentLines = input.lines;
     let priceMode = reference
-      ? (reference.priceMode === 'exclusive' ? 'exclusive' : 'inclusive')
+      ? (referenceTreatment.priceMode
+        || (reference.priceMode === 'exclusive' ? 'exclusive' : 'inclusive'))
       : (input.priceMode === 'exclusive' ? 'exclusive' : 'inclusive');
     if (mode === 'linked') {
       const quantity = Math.max(0, Number(wash.quantity) || 0);
@@ -932,7 +991,7 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
         vatRegistered: taxable, washPriceMode: priceMode,
         vatRate: taxable ? vatRate : 0,
         net: totals.net, vat: totals.vat, gross: totals.gross,
-        source: reference ? 'reference' : mode === 'linked' ? entryTreatment.source : 'policy',
+        source: reference ? referenceTreatment.source : mode === 'linked' ? entryTreatment.source : 'policy',
         effectiveFrom: policyEffectiveFrom,
       },
       qrPayload,

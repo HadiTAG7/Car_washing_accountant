@@ -656,6 +656,17 @@ inferred — a guessed baseline is the same bug wearing a timestamp. **إقفا�
 what has applied since the books began, changing nothing) or alongside the
 first change.
 
+A row is added or dropped by comparing the proposal against **what would
+already apply on its own effective date**, not against today's settings. The
+difference is two whole classes of legitimate change that the naive comparison
+silently swallowed: a future row returning to an earlier policy (baseline
+inclusive, September exclusive, October back to inclusive — October matches
+today, so the transition simply vanished), and a historical correction to a
+policy that happens to match today (5% from January, 15% from July, March
+corrected to 15%). The row at that date is removed first, the inherited policy
+is resolved without it, and the proposal is judged against that. Exactly one
+row carries `baseline`, and no date appears twice.
+
 Three consequences worth stating:
 
 - A date **before** the first baseline returns `known: false`, not today's
@@ -692,6 +703,24 @@ accountant may not make it at all, an admin may with a written reason, and the
 audit record says `retroactive`. `accountingSetPreferences` carries the
 switches that move no past figure — auto-posting and the filing frequency.
 
+**The closed-period query runs inside the same transaction**, and that is the
+whole point of its placement. Read beforehand, the answer is a photograph: a
+period closed between the photograph and the commit, and the accountant's
+change sails into a month filed while it was in flight. Firestore counts a
+transactional query in the read set, so a period closing mid-flight aborts the
+transaction and the retry sees it — the refusal and the write are made on one
+snapshot, and the audit records the `closedThrough` the transaction actually
+read.
+
+Seeding the baseline is **not** gated on closed periods, and the reason is
+worth writing down rather than assuming. Seeding changes no figure: before it,
+`taxPolicyAt(anything)` already returned the current values for every date, as
+an unlabelled assumption; after it, every date on or after the baseline
+resolves to those same values and only earlier dates change — from a silently
+assumed number to a declared gap. What IS refused is a baseline dated *after*
+an entry that has already been posted, because that would leave a month in the
+books with no policy to explain it.
+
 ### الفوترة تقرأ السياسة، لا الترويسة
 
 `app_settings/company` is the seller's **identity** — name, address, VAT number.
@@ -701,7 +730,7 @@ It no longer does. Three sources, one per path:
 
 | Path | Tax treatment from |
 |---|---|
-| `note` | the invoice it corrects — a correction to a taxable invoice keeps its tax even if the business has since de-registered |
+| `note` | the invoice it corrects: its own `taxSnapshot`, else the referenced **entry's**, else derived from that entry's lines and verified. `reference.vatRate ?? 15%` was a 15% assumption wearing a fallback — a legacy invoice carries no rate, so a note on a 5%-era sale would have reclaimed output tax that was never charged. If none of the three can answer, the note is refused, and the invoice and the entry are also checked against each other first |
 | `linked` | the wash entry's own `taxSnapshot`. A pre-snapshot entry has its rate and pricing mode **derived from its lines and verified** — the derived rate has to reproduce the entry to the halala, and if it cannot the invoice is refused rather than issued at an assumed 15% |
 | `standalone` | `taxPolicyAt(supplyDate)` |
 
@@ -724,6 +753,19 @@ moved was the operational check beside it, and the input side:
   rate is second-guessing the paper the deduction rests on. Failing that, the
   rate stored *on* the invoice; failing that, the rate in force on the
   invoice's date. Today's rate is never the answer for a historical document.
+  `vatAmount`, `vatRate`, `priceMode` and `vatDeductible` travel from the shared
+  form through one mapper block to every expense source, so a field cannot be
+  dropped in four places independently.
+- A qualifying invoice whose VAT nobody can determine — no stated amount, no
+  rate of its own, and a date the record does not reach — goes to a separate
+  **unresolved** list with the reason, shown on the page and in the CSV. It is
+  neither deducted nor filed as a zero-VAT purchase: a deductible tax vanishing
+  in silence is exactly as bad as one appearing from nowhere.
+  `policyUnconfigured` covers both sides, so a gap on either one raises it.
+- Every deducted figure shows **where it came from** — مبلغ الفاتورة / نسبة
+  الفاتورة / سياسة تاريخ الفاتورة — on screen and in the export. The column
+  caption is no longer «الضريبة 15%», because a 5%-era purchase would have made
+  the caption contradict its own number.
 - A period the record cannot answer for reports
   «السياسة التاريخية غير مهيأة» and a count, never a figure computed under
   today's rules.

@@ -34,6 +34,27 @@ export default function TaxInvoiceFields({
 
   const set = (patch) => onChange({ ...form, ...patch });
 
+  // The stated amount cannot exceed the invoice it sits on — a VAT of 200 on a
+  // 115 purchase is a typo, and letting it through would reclaim money the
+  // document does not support.
+  const statedVat = form.vatAmount === '' || form.vatAmount === null || form.vatAmount === undefined
+    ? null : Number(form.vatAmount);
+  let vatProblem = '';
+  if (statedVat !== null && (!Number.isFinite(statedVat) || statedVat < 0)) {
+    vatProblem = 'مبلغ الضريبة يجب أن يكون رقماً موجباً.';
+  } else if (statedVat !== null && (form.priceMode || 'inclusive') === 'inclusive'
+    && Number(amount) > 0 && statedVat > Number(amount) + 0.005) {
+    vatProblem = `مبلغ الضريبة أكبر من إجمالي الفاتورة (${Number(amount).toFixed(2)}).`;
+  }
+
+  // Which of the three sources will actually be used, said out loud so the
+  // deduction is never a mystery.
+  const taxSourceLabel = statedVat !== null && !vatProblem
+    ? 'مبلغ مكتوب على الفاتورة'
+    : (form.vatRate !== null && form.vatRate !== undefined && form.vatRate !== ''
+      ? 'نسبة مثبتة على الفاتورة'
+      : 'سياسة تاريخ الفاتورة');
+
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -70,6 +91,62 @@ export default function TaxInvoiceFields({
           )}
         </div>
       </div>
+
+      {/* ── مبلغ الضريبة كما كتبه المورّد ─────────────────────────────
+          The deduction rests on the paper, and the paper states its own VAT.
+          Without this the report had to derive the tax from a rate — and the
+          only rate it had was TODAY's, so a 5%-era invoice was reclaimed at
+          15% the moment the standard rate moved. The rate below is the
+          fallback for a document whose amount is not itemised; it is the
+          invoice's own rate, not the current one. */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div>
+          <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5"
+            htmlFor={`${idPrefix}-vat-amount`}>
+            مبلغ الضريبة على الفاتورة
+          </label>
+          <input id={`${idPrefix}-vat-amount`} type="number" min="0" step="0.01" dir="ltr"
+            value={form.vatAmount ?? ''}
+            onChange={(e) => set({ vatAmount: e.target.value === '' ? null : e.target.value })}
+            placeholder="اتركه فارغاً إن لم يكن مذكوراً"
+            className={`${INPUT_CLS} tabular-nums`} />
+          {vatProblem && (
+            <p className="text-[11px] text-rose-600 dark:text-rose-400 mt-1">{vatProblem}</p>
+          )}
+        </div>
+        <div>
+          <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5"
+            htmlFor={`${idPrefix}-vat-rate`}>
+            نسبة الفاتورة
+          </label>
+          <select id={`${idPrefix}-vat-rate`}
+            value={form.vatRate === null || form.vatRate === undefined ? '' : String(form.vatRate)}
+            onChange={(e) => set({ vatRate: e.target.value === '' ? null : Number(e.target.value) })}
+            className={INPUT_CLS}>
+            <option value="">حسب سياسة تاريخ الفاتورة</option>
+            <option value="0.15">15%</option>
+            <option value="0.05">5%</option>
+            <option value="0">معفاة / صفرية</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5"
+            htmlFor={`${idPrefix}-price-mode`}>
+            المبلغ المسجَّل
+          </label>
+          <select id={`${idPrefix}-price-mode`} value={form.priceMode || 'inclusive'}
+            onChange={(e) => set({ priceMode: e.target.value })}
+            className={INPUT_CLS}>
+            <option value="inclusive">شامل الضريبة</option>
+            <option value="exclusive">غير شامل الضريبة</option>
+          </select>
+        </div>
+      </div>
+
+      <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+        المصدر المُعتمد للخصم: <span className="font-semibold">{taxSourceLabel}</span>.
+        المبلغ المكتوب على الفاتورة يسبق النسبة، والنسبة المثبتة تسبق سياسة تاريخها.
+      </p>
 
       <label className="flex items-center gap-2.5 min-h-touch cursor-pointer select-none">
         <input type="checkbox" checked={form.vatDeductible !== false}

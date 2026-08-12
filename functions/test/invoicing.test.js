@@ -1060,6 +1060,122 @@ d('إصدار المستندات الضريبية على الخادم', () => {
       expect(later.vat).toBe(2.5);
     }, 150_000);
 
+    // ── الإشعار على فاتورة قديمة لا يفترض 15% ────────────────────────
+    // `reference.vatRate ?? VAT_RATE` was a 15% assumption wearing a fallback:
+    // a legacy invoice carries no rate, so a note on a 5%-era sale would have
+    // been raised at 15% — reclaiming output tax that was never charged.
+    it('إشعار على فاتورة قديمة بلا vatRate يرث 5% من قيدها', async () => {
+      await washWithSnapshot('w5', { rate: 0.05, price: 52.5 });
+      const inv = await issue({ type: 'invoice', washId: 'w5', issueDate: '2020-03-15' });
+      // Strip everything the invoice knows about tax, leaving only its link.
+      await db.collection(DOC_COL.DOCUMENTS).doc(inv.id).update({
+        vatRate: FieldValue.delete(), taxSnapshot: FieldValue.delete(),
+      });
+
+      const note = await issue({
+        type: 'credit_note', issueDate: '2020-03-20', reason: 'إرجاع',
+        referenceDocumentId: inv.id, refundMethod: 'cash',
+        lines: [{ description: 'إرجاع', quantity: 2, unitPrice: 52.5 }],
+      });
+      expect(note.vatRate).toBe(0.05);
+      expect(note.vat).toBe(5);
+      const saved = (await db.collection(DOC_COL.DOCUMENTS).doc(note.id).get()).data();
+      expect(saved.taxSnapshot).toMatchObject({ vatRate: 0.05, source: 'reference-entry-snapshot' });
+      // The old invoice is untouched — the note recovers, it does not rewrite.
+      const oldInv = (await db.collection(DOC_COL.DOCUMENTS).doc(inv.id).get()).data();
+      expect(oldInv.vatRate).toBeUndefined();
+      expect(oldInv.taxSnapshot).toBeUndefined();
+      // And the note's own entry names 5% on its 2100 line.
+      const entry = (await db.collection(COL.ENTRIES).doc(note.journalEntryId).get()).data();
+      expect(entry.lines.find((l) => l.accountId === '2100').description).toBe('عكس ضريبة مخرجات 5%');
+      expect(entry.taxSnapshot).toMatchObject({ vatRate: 0.05 });
+    }, 120_000);
+
+    it('وعلى فاتورة قديمة مرتبطة بقيد 15% يرث 15%', async () => {
+      await washWithSnapshot('w15', { rate: 0.15, price: 57.5 });
+      const inv = await issue({ type: 'invoice', washId: 'w15', issueDate: '2026-08-12' });
+      await db.collection(DOC_COL.DOCUMENTS).doc(inv.id).update({
+        vatRate: FieldValue.delete(), taxSnapshot: FieldValue.delete(),
+      });
+      const note = await issue({
+        type: 'credit_note', issueDate: '2026-08-20', reason: 'إرجاع',
+        referenceDocumentId: inv.id, refundMethod: 'cash',
+        lines: [{ description: 'إرجاع', quantity: 2, unitPrice: 57.5 }],
+      });
+      expect(note.vatRate).toBe(0.15);
+      expect(note.vat).toBe(15);
+    }, 120_000);
+
+    it('وقيد غير قابل للاشتقاق يرفض الإشعار بلا مستند ولا قيد ولا رقم مستهلك', async () => {
+      const posted = await washWithSnapshot('w-bad2');
+      const inv = await issue({ type: 'invoice', washId: 'w-bad2', issueDate: '2026-08-12' });
+      await db.collection(DOC_COL.DOCUMENTS).doc(inv.id).update({
+        vatRate: FieldValue.delete(), taxSnapshot: FieldValue.delete(),
+      });
+      await db.collection(COL.ENTRIES).doc(posted.entryId).update({
+        taxSnapshot: FieldValue.delete(),
+        lines: [
+          { accountId: '1010', debit: 115, credit: 0, description: 'تحصيل' },
+          { accountId: '4000', debit: 0, credit: 100, description: 'إيراد' },
+          { accountId: '2100', debit: 0, credit: 20, description: 'ضريبة' },
+        ],
+      });
+
+      const entriesBefore = (await db.collection(COL.ENTRIES).get()).size;
+      await expect(issue({
+        type: 'credit_note', issueDate: '2026-08-20', reason: 'إرجاع',
+        referenceDocumentId: inv.id, refundMethod: 'cash',
+        lines: [{ description: 'إرجاع', quantity: 2, unitPrice: 57.5 }],
+      })).rejects.toThrow(/المعالجة الضريبية للفاتورة .* غير معروفة/);
+
+      // No note, no entry, and the credit-note counter never opened.
+      const docs = (await db.collection(DOC_COL.DOCUMENTS).get()).docs.map((x) => x.data());
+      expect(docs.filter((x) => x.type === 'credit_note')).toHaveLength(0);
+      expect((await db.collection(COL.ENTRIES).get()).size).toBe(entriesBefore);
+      expect((await db.collection(DOC_COL.COUNTERS).doc('documents-credit_note-2026').get()).exists).toBe(false);
+    }, 120_000);
+
+    it('وفاتورة لا تطابق قيدها تُرفض قبل إصدار الإشعار', async () => {
+      const posted = await washWithSnapshot('w-drift');
+      const inv = await issue({ type: 'invoice', washId: 'w-drift', issueDate: '2026-08-12' });
+      // The entry is edited under a filed invoice: the two now disagree.
+      await db.collection(COL.ENTRIES).doc(posted.entryId).update({
+        taxSnapshot: FieldValue.delete(),
+        lines: [
+          { accountId: '1010', debit: 230, credit: 0, description: 'تحصيل' },
+          { accountId: '4000', debit: 0, credit: 200, description: 'إيراد' },
+          { accountId: '2100', debit: 0, credit: 30, description: 'ضريبة' },
+        ],
+      });
+      await db.collection(DOC_COL.DOCUMENTS).doc(inv.id).update({ taxSnapshot: FieldValue.delete() });
+      await expect(issue({
+        type: 'credit_note', issueDate: '2026-08-20', reason: 'إرجاع',
+        referenceDocumentId: inv.id, refundMethod: 'cash',
+        lines: [{ description: 'إرجاع', quantity: 1, unitPrice: 57.5 }],
+      })).rejects.toThrow(/لا تطابق قيدها/);
+    }, 120_000);
+
+    it('وتغيير سياسة اليوم لا يغيّر إشعاراً على فاتورة تاريخية', async () => {
+      await washWithSnapshot('w5b', { rate: 0.05, price: 52.5 });
+      const inv = await issue({ type: 'invoice', washId: 'w5b', issueDate: '2020-03-15' });
+      await db.collection(DOC_COL.SETTINGS).doc('accounting').set({
+        value: {
+          vatRegistered: true, washPriceMode: 'exclusive', vatRate: 0.15,
+          taxPolicyHistory: [
+            { effectiveFrom: '2018-01-01', vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.05, baseline: true },
+            { effectiveFrom: '2020-07-01', vatRegistered: true, washPriceMode: 'exclusive', vatRate: 0.15 },
+          ],
+        },
+      });
+      const note = await issue({
+        type: 'credit_note', issueDate: '2026-08-20', reason: 'إرجاع متأخر',
+        referenceDocumentId: inv.id, refundMethod: 'cash',
+        lines: [{ description: 'إرجاع', quantity: 2, unitPrice: 52.5 }],
+      });
+      expect(note.vatRate).toBe(0.05);
+      expect(note.vat).toBe(5);
+    }, 120_000);
+
     it('وفاتورة قبل بداية السجل التاريخي تُرفض بدل اختراع سياسة', async () => {
       await db.collection(DOC_COL.SETTINGS).doc('accounting').set({
         value: {

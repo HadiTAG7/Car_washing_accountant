@@ -146,6 +146,31 @@ export class TaxPolicyError extends Error {
   }
 }
 
+/** Do two policies say the same thing? */
+export function samePolicy(a, b) {
+  if (!a || !b) return false;
+  return a.vatRegistered === b.vatRegistered
+    && a.washPriceMode === b.washPriceMode
+    && a.vatRate === b.vatRate;
+}
+
+/**
+ * Sorts, de-duplicates by date, and marks exactly the earliest row `baseline`.
+ *
+ * Exactly one baseline: it is the date the record BEGINS, and two rows both
+ * claiming to be the beginning is not a record anyone can read. A row inserted
+ * before the old first row becomes the beginning; the old one stops being it.
+ */
+function finaliseHistory(rows) {
+  const byDate = new Map();
+  for (const r of rows) byDate.set(r.effectiveFrom, r);
+  const sorted = [...byDate.values()].sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom));
+  return sorted.map((r, i) => {
+    const { baseline, ...rest } = r;   // eslint-disable-line no-unused-vars
+    return i === 0 ? { ...rest, baseline: true } : rest;
+  });
+}
+
 /**
  * Builds the history a policy change should leave behind.
  *
@@ -155,6 +180,24 @@ export class TaxPolicyError extends Error {
  * in force until now, and the change itself. `baselineFrom` is required for
  * that first change and is never inferred; it is the date the books start, or
  * the date the current policy began, and only the person doing it knows which.
+ *
+ * ── ما الذي يجعل السطر "بلا أثر" ──
+ * A new row is redundant only when the policy that would ALREADY apply on its
+ * own effective date is the same policy. That is not the same question as
+ * "does it match today's settings", which is what this used to ask — and the
+ * difference is two whole classes of change:
+ *
+ *   • a FUTURE row returning to an earlier policy — baseline inclusive,
+ *     September exclusive, October back to inclusive. October differs from
+ *     September, which is what October follows; it happens to match today, and
+ *     the old comparison dropped it. The transition simply disappeared.
+ *   • a HISTORICAL correction to a policy that matches today — 5% from
+ *     January, 15% from July, and March corrected to 15%. March differs from
+ *     January; it matches today's 15%, and was dropped for that reason.
+ *
+ * So the row at `effectiveFrom` is removed first, the policy that WOULD apply
+ * on that date without it is resolved, and the proposal is compared against
+ * THAT.
  */
 export function withTaxPolicyChange(settings = {}, next = {}, effectiveFrom, {
   baselineFrom = null, baselineNote = null, note = null,
@@ -180,28 +223,30 @@ export function withTaxPolicyChange(settings = {}, next = {}, effectiveFrom, {
     if (base > from) {
       throw new TaxPolicyError('تاريخ بداية السياسة الحالية بعد تاريخ سريان التغيير.');
     }
-    const baselineRow = {
-      effectiveFrom: base, ...current, baseline: true,
-      ...(baselineNote ? { note: String(baselineNote).slice(0, 300) } : {}),
-    };
     // Same day: the baseline never existed as a separate period, so the change
     // simply IS the baseline.
     if (base === from) {
-      return [{ effectiveFrom: from, ...proposed, baseline: true, ...(note ? { note } : {}) }];
+      return finaliseHistory([{ effectiveFrom: from, ...proposed, ...(note ? { note } : {}) }]);
     }
-    return [baselineRow, { effectiveFrom: from, ...proposed, ...(note ? { note } : {}) }];
+    return finaliseHistory([
+      { effectiveFrom: base, ...current, ...(baselineNote ? { note: String(baselineNote).slice(0, 300) } : {}) },
+      { effectiveFrom: from, ...proposed, ...(note ? { note } : {}) },
+    ]);
   }
 
-  const unchanged = proposed.vatRegistered === current.vatRegistered
-    && proposed.washPriceMode === current.washPriceMode
-    && proposed.vatRate === current.vatRate;
-  if (unchanged) return history;
+  // The history WITHOUT any row at this date, so an edit-in-place is judged
+  // against what the date would inherit rather than against itself.
+  const without = history.filter((h) => h.effectiveFrom !== from);
+  const wouldApply = taxPolicyAt(from, { ...current, taxPolicyHistory: without });
 
-  // A same-day edit REPLACES: correcting today's row twice must not leave the
-  // loser readable as history.
-  return [...history.filter((h) => h.effectiveFrom !== from),
-    { effectiveFrom: from, ...proposed, ...(note ? { note } : {}) }]
-    .sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom));
+  // Redundant only if the date already resolves to exactly this policy. When
+  // it does and a row is sitting there, the row is normalised away: the
+  // transition it described no longer exists.
+  if (wouldApply.known && samePolicy(wouldApply, proposed)) {
+    return finaliseHistory(without);
+  }
+
+  return finaliseHistory([...without, { effectiveFrom: from, ...proposed, ...(note ? { note } : {}) }]);
 }
 
 /**

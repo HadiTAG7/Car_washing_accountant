@@ -14,6 +14,7 @@
  */
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { taxPolicyAt } from '../src/taxPolicy.js';
+import { setTaxPolicy } from '../src/accountingSettings.js';
 import { initializeApp as initAdmin, deleteApp as deleteAdmin } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getAuth as getAdminAuth } from 'firebase-admin/auth';
@@ -381,6 +382,96 @@ d('الاستدعاءات الحقيقية عبر محاكي الدوال', () =
       expect(audit.userId).toBe(uids.admin);
       expect(audit.note).toContain('رجعي في فترة مقفلة');
     }, 150_000);
+
+    // ── سباق الفترة المقفلة ────────────────────────────────────────────
+    // The closed-period query lives INSIDE the transaction. Read beforehand it
+    // is a photograph, and a period closed between the photograph and the
+    // commit lets the accountant's change into a month filed while it was in
+    // flight. `onBeforeCommit` closes the period after the reads and before
+    // the writes; Firestore then aborts and retries, and the retry sees it.
+    it('الفترة تُقفل قبل commit: المحاسب يُرفض ولا يبقى أي سطر', async () => {
+      const call = await as('accountant');
+      await call('accountingSeedTaxPolicy')({ baselineFrom: '2026-01-01' });
+      await call('ledgerPostSource')({ kind: 'wash', sourceId: 'w1' });
+
+      let closed = false;
+      await expect(setTaxPolicy(adb, FieldValue, {
+        vatRegistered: true, washPriceMode: 'exclusive', vatRate: 0.15,
+        effectiveFrom: '2026-08-01',
+      }, {
+        userId: uids.accountant, role: 'accountant',
+        onBeforeCommit: async () => {
+          if (closed) return;
+          closed = true;
+          await adb.collection('accounting_periods').doc('2026-08')
+            .set({ periodKey: '2026-08', status: 'closed' }, { merge: true });
+        },
+      })).rejects.toThrow(/يحتاج مديراً وسبباً مكتوباً/);
+
+      const after = await settings();
+      expect(after.taxPolicyHistory).toHaveLength(1);
+      expect(after.taxPolicyHistory[0].effectiveFrom).toBe('2026-01-01');
+    }, 120_000);
+
+    it('وفي السباق نفسه: المدير بلا سبب يُرفض، وبسبب صريح ينجح', async () => {
+      const call = await as('accountant');
+      await call('accountingSeedTaxPolicy')({ baselineFrom: '2026-01-01' });
+      await call('ledgerPostSource')({ kind: 'wash', sourceId: 'w1' });
+
+      const closeMidFlight = () => {
+        let done = false;
+        return async () => {
+          if (done) return;
+          done = true;
+          await adb.collection('accounting_periods').doc('2026-08')
+            .set({ periodKey: '2026-08', status: 'closed' }, { merge: true });
+        };
+      };
+
+      await expect(setTaxPolicy(adb, FieldValue, {
+        vatRegistered: true, washPriceMode: 'exclusive', vatRate: 0.15,
+        effectiveFrom: '2026-08-01',
+      }, { userId: uids.admin, role: 'admin', onBeforeCommit: closeMidFlight() }))
+        .rejects.toThrow(/سبباً مكتوباً/);
+      expect((await settings()).taxPolicyHistory).toHaveLength(1);
+
+      const ok = await setTaxPolicy(adb, FieldValue, {
+        vatRegistered: true, washPriceMode: 'exclusive', vatRate: 0.15,
+        effectiveFrom: '2026-08-01', reason: 'قرار الهيئة بأثر رجعي',
+      }, { userId: uids.admin, role: 'admin', onBeforeCommit: closeMidFlight() });
+      expect(ok.retroactive).toBe(true);
+      expect(ok.closedThrough).toBe('2026-08');
+      expect((await settings()).taxPolicyHistory).toHaveLength(2);
+      // The audit names the closed month the TRANSACTION actually read.
+      const audit = (await adb.collection('audit_logs').where('action', '==', 'tax-policy').get())
+        .docs.map((x) => x.data()).find((x) => x.after?.retroactive === true);
+      expect(audit.after.closedThrough).toBe('2026-08');
+    }, 150_000);
+
+    // ── التهيئة لا تغيّر رقماً، لكنها لا تُترك بعد أقدم قيد ────────────
+    it('التهيئة تُقبل في فترة مقفلة لأنها لا تغيّر رقماً', async () => {
+      const call = await as('accountant');
+      await call('ledgerPostSource')({ kind: 'wash', sourceId: 'w1' });
+      const before = (await adb.collection('journal_entries').get()).docs[0].data();
+      await call('ledgerClosePeriod')({ periodKey: '2026-08' });
+
+      // The baseline covers the closed month, and that is fine: before it,
+      // every date already resolved to these same values as an unlabelled
+      // assumption. Nothing posted moves.
+      await call('accountingSeedTaxPolicy')({ baselineFrom: '2026-01-01' });
+      const after = (await adb.collection('journal_entries').get()).docs[0].data();
+      expect(after.taxSnapshot).toEqual(before.taxSnapshot);
+      expect(after.lines).toEqual(before.lines);
+      expect((await settings()).taxPolicyHistory).toHaveLength(1);
+    }, 120_000);
+
+    it('وترفض التهيئة بتاريخ بعد أقدم قيد مُرحّل', async () => {
+      const call = await as('accountant');
+      await call('ledgerPostSource')({ kind: 'wash', sourceId: 'w1' });   // 2026-08-11
+      await expect(call('accountingSeedTaxPolicy')({ baselineFrom: '2026-09-01' }))
+        .rejects.toSatisfy((e) => /بعد أقدم قيد مُرحّل/.test(String(e?.message)));
+      expect((await settings()).taxPolicyHistory ?? []).toHaveLength(0);
+    }, 90_000);
 
     it('والمشغّل لا يمسّ السياسة إطلاقاً', async () => {
       const call = await as('operator');

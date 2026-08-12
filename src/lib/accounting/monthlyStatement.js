@@ -24,8 +24,9 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { round2 } from './journal';
+import { splitVat, VAT_RATE } from './vat';
 import { ACC } from './chartOfAccounts';
-import { incomeStatement } from './reports';
+import { incomeStatement, movementBySource } from './reports';
 
 /**
  * The fees that apply when `fee_rules` has not been configured.
@@ -145,22 +146,104 @@ export function monthlyStatement({
 }
 
 /**
- * مطابقة التشغيل بالدفاتر.
+ * صافي مبيعات الغسلات التشغيلية لشهر واحد.
  *
- * The operational tables are not wrong — they are a different question. This
- * states both answers and the gap between them, so an unposted wash shows up
- * as a number to act on instead of silently inflating an official statement.
+ * `quantity × price` is a GROSS figure whenever wash prices are quoted
+ * VAT-inclusive, and the statement's revenue is net of tax. Comparing the two
+ * directly made output tax look like a posting gap: a single 115 wash reported
+ * a 15-riyal "difference" that no amount of posting would ever close.
+ *
+ * So the split runs here with the SAME settings the poster used — the wash
+ * adapter reads `vatRegistered` and `washPriceMode` out of
+ * `app_settings/accounting`, and so does this.
  */
-export function reconcileOperational({ operationalRevenue, statement }) {
-  const operational = round2(operationalRevenue);
-  const ledger = round2(statement?.netRevenue ?? 0);
+export function operationalWashSales(washes, {
+  periodKey, vatRegistered = true, washPriceMode = 'inclusive', rate = VAT_RATE,
+  isPosted = null,
+} = {}) {
+  let net = 0, gross = 0, vat = 0, count = 0;
+  let unpostedNet = 0, unpostedCount = 0;
+  for (const w of washes || []) {
+    if (w.status !== 'مكتملة') continue;
+    if (String(w.washDate || '').slice(0, 7) !== periodKey) continue;
+    const amount = round2((Number(w.quantity) || 0) * (Number(w.price) || 0));
+    if (amount <= 0) continue;
+    const s = splitVat(amount, { mode: washPriceMode, taxable: vatRegistered, rate });
+    net += s.net; gross += s.gross; vat += s.vat; count += 1;
+    // "Not in the books" is a fact about the ledger, so the caller supplies the
+    // predicate rather than this module guessing at entry shapes.
+    if (isPosted && !isPosted(w)) { unpostedNet += s.net; unpostedCount += 1; }
+  }
   return {
-    operational,
-    ledger,
-    difference: round2(operational - ledger),
-    // Returns explain part of any gap on their own: a credit note reduces the
-    // ledger without touching the wash it came from.
-    salesReturns: round2(statement?.salesReturns ?? 0),
-    matched: Math.abs(round2(operational - ledger)) < 0.005,
+    net: round2(net), gross: round2(gross), vat: round2(vat), count,
+    unpostedNet: round2(unpostedNet), unpostedCount,
+  };
+}
+
+/**
+ * مطابقة التشغيل بالدفاتر — بستة بنود، لا برقم واحد.
+ *
+ * The operational tables are not wrong; they answer a different question. The
+ * old version subtracted one total from another and blamed the whole gap on
+ * unposted washes, which was wrong twice over: VAT made a perfectly reconciled
+ * month look broken, and a credit note — which reduces the ledger and touches
+ * no wash at all — was reported as a missing posting.
+ *
+ * The identity this states is:
+ *
+ *   (أ) صافي مبيعات تشغيلية
+ *     = (ب) إيرادات الغسلات المُرحّلة
+ *     + (ج) غسلات مكتملة غير مُرحّلة
+ *     + (و) فرق غير مفسَّر
+ *
+ * with (د) returns and (هـ) other posted revenue shown alongside, because they
+ * move the statement's net revenue without belonging to (أ) at all. Only (و)
+ * is a discrepancy; everything else is an explanation.
+ */
+export function reconcileOperational({
+  operational, statement, entries = [], lines = [], scalingFactor = 1,
+}) {
+  const factor = Number(scalingFactor) || 0;
+  const { from, to } = monthRange(statement?.periodKey);
+
+  const operationalNet = round2((operational?.net ?? 0) * factor);
+  const unpostedNet    = round2((operational?.unpostedNet ?? 0) * factor);
+
+  // 4000 split by what produced it. Wash revenue is the only part the
+  // operational register has an opinion about.
+  const bySource = movementBySource(entries, lines, ACC.WASH_REVENUE, { from, to });
+  const postedWashNet = round2((bySource.wash || 0) * factor);
+  const postedOtherOnSales = round2(
+    Object.entries(bySource)
+      .filter(([kind]) => kind !== 'wash')
+      .reduce((s, [, v]) => s + v, 0) * factor,
+  );
+
+  const salesReturns = round2(statement?.salesReturns ?? 0);
+  const otherRevenue = round2(postedOtherOnSales + (statement?.otherRevenue ?? 0));
+  const unexplained = round2(operationalNet - postedWashNet - unpostedNet);
+
+  return {
+    // أ
+    operationalNet,
+    operationalGross: round2((operational?.gross ?? 0) * factor),
+    operationalVat: round2((operational?.vat ?? 0) * factor),
+    washCount: operational?.count ?? 0,
+    // ب
+    postedWashNet,
+    // ج
+    unpostedNet,
+    unpostedCount: operational?.unpostedCount ?? 0,
+    // د
+    salesReturns,
+    // هـ
+    otherRevenue,
+    // و
+    unexplained,
+    ledgerNetRevenue: round2(statement?.netRevenue ?? 0),
+    // Only the unexplained remainder is a problem. A month with unposted
+    // washes or credit notes is fully explained, and says so.
+    matched: Math.abs(unexplained) < 0.005,
+    clean: Math.abs(unexplained) < 0.005 && Math.abs(unpostedNet) < 0.005,
   };
 }

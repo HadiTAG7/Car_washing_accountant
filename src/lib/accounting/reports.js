@@ -48,6 +48,46 @@ export function postedLines(entries, lines, { from = null, to = null } = {}) {
   return out;
 }
 
+/**
+ * The source kind an entry BELONGS to, mirror entries included.
+ *
+ * A reversal is written as an adjustment with no source of its own — it must
+ * not look like a live posting of the record it cancels. But for a report the
+ * mirror still belongs to that record's story: leaving it unattributed would
+ * show a reversed wash's revenue in full under "washes" and its cancellation
+ * under "other". `reversedSourceKind` is what the mirror records, and older
+ * mirrors that inherited the identity outright are read the old way.
+ */
+export function sourceKindOf(entry) {
+  if (!entry) return null;
+  if (entry.reversalOf) {
+    return entry.reversedSourceKind || entry.reversedSourceType
+      || entry.sourceKind || entry.sourceType || null;
+  }
+  return entry.sourceKind || entry.sourceType || null;
+}
+
+/**
+ * Movement on one account in a window, split by the SOURCE KIND behind it.
+ *
+ * `{ wash: 100, sales_invoice: 50, adjustment: -20, … }`, signed the way a
+ * revenue account reads (credit − debit). The reconciliation needs this
+ * because account 4000 carries wash revenue, standalone-invoice revenue and
+ * debit notes all at once, and "does the operational register agree with the
+ * books?" is only answerable about the wash part.
+ */
+export function movementBySource(entries, lines, accountCode, { from = null, to = null } = {}) {
+  const code = String(accountCode);
+  const kindByEntry = new Map((entries || []).map((e) => [e.id, sourceKindOf(e)]));
+  const out = {};
+  for (const l of postedLines(entries, lines, { from, to })) {
+    if (String(l.accountId) !== code) continue;
+    const kind = kindByEntry.get(l.entryId) || 'unknown';
+    out[kind] = round2((out[kind] || 0) + (Number(l.credit) || 0) - (Number(l.debit) || 0));
+  }
+  return out;
+}
+
 /** Signed movement of a line for an account with the given normal balance. */
 export function signedAmount(line, normalBalance) {
   const d = Number(line.debit) || 0;

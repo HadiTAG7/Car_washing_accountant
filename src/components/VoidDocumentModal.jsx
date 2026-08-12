@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { X, Ban, Loader2, AlertTriangle } from 'lucide-react';
+import { X, Ban, Loader2, AlertTriangle, RotateCcw } from 'lucide-react';
 import { formatCurrencyPrecise } from '../data/initialData';
 import DateField from './DateField';
 import { PrimaryButton, SecondaryButton } from './UI';
@@ -22,7 +22,15 @@ const todayIso = () => new Date().toISOString().slice(0, 10);
  */
 // Mounted per document (the caller keys it on the document id), so the draft
 // resets by remounting rather than by an effect that re-renders on open.
-export default function VoidDocumentModal({ document: doc, busy = false, onConfirm, onClose }) {
+//
+// `mode: 'correct'` is the wash-linked path: the same two inputs, but what
+// they drive is one atomic server call that also reverses the wash's entry,
+// frees its posting lock and releases the source claim. The dialog says so,
+// because "cancel" and "cancel, reverse, unlock and release" are not the same
+// action and must not look like it.
+export default function VoidDocumentModal({
+  document: doc, mode = 'void', busy = false, onConfirm, onClose,
+}) {
   const [reason, setReason] = useState('');
   const [reversalDate, setReversalDate] = useState(todayIso);
 
@@ -32,7 +40,8 @@ export default function VoidDocumentModal({ document: doc, busy = false, onConfi
     return () => window.removeEventListener('keydown', onKey);
   }, [busy, onClose]);
 
-  const reverses = Boolean(doc.journalEntryId);
+  const correcting = mode === 'correct';
+  const reverses = correcting || Boolean(doc.journalEntryId);
   const canSubmit = Boolean(reason.trim()) && (!reverses || Boolean(reversalDate)) && !busy;
 
   return (
@@ -42,21 +51,27 @@ export default function VoidDocumentModal({ document: doc, busy = false, onConfi
       <div
         role="dialog"
         aria-modal="true"
-        aria-label={`إلغاء المستند ${doc.documentNumber}`}
+        aria-label={`${correcting ? 'تصحيح' : 'إلغاء'} المستند ${doc.documentNumber}`}
         className="relative bg-white dark:bg-slate-900 rounded-card border border-slate-100 dark:border-slate-800 w-full max-w-lg mx-4 max-h-[92vh] overflow-y-auto"
         style={{ boxShadow: 'var(--sw-shadow-overlay)' }}
       >
         <div className="flex items-center justify-between gap-3 px-5 sm:px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800">
           <div className="flex items-center gap-3 min-w-0">
-            <span className="w-10 h-10 rounded-control flex items-center justify-center shrink-0 bg-rose-50 dark:bg-rose-500/15 text-rose-700 dark:text-rose-300">
-              <Ban size={20} strokeWidth={2.2} />
+            <span className={`w-10 h-10 rounded-control flex items-center justify-center shrink-0 ${
+              correcting
+                ? 'bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300'
+                : 'bg-rose-50 dark:bg-rose-500/15 text-rose-700 dark:text-rose-300'
+            }`}>
+              {correcting ? <RotateCcw size={20} strokeWidth={2.2} /> : <Ban size={20} strokeWidth={2.2} />}
             </span>
             <div className="min-w-0">
               <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100 truncate">
-                إلغاء {doc.documentNumber}
+                {correcting ? 'تصحيح' : 'إلغاء'} {doc.documentNumber}
               </h3>
               <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 tabular-nums truncate">
-                {doc.issueDate} · {formatCurrencyPrecise(doc.gross)}
+                {doc.issueDate}
+                {doc.supplyDate && doc.supplyDate !== doc.issueDate ? ` · توريد ${doc.supplyDate}` : ''}
+                {' · '}{formatCurrencyPrecise(doc.gross)}
               </p>
             </div>
           </div>
@@ -71,18 +86,30 @@ export default function VoidDocumentModal({ document: doc, busy = false, onConfi
         <div className="p-5 sm:p-6 space-y-4">
           <div className="flex items-start gap-2.5 bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/30 text-amber-800 dark:text-amber-300 text-xs px-4 py-3 rounded-control leading-relaxed">
             <AlertTriangle size={16} className="shrink-0 mt-0.5" />
-            <p>
-              {reverses
-                ? `الإلغاء يعكس قيد المستند رقم ${doc.journalEntryNumber ?? '—'} بقيد مرآة مؤرّخ بالتاريخ أدناه. `
-                  + 'الرقم يبقى محجوزاً — لا يُعاد استخدامه ولا يُحذف المستند.'
-                : 'هذا المستند لا يحمل قيداً خاصاً به، فالإلغاء يوثّق النية فقط. '
-                  + 'الأثر المحاسبي لغسلة مُرحّلة يُصحَّح بعكس قيدها من دفتر الأستاذ.'}
-            </p>
+            {correcting ? (
+              <div className="min-w-0">
+                <p className="font-bold">عملية واحدة لا تتجزأ:</p>
+                <ol className="mt-1 space-y-0.5 list-decimal pr-4">
+                  <li>إلغاء الفاتورة مع الاحتفاظ برقمها وتاريخيها.</li>
+                  <li>عكس قيد الغسلة رقم {doc.linkedJournalEntryNumber ?? '—'} بالتاريخ أدناه.</li>
+                  <li>فك قفل ترحيل الغسلة إن كان يملكه هذا القيد.</li>
+                  <li>تحرير مطالبة السجل لإصدار فاتورة بديلة بعد إعادة الترحيل.</li>
+                </ol>
+                <p className="mt-1">تفشل كلها أو تنجح كلها — لا حالة وسط.</p>
+              </div>
+            ) : (
+              <p>
+                {reverses
+                  ? `الإلغاء يعكس قيد المستند رقم ${doc.journalEntryNumber ?? '—'} بقيد مرآة مؤرّخ بالتاريخ أدناه. `
+                    + 'الرقم يبقى محجوزاً — لا يُعاد استخدامه ولا يُحذف المستند.'
+                  : 'هذا المستند لا يحمل قيداً خاصاً به، فالإلغاء يوثّق النية فقط.'}
+              </p>
+            )}
           </div>
 
           <div>
             <label htmlFor="void-reason" className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-              سبب الإلغاء <span className="text-rose-600">*</span>
+              سبب {correcting ? 'التصحيح' : 'الإلغاء'} <span className="text-rose-600">*</span>
             </label>
             <textarea
               id="void-reason" rows={3} value={reason} disabled={busy}
@@ -113,14 +140,16 @@ export default function VoidDocumentModal({ document: doc, busy = false, onConfi
         <div className="flex items-center justify-end gap-2 px-5 sm:px-6 py-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800">
           <SecondaryButton onClick={onClose} disabled={busy}>تراجع</SecondaryButton>
           <PrimaryButton
-            icon={busy ? Loader2 : Ban}
+            icon={busy ? Loader2 : (correcting ? RotateCcw : Ban)}
             disabled={!canSubmit}
             onClick={() => onConfirm({
               reason: reason.trim(),
               reversalDate: reverses ? reversalDate : null,
             })}
           >
-            {busy ? 'جارٍ الإلغاء...' : 'تأكيد الإلغاء'}
+            {busy
+              ? (correcting ? 'جارٍ التصحيح...' : 'جارٍ الإلغاء...')
+              : (correcting ? 'تأكيد التصحيح' : 'تأكيد الإلغاء')}
           </PrimaryButton>
         </div>
       </div>

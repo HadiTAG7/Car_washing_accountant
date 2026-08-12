@@ -229,6 +229,42 @@ d('الاستدعاءات الحقيقية عبر محاكي الدوال', () =
       const call = await as('accountant');
       await expectDenied(call('ledgerReopenPeriod')({ periodKey: '2026-08', reason: 'تصحيح' }));
     }, 60_000);
+
+    // ── المسار الذري عبر الاستدعاء الحقيقي ────────────────────────────
+    it('يصحّح فاتورة غسلة ذرياً، وعكس القيد مباشرةً مرفوض قبلها', async () => {
+      const call = await as('accountant');
+      const posted = await call('ledgerPostSource')({ kind: 'wash', sourceId: 'w1' });
+      const f1 = await call('salesIssueDocument')({
+        type: 'invoice', washId: 'w1', issueDate: '2026-08-12',
+      });
+      expect(f1.data.linkedJournalEntryId).toBe(posted.data.entryId);
+      expect(f1.data.supplyDate).toBe('2026-08-11');
+
+      // The ledger refuses the piecemeal route and says where to go.
+      await expect(call('ledgerReverseEntry')({
+        entryId: posted.data.entryId, entryDate: '2026-08-25',
+      })).rejects.toSatisfy((e) => /موثّق بفاتورة سارية/.test(String(e?.message)));
+
+      const fixed = await call('salesCorrectWashInvoice')({
+        documentId: f1.data.id, reason: 'سعر خاطئ', reversalDate: '2026-08-25',
+      });
+      expect(fixed.data.lockReleased).toBe(true);
+      expect(fixed.data.claimReleased).toBe(true);
+      expect((await adb.collection('sales_documents').doc(f1.data.id).get()).data().status).toBe('cancelled');
+      expect((await adb.collection('journal_entries').doc(posted.data.entryId).get()).data().status).toBe('reversed');
+      expect((await adb.collection('posting_locks').doc('wash__w1').get()).exists).toBe(false);
+    }, 120_000);
+
+    it('ويفحص الفواتير القديمة تجريبياً، لكن التطبيق للمدير', async () => {
+      const call = await as('accountant');
+      const dry = await call('salesLinkLegacyInvoices')({});
+      expect(dry.data.dryRun).toBe(true);
+      await expectDenied(call('salesLinkLegacyInvoices')({ apply: true }));
+
+      const adminCall = await as('admin');
+      const applied = await adminCall('salesLinkLegacyInvoices')({ apply: true });
+      expect(applied.data.applied).toBe(0);   // nothing to link in this fixture
+    }, 90_000);
   });
 
   // ═══ المدير وغير المصرّح ════════════════════════════════════════════

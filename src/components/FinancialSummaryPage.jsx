@@ -18,7 +18,11 @@ import { useMonthlyExpenseCategories } from '../hooks/useMonthlyExpenseCategorie
 import { useAnnualExpenses } from '../hooks/useAnnualExpenses';
 import { useLedger } from '../hooks/useLedger';
 import { useFeeRules } from '../hooks/useFeeRules';
-import { monthlyStatement, reconcileOperational } from '../lib/accounting/monthlyStatement';
+import { useAccountingSettings } from '../hooks/useAccountingSettings';
+import {
+  monthlyStatement, operationalWashSales, reconcileOperational,
+} from '../lib/accounting/monthlyStatement';
+import { hasPostedEntryFor } from '../lib/accounting/firestoreLedger';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 import {
   todayMonth,
@@ -158,6 +162,10 @@ export default function FinancialSummaryPage() {
     loading: ledgerLoading, error: ledgerError, refetch: refetchLedger,
   } = useLedger();
   const { rules: feeRules } = useFeeRules();
+  // The same two switches the wash poster reads. Without them the operational
+  // side would be compared gross against a net statement, and VAT alone would
+  // read as a posting gap.
+  const { settings } = useAccountingSettings();
   // isPartnerView also gates the drill-down modal: its rows are the RAW
   // company-level records (each row IS what it is — a 200 ر.س wash can't
   // honestly display as 72 ر.س), so opening it under a scaled headline
@@ -218,15 +226,18 @@ export default function FinancialSummaryPage() {
   const monthLabel = formatMonthLabel(selectedMonth);
 
   // ── مطابقة التشغيل بالدفاتر ──
-  // The operational revenue for the month, kept beside the ledger figure
-  // rather than instead of it. A gap means washes were recorded but not
-  // posted — an action to take, not a number to quietly average in.
+  // Both answers side by side, with every explainable part named. Only the
+  // unexplained remainder is a discrepancy — an unposted wash and a credit
+  // note are both accounted for, and neither is a "missing posting".
   const reconciliation = useMemo(() => {
-    const operationalRevenue = washes
-      .filter((w) => w.status === 'مكتملة' && (w.washDate || '').slice(0, 7) === selectedMonth)
-      .reduce((s, w) => s + (w.quantity || 0) * (w.price || 0), 0) * scalingFactor;
-    return reconcileOperational({ operationalRevenue, statement });
-  }, [washes, selectedMonth, scalingFactor, statement]);
+    const operational = operationalWashSales(washes, {
+      periodKey: selectedMonth,
+      vatRegistered: settings.vatRegistered !== false,
+      washPriceMode: settings.washPriceMode || 'inclusive',
+      isPosted: (w) => hasPostedEntryFor(entries, 'wash', w.id, 'wash'),
+    });
+    return reconcileOperational({ operational, statement, entries, lines, scalingFactor });
+  }, [washes, selectedMonth, settings, entries, lines, statement, scalingFactor]);
 
   // ── 6-month trend ending at the selected month ────────────────────────
   // The SAME function, run six times, so the chart cannot disagree with the
@@ -413,32 +424,82 @@ export default function FinancialSummaryPage() {
             </div>
 
             {/* ── مطابقة التشغيل بالدفاتر ───────────────────────────
-                Stated whenever the two disagree. The statement above reads the
-                journal; this says what the operational register says and by
-                how much they differ, so an unposted wash is a task rather than
-                a silent discrepancy between two screens. */}
-            {!reconciliation.matched && (
-              <div
-                role="note"
-                className="flex items-start gap-2.5 bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/30 text-amber-800 dark:text-amber-300 text-xs px-4 py-3 rounded-control leading-relaxed"
-              >
-                <Scale size={16} className="shrink-0 mt-0.5" />
-                <div className="min-w-0">
-                  <p className="font-bold">
-                    فرق بين سجل التشغيل والدفاتر: {formatCurrency(Math.abs(reconciliation.difference))}
-                  </p>
-                  <p className="mt-1 tabular-nums">
-                    الغسلات المكتملة المسجّلة: {formatCurrency(reconciliation.operational)} ·
-                    {' '}صافي الإيراد المُرحّل: {formatCurrency(reconciliation.ledger)}
-                    {reconciliation.salesReturns > 0
-                      && ` · منها مردودات ${formatCurrency(reconciliation.salesReturns)}`}
-                  </p>
-                  <p className="mt-1">
-                    القائمة أدناه رسمية وتقرأ القيود المُرحّلة فقط. الفرق يعني غسلات مسجّلة لم تُرحّل
-                    بعد — رحّلها من صفحة الغسلات لتظهر في الدفاتر.
-                  </p>
+                Six named lines, not one subtraction. The old strip took the
+                operational total (gross, VAT included) away from the ledger's
+                net revenue and called the whole remainder "unposted washes" —
+                so a perfectly reconciled month showed a difference equal to
+                its output tax, and a credit note was reported as a missing
+                posting. Here every part that CAN be explained is named, and
+                only what is left over is called a discrepancy. */}
+            {!reconciliation.clean && (
+              <Card className="p-6">
+                <SectionHeader
+                  title="مطابقة سجل التشغيل بالدفاتر"
+                  subtitle={reconciliation.matched
+                    ? 'الفرق مفسَّر بالكامل — لا يوجد اختلاف غير معروف السبب'
+                    : 'يوجد فرق غير مفسَّر — راجعه قبل اعتماد الشهر'}
+                />
+                <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
+                  <table className="w-full min-w-[560px] text-sm">
+                    <tbody>
+                      {[
+                        ['أ', 'صافي المبيعات التشغيلية (غسلات مكتملة، بعد استبعاد الضريبة)',
+                          reconciliation.operationalNet,
+                          `${reconciliation.washCount} غسلة · إجمالي ${formatCurrency(reconciliation.operationalGross)}`
+                            + (reconciliation.operationalVat > 0
+                              ? ` منها ضريبة ${formatCurrency(reconciliation.operationalVat)}` : '')],
+                        ['ب', 'إيرادات الغسلات المُرحّلة في الدفاتر',
+                          reconciliation.postedWashNet, 'حساب 4000 من قيود مصدرها غسلة'],
+                        ['ج', 'غسلات مكتملة غير مُرحّلة',
+                          reconciliation.unpostedNet,
+                          reconciliation.unpostedCount
+                            ? `${reconciliation.unpostedCount} غسلة — رحّلها من إقفال الفترة`
+                            : 'لا يوجد'],
+                        ['د', 'مردودات المبيعات (إشعارات دائنة)',
+                          reconciliation.salesReturns, 'تخفض الدفاتر ولا تمسّ سجل الغسلات'],
+                        ['هـ', 'إيرادات أخرى مُرحّلة',
+                          reconciliation.otherRevenue, 'فواتير بيع مستقلة · إشعارات مدينة · إيرادات غير تشغيلية'],
+                        ['و', 'فرق غير مفسَّر',
+                          reconciliation.unexplained, 'أ − ب − ج'],
+                      ].map(([key, label, amount, hint]) => {
+                        const isGap = key === 'و';
+                        const bad = isGap && Math.abs(amount) >= 0.005;
+                        return (
+                          <tr
+                            key={key}
+                            className={isGap
+                              ? `border-t-2 ${bad
+                                ? 'border-rose-100 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30'
+                                : 'border-emerald-100 dark:border-emerald-900/50 bg-emerald-50 dark:bg-emerald-950/30'}`
+                              : 'border-b border-slate-50 dark:border-slate-800/60'}
+                          >
+                            <td className="py-3 px-4 align-top w-8 text-slate-500 dark:text-slate-400 font-bold">{key})</td>
+                            <td className="py-3 px-4">
+                              <span className={`block ${isGap ? 'font-bold' : ''} text-slate-800 dark:text-slate-200`}>{label}</span>
+                              <span className="block text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{hint}</span>
+                            </td>
+                            <td className={`py-3 px-4 text-left whitespace-nowrap tabular-nums font-bold ${
+                              bad ? 'text-rose-700 dark:text-rose-400'
+                                : isGap ? 'text-emerald-700 dark:text-emerald-400'
+                                  : 'text-slate-900 dark:text-slate-100'}`}
+                            >
+                              {formatCurrency(amount)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
-              </div>
+                <p className="flex items-start gap-2 text-[11px] text-slate-500 dark:text-slate-400 mt-3 leading-relaxed">
+                  <Scale size={14} className="shrink-0 mt-0.5" />
+                  <span>
+                    القائمة أدناه رسمية وتقرأ القيود المُرحّلة فقط. الضريبة ليست فرق ترحيل —
+                    سعر الغسلة {settings.washPriceMode === 'exclusive' ? 'غير شامل' : 'شامل'} الضريبة
+                    وفق إعدادات المحاسبة، والمقارنة تجري على الصافي في الجانبين.
+                  </span>
+                </p>
+              </Card>
             )}
 
             {/* ── Vertical Income Statement table ─────────────────── */}

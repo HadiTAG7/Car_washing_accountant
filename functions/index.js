@@ -23,7 +23,10 @@ import {
   postEntry, postSource, reverseEntry, closePeriod, reopenPeriod,
   seedChartOfAccounts, ensureAccount, LedgerError,
 } from './src/ledger.js';
-import { issueDocument, voidDocument, InvoicingError } from './src/invoicing.js';
+import {
+  issueDocument, voidDocument, correctLinkedInvoice, InvoicingError,
+} from './src/invoicing.js';
+import { runLegacyInvoiceLinks } from './src/legacyLinks.js';
 import { canPost } from './src/posting.js';
 
 initializeApp();
@@ -207,6 +210,42 @@ export const salesVoidDocument = onCall(OPTS, async (req) => {
       reason: req.data?.reason,
       reversalDate: req.data?.reversalDate,
     }, { userId: uid });
+  } catch (e) { throw toHttps(e); }
+});
+
+/**
+ * التصحيح الذري لفاتورة غسلة.
+ *
+ * Cancels the document, reverses the wash's entry on an explicit date, frees
+ * the posting lock only if that entry still owns it, and releases the source
+ * claim — in ONE transaction. Done as four separate calls, any of them could
+ * land alone and leave an issued invoice over a reversed entry, or a wash that
+ * can be re-posted but never re-invoiced.
+ */
+export const salesCorrectWashInvoice = onCall(OPTS, async (req) => {
+  const { uid } = await requireAccountant(req.auth);
+  try {
+    return await correctLinkedInvoice(db, FieldValue, {
+      documentId: req.data?.documentId,
+      reason: req.data?.reason,
+      reversalDate: req.data?.reversalDate,
+    }, { userId: uid });
+  } catch (e) { throw toHttps(e); }
+});
+
+/**
+ * ربط الفواتير القديمة بقيودها — dry-run by default.
+ *
+ * Adopts only links the document already DECLARES and that the lock, the entry
+ * and the amount all confirm; everything else comes back as a review list.
+ * Admin-only, because applying it writes to filed documents — even though all
+ * it writes are the link fields.
+ */
+export const salesLinkLegacyInvoices = onCall(OPTS, async (req) => {
+  const apply = req.data?.apply === true;
+  const { uid } = apply ? await requireAdmin(req.auth) : await requireAccountant(req.auth);
+  try {
+    return await runLegacyInvoiceLinks(db, FieldValue, { apply }, { userId: uid });
   } catch (e) { throw toHttps(e); }
 });
 

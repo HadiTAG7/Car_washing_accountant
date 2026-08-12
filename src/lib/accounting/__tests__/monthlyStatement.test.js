@@ -7,7 +7,9 @@
  * full. These fix the numbers the page, the CSV and the chart all read.
  */
 import { describe, it, expect } from 'vitest';
-import { monthlyStatement, monthRange, reconcileOperational, DEFAULT_FEE_RULES } from '../monthlyStatement';
+import {
+  monthlyStatement, monthRange, operationalWashSales, reconcileOperational, DEFAULT_FEE_RULES,
+} from '../monthlyStatement';
 
 const ACCOUNTS = [
   { code: '1010', nameArabic: 'الصندوق', accountType: 'asset', normalBalance: 'debit' },
@@ -177,21 +179,197 @@ describe('قائمة الدخل الشهرية من القيود', () => {
   });
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+// المطابقة: صافي بصافي، وكل بند مفسَّر باسمه
+// ═══════════════════════════════════════════════════════════════════════════
+// The old strip took `quantity × price` — a GROSS figure whenever wash prices
+// are quoted VAT-inclusive — away from the statement's NET revenue and called
+// the whole remainder "unposted washes". So a perfectly reconciled month
+// reported a difference exactly equal to its output tax, and a credit note
+// (which reduces the ledger and touches no wash) was reported as a missing
+// posting. Both are fixed here.
+describe('صافي المبيعات التشغيلية', () => {
+  const wash = (over = {}) => ({
+    id: 'w1', status: 'مكتملة', washDate: '2026-08-11', quantity: 1, price: 115, ...over,
+  });
+
+  it('السعر الشامل للضريبة يُقسَّم قبل المقارنة', () => {
+    const r = operationalWashSales([wash()], { periodKey: '2026-08', washPriceMode: 'inclusive' });
+    expect(r).toMatchObject({ gross: 115, net: 100, vat: 15, count: 1 });
+  });
+
+  it('والسعر غير الشامل يُضاف إليه', () => {
+    const r = operationalWashSales([wash({ price: 100 })], {
+      periodKey: '2026-08', washPriceMode: 'exclusive',
+    });
+    expect(r).toMatchObject({ gross: 115, net: 100, vat: 15 });
+  });
+
+  it('ومنشأة غير مسجّلة لا ضريبة عليها', () => {
+    const r = operationalWashSales([wash()], { periodKey: '2026-08', vatRegistered: false });
+    expect(r).toMatchObject({ gross: 115, net: 115, vat: 0 });
+  });
+
+  it('ويُستبعد غير المكتمل وغير الشهر', () => {
+    const r = operationalWashSales([
+      wash(),
+      wash({ id: 'w2', status: 'قيد التنفيذ' }),
+      wash({ id: 'w3', washDate: '2026-07-31' }),
+    ], { periodKey: '2026-08' });
+    expect(r.count).toBe(1);
+    expect(r.net).toBe(100);
+  });
+
+  it('ويعزل غير المُرحّل بالصافي', () => {
+    const posted = new Set(['w1']);
+    const r = operationalWashSales([wash(), wash({ id: 'w2' })], {
+      periodKey: '2026-08', isPosted: (w) => posted.has(w.id),
+    });
+    expect(r.net).toBe(200);
+    expect(r.unpostedNet).toBe(100);      // ← 100, NOT 115
+    expect(r.unpostedCount).toBe(1);
+  });
+});
+
 describe('مطابقة التشغيل بالدفاتر', () => {
-  it('تُظهر الفرق حين تُسجَّل غسلة ولم تُرحَّل', () => {
-    const s = monthlyStatement({ ...bundle(SALE()), periodKey: '2026-08' });
-    const r = reconcileOperational({ operationalRevenue: 230, statement: s });
-    expect(r.operational).toBe(230);
-    expect(r.ledger).toBe(100);
-    expect(r.difference).toBe(130);
+  const washRow = (over = {}) => ({
+    id: 'w1', status: 'مكتملة', washDate: '2026-08-11', quantity: 1, price: 115, ...over,
+  });
+  /** A posted wash entry: the source kind is what the reconciliation reads. */
+  const WASH_SALE = (date = '2026-08-11', net = 100, vat = 15) => entryOf(
+    date,
+    [['1010', net + vat, 0], ['4000', 0, net], ['2100', 0, vat]],
+    { sourceType: 'wash', sourceKind: 'wash', sourceId: 'w1' },
+  );
+
+  it('غسلة 115 شاملة الضريبة مقابل قيد 100+15 تطابق بلا فرق', () => {
+    const b = bundle(WASH_SALE());
+    const s = monthlyStatement({ ...b, periodKey: '2026-08' });
+    const operational = operationalWashSales([washRow()], {
+      periodKey: '2026-08', washPriceMode: 'inclusive', isPosted: () => true,
+    });
+    const r = reconcileOperational({ operational, statement: s, ...b });
+
+    expect(r.operationalNet).toBe(100);
+    expect(r.operationalVat).toBe(15);
+    expect(r.postedWashNet).toBe(100);
+    expect(r.unpostedNet).toBe(0);
+    // The tax is NOT a posting gap.
+    expect(r.unexplained).toBe(0);
+    expect(r.matched).toBe(true);
+    expect(r.clean).toBe(true);
+  });
+
+  it('وسعر 100 غير شامل الضريبة مقابل قيد 100+15 يطابق كذلك', () => {
+    const b = bundle(WASH_SALE());
+    const s = monthlyStatement({ ...b, periodKey: '2026-08' });
+    const operational = operationalWashSales([washRow({ price: 100 })], {
+      periodKey: '2026-08', washPriceMode: 'exclusive', isPosted: () => true,
+    });
+    const r = reconcileOperational({ operational, statement: s, ...b });
+    expect(r.operationalNet).toBe(100);
+    expect(r.unexplained).toBe(0);
+    expect(r.matched).toBe(true);
+  });
+
+  it('والغسلة غير المُرحّلة تظهر 100 كفرق ترحيل لا 115', () => {
+    const b = bundle(WASH_SALE());
+    const s = monthlyStatement({ ...b, periodKey: '2026-08' });
+    const operational = operationalWashSales(
+      [washRow(), washRow({ id: 'w2' })],
+      { periodKey: '2026-08', isPosted: (w) => w.id === 'w1' },
+    );
+    const r = reconcileOperational({ operational, statement: s, ...b });
+
+    expect(r.operationalNet).toBe(200);
+    expect(r.postedWashNet).toBe(100);
+    expect(r.unpostedNet).toBe(100);      // ← 100, NOT 115
+    expect(r.unpostedCount).toBe(1);
+    // Fully explained: nothing is unaccounted for, it is just not posted yet.
+    expect(r.unexplained).toBe(0);
+    expect(r.matched).toBe(true);
+    expect(r.clean).toBe(false);
+  });
+
+  it('والإشعار الدائن يظهر كمردودات ولا يُصنَّف غسلة ناقصة', () => {
+    const b = bundle(WASH_SALE(), CREDIT());
+    const s = monthlyStatement({ ...b, periodKey: '2026-08' });
+    const operational = operationalWashSales([washRow()], {
+      periodKey: '2026-08', isPosted: () => true,
+    });
+    const r = reconcileOperational({ operational, statement: s, ...b });
+
+    expect(r.salesReturns).toBe(100);
+    expect(r.unpostedNet).toBe(0);
+    expect(r.unpostedCount).toBe(0);
+    expect(r.unexplained).toBe(0);
+    expect(r.matched).toBe(true);
+    // The ledger's net revenue is nil, and that is explained by (د), not by a
+    // wash anyone forgot to post.
+    expect(r.ledgerNetRevenue).toBe(0);
+  });
+
+  it('وفاتورة البيع المستقلة تظهر كإيراد آخر لا كفرق', () => {
+    const standalone = entryOf('2026-08-14',
+      [['1010', 57.5, 0], ['4000', 0, 50], ['2100', 0, 7.5]],
+      { sourceType: 'sales_invoice', sourceId: 'doc1' });
+    const b = bundle(WASH_SALE(), standalone);
+    const s = monthlyStatement({ ...b, periodKey: '2026-08' });
+    const operational = operationalWashSales([washRow()], {
+      periodKey: '2026-08', isPosted: () => true,
+    });
+    const r = reconcileOperational({ operational, statement: s, ...b });
+
+    expect(r.postedWashNet).toBe(100);
+    expect(r.otherRevenue).toBe(50);
+    expect(r.unexplained).toBe(0);
+    expect(s.netRevenue).toBe(150);
+  });
+
+  it('والقيد المعكوس ومرآته يلغيان بعضهما في جانب الغسلات', () => {
+    const sale = WASH_SALE();
+    const mirror = entryOf('2026-08-25',
+      [['1010', 0, 115], ['4000', 100, 0], ['2100', 15, 0]],
+      { sourceType: 'adjustment', sourceId: null, reversalOf: sale.entry.id, reversedSourceKind: 'wash' });
+    sale.entry.status = 'reversed';
+    const b = bundle(sale, mirror);
+    const s = monthlyStatement({ ...b, periodKey: '2026-08' });
+    // The wash is no longer posted (its entry was reversed), so it shows as a
+    // posting gap rather than as an unexplained difference.
+    const operational = operationalWashSales([washRow()], {
+      periodKey: '2026-08', isPosted: () => false,
+    });
+    const r = reconcileOperational({ operational, statement: s, ...b });
+
+    expect(r.postedWashNet).toBe(0);      // +100 then −100, attributed to 'wash'
+    expect(r.unpostedNet).toBe(100);
+    expect(r.otherRevenue).toBe(0);       // the mirror is NOT "other revenue"
+    expect(r.unexplained).toBe(0);
+  });
+
+  it('والفرق الذي لا يفسّره شيء يظهر باسمه', () => {
+    // A wash marked posted whose entry landed in another month.
+    const b = bundle(WASH_SALE('2026-07-20'));
+    const s = monthlyStatement({ ...b, periodKey: '2026-08' });
+    const operational = operationalWashSales([washRow()], {
+      periodKey: '2026-08', isPosted: () => true,
+    });
+    const r = reconcileOperational({ operational, statement: s, ...b });
+    expect(r.postedWashNet).toBe(0);
+    expect(r.unpostedNet).toBe(0);
+    expect(r.unexplained).toBe(100);
     expect(r.matched).toBe(false);
   });
 
-  it('وتُظهر أن الفرق قد يكون مردودات لا غسلات ناقصة', () => {
-    const s = monthlyStatement({ ...bundle(SALE(), CREDIT()), periodKey: '2026-08' });
-    const r = reconcileOperational({ operationalRevenue: 100, statement: s });
-    expect(r.ledger).toBe(0);
-    expect(r.difference).toBe(100);
-    expect(r.salesReturns).toBe(100);
+  it('وحصة الشريك تقيس الجانبين معاً', () => {
+    const b = bundle(WASH_SALE());
+    const s = monthlyStatement({ ...b, periodKey: '2026-08', scalingFactor: 0.5 });
+    const operational = operationalWashSales([washRow()], {
+      periodKey: '2026-08', isPosted: () => true,
+    });
+    const r = reconcileOperational({ operational, statement: s, ...b, scalingFactor: 0.5 });
+    expect(r.operationalNet).toBe(50);
+    expect(r.postedWashNet).toBe(50);
+    expect(r.unexplained).toBe(0);
   });
 });

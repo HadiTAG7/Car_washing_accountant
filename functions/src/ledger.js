@@ -40,6 +40,7 @@ export const COL = {
   AUDIT:    'audit_logs',
   COUNTERS: 'counters',
   LOCKS:    'posting_locks',
+  DOCUMENTS: 'sales_documents',
 };
 const JOURNAL_COUNTER = 'journal';
 const SETTINGS_DOC = 'accounting';
@@ -360,6 +361,38 @@ export async function reverseEntry(db, FieldValue, entryId, { entryDate, descrip
     if (original.reversalOf) {
       throw new LedgerError(
         'لا يُعكس قيد عكسي — سجّل قيد تسوية جديداً يوضّح التصحيح.',
+      );
+    }
+
+    // ── فاتورة سارية تشير إلى هذا القيد ──
+    // An ISSUED tax invoice pointing at a REVERSED entry is a state the books
+    // must never hold: the paper says a sale happened and the ledger says it
+    // did not, and the invoice is already in a customer's hands. Reversing the
+    // entry on its own would create exactly that, so it is refused here and
+    // the caller is sent to the path that moves both together.
+    //
+    // Two shapes of link: `linkedJournalEntryId` (a wash invoice documenting
+    // an entry it did not create) and `journalEntryId` (a standalone sale or a
+    // note, whose entry belongs to the document itself).
+    const [linkedDocs, ownDocs] = await Promise.all([
+      tx.get(db.collection(COL.DOCUMENTS).where('linkedJournalEntryId', '==', originalRef.id)),
+      tx.get(db.collection(COL.DOCUMENTS).where('journalEntryId', '==', originalRef.id)),
+    ]);
+    const blockingLinked = linkedDocs.docs.map((x) => x.data()).filter((x) => x.status !== 'cancelled');
+    const blockingOwn    = ownDocs.docs.map((x) => x.data()).filter((x) => x.status !== 'cancelled');
+    if (blockingLinked.length) {
+      const numbers = blockingLinked.map((x) => x.documentNumber).filter(Boolean).join('، ');
+      throw new LedgerError(
+        `القيد موثّق بفاتورة سارية (${numbers}) — لا يُعكس وحده، وإلا بقيت فاتورة ضريبية `
+        + 'صادرة مقابل قيد معكوس. استخدم «تصحيح فاتورة الغسلة»: يلغي المستند ويعكس القيد '
+        + 'ويفك القفل ويحرّر السجل في عملية واحدة، ثم صحّح الغسلة وأعد ترحيلها وأصدر فاتورة بديلة.',
+      );
+    }
+    if (blockingOwn.length) {
+      const numbers = blockingOwn.map((x) => x.documentNumber).filter(Boolean).join('، ');
+      throw new LedgerError(
+        `هذا القيد مملوك للمستند ${numbers} — ألغِ المستند نفسه (يعكس قيده في المعاملة ذاتها) `
+        + 'بدل عكس القيد من دفتر الأستاذ.',
       );
     }
 

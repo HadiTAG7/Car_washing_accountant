@@ -118,6 +118,9 @@ export async function issueDocument(document, _options = {}) {
     issueTime: document.issueTime,
     priceMode: document.priceMode,
     customer: document.customer,
+    // When the service was rendered, as opposed to when the paper was issued.
+    // On the linked path the server takes it from the wash and ignores this.
+    supplyDate: document.supplyDate || null,
     // ── the wash-linked path ──
     // When this is set the server ignores every money field below: it reads
     // the wash, its posting lock and its posted entry, and builds the invoice
@@ -154,14 +157,14 @@ export async function issueDocument(document, _options = {}) {
  */
 export async function issueSimplifiedInvoice({
   issueDate, issueTime, lines, customer = null, priceMode = 'inclusive',
-  paymentMethod = 'cash', paymentStatus = 'paid',
+  paymentMethod = 'cash', paymentStatus = 'paid', supplyDate = null,
   sourceType = null, sourceId = null,
 }) {
   // The seller identity and the VAT treatment come from the server's copy of
   // app_settings/company, so nothing about them is passed here.
   return issueDocument({
     type: 'invoice', issueDate, issueTime, lines, customer, priceMode,
-    paymentMethod, paymentStatus, sourceType, sourceId,
+    paymentMethod, paymentStatus, supplyDate, sourceType, sourceId,
   });
 }
 
@@ -169,16 +172,62 @@ export async function issueSimplifiedInvoice({
  * فاتورة لغسلة مُرحّلة — the invoice for a wash whose revenue is already in
  * the books.
  *
- * Only the wash id travels. The date, the quantity, the price, the VAT
- * treatment and the settlement account are all read server-side from the wash
- * and its posted entry, and the document is refused if the two disagree. No
- * second sales entry is created: the wash's entry already holds that revenue,
- * and posting it again would double it.
+ * The wash id and the ISSUE DATE travel; nothing else. The quantity, the
+ * price, the VAT treatment, the settlement account and the SUPPLY date are all
+ * read server-side from the wash and its posted entry, and the document is
+ * refused if the two disagree. No second sales entry is created: the wash's
+ * entry already holds that revenue, and posting it again would double it.
+ *
+ * `issueDate` is the document's own date and must be stated. It used to be
+ * taken from the wash, which filed every late invoice in the month of supply
+ * rather than the month it was issued in.
  */
-export async function issueInvoiceForWash(washId, { issueTime = null, customer = null } = {}) {
+export async function issueInvoiceForWash(washId, {
+  issueDate, issueTime = null, customer = null,
+} = {}) {
   requireDb();
   if (!String(washId || '').trim()) throw new Error('معرّف الغسلة مطلوب.');
-  return issueDocument({ type: 'invoice', washId: String(washId).trim(), issueTime, customer });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(issueDate || ''))) {
+    throw new Error('تاريخ إصدار الفاتورة مطلوب.');
+  }
+  return issueDocument({
+    type: 'invoice', washId: String(washId).trim(), issueDate, issueTime, customer,
+  });
+}
+
+/**
+ * التصحيح الذري لفاتورة غسلة.
+ *
+ * One server call that cancels the document, reverses the wash's entry on the
+ * date given, frees the posting lock when that entry still owns it, and
+ * releases the source claim so a replacement can be issued after the wash is
+ * corrected and re-posted. Doing those four by hand is what leaves an issued
+ * invoice pointing at a reversed entry — a state the ledger now refuses to
+ * create, which is why this path exists at all.
+ */
+export async function correctWashInvoice(id, { reason, reversalDate } = {}) {
+  requireDb();
+  if (!String(reason || '').trim()) throw new Error('سبب التصحيح مطلوب.');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(reversalDate || ''))) {
+    throw new Error('تاريخ القيد العكسي مطلوب.');
+  }
+  return callLedger('salesCorrectWashInvoice', {
+    documentId: id,
+    reason: String(reason).trim(),
+    reversalDate: String(reversalDate).slice(0, 10),
+  });
+}
+
+/**
+ * ربط الفواتير القديمة بقيودها — dry-run unless `apply` is set.
+ *
+ * Returns `{ scanned, linkable, review, applied }`. Only links the document
+ * itself declares are adopted, and only when the lock, the entry and the total
+ * all confirm them; everything else is listed for a human.
+ */
+export async function linkLegacyInvoices({ apply = false } = {}) {
+  requireDb();
+  return callLedger('salesLinkLegacyInvoices', { apply: apply === true });
 }
 
 /**

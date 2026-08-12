@@ -243,15 +243,15 @@ about. So issuing is split, server-side, into three explicit modes:
 
 | Mode | Client sends | Server does |
 |---|---|---|
-| `linked` — فاتورة غسلة مُرحّلة | `washId` only | Reads the wash, its `posting_locks/wash__<id>` and the posted entry that lock names. Builds the lines, the date and the tax treatment from those, refuses if the invoice and the entry disagree by a halala, stores `linkedJournalEntryId`. **Creates no entry.** |
+| `linked` — فاتورة غسلة مُرحّلة | `washId` + `issueDate` | Reads the wash, its `posting_locks/wash__<id>` and the posted entry that lock names. Builds the lines and the tax treatment from those, takes `supplyDate` from the wash, refuses if the invoice and the entry disagree by a halala, stores `linkedJournalEntryId`. **Creates no entry.** |
 | `standalone` — فاتورة بيع مستقلة | lines + `paymentMethod` + `paymentStatus` | Writes the invoice **and** its sales entry in one transaction: Dr cash/bank/receivable (gross) · Cr `4000` (net) · Cr `2100` (VAT). Invoice stores `journalEntryId`, entry stores `documentId`. |
 | `note` — إشعار دائن/مدين | reference + reason + lines | Posts the adjusting entry (below), and only if the reference invoice names a **live** entry. |
 
 Consequences worth stating plainly:
 
 - On the linked path nothing the caller sends about money is used. A forged
-  `lines` array, a different date, an invented total — all ignored in favour of
-  the wash and its entry.
+  `lines` array, an invented total — all ignored in favour of the wash and its
+  entry. The *dates* are the exception, and deliberately so: see below.
 - A standalone invoice cannot claim `sourceType: 'wash'`. That was the route to
   posting one wash's revenue twice, so it is refused with the reason.
 - A note is refused unless its invoice carries `journalEntryId` **or**
@@ -270,6 +270,91 @@ Consequences worth stating plainly:
   payload (tags 1–5: seller, VAT number, timestamp, total, VAT), rendered as
   inline SVG from a bundled zero-dependency generator so it still works in the
   offline APK.
+
+### تاريخ الإصدار ≠ تاريخ التوريد
+
+Two dates, two facts, both printed and both exported.
+
+`supplyDate` is when the service was rendered — the wash's own date on the
+linked path, an optional field on a standalone sale, inherited from the invoice
+on a note. `issueDate` is when the paper was raised, and it is what the
+document's **identity** is made of: the sequence, the year, the counter, the
+accounting period and the QR timestamp all follow it.
+
+The linked path used to take its `issueDate` from the wash, which quietly filed
+every late invoice in the month of supply: a wash on 31 July invoiced on 12
+August came out with a July period and a QR timestamp for a moment the invoice
+did not exist. It is an **August document for a July supply**, and now says so.
+
+One rule, and it goes one way only: **an invoice may not be dated before its
+supply.** Issuing late is normal and unlimited; issuing early would file a sale
+into a period that closed before the service happened. A note is exempt — it
+corrects a supply that is by definition already past.
+
+### إشعارات قائمة تمنع إلغاء أصلها
+
+Cancelling an invoice reverses it in full. Doing that while a credit note
+against it is still posted takes the sale out **twice** — once through the
+reversal and once through the note — and leaves 4010 carrying a return against
+revenue that is no longer there. So `salesVoidDocument` reads the live notes
+first (`referenceDocumentId`, anything not `cancelled`) and refuses, naming
+them: void the notes first, or correct with a further note. The same guard runs
+in the atomic correction path.
+
+### التصحيح الذري لفاتورة الغسلة
+
+A wash-linked invoice, the wash's journal entry, the posting lock and the
+source claim are four things held together. Undoing them one at a time can
+leave four different half-states, and one of them is genuinely dangerous: an
+**ISSUED tax invoice pointing at a REVERSED entry** — paper in a customer's
+hands saying a sale happened, and books saying it did not.
+
+So `ledgerReverseEntry` now **refuses** to reverse an entry that a live
+document points at, whether by `linkedJournalEntryId` (a wash invoice) or
+`journalEntryId` (a standalone sale or a note), and the error names the way
+out. That way out is `salesCorrectWashInvoice`, one transaction:
+
+1. the document is **cancelled** — number, `issueDate` and `supplyDate` all
+   untouched, because a tax series carries cancelled rows and cannot carry
+   gaps;
+2. the linked entry is **reversed** on an explicit `reversalDate`, mirror
+   posted and original marked;
+3. the wash's **posting lock is deleted only if it still names that entry** —
+   if a newer entry owns it, that entry is the live one and the lock stays;
+4. the **source claim is released**, not deleted: it keeps
+   `previousDocumentId` and the number it belonged to;
+5. one audit record ties all four together.
+
+Then the wash is corrected, re-posted (`postSource` writes a fresh lock), and
+invoiced again. The replacement carries `replacesDocumentId` / `…Number`, and
+the cancelled document gets `replacedByDocumentId` / `…Number` written back —
+so the trail from the dead number to the live one is walkable from either end.
+
+A failure at any step aborts the whole transaction: no half-cancelled document,
+no orphan mirror, no freed lock over a live entry, no released claim without a
+cancellation.
+
+### ربط الفواتير القديمة — a migration, run before go-live
+
+Invoices issued before the two-path split carry neither `journalEntryId` nor
+`linkedJournalEntryId`, so nothing can be credited against them.
+**إقفال الفترة → ربط الفواتير القديمة بقيودها** is the tool, and it is a
+dry-run by default.
+
+The rule that makes automating it safe: **a link is adopted only when the
+document already declares it.** An invoice saying `sourceType: 'wash',
+sourceId: 'w1'` is asserting which record it is for; the tool verifies that
+assertion against the posting lock, the entry's status and the total to the
+halala, and adopts it only when all four agree. Matching by "same day, same
+amount" would be a guess, and a guess here writes a filed tax document's link
+to an entry that may not be its own — so every other case becomes a review row,
+with same-total candidates listed as information for a person, never applied.
+
+Applying writes link fields only — `linkedJournalEntryId`,
+`linkedJournalEntryNumber`, `washId`, `issueMode`, `supplyDate` — plus the
+missing source claim so the wash cannot be invoiced twice. Numbers, sequences,
+dates, totals, VAT rates and QR payloads are never restated. It is idempotent,
+admin-gated to apply, and audited per document.
 
 ### ZATCA — what is and is not implemented
 `src/lib/accounting/zatcaIntegration.js` is the boundary, and it is honest:
@@ -509,9 +594,36 @@ chart all consume the *same object* and cannot drift:
 - The partner-view pro-rata factor is applied once, at the end.
 
 The operational registers keep their page and their drill-down, relabelled as
-what they are: **تفاصيل تشغيلية للمطابقة**. When the two disagree the page says
-so, with both numbers and the difference — an unposted wash becomes a task
-("رحّلها من صفحة الغسلات") instead of a silent discrepancy between two screens.
+what they are: **تفاصيل تشغيلية للمطابقة**.
+
+### المطابقة تُفسّر، ولا تطرح رقمين
+
+The first version of the reconciliation strip subtracted the operational total
+from the ledger's net revenue and blamed the whole remainder on unposted
+washes. It was wrong twice: `quantity × price` is a **gross** figure whenever
+wash prices are quoted VAT-inclusive, so a perfectly reconciled month reported
+a difference exactly equal to its output tax; and a credit note — which reduces
+the ledger and touches no wash at all — was reported as a missing posting.
+
+The operational side is now split with the **same** `vatRegistered` and
+`washPriceMode` the wash poster reads out of `app_settings/accounting`, so the
+comparison is net against net. And the result is six named lines, not one
+subtraction:
+
+| | |
+|---|---|
+| **أ** | صافي المبيعات التشغيلية — completed washes, tax removed |
+| **ب** | إيرادات الغسلات المُرحّلة — 4000, restricted to entries whose source is a wash |
+| **ج** | غسلات مكتملة غير مُرحّلة — at **net**, and counted |
+| **د** | مردودات المبيعات — credit notes, which move the ledger and not the register |
+| **هـ** | إيرادات أخرى مُرحّلة — standalone invoices, debit notes, non-operating revenue |
+| **و** | الفرق غير المفسَّر — **أ − ب − ج** |
+
+Only **و** is a discrepancy. A month full of unposted washes and credit notes
+is fully *explained*, and the page says which, rather than lumping them into
+one number and calling it a posting gap. Mirror entries are attributed back to
+the source they cancel (`reversedSourceKind`), so a reversed wash nets to zero
+under **ب** instead of appearing as revenue under **هـ**.
 
 ---
 
@@ -672,13 +784,18 @@ Release signing reads `android/keystore.properties` (gitignored, along with
 - Existing startup-cost rows are not swept into the asset register
   automatically — `importAssetFromSource` exists and is idempotent, but each
   asset's useful life is a judgement, so it is entered rather than guessed.
-- **Invoices issued before the two-path split carry no ledger link.** They
-  have neither `journalEntryId` nor `linkedJournalEntryId`, so a credit note
-  against one is refused with the reason. That is deliberate — crediting an
-  invoice the books never saw would create negative revenue — but it means
-  such an invoice has to be corrected by posting its source first.
+- **Invoices issued before the two-path split carry no ledger link**, so a
+  credit note against one is refused. That is a **migration to run before this
+  goes live**, not a limit to live with — see *ربط الفواتير القديمة* above.
+  What stays a limit is the residue: any invoice that does not declare its
+  source record is never linked automatically, and has to be decided by hand.
 - **قائمة الدخل shows only what has been posted.** A month whose washes are
   recorded but not swept into the ledger reads as zero revenue there, with the
-  gap named in the reconciliation strip. That is the intended reading of an
-  official statement, not a bug, but it does mean the sweep is now on the
+  gap named as line **ج** of the reconciliation. That is the intended reading of
+  an official statement, not a bug, but it does mean the sweep is now on the
   critical path for the monthly numbers.
+- **Correcting a wash invoice needs the atomic path**, and that path cancels
+  the document rather than amending it. There is no "edit the invoice": the old
+  number stays cancelled and a new one is issued, linked both ways. Fixing a
+  typo in a customer name therefore consumes a number, which is the correct
+  behaviour for a tax series and worth knowing before it surprises anyone.

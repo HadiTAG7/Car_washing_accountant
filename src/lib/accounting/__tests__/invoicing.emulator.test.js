@@ -243,7 +243,9 @@ d('إصدار المستندات على Firestore الحقيقي', () => {
       entries = await ledger.fetchEntries();
       expect(entries).toHaveLength(2);
 
-      const linked = await inv.issueInvoiceForWash('w1', { issueTime: '10:00:00' });
+      const linked = await inv.issueInvoiceForWash('w1', {
+        issueDate: '2026-08-12', issueTime: '10:00:00',
+      });
       expect(linked.journalEntryId).toBeNull();
       expect(linked.linkedJournalEntryId).toBe(posted.entryId);
       expect(linked.gross).toBe(115);
@@ -254,7 +256,9 @@ d('إصدار المستندات على Firestore الحقيقي', () => {
       const saved = await inv.fetchDocument(linked.id);
       expect(saved.issueMode).toBe('linked');
       expect(saved.washId).toBe('w1');
-      expect(saved.issueDate).toBe('2026-08-11');
+      // Two dates: the paper's own and the service's.
+      expect(saved.issueDate).toBe('2026-08-12');
+      expect(saved.supplyDate).toBe('2026-08-11');
     }, 120_000);
 
     it('لا تُصدَر فاتورة لغسلة غير مُرحّلة', async () => {
@@ -262,7 +266,7 @@ d('إصدار المستندات على Firestore الحقيقي', () => {
         biker_name: 'س', quantity: 1, price: 115, status: 'مكتملة',
         wash_date: '2026-08-12', payment_method: 'cash',
       });
-      await expect(inv.issueInvoiceForWash('w-unposted'))
+      await expect(inv.issueInvoiceForWash('w-unposted', { issueDate: '2026-08-13' }))
         .rejects.toThrow(/غير مُرحّلة إلى الدفاتر/);
       expect(await inv.fetchDocuments()).toHaveLength(0);
     }, 90_000);
@@ -284,5 +288,57 @@ d('إصدار المستندات على Firestore الحقيقي', () => {
       // No entry, so no negative revenue was invented.
       expect(await ledger.fetchEntries()).toHaveLength(0);
     }, 90_000);
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // التصحيح الذري، من مسار العميل
+  // ═══════════════════════════════════════════════════════════════════════
+  describe('تصحيح فاتورة الغسلة عبر مسار العميل', () => {
+    it('عكس قيد الغسلة مباشرةً مرفوض ما دامت فاتورته سارية', async () => {
+      const e1 = await postedWash('w1');
+      await inv.issueInvoiceForWash('w1', { issueDate: '2026-08-12' });
+      await expect(ledger.reverseEntry(e1.entryId, { entryDate: '2026-08-25', userId: 'u1' }))
+        .rejects.toThrow(/موثّق بفاتورة سارية/);
+      const entries = await ledger.fetchEntries();
+      expect(entries).toHaveLength(1);
+      expect(entries[0].status).toBe('posted');
+    }, 120_000);
+
+    it('والمسار الذري يلغي ويعكس ويفك ويحرّر، ثم تُصدر فاتورة بديلة', async () => {
+      const e1 = await postedWash('w1');
+      const f1 = await inv.issueInvoiceForWash('w1', { issueDate: '2026-08-12' });
+
+      const fixed = await inv.correctWashInvoice(f1.id, {
+        reason: 'سعر خاطئ', reversalDate: '2026-08-25',
+      });
+      expect(fixed.lockReleased).toBe(true);
+      expect(fixed.claimReleased).toBe(true);
+
+      const cancelled = await inv.fetchDocument(f1.id);
+      expect(cancelled.status).toBe('cancelled');
+      expect(cancelled.documentNumber).toBe('INV-2026-000001');   // number kept
+      expect((await ledger.fetchEntries()).find((e) => e.id === e1.entryId).status).toBe('reversed');
+
+      // The wash is free again: corrected, re-posted, re-invoiced.
+      await setDoc(doc(db, 'washes', 'w1'), {
+        biker_name: 'أحمد', quantity: 2, price: 115, status: 'مكتملة',
+        wash_date: '2026-08-11', payment_method: 'cash',
+      });
+      const e2 = await ledger.postSource('wash', 'w1');
+      const f2 = await inv.issueInvoiceForWash('w1', { issueDate: '2026-08-26' });
+
+      expect(f2.linkedJournalEntryId).toBe(e2.entryId);
+      expect(f2.replacesDocumentId).toBe(f1.id);
+      expect((await inv.fetchDocument(f1.id)).replacedByDocumentId).toBe(f2.id);
+
+      // Revenue once, at the corrected figure: 100 − 100 + 200.
+      const { entries, lines } = await ledger.fetchLedgerBundle();
+      const byId = new Map(entries.map((e) => [e.id, e]));
+      const revenue = lines
+        .filter((l) => l.accountId === '4000'
+          && ['posted', 'reversed'].includes(byId.get(l.entryId)?.status))
+        .reduce((s, l) => s + (l.credit || 0) - (l.debit || 0), 0);
+      expect(Math.round(revenue * 100) / 100).toBe(200);
+    }, 180_000);
   });
 });

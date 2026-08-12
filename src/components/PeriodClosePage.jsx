@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
   Lock, Unlock, ShieldCheck, AlertTriangle, CheckCircle2, Loader2, Database, Upload,
-  CalendarRange, FilePlus2, Zap,
+  CalendarRange, FilePlus2, Zap, Link2,
 } from 'lucide-react';
 import { formatCurrency } from '../data/initialData';
 import TopBar from './TopBar';
@@ -15,6 +15,7 @@ import { closePreflight, currentPeriodKey } from '../lib/accounting/periods';
 import { closePeriod, reopenPeriod, seedChartOfAccounts } from '../lib/accounting/firestoreLedger';
 import { collectUnposted, postUnposted } from '../lib/accounting/postOperations';
 import { previewGeneration, generateVouchers } from '../lib/accounting/firestoreRecurring';
+import { linkLegacyInvoices } from '../lib/accounting/firestoreInvoicing';
 import { addMonths } from '../lib/accounting/depreciation';
 import { useAccountingSettings } from '../hooks/useAccountingSettings';
 import { isFirebaseConfigured, missingEnvNames, describeBackendError } from '../lib/firebaseClient';
@@ -39,6 +40,8 @@ export default function PeriodClosePage() {
     from: addMonths(currentPeriodKey(), -2), through: currentPeriodKey(),
   }));
   const [genPreview, setGenPreview] = useState(null);
+  // Legacy invoices with no ledger link: the dry-run plan, then the apply.
+  const [legacyPlan, setLegacyPlan] = useState(null);
   const [toast, setToast] = useState({ open: false, message: '', tone: 'success', duration: 3000 });
 
   const showToast = useCallback((message, tone = 'success') => {
@@ -135,6 +138,48 @@ export default function PeriodClosePage() {
         : 'الترحيل التلقائي موقوف — الترحيل يتم من هذه الصفحة.');
     } catch (e) {
       showToast(describeBackendError(e) || e?.message || 'تعذّر الحفظ', 'error');
+    } finally { setBusy(''); }
+  }
+
+  /**
+   * ربط الفواتير القديمة — dry-run first, always.
+   *
+   * Invoices issued before the two-path split carry no ledger link, so no
+   * credit note can be raised against them. The scan adopts only links a
+   * document already declares and that the posting lock, the entry and the
+   * total all confirm; anything else is listed for a person to decide,
+   * because a guessed link writes a tax document to an entry that may not be
+   * its own.
+   */
+  async function handleScanLegacy() {
+    setBusy('legacy-scan');
+    try {
+      const r = await linkLegacyInvoices({ apply: false });
+      setLegacyPlan(r);
+      showToast(r.candidates === 0
+        ? 'كل الفواتير مرتبطة بقيودها — لا يوجد ما يُرحَّل.'
+        : `${r.linkable.length} فاتورة قابلة للربط المؤكد، و${r.review.length} تحتاج مراجعة يدوية.`);
+    } catch (e) {
+      showToast(describeBackendError(e) || e?.message || 'تعذّر الفحص', 'error');
+    } finally { setBusy(''); }
+  }
+
+  async function handleApplyLegacy() {
+    const count = legacyPlan?.linkable?.length || 0;
+    const ok = typeof window === 'undefined' || window.confirm(
+      `ربط ${count} فاتورة بقيودها؟\n\n`
+      + 'يُكتب الرابط فقط — رقم المستند وتاريخه ومبالغه ورمز QR لا تُمسّ. '
+      + 'الحالات الغامضة لا تُربط.',
+    );
+    if (!ok) return;
+    setBusy('legacy-apply');
+    try {
+      const r = await linkLegacyInvoices({ apply: true });
+      setLegacyPlan(r);
+      showToast(`تم ربط ${r.applied} فاتورة. المتبقي للمراجعة اليدوية: ${r.review.length}.`);
+      await refetch();
+    } catch (e) {
+      showToast(describeBackendError(e) || e?.message || 'تعذّر الربط', 'error');
     } finally { setBusy(''); }
   }
 
@@ -522,6 +567,102 @@ export default function PeriodClosePage() {
                       </ul>
                     )}
                   </div>
+                </div>
+              )}
+            </Card>
+
+            {/* ── ربط الفواتير القديمة ─────────────────────────────────
+                A migration, not a footnote: an invoice with no ledger link
+                cannot be credited, so this has to run before the books are
+                relied on. Dry-run by default, and it never guesses. */}
+            <Card className="p-6">
+              <SectionHeader
+                title="ربط الفواتير القديمة بقيودها"
+                subtitle="فاتورة بلا قيد لا يمكن إصدار إشعار عليها — يُربط المؤكد فقط، والغامض يُعرض للمراجعة"
+                action={canMutate ? (
+                  <div className="flex items-center gap-2">
+                    <SecondaryButton
+                      icon={busy === 'legacy-scan' ? Loader2 : Link2}
+                      onClick={handleScanLegacy}
+                      disabled={Boolean(busy)}
+                    >
+                      {busy === 'legacy-scan' ? 'جارٍ الفحص...' : 'فحص (تجريبي)'}
+                    </SecondaryButton>
+                    {(legacyPlan?.linkable?.length || 0) > 0 && (
+                      <PrimaryButton
+                        icon={busy === 'legacy-apply' ? Loader2 : Link2}
+                        onClick={handleApplyLegacy}
+                        disabled={Boolean(busy)}
+                      >
+                        {busy === 'legacy-apply' ? 'جارٍ الربط...' : `ربط ${legacyPlan.linkable.length}`}
+                      </PrimaryButton>
+                    )}
+                  </div>
+                ) : null}
+              />
+              {!legacyPlan ? (
+                <EmptyState
+                  icon={Link2}
+                  title="لم يُجرَ الفحص بعد"
+                  hint="الفحص لا يكتب شيئاً — يعرض ما يمكن ربطه بثقة وما يحتاج قراراً بشرياً."
+                  compact
+                />
+              ) : (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <StatCard icon={Database} tone="slate" label="فواتير مفحوصة" value={String(legacyPlan.scanned)} />
+                    <StatCard icon={Link2} tone="primary" label="بلا رابط" value={String(legacyPlan.candidates)} />
+                    <StatCard icon={CheckCircle2} tone="emerald" label="ربط مؤكد" value={String(legacyPlan.linkable.length)}
+                      sub="رابط مُعلن + قفل + قيد مُرحّل + تطابق المبلغ" />
+                    <StatCard icon={AlertTriangle} tone="amber" label="مراجعة يدوية" value={String(legacyPlan.review.length)} />
+                  </div>
+
+                  {legacyPlan.applied > 0 && (
+                    <p className="text-xs text-emerald-700 dark:text-emerald-400 font-semibold">
+                      تم ربط {legacyPlan.applied} فاتورة في آخر تشغيل.
+                    </p>
+                  )}
+
+                  {legacyPlan.review.length > 0 && (
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100 mb-2">
+                        تحتاج قراراً بشرياً — لم يُخمَّن لها رابط
+                      </h4>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs min-w-[38rem]">
+                          <thead>
+                            <tr className="text-right text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-200 dark:border-slate-700">
+                              <th className="py-2 px-3">المستند</th>
+                              <th className="py-2 px-3">التاريخ</th>
+                              <th className="py-2 px-3 text-left">الإجمالي</th>
+                              <th className="py-2 px-3">السبب</th>
+                              <th className="py-2 px-3">مرشّحون (للاطلاع فقط)</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {legacyPlan.review.slice(0, 50).map((r) => (
+                              <tr key={r.documentId} className="border-b border-slate-50 dark:border-slate-800/60 last:border-0">
+                                <td className="py-2 px-3 tabular-nums font-semibold text-slate-900 dark:text-slate-100">{r.documentNumber || r.documentId}</td>
+                                <td className="py-2 px-3 tabular-nums text-slate-600 dark:text-slate-300">{r.issueDate || '—'}</td>
+                                <td className="py-2 px-3 text-left tabular-nums text-slate-600 dark:text-slate-300">{formatCurrency(r.gross)}</td>
+                                <td className="py-2 px-3 text-slate-600 dark:text-slate-300">{r.reason}</td>
+                                <td className="py-2 px-3 tabular-nums text-slate-500 dark:text-slate-400">
+                                  {(r.candidates || []).length
+                                    ? (r.candidates || []).map((c) => `قيد ${c.entryNumber} (${c.entryDate})`).join('، ')
+                                    : '—'}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      {legacyPlan.review.length > 50 && (
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-2">
+                          معروض أول 50 من {legacyPlan.review.length}.
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </Card>

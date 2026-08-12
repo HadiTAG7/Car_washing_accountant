@@ -273,11 +273,19 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
   const mode = issueModeFor(input);
   const washId = mode === 'linked' ? String(input.washId).trim() : '';
 
-  // The linked path takes its date from the WASH, so only the two paths that
-  // own a date validate one here.
-  let issueDate = String(input.issueDate ?? '').slice(0, 10);
-  if (mode !== 'linked' && !isRealDate(issueDate)) {
-    throw new InvoicingError('تاريخ إصدار المستند غير صالح.', { code: 'invalid-argument' });
+  // ── تاريخ الإصدار ≠ تاريخ التوريد ──
+  // These are two different facts and only one of them is the document's own.
+  // The linked path used to take its `issueDate` FROM the wash, which quietly
+  // made every invoice for a July wash a July document: its number came out of
+  // the 2026 counter for the month it was supplied in, its period followed, and
+  // its QR carried a timestamp for a moment the invoice did not exist. A wash
+  // on 31 July invoiced on 12 August is an AUGUST document for a JULY supply,
+  // and both dates belong on it.
+  //
+  // So `issueDate` is always the caller's, on every path, and always validated.
+  const issueDate = String(input.issueDate ?? '').slice(0, 10);
+  if (!isRealDate(issueDate)) {
+    throw new InvoicingError('تاريخ إصدار المستند مطلوب ويجب أن يكون تاريخاً حقيقياً (YYYY-MM-DD).', { code: 'invalid-argument' });
   }
   // 25:70 used to sail through a `\d{2}:\d{2}` test and ride into the QR
   // timestamp as a value no reader can parse.
@@ -401,10 +409,41 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
           'قيد الغسلة غير مُرحّل — لا تُصدر فاتورة لغسلة بلا أثر محاسبي قائم.',
         );
       }
-      issueDate = String(wash.wash_date || '').slice(0, 10);
-      if (!isRealDate(issueDate)) {
+    }
+
+    // ── تاريخ التوريد ──
+    // When the service was rendered. On the linked path it is the wash's own
+    // date; on a standalone sale the caller may state one and it defaults to
+    // the issue date; a note inherits its invoice's, because it corrects a
+    // supply that happened then and not on the day the correction was typed.
+    let supplyDate = issueDate;
+    if (mode === 'linked') {
+      supplyDate = String(wash.wash_date || '').slice(0, 10);
+      if (!isRealDate(supplyDate)) {
         throw new InvoicingError('تاريخ الغسلة غير صالح — صحّحه قبل إصدار الفاتورة.');
       }
+    } else if (mode === 'standalone' && input.supplyDate) {
+      supplyDate = String(input.supplyDate).slice(0, 10);
+      if (!isRealDate(supplyDate)) {
+        throw new InvoicingError('تاريخ التوريد غير صالح.', { code: 'invalid-argument' });
+      }
+    }
+    // ── السياسة: لا تُصدر فاتورة قبل توريدها ──
+    // An invoice dated before the service it bills is not a late invoice, it is
+    // a wrong one: it would file the sale in a period that closed before the
+    // supply happened. Issuing LATER is normal and allowed without limit — the
+    // two dates simply both appear on the document.
+    //
+    // A NOTE is exempt, and its supply date is set below from the invoice it
+    // corrects: a correction naturally comes after the supply, and the rule
+    // that matters there is the one already enforced — a note cannot exist
+    // without a live invoice behind it.
+    if (mode !== 'note' && issueDate < supplyDate) {
+      throw new InvoicingError(
+        `تاريخ الإصدار (${issueDate}) قبل تاريخ التوريد (${supplyDate}) — `
+        + 'الفاتورة لا تسبق الخدمة التي توثّقها.',
+        { code: 'invalid-argument' },
+      );
     }
 
     const year = Number(issueDate.slice(0, 4));
@@ -458,6 +497,10 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
       // Derived from the document that was found, so a forged
       // `referenceNumber` in the payload changes nothing.
       referenceNumber = reference.documentNumber;
+      // A note corrects a supply that happened on the invoice's date, not on
+      // the day the correction was typed. Inherited, like the tax treatment,
+      // from the document being adjusted.
+      supplyDate = String(reference.supplyDate || reference.issueDate || issueDate).slice(0, 10);
 
       // ── أصل محاسبي حقيقي، لا مجرد ورقة ──
       // A credit note DEBITS مردودات المبيعات. Against an invoice that never
@@ -490,12 +533,43 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
       }
     }
 
+    // ── المطالبة بالسجل المصدر ──
+    // A held claim means "this record already has its document". A RELEASED
+    // claim means a correction has cancelled that document and reversed its
+    // entry, so the record is waiting for a replacement — and the replacement
+    // links back to what it replaces, in both directions, so the trail from the
+    // cancelled number to the live one is walkable from either end.
+    let replacesDocumentId = null;
+    let replacedRef = null;
+    let replacedNumber = null;
     if (claimSnap?.exists) {
       const prev = claimSnap.data();
-      throw new InvoicingError(
-        `سبق إصدار مستند لهذا السجل: ${prev.documentNumber}. استخدم إشعاراً دائناً أو مديناً للتعديل.`,
-        { code: 'already-exists' },
-      );
+      if (prev.status !== 'released') {
+        throw new InvoicingError(
+          `سبق إصدار مستند لهذا السجل: ${prev.documentNumber}. استخدم إشعاراً دائناً أو مديناً للتعديل.`,
+          { code: 'already-exists' },
+        );
+      }
+      replacesDocumentId = prev.previousDocumentId || prev.documentId || null;
+      if (replacesDocumentId) {
+        replacedRef = db.collection(DOC_COL.DOCUMENTS).doc(String(replacesDocumentId));
+        const replacedSnap = await tx.get(replacedRef);
+        if (!replacedSnap.exists) {
+          // The claim names a document that is gone. Refusing beats issuing a
+          // replacement whose predecessor cannot be shown to an auditor.
+          throw new InvoicingError(
+            'المستند السابق لهذا السجل غير موجود — راجع السجل قبل إصدار بديل.',
+            { code: 'not-found' },
+          );
+        }
+        if (replacedSnap.data().status !== 'cancelled') {
+          throw new InvoicingError(
+            `المستند السابق ${replacedSnap.data().documentNumber} ما زال سارياً — `
+            + 'لا يُصدر بديل عن مستند لم يُلغَ.',
+          );
+        }
+        replacedNumber = replacedSnap.data().documentNumber || null;
+      }
     }
 
     // The seller block comes from settings, never from the payload: a client
@@ -730,6 +804,11 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
       issueMode: mode,
       documentNumber, sequence, year,
       issueDate, issueTime, timestamp,
+      // When the service was rendered, kept apart from when the paper was
+      // issued. The number, the year, the counter, the period and the QR
+      // timestamp all follow `issueDate`; `supplyDate` is what the document
+      // is FOR, and both are printed.
+      supplyDate,
       seller, taxable, priceMode,
       customer,
       lines: totals.lines,
@@ -758,6 +837,11 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
       // something real to adjust.
       linkedJournalEntryId: linkedEntryId || null,
       linkedJournalEntryNumber: mode === 'linked' ? (washEntry.entryNumber ?? null) : null,
+      // The cancelled document this one stands in for, when a correction
+      // released the source claim. Its own number and date are untouched.
+      replacesDocumentId: replacesDocumentId || null,
+      replacesDocumentNumber: replacedNumber,
+      replacedByDocumentId: null,
       issuedBy: userId,
       issuedAt: FieldValue.serverTimestamp(),
       createdAt: FieldValue.serverTimestamp(),
@@ -765,9 +849,19 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
     tx.set(counterRef, {
       nextNumber: sequence + 1, type, year, updatedAt: FieldValue.serverTimestamp(),
     }, { merge: true });
+    // The other half of the replacement link — walkable from the cancelled
+    // number as well as from the live one.
+    if (replacedRef) {
+      tx.update(replacedRef, {
+        replacedByDocumentId: ref.id,
+        replacedByDocumentNumber: documentNumber,
+      });
+    }
     if (claimRef) {
       tx.set(claimRef, {
         sourceType: claimType, sourceId: claimId, documentId: ref.id, documentNumber,
+        status: 'held',
+        previousDocumentId: replacesDocumentId || null,
         at: FieldValue.serverTimestamp(),
       });
     }
@@ -776,23 +870,61 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
       userId, before: null,
       after: {
         documentNumber, gross: totals.gross, vat: totals.vat, mode,
+        issueDate, supplyDate,
         journalEntryId: entryRef ? entryRef.id : null,
         linkedJournalEntryId: linkedEntryId || null,
+        replacesDocumentId: replacesDocumentId || null,
       },
       note: `إصدار ${documentNumber} (${mode})`
         + (entryNumber ? ` — قيد رقم ${entryNumber}` : '')
-        + (linkedEntryId ? ` — يوثّق قيد رقم ${washEntry.entryNumber ?? '—'}` : ''),
+        + (linkedEntryId ? ` — يوثّق قيد رقم ${washEntry.entryNumber ?? '—'}` : '')
+        + (replacedNumber ? ` — بديل عن ${replacedNumber}` : ''),
     }, FieldValue));
 
     return {
       id: ref.id, documentNumber, sequence, year, qrPayload, vatRate,
-      mode,
+      mode, issueDate, supplyDate,
       net: totals.net, vat: totals.vat, gross: totals.gross,
       journalEntryId: entryRef ? entryRef.id : null,
       journalEntryNumber: entryNumber,
       linkedJournalEntryId: linkedEntryId || null,
+      replacesDocumentId: replacesDocumentId || null,
     };
   });
+}
+
+// ─── الإشعارات النشطة ────────────────────────────────────────────────────
+/**
+ * The live notes raised against one invoice.
+ *
+ * Read inside the transaction that wants to cancel it, because "does this
+ * invoice have corrections outstanding?" must be answered on the same snapshot
+ * as the cancellation itself.
+ */
+async function activeNotesFor(db, tx, documentId) {
+  const snap = await tx.get(
+    db.collection(DOC_COL.DOCUMENTS).where('referenceDocumentId', '==', String(documentId)),
+  );
+  return snap.docs
+    .map((x) => ({ id: x.id, ...x.data() }))
+    .filter((x) => x.type !== 'invoice' && x.status !== 'cancelled');
+}
+
+/**
+ * Refuses to cancel an invoice while corrections against it are still live.
+ *
+ * Reversing the invoice in full while its credit note stays posted double-
+ * counts the reduction: the sale comes out once through the reversal and again
+ * through the note, and 4010 ends up carrying a return against revenue that is
+ * no longer there. The notes are the outstanding decision, so they are named.
+ */
+function refuseIfNotesOutstanding(doc, notes) {
+  if (doc.type !== 'invoice' || notes.length === 0) return;
+  const listed = notes.map((n) => n.documentNumber).filter(Boolean).join('، ');
+  throw new InvoicingError(
+    `الفاتورة ${doc.documentNumber} عليها ${notes.length} إشعار نشط (${listed}) — `
+    + 'ألغِ الإشعارات أولاً أو صحّح بإشعار جديد. إلغاء الفاتورة الآن يخصم الأثر مرتين.',
+  );
 }
 
 /**
@@ -827,6 +959,30 @@ export async function voidDocument(db, FieldValue, { documentId, reason, reversa
     if (doc.status === 'cancelled') {
       throw new InvoicingError('المستند ملغى بالفعل.', { code: 'already-exists' });
     }
+
+    // ── لا تُلغى فاتورة عليها إشعارات نشطة ──
+    // Read before any write, on the same snapshot as the cancellation.
+    refuseIfNotesOutstanding(doc, await activeNotesFor(db, tx, id));
+
+    // A wash-linked invoice is cancelled through the correction path, which
+    // reverses the wash's entry in the same transaction. Voiding it here would
+    // leave an issued-then-cancelled paper over a still-posted entry and a
+    // claim nobody released — a wash with revenue in the books and no way to
+    // invoice it again.
+    if (doc.linkedJournalEntryId && !doc.journalEntryId) {
+      throw new InvoicingError(
+        `${doc.documentNumber} فاتورة لغسلة مُرحّلة — استخدم «التصحيح الذري» `
+        + 'الذي يلغي المستند ويعكس قيد الغسلة ويحرّر السجل في عملية واحدة.',
+      );
+    }
+
+    // The claim this document holds over its source record, if any. A note
+    // never took one (`sourceId` is null on notes), so this is an invoice's
+    // claim or nothing.
+    const claimType = doc.type === 'invoice' && doc.sourceType ? String(doc.sourceType) : null;
+    const claimId   = doc.type === 'invoice' && doc.sourceId   ? String(doc.sourceId)   : null;
+    const claimRef = claimType && claimId
+      ? db.collection(DOC_COL.SOURCES).doc(sourceClaimId(claimType, claimId)) : null;
 
     // ── a document with an accounting effect cannot just be marked void ──
     // Cancelling the paper while its entry stays posted would leave revenue
@@ -879,8 +1035,15 @@ export async function voidDocument(db, FieldValue, { documentId, reason, reversa
       tx.set(reversalRef, {
         entryDate: date,
         periodKey: revPeriod,
+        // A mirror is an adjustment, never a posting of the source it cancels
+        // — otherwise it would look like the source's live entry to every
+        // reader that asks. What it reversed is recorded on its own fields.
         sourceType: 'adjustment',
         sourceId: null,
+        sourceKind: null,
+        reversedSourceKind: entry.sourceKind ?? null,
+        reversedSourceType: entry.sourceType ?? null,
+        reversedSourceId: entry.sourceId ?? null,
         description: `عكس ${doc.documentNumber} — ${why}`,
         status: 'posted',
         reversalOf: entryRef.id,
@@ -909,6 +1072,21 @@ export async function voidDocument(db, FieldValue, { documentId, reason, reversa
       }, { merge: true });
     }
 
+    // A cancelled document no longer holds its source record. The claim is
+    // RELEASED rather than deleted, carrying the number it used to belong to,
+    // so the replacement can link back to it and an auditor can see why a
+    // second document exists for one record.
+    if (claimRef) {
+      tx.set(claimRef, {
+        status: 'released',
+        previousDocumentId: id,
+        previousDocumentNumber: doc.documentNumber || null,
+        releasedAt: FieldValue.serverTimestamp(),
+        releasedBy: userId,
+        releaseReason: why,
+      }, { merge: true });
+    }
+
     tx.update(ref, {
       status: 'cancelled', voidReason: why,
       voidedBy: userId, voidedAt: FieldValue.serverTimestamp(),
@@ -917,15 +1095,235 @@ export async function voidDocument(db, FieldValue, { documentId, reason, reversa
     tx.set(db.collection(DOC_COL.AUDIT).doc(), auditRecord({
       action: 'void', collectionName: DOC_COL.DOCUMENTS, documentId: id, userId,
       before: { status: doc.status, journalEntryId: doc.journalEntryId || null },
-      after: { status: 'cancelled', reversalEntryId: reversalRef ? reversalRef.id : null },
+      after: {
+        status: 'cancelled',
+        reversalEntryId: reversalRef ? reversalRef.id : null,
+        claimReleased: Boolean(claimRef),
+      },
       note: `إلغاء ${doc.documentNumber} — ${why}`
-        + (reversalNumber ? ` (عكس بقيد رقم ${reversalNumber})` : ''),
+        + (reversalNumber ? ` (عكس بقيد رقم ${reversalNumber})` : '')
+        + (claimRef ? ' — حُرّرت مطالبة السجل المصدر' : ''),
     }, FieldValue));
 
     return {
       id, documentNumber: doc.documentNumber,
       reversalEntryId: reversalRef ? reversalRef.id : null,
       reversalEntryNumber: reversalNumber,
+      claimReleased: Boolean(claimRef),
+    };
+  });
+}
+
+// ─── التصحيح الذري لفاتورة الغسلة ────────────────────────────────────────
+/**
+ * تصحيح فاتورة غسلة — one transaction, five moves, all or none.
+ *
+ * A wash-linked invoice documents an entry it does not own, and the two are
+ * held together by a posting lock and a source claim. Unwinding that by hand
+ * means four separate operations that can each half-succeed:
+ *
+ *   • cancel the paper but leave the entry posted → an `issued`-turned-void
+ *     document over live revenue, and no way to invoice the wash again;
+ *   • reverse the entry but leave the paper issued → an ISSUED invoice
+ *     pointing at a REVERSED entry, which is the state `ledgerReverseEntry`
+ *     now refuses outright to create;
+ *   • release the lock but not the claim → the wash can be re-posted and never
+ *     re-invoiced;
+ *   • release the claim but not the lock → the reverse.
+ *
+ * So it is one call:
+ *
+ *   1. the document is cancelled (number and dates untouched, `replacedBy`
+ *      filled in later by whatever replaces it);
+ *   2. its linked entry is reversed with an EXPLICIT `reversalDate`, mirror
+ *      posted, original marked;
+ *   3. the wash's posting lock is deleted ONLY if it still names the entry
+ *      being reversed — if a newer entry owns it, that entry is the live one
+ *      and the lock stays;
+ *   4. the source claim is RELEASED (not deleted), recording which document it
+ *      used to belong to;
+ *   5. an audit record ties all four together.
+ *
+ * Afterwards the wash can be corrected, re-posted, and invoiced again — and
+ * the replacement invoice carries `replacesDocumentId` back to the cancelled
+ * number.
+ */
+export async function correctLinkedInvoice(db, FieldValue, { documentId, reason, reversalDate }, { userId = null } = {}) {
+  const why = String(reason || '').trim();
+  if (!why) throw new InvoicingError('سبب التصحيح مطلوب.', { code: 'invalid-argument' });
+  const id = String(documentId || '').trim();
+  if (!id) throw new InvoicingError('معرّف المستند مطلوب.', { code: 'invalid-argument' });
+  const date = String(reversalDate ?? '').slice(0, 10);
+  if (!isRealDate(date)) {
+    throw new InvoicingError(
+      'تاريخ القيد العكسي مطلوب ويجب أن يكون تاريخاً حقيقياً (YYYY-MM-DD) — '
+      + 'اختر تاريخاً في فترة مفتوحة.',
+      { code: 'invalid-argument' },
+    );
+  }
+  const revPeriod = periodKeyOf(date);
+  if (!isValidPeriodKey(revPeriod)) {
+    throw new InvoicingError('تاريخ العكس لا ينتمي لفترة صالحة.', { code: 'invalid-argument' });
+  }
+
+  return db.runTransaction(async (tx) => {
+    // ══ reads ══════════════════════════════════════════════════════════
+    const ref = db.collection(DOC_COL.DOCUMENTS).doc(id);
+    const snap = await tx.get(ref);
+    if (!snap.exists) throw new InvoicingError('المستند غير موجود.', { code: 'not-found' });
+    const doc = snap.data();
+    if (doc.status === 'cancelled') {
+      throw new InvoicingError('المستند ملغى بالفعل.', { code: 'already-exists' });
+    }
+    if (doc.type !== 'invoice') {
+      throw new InvoicingError('التصحيح الذري للفواتير فقط.', { code: 'invalid-argument' });
+    }
+    const linkedEntryId = String(doc.linkedJournalEntryId || '').trim();
+    if (!linkedEntryId) {
+      throw new InvoicingError(
+        `${doc.documentNumber} ليست فاتورة غسلة مُرحّلة — استخدم الإلغاء العادي.`,
+        { code: 'invalid-argument' },
+      );
+    }
+
+    refuseIfNotesOutstanding(doc, await activeNotesFor(db, tx, id));
+
+    const washId = String(doc.washId || doc.sourceId || '').trim();
+    const entryRef   = db.collection(DOC_COL.ENTRIES).doc(linkedEntryId);
+    const counterRef = db.collection(DOC_COL.COUNTERS).doc(JOURNAL_COUNTER);
+    const periodRef  = db.collection(DOC_COL.PERIODS).doc(revPeriod);
+    const lockRef  = washId
+      ? db.collection(DOC_COL.LOCKS).doc(postingLockId(ADAPTERS.wash.lockKind, washId)) : null;
+    const claimRef = washId
+      ? db.collection(DOC_COL.SOURCES).doc(sourceClaimId('wash', washId)) : null;
+
+    const [entrySnap, counterSnap, periodSnap, lockSnap] = await Promise.all([
+      tx.get(entryRef), tx.get(counterRef), tx.get(periodRef),
+      lockRef ? tx.get(lockRef) : Promise.resolve(null),
+    ]);
+
+    if (!entrySnap.exists) {
+      throw new InvoicingError('قيد الغسلة غير موجود — راجع الدفاتر قبل التصحيح.', { code: 'not-found' });
+    }
+    const entry = entrySnap.data();
+    if (entry.status !== 'posted') {
+      throw new InvoicingError('قيد الغسلة غير مُرحّل — لا يمكن عكسه.');
+    }
+    if (periodSnap.exists && periodSnap.data().status === 'closed') {
+      throw new InvoicingError(`الفترة ${revPeriod} مقفلة — اختر تاريخاً في فترة مفتوحة.`);
+    }
+    const lines = Array.isArray(entry.lines) ? entry.lines : [];
+    if (lines.length < 2) {
+      throw new InvoicingError(
+        'قيد الغسلة بصيغة قديمة لا تحمل سطوره داخله — سجّل قيد تسوية يدوياً بدل عكسه.',
+      );
+    }
+
+    // ══ writes ═════════════════════════════════════════════════════════
+    const mirror = lines.map((l) => ({
+      accountId: l.accountId, debit: round2(l.credit), credit: round2(l.debit),
+      description: l.description || '',
+    }));
+    const mirrorTotals = totalsOf(mirror);
+    if (Math.abs(mirrorTotals.debit - mirrorTotals.credit) >= MONEY_EPSILON) {
+      throw new InvoicingError('قيد الغسلة غير متوازن — لا يمكن بناء عكس صحيح له.');
+    }
+    const reversalNumber = counterSnap.exists ? (Number(counterSnap.data().nextNumber) || 1) : 1;
+    const reversalRef = db.collection(DOC_COL.ENTRIES).doc();
+
+    tx.set(reversalRef, {
+      entryDate: date,
+      periodKey: revPeriod,
+      sourceType: 'adjustment',
+      sourceId: null,
+      sourceKind: null,
+      reversedSourceKind: entry.sourceKind ?? null,
+      reversedSourceType: entry.sourceType ?? null,
+      reversedSourceId: entry.sourceId ?? null,
+      description: `تصحيح فاتورة ${doc.documentNumber} — عكس قيد رقم ${entry.entryNumber ?? '—'} — ${why}`,
+      status: 'posted',
+      reversalOf: entryRef.id,
+      entryNumber: reversalNumber,
+      lines: mirror,
+      lineCount: mirror.length,
+      totalDebit: mirrorTotals.debit,
+      totalCredit: mirrorTotals.credit,
+      documentId: id,
+      documentNumber: doc.documentNumber,
+      createdBy: userId,
+      createdAt: FieldValue.serverTimestamp(),
+      postedAt: FieldValue.serverTimestamp(),
+    });
+    tx.update(entryRef, {
+      status: 'reversed', reversedBy: reversalRef.id, reversedAt: FieldValue.serverTimestamp(),
+    });
+    if (!periodSnap.exists) {
+      tx.set(periodRef, {
+        periodKey: revPeriod, status: 'open', closedAt: null, closedBy: null,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+    }
+    tx.set(counterRef, {
+      nextNumber: reversalNumber + 1, updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    // The lock is released only when it still belongs to the entry being
+    // reversed. A wash corrected and re-posted already has a newer entry
+    // holding it, and freeing it here would let the books hold that record
+    // twice.
+    const lockOwned = Boolean(lockSnap?.exists && lockSnap.data().entryId === entryRef.id);
+    if (lockOwned) tx.delete(lockRef);
+
+    if (claimRef) {
+      tx.set(claimRef, {
+        sourceType: 'wash', sourceId: washId,
+        status: 'released',
+        previousDocumentId: id,
+        previousDocumentNumber: doc.documentNumber || null,
+        releasedAt: FieldValue.serverTimestamp(),
+        releasedBy: userId,
+        releaseReason: why,
+      }, { merge: true });
+    }
+
+    // The number and both dates stay exactly as filed. `cancelled` is the
+    // status a tax series can carry; deleting the row is what it cannot.
+    tx.update(ref, {
+      status: 'cancelled',
+      voidReason: why,
+      correctedAt: FieldValue.serverTimestamp(),
+      correctedBy: userId,
+      voidedBy: userId,
+      voidedAt: FieldValue.serverTimestamp(),
+      reversalEntryId: reversalRef.id,
+      reversalEntryNumber: reversalNumber,
+    });
+
+    tx.set(db.collection(DOC_COL.AUDIT).doc(), auditRecord({
+      action: 'correct', collectionName: DOC_COL.DOCUMENTS, documentId: id, userId,
+      before: {
+        status: doc.status, linkedJournalEntryId: linkedEntryId,
+        entryStatus: 'posted', lockHeld: Boolean(lockSnap?.exists),
+      },
+      after: {
+        status: 'cancelled', reversalEntryId: reversalRef.id,
+        lockReleased: lockOwned, claimReleased: Boolean(claimRef),
+      },
+      note: `تصحيح ${doc.documentNumber} — عكس قيد رقم ${entry.entryNumber ?? '—'} `
+        + `بقيد رقم ${reversalNumber} بتاريخ ${date}`
+        + (lockOwned ? ' — فُك قفل الغسلة' : ' — القفل يملكه قيد أحدث فبقي')
+        + (claimRef ? ' — حُرّرت المطالبة لإصدار بديل' : ''),
+    }, FieldValue));
+
+    return {
+      id,
+      documentNumber: doc.documentNumber,
+      washId: washId || null,
+      reversedEntryId: linkedEntryId,
+      reversalEntryId: reversalRef.id,
+      reversalEntryNumber: reversalNumber,
+      lockReleased: lockOwned,
+      claimReleased: Boolean(claimRef),
     };
   });
 }

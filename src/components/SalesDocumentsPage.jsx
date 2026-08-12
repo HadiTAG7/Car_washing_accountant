@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
   FileText, Plus, Trash2, Download, Loader2, Save, ShieldAlert,
-  AlertTriangle, CheckCircle2, Ban, CornerUpLeft, CornerUpRight, QrCode as QrIcon,
+  AlertTriangle, CheckCircle2, Ban, CornerUpLeft, CornerUpRight, RotateCcw,
+  QrCode as QrIcon,
 } from 'lucide-react';
 import { formatCurrency, formatCurrencyPrecise } from '../data/initialData';
 import { downloadCsv } from '../lib/exportCsv';
@@ -20,7 +21,7 @@ import { useLedger } from '../hooks/useLedger';
 import { hasPostedEntryFor } from '../lib/accounting/firestoreLedger';
 import {
   issueSimplifiedInvoice, issueInvoiceForWash, issueCreditNoteFor, issueDebitNoteFor,
-  voidDocument, saveSellerProfile,
+  voidDocument, correctWashInvoice, saveSellerProfile,
 } from '../lib/accounting/firestoreInvoicing';
 import {
   DOCUMENT_TYPE_LABELS, invoiceTotals, decodeZatcaQrPayload, documentSign,
@@ -63,6 +64,9 @@ export default function SalesDocumentsPage() {
   const [toast, setToast] = useState({ open: false, message: '', tone: 'success', duration: 3000 });
   const [expanded, setExpanded] = useState(null);
   const [voiding, setVoiding] = useState(null);
+  const [correcting, setCorrecting] = useState(null);
+  // The wash panel's own issue date — the paper's date, not the service's.
+  const [washIssueDate, setWashIssueDate] = useState(todayIso());
 
   const [profile, setProfile] = useState(null);
   const [form, setForm] = useState({
@@ -153,18 +157,52 @@ export default function SalesDocumentsPage() {
   }
 
   /**
-   * Invoicing a wash sends its id and nothing else. The server reads the wash,
-   * its posting lock and its posted entry, prints what the books already say
-   * and creates NO second entry — the wash's revenue is in there once.
+   * Invoicing a wash sends its id and the ISSUE DATE — the wash supplies
+   * everything else. The two dates are different facts: the wash's date is
+   * when the service happened, and the invoice's is when the paper was raised,
+   * which is what its number, year, period and QR timestamp follow.
    */
   async function handleIssueForWash(wash) {
+    if (washIssueDate < wash.washDate) {
+      showToast('تاريخ الإصدار قبل تاريخ الغسلة — الفاتورة لا تسبق الخدمة.', 'error');
+      return;
+    }
     setBusy(`wash-${wash.id}`);
     try {
-      const res = await issueInvoiceForWash(wash.id, { issueTime: nowTime() });
-      showToast(`تم إصدار الفاتورة ${res.documentNumber} للغسلة بلا قيد جديد.`);
+      const res = await issueInvoiceForWash(wash.id, {
+        issueDate: washIssueDate, issueTime: nowTime(),
+      });
+      showToast(
+        `تم إصدار الفاتورة ${res.documentNumber} بتاريخ ${res.issueDate} `
+        + `عن توريد ${res.supplyDate} — بلا قيد جديد.`,
+      );
       await Promise.all([refetch(), refetchWashes?.(), refetchLedger()]);
     } catch (e) {
       showToast(describeBackendError(e) || e?.message || 'تعذّر إصدار فاتورة الغسلة', 'error');
+    } finally { setBusy(''); }
+  }
+
+  /**
+   * التصحيح الذري — cancel the paper, reverse the wash's entry, free the lock
+   * and release the claim, in one server transaction. The ledger refuses to
+   * reverse an entry a live invoice documents, so this is the only way through
+   * — and it is the only way that cannot leave the four halves out of step.
+   */
+  async function handleCorrect({ reason, reversalDate }) {
+    const docRow = correcting;
+    if (!docRow) return;
+    setBusy(docRow.id);
+    try {
+      const res = await correctWashInvoice(docRow.id, { reason, reversalDate });
+      setCorrecting(null);
+      showToast(
+        `تم تصحيح ${res.documentNumber}: عُكس القيد بقيد رقم ${res.reversalEntryNumber}`
+        + `${res.lockReleased ? '، وفُك قفل الغسلة' : ''}`
+        + '. صحّح الغسلة وأعد ترحيلها ثم أصدر الفاتورة البديلة.',
+      );
+      await Promise.all([refetch(), refetchWashes?.(), refetchLedger()]);
+    } catch (e) {
+      showToast(describeBackendError(e) || e?.message || 'تعذّر التصحيح', 'error');
     } finally { setBusy(''); }
   }
 
@@ -210,13 +248,19 @@ export default function SalesDocumentsPage() {
   function handleExport() {
     downloadCsv(
       'المستندات-الضريبية',
-      ['رقم المستند', 'النوع', 'التاريخ', 'العميل', 'مرجع', 'الصافي', 'الضريبة', 'الإجمالي', 'الحالة', 'الاتجاه'],
+      // Both dates. They are different facts, and a tax export that carries
+      // only one of them cannot answer "which period does this belong to?"
+      // and "when was the service rendered?" at the same time.
+      ['رقم المستند', 'النوع', 'تاريخ الإصدار', 'تاريخ التوريد', 'العميل', 'مرجع',
+        'الصافي', 'الضريبة', 'الإجمالي', 'الحالة', 'الاتجاه', 'بديل عن', 'استُبدل بـ'],
       documents.map((d) => [
-        d.documentNumber, DOCUMENT_TYPE_LABELS[d.type] || d.type, d.issueDate,
+        d.documentNumber, DOCUMENT_TYPE_LABELS[d.type] || d.type,
+        d.issueDate, d.supplyDate || d.issueDate,
         d.customer?.name || '', d.referenceNumber || '',
         Number((d.net || 0).toFixed(2)), Number((d.vat || 0).toFixed(2)), Number((d.gross || 0).toFixed(2)),
         d.status === 'cancelled' ? 'ملغى' : 'صادر',
         documentSign(d.type) < 0 ? 'خصم' : 'إضافة',
+        d.replacesDocumentNumber || '', d.replacedByDocumentNumber || '',
       ]),
     );
   }
@@ -441,11 +485,31 @@ export default function SalesDocumentsPage() {
               title="فواتير غسلات مُرحّلة بانتظار الإصدار"
               subtitle="الفاتورة توثّق قيد الغسلة القائم ولا تُنشئ قيداً ثانياً — الإيراد مُسجَّل مرة واحدة"
             />
+            {/* The paper's own date. A wash on 31 July invoiced on 12 August is
+                an AUGUST document for a JULY supply: the number, the year, the
+                counter, the period and the QR timestamp all follow this field,
+                and the wash's date rides along as `supplyDate`. */}
+            <div className="flex flex-wrap items-end gap-4 mb-4">
+              <div className="w-full sm:w-56">
+                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                  تاريخ إصدار الفواتير
+                </label>
+                <DateField
+                  name="washIssueDate" value={washIssueDate}
+                  onChange={(e) => setWashIssueDate(e.target.value)}
+                  ariaLabel="تاريخ إصدار فواتير الغسلات"
+                />
+              </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed flex-1 min-w-[16rem]">
+                تاريخ التوريد يأتي من الغسلة نفسها ويُطبع على الفاتورة بجانب تاريخ الإصدار.
+                الرقم والفترة ورمز QR تتبع تاريخ الإصدار، ولا يجوز أن يسبق تاريخ الغسلة.
+              </p>
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm min-w-[38rem]">
                 <thead>
                   <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
-                    <th className="py-3 px-4">التاريخ</th>
+                    <th className="py-3 px-4">تاريخ التوريد</th>
                     <th className="py-3 px-4">البايكر</th>
                     <th className="py-3 px-4 text-center">العدد</th>
                     <th className="py-3 px-4 text-left">السعر</th>
@@ -454,26 +518,30 @@ export default function SalesDocumentsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {invoiceableWashes.map((w) => (
-                    <tr key={w.id} className="border-b border-slate-50 dark:border-slate-800/60 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
-                      <td className="py-3 px-4 whitespace-nowrap tabular-nums text-slate-700 dark:text-slate-300">{w.washDate}</td>
-                      <td className="py-3 px-4 text-slate-700 dark:text-slate-300">{w.bikerName || '—'}</td>
-                      <td className="py-3 px-4 text-center tabular-nums text-slate-700 dark:text-slate-300">{w.quantity}</td>
-                      <td className="py-3 px-4 text-left tabular-nums text-slate-700 dark:text-slate-300">{formatCurrencyPrecise(w.price)}</td>
-                      <td className="py-3 px-4 text-left tabular-nums font-bold text-slate-900 dark:text-slate-100">
-                        {formatCurrencyPrecise((w.quantity || 0) * (w.price || 0))}
-                      </td>
-                      <td className="py-3 px-4 text-left whitespace-nowrap">
-                        <SecondaryButton
-                          icon={busy === `wash-${w.id}` ? Loader2 : FileText}
-                          onClick={() => handleIssueForWash(w)}
-                          disabled={Boolean(busy)}
-                        >
-                          {busy === `wash-${w.id}` ? 'جارٍ الإصدار...' : 'إصدار الفاتورة'}
-                        </SecondaryButton>
-                      </td>
-                    </tr>
-                  ))}
+                  {invoiceableWashes.map((w) => {
+                    const tooEarly = washIssueDate < w.washDate;
+                    return (
+                      <tr key={w.id} className="border-b border-slate-50 dark:border-slate-800/60 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+                        <td className="py-3 px-4 whitespace-nowrap tabular-nums text-slate-700 dark:text-slate-300">{w.washDate}</td>
+                        <td className="py-3 px-4 text-slate-700 dark:text-slate-300">{w.bikerName || '—'}</td>
+                        <td className="py-3 px-4 text-center tabular-nums text-slate-700 dark:text-slate-300">{w.quantity}</td>
+                        <td className="py-3 px-4 text-left tabular-nums text-slate-700 dark:text-slate-300">{formatCurrencyPrecise(w.price)}</td>
+                        <td className="py-3 px-4 text-left tabular-nums font-bold text-slate-900 dark:text-slate-100">
+                          {formatCurrencyPrecise((w.quantity || 0) * (w.price || 0))}
+                        </td>
+                        <td className="py-3 px-4 text-left whitespace-nowrap">
+                          <SecondaryButton
+                            icon={busy === `wash-${w.id}` ? Loader2 : FileText}
+                            onClick={() => handleIssueForWash(w)}
+                            disabled={Boolean(busy) || tooEarly}
+                            title={tooEarly ? 'تاريخ الإصدار قبل تاريخ الغسلة' : undefined}
+                          >
+                            {busy === `wash-${w.id}` ? 'جارٍ الإصدار...' : 'إصدار الفاتورة'}
+                          </SecondaryButton>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -510,7 +578,7 @@ export default function SalesDocumentsPage() {
                       <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
                         <th className="py-3 px-4">رقم المستند</th>
                         <th className="py-3 px-4">النوع</th>
-                        <th className="py-3 px-4">التاريخ</th>
+                        <th className="py-3 px-4">الإصدار / التوريد</th>
                         <th className="py-3 px-4">العميل / المرجع</th>
                         <th className="py-3 px-4 text-left">الصافي</th>
                         <th className="py-3 px-4 text-left">الضريبة</th>
@@ -541,12 +609,34 @@ export default function SalesDocumentsPage() {
                                 {DOCUMENT_TYPE_LABELS[d.type] || d.type}
                               </span>
                             </td>
-                            <td className="py-3 px-4 whitespace-nowrap tabular-nums text-slate-700 dark:text-slate-300">{d.issueDate}</td>
+                            {/* Both dates. They coincide on most documents, and
+                                when they do not that is exactly the fact a
+                                reader needs — the supply is what the invoice
+                                is FOR, the issue date is what its number and
+                                its period follow. */}
+                            <td className="py-3 px-4 whitespace-nowrap tabular-nums text-slate-700 dark:text-slate-300">
+                              {d.issueDate}
+                              {d.supplyDate && d.supplyDate !== d.issueDate && (
+                                <span className="block text-[11px] text-slate-500 dark:text-slate-400">
+                                  توريد {d.supplyDate}
+                                </span>
+                              )}
+                            </td>
                             <td className="py-3 px-4 text-slate-700 dark:text-slate-300">
                               {d.customer?.name || '—'}
                               {d.referenceNumber && (
                                 <span className="block text-[11px] tabular-nums text-slate-500 dark:text-slate-400">
                                   على {d.referenceNumber}
+                                </span>
+                              )}
+                              {d.replacesDocumentNumber && (
+                                <span className="block text-[11px] tabular-nums text-slate-500 dark:text-slate-400">
+                                  بديل عن {d.replacesDocumentNumber}
+                                </span>
+                              )}
+                              {d.replacedByDocumentNumber && (
+                                <span className="block text-[11px] tabular-nums text-slate-500 dark:text-slate-400">
+                                  استُبدل بـ {d.replacedByDocumentNumber}
                                 </span>
                               )}
                             </td>
@@ -576,15 +666,27 @@ export default function SalesDocumentsPage() {
                                       </button>
                                     </>
                                   )}
-                                  {/* A NOTE gets this button too. It has a journal entry of its
-                                      own, so voiding it is the only way to unwind that entry —
-                                      and the dialog asks for the date the reversal lands on,
-                                      which is what makes a note in a closed month recoverable. */}
-                                  <button type="button" title="إلغاء المستند"
-                                    onClick={() => setVoiding(d)} disabled={busy === d.id}
-                                    className="min-h-touch min-w-touch flex items-center justify-center rounded-control text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors">
-                                    <Ban size={16} />
-                                  </button>
+                                  {/* A wash-linked invoice cannot simply be voided: its
+                                      entry belongs to the wash, and the ledger refuses to
+                                      reverse an entry a live invoice documents. It gets the
+                                      atomic correction instead — one call that cancels the
+                                      paper, reverses the entry, frees the lock and releases
+                                      the claim. Everything else gets the ordinary void; a
+                                      NOTE gets it too, because its own entry is only
+                                      unwound that way. */}
+                                  {d.linkedJournalEntryId && !d.journalEntryId ? (
+                                    <button type="button" title="تصحيح ذري — إلغاء الفاتورة وعكس قيد الغسلة معاً"
+                                      onClick={() => setCorrecting(d)} disabled={busy === d.id}
+                                      className="min-h-touch min-w-touch flex items-center justify-center rounded-control text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 transition-colors">
+                                      <RotateCcw size={16} />
+                                    </button>
+                                  ) : (
+                                    <button type="button" title="إلغاء المستند"
+                                      onClick={() => setVoiding(d)} disabled={busy === d.id}
+                                      className="min-h-touch min-w-touch flex items-center justify-center rounded-control text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors">
+                                      <Ban size={16} />
+                                    </button>
+                                  )}
                                 </div>
                               )}
                             </td>
@@ -658,11 +760,22 @@ export default function SalesDocumentsPage() {
 
       {voiding && (
         <VoidDocumentModal
-          key={voiding.id}
+          key={`void-${voiding.id}`}
           document={voiding}
           busy={busy === voiding.id}
           onConfirm={handleVoid}
           onClose={() => setVoiding(null)}
+        />
+      )}
+
+      {correcting && (
+        <VoidDocumentModal
+          key={`correct-${correcting.id}`}
+          mode="correct"
+          document={correcting}
+          busy={busy === correcting.id}
+          onConfirm={handleCorrect}
+          onClose={() => setCorrecting(null)}
         />
       )}
 

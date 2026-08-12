@@ -124,7 +124,7 @@ string), and it is audited.
 ### Posting rules
 | Operation | Entry |
 |---|---|
-| غسلة (مكتملة فقط) | Dr cash/bank/receivable (gross) · Cr revenue (net) · Cr output VAT |
+| غسلة (مكتملة فقط) | Dr cash/bank/receivable (gross) · Cr revenue (net) · Cr output VAT — under the tax policy in force on the WASH's date, and the split is frozen onto the entry as `taxSnapshot` |
 | مصروف | Dr expense/asset (net) · Dr input VAT *(if deductible)* · Cr cash/bank/**payable** |
 | دفعة شريك | Dr cash/bank · Cr partner capital sub-account |
 | عهدة | Dr advances (an **asset**) · Cr cash/bank |
@@ -350,11 +350,32 @@ amount" would be a guess, and a guess here writes a filed tax document's link
 to an entry that may not be its own — so every other case becomes a review row,
 with same-total candidates listed as information for a person, never applied.
 
+Two more rules follow from the first:
+
+- **One record, one document.** Two invoices declaring the same wash — or two
+  declarations resolving to the same *entry* — are a contradiction the data
+  cannot settle, so **all** of them go to review with what they clash on.
+  Picking one would be picking arbitrarily.
+- **The plan does not authorise the write.** A dry-run is a photograph, and
+  between the photograph and the write an entry can be reversed, a claim can be
+  taken, another invoice can be linked. So `apply` re-reads the invoice, the
+  wash, the lock, the entry and the claim **inside a per-document transaction**
+  and re-checks all of it there, including a query for any other live document
+  already pointing at that entry. A row that no longer qualifies is skipped
+  with its reason and joins the review list — never forced through on the
+  strength of a stale scan. Two concurrent applies therefore link the source
+  exactly once.
+
+The **claim always ends `held`** by the linked invoice. A `released` claim is
+re-holdable only by the document it was released *from*; released to somebody
+else, or held by somebody else, it goes to review. Leaving it released would
+let a second invoice be issued for a wash that already has one — which is the
+first thing the next `salesIssueDocument` for that wash now refuses.
+
 Applying writes link fields only — `linkedJournalEntryId`,
 `linkedJournalEntryNumber`, `washId`, `issueMode`, `supplyDate` — plus the
-missing source claim so the wash cannot be invoiced twice. Numbers, sequences,
-dates, totals, VAT rates and QR payloads are never restated. It is idempotent,
-admin-gated to apply, and audited per document.
+claim. Numbers, sequences, dates, totals, VAT rates and QR payloads are never
+restated. It is idempotent, admin-gated to apply, and audited per document.
 
 ### ZATCA — what is and is not implemented
 `src/lib/accounting/zatcaIntegration.js` is the boundary, and it is honest:
@@ -596,6 +617,36 @@ chart all consume the *same object* and cannot drift:
 The operational registers keep their page and their drill-down, relabelled as
 what they are: **تفاصيل تشغيلية للمطابقة**.
 
+### الشهر السابق لا يتحرك بتغيير إعداد
+
+`vatRegistered` and `washPriceMode` decide whether a 115-riyal wash is 100 + 15
+or 115 + 0. Read as "whatever the setting says today", flipping either one
+silently restated every past month that a screen derives from raw wash rows —
+and produced a reconciliation gap exactly the size of the tax, which no amount
+of posting could close, because the gap was in the question rather than in the
+data.
+
+Two changes, and they cover the two halves of the problem:
+
+**Posted washes carry their own answer.** `postSource` writes a `taxSnapshot`
+onto the wash's entry — the switches that were in force and the net/vat/gross
+they produced. Every later reader asking "what was this wash's revenue?" reads
+it from there. Entries written before the snapshot existed are read off their
+own lines, which say the same thing one step less directly.
+
+**Unposted washes use the rules of their own day.** The switches now carry an
+effective date: `app_settings/accounting.taxPolicyHistory` is a list of
+`{ effectiveFrom, vatRegistered, washPriceMode, vatRate }`, and `taxPolicyAt`
+answers "what were the rules on this date". `postSource` resolves the policy
+from the *record's* date too, so posting a July wash in September files it
+under July's rules rather than today's.
+
+The date is typed in **إقفال الفترة → إعدادات المحاسبة** and defaults to today,
+which is the only honest default: a change made today applies from today.
+Back-dating one is a correction and is stored as such. An install with no
+history reads exactly as before — the current values apply to all dates, which
+says "we do not know when this was set" rather than "it was always this".
+
 ### المطابقة تُفسّر، ولا تطرح رقمين
 
 The first version of the reconciliation strip subtracted the operational total
@@ -624,6 +675,11 @@ is fully *explained*, and the page says which, rather than lumping them into
 one number and calling it a posting gap. Mirror entries are attributed back to
 the source they cancel (`reversedSourceKind`), so a reversed wash nets to zero
 under **ب** instead of appearing as revenue under **هـ**.
+
+Line **أ** itself is built the same way the statement is: a POSTED wash
+contributes the figures its own entry froze, and only an UNPOSTED one is split
+— under the policy effective on its date. That is what makes **و** stay at zero
+when a setting changes, instead of jumping by the month's output tax.
 
 ---
 

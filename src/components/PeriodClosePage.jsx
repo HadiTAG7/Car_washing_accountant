@@ -9,6 +9,7 @@ import { Card, SectionHeader, StatCard, EmptyState, PrimaryButton, SecondaryButt
 import LoadingState from './LoadingState';
 import ErrorState, { SetupRequiredCard } from './ErrorState';
 import Toast from './Toast';
+import DateField from './DateField';
 import { useLedger } from '../hooks/useLedger';
 import { useAuth } from '../hooks/useAuth';
 import { closePreflight, currentPeriodKey } from '../lib/accounting/periods';
@@ -42,6 +43,10 @@ export default function PeriodClosePage() {
   const [genPreview, setGenPreview] = useState(null);
   // Legacy invoices with no ledger link: the dry-run plan, then the apply.
   const [legacyPlan, setLegacyPlan] = useState(null);
+  // The date a tax-switch change takes effect from. Today by default, because
+  // a change made today applies from today — back-dating one restates a period
+  // that has already been filed, so it has to be typed on purpose.
+  const [policyFrom, setPolicyFrom] = useState(() => new Date().toISOString().slice(0, 10));
   const [toast, setToast] = useState({ open: false, message: '', tone: 'success', duration: 3000 });
 
   const showToast = useCallback((message, tone = 'success') => {
@@ -119,11 +124,24 @@ export default function PeriodClosePage() {
     } finally { setBusy(''); setProgress(null); }
   }
 
+  /**
+   * Saving a TAX switch records the date it takes effect.
+   *
+   * `vatRegistered`, `washPriceMode` and the rate decide what a wash's revenue
+   * is, so changing one without a date silently restates every past month that
+   * is derived from raw wash rows. The date defaults to today — a change made
+   * today applies from today — and can be back-dated deliberately when the
+   * registration actually started earlier.
+   */
   async function handleSetting(patch) {
     setBusy('settings');
     try {
-      await updateSettings(patch, { userId: user?.id });
-      showToast('تم حفظ إعدادات المحاسبة.');
+      await updateSettings(patch, { userId: user?.id, effectiveFrom: policyFrom });
+      const dated = ['vatRegistered', 'washPriceMode', 'vatRate']
+        .some((k) => Object.prototype.hasOwnProperty.call(patch, k));
+      showToast(dated
+        ? `تم الحفظ، ساري من ${policyFrom}. الأشهر السابقة تبقى على قواعدها.`
+        : 'تم حفظ إعدادات المحاسبة.');
     } catch (e) {
       showToast(describeBackendError(e) || e?.message || 'تعذّر الحفظ', 'error');
     } finally { setBusy(''); }
@@ -313,7 +331,7 @@ export default function PeriodClosePage() {
                 title="إعدادات المحاسبة"
                 subtitle="تحكم في احتساب الضريبة ودورية الإقرار — تنعكس مباشرة على تقرير ضريبة القيمة المضافة والقيود"
               />
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
                     التسجيل الضريبي
@@ -344,6 +362,21 @@ export default function PeriodClosePage() {
                   </select>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed mt-1">
                     «شامل» يستخرج الضريبة من السعر؛ «غير شامل» يضيفها فوقه.
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                    سريان تغيير الضريبة من
+                  </label>
+                  <DateField
+                    name="policyFrom" value={policyFrom}
+                    onChange={(e) => setPolicyFrom(e.target.value)}
+                    ariaLabel="تاريخ سريان تغيير إعدادات الضريبة"
+                    disabled={!canMutate || busy === 'settings'}
+                  />
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed mt-1">
+                    تغيير التسجيل أو وضع السعر يُسجَّل بتاريخ سريان، فلا يُعاد احتساب شهر سابق
+                    بقواعد اليوم. الغسلات المُرحّلة محفوظة بأرقامها على أي حال.
                   </p>
                 </div>
                 <div>

@@ -487,6 +487,62 @@ d('الخادم الموثوق للترحيل', () => {
       expect(e.lines.some((l) => l.accountId === '2100')).toBe(false);
     });
 
+    // ═══ سياسة الضريبة بتاريخ السجل ═══════════════════════════════════
+    // Posting a July wash in September must file it under JULY's rules. If
+    // the business re-quoted prices as VAT-exclusive in August, reading the
+    // current switch would restate a sale that was quoted inclusive.
+    it('يرحّل بقواعد تاريخ السجل لا بقواعد اليوم', async () => {
+      await db.collection('app_settings').doc('accounting').set({
+        value: {
+          vatRegistered: true, washPriceMode: 'exclusive',
+          taxPolicyHistory: [
+            { effectiveFrom: '2026-01-01', vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15 },
+            { effectiveFrom: '2026-08-01', vatRegistered: true, washPriceMode: 'exclusive', vatRate: 0.15 },
+          ],
+        },
+      });
+      await db.collection('washes').doc('july').set(wash({ wash_date: '2026-07-20' }));
+      await db.collection('washes').doc('august').set(wash({ wash_date: '2026-08-20' }));
+
+      const j = await postSource(db, FieldValue, { kind: 'wash', sourceId: 'july' }, { userId: 'u1' });
+      const a = await postSource(db, FieldValue, { kind: 'wash', sourceId: 'august' }, { userId: 'u1' });
+
+      // July: 115 quoted inclusive → 100 + 15.
+      const je = (await db.collection(COL.ENTRIES).doc(j.entryId).get()).data();
+      expect(je.lines.find((l) => l.accountId === '4000').credit).toBe(100);
+      expect(je.lines.find((l) => l.accountId === '2100').credit).toBe(15);
+
+      // August: 115 quoted exclusive → 115 + 17.25.
+      const ae = (await db.collection(COL.ENTRIES).doc(a.entryId).get()).data();
+      expect(ae.lines.find((l) => l.accountId === '4000').credit).toBe(115);
+      expect(ae.lines.find((l) => l.accountId === '2100').credit).toBe(17.25);
+    }, 60_000);
+
+    it('ويثبّت لقطة الضريبة على القيد فلا يحرّكها تغيير لاحق', async () => {
+      await db.collection('app_settings').doc('accounting').set({
+        value: { vatRegistered: true, washPriceMode: 'inclusive' },
+      });
+      await db.collection('washes').doc('w1').set(wash({ wash_date: '2026-07-20' }));
+      const res = await postSource(db, FieldValue, { kind: 'wash', sourceId: 'w1' }, { userId: 'u1' });
+
+      const before = (await db.collection(COL.ENTRIES).doc(res.entryId).get()).data();
+      expect(before.taxSnapshot).toEqual({
+        vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15,
+        net: 100, vat: 15, gross: 115,
+      });
+
+      // The switch flips. The filed entry does not.
+      await db.collection('app_settings').doc('accounting').set({
+        value: {
+          vatRegistered: true, washPriceMode: 'exclusive',
+          taxPolicyHistory: [{ effectiveFrom: '2026-08-01', vatRegistered: true, washPriceMode: 'exclusive', vatRate: 0.15 }],
+        },
+      });
+      const after = (await db.collection(COL.ENTRIES).doc(res.entryId).get()).data();
+      expect(after.taxSnapshot).toEqual(before.taxSnapshot);
+      expect(after.lines).toEqual(before.lines);
+    }, 60_000);
+
     it('لا يُرحَّل السجل مرتين، والقفل مفتاحه نوع السجل', async () => {
       await db.collection('washes').doc('w1').set(wash());
       await postSource(db, FieldValue, { kind: 'wash', sourceId: 'w1' }, { userId: 'u1' });

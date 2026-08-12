@@ -29,7 +29,7 @@ async function wipe() {
     'accounting_periods', 'audit_logs', 'counters', 'posting_locks',
     'washes', 'monthly_expenses', 'variable_expenses', 'annual_expense_entries',
     'startup_cost_entries', 'partner_payments', 'partners', 'temporary_expenses',
-    'expense_vouchers', 'fixed_assets']) {
+    'expense_vouchers', 'fixed_assets', 'app_settings']) {
     const snap = await getDocs(collection(db, c));
     await Promise.all(snap.docs.map((s) => deleteDoc(s.ref)));
   }
@@ -184,6 +184,55 @@ d('الترحيل التلقائي على Firestore الحقيقي', () => {
     expect(r.status).toBe('skipped');
     expect(r.reason).toMatch(/ولّد سنداً مؤرخاً/);
   }, 60_000);
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // الشهر السابق لا يتحرك بتغيير إعدادات الضريبة
+  // ═══════════════════════════════════════════════════════════════════════
+  describe('سياسة الضريبة بتاريخ سريان', () => {
+    it('غسلة يوليو تُرحَّل بقواعد يوليو، وتغيير أغسطس لا يمسّها', async () => {
+      await setDoc(doc(db, 'app_settings', 'accounting'), {
+        value: { vatRegistered: true, washPriceMode: 'inclusive' },
+      });
+      await setDoc(doc(db, 'washes', 'july'), wash({ wash_date: '2026-07-20' }));
+      const posted = await auto.autoPost({ kind: 'wash', id: 'july', userId: 'u1' });
+      expect(posted.status).toBe('posted');
+
+      const before = (await ledger.fetchEntries()).find((e) => e.id === posted.entryId);
+      expect(before.taxSnapshot).toMatchObject({
+        washPriceMode: 'inclusive', net: 100, vat: 15, gross: 115,
+      });
+
+      // The business re-quotes prices as VAT-exclusive from 1 August.
+      await setDoc(doc(db, 'app_settings', 'accounting'), {
+        value: {
+          vatRegistered: true, washPriceMode: 'exclusive',
+          taxPolicyHistory: [
+            { effectiveFrom: '2026-01-01', vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15 },
+            { effectiveFrom: '2026-08-01', vatRegistered: true, washPriceMode: 'exclusive', vatRate: 0.15 },
+          ],
+        },
+      });
+
+      // July's entry is untouched, snapshot and lines alike.
+      const after = (await ledger.fetchEntries()).find((e) => e.id === posted.entryId);
+      expect(after.taxSnapshot).toEqual(before.taxSnapshot);
+      expect(after.lines).toEqual(before.lines);
+
+      // And a July wash posted NOW still files under July's rules.
+      await setDoc(doc(db, 'washes', 'july2'), wash({ wash_date: '2026-07-25' }));
+      const late = await auto.autoPost({ kind: 'wash', id: 'july2', userId: 'u1' });
+      const lateLines = await ledger.fetchLinesOf(late.entryId);
+      expect(lateLines.find((l) => l.accountId === '4000').credit).toBe(100);
+      expect(lateLines.find((l) => l.accountId === '2100').credit).toBe(15);
+
+      // While an August wash uses August's.
+      await setDoc(doc(db, 'washes', 'august'), wash({ wash_date: '2026-08-20' }));
+      const aug = await auto.autoPost({ kind: 'wash', id: 'august', userId: 'u1' });
+      const augLines = await ledger.fetchLinesOf(aug.entryId);
+      expect(augLines.find((l) => l.accountId === '4000').credit).toBe(115);
+      expect(augLines.find((l) => l.accountId === '2100').credit).toBe(17.25);
+    }, 150_000);
+  });
 
   // ═══════════════════════════════════════════════════════════════════════
   // صحّح وأعد الترحيل — من مسار العميل نفسه

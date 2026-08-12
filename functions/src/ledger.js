@@ -32,6 +32,7 @@ import {
   isRealDate, isValidPeriodKey,
 } from './invariants.js';
 import { ADAPTERS, legacyLockIdFor } from './posting.js';
+import { taxPolicyAt } from './taxPolicy.js';
 
 export const COL = {
   ACCOUNTS: 'chart_of_accounts',
@@ -244,9 +245,17 @@ export async function postSource(db, FieldValue, { kind, sourceId }, { userId = 
     }
 
     const settings = { ...DEFAULT_SETTINGS, ...(settingsSnap.exists ? (settingsSnap.data().value || {}) : {}) };
+    // ── the rules of the record's OWN day ──
+    // Not today's. Posting a July wash in September must file it under July's
+    // policy: if the business re-quoted its prices as VAT-exclusive in August,
+    // the July sale was still quoted inclusive, and reading the current switch
+    // would restate it. With no policy history stored this is exactly the
+    // current settings, so an existing install is unaffected.
+    const policy = taxPolicyAt(adapter.dateOf?.(row), settings);
     const built = adapter.build(row, id, {
-      vatRegistered: settings.vatRegistered !== false,
-      washPriceMode: settings.washPriceMode || 'inclusive',
+      vatRegistered: policy.vatRegistered,
+      washPriceMode: policy.washPriceMode,
+      vatRate: policy.vatRate,
     });
 
     const normEntry = normalizeEntry(built.entry);
@@ -272,6 +281,10 @@ export async function postSource(db, FieldValue, { kind, sourceId }, { userId = 
       ...normEntry,
       entryNumber: nextNumber,
       sourceKind: adapter.lockKind,
+      // What the tax rules said on this record's own day, frozen. Every later
+      // reader asking "what was this wash's net revenue?" reads it here rather
+      // than re-deriving it from switches that may since have moved.
+      taxSnapshot: built.taxSnapshot || null,
       lines: normLines,
       lineCount: normLines.length,
       totalDebit: totals.debit,

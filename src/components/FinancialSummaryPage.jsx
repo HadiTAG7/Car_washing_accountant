@@ -22,7 +22,8 @@ import { useAccountingSettings } from '../hooks/useAccountingSettings';
 import {
   monthlyStatement, operationalWashSales, reconcileOperational,
 } from '../lib/accounting/monthlyStatement';
-import { hasPostedEntryFor } from '../lib/accounting/firestoreLedger';
+import { isLiveSourceEntry } from '../lib/accounting/firestoreLedger';
+import { taxPolicyAt } from '../lib/accounting/taxPolicy';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 import {
   todayMonth,
@@ -225,19 +226,40 @@ export default function FinancialSummaryPage() {
 
   const monthLabel = formatMonthLabel(selectedMonth);
 
+  // The tax rules in force in the month being viewed, not the ones in force
+  // today — said out loud, because it is the difference between a reconciled
+  // month and a phantom gap.
+  const monthPolicyLabel = useMemo(() => {
+    const p = taxPolicyAt(`${selectedMonth}-15`, settings);
+    if (!p.vatRegistered) return 'غير مسجّلة في الضريبة';
+    return p.washPriceMode === 'exclusive' ? 'السعر غير شامل الضريبة' : 'السعر شامل الضريبة';
+  }, [selectedMonth, settings]);
+
   // ── مطابقة التشغيل بالدفاتر ──
   // Both answers side by side, with every explainable part named. Only the
   // unexplained remainder is a discrepancy — an unposted wash and a credit
   // note are both accounted for, and neither is a "missing posting".
+  // The live wash entry per source id — so a posted wash reports the figures
+  // its own entry froze rather than a re-derivation under today's switches.
+  const washEntryBySource = useMemo(() => {
+    const m = new Map();
+    for (const e of entries) {
+      if (!isLiveSourceEntry(e, 'wash', 'wash')) continue;
+      m.set(String(e.sourceId ?? ''), e);
+    }
+    return m;
+  }, [entries]);
+
   const reconciliation = useMemo(() => {
     const operational = operationalWashSales(washes, {
       periodKey: selectedMonth,
-      vatRegistered: settings.vatRegistered !== false,
-      washPriceMode: settings.washPriceMode || 'inclusive',
-      isPosted: (w) => hasPostedEntryFor(entries, 'wash', w.id, 'wash'),
+      // Unposted washes only: the rules that were in force on THEIR date.
+      policyAt: (date) => taxPolicyAt(date, settings),
+      isPosted: (w) => washEntryBySource.has(String(w.id)),
+      postedEntryOf: (w) => washEntryBySource.get(String(w.id)),
     });
     return reconcileOperational({ operational, statement, entries, lines, scalingFactor });
-  }, [washes, selectedMonth, settings, entries, lines, statement, scalingFactor]);
+  }, [washes, selectedMonth, settings, washEntryBySource, entries, lines, statement, scalingFactor]);
 
   // ── 6-month trend ending at the selected month ────────────────────────
   // The SAME function, run six times, so the chart cannot disagree with the
@@ -495,8 +517,9 @@ export default function FinancialSummaryPage() {
                   <Scale size={14} className="shrink-0 mt-0.5" />
                   <span>
                     القائمة أدناه رسمية وتقرأ القيود المُرحّلة فقط. الضريبة ليست فرق ترحيل —
-                    سعر الغسلة {settings.washPriceMode === 'exclusive' ? 'غير شامل' : 'شامل'} الضريبة
-                    وفق إعدادات المحاسبة، والمقارنة تجري على الصافي في الجانبين.
+                    المقارنة تجري على الصافي في الجانبين. الغسلة المُرحّلة تُقرأ بالأرقام
+                    المُثبَّتة في قيدها، وغير المُرحّلة تُقسَّم بإعدادات الضريبة السارية في
+                    تاريخها ({monthPolicyLabel})، فتغيير الإعداد اليوم لا يحرّك شهراً مُقفلاً.
                   </span>
                 </p>
               </Card>

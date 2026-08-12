@@ -147,17 +147,22 @@ function buildExpense(kind, row, id, { vatRegistered }) {
  * documents whose ids happen to match would have shadowed each other. The
  * lock is keyed on the KIND instead, which is one-to-one with a collection.
  */
+// `dateOf` is the date the record BELONGS to — which is also the date whose
+// tax policy governs it. Posting a July wash in September must file it under
+// July's rules, so the poster resolves the policy from this before building.
 export const ADAPTERS = {
   wash: {
     collection: 'washes',
     lockKind: 'wash',
+    dateOf: (r) => String(r.wash_date || '').slice(0, 10),
     approved: (r) => r.status === 'مكتملة',
     notApproved: 'الغسلة غير مكتملة — لا يُعترف بالإيراد قبل إتمامها.',
-    build: (row, id, { vatRegistered, washPriceMode }) => {
+    build: (row, id, { vatRegistered, washPriceMode, vatRate = VAT_RATE }) => {
       const qty = Math.max(0, Number(row.quantity) || 0);
       const price = Math.max(0, Number(row.price) || 0);
+      const mode = row.price_mode || washPriceMode;
       const { gross, net, vat } = splitVat(round2(qty * price), {
-        mode: row.price_mode || washPriceMode, taxable: vatRegistered,
+        mode, taxable: vatRegistered, rate: vatRate,
       });
       const lines = [
         { accountId: settlementForSale(row.payment_method || 'cash'), debit: gross, credit: 0, description: 'تحصيل غسلات' },
@@ -171,6 +176,17 @@ export const ADAPTERS = {
           description: `غسلات ${row.biker_name ? `— ${row.biker_name}` : ''} (${qty} × ${price})`.trim(),
         },
         lines,
+        // ── ما كانت عليه القواعد لحظة الترحيل ──
+        // Stored on the entry so a later settings change cannot restate this
+        // wash. Without it, "what was this wash's net revenue?" is answered by
+        // re-running today's switches over the raw row — and flipping
+        // `washPriceMode` in August moves July.
+        taxSnapshot: {
+          vatRegistered: Boolean(vatRegistered),
+          washPriceMode: mode === 'exclusive' ? 'exclusive' : 'inclusive',
+          vatRate: vatRegistered ? vatRate : 0,
+          net, vat, gross,
+        },
       };
     },
   },
@@ -178,6 +194,7 @@ export const ADAPTERS = {
   monthly: {
     collection: 'monthly_expenses',
     lockKind: 'monthly',
+    dateOf: (r) => String(r.logged_date || '').slice(0, 10),
     // A recurring template has no date: it is not a document, and its dated
     // vouchers are what get posted.
     approved: (r) => Boolean(r.logged_date),
@@ -187,24 +204,28 @@ export const ADAPTERS = {
   variable: {
     collection: 'variable_expenses',
     lockKind: 'variable',
+    dateOf: (r) => String(r.logged_date || '').slice(0, 10),
     approved: () => true,
     build: (row, id, opts) => buildExpense('variable', row, id, opts),
   },
   annual: {
     collection: 'annual_expense_entries',
     lockKind: 'annual',
+    dateOf: (r) => String(r.paid_date || r.logged_date || '').slice(0, 10),
     approved: () => true,
     build: (row, id, opts) => buildExpense('annual', row, id, opts),
   },
   startup: {
     collection: 'startup_cost_entries',
     lockKind: 'startup',
+    dateOf: (r) => String(r.paid_date || r.logged_date || '').slice(0, 10),
     approved: () => true,
     build: (row, id, opts) => buildExpense('startup', row, id, opts),
   },
   voucher: {
     collection: 'expense_vouchers',
     lockKind: 'voucher',
+    dateOf: (r) => String(r.due_date || r.logged_date || '').slice(0, 10),
     approved: (r) => r.status !== 'cancelled',
     notApproved: 'السند ملغى.',
     build: (row, id, opts) => buildExpense('voucher', row, id, opts),
@@ -213,6 +234,7 @@ export const ADAPTERS = {
   partner_payment: {
     collection: 'partner_payments',
     lockKind: 'partner_payment',
+    dateOf: (r) => String(r.payment_date || '').slice(0, 10),
     approved: () => true,
     build: (row, id) => {
       const amount = round2(row.amount);
@@ -234,6 +256,7 @@ export const ADAPTERS = {
   temporary_expense: {
     collection: 'temporary_expenses',
     lockKind: 'temporary_expense',
+    dateOf: (r) => String(r.spent_date || '').slice(0, 10),
     approved: () => true,
     build: (row, id) => {
       const amount = round2(row.amount);
@@ -253,6 +276,7 @@ export const ADAPTERS = {
   recovery: {
     collection: 'temporary_expenses',
     lockKind: 'recovery',
+    dateOf: (r) => String(r.recovered_date || '').slice(0, 10),
     approved: (r) => r.status === 'recovered' && Boolean(r.recovered_date),
     notApproved: 'العهدة لم تُسترد بعد.',
     build: (row, id) => {

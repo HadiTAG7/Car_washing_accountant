@@ -146,37 +146,96 @@ export function monthlyStatement({
 }
 
 /**
+ * ما سجّله الدفتر عن غسلة بعينها — its own frozen tax split.
+ *
+ * `postSource` stores a `taxSnapshot` on the wash's entry: the switches that
+ * were in force, and the net/vat/gross they produced. Reading it back is the
+ * only way to answer "what was this wash's revenue?" that a later settings
+ * change cannot move. Entries written before the snapshot existed are read off
+ * their own lines, which say the same thing one step less directly.
+ */
+export function postedWashSplit(entry) {
+  if (!entry) return null;
+  const snap = entry.taxSnapshot;
+  if (snap && Number.isFinite(Number(snap.net))) {
+    return { net: round2(snap.net), vat: round2(snap.vat), gross: round2(snap.gross) };
+  }
+  const lines = Array.isArray(entry.lines) ? entry.lines : null;
+  if (!lines) return null;
+  let net = 0, vat = 0, gross = 0;
+  for (const l of lines) {
+    const code = String(l.accountId);
+    const movement = (Number(l.credit) || 0) - (Number(l.debit) || 0);
+    if (code === '4000') net += movement;
+    else if (code === '2100') vat += movement;
+    else gross += -movement;
+  }
+  return { net: round2(net), vat: round2(vat), gross: round2(gross) };
+}
+
+/**
  * صافي مبيعات الغسلات التشغيلية لشهر واحد.
  *
- * `quantity × price` is a GROSS figure whenever wash prices are quoted
- * VAT-inclusive, and the statement's revenue is net of tax. Comparing the two
- * directly made output tax look like a posting gap: a single 115 wash reported
- * a 15-riyal "difference" that no amount of posting would ever close.
+ * Two corrections live here, and they are different problems that looked like
+ * one.
  *
- * So the split runs here with the SAME settings the poster used — the wash
- * adapter reads `vatRegistered` and `washPriceMode` out of
- * `app_settings/accounting`, and so does this.
+ * **The tax.** `quantity × price` is a GROSS figure whenever wash prices are
+ * quoted VAT-inclusive, and the statement's revenue is net of tax. Comparing
+ * the two directly made output tax look like a posting gap: a single 115 wash
+ * reported a 15-riyal "difference" that no amount of posting would close.
+ *
+ * **The date.** Splitting every wash with TODAY's switches made history move.
+ * Post a July wash at 115 inclusive — 100 revenue, 15 tax, filed — then re-quote
+ * prices as exclusive in August, and July's reconciliation would recompute that
+ * same wash as 115 of revenue and report a discrepancy that is not in the data
+ * at all. So a POSTED wash is read from its own entry's frozen snapshot, and
+ * only an UNPOSTED one is split — under the policy effective on ITS date, via
+ * the `policyAt` resolver the caller supplies.
  */
 export function operationalWashSales(washes, {
-  periodKey, vatRegistered = true, washPriceMode = 'inclusive', rate = VAT_RATE,
-  isPosted = null,
+  periodKey,
+  // The policy in force on a given date. Defaults to one fixed policy, which
+  // is what an install with no recorded history has.
+  policyAt = null,
+  vatRegistered = true, washPriceMode = 'inclusive', rate = VAT_RATE,
+  isPosted = null, postedEntryOf = null,
 } = {}) {
+  const resolve = policyAt
+    || (() => ({ vatRegistered, washPriceMode, vatRate: rate }));
   let net = 0, gross = 0, vat = 0, count = 0;
   let unpostedNet = 0, unpostedCount = 0;
+  let fromLedger = 0;
   for (const w of washes || []) {
     if (w.status !== 'مكتملة') continue;
-    if (String(w.washDate || '').slice(0, 7) !== periodKey) continue;
+    const date = String(w.washDate || '').slice(0, 10);
+    if (date.slice(0, 7) !== periodKey) continue;
     const amount = round2((Number(w.quantity) || 0) * (Number(w.price) || 0));
     if (amount <= 0) continue;
-    const s = splitVat(amount, { mode: washPriceMode, taxable: vatRegistered, rate });
-    net += s.net; gross += s.gross; vat += s.vat; count += 1;
+
     // "Not in the books" is a fact about the ledger, so the caller supplies the
     // predicate rather than this module guessing at entry shapes.
-    if (isPosted && !isPosted(w)) { unpostedNet += s.net; unpostedCount += 1; }
+    const posted = isPosted ? isPosted(w) : false;
+    const recorded = posted && postedEntryOf ? postedWashSplit(postedEntryOf(w)) : null;
+    const s = recorded || (() => {
+      const policy = resolve(date);
+      return splitVat(amount, {
+        mode: w.priceMode || policy.washPriceMode,
+        taxable: policy.vatRegistered,
+        rate: policy.vatRate,
+      });
+    })();
+
+    net += s.net; gross += s.gross; vat += s.vat; count += 1;
+    if (recorded) fromLedger += 1;
+    if (!posted) { unpostedNet += s.net; unpostedCount += 1; }
   }
   return {
     net: round2(net), gross: round2(gross), vat: round2(vat), count,
     unpostedNet: round2(unpostedNet), unpostedCount,
+    // How many of the figures came from the books rather than from a
+    // re-derivation. A month where this equals `count − unpostedCount` cannot
+    // be moved by a settings change.
+    fromLedger,
   };
 }
 

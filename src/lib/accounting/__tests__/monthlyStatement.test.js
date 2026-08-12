@@ -8,8 +8,10 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
-  monthlyStatement, monthRange, operationalWashSales, reconcileOperational, DEFAULT_FEE_RULES,
+  monthlyStatement, monthRange, operationalWashSales, postedWashSplit,
+  reconcileOperational, DEFAULT_FEE_RULES,
 } from '../monthlyStatement';
+import { taxPolicyAt } from '../taxPolicy';
 
 const ACCOUNTS = [
   { code: '1010', nameArabic: 'الصندوق', accountType: 'asset', normalBalance: 'debit' },
@@ -228,6 +230,134 @@ describe('صافي المبيعات التشغيلية', () => {
     expect(r.net).toBe(200);
     expect(r.unpostedNet).toBe(100);      // ← 100, NOT 115
     expect(r.unpostedCount).toBe(1);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// الشهر السابق لا يتحرك بتغيير الإعدادات
+// ═══════════════════════════════════════════════════════════════════════════
+// A July wash posted at 115 VAT-inclusive is 100 of revenue and 15 of tax,
+// filed and gone. Re-quote prices as exclusive in August and every screen that
+// re-derived July from the raw wash rows reported 115 of revenue and a
+// 15-riyal gap that no amount of posting could close — the gap was not in the
+// data, it was in the question.
+describe('ثبات الأشهر التاريخية', () => {
+  const wash = (over = {}) => ({
+    id: 'w1', status: 'مكتملة', washDate: '2026-07-20', quantity: 1, price: 115, ...over,
+  });
+  /** The entry a July posting left behind, with its frozen snapshot. */
+  const julyEntry = {
+    id: 'e1', status: 'posted', sourceKind: 'wash', sourceId: 'w1', entryDate: '2026-07-20',
+    taxSnapshot: { vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15, net: 100, vat: 15, gross: 115 },
+    lines: [
+      { accountId: '1010', debit: 115, credit: 0 },
+      { accountId: '4000', debit: 0, credit: 100 },
+      { accountId: '2100', debit: 0, credit: 15 },
+    ],
+  };
+  // The switch moved to exclusive from August, and July's row is on record.
+  const SETTINGS_AFTER_CHANGE = {
+    vatRegistered: true, washPriceMode: 'exclusive', vatRate: 0.15,
+    taxPolicyHistory: [
+      { effectiveFrom: '2026-01-01', vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15 },
+      { effectiveFrom: '2026-08-01', vatRegistered: true, washPriceMode: 'exclusive', vatRate: 0.15 },
+    ],
+  };
+
+  it('تقرأ الغسلة المُرحّلة من لقطة قيدها', () => {
+    expect(postedWashSplit(julyEntry)).toEqual({ net: 100, vat: 15, gross: 115 });
+  });
+
+  it('وتشتقها من سطور القيد إن كانت من قبل اللقطة', () => {
+    const { taxSnapshot, ...legacy } = julyEntry;   // eslint-disable-line no-unused-vars
+    expect(postedWashSplit(legacy)).toEqual({ net: 100, vat: 15, gross: 115 });
+  });
+
+  it('غسلة يوليو المُرحّلة لا يحرّكها تغيير الإعداد في أغسطس', () => {
+    const before = operationalWashSales([wash()], {
+      periodKey: '2026-07',
+      policyAt: (dt) => taxPolicyAt(dt, { vatRegistered: true, washPriceMode: 'inclusive' }),
+      isPosted: () => true,
+      postedEntryOf: () => julyEntry,
+    });
+    const after = operationalWashSales([wash()], {
+      periodKey: '2026-07',
+      policyAt: (dt) => taxPolicyAt(dt, SETTINGS_AFTER_CHANGE),
+      isPosted: () => true,
+      postedEntryOf: () => julyEntry,
+    });
+    expect(after).toEqual(before);
+    expect(after.net).toBe(100);
+    expect(after.fromLedger).toBe(1);
+  });
+
+  it('ومطابقة يوليو تبقى صفراً بعد تغيير الإعداد', () => {
+    const b = bundle({ entry: julyEntry, lines: julyEntry.lines.map((l, i) => ({ ...l, id: `e1-${i}`, entryId: 'e1' })) });
+    const s = monthlyStatement({ ...b, periodKey: '2026-07' });
+    const measure = (settings) => reconcileOperational({
+      operational: operationalWashSales([wash()], {
+        periodKey: '2026-07',
+        policyAt: (dt) => taxPolicyAt(dt, settings),
+        isPosted: () => true,
+        postedEntryOf: () => julyEntry,
+      }),
+      statement: s, ...b,
+    });
+
+    const before = measure({ vatRegistered: true, washPriceMode: 'inclusive' });
+    const after = measure(SETTINGS_AFTER_CHANGE);
+    expect(before.unexplained).toBe(0);
+    expect(after.unexplained).toBe(0);
+    expect(after.operationalNet).toBe(before.operationalNet);
+    expect(after.postedWashNet).toBe(100);
+  });
+
+  it('والغسلة غير المُرحّلة تُقسَّم بإعداد تاريخها هي', () => {
+    // Two unposted washes, one either side of the change.
+    const r = operationalWashSales(
+      [wash({ id: 'jul', washDate: '2026-07-20' }), wash({ id: 'aug', washDate: '2026-08-20' })],
+      {
+        periodKey: '2026-07',
+        policyAt: (dt) => taxPolicyAt(dt, SETTINGS_AFTER_CHANGE),
+        isPosted: () => false,
+      },
+    );
+    // Only July is in the window, and July was inclusive: 115 → 100 net.
+    expect(r.count).toBe(1);
+    expect(r.net).toBe(100);
+    expect(r.unpostedNet).toBe(100);
+
+    const august = operationalWashSales(
+      [wash({ id: 'aug', washDate: '2026-08-20' })],
+      {
+        periodKey: '2026-08',
+        policyAt: (dt) => taxPolicyAt(dt, SETTINGS_AFTER_CHANGE),
+        isPosted: () => false,
+      },
+    );
+    // August was exclusive: 115 is the net and the tax sits on top.
+    expect(august.net).toBe(115);
+    expect(august.vat).toBe(17.25);
+  });
+
+  it('ومجموع المُرحّل وغير المُرحّل يطابق التشغيل بلا فرق ضريبة وهمي', () => {
+    const posted = wash({ id: 'w1' });
+    const pending = wash({ id: 'w2' });
+    const b = bundle({ entry: julyEntry, lines: julyEntry.lines.map((l, i) => ({ ...l, id: `e1-${i}`, entryId: 'e1' })) });
+    const s = monthlyStatement({ ...b, periodKey: '2026-07' });
+    const operational = operationalWashSales([posted, pending], {
+      periodKey: '2026-07',
+      policyAt: (dt) => taxPolicyAt(dt, SETTINGS_AFTER_CHANGE),
+      isPosted: (w) => w.id === 'w1',
+      postedEntryOf: () => julyEntry,
+    });
+    const r = reconcileOperational({ operational, statement: s, ...b });
+
+    expect(r.operationalNet).toBe(200);        // 100 posted + 100 pending
+    expect(r.postedWashNet).toBe(100);
+    expect(r.unpostedNet).toBe(100);
+    expect(r.unexplained).toBe(0);
+    expect(r.matched).toBe(true);
   });
 });
 

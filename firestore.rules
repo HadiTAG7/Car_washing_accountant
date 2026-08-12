@@ -153,12 +153,23 @@ service cloud.firestore {
 
     // ── إعدادات التطبيق ──────────────────────────────────────────────
     // Deliberately NOT in the operational list below: `app_settings/company`
-    // holds the VAT number that goes into every QR code, and
-    // `app_settings/accounting` holds the auto-posting switch. Both are
-    // accounting policy, not day-to-day data.
+    // holds the VAT number that goes into every QR code. That is accounting
+    // policy, not day-to-day data.
+    //
+    // `app_settings/accounting` is closed to clients ENTIRELY — readable,
+    // never writable. It carries `taxPolicyHistory`, and a policy row decides
+    // what every wash in a period means. Written from a browser it had three
+    // holes: read-merge-write from two tabs drops a row with nothing to show
+    // it existed, there was no audit record of a decision that restates
+    // revenue, and nothing stopped a policy being back-dated into a month
+    // already filed. It now goes through `accountingSetTaxPolicy`, which does
+    // all three properly.
+    // Rules are a permissive UNION: a second match that allows the write
+    // would grant it however emphatically the first one denies. So the
+    // exclusion lives on the wildcard itself rather than in a rule beside it.
     match /app_settings/{key} {
       allow read:  if isMember();
-      allow write: if isAccountant();
+      allow write: if isAccountant() && key != 'accounting';
     }
 
     // ── سندات المصاريف المتكررة ──────────────────────────────────────

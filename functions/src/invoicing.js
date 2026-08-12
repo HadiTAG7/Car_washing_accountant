@@ -20,6 +20,7 @@ import {
   normalizeLines, validateEntry, totalsOf, postingLockId, MONEY_EPSILON,
 } from './invariants.js';
 import { splitVat, VAT_RATE, ACC, settlementForSale, ADAPTERS } from './posting.js';
+import { taxPolicyAt } from './taxPolicy.js';
 
 export const DOC_COL = {
   DOCUMENTS: 'sales_documents',
@@ -84,13 +85,15 @@ export function saleSettlementAccount(method, paymentStatus) {
  *   دائن إيراد المبيعات          بالصافي
  *   دائن ضريبة المخرجات          بالضريبة
  */
-export function buildSaleLines(totals, settlementAccount) {
+export function buildSaleLines(totals, settlementAccount, rate = VAT_RATE) {
   const lines = [
     { accountId: settlementAccount, debit: totals.gross, credit: 0, description: 'قيمة الفاتورة' },
     { accountId: ACC.WASH_REVENUE, debit: 0, credit: totals.net, description: 'إيراد مبيعات' },
   ];
   if (totals.vat > 0) {
-    lines.push({ accountId: ACC.OUTPUT_VAT, debit: 0, credit: totals.vat, description: 'ضريبة مخرجات 15%' });
+    // The rate is written on the line. `ضريبة مخرجات 15%` on a 5% entry is a
+    // description that contradicts its own amount.
+    lines.push({ accountId: ACC.OUTPUT_VAT, debit: 0, credit: totals.vat, description: vatLineLabel(rate) });
   }
   return lines;
 }
@@ -104,6 +107,60 @@ export function buildSaleLines(totals, settlementAccount) {
  * revenue nor output tax is the settlement side, which is what `gross` means
  * on a sale.
  */
+/** `ضريبة مخرجات 15%` — the rate is stated, never assumed by the reader. */
+export function vatLineLabel(rate, { side = 'output' } = {}) {
+  const pct = Number(rate) * 100;
+  const shown = Number.isFinite(pct)
+    ? (Math.abs(pct - Math.round(pct)) < 0.005 ? String(Math.round(pct)) : pct.toFixed(2))
+    : '—';
+  return `${side === 'input' ? 'ضريبة مدخلات' : 'ضريبة مخرجات'} ${shown}%`;
+}
+
+/**
+ * The tax treatment a posted SALES entry was made under.
+ *
+ * `postSource` freezes a `taxSnapshot` onto the entry, and that is the answer.
+ * For entries written before the snapshot existed the treatment is DERIVED
+ * from the lines — and derived exactly, or refused: a rate that cannot be
+ * reproduced from the numbers is a rate nobody knows, and assuming 15% would
+ * print a tax invoice claiming a figure the ledger never agreed to.
+ */
+export function saleTaxTreatmentOfEntry(entry) {
+  const snap = entry?.taxSnapshot;
+  if (snap && Number.isFinite(Number(snap.vatRate))) {
+    return {
+      known: true, source: 'snapshot',
+      taxable: Boolean(snap.vatRegistered) && Number(snap.vat) > 0,
+      vatRate: Number(snap.vatRate),
+      priceMode: snap.washPriceMode === 'exclusive' ? 'exclusive' : 'inclusive',
+    };
+  }
+  const totals = saleTotalsOfEntry(entry?.lines);
+  if (!(totals.gross > 0)) return { known: false, reason: 'قيد بلا قيمة' };
+  if (totals.vat === 0) {
+    // No output-tax line: the sale was not taxable. Unambiguous.
+    return { known: true, source: 'lines', taxable: false, vatRate: 0, priceMode: 'inclusive' };
+  }
+  if (!(totals.net > 0)) return { known: false, reason: 'قيد بضريبة بلا صافي' };
+
+  // vat / net is the rate, to four decimals. It is then CHECKED by rebuilding
+  // the split both ways round: whichever pricing mode reproduces the entry to
+  // the halala is the one the sale was quoted in, and if neither does the
+  // treatment is not recoverable.
+  const derived = Math.round((totals.vat / totals.net) * 10_000) / 10_000;
+  if (!(derived > 0) || derived >= 1) return { known: false, reason: 'نسبة غير قابلة للاشتقاق' };
+  for (const priceMode of ['inclusive', 'exclusive']) {
+    const base = priceMode === 'inclusive' ? totals.gross : totals.net;
+    const s = splitVat(base, { mode: priceMode, taxable: true, rate: derived });
+    if (Math.abs(s.net - totals.net) < MONEY_EPSILON
+      && Math.abs(s.vat - totals.vat) < MONEY_EPSILON
+      && Math.abs(s.gross - totals.gross) < MONEY_EPSILON) {
+      return { known: true, source: 'lines', taxable: true, vatRate: derived, priceMode };
+    }
+  }
+  return { known: false, reason: 'المعالجة الضريبية غير قابلة للاشتقاق من سطور القيد' };
+}
+
 export function saleTotalsOfEntry(lines) {
   let net = 0, vat = 0, gross = 0;
   let settlementAccount = null;
@@ -136,12 +193,15 @@ export function saleTotalsOfEntry(lines) {
  *                دائن الإيراد
  *                دائن ضريبة المخرجات
  */
-export function buildNoteLines(type, totals, settlementAccount) {
+export function buildNoteLines(type, totals, settlementAccount, rate = VAT_RATE) {
   const lines = [];
   if (type === 'credit_note') {
     lines.push({ accountId: ACC.SALES_RETURNS, debit: totals.net, credit: 0, description: 'مردودات مبيعات' });
     if (totals.vat > 0) {
-      lines.push({ accountId: ACC.OUTPUT_VAT, debit: totals.vat, credit: 0, description: 'عكس ضريبة مخرجات' });
+      lines.push({
+        accountId: ACC.OUTPUT_VAT, debit: totals.vat, credit: 0,
+        description: `عكس ${vatLineLabel(rate)}`,
+      });
     }
     lines.push({ accountId: settlementAccount, debit: 0, credit: totals.gross, description: 'رد للعميل' });
     return lines;
@@ -149,7 +209,7 @@ export function buildNoteLines(type, totals, settlementAccount) {
   lines.push({ accountId: settlementAccount, debit: totals.gross, credit: 0, description: 'تحصيل فرق' });
   lines.push({ accountId: ACC.WASH_REVENUE, debit: 0, credit: totals.net, description: 'إيراد إضافي' });
   if (totals.vat > 0) {
-    lines.push({ accountId: ACC.OUTPUT_VAT, debit: 0, credit: totals.vat, description: 'ضريبة مخرجات 15%' });
+    lines.push({ accountId: ACC.OUTPUT_VAT, debit: 0, credit: totals.vat, description: vatLineLabel(rate) });
   }
   return lines;
 }
@@ -465,9 +525,15 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
     const journalCounterRef = db.collection(DOC_COL.COUNTERS).doc(JOURNAL_COUNTER);
     const periodRef = db.collection(DOC_COL.PERIODS).doc(periodKey);
 
-    const [settingsSnap, counterSnap, claimSnap, referenceSnap,
+    // `app_settings/company` is the seller's IDENTITY; `app_settings/accounting`
+    // is the tax POLICY. They are read separately because they answer different
+    // questions and conflating them is how `company.vatRegistered` came to
+    // decide whether a supply bore tax.
+    const settingsAccountingRef = db.collection(DOC_COL.SETTINGS).doc('accounting');
+
+    const [settingsSnap, settingsAccountingSnap, counterSnap, claimSnap, referenceSnap,
       journalCounterSnap, periodSnap] = await Promise.all([
-      tx.get(settingsRef), tx.get(counterRef),
+      tx.get(settingsRef), tx.get(settingsAccountingRef), tx.get(counterRef),
       claimRef ? tx.get(claimRef) : Promise.resolve(null),
       referenceRef ? tx.get(referenceRef) : Promise.resolve(null),
       tx.get(journalCounterRef), tx.get(periodRef),
@@ -581,33 +647,60 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
       address: String(company.address || ''),
     };
 
-    // ── the tax treatment ──
-    // A NOTE corrects a document issued under the rules of its own day. If the
-    // business de-registered since, a correction to a taxable invoice still
-    // carries that invoice's tax — reading today's setting would silently drop
-    // VAT the authority was already told about. So a note inherits the rate,
-    // the taxability and the pricing mode, and any value the caller sent for
-    // them is ignored.
+    // ── المعالجة الضريبية ──
+    // Three sources, one per path, and NONE of them is "what the settings say
+    // today". `app_settings/company` is deliberately not consulted either: it
+    // holds the seller's IDENTITY — name, address, VAT number — and whether a
+    // supply bears tax is an accounting policy, not a letterhead.
     //
-    // A LINKED invoice inherits from its ENTRY for the same reason, one step
-    // further back: whether that sale bore output tax is settled by whether
-    // the entry credits 2100, not by what the settings say today.
+    //   note        inherits from the invoice it corrects. A correction to a
+    //               taxable invoice still carries that invoice's tax even if
+    //               the business has de-registered since; reading today's
+    //               setting would silently drop VAT already declared.
+    //   linked      inherits from the ENTRY, which froze its own `taxSnapshot`
+    //               at posting. A pre-snapshot entry has its treatment derived
+    //               from its lines — exactly, or the invoice is refused.
+    //   standalone  resolves the policy at the SUPPLY date.
     const entrySale = mode === 'linked' ? saleTotalsOfEntry(washEntry.lines) : null;
-    const taxable = reference
-      ? Boolean(reference.taxable)
-      : mode === 'linked'
-        ? entrySale.vat > 0
-        : Boolean(company.vatRegistered && company.vatNumber);
-    const vatRate = reference
-      ? (Number.isFinite(Number(reference.vatRate)) ? Number(reference.vatRate) : VAT_RATE)
-      : VAT_RATE;
+    let taxable;
+    let vatRate;
+    let entryTreatment = null;
+    let policyEffectiveFrom = null;
+    if (reference) {
+      taxable = Boolean(reference.taxable);
+      vatRate = Number.isFinite(Number(reference.vatRate)) ? Number(reference.vatRate) : VAT_RATE;
+      policyEffectiveFrom = reference.taxPolicyEffectiveFrom || null;
+    } else if (mode === 'linked') {
+      entryTreatment = saleTaxTreatmentOfEntry(washEntry);
+      if (!entryTreatment.known) {
+        throw new InvoicingError(
+          `المعالجة الضريبية لقيد الغسلة غير معروفة (${entryTreatment.reason}) — `
+          + 'لا تُفترض نسبة. راجع القيد أو اعكسه وأعد ترحيله قبل إصدار الفاتورة.',
+        );
+      }
+      taxable = entryTreatment.taxable;
+      vatRate = entryTreatment.vatRate;
+    } else {
+      const settings = settingsAccountingSnap.exists
+        ? (settingsAccountingSnap.data().value || settingsAccountingSnap.data()) : {};
+      const policy = taxPolicyAt(supplyDate, settings);
+      if (!policy.known) {
+        throw new InvoicingError(
+          `السياسة الضريبية غير مهيأة لتاريخ التوريد ${supplyDate} `
+          + `(السجل التاريخي يبدأ من ${policy.baselineFrom || '—'}) — `
+          + 'هيّئ تاريخ بداية السياسة قبل إصدار فاتورة أقدم منه.',
+        );
+      }
+      taxable = policy.vatRegistered;
+      vatRate = policy.vatRate;
+      policyEffectiveFrom = policy.effectiveFrom;
+    }
 
     // ── the lines ──
     // On the linked path they are built from the wash and then CHECKED against
-    // the entry to the halala. Whether the wash was priced VAT-inclusive or
-    // -exclusive is read back out of the entry rather than from settings, so
-    // an administrator who flips the default months later cannot silently
-    // restate an invoice for a sale that was already filed.
+    // the entry to the halala. The pricing mode comes from the entry's own
+    // snapshot, so an administrator who flips the default months later cannot
+    // silently restate an invoice for a sale that was already filed.
     let documentLines = input.lines;
     let priceMode = reference
       ? (reference.priceMode === 'exclusive' ? 'exclusive' : 'inclusive')
@@ -616,12 +709,11 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
       const quantity = Math.max(0, Number(wash.quantity) || 0);
       const unitPrice = Math.max(0, Number(wash.price) || 0);
       const base = round2(quantity * unitPrice);
-      priceMode = Math.abs(base - entrySale.gross) < MONEY_EPSILON
-        ? 'inclusive'
-        : Math.abs(base - entrySale.net) < MONEY_EPSILON
-          ? 'exclusive'
-          : null;
-      if (!priceMode) {
+      priceMode = entryTreatment.priceMode;
+      // The snapshot says how it was quoted; the arithmetic still has to agree
+      // with the wash row, or the row has been edited under a posted entry.
+      const expected = priceMode === 'inclusive' ? entrySale.gross : entrySale.net;
+      if (Math.abs(base - expected) >= MONEY_EPSILON) {
         throw new InvoicingError(
           `قيمة الغسلة (${base.toFixed(2)}) لا تطابق قيدها المُرحّل `
           + `(${entrySale.gross.toFixed(2)}) — اعكس القيد وأعد ترحيله قبل إصدار الفاتورة.`,
@@ -728,7 +820,7 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
       let entryLines;
       let draftEntry;
       if (mode === 'standalone') {
-        entryLines = normalizeLines(buildSaleLines(totals, settlementAccount));
+        entryLines = normalizeLines(buildSaleLines(totals, settlementAccount, vatRate));
         draftEntry = {
           entryDate: issueDate,
           periodKey,
@@ -749,7 +841,7 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
           ? settlementForSale(method)
           : (reference?.settlementAccount
             || settlementForSale(reference?.paymentMethod || 'cash'));
-        entryLines = normalizeLines(buildNoteLines(type, totals, noteAccount));
+        entryLines = normalizeLines(buildNoteLines(type, totals, noteAccount, vatRate));
         draftEntry = {
           entryDate: issueDate,
           periodKey,
@@ -774,6 +866,14 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
       tx.set(entryRef, {
         ...draftEntry,
         entryNumber,
+        // The treatment this entry was made under, frozen — the same guarantee
+        // a posted wash gets, for the same reason.
+        taxSnapshot: {
+          vatRegistered: taxable, washPriceMode: priceMode,
+          vatRate: taxable ? vatRate : 0,
+          net: totals.net, vat: totals.vat, gross: totals.gross,
+          effectiveFrom: policyEffectiveFrom,
+        },
         lines: entryLines,
         lineCount: entryLines.length,
         totalDebit: entryTotals.debit,
@@ -825,6 +925,16 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
       // Stored explicitly rather than assumed to be 15% forever: a rate change
       // must not restate what a filed document said.
       vatRate,
+      // Which dated policy row governed it, and the split that row produced.
+      // A reader never has to re-derive either.
+      taxPolicyEffectiveFrom: policyEffectiveFrom,
+      taxSnapshot: {
+        vatRegistered: taxable, washPriceMode: priceMode,
+        vatRate: taxable ? vatRate : 0,
+        net: totals.net, vat: totals.vat, gross: totals.gross,
+        source: reference ? 'reference' : mode === 'linked' ? entryTreatment.source : 'policy',
+        effectiveFrom: policyEffectiveFrom,
+      },
       qrPayload,
       zatcaReported: false,
       // The document's OWN entry — a standalone sale or a note. Null on the

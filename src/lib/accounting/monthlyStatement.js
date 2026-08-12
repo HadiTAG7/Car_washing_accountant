@@ -204,7 +204,7 @@ export function operationalWashSales(washes, {
     || (() => ({ vatRegistered, washPriceMode, vatRate: rate }));
   let net = 0, gross = 0, vat = 0, count = 0;
   let unpostedNet = 0, unpostedCount = 0;
-  let fromLedger = 0;
+  let fromLedger = 0, unknownPolicy = 0;
   for (const w of washes || []) {
     if (w.status !== 'مكتملة') continue;
     const date = String(w.washDate || '').slice(0, 10);
@@ -216,14 +216,18 @@ export function operationalWashSales(washes, {
     // predicate rather than this module guessing at entry shapes.
     const posted = isPosted ? isPosted(w) : false;
     const recorded = posted && postedEntryOf ? postedWashSplit(postedEntryOf(w)) : null;
-    const s = recorded || (() => {
+    let s = recorded;
+    if (!s) {
       const policy = resolve(date);
-      return splitVat(amount, {
+      // Before the policy record begins there is no answer, and today's
+      // switches are the wrong one. Counted separately, never folded in.
+      if (policy.known === false) { unknownPolicy += 1; continue; }
+      s = splitVat(amount, {
         mode: w.priceMode || policy.washPriceMode,
         taxable: policy.vatRegistered,
         rate: policy.vatRate,
       });
-    })();
+    }
 
     net += s.net; gross += s.gross; vat += s.vat; count += 1;
     if (recorded) fromLedger += 1;
@@ -236,6 +240,9 @@ export function operationalWashSales(washes, {
     // re-derivation. A month where this equals `count − unpostedCount` cannot
     // be moved by a settings change.
     fromLedger,
+    // Completed washes the policy record cannot answer for. The page says so
+    // instead of showing a figure computed under today's rules.
+    unknownPolicy,
   };
 }
 
@@ -293,6 +300,9 @@ export function reconcileOperational({
     // ج
     unpostedNet,
     unpostedCount: operational?.unpostedCount ?? 0,
+    // Washes the policy record cannot answer for — a gap in the RECORD, not a
+    // gap in the books, and it is labelled as such rather than counted.
+    unknownPolicyCount: operational?.unknownPolicy ?? 0,
     // د
     salesReturns,
     // هـ
@@ -303,6 +313,7 @@ export function reconcileOperational({
     // Only the unexplained remainder is a problem. A month with unposted
     // washes or credit notes is fully explained, and says so.
     matched: Math.abs(unexplained) < 0.005,
-    clean: Math.abs(unexplained) < 0.005 && Math.abs(unpostedNet) < 0.005,
+    clean: Math.abs(unexplained) < 0.005 && Math.abs(unpostedNet) < 0.005
+      && (operational?.unknownPolicy ?? 0) === 0,
   };
 }

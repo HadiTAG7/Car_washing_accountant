@@ -31,7 +31,10 @@ export default function PeriodClosePage() {
   const { entries, periods, linesByEntry, needsSeeding, loading, error, refetch } = useLedger();
   const { user } = useAuth();
   const { canMutate } = usePartnerView();
-  const { settings, update: updateSettings } = useAccountingSettings();
+  const {
+    settings, update: updateSettings, setPolicy, seedPolicy,
+    baselineFrom, policyConfigured,
+  } = useAccountingSettings();
   const [busy, setBusy] = useState('');
   // Result of the last unposted-operations scan / sweep.
   const [scan, setScan] = useState(null);
@@ -47,6 +50,10 @@ export default function PeriodClosePage() {
   // a change made today applies from today — back-dating one restates a period
   // that has already been filed, so it has to be typed on purpose.
   const [policyFrom, setPolicyFrom] = useState(() => new Date().toISOString().slice(0, 10));
+  // The date the CURRENT policy started, asked for once. Never inferred: a
+  // guessed baseline is the same bug wearing a timestamp.
+  const [baselineDraft, setBaselineDraft] = useState('');
+  const [policyReason, setPolicyReason] = useState('');
   const [toast, setToast] = useState({ open: false, message: '', tone: 'success', duration: 3000 });
 
   const showToast = useCallback((message, tone = 'success') => {
@@ -125,23 +132,49 @@ export default function PeriodClosePage() {
   }
 
   /**
-   * Saving a TAX switch records the date it takes effect.
+   * Saving a TAX switch records the date it takes effect — on the SERVER.
    *
    * `vatRegistered`, `washPriceMode` and the rate decide what a wash's revenue
    * is, so changing one without a date silently restates every past month that
-   * is derived from raw wash rows. The date defaults to today — a change made
-   * today applies from today — and can be back-dated deliberately when the
-   * registration actually started earlier.
+   * is derived from raw wash rows. And the FIRST change needs a baseline date
+   * as well: storing only the new row would leave every earlier month either
+   * unanswerable or, worse, answered by the new policy.
    */
+  async function handlePolicy(patch) {
+    setBusy('settings');
+    try {
+      await setPolicy({
+        vatRegistered: settings.vatRegistered,
+        washPriceMode: settings.washPriceMode,
+        vatRate: settings.vatRate,
+        ...patch,
+        effectiveFrom: policyFrom,
+        baselineFrom: policyConfigured ? null : baselineDraft,
+        reason: policyReason.trim() || null,
+      });
+      showToast(`تم الحفظ، ساري من ${policyFrom}. الأشهر السابقة تبقى على قواعدها.`);
+    } catch (e) {
+      showToast(describeBackendError(e) || e?.message || 'تعذّر الحفظ', 'error');
+    } finally { setBusy(''); }
+  }
+
+  /** Records the baseline without changing anything — makes the past readable. */
+  async function handleSeedPolicy() {
+    setBusy('settings');
+    try {
+      await seedPolicy({ baselineFrom: baselineDraft, note: policyReason.trim() || null });
+      showToast(`تم تسجيل السياسة القائمة من ${baselineDraft}.`);
+    } catch (e) {
+      showToast(describeBackendError(e) || e?.message || 'تعذّرت التهيئة', 'error');
+    } finally { setBusy(''); }
+  }
+
+  /** The switches that move no past figure. */
   async function handleSetting(patch) {
     setBusy('settings');
     try {
-      await updateSettings(patch, { userId: user?.id, effectiveFrom: policyFrom });
-      const dated = ['vatRegistered', 'washPriceMode', 'vatRate']
-        .some((k) => Object.prototype.hasOwnProperty.call(patch, k));
-      showToast(dated
-        ? `تم الحفظ، ساري من ${policyFrom}. الأشهر السابقة تبقى على قواعدها.`
-        : 'تم حفظ إعدادات المحاسبة.');
+      await updateSettings(patch);
+      showToast('تم حفظ إعدادات المحاسبة.');
     } catch (e) {
       showToast(describeBackendError(e) || e?.message || 'تعذّر الحفظ', 'error');
     } finally { setBusy(''); }
@@ -150,7 +183,7 @@ export default function PeriodClosePage() {
   async function handleToggleAutoPost(next) {
     setBusy('autopost');
     try {
-      await updateSettings({ autoPost: next }, { userId: user?.id });
+      await updateSettings({ autoPost: next });
       showToast(next
         ? 'الترحيل التلقائي مفعّل — ستُرحَّل الغسلة عند إتمامها والمصروف عند سداده.'
         : 'الترحيل التلقائي موقوف — الترحيل يتم من هذه الصفحة.');
@@ -331,6 +364,54 @@ export default function PeriodClosePage() {
                 title="إعدادات المحاسبة"
                 subtitle="تحكم في احتساب الضريبة ودورية الإقرار — تنعكس مباشرة على تقرير ضريبة القيمة المضافة والقيود"
               />
+              {/* ── السجل التاريخي للسياسة ────────────────────────────
+                  Until this exists, "what were the rules in July?" has no
+                  answer — and the honest reading of an unconfigured install is
+                  that today's switches are an ASSUMPTION about every past
+                  month, not a record of one. The date is asked for, never
+                  inferred: a guessed baseline is the same bug with a
+                  timestamp on it. */}
+              {!policyConfigured ? (
+                <div role="note" className="flex flex-col gap-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/30 text-amber-800 dark:text-amber-300 text-xs px-4 py-3 rounded-control leading-relaxed mb-4">
+                  <div className="flex items-start gap-2.5">
+                    <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+                    <div className="min-w-0">
+                      <p className="font-bold">السجل التاريخي للسياسة الضريبية غير مُهيّأ.</p>
+                      <p className="mt-1">
+                        الإعدادات أدناه تُقرأ حالياً كافتراض يسري على كل التواريخ. سجّل تاريخ بدء
+                        السياسة الحالية (أو بداية الدفاتر) ليصبح كل شهر سابق قابلاً للإجابة، ولا
+                        يتغيّر بتغيير إعداد اليوم.
+                      </p>
+                    </div>
+                  </div>
+                  {canMutate && (
+                    <div className="flex flex-wrap items-end gap-3">
+                      <div className="w-full sm:w-56">
+                        <label className="block text-[11px] font-bold mb-1.5">تاريخ بدء السياسة الحالية</label>
+                        <DateField
+                          name="baselineFrom" value={baselineDraft}
+                          onChange={(e) => setBaselineDraft(e.target.value)}
+                          ariaLabel="تاريخ بدء السياسة الضريبية الحالية"
+                          disabled={busy === 'settings'}
+                        />
+                      </div>
+                      <PrimaryButton
+                        icon={busy === 'settings' ? Loader2 : ShieldCheck}
+                        onClick={handleSeedPolicy}
+                        disabled={busy === 'settings' || !baselineDraft}
+                      >
+                        تسجيل السياسة القائمة
+                      </PrimaryButton>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed mb-4">
+                  السجل التاريخي مُهيّأ من {baselineFrom}. التواريخ الأسبق منه تُعرض
+                  «السياسة التاريخية غير مهيأة» بدل رقم محسوب بقواعد اليوم.
+                </p>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
@@ -339,7 +420,7 @@ export default function PeriodClosePage() {
                   <label className="flex items-center gap-2.5 min-h-touch cursor-pointer select-none">
                     <input type="checkbox" checked={Boolean(settings.vatRegistered)}
                       disabled={!canMutate || busy === 'settings'}
-                      onChange={(e) => handleSetting({ vatRegistered: e.target.checked })}
+                      onChange={(e) => handlePolicy({ vatRegistered: e.target.checked })}
                       className="w-4 h-4 accent-primary-600" />
                     <span className="text-sm text-slate-700 dark:text-slate-300">
                       المنشأة مسجّلة في ضريبة القيمة المضافة
@@ -355,7 +436,7 @@ export default function PeriodClosePage() {
                   </label>
                   <select id="wash-price-mode" value={settings.washPriceMode}
                     disabled={!canMutate || busy === 'settings'}
-                    onChange={(e) => handleSetting({ washPriceMode: e.target.value })}
+                    onChange={(e) => handlePolicy({ washPriceMode: e.target.value })}
                     className="w-full min-h-touch px-3 py-2 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-slate-900 dark:text-slate-100">
                     <option value="inclusive">شامل الضريبة</option>
                     <option value="exclusive">غير شامل الضريبة</option>
@@ -374,9 +455,32 @@ export default function PeriodClosePage() {
                     ariaLabel="تاريخ سريان تغيير إعدادات الضريبة"
                     disabled={!canMutate || busy === 'settings'}
                   />
+                  <input
+                    type="text" value={policyReason}
+                    disabled={!canMutate || busy === 'settings'}
+                    onChange={(e) => setPolicyReason(e.target.value)}
+                    placeholder="سبب التغيير (مطلوب للتاريخ الرجعي)"
+                    className="w-full min-h-touch mt-2 px-3 py-2 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-slate-900 dark:text-slate-100"
+                  />
                   <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed mt-1">
-                    تغيير التسجيل أو وضع السعر يُسجَّل بتاريخ سريان، فلا يُعاد احتساب شهر سابق
-                    بقواعد اليوم. الغسلات المُرحّلة محفوظة بأرقامها على أي حال.
+                    تغيير التسجيل أو وضع السعر أو النسبة يُسجَّل بتاريخ سريان، فلا يُعاد احتساب شهر
+                    سابق بقواعد اليوم. تاريخ يقع في فترة مقفلة يحتاج مديراً وسبباً مكتوباً.
+                  </p>
+                </div>
+                <div>
+                  <label htmlFor="vat-rate" className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                    نسبة الضريبة
+                  </label>
+                  <select id="vat-rate" value={String(settings.vatRate)}
+                    disabled={!canMutate || busy === 'settings' || !settings.vatRegistered}
+                    onChange={(e) => handlePolicy({ vatRate: Number(e.target.value) })}
+                    className="w-full min-h-touch px-3 py-2 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-slate-900 dark:text-slate-100">
+                    <option value="0.15">15%</option>
+                    <option value="0.05">5%</option>
+                  </select>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed mt-1">
+                    النسبة السعودية 15% منذ يوليو 2020، و5% قبلها. تُخزَّن على كل مستند وقيد،
+                    فتوثيق نسبة قديمة يُبقيها كما فُوترت.
                   </p>
                 </div>
                 <div>

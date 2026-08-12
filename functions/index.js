@@ -27,6 +27,10 @@ import {
   issueDocument, voidDocument, correctLinkedInvoice, InvoicingError,
 } from './src/invoicing.js';
 import { runLegacyInvoiceLinks } from './src/legacyLinks.js';
+import {
+  setTaxPolicy, seedTaxPolicy, setAccountingPreferences,
+} from './src/accountingSettings.js';
+import { TaxPolicyError } from './src/taxPolicy.js';
 import { canPost } from './src/posting.js';
 
 initializeApp();
@@ -92,6 +96,9 @@ function toHttps(e) {
     return new HttpsError(e.code || 'failed-precondition', e.message, {
       problems: e.problems || null,
     });
+  }
+  if (e instanceof TaxPolicyError) {
+    return new HttpsError(e.code || 'invalid-argument', e.message);
   }
   // Anything else is a bug: log it in full, tell the caller nothing internal.
   console.error('[ledger] unexpected failure', e);
@@ -246,6 +253,52 @@ export const salesLinkLegacyInvoices = onCall(OPTS, async (req) => {
   const { uid } = apply ? await requireAdmin(req.auth) : await requireAccountant(req.auth);
   try {
     return await runLegacyInvoiceLinks(db, FieldValue, { apply }, { userId: uid });
+  } catch (e) { throw toHttps(e); }
+});
+
+// ─── سياسة الضريبة ───────────────────────────────────────────────────────
+/**
+ * تعيين السياسة الضريبية بتاريخ سريان.
+ *
+ * `app_settings/accounting` is denied to clients in the rules, so this is the
+ * only door. It re-reads inside a transaction (two tabs saving at once would
+ * otherwise drop a policy row with nothing to show it existed), validates the
+ * date against the calendar, and writes the before/after to `audit_logs`.
+ *
+ * A change reaching into a CLOSED month rewrites what was filed: an accountant
+ * may not make it, an admin may with a written reason.
+ */
+export const accountingSetTaxPolicy = onCall(OPTS, async (req) => {
+  const { uid, role } = await requireAccountant(req.auth);
+  try {
+    return await setTaxPolicy(db, FieldValue, {
+      vatRegistered: req.data?.vatRegistered,
+      washPriceMode: req.data?.washPriceMode,
+      vatRate: req.data?.vatRate,
+      effectiveFrom: req.data?.effectiveFrom,
+      baselineFrom: req.data?.baselineFrom ?? null,
+      baselineNote: req.data?.baselineNote ?? null,
+      reason: req.data?.reason ?? null,
+    }, { userId: uid, role });
+  } catch (e) { throw toHttps(e); }
+});
+
+/** تهيئة السجل التاريخي بلا تغيير — "this has applied since the books began". */
+export const accountingSeedTaxPolicy = onCall(OPTS, async (req) => {
+  const { uid } = await requireAccountant(req.auth);
+  try {
+    return await seedTaxPolicy(db, FieldValue, {
+      baselineFrom: req.data?.baselineFrom,
+      note: req.data?.note ?? null,
+    }, { userId: uid });
+  } catch (e) { throw toHttps(e); }
+});
+
+/** The switches that change no past figure: auto-posting, filing frequency. */
+export const accountingSetPreferences = onCall(OPTS, async (req) => {
+  const { uid } = await requireAccountant(req.auth);
+  try {
+    return await setAccountingPreferences(db, FieldValue, req.data || {}, { userId: uid });
   } catch (e) { throw toHttps(e); }
 });
 

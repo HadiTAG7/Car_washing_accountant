@@ -1,14 +1,23 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // إعدادات المحاسبة — app_settings/accounting
 // ═══════════════════════════════════════════════════════════════════════════
-// One document, read by the pages that need to know how the books behave.
-// Kept separate from the seller profile because these are policy switches,
-// not identity.
+// Read here, written on the SERVER. The document used to be `setDoc`-ed
+// straight from the browser, which cost three things: two tabs saving at once
+// dropped a policy row with nothing to show it had existed, a decision that
+// restates revenue left no audit record, and nothing stopped a policy being
+// back-dated into a month that had already been filed.
+//
+// The rules now deny every client write to this one document. Everything below
+// that changes it goes through a callable.
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../firebaseClient';
-import { normalizeTaxPolicyHistory, withTaxPolicyChange, DEFAULT_VAT_RATE } from './taxPolicy';
+import { callServer } from '../ledgerTransport';
+import {
+  normalizeTaxPolicyHistory, taxPolicyAt, taxPolicyBaselineDate,
+  hasTaxPolicyHistory, DEFAULT_VAT_RATE,
+} from './taxPolicy';
 
 const SETTINGS_DOC = 'accounting';
 
@@ -24,12 +33,10 @@ export const DEFAULT_ACCOUNTING_SETTINGS = {
   // so neither can be assumed — the report reads this rather than hard-coding
   // a frequency. Quarterly is the common case for a single car wash.
   vatFilingPeriod: 'quarterly',
-  // Every past value of the three tax switches, each with the date it took
-  // effect. Without this, flipping `washPriceMode` in August restated July:
-  // any figure derived from raw wash rows would be recomputed under today's
-  // rules, and a reconciliation gap the size of the tax would appear out of a
-  // setting change. Empty on an existing install, which reads exactly as
-  // before — the current values apply to all dates.
+  // Every policy that has ever applied, each with the date it took effect.
+  // Empty means "never configured": the flat fields above are ASSUMED to hold
+  // for all dates, which is the pre-migration reading and is labelled as such
+  // by `taxPolicyAt(...).source === 'unversioned'`.
   taxPolicyHistory: [],
 };
 
@@ -51,24 +58,36 @@ export async function fetchAccountingSettings() {
 }
 
 /**
- * Saves the switches, recording WHEN a tax change takes effect.
+ * Sets the tax policy from a date.
  *
- * `effectiveFrom` defaults to today, which is the only honest default: a
- * change made today applies from today, and back-dating one silently restates
- * a filed period. The caller may name an earlier date deliberately — that is a
- * correction, and it is stored as such.
+ * `baselineFrom` is required for the FIRST change and is never guessed: it is
+ * the date the current policy started, or the date the books begin. Without it
+ * the server refuses, because storing only the new row would leave every
+ * earlier month either unanswerable or — worse — answered by the new policy.
  */
-export async function saveAccountingSettings(patch, { userId = null, effectiveFrom = null } = {}) {
+export async function setTaxPolicy({
+  vatRegistered, washPriceMode, vatRate,
+  effectiveFrom, baselineFrom = null, baselineNote = null, reason = null,
+}) {
   if (!isFirebaseConfigured) throw new Error('Firebase غير مُهيّأ.');
-  const current = await fetchAccountingSettings();
-  const merged = { ...current, ...patch };
-  const from = effectiveFrom || new Date().toISOString().slice(0, 10);
-  const next = {
-    ...merged,
-    taxPolicyHistory: withTaxPolicyChange(current, merged, from),
-  };
-  await setDoc(doc(db, 'app_settings', SETTINGS_DOC), {
-    value: next, updatedBy: userId, updatedAt: serverTimestamp(),
-  }, { merge: true });
-  return next;
+  return callServer('accountingSetTaxPolicy', {
+    vatRegistered: Boolean(vatRegistered),
+    washPriceMode: washPriceMode === 'exclusive' ? 'exclusive' : 'inclusive',
+    vatRate: Number(vatRate),
+    effectiveFrom, baselineFrom, baselineNote, reason,
+  });
 }
+
+/** Records the baseline WITHOUT changing anything — makes the past answerable. */
+export async function seedTaxPolicy({ baselineFrom, note = null }) {
+  if (!isFirebaseConfigured) throw new Error('Firebase غير مُهيّأ.');
+  return callServer('accountingSeedTaxPolicy', { baselineFrom, note });
+}
+
+/** Auto-posting and the filing frequency — no past figure moves with them. */
+export async function saveAccountingPreferences(patch) {
+  if (!isFirebaseConfigured) throw new Error('Firebase غير مُهيّأ.');
+  return callServer('accountingSetPreferences', patch);
+}
+
+export { taxPolicyAt, taxPolicyBaselineDate, hasTaxPolicyHistory };

@@ -21,6 +21,9 @@ import {
   issueDocument, voidDocument, correctLinkedInvoice,
 } from '../../../../functions/src/invoicing.js';
 import { runLegacyInvoiceLinks } from '../../../../functions/src/legacyLinks.js';
+import {
+  setTaxPolicy, seedTaxPolicy, setAccountingPreferences,
+} from '../../../../functions/src/accountingSettings.js';
 import { __setLedgerTransport } from '../../ledgerTransport';
 import { app as clientApp } from '../../firebaseClient';
 
@@ -69,6 +72,14 @@ export function useServerTransport(projectId = clientApp?.options?.projectId || 
         return correctLinkedInvoice(adb, FieldValue, payload, { userId: uid });
       case 'salesLinkLegacyInvoices':
         return runLegacyInvoiceLinks(adb, FieldValue, payload, { userId: uid });
+      case 'accountingSetTaxPolicy':
+        // The suites run as an admin: the closed-period gate is proven in the
+        // callables suite, where a real role is attached to a real token.
+        return setTaxPolicy(adb, FieldValue, payload, { userId: uid, role: 'admin' });
+      case 'accountingSeedTaxPolicy':
+        return seedTaxPolicy(adb, FieldValue, payload, { userId: uid });
+      case 'accountingSetPreferences':
+        return setAccountingPreferences(adb, FieldValue, payload, { userId: uid });
       case 'ledgerReverseEntry':
         return reverseEntry(adb, FieldValue, payload.entryId, { ...payload, userId: uid });
       case 'ledgerClosePeriod':

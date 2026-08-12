@@ -251,7 +251,15 @@ export async function postSource(db, FieldValue, { kind, sourceId }, { userId = 
     // the July sale was still quoted inclusive, and reading the current switch
     // would restate it. With no policy history stored this is exactly the
     // current settings, so an existing install is unaffected.
-    const policy = taxPolicyAt(adapter.dateOf?.(row), settings);
+    const recordDate = adapter.dateOf?.(row);
+    const policy = taxPolicyAt(recordDate, settings);
+    if (!policy.known) {
+      throw new LedgerError(
+        `السياسة الضريبية غير مهيأة لتاريخ ${recordDate || '—'} `
+        + `(السجل التاريخي يبدأ من ${policy.baselineFrom || '—'}) — `
+        + 'هيّئ تاريخ بداية السياسة قبل ترحيل سجلات أقدم منه.',
+      );
+    }
     const built = adapter.build(row, id, {
       vatRegistered: policy.vatRegistered,
       washPriceMode: policy.washPriceMode,

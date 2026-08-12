@@ -25,6 +25,7 @@ import {
   buildVatReport, periodLabel, availablePeriods, currentPeriodKey,
   FILING_PERIOD_LABELS,
 } from '../lib/accounting/vatReturn';
+import { taxPolicyAt } from '../lib/accounting/taxPolicy';
 import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 
@@ -95,6 +96,19 @@ export default function VatRecoveryPage() {
     : currentPeriodKey(filing);
   const activePeriod = selected === '__all__' ? '' : selected;
 
+  // A posted wash reports what its own entry froze; an unposted one is split
+  // under the policy in force on ITS date. Neither is re-derived from today's
+  // switches — that is what made a July figure move when August changed.
+  const washEntryBySource = useMemo(() => {
+    const m = new Map();
+    for (const e of entries) {
+      if (e.status !== 'posted' || e.reversalOf) continue;
+      if ((e.sourceKind || e.sourceType) !== 'wash') continue;
+      m.set(String(e.sourceId ?? ''), e);
+    }
+    return m;
+  }, [entries]);
+
   const report = useMemo(() => buildVatReport({
     inputs: invoices,
     washes,
@@ -102,9 +116,11 @@ export default function VatRecoveryPage() {
     lines,
     period: activePeriod,
     filing,
+    policyAt: (date) => taxPolicyAt(date, settings),
+    postedEntryOf: (w) => washEntryBySource.get(String(w.id)),
     vatRegistered: settings.vatRegistered,
     washPriceMode: settings.washPriceMode,
-  }), [invoices, washes, entries, lines, activePeriod, filing, settings]);
+  }), [invoices, washes, entries, lines, activePeriod, filing, settings, washEntryBySource]);
 
   // Resolve parentId → item name across all sources (uuids can't collide, so
   // one merged map is enough).

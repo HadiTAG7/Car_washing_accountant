@@ -2,9 +2,15 @@
  * سياسة الضريبة بتاريخ سريان — driven over BOTH copies.
  *
  * The server's copy decides what a posted entry says; the client's decides how
- * an unposted wash is read on screen. If they disagree, a month reconciles on
- * one side and not the other — so both are run over one battery here, exactly
- * as `invariants.test.js` does for entry validation.
+ * an unposted record is read on screen. If they disagree, a month reconciles
+ * on one side and not the other — so both are run over one battery here,
+ * exactly as `invariants.test.js` does for entry validation.
+ *
+ * The bug these pin down: the first change used to store the NEW policy alone.
+ * With one row dated August, `taxPolicyAt('2026-07-15')` found nothing on or
+ * before July, fell back to the current settings — which the change had just
+ * made exclusive — and reported July as exclusive. One setting change silently
+ * restated a filed month.
  *
  * Run: npm run test:functions (no emulator needed)
  */
@@ -14,100 +20,182 @@ import * as client from '../../src/lib/accounting/taxPolicy.js';
 
 const IMPLEMENTATIONS = [['server', server], ['client', client]];
 
+/** inclusive since the books began, exclusive from August. */
 const HISTORY = [
-  { effectiveFrom: '2026-01-01', vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15 },
+  { effectiveFrom: '2026-01-01', vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15, baseline: true },
   { effectiveFrom: '2026-08-01', vatRegistered: true, washPriceMode: 'exclusive', vatRate: 0.15 },
 ];
+const SETTLED = { vatRegistered: true, washPriceMode: 'exclusive', vatRate: 0.15, taxPolicyHistory: HISTORY };
 
 describe.each(IMPLEMENTATIONS)('%s — taxPolicyAt', (_name, impl) => {
-  it('بلا سجل، الإعدادات الحالية تسري على كل التواريخ', () => {
-    const p = impl.taxPolicyAt('2020-05-05', { vatRegistered: false, washPriceMode: 'exclusive' });
-    expect(p).toEqual({ vatRegistered: false, washPriceMode: 'exclusive', vatRate: 0.15 });
-  });
-
   it('تختار آخر سطر ساري في التاريخ أو قبله', () => {
-    const settings = { vatRegistered: true, washPriceMode: 'exclusive', taxPolicyHistory: HISTORY };
-    expect(impl.taxPolicyAt('2026-07-31', settings).washPriceMode).toBe('inclusive');
-    expect(impl.taxPolicyAt('2026-08-01', settings).washPriceMode).toBe('exclusive');
-    expect(impl.taxPolicyAt('2026-12-31', settings).washPriceMode).toBe('exclusive');
+    expect(impl.taxPolicyAt('2026-01-01', SETTLED)).toMatchObject({ known: true, washPriceMode: 'inclusive' });
+    expect(impl.taxPolicyAt('2026-07-31', SETTLED)).toMatchObject({ known: true, washPriceMode: 'inclusive' });
+    expect(impl.taxPolicyAt('2026-08-01', SETTLED)).toMatchObject({ known: true, washPriceMode: 'exclusive' });
+    expect(impl.taxPolicyAt('2026-12-31', SETTLED)).toMatchObject({ known: true, washPriceMode: 'exclusive' });
   });
 
-  it('وتاريخ أقدم من كل السطور يعود للإعداد الحالي بدل اختراع سياسة', () => {
-    const settings = { vatRegistered: true, washPriceMode: 'exclusive', taxPolicyHistory: HISTORY };
-    expect(impl.taxPolicyAt('2025-06-01', settings).washPriceMode).toBe('exclusive');
+  // ── الفجوة التي كانت تُملأ بإعداد اليوم ──────────────────────────────
+  it('وتاريخ قبل أول baseline يعود unknown ولا يعود بإعداد اليوم', () => {
+    const before = impl.taxPolicyAt('2025-12-31', SETTLED);
+    expect(before.known).toBe(false);
+    expect(before.reason).toBe(impl.POLICY_UNKNOWN.BEFORE_BASELINE);
+    expect(before.baselineFrom).toBe('2026-01-01');
+    // Nothing to accidentally use as a number.
+    expect(before.washPriceMode).toBeNull();
+    expect(before.vatRegistered).toBeNull();
+    expect(before.vatRate).toBeNull();
+  });
+
+  it('وتاريخ غير حقيقي يعود unknown — 2026-13-40 و2026-02-30', () => {
+    for (const bad of ['2026-13-40', '2026-02-30', '', 'أمس']) {
+      const r = impl.taxPolicyAt(bad, SETTLED);
+      expect(r.known).toBe(false);
+      expect(r.reason).toBe(impl.POLICY_UNKNOWN.BAD_DATE);
+      expect(r.washPriceMode).toBeNull();
+    }
+    expect(impl.isRealPolicyDate('2026-02-30')).toBe(false);
+    expect(impl.isRealPolicyDate('2028-02-29')).toBe(true);
+  });
+
+  it('وبلا سجل إطلاقاً تسري الإعدادات الحالية، معلَّمةً بأنها افتراض', () => {
+    const r = impl.taxPolicyAt('2020-05-05', { vatRegistered: false, washPriceMode: 'exclusive' });
+    expect(r).toMatchObject({
+      known: true, source: impl.POLICY_SOURCE.UNVERSIONED,
+      vatRegistered: false, washPriceMode: 'exclusive',
+    });
+    expect(impl.hasTaxPolicyHistory({})).toBe(false);
+    expect(impl.taxPolicyBaselineDate({})).toBeNull();
+    expect(impl.taxPolicyBaselineDate(SETTLED)).toBe('2026-01-01');
   });
 
   it('وتتجاهل السطور بلا تاريخ سريان — لا تُخمَّن', () => {
-    const settings = {
-      vatRegistered: true, washPriceMode: 'inclusive',
-      taxPolicyHistory: [{ washPriceMode: 'exclusive' }, ...HISTORY],
-    };
+    const settings = { ...SETTLED, taxPolicyHistory: [{ washPriceMode: 'inclusive' }, ...HISTORY] };
     expect(impl.normalizeTaxPolicyHistory(settings.taxPolicyHistory, settings)).toHaveLength(2);
     expect(impl.taxPolicyAt('2026-03-01', settings).washPriceMode).toBe('inclusive');
   });
 
-  it('وتاريخ غير صالح يعود للإعداد الحالي', () => {
-    const settings = { vatRegistered: true, washPriceMode: 'exclusive', taxPolicyHistory: HISTORY };
-    expect(impl.taxPolicyAt('', settings).washPriceMode).toBe('exclusive');
-    expect(impl.taxPolicyAt('2026-13-40', settings).washPriceMode).toBe('exclusive');
-  });
-
-  it('والتسجيل الضريبي يُقرأ بتاريخه', () => {
+  it('والتسجيل الضريبي والنسبة يُقرآن بتاريخهما', () => {
     const settings = {
-      vatRegistered: true, washPriceMode: 'inclusive',
+      vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15,
       taxPolicyHistory: [
-        { effectiveFrom: '2026-01-01', vatRegistered: false, washPriceMode: 'inclusive' },
-        { effectiveFrom: '2026-06-01', vatRegistered: true, washPriceMode: 'inclusive' },
+        { effectiveFrom: '2018-01-01', vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.05, baseline: true },
+        { effectiveFrom: '2020-07-01', vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15 },
       ],
     };
-    expect(impl.taxPolicyAt('2026-05-31', settings).vatRegistered).toBe(false);
-    expect(impl.taxPolicyAt('2026-06-01', settings).vatRegistered).toBe(true);
+    expect(impl.taxPolicyAt('2020-06-30', settings).vatRate).toBe(0.05);
+    expect(impl.taxPolicyAt('2020-07-01', settings).vatRate).toBe(0.15);
   });
 });
 
-describe.each(IMPLEMENTATIONS)('%s — withTaxPolicyChange', (_name, impl) => {
+describe.each(IMPLEMENTATIONS)('%s — أول تغيير يكتب baseline صريحاً', (_name, impl) => {
   const current = { vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15, taxPolicyHistory: [] };
 
-  it('تُسجّل سطراً مؤرخاً عند تغيير وضع السعر', () => {
-    const next = impl.withTaxPolicyChange(current, { ...current, washPriceMode: 'exclusive' }, '2026-08-01');
-    expect(next).toEqual([
-      { effectiveFrom: '2026-08-01', vatRegistered: true, washPriceMode: 'exclusive', vatRate: 0.15 },
-    ]);
+  it('يرفض أول تغيير بلا تاريخ بداية للسياسة الحالية', () => {
+    expect(() => impl.withTaxPolicyChange(current, { ...current, washPriceMode: 'exclusive' }, '2026-08-01'))
+      .toThrow(/تاريخ بداية السياسة الحالية/);
   });
 
-  it('ولا تُسجّل شيئاً إذا لم تتغير حقول الضريبة والسجل غير فارغ', () => {
-    const withHistory = { ...current, taxPolicyHistory: [{ effectiveFrom: '2026-01-01', ...current }] };
-    const next = impl.withTaxPolicyChange(withHistory, { ...current, autoPost: true }, '2026-08-01');
+  it('ويكتب سطرين: baseline للسابقة ثم التغيير', () => {
+    const next = impl.withTaxPolicyChange(
+      current, { ...current, washPriceMode: 'exclusive' }, '2026-08-01',
+      { baselineFrom: '2026-01-01' },
+    );
+    expect(next).toHaveLength(2);
+    expect(next[0]).toMatchObject({ effectiveFrom: '2026-01-01', washPriceMode: 'inclusive', baseline: true });
+    expect(next[1]).toMatchObject({ effectiveFrom: '2026-08-01', washPriceMode: 'exclusive' });
+
+    // …and July therefore reads INCLUSIVE, which is the whole point.
+    const settled = { vatRegistered: true, washPriceMode: 'exclusive', taxPolicyHistory: next };
+    expect(impl.taxPolicyAt('2026-07-15', settled)).toMatchObject({ known: true, washPriceMode: 'inclusive' });
+    expect(impl.taxPolicyAt('2026-08-15', settled)).toMatchObject({ known: true, washPriceMode: 'exclusive' });
+  });
+
+  it('وbaseline في يوم التغيير نفسه يعطي سطراً واحداً', () => {
+    const next = impl.withTaxPolicyChange(
+      current, { ...current, washPriceMode: 'exclusive' }, '2026-08-01',
+      { baselineFrom: '2026-08-01' },
+    );
     expect(next).toHaveLength(1);
-    expect(next[0].effectiveFrom).toBe('2026-01-01');
+    expect(next[0]).toMatchObject({ effectiveFrom: '2026-08-01', washPriceMode: 'exclusive', baseline: true });
+  });
+
+  it('ويرفض baseline بعد تاريخ السريان', () => {
+    expect(() => impl.withTaxPolicyChange(
+      current, { ...current, washPriceMode: 'exclusive' }, '2026-08-01',
+      { baselineFrom: '2026-09-01' },
+    )).toThrow(/بعد تاريخ سريان/);
+  });
+
+  it('ويرفض تاريخ سريان غير حقيقي', () => {
+    expect(() => impl.withTaxPolicyChange(current, current, '2026-02-30', { baselineFrom: '2026-01-01' }))
+      .toThrow(/تاريخ سريان/);
+  });
+
+  it('والتهيئة وحدها تسجّل السياسة القائمة بلا تغيير', () => {
+    const seeded = impl.seedTaxPolicyBaseline(current, '2026-01-01', { note: 'بداية الدفاتر' });
+    expect(seeded).toEqual([{
+      effectiveFrom: '2026-01-01', vatRegistered: true, washPriceMode: 'inclusive',
+      vatRate: 0.15, baseline: true, note: 'بداية الدفاتر',
+    }]);
+    expect(() => impl.seedTaxPolicyBaseline({ ...current, taxPolicyHistory: seeded }, '2025-01-01'))
+      .toThrow(/مُهيّأ بالفعل/);
+  });
+});
+
+describe.each(IMPLEMENTATIONS)('%s — التغييرات اللاحقة', (_name, impl) => {
+  const settled = { vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15, taxPolicyHistory: [HISTORY[0]] };
+
+  it('لا تُسجّل شيئاً إذا لم تتغير حقول الضريبة', () => {
+    const next = impl.withTaxPolicyChange(settled, { ...settled, autoPost: true }, '2026-08-01');
+    expect(next).toEqual([HISTORY[0]]);
   });
 
   it('وتغييران في اليوم نفسه يتركان سطراً واحداً', () => {
-    const first = impl.withTaxPolicyChange(current, { ...current, washPriceMode: 'exclusive' }, '2026-08-01');
+    const first = impl.withTaxPolicyChange(settled, { ...settled, washPriceMode: 'exclusive' }, '2026-08-01');
     const second = impl.withTaxPolicyChange(
-      { ...current, washPriceMode: 'exclusive', taxPolicyHistory: first },
-      { ...current, vatRegistered: false, washPriceMode: 'exclusive' },
+      { ...settled, washPriceMode: 'exclusive', taxPolicyHistory: first },
+      { ...settled, vatRegistered: false, washPriceMode: 'exclusive' },
       '2026-08-01',
     );
-    expect(second).toHaveLength(1);
-    expect(second[0]).toMatchObject({ effectiveFrom: '2026-08-01', vatRegistered: false });
+    expect(second.filter((h) => h.effectiveFrom === '2026-08-01')).toHaveLength(1);
+    expect(second.find((h) => h.effectiveFrom === '2026-08-01')).toMatchObject({ vatRegistered: false });
   });
 
   it('والسطور تبقى مرتبة تصاعدياً', () => {
-    const a = impl.withTaxPolicyChange(current, { ...current, washPriceMode: 'exclusive' }, '2026-08-01');
+    const a = impl.withTaxPolicyChange(settled, { ...settled, washPriceMode: 'exclusive' }, '2026-08-01');
     const b = impl.withTaxPolicyChange(
-      { ...current, washPriceMode: 'exclusive', taxPolicyHistory: a },
-      { ...current, washPriceMode: 'inclusive' },
+      { ...settled, washPriceMode: 'exclusive', taxPolicyHistory: a },
+      { ...settled, vatRate: 0.05, washPriceMode: 'exclusive' },
       '2026-03-01',
     );
-    expect(b.map((h) => h.effectiveFrom)).toEqual(['2026-03-01', '2026-08-01']);
+    expect(b.map((h) => h.effectiveFrom)).toEqual(['2026-01-01', '2026-03-01', '2026-08-01']);
+  });
+
+  // ── التغيير المستقبلي لا يحرّك اليوم ────────────────────────────────
+  it('تغيير مستقبلي لا يغيّر سياسة اليوم ولا الحقول المسطّحة', () => {
+    const future = impl.withTaxPolicyChange(settled, { ...settled, washPriceMode: 'exclusive' }, '2026-12-01');
+    const asOf = '2026-08-15';
+    expect(impl.taxPolicyAt(asOf, { taxPolicyHistory: future })).toMatchObject({ washPriceMode: 'inclusive' });
+    // The compatibility fields must equal taxPolicyAt(today), not the last row.
+    expect(impl.currentPolicyFields(future, asOf)).toEqual({
+      vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15,
+    });
+    // …and once the date arrives, they move on their own.
+    expect(impl.currentPolicyFields(future, '2026-12-01')).toMatchObject({ washPriceMode: 'exclusive' });
+  });
+
+  it('والحقول المسطّحة قبل الـbaseline لا تُخترع', () => {
+    expect(impl.currentPolicyFields(HISTORY, '2025-06-01')).toBeNull();
   });
 });
 
 describe('النسختان متطابقتان', () => {
   const cases = [
-    ['2026-07-31', { vatRegistered: true, washPriceMode: 'exclusive', taxPolicyHistory: HISTORY }],
-    ['2026-08-15', { vatRegistered: true, washPriceMode: 'exclusive', taxPolicyHistory: HISTORY }],
+    ['2026-07-31', SETTLED],
+    ['2026-08-15', SETTLED],
+    ['2025-12-31', SETTLED],
+    ['2026-02-30', SETTLED],
     ['2020-01-01', { vatRegistered: false, washPriceMode: 'inclusive' }],
     ['', { taxPolicyHistory: HISTORY }],
   ];

@@ -184,8 +184,12 @@ d('إصدار المستندات على Firestore الحقيقي', () => {
     expect((await getDoc(doc(db, 'counters', 'documents-invoice-2026'))).exists()).toBe(false);
   }, 90_000);
 
+  // Taxability is an ACCOUNTING policy, not a letterhead: it comes from
+  // `app_settings/accounting`, and the seller profile only supplies identity.
   it('منشأة غير مسجّلة في الضريبة تصدر مستنداً بلا ضريبة وبلا رمز', async () => {
-    await inv.saveSellerProfile({ name: 'مغسلة', vatNumber: '', vatRegistered: false }, { userId: 'u1' });
+    await setDoc(doc(db, 'app_settings', 'accounting'), {
+      value: { vatRegistered: false, washPriceMode: 'inclusive' },
+    });
     const res = await sale();
     const saved = await inv.fetchDocument(res.id);
     expect(saved.vat).toBe(0);

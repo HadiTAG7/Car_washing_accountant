@@ -340,6 +340,31 @@ describe('ثبات الأشهر التاريخية', () => {
     expect(august.vat).toBe(17.25);
   });
 
+  it('وفترة قبل الـbaseline لا تُحسب بسياسة اليوم — تُعلَن غير مهيأة', () => {
+    const settings = {
+      vatRegistered: true, washPriceMode: 'exclusive', vatRate: 0.15,
+      taxPolicyHistory: [
+        { effectiveFrom: '2026-01-01', vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15, baseline: true },
+      ],
+    };
+    const old2025 = wash({ id: 'w-old', washDate: '2025-11-20' });
+    const r = operationalWashSales([old2025], {
+      periodKey: '2025-11',
+      policyAt: (dt) => taxPolicyAt(dt, settings),
+      isPosted: () => false,
+    });
+    expect(r.count).toBe(0);
+    expect(r.net).toBe(0);
+    expect(r.unknownPolicy).toBe(1);
+
+    const b = bundle();
+    const s = monthlyStatement({ ...b, periodKey: '2025-11' });
+    const rec = reconcileOperational({ operational: r, statement: s, ...b });
+    expect(rec.unknownPolicyCount).toBe(1);
+    expect(rec.operationalNet).toBe(0);
+    expect(rec.clean).toBe(false);
+  });
+
   it('ومجموع المُرحّل وغير المُرحّل يطابق التشغيل بلا فرق ضريبة وهمي', () => {
     const posted = wash({ id: 'w1' });
     const pending = wash({ id: 'w2' });

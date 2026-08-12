@@ -148,6 +148,42 @@ export function claimDateOf(row) {
   return isIsoDate(d) ? String(d).slice(0, 10) : '';
 }
 
+/**
+ * The VAT on one purchase invoice, in order of authority.
+ *
+ *   1. The amount the SUPPLIER wrote on the document. A tax invoice states its
+ *      own VAT; recomputing it from a rate is second-guessing the paper the
+ *      deduction rests on, and a supplier's rounding is theirs to make.
+ *   2. Failing that, the rate stored ON the invoice — a 5%-era purchase keeps
+ *      its 5% however many times the standard rate has moved since.
+ *   3. Failing that, the rate in force on the INVOICE's date.
+ *
+ * Today's rate is never the answer for a historical document.
+ */
+export function inputInvoiceTax(row, { policyAt = null, rate = VAT_RATE } = {}) {
+  const amount = round2(Number(row?.amount) || 0);
+  const mode = row?.priceMode === 'exclusive' ? 'exclusive' : 'inclusive';
+
+  const stated = Number(row?.vatAmount);
+  if (Number.isFinite(stated) && stated >= 0 && stated <= amount) {
+    const gross = mode === 'exclusive' ? round2(amount + stated) : amount;
+    return { gross, net: round2(gross - stated), vat: round2(stated), source: 'invoice' };
+  }
+
+  const onInvoice = Number(row?.vatRate);
+  if (Number.isFinite(onInvoice) && onInvoice >= 0 && onInvoice < 1) {
+    return { ...splitVatBalanced(amount, { mode, taxable: true, rate: onInvoice }), source: 'invoice-rate' };
+  }
+
+  const date = claimDateOf(row);
+  const policy = policyAt ? policyAt(date) : null;
+  if (policy && !policy.known) {
+    return { gross: amount, net: amount, vat: 0, source: 'unknown-policy' };
+  }
+  const effective = policy?.vatRate ?? rate;
+  return { ...splitVatBalanced(amount, { mode, taxable: true, rate: effective }), source: policy ? 'policy' : 'default' };
+}
+
 // ─── ضريبة المخرجات ──────────────────────────────────────────────────────
 /**
  * Output tax from completed washes in the period.
@@ -157,8 +193,20 @@ export function claimDateOf(row) {
  * business is not VAT-registered the whole amount is revenue and output tax
  * is zero — stated as such rather than computed and hidden.
  */
-export function outputTaxFromWashes(washes, { period, filing = 'quarterly', vatRegistered = true, priceMode = 'inclusive', rate = VAT_RATE } = {}) {
-  let gross = 0, net = 0, vat = 0, count = 0, excluded = 0;
+export function outputTaxFromWashes(washes, {
+  period, filing = 'quarterly',
+  // The policy in force on a given date, and the wash's own posted entry.
+  // Both default to the flat behaviour so a caller that has neither still
+  // works — but the page passes both, because neither shortcut is safe:
+  // re-splitting a POSTED wash under today's switches restates a filed month,
+  // and splitting an UNPOSTED one under today's switches answers a question
+  // about July with August's rules.
+  policyAt = null, postedEntryOf = null,
+  vatRegistered = true, priceMode = 'inclusive', rate = VAT_RATE,
+} = {}) {
+  const resolve = policyAt
+    || (() => ({ known: true, vatRegistered, washPriceMode: priceMode, vatRate: rate }));
+  let gross = 0, net = 0, vat = 0, count = 0, excluded = 0, unknownPolicy = 0;
   for (const w of washes || []) {
     if (w.status !== 'مكتملة') { excluded += 1; continue; }
     const date = String(w.washDate || '').slice(0, 10);
@@ -166,12 +214,60 @@ export function outputTaxFromWashes(washes, { period, filing = 'quarterly', vatR
     if (period && periodKeyFor(date, filing) !== period) continue;
     const amount = round2((Number(w.quantity) || 0) * (Number(w.price) || 0));
     if (amount <= 0) continue;
-    const s = splitVatBalanced(amount, { mode: priceMode, taxable: vatRegistered, rate });
+
+    // A posted wash carries its own answer, frozen at posting.
+    const recorded = postedEntryOf ? washEntryTax(postedEntryOf(w)) : null;
+    if (recorded) {
+      gross += recorded.gross; net += recorded.net; vat += recorded.vat; count += 1;
+      continue;
+    }
+    const policy = resolve(date);
+    if (!policy.known) {
+      // Before the policy record begins. Counting it under today's rules is
+      // exactly the invention this report must not make.
+      unknownPolicy += 1;
+      continue;
+    }
+    const s = splitVatBalanced(amount, {
+      mode: w.priceMode || policy.washPriceMode,
+      taxable: policy.vatRegistered,
+      rate: policy.vatRate,
+    });
     gross += s.gross; net += s.net; vat += s.vat; count += 1;
   }
   return {
     gross: round2(gross), net: round2(net), tax: round2(vat), count, excluded,
+    // Completed washes whose period predates the policy record. Named, never
+    // folded into the figure.
+    unknownPolicy,
   };
+}
+
+/**
+ * The tax a posted wash entry actually recorded.
+ *
+ * `taxSnapshot` is what `postSource` froze; an entry from before the snapshot
+ * is read off its own lines, which say the same thing one step less directly.
+ * Returns null when there is no entry — the caller then falls back to the
+ * dated policy.
+ */
+export function washEntryTax(entry) {
+  if (!entry) return null;
+  const snap = entry.taxSnapshot;
+  if (snap && Number.isFinite(Number(snap.net))) {
+    return { net: round2(snap.net), vat: round2(snap.vat), gross: round2(snap.gross) };
+  }
+  const lines = Array.isArray(entry.lines) ? entry.lines : null;
+  if (!lines) return null;
+  let net = 0, vat = 0, gross = 0;
+  for (const l of lines) {
+    const code = String(l.accountId);
+    const movement = (Number(l.credit) || 0) - (Number(l.debit) || 0);
+    if (code === '4000') net += movement;
+    else if (code === '2100') vat += movement;
+    else gross += -movement;
+  }
+  return { net: round2(net), vat: round2(vat), gross: round2(gross) };
 }
 
 /** Posted entries inside the period, indexed by id. */
@@ -249,6 +345,9 @@ export function postedSourceIds(entries) {
 export function buildVatReport({
   inputs = [], washes = [], entries = [], lines = [],
   period = '', filing = 'quarterly',
+  // The dated policy, and the posted entry behind a wash. Both optional so an
+  // old caller still works; the page supplies both.
+  policyAt = null, postedEntryOf = null,
   vatRegistered = true, washPriceMode = 'inclusive', rate = VAT_RATE,
 } = {}) {
   const eligible = [];
@@ -263,9 +362,8 @@ export function buildVatReport({
       // An eligible row always has a usable date — it is one of the
       // requirements — so period filtering is unambiguous.
       if (outsidePeriod) continue;
-      const amount = round2(Number(row.amount) || 0);
-      const s = splitVatBalanced(amount, { mode: row.priceMode || 'inclusive', taxable: true, rate });
-      eligible.push({ ...row, claimDate: date, gross: s.gross, net: s.net, tax: s.vat });
+      const s = inputInvoiceTax(row, { policyAt, rate });
+      eligible.push({ ...row, claimDate: date, gross: s.gross, net: s.net, tax: s.vat, taxSource: s.source });
       continue;
     }
 
@@ -282,7 +380,7 @@ export function buildVatReport({
   const inputGross = round2(eligible.reduce((sum, r) => sum + r.gross, 0));
   const inputNet = round2(eligible.reduce((sum, r) => sum + r.net, 0));
   const forfeitedTax = round2(ineligible.reduce(
-    (sum, r) => sum + splitVatBalanced(Number(r.amount) || 0, { mode: 'inclusive', taxable: true, rate }).vat, 0,
+    (sum, r) => sum + inputInvoiceTax(r, { policyAt, rate }).vat, 0,
   ));
 
   // ── ضريبة المخرجات: الدفاتر هي المصدر ──
@@ -293,15 +391,23 @@ export function buildVatReport({
   // together. The wash figure is kept only as an INDEPENDENT check that says
   // how much has not reached the books yet.
   const operationalOutput = outputTaxFromWashes(washes, {
-    period, filing, vatRegistered, priceMode: washPriceMode, rate,
+    period, filing, policyAt, postedEntryOf,
+    vatRegistered, priceMode: washPriceMode, rate,
   });
   const ledgerOutput = outputTaxFromLedger(entries, lines, { period, filing });
   const ledgerInput  = inputTaxFromLedger(entries, lines, { period, filing });
   // Where the ledger has nothing at all, the operational figure is all there
   // is — and the report says which one it used.
+  //
+  // …unless the operational figure could not be computed either, because the
+  // period predates the policy record. A number derived from today's switches
+  // for a month nobody described is worse than no number: it looks filed.
+  const policyGap = operationalOutput.unknownPolicy > 0 && !ledgerOutput.available;
   const output = ledgerOutput.available
     ? { ...operationalOutput, tax: ledgerOutput.tax, source: 'ledger' }
-    : { ...operationalOutput, source: 'operations' };
+    : policyGap
+      ? { ...operationalOutput, tax: 0, source: 'unknown-policy' }
+      : { ...operationalOutput, source: 'operations' };
 
   // Eligible purchases the ledger has never seen. These are exactly the rows
   // that make the two input figures disagree, so the report names them rather
@@ -316,6 +422,10 @@ export function buildVatReport({
     filing,
     vatRegistered,
     output,
+    // Completed washes in the period whose date predates the policy record.
+    // The page shows «السياسة التاريخية غير مهيأة» rather than a figure.
+    unknownPolicyWashes: operationalOutput.unknownPolicy,
+    policyUnconfigured: policyGap,
     operationalOutput,
     ledgerOutput,
     ledgerInput,

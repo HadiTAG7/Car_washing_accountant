@@ -328,12 +328,48 @@ d('قواعد أمان Firestore', () => {
 
   // ── إعدادات التطبيق ────────────────────────────────────────────────
   describe('إعدادات المحاسبة سياسة لا بيانات يومية', () => {
-    it('المحاسب يبدّل الترحيل التلقائي، والمشغّل لا', async () => {
-      await assertSucceeds(setDoc(doc(ctx.acct, 'app_settings', 'accounting'), {
+    // ── app_settings/accounting مغلق تماماً على العملاء ──────────────
+    // It carries `taxPolicyHistory`, and a policy row decides what every wash
+    // in a period means. Written from a browser it had three holes: two tabs
+    // read-merge-writing drop a row with nothing to show it existed, a
+    // decision that restates revenue left no audit record, and nothing stopped
+    // a policy being back-dated into a filed month. It goes through
+    // `accountingSetTaxPolicy` now, so NOBODY writes it directly.
+    it('لا أحد يكتب إعدادات المحاسبة مباشرة — ولا المحاسب ولا المدير', async () => {
+      await assertFails(setDoc(doc(ctx.acct, 'app_settings', 'accounting'), {
         value: { autoPost: true },
+      }));
+      await assertFails(setDoc(doc(ctx.admin, 'app_settings', 'accounting'), {
+        value: { vatRegistered: false },
       }));
       await assertFails(setDoc(doc(ctx.op, 'app_settings', 'accounting'), {
         value: { autoPost: false },
+      }));
+    });
+
+    it('ولا يُعدَّل سجل السياسة التاريخية ولا يُحذف المستند', async () => {
+      await env.withSecurityRulesDisabled(async (c) => {
+        await setDoc(doc(c.firestore(), 'app_settings', 'accounting'), {
+          value: {
+            vatRegistered: true, washPriceMode: 'inclusive',
+            taxPolicyHistory: [{ effectiveFrom: '2026-01-01', vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15 }],
+          },
+        });
+      });
+      await assertFails(updateDoc(doc(ctx.acct, 'app_settings', 'accounting'), {
+        'value.taxPolicyHistory': [],
+      }));
+      await assertFails(deleteDoc(doc(ctx.admin, 'app_settings', 'accounting')));
+      // …but every member may READ it: the reports need the policy.
+      await assertSucceeds(getDoc(doc(ctx.op, 'app_settings', 'accounting')));
+    });
+
+    it('وبقية إعدادات التطبيق تبقى للمحاسب', async () => {
+      await assertSucceeds(setDoc(doc(ctx.acct, 'app_settings', 'company'), {
+        value: { name: 'سويتر' },
+      }));
+      await assertFails(setDoc(doc(ctx.op, 'app_settings', 'company'), {
+        value: { name: 'غير مصرّح' },
       }));
     });
 

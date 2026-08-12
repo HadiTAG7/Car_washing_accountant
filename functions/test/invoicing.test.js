@@ -240,9 +240,11 @@ d('إصدار المستندات الضريبية على الخادم', () => {
       expect(next.documentNumber).toBe('INV-2027-000001');
     }, 60_000);
 
+    // Taxability is an ACCOUNTING policy, not a letterhead — so this is set on
+    // `app_settings/accounting`, and the seller profile is left alone.
     it('منشأة غير مسجّلة: بلا ضريبة وبلا رمز QR', async () => {
-      await db.collection(DOC_COL.SETTINGS).doc('company').set({
-        value: { name: 'مغسلة', vatNumber: '', vatRegistered: false },
+      await db.collection(DOC_COL.SETTINGS).doc('accounting').set({
+        value: { vatRegistered: false, washPriceMode: 'inclusive' },
       });
       const res = await issue({ type: 'invoice', issueDate: '2026-08-11', lines: LINES });
       const doc = (await db.collection(DOC_COL.DOCUMENTS).doc(res.id).get()).data();
@@ -250,6 +252,32 @@ d('إصدار المستندات الضريبية على الخادم', () => {
       expect(doc.gross).toBe(115);
       expect(doc.qrPayload).toBeNull();
     });
+
+    // ── company هو هوية البائع، لا سياسة الضريبة ──────────────────────
+    it('company.vatRegistered لا يتغلب على سياسة المحاسبة', async () => {
+      // The seller profile says "not registered"; the accounting policy says
+      // it is. The policy decides, and the QR still needs a real VAT number —
+      // which this profile has, so the document is a full tax invoice.
+      await db.collection(DOC_COL.SETTINGS).doc('company').set({
+        value: { ...COMPANY, vatRegistered: false },
+      });
+      await db.collection(DOC_COL.SETTINGS).doc('accounting').set({
+        value: { vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15 },
+      });
+      const res = await issue({ type: 'invoice', issueDate: '2026-08-11', lines: LINES });
+      expect(res.vat).toBe(15);
+      const doc = (await db.collection(DOC_COL.DOCUMENTS).doc(res.id).get()).data();
+      expect(doc.taxable).toBe(true);
+      expect(doc.qrPayload).toBeTruthy();
+
+      // …and the reverse: a registered-looking profile does not make a supply
+      // taxable when the policy says the business is not registered.
+      await db.collection(DOC_COL.SETTINGS).doc('accounting').set({
+        value: { vatRegistered: false, washPriceMode: 'inclusive' },
+      });
+      const untaxed = await issue({ type: 'invoice', issueDate: '2026-08-12', lines: LINES });
+      expect(untaxed.vat).toBe(0);
+    }, 90_000);
 
     it('رقم ضريبي غير صالح يمنع الإصدار قبل أن يمسّ العدّاد', async () => {
       await db.collection(DOC_COL.SETTINGS).doc('company').set({
@@ -874,6 +902,176 @@ d('إصدار المستندات الضريبية على الخادم', () => {
       const netRevenue = await accountMovement(db, '4000') + await accountMovement(db, '4010');
       expect(netRevenue).toBe(0);
       expect(await accountMovement(db, '2100')).toBe(0);
+    }, 90_000);
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // الفوترة تتبع السياسة التاريخية، لا إعداد اليوم
+  // ═══════════════════════════════════════════════════════════════════════
+  describe('المعالجة الضريبية بتاريخها', () => {
+    /** A posted wash with an explicit tax snapshot, as `postSource` writes. */
+    async function washWithSnapshot(id, { rate = 0.15, mode = 'inclusive',
+      quantity = 2, price = 57.5, date = '2020-03-11' } = {}) {
+      const base = Math.round(quantity * price * 100) / 100;
+      const net = mode === 'inclusive' ? Math.round((base / (1 + rate)) * 100) / 100 : base;
+      const vat = Math.round((mode === 'inclusive' ? base - net : base * rate) * 100) / 100;
+      const gross = Math.round((net + vat) * 100) / 100;
+      const lines = [
+        { accountId: '1010', debit: gross, credit: 0, description: 'تحصيل غسلات' },
+        { accountId: '4000', debit: 0, credit: net, description: 'إيراد' },
+      ];
+      if (vat > 0) lines.push({ accountId: '2100', debit: 0, credit: vat, description: `ضريبة مخرجات ${rate * 100}%` });
+
+      await db.collection('washes').doc(id).set({
+        biker_name: 'أحمد', quantity, price, status: 'مكتملة', wash_date: date, payment_method: 'cash',
+      });
+      const entryRef = db.collection(COL.ENTRIES).doc();
+      await entryRef.set({
+        entryDate: date, periodKey: date.slice(0, 7), sourceType: 'wash', sourceId: id,
+        sourceKind: 'wash', description: 'غسلات', status: 'posted', reversalOf: null, entryNumber: 1,
+        taxSnapshot: { vatRegistered: vat > 0, washPriceMode: mode, vatRate: vat > 0 ? rate : 0, net, vat, gross },
+        lines, lineCount: lines.length, totalDebit: gross, totalCredit: gross,
+      });
+      await db.collection(COL.LOCKS).doc(`wash__${id}`).set({
+        kind: 'wash', sourceType: 'wash', sourceId: id, entryId: entryRef.id, entryNumber: 1,
+      });
+      return { entryId: entryRef.id, net, vat, gross };
+    }
+
+    it('غسلة تاريخية بنسبة 5% تُفوتَر بنسبة 5%، لا 15%', async () => {
+      // A 2020 wash, quoted VAT-inclusive at 5% — the rate before July 2020.
+      const posted = await washWithSnapshot('w5', { rate: 0.05, price: 52.5 });
+      expect(posted.vat).toBe(5);
+
+      const res = await issue({ type: 'invoice', washId: 'w5', issueDate: '2020-03-15' });
+      expect(res.vat).toBe(5);
+      expect(res.net).toBe(100);
+      expect(res.gross).toBe(105);
+      const doc = (await db.collection(DOC_COL.DOCUMENTS).doc(res.id).get()).data();
+      expect(doc.vatRate).toBe(0.05);
+      expect(doc.taxSnapshot).toMatchObject({ vatRate: 0.05, source: 'snapshot' });
+    }, 90_000);
+
+    it('وقيد قديم بلا لقطة تُشتق معالجته من سطوره', async () => {
+      const posted = await washWithSnapshot('w-old', { rate: 0.05, price: 52.5 });
+      await db.collection(COL.ENTRIES).doc(posted.entryId).update({
+        taxSnapshot: FieldValue.delete(),
+      });
+      const res = await issue({ type: 'invoice', washId: 'w-old', issueDate: '2020-03-15' });
+      expect(res.vat).toBe(5);
+      const doc = (await db.collection(DOC_COL.DOCUMENTS).doc(res.id).get()).data();
+      expect(doc.vatRate).toBe(0.05);
+      expect(doc.taxSnapshot.source).toBe('lines');
+    }, 90_000);
+
+    it('وقيد لا تُشتق نسبته يُرفض بدل افتراض 15%', async () => {
+      const posted = await washWithSnapshot('w-bad');
+      // Lines nobody can reproduce a rate from: 20 of tax on 100 of revenue is
+      // 20%, but 20% of neither 115 nor 100 gives this trio. No rate and no
+      // pricing mode produce it, so the treatment is simply not recoverable.
+      await db.collection(COL.ENTRIES).doc(posted.entryId).update({
+        taxSnapshot: FieldValue.delete(),
+        lines: [
+          { accountId: '1010', debit: 115, credit: 0, description: 'تحصيل' },
+          { accountId: '4000', debit: 0, credit: 100, description: 'إيراد' },
+          { accountId: '2100', debit: 0, credit: 20, description: 'ضريبة' },
+        ],
+      });
+      await expect(issue({ type: 'invoice', washId: 'w-bad', issueDate: '2026-08-12' }))
+        .rejects.toThrow(/المعالجة الضريبية لقيد الغسلة غير معروفة/);
+      expect((await db.collection(DOC_COL.DOCUMENTS).get()).size).toBe(0);
+    }, 90_000);
+
+    it('والفاتورة المستقلة تتبع سياسة تاريخ التوريد قبل التغيير وبعده', async () => {
+      await db.collection(DOC_COL.SETTINGS).doc('accounting').set({
+        value: {
+          vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15,
+          taxPolicyHistory: [
+            { effectiveFrom: '2018-01-01', vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.05, baseline: true },
+            { effectiveFrom: '2020-07-01', vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15 },
+          ],
+        },
+      });
+
+      const before = await issue({
+        type: 'invoice', issueDate: '2020-07-05', supplyDate: '2020-06-30',
+        lines: [{ description: 'خدمة', quantity: 1, unitPrice: 105 }],
+      });
+      expect(before.vatRate).toBe(0.05);
+      expect(before.vat).toBe(5);
+
+      const after = await issue({
+        type: 'invoice', issueDate: '2020-07-05', supplyDate: '2020-07-01',
+        lines: [{ description: 'خدمة', quantity: 1, unitPrice: 115 }],
+      });
+      expect(after.vatRate).toBe(0.15);
+      expect(after.vat).toBe(15);
+
+      // The entry's 2100 line names its own rate rather than a fixed 15%.
+      const entry = (await db.collection(COL.ENTRIES).doc(before.journalEntryId).get()).data();
+      expect(entry.lines.find((l) => l.accountId === '2100').description).toBe('ضريبة مخرجات 5%');
+      expect(entry.taxSnapshot).toMatchObject({ vatRate: 0.05, effectiveFrom: '2018-01-01' });
+    }, 120_000);
+
+    it('وتغيير إعداد اليوم لا يغيّر فاتورة ولا إشعاراً قديمين', async () => {
+      await db.collection(DOC_COL.SETTINGS).doc('accounting').set({
+        value: {
+          vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.05,
+          taxPolicyHistory: [{ effectiveFrom: '2018-01-01', vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.05, baseline: true }],
+        },
+      });
+      const inv = await issue({
+        type: 'invoice', issueDate: '2020-03-15',
+        lines: [{ description: 'خدمة', quantity: 1, unitPrice: 105 }],
+      });
+      // Partial, so there is still room for a second note further down.
+      const note = await issue({
+        type: 'credit_note', issueDate: '2020-03-20', reason: 'إرجاع',
+        referenceDocumentId: inv.id, refundMethod: 'cash',
+        lines: [{ description: 'إرجاع', quantity: 1, unitPrice: 52.5 }],
+      });
+      expect(note.vatRate).toBe(0.05);
+      const noteDoc = (await db.collection(DOC_COL.DOCUMENTS).doc(note.id).get()).data();
+      expect(noteDoc.vat).toBe(2.5);
+
+      const snapshotBefore = (await db.collection(DOC_COL.DOCUMENTS).doc(inv.id).get()).data().taxSnapshot;
+
+      // The rate moves to 15% from July 2020. Neither filed document budges.
+      await db.collection(DOC_COL.SETTINGS).doc('accounting').set({
+        value: {
+          vatRegistered: true, washPriceMode: 'exclusive', vatRate: 0.15,
+          taxPolicyHistory: [
+            { effectiveFrom: '2018-01-01', vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.05, baseline: true },
+            { effectiveFrom: '2020-07-01', vatRegistered: true, washPriceMode: 'exclusive', vatRate: 0.15 },
+          ],
+        },
+      });
+      const stored = (await db.collection(DOC_COL.DOCUMENTS).doc(inv.id).get()).data();
+      expect(stored.vatRate).toBe(0.05);
+      expect(stored.vat).toBe(5);
+      expect(stored.taxSnapshot).toEqual(snapshotBefore);
+      // And a NEW note on that old invoice still inherits 5%.
+      const later = await issue({
+        type: 'credit_note', issueDate: '2026-08-20', reason: 'إرجاع متأخر',
+        referenceDocumentId: inv.id, refundMethod: 'cash',
+        lines: [{ description: 'إرجاع', quantity: 1, unitPrice: 52.5 }],
+      });
+      expect(later.vatRate).toBe(0.05);
+      expect(later.vat).toBe(2.5);
+    }, 150_000);
+
+    it('وفاتورة قبل بداية السجل التاريخي تُرفض بدل اختراع سياسة', async () => {
+      await db.collection(DOC_COL.SETTINGS).doc('accounting').set({
+        value: {
+          vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15,
+          taxPolicyHistory: [{ effectiveFrom: '2026-01-01', vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15, baseline: true }],
+        },
+      });
+      await expect(issue({
+        type: 'invoice', issueDate: '2025-12-15',
+        lines: [{ description: 'خدمة', quantity: 1, unitPrice: 115 }],
+      })).rejects.toThrow(/السياسة الضريبية غير مهيأة/);
+      expect((await db.collection(DOC_COL.DOCUMENTS).get()).size).toBe(0);
     }, 90_000);
   });
 

@@ -3,7 +3,9 @@ import {
   periodKeyFor, periodLabel, periodRange, currentPeriodKey,
   inputInvoiceEligibility, claimDateOf, outputTaxFromWashes, outputTaxFromLedger,
   inputTaxFromLedger, postedSourceIds, buildVatReport, availablePeriods,
+  inputInvoiceTax, washEntryTax,
 } from '../vatReturn';
+import { taxPolicyAt } from '../taxPolicy';
 
 /** A complete, deductible purchase invoice. */
 const INVOICE = {
@@ -321,5 +323,152 @@ describe('الفلترة بالفترة', () => {
     expect(ps).toContain('2025-Q4');
     expect(ps).toContain(currentPeriodKey('quarterly'));
     expect([...ps]).toEqual([...ps].sort().reverse());   // newest first
+  });
+});
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// السياسة التاريخية — لا يُعاد احتساب شهر سابق بقواعد اليوم
+// ═══════════════════════════════════════════════════════════════════════════
+// The output figure the return FILES is the movement on 2100 and has always
+// been. What moved was the operational CHECK beside it: every completed wash
+// was re-split under today's switches, so flipping `washPriceMode` in August
+// changed the July check and manufactured a mismatch out of a setting change.
+describe('فحص المخرجات التشغيلي يتبع تاريخه', () => {
+  const SETTINGS = {
+    vatRegistered: true, washPriceMode: 'exclusive', vatRate: 0.15,
+    taxPolicyHistory: [
+      { effectiveFrom: '2026-01-01', vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15, baseline: true },
+      { effectiveFrom: '2026-08-01', vatRegistered: true, washPriceMode: 'exclusive', vatRate: 0.15 },
+    ],
+  };
+  const policyAt = (settings) => (date) => taxPolicyAt(date, settings);
+  const julyWash = WASH({ id: 'jw', quantity: 1, price: 115, washDate: '2026-07-20' });
+  /** The entry July's wash actually left, with its frozen split. */
+  const julyEntry = {
+    id: 'e1', status: 'posted', sourceKind: 'wash', sourceId: 'jw', entryDate: '2026-07-20',
+    taxSnapshot: { vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15, net: 100, vat: 15, gross: 115 },
+    lines: [
+      { accountId: '1010', debit: 115, credit: 0 },
+      { accountId: '4000', debit: 0, credit: 100 },
+      { accountId: '2100', debit: 0, credit: 15 },
+    ],
+  };
+
+  it('تقرأ الغسلة المُرحّلة من لقطة قيدها، ومن سطوره إن غابت', () => {
+    expect(washEntryTax(julyEntry)).toEqual({ net: 100, vat: 15, gross: 115 });
+    const { taxSnapshot, ...legacy } = julyEntry;   // eslint-disable-line no-unused-vars
+    expect(washEntryTax(legacy)).toEqual({ net: 100, vat: 15, gross: 115 });
+    expect(washEntryTax(null)).toBeNull();
+  });
+
+  it('تغيير أغسطس لا يغيّر فحص يوليو', () => {
+    const before = outputTaxFromWashes([julyWash], {
+      period: '2026-07', filing: 'monthly',
+      policyAt: policyAt({ vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15 }),
+      postedEntryOf: () => julyEntry,
+    });
+    const after = outputTaxFromWashes([julyWash], {
+      period: '2026-07', filing: 'monthly',
+      policyAt: policyAt(SETTINGS), postedEntryOf: () => julyEntry,
+    });
+    expect(after).toEqual(before);
+    expect(after.tax).toBe(15);
+    expect(after.net).toBe(100);
+  });
+
+  it('وغسلة يوليو غير المُرحّلة تستخدم baseline يوليو لا سياسة أغسطس', () => {
+    const r = outputTaxFromWashes([julyWash], {
+      period: '2026-07', filing: 'monthly', policyAt: policyAt(SETTINGS),
+    });
+    // July was inclusive: 115 → 100 + 15. Under August's exclusive rule it
+    // would have been 115 + 17.25, which is the number that used to appear.
+    expect(r.net).toBe(100);
+    expect(r.tax).toBe(15);
+  });
+
+  it('وغسلة أغسطس غير المُرحّلة تستخدم سياسة أغسطس', () => {
+    const r = outputTaxFromWashes(
+      [WASH({ id: 'aw', quantity: 1, price: 115, washDate: '2026-08-20' })],
+      { period: '2026-08', filing: 'monthly', policyAt: policyAt(SETTINGS) },
+    );
+    expect(r.net).toBe(115);
+    expect(r.tax).toBe(17.25);
+  });
+
+  it('وفترة قبل الـbaseline تُعلَن غير مهيأة ولا تُحسب بسياسة اليوم', () => {
+    const old = WASH({ id: 'ow', quantity: 1, price: 115, washDate: '2025-11-20' });
+    const r = outputTaxFromWashes([old], {
+      period: '2025-11', filing: 'monthly', policyAt: policyAt(SETTINGS),
+    });
+    expect(r.count).toBe(0);
+    expect(r.tax).toBe(0);
+    expect(r.unknownPolicy).toBe(1);
+
+    const report = buildVatReport({
+      washes: [old], period: '2025-11', filing: 'monthly', policyAt: policyAt(SETTINGS),
+    });
+    expect(report.policyUnconfigured).toBe(true);
+    expect(report.unknownPolicyWashes).toBe(1);
+    expect(report.output.source).toBe('unknown-policy');
+    expect(report.output.tax).toBe(0);
+  });
+
+  it('وفترة بلا قيود لا تستخدم سياسة اليوم لشهر لا يغطيه السجل', () => {
+    const report = buildVatReport({
+      washes: [WASH({ id: 'ow', quantity: 1, price: 115, washDate: '2025-11-20' })],
+      entries: [], lines: [],
+      period: '2025-11', filing: 'monthly', policyAt: policyAt(SETTINGS),
+    });
+    expect(report.output.tax).toBe(0);
+    expect(report.output.source).not.toBe('operations');
+  });
+});
+
+describe('ضريبة المدخلات من الفاتورة نفسها', () => {
+  it('المبلغ الصريح على الفاتورة يسبق كل نسبة', () => {
+    const r = inputInvoiceTax({ ...INVOICE, amount: 1150, vatAmount: 143.75 });
+    expect(r).toMatchObject({ gross: 1150, net: 1006.25, vat: 143.75, source: 'invoice' });
+  });
+
+  it('ثم النسبة المثبتة على الفاتورة — 5% تبقى 5%', () => {
+    const r = inputInvoiceTax({ ...INVOICE, amount: 105, vatRate: 0.05 });
+    expect(r).toMatchObject({ net: 100, vat: 5, source: 'invoice-rate' });
+  });
+
+  it('ثم نسبة تاريخ الفاتورة، لا نسبة اليوم', () => {
+    const settings = {
+      vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15,
+      taxPolicyHistory: [
+        { effectiveFrom: '2018-01-01', vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.05, baseline: true },
+        { effectiveFrom: '2020-07-01', vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15 },
+      ],
+    };
+    const r = inputInvoiceTax(
+      { ...INVOICE, amount: 105, invoiceDate: '2020-03-01' },
+      { policyAt: (d) => taxPolicyAt(d, settings) },
+    );
+    expect(r).toMatchObject({ net: 100, vat: 5, source: 'policy' });
+  });
+
+  it('وفاتورة قبل الـbaseline لا تُحتسب لها ضريبة مخترعة', () => {
+    const settings = {
+      vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15,
+      taxPolicyHistory: [{ effectiveFrom: '2026-01-01', vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15, baseline: true }],
+    };
+    const r = inputInvoiceTax(
+      { ...INVOICE, amount: 115, invoiceDate: '2025-06-01' },
+      { policyAt: (d) => taxPolicyAt(d, settings) },
+    );
+    expect(r).toMatchObject({ vat: 0, source: 'unknown-policy' });
+  });
+
+  it('والتقرير يحافظ على مبلغ ضريبة فاتورة بنسبة تاريخية مختلفة', () => {
+    const report = buildVatReport({
+      inputs: [{ ...INVOICE, id: 'old', amount: 105, vatRate: 0.05, invoiceDate: '2026-08-03' }],
+      period: '2026-Q3',
+    });
+    expect(report.input.tax).toBe(5);
+    expect(report.eligible[0].taxSource).toBe('invoice-rate');
   });
 });

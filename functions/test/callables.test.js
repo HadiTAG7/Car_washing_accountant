@@ -13,6 +13,7 @@
  * Run: npm run test:callables
  */
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
+import { taxPolicyAt } from '../src/taxPolicy.js';
 import { initializeApp as initAdmin, deleteApp as deleteAdmin } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getAuth as getAdminAuth } from 'firebase-admin/auth';
@@ -265,6 +266,140 @@ d('الاستدعاءات الحقيقية عبر محاكي الدوال', () =
       const applied = await adminCall('salesLinkLegacyInvoices')({ apply: true });
       expect(applied.data.applied).toBe(0);   // nothing to link in this fixture
     }, 90_000);
+  });
+
+  // ═══ سياسة الضريبة ══════════════════════════════════════════════════
+  // `app_settings/accounting` is denied to clients in the rules, so this is
+  // the only door. What it has to get right: a real calendar date, a
+  // transaction that cannot lose a concurrent update, an audit record, and a
+  // gate on rewriting a month that has already been filed.
+  describe('سياسة الضريبة عبر الاستدعاء', () => {
+    const settings = () => adb.collection('app_settings').doc('accounting').get()
+      .then((s) => (s.exists ? (s.data().value || {}) : {}));
+
+    it('يهيّئ السجل ثم يغيّر السياسة بتاريخ سريان، فيقرأ يوليو inclusive', async () => {
+      const call = await as('accountant');
+      await call('accountingSeedTaxPolicy')({ baselineFrom: '2026-01-01', note: 'بداية الدفاتر' });
+      const seeded = await settings();
+      expect(seeded.taxPolicyHistory).toHaveLength(1);
+      expect(seeded.taxPolicyHistory[0]).toMatchObject({ effectiveFrom: '2026-01-01', washPriceMode: 'inclusive' });
+
+      await call('accountingSetTaxPolicy')({
+        vatRegistered: true, washPriceMode: 'exclusive', vatRate: 0.15,
+        effectiveFrom: '2026-08-01',
+      });
+      const after = await settings();
+      expect(after.taxPolicyHistory.map((h) => h.effectiveFrom)).toEqual(['2026-01-01', '2026-08-01']);
+      expect(taxPolicyAt('2026-07-15', after)).toMatchObject({ known: true, washPriceMode: 'inclusive' });
+      expect(taxPolicyAt('2026-08-15', after)).toMatchObject({ known: true, washPriceMode: 'exclusive' });
+
+      const audit = await adb.collection('audit_logs').where('action', '==', 'tax-policy').get();
+      expect(audit.size).toBe(2);
+      const change = audit.docs.map((x) => x.data()).find((x) => x.after?.effectiveFrom === '2026-08-01');
+      expect(change.userId).toBe(uids.accountant);
+      expect(change.before).toMatchObject({ washPriceMode: 'inclusive' });
+      expect(change.after).toMatchObject({ washPriceMode: 'exclusive', effectiveFrom: '2026-08-01' });
+    }, 90_000);
+
+    it('وأول تغيير بلا سجل يحتاج تاريخ بداية صريحاً', async () => {
+      const call = await as('accountant');
+      await expect(call('accountingSetTaxPolicy')({
+        vatRegistered: true, washPriceMode: 'exclusive', vatRate: 0.15,
+        effectiveFrom: '2026-08-01',
+      })).rejects.toSatisfy((e) => /تاريخ بداية السياسة الحالية/.test(String(e?.message)));
+      expect((await settings()).taxPolicyHistory ?? []).toHaveLength(0);
+    }, 60_000);
+
+    it('ويرفض تاريخاً غير حقيقي ونسبة خارج المدى', async () => {
+      const call = await as('accountant');
+      for (const bad of ['2026-02-30', '2026-13-01', '']) {
+        await expect(call('accountingSetTaxPolicy')({
+          vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15,
+          effectiveFrom: bad, baselineFrom: '2026-01-01',
+        })).rejects.toSatisfy((e) => /تاريخ سريان/.test(String(e?.message)));
+      }
+      await expect(call('accountingSetTaxPolicy')({
+        vatRegistered: true, washPriceMode: 'inclusive', vatRate: 1.5,
+        effectiveFrom: '2026-08-01', baselineFrom: '2026-01-01',
+      })).rejects.toSatisfy((e) => /نسبة الضريبة/.test(String(e?.message)));
+    }, 90_000);
+
+    it('وتحديثان متزامنان لا يفقدان أي سطر سياسة', async () => {
+      const call = await as('accountant');
+      await call('accountingSeedTaxPolicy')({ baselineFrom: '2026-01-01' });
+      await Promise.all([
+        call('accountingSetTaxPolicy')({
+          vatRegistered: true, washPriceMode: 'exclusive', vatRate: 0.15, effectiveFrom: '2026-08-01',
+        }),
+        call('accountingSetTaxPolicy')({
+          vatRegistered: false, washPriceMode: 'inclusive', vatRate: 0, effectiveFrom: '2026-09-01',
+        }),
+      ]);
+      const after = await settings();
+      // Read-merge-write from two callers would have dropped one of these.
+      expect(after.taxPolicyHistory.map((h) => h.effectiveFrom))
+        .toEqual(['2026-01-01', '2026-08-01', '2026-09-01']);
+    }, 120_000);
+
+    // ── الرجعي في فترة مقفلة ───────────────────────────────────────────
+    it('والتغيير الرجعي في فترة مقفلة يفشل للمحاسب', async () => {
+      const call = await as('accountant');
+      await call('accountingSeedTaxPolicy')({ baselineFrom: '2026-01-01' });
+      await call('ledgerPostSource')({ kind: 'wash', sourceId: 'w1' });
+      await call('ledgerClosePeriod')({ periodKey: '2026-08' });
+
+      await expect(call('accountingSetTaxPolicy')({
+        vatRegistered: true, washPriceMode: 'exclusive', vatRate: 0.15,
+        effectiveFrom: '2026-08-01', reason: 'تصحيح',
+      })).rejects.toSatisfy((e) => /يحتاج مديراً وسبباً مكتوباً/.test(String(e?.message)));
+
+      const after = await settings();
+      expect(after.taxPolicyHistory).toHaveLength(1);
+    }, 120_000);
+
+    it('والمدير لا ينفّذه بلا سبب، وينفّذه بسبب مكتوب ومُدقَّق', async () => {
+      const acct = await as('accountant');
+      await acct('accountingSeedTaxPolicy')({ baselineFrom: '2026-01-01' });
+      await acct('ledgerPostSource')({ kind: 'wash', sourceId: 'w1' });
+      await acct('ledgerClosePeriod')({ periodKey: '2026-08' });
+
+      const admin = await as('admin');
+      await expect(admin('accountingSetTaxPolicy')({
+        vatRegistered: true, washPriceMode: 'exclusive', vatRate: 0.15,
+        effectiveFrom: '2026-08-01',
+      })).rejects.toSatisfy((e) => /سبباً مكتوباً/.test(String(e?.message)));
+
+      const res = await admin('accountingSetTaxPolicy')({
+        vatRegistered: true, washPriceMode: 'exclusive', vatRate: 0.15,
+        effectiveFrom: '2026-08-01', reason: 'تصحيح تسجيل بأثر رجعي بقرار الهيئة',
+      });
+      expect(res.data.retroactive).toBe(true);
+      expect(res.data.closedThrough).toBe('2026-08');
+
+      const audit = (await adb.collection('audit_logs').where('action', '==', 'tax-policy').get())
+        .docs.map((x) => x.data()).find((x) => x.after?.retroactive === true);
+      expect(audit.userId).toBe(uids.admin);
+      expect(audit.note).toContain('رجعي في فترة مقفلة');
+    }, 150_000);
+
+    it('والمشغّل لا يمسّ السياسة إطلاقاً', async () => {
+      const call = await as('operator');
+      await expectDenied(call('accountingSetTaxPolicy')({
+        vatRegistered: false, washPriceMode: 'inclusive', vatRate: 0,
+        effectiveFrom: '2026-08-01', baselineFrom: '2026-01-01',
+      }));
+      await expectDenied(call('accountingSeedTaxPolicy')({ baselineFrom: '2026-01-01' }));
+      await expectDenied(call('accountingSetPreferences')({ autoPost: true }));
+    }, 90_000);
+
+    it('وإعدادات لا تمسّ الضريبة تُحفظ بلا تاريخ سريان', async () => {
+      const call = await as('accountant');
+      await call('accountingSetPreferences')({ autoPost: true, vatFilingPeriod: 'monthly' });
+      const after = await settings();
+      expect(after.autoPost).toBe(true);
+      expect(after.vatFilingPeriod).toBe('monthly');
+      expect(after.taxPolicyHistory ?? []).toHaveLength(0);
+    }, 60_000);
   });
 
   // ═══ المدير وغير المصرّح ════════════════════════════════════════════

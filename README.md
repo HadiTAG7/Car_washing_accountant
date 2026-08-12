@@ -634,18 +634,99 @@ they produced. Every later reader asking "what was this wash's revenue?" reads
 it from there. Entries written before the snapshot existed are read off their
 own lines, which say the same thing one step less directly.
 
-**Unposted washes use the rules of their own day.** The switches now carry an
+**Unposted records use the rules of their own day.** The switches carry an
 effective date: `app_settings/accounting.taxPolicyHistory` is a list of
 `{ effectiveFrom, vatRegistered, washPriceMode, vatRate }`, and `taxPolicyAt`
 answers "what were the rules on this date". `postSource` resolves the policy
 from the *record's* date too, so posting a July wash in September files it
 under July's rules rather than today's.
 
-The date is typed in **إقفال الفترة → إعدادات المحاسبة** and defaults to today,
-which is the only honest default: a change made today applies from today.
-Back-dating one is a correction and is stored as such. An install with no
-history reads exactly as before — the current values apply to all dates, which
-says "we do not know when this was set" rather than "it was always this".
+### السجل التاريخي يبدأ بـbaseline صريح
+
+The first change is the one that decides whether any of this works. Storing the
+new policy alone leaves one row dated August — and `taxPolicyAt('2026-07-15')`
+then finds nothing on or before July, falls back to the current settings, and
+reports July under the policy the change had *just* introduced. One save,
+and a filed month silently restated.
+
+So the first change writes **two** rows: an explicit `baseline` for the policy
+that was in force until then, and the change itself. The baseline date is never
+inferred — a guessed baseline is the same bug wearing a timestamp. **إقفال
+الفترة → إعدادات المحاسبة** asks for it once, either as its own step (record
+what has applied since the books began, changing nothing) or alongside the
+first change.
+
+Three consequences worth stating:
+
+- A date **before** the first baseline returns `known: false`, not today's
+  settings. Every caller says «السياسة التاريخية غير مهيأة» rather than
+  substituting a figure: `postSource` refuses to post, `issueDocument` refuses
+  to issue, and the VAT report and the reconciliation report the count instead
+  of a number.
+- A **future-dated** change does not move `taxPolicyAt(today)`. The flat
+  `vatRegistered` / `washPriceMode` / `vatRate` fields kept for compatibility
+  are always `taxPolicyAt(today)`, never the last row — so a change effective
+  next month does not take effect the moment it is saved.
+- An install with **no history at all** reads as before: the current values
+  apply to all dates, labelled `source: 'unversioned'`, which says "we do not
+  know when this was set" rather than "it was always this".
+
+### الإعدادات تُكتب على الخادم
+
+`app_settings/accounting` is denied to clients in the rules — readable, never
+writable — and every change goes through `accountingSetTaxPolicy`. Written from
+a browser it had three holes, and only the third is obvious:
+
+1. **Lost updates.** Read-merge-write from two tabs drops a policy row, with no
+   counter to notice it and no audit record to find it in.
+2. **No audit trail.** Changing `washPriceMode` restates what every future wash
+   means. That is an accounting decision and it has to be signed.
+3. **No gate.** Anyone reaching Firestore could back-date a policy into a month
+   already filed.
+
+The callable re-reads inside a transaction, validates the date against the
+calendar (not `Date.parse`, which rolls `2026-02-30` over to 2 March), and
+writes before/after/effectiveFrom/reason/userId to `audit_logs`. A change whose
+effective date reaches into a **closed** month rewrites what was filed: an
+accountant may not make it at all, an admin may with a written reason, and the
+audit record says `retroactive`. `accountingSetPreferences` carries the
+switches that move no past figure — auto-posting and the filing frequency.
+
+### الفوترة تقرأ السياسة، لا الترويسة
+
+`app_settings/company` is the seller's **identity** — name, address, VAT number.
+Whether a supply bears tax is an accounting policy, and the two used to be
+conflated: `company.vatRegistered` decided a standalone invoice's taxability.
+It no longer does. Three sources, one per path:
+
+| Path | Tax treatment from |
+|---|---|
+| `note` | the invoice it corrects — a correction to a taxable invoice keeps its tax even if the business has since de-registered |
+| `linked` | the wash entry's own `taxSnapshot`. A pre-snapshot entry has its rate and pricing mode **derived from its lines and verified** — the derived rate has to reproduce the entry to the halala, and if it cannot the invoice is refused rather than issued at an assumed 15% |
+| `standalone` | `taxPolicyAt(supplyDate)` |
+
+Both the document and its entry store a `taxSnapshot` and
+`taxPolicyEffectiveFrom`, so a reader never re-derives either. The `2100` line
+names its own rate — `ضريبة مخرجات 5%` on a 5% entry, not a fixed 15% caption
+contradicting its own amount. The rate is a real setting, with 15% and 5% in
+the picker: KSA has charged both, and a 2019 purchase invoice keeps its 5%
+however many times the standard rate moves.
+
+### تقرير الضريبة كذلك
+
+The official output figure is the movement on **2100** and always was. What
+moved was the operational check beside it, and the input side:
+
+- A **posted** wash contributes what its entry froze; an **unposted** one is
+  split under the policy in force on its date.
+- **Input VAT** comes from the amount the supplier wrote on the invoice when
+  there is one — a tax invoice states its own VAT, and recomputing it from a
+  rate is second-guessing the paper the deduction rests on. Failing that, the
+  rate stored *on* the invoice; failing that, the rate in force on the
+  invoice's date. Today's rate is never the answer for a historical document.
+- A period the record cannot answer for reports
+  «السياسة التاريخية غير مهيأة» and a count, never a figure computed under
+  today's rules.
 
 ### المطابقة تُفسّر، ولا تطرح رقمين
 

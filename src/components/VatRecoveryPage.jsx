@@ -227,7 +227,9 @@ export default function VatRecoveryPage() {
             tone="indigo"
             label="ضريبة المخرجات (المبيعات)"
             value={formatCurrencyPrecise(outputTax)}
-            sub={`${formatNumber(report.output.count)} غسلة مكتملة`}
+            sub={report.output.source === 'ledger'
+              ? 'من حركة حساب 2100 المُرحّلة — شاملة الإشعارات'
+              : `${formatNumber(report.output.count)} غسلة مكتملة (لا توجد قيود بعد)`}
           />
           <StatCard
             icon={ArrowDownLeft}
@@ -284,7 +286,7 @@ export default function VatRecoveryPage() {
               {report.outputMismatch !== 0 && (
                 <p className="mt-1">
                   <span className="font-semibold">المخرجات:</span> من الغسلات{' '}
-                  <strong className="tabular-nums">{formatCurrencyPrecise(report.output.tax)}</strong>{' '}
+                  <strong className="tabular-nums">{formatCurrencyPrecise(report.operationalOutput.tax)}</strong>{' '}
                   · في الدفاتر (حساب 2100){' '}
                   <strong className="tabular-nums">{formatCurrencyPrecise(report.ledgerOutput.tax)}</strong>{' '}
                   · الفرق{' '}

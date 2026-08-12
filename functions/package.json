@@ -1,12 +1,17 @@
 {
   "name": "sweater-functions",
-  "description": "الترحيل المحاسبي — trusted server. Every ledger mutation runs here.",
+  "description": "\u0627\u0644\u062a\u0631\u062d\u064a\u0644 \u0627\u0644\u0645\u062d\u0627\u0633\u0628\u064a \u2014 trusted server. Every ledger mutation runs here.",
   "type": "module",
   "private": true,
-  "engines": { "node": "20" },
+  "engines": {
+    "node": "20"
+  },
   "main": "index.js",
   "dependencies": {
-    "firebase-admin": "^13.0.2",
+    "firebase-admin": "^13.10.0",
     "firebase-functions": "^6.3.0"
+  },
+  "overrides": {
+    "uuid": "^11.1.1"
   }
 }

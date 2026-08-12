@@ -21,8 +21,8 @@ The app deliberately keeps two layers, and the split matters:
 | **Accounting** | `chart_of_accounts`, `journal_entries`, `journal_lines`, `accounting_periods`, `audit_logs` | What it means. Every financial statement is built **only** from posted journal lines. |
 
 A number in a statement is therefore always traceable to an entry, and a
-reversed entry stops counting automatically. Operational tables are never
-summed directly into a report.
+reversal cancels itself out — the original and its mirror both stay in the
+books. Operational tables are never summed directly into a report.
 
 ---
 
@@ -63,7 +63,8 @@ overwrites an existing account). Document id = account code.
 | 1500 / 1510 | أصول ثابتة / مجمع الإهلاك | asset (1510 contra) |
 | 2000 / 2100 | الموردون / ضريبة مخرجات مستحقة | liability |
 | 3000 / 3100 | رأس مال الشركاء / أرباح محتجزة | equity |
-| 4000 / 4100 | إيرادات غسيل السيارات / أرباح استبعاد أصول | revenue |
+| 4000 / 4010 | إيرادات غسيل السيارات / مردودات المبيعات (contra) | revenue |
+| 4100 | أرباح استبعاد أصول | revenue |
 | 5000–5400 | عمولات · متغيرة · إيجار · إدارية · إهلاك | expense |
 | 5500 | خسائر استبعاد أصول | expense |
 
@@ -344,7 +345,7 @@ corrections of prior periods), so calling it an إقرار would overstate it.
 
 | | |
 |---|---|
-| **ضريبة المخرجات** | From **completed** washes in the period, split per the VAT-registered and price-mode settings. Cross-checked against posted movement on `2100`; a difference means completed washes are not in the books yet, and the page says so. |
+| **ضريبة المخرجات** | The **posted movement on `2100`** — which already contains the washes AND the credit/debit notes that adjusted them. Washes and invoices are never summed together: an invoice documents a wash that was already posted, so adding both would double the sale. The wash figure is kept as an independent check that says how much has not reached the books yet. |
 | **ضريبة المدخلات** | Only from purchases that carry a real tax invoice. |
 | **الصافي** | Output − input, labelled payable or refundable. |
 
@@ -371,6 +372,51 @@ Quarterly below the SAR 40m threshold, monthly above it — neither is assumed.
 Set it in **إقفال الفترة → إعدادات المحاسبة**, alongside VAT registration and
 whether wash prices include the tax. The report's periods, labels and totals
 follow it.
+
+---
+
+## الإشعارات تصل إلى الدفاتر
+
+A credit note that writes only `sales_documents` changes nothing: revenue and
+output tax stay exactly where the invoice left them, and the VAT report keeps
+showing the original sale in full. So the document and its journal entry are
+written in **one transaction** — document, counter, entry, journal counter,
+period and audit record all land or none do. The document stores
+`journalEntryId`; the entry stores `documentId`, so neither can be an orphan.
+
+| | |
+|---|---|
+| **إشعار دائن** | Dr `4010` مردودات المبيعات (net) · Dr `2100` (the tax reversed) · Cr cash/bank/customer (gross) |
+| **إشعار مدين** | Dr cash/bank/customer · Cr `4000` (net) · Cr `2100` |
+
+An **invoice** gets no entry: the sale it documents was already posted from its
+wash, and posting it again would double the revenue.
+
+The settlement account is not guessed — the caller states `refundMethod` /
+`paymentMethod`, defaulting to the invoice's own.
+
+### A note inherits its invoice's tax treatment
+`taxable`, `vatRate`, `priceMode`, the customer and the seller identity all
+come from the **referenced invoice**, read inside the transaction. A note
+correcting an invoice issued while registered still carries that invoice's VAT
+even if the business has de-registered since — reading today's setting would
+silently drop tax the authority was already told about. `vatRate` is stored on
+every document rather than assumed to be 15% forever.
+
+The note's period comes from its own date, and a closed month refuses it.
+
+### Voiding a document with an accounting effect
+Cancelling the paper while its entry stayed posted would leave revenue and
+output tax reduced by a note the register says never happened. `salesVoidDocument`
+**reverses the entry in the same transaction** and links the mirror both ways.
+
+### A reversed entry still counts
+`postedLines` used to keep only `status === 'posted'`, which dropped the
+original of a reversal while keeping its mirror — leaving the account off by
+the full amount, in the wrong direction. Reports now include `posted` **and**
+`reversed`; only `draft` stays out. (Idempotency is a different question: a
+reversed source may be corrected and re-posted, so `hasPostedEntryFor` still
+ignores it.)
 
 ---
 

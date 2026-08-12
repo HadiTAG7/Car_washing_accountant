@@ -23,7 +23,12 @@ export const ACC = {
   CASH: '1010', BANK: '1020', RECEIVABLE: '1100', INPUT_VAT: '1200',
   EMPLOYEE_ADVANCE: '1300', FIXED_ASSETS: '1500', ACCUM_DEPRECIATION: '1510',
   PAYABLE: '2000', OUTPUT_VAT: '2100', PARTNER_CAPITAL: '3000',
-  WASH_REVENUE: '4000', BIKER_COMMISSION: '5000', VARIABLE_COSTS: '5100',
+  WASH_REVENUE: '4000',
+  // مردودات وخصومات المبيعات — a CONTRA-revenue account. A credit note
+  // reduces revenue, but netting it against 4000 would hide the return; a
+  // separate debit-side account keeps gross sales and returns both visible.
+  SALES_RETURNS: '4010',
+  BIKER_COMMISSION: '5000', VARIABLE_COSTS: '5100',
   RENT_MONTHLY: '5200', ADMIN_EXPENSES: '5300', DEPRECIATION: '5400',
 };
 
@@ -46,8 +51,8 @@ export function splitVat(amount, { mode = 'inclusive', taxable = true, rate = VA
   return { gross: value, net: round2(value - vat), vat };
 }
 
-/** The account cash lands in, on the SALES side. */
-function settlementForSale(method) {
+/** The account cash lands in, on the SALES side. Exported for the notes. */
+export function settlementForSale(method) {
   switch (method) {
     case 'cash': return ACC.CASH;
     case 'card': case 'transfer': return ACC.BANK;

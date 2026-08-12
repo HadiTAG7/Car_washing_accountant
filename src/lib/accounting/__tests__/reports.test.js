@@ -267,3 +267,50 @@ describe('الفترات المقفلة', () => {
     expect(pre.problems.join(' ')).toContain('غير متوازن');
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// A REVERSED entry still counts.
+//
+// `postedLines` used to keep only `status === 'posted'`, which dropped the
+// original of a reversal while keeping its mirror — so a reversed 100 left
+// the account at −100 instead of zero. Caught by the credit-note tests, and
+// pinned here so it cannot come back.
+// ─────────────────────────────────────────────────────────────────────────
+describe('القيد المعكوس يبقى في الحساب مع مرآته', () => {
+  const accounts = [
+    { code: '1010', nameArabic: 'الصندوق', accountType: 'asset', normalBalance: 'debit' },
+    { code: '4000', nameArabic: 'إيرادات', accountType: 'revenue', normalBalance: 'credit' },
+  ];
+  const entries = [
+    { id: 'e1', status: 'reversed', entryDate: '2026-08-11', reversedBy: 'e2' },
+    { id: 'e2', status: 'posted', entryDate: '2026-08-20', reversalOf: 'e1' },
+    { id: 'e3', status: 'draft', entryDate: '2026-08-21' },
+  ];
+  const lines = [
+    { entryId: 'e1', accountId: '1010', debit: 115, credit: 0 },
+    { entryId: 'e1', accountId: '4000', debit: 0, credit: 115 },
+    { entryId: 'e2', accountId: '1010', debit: 0, credit: 115 },
+    { entryId: 'e2', accountId: '4000', debit: 115, credit: 0 },
+    { entryId: 'e3', accountId: '1010', debit: 999, credit: 0 },
+  ];
+
+  it('الأثر الصافي صفر على كل حساب — لا سالب ولا مضاعف', () => {
+    const tb = trialBalance(accounts, entries, lines);
+    expect(tb.balanced).toBe(true);
+    for (const row of tb.rows) {
+      expect(row.balanceDebit).toBe(0);
+      expect(row.balanceCredit).toBe(0);
+    }
+  });
+
+  it('وكلا القيدين يظهران في دفتر الأستاذ', () => {
+    const led = generalLedger('1010', entries, lines, { account: accounts[0] });
+    expect(led.rows).toHaveLength(2);
+    expect(led.closing).toBe(0);
+  });
+
+  it('والمسودة تبقى خارج التقرير', () => {
+    const led = generalLedger('1010', entries, lines, { account: accounts[0] });
+    expect(led.rows.some((r) => r.entryId === 'e3')).toBe(false);
+  });
+});

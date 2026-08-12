@@ -43,6 +43,7 @@ export const ACC = {
   PARTNER_CAPITAL:   '3000', // رأس مال الشركاء
   RETAINED_EARNINGS: '3100', // أرباح محتجزة
   WASH_REVENUE:      '4000', // إيرادات غسيل السيارات
+  SALES_RETURNS:     '4010', // مردودات وخصومات المبيعات (حساب مقابل)
   ASSET_DISPOSAL_GAIN:'4100',// أرباح استبعاد أصول
   BIKER_COMMISSION:  '5000', // عمولات البايكرز
   VARIABLE_COSTS:    '5100', // مواد تشغيل ومصروفات متغيرة
@@ -79,6 +80,10 @@ export const DEFAULT_CHART_OF_ACCOUNTS = [
 
   // ── الإيرادات ───────────────────────────────────────────────────────
   { code: ACC.WASH_REVENUE,       nameArabic: 'إيرادات غسيل السيارات',          accountType: 'revenue' },
+  // Contra-revenue: a credit note reduces sales, and netting it into 4000
+  // would hide the return. Debit-side, under revenue.
+  { code: ACC.SALES_RETURNS,      nameArabic: 'مردودات وخصومات المبيعات',       accountType: 'revenue',
+    parentId: ACC.WASH_REVENUE, normalBalance: 'debit', contra: true },
   // Disposing of an asset is not trading income, so it gets its own account
   // and never inflates the wash revenue line.
   { code: ACC.ASSET_DISPOSAL_GAIN, nameArabic: 'أرباح استبعاد أصول',            accountType: 'revenue' },

@@ -178,7 +178,9 @@ export function outputTaxFromWashes(washes, { period, filing = 'quarterly', vatR
 function postedEntriesIn(entries, period, filing) {
   const map = new Map();
   for (const e of entries || []) {
-    if (e.status !== 'posted') continue;
+    // A reversed entry keeps counting; its mirror cancels it. Dropping one
+    // side of a reversal would move the VAT figure by the full amount.
+    if (e.status !== 'posted' && e.status !== 'reversed') continue;
     const date = String(e.entryDate || '').slice(0, 10);
     if (period && periodKeyFor(date, filing) !== period) continue;
     map.set(e.id, e);
@@ -283,9 +285,23 @@ export function buildVatReport({
     (sum, r) => sum + splitVatBalanced(Number(r.amount) || 0, { mode: 'inclusive', taxable: true, rate }).vat, 0,
   ));
 
-  const output = outputTaxFromWashes(washes, { period, filing, vatRegistered, priceMode: washPriceMode, rate });
+  // ── ضريبة المخرجات: الدفاتر هي المصدر ──
+  // The posted movement on 2100 already contains everything: the washes that
+  // were posted AND the credit/debit notes that adjusted them. Adding the
+  // invoices to the washes would double the same sale, since an invoice
+  // documents a wash that was already posted — so they are never summed
+  // together. The wash figure is kept only as an INDEPENDENT check that says
+  // how much has not reached the books yet.
+  const operationalOutput = outputTaxFromWashes(washes, {
+    period, filing, vatRegistered, priceMode: washPriceMode, rate,
+  });
   const ledgerOutput = outputTaxFromLedger(entries, lines, { period, filing });
   const ledgerInput  = inputTaxFromLedger(entries, lines, { period, filing });
+  // Where the ledger has nothing at all, the operational figure is all there
+  // is — and the report says which one it used.
+  const output = ledgerOutput.available
+    ? { ...operationalOutput, tax: ledgerOutput.tax, source: 'ledger' }
+    : { ...operationalOutput, source: 'operations' };
 
   // Eligible purchases the ledger has never seen. These are exactly the rows
   // that make the two input figures disagree, so the report names them rather
@@ -300,12 +316,14 @@ export function buildVatReport({
     filing,
     vatRegistered,
     output,
+    operationalOutput,
     ledgerOutput,
     ledgerInput,
-    // A difference between the operational figure and the posted one means
-    // some completed washes have not been carried into the books yet.
-    outputMismatch: ledgerOutput.available && Math.abs(round2(ledgerOutput.tax - output.tax)) >= 0.01
-      ? round2(output.tax - ledgerOutput.tax)
+    // A difference between the two means some completed washes have not been
+    // carried into the books yet. Named, not averaged.
+    outputMismatch: ledgerOutput.available
+      && Math.abs(round2(operationalOutput.tax - ledgerOutput.tax)) >= 0.01
+      ? round2(operationalOutput.tax - ledgerOutput.tax)
       : 0,
     // The same check on the purchase side: claimed here, not in the books.
     inputMismatch: ledgerInput.available && Math.abs(round2(ledgerInput.tax - inputTax)) >= 0.01

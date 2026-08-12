@@ -60,6 +60,20 @@ export function isValidPeriodKey(key) {
   return month >= 1 && month <= 12;
 }
 
+/**
+ * `HH:MM` or `HH:MM:SS` naming a real time of day.
+ *
+ * A regex of `\d{2}:\d{2}` accepts 25:70, which then rides into the QR
+ * timestamp as a value no reader can parse. The parts are range-checked.
+ */
+export function normalizeTimeOfDay(value, fallback = '00:00:00') {
+  const m = /^(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(String(value ?? '').trim());
+  if (!m) return fallback;
+  const h = Number(m[1]), min = Number(m[2]), sec = m[3] === undefined ? 0 : Number(m[3]);
+  if (h > 23 || min > 59 || sec > 59) return fallback;
+  return `${m[1]}:${m[2]}:${String(sec).padStart(2, '0')}`;
+}
+
 /** Server-derived period key. The client never gets to name its own. */
 export function periodKeyOf(isoDate) {
   const s = String(isoDate || '');

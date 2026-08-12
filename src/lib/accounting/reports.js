@@ -21,7 +21,12 @@ import { indexAccounts } from './chartOfAccounts';
 export function postedLines(entries, lines, { from = null, to = null } = {}) {
   const meta = new Map();
   for (const e of entries || []) {
-    if (e.status !== 'posted') continue;
+    // `posted` AND `reversed`. A reversal does not delete the original — it
+    // adds a mirror that cancels it. Excluding the original while keeping the
+    // mirror would leave every reversed account off by the full amount in the
+    // WRONG direction, which is worse than not reversing at all. `draft` is
+    // the only status that stays out of a report.
+    if (e.status !== 'posted' && e.status !== 'reversed') continue;
     const d = String(e.entryDate || '');
     if (from && d < from) continue;
     if (to && d > to) continue;

@@ -129,6 +129,10 @@ export async function issueDocument(document, _options = {}) {
     // derives the reference number from what it actually found.
     referenceDocumentId: document.referenceDocumentId || null,
     reason: document.reason || null,
+    // How the money moved. The server picks the settlement account from this
+    // rather than guessing — cash, bank, or the customer's balance.
+    refundMethod: document.refundMethod || null,
+    paymentMethod: document.paymentMethod || null,
     sourceType: document.sourceType || null,
     sourceId: document.sourceId || null,
   });
@@ -151,7 +155,9 @@ export async function issueSimplifiedInvoice({
  * إشعار دائن — the only way to reduce or cancel an issued invoice. Deleting a
  * document would break the sequence a tax audit walks.
  */
-export async function issueCreditNoteFor(invoiceId, { issueDate, issueTime, lines = null, reason }) {
+export async function issueCreditNoteFor(invoiceId, {
+  issueDate, issueTime, lines = null, reason, refundMethod = 'cash',
+}) {
   requireDb();
   const invoice = await fetchDocument(invoiceId);
   if (!invoice) throw new Error('الفاتورة غير موجودة.');
@@ -160,19 +166,23 @@ export async function issueCreditNoteFor(invoiceId, { issueDate, issueTime, line
   // A note is its own document with its own sequence; it must not inherit the
   // invoice's source claim or the claim would block the note.
   return issueDocument({
-    ...note, referenceDocumentId: invoiceId, sourceType: null, sourceId: null,
+    ...note, referenceDocumentId: invoiceId, refundMethod,
+    sourceType: null, sourceId: null,
   });
 }
 
 /** إشعار مدين — raises an already-issued invoice (an undercharge). */
-export async function issueDebitNoteFor(invoiceId, { issueDate, issueTime, lines, reason }) {
+export async function issueDebitNoteFor(invoiceId, {
+  issueDate, issueTime, lines, reason, paymentMethod = 'cash',
+}) {
   requireDb();
   const invoice = await fetchDocument(invoiceId);
   if (!invoice) throw new Error('الفاتورة غير موجودة.');
   if (invoice.type !== 'invoice') throw new Error('الإشعار المدين يصدر مقابل فاتورة فقط.');
   const note = buildDebitNote(invoice, { issueDate, issueTime, lines, reason });
   return issueDocument({
-    ...note, referenceDocumentId: invoiceId, sourceType: null, sourceId: null,
+    ...note, referenceDocumentId: invoiceId, paymentMethod,
+    sourceType: null, sourceId: null,
   });
 }
 

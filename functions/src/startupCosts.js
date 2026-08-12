@@ -38,6 +38,8 @@ import { legacyLockIdFor } from './posting.js';
 import {
   startupEntryProblems, startupConversionProblems, startupRollup,
   buildStartupConversionEntry, legacyEntryIdFor,
+  startupParentHasLegacySpend, startupParentHasLegacyTaxFields,
+  startupPlanUpdateProblems, LEGACY_BLOCKS_ENTRY,
 } from './startupMigration.js';
 
 const COL = {
@@ -46,6 +48,7 @@ const COL = {
   LOCKS: 'posting_locks',
   PERIODS: 'accounting_periods',
   AUDIT: 'audit_logs',
+  JOURNAL: 'journal_entries',
 };
 
 /** A refusal the caller is meant to read, not a bug. */
@@ -107,6 +110,23 @@ async function readParentAndEntries(db, tx, parentId) {
     parentRef,
     parent: parentSnap.data(),
     entries: entriesSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
+  };
+}
+
+/** The stored parent in the vocabulary the shared rules speak. */
+function parentAsApp(id, row) {
+  return {
+    id,
+    itemName: row.item_name,
+    plannedAmount: Number(row.budgeted_amount) || 0,
+    actualAmount: round2(row.actual_amount),
+    isTaxInvoice: row.is_tax_invoice === true,
+    invoiceNumber: row.invoice_number || '',
+    invoiceDate: row.invoice_date || '',
+    supplier: row.supplier || '',
+    vatAmount: row.vat_amount ?? null,
+    vatRate: row.vat_rate ?? null,
+    invoiceUrl: row.invoice_url || '',
   };
 }
 
@@ -177,6 +197,17 @@ export async function addStartupEntry(db, FieldValue, { parentId, entry = {} }, 
   return db.runTransaction(async (tx) => {
     const { parentRef, parent, entries } = await readParentAndEntries(db, tx, id);
     if (onBeforeCommit) await onBeforeCommit();
+
+    // ── الصرف القديم يُحوَّل، ولا يُدفن تحت مصروف جديد ──
+    // Checked HERE, inside the transaction, and not in the form: a parent that
+    // still holds its own `actual_amount` or its own invoice fields is a
+    // record in mid-migration. Adding a child recomputed `actual_amount` as
+    // SUM(children) — 1,150 became 100 — and the child's mere existence took
+    // the parent out of the VAT report's parent pass, so its invoice stopped
+    // being counted. Two silent losses from one write.
+    if (startupParentHasLegacySpend(parentAsApp(id, parent), { hasEntries: entries.length > 0 })) {
+      throw new StartupCostError(LEGACY_BLOCKS_ENTRY);
+    }
 
     const entryRef = db.collection(COL.ENTRIES).doc();
     tx.set(entryRef, entryDocument(id, entry, FieldValue, userId));
@@ -292,12 +323,40 @@ export async function convertLegacyStartupSpend(db, FieldValue, { parentId, form
     // …and any OTHER entry means the item is already ledger-managed: its
     // `actual_amount` is a roll-up, not a figure of its own to move. This is
     // the concurrent-add case — the transactional query is what sees it.
-    const app = {
-      id,
-      itemName: parent.item_name,
-      actualAmount: round2(parent.actual_amount),
-      invoiceUrl: parent.invoice_url || '',
-    };
+    const app = parentAsApp(id, parent);
+
+    // ── فاتورة قديمة بلا مبلغ: تُمسح بقرار، لا بصمت ──
+    // A parent can hold the invoice half of a legacy record with no amount
+    // behind it — a flag and a supplier typed in and never spent against.
+    // Those fields are a claim the VAT report reads, so they block adding an
+    // ordinary entry; and there is no amount to turn into a document, so the
+    // conversion has nothing to build. Rather than leave the item frozen, the
+    // accountant clears them EXPLICITLY here, and it is audited as its own
+    // action. Nothing is erased as a side effect of something else.
+    if (app.actualAmount === 0 && startupParentHasLegacyTaxFields(app)) {
+      tx.update(parentRef, {
+        is_tax_invoice: false,
+        invoice_number: null,
+        invoice_date: null,
+        supplier: null,
+        vat_amount: null,
+        vat_rate: null,
+        vat_deductible: true,
+        converted_at: FieldValue.serverTimestamp(),
+        converted_by: userId,
+      });
+      tx.set(db.collection(COL.AUDIT).doc(), auditRecord({
+        action: 'startup-clear-legacy-tax', documentId: id, userId,
+        before: {
+          actualAmount: 0, isTaxInvoice: app.isTaxInvoice,
+          invoiceNumber: app.invoiceNumber || null, supplier: app.supplier || null,
+        },
+        after: { isTaxInvoice: false, entryCount: 0, role },
+        note: `مسح بيانات فاتورة قديمة بلا مبلغ عن بند التأسيس ${id}`,
+      }, FieldValue));
+      return { id: entryId, parentId: id, created: false, cleared: true };
+    }
+
     const problems = startupConversionProblems(app, form, {
       hasEntries: entries.length > 0,
       closedPeriods,
@@ -344,5 +403,137 @@ export async function convertLegacyStartupSpend(db, FieldValue, { parentId, form
       note: `تحويل مبلغ بند التأسيس ${id} إلى مصروف مؤرّخ`,
     }, FieldValue));
     return { id: entryId, parentId: id, created: true, ...rollup };
+  });
+}
+
+// ─── تعديل الخطة ─────────────────────────────────────────────────────────
+/**
+ * Edits the plan and RE-DERIVES the status from it, in one transaction.
+ *
+ * `status` used to be a plain column: `startupRollup` derived it whenever an
+ * entry changed, and the client could also write it by hand and could edit
+ * `budgeted_amount` straight through the rules. So raising a budget from 1,000
+ * to 2,000 against 1,500 of spend left the row saying `completed` — the number
+ * it was derived from had moved and nothing re-ran the derivation.
+ *
+ * Now the budget can only change here, and changing it recomputes the status
+ * from the entries the transaction can actually see. A patch that tries to
+ * carry `status`, `actual_amount` or the tax block is refused rather than
+ * ignored: a caller that sent them believes they took effect.
+ */
+export async function updateStartupPlan(db, FieldValue, { parentId, patch = {} }, {
+  userId = null, role = 'operator', onBeforeCommit = null,
+} = {}) {
+  requireRole(role, WRITE_ROLES, 'تعديل خطة رسوم التأسيس');
+  const id = String(parentId ?? '').trim();
+  if (!id) throw new StartupCostError('معرّف البند مطلوب.', { code: 'invalid-argument' });
+
+  const problems = startupPlanUpdateProblems(patch);
+  if (problems.length) throw new StartupCostError(problems[0], { code: 'invalid-argument' });
+
+  return db.runTransaction(async (tx) => {
+    const { parentRef, parent, entries } = await readParentAndEntries(db, tx, id);
+    if (onBeforeCommit) await onBeforeCommit();
+
+    const next = {};
+    if ('category' in patch) next.category = String(patch.category || '');
+    if ('itemName' in patch) next.item_name = String(patch.itemName).trim();
+    if ('quantity' in patch) next.quantity = Math.max(1, Math.trunc(Number(patch.quantity)));
+    if ('plannedAmount' in patch) next.budgeted_amount = round2(patch.plannedAmount);
+
+    // The budget the roll-up is judged against is the one being written, so a
+    // 1,000 → 2,000 edit takes effect in the SAME snapshot that re-derives.
+    const planned = 'budgeted_amount' in next
+      ? next.budgeted_amount : (Number(parent.budgeted_amount) || 0);
+    const rollup = startupRollup(entries.map((e) => e.amount), planned);
+
+    tx.update(parentRef, {
+      ...next,
+      actual_amount: rollup.actualAmount,
+      status: rollup.status,
+      updated_at: FieldValue.serverTimestamp(),
+      updated_by: userId,
+    });
+    tx.set(db.collection(COL.AUDIT).doc(), auditRecord({
+      action: 'startup-plan-update', documentId: id, userId,
+      before: {
+        itemName: parent.item_name ?? null,
+        plannedAmount: Number(parent.budgeted_amount) || 0,
+        actualAmount: round2(parent.actual_amount),
+        status: parent.status ?? null,
+      },
+      after: { ...next, ...rollup, entryCount: entries.length },
+      note: `تعديل خطة بند التأسيس ${id}`,
+    }, FieldValue));
+    return { id, ...rollup };
+  });
+}
+
+// ─── حذف الخطة ───────────────────────────────────────────────────────────
+/**
+ * Deletes a plan — only when there is nothing hanging off it.
+ *
+ * `allow delete: if isOperator()` used to sit on the collection, so a plan
+ * could be removed while its `startup_cost_entries`, their journal entries and
+ * their posting locks stayed behind, referring to a parent that no longer
+ * existed. Nothing detected it afterwards; the sub-ledger simply had rows
+ * whose owner was gone.
+ *
+ * NOT a cascade. Deleting a plan must not quietly delete spend documents, and
+ * it certainly must not touch one that is in the books — a posted entry is
+ * reversed, which releases its lock, and only then may its document go. So
+ * this refuses and says which step is missing.
+ */
+export async function deleteStartupPlan(db, FieldValue, { parentId }, {
+  userId = null, role = 'operator', onBeforeCommit = null,
+} = {}) {
+  requireRole(role, WRITE_ROLES, 'حذف خطة رسوم التأسيس');
+  const id = String(parentId ?? '').trim();
+  if (!id) throw new StartupCostError('معرّف البند مطلوب.', { code: 'invalid-argument' });
+
+  return db.runTransaction(async (tx) => {
+    const { parentRef, parent, entries } = await readParentAndEntries(db, tx, id);
+    // A lock or a live entry naming the plan itself, or the legacy document it
+    // would have produced. Read transactionally like everything else, so the
+    // refusal and the delete are decided on one snapshot.
+    const [selfLock, legacyLock, liveEntries] = await Promise.all([
+      tx.get(db.collection(COL.LOCKS).doc(postingLockId('startup', id))),
+      tx.get(db.collection(COL.LOCKS).doc(postingLockId('startup', legacyEntryIdFor(id)))),
+      tx.get(db.collection(COL.JOURNAL).where('sourceId', '==', id)),
+    ]);
+    if (onBeforeCommit) await onBeforeCommit();
+
+    if (entries.length) {
+      throw new StartupCostError(
+        `لهذا البند ${entries.length} مصروفاً في سجله — لا يُحذف وهي قائمة. `
+        + 'احذف المصاريف غير المُرحّلة أولاً؛ والمُرحّل منها يُعكس قيده ثم يُحذف مصروفه.',
+      );
+    }
+    if ((Number(parent.actual_amount) || 0) !== 0) {
+      throw new StartupCostError(
+        `البند يحمل مبلغاً فعلياً (${round2(parent.actual_amount).toFixed(2)}) مسجَّلاً عليه مباشرة — `
+        + 'حوّله إلى مستند مؤرَّخ أولاً، أو اطلب من المحاسب مسحه صراحةً.',
+      );
+    }
+    const live = liveEntries.docs.map((x) => x.data()).filter((e) => e.status === 'posted' && !e.reversalOf);
+    if (selfLock.exists || legacyLock.exists || live.length) {
+      throw new StartupCostError(
+        'البند مرتبط بقيد مُرحّل أو بقفل ترحيل — اعكس القيد أولاً، فالعكس هو ما يفكّ القفل.',
+      );
+    }
+
+    tx.delete(parentRef);
+    tx.set(db.collection(COL.AUDIT).doc(), auditRecord({
+      action: 'startup-plan-delete', documentId: id, userId,
+      before: {
+        itemName: parent.item_name ?? null,
+        plannedAmount: Number(parent.budgeted_amount) || 0,
+        actualAmount: round2(parent.actual_amount),
+        entryCount: 0,
+      },
+      after: null,
+      note: `حذف خطة بند التأسيس ${id}`,
+    }, FieldValue));
+    return { id, deleted: true };
   });
 }

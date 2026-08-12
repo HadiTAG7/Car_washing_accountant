@@ -26,6 +26,7 @@ import {
 } from '../../../../functions/src/accountingSettings.js';
 import {
   addStartupEntry, deleteStartupEntry, convertLegacyStartupSpend,
+  updateStartupPlan, deleteStartupPlan,
 } from '../../../../functions/src/startupCosts.js';
 import { __setLedgerTransport } from '../../ledgerTransport';
 import { app as clientApp } from '../../firebaseClient';
@@ -74,6 +75,10 @@ export function useServerTransport(projectId = clientApp?.options?.projectId || 
         return addStartupEntry(adb, FieldValue, payload, { userId: uid, role: 'accountant' });
       case 'startupDeleteEntry':
         return deleteStartupEntry(adb, FieldValue, payload, { userId: uid, role: 'accountant' });
+      case 'startupUpdatePlan':
+        return updateStartupPlan(adb, FieldValue, payload, { userId: uid, role: 'accountant' });
+      case 'startupDeletePlan':
+        return deleteStartupPlan(adb, FieldValue, payload, { userId: uid, role: 'accountant' });
       case 'startupConvertLegacySpend':
         return convertLegacyStartupSpend(adb, FieldValue, payload, { userId: uid, role: 'accountant' });
       case 'salesIssueDocument':

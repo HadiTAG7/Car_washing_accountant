@@ -24,18 +24,23 @@ import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { initializeApp, deleteApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import {
-  addStartupEntry, deleteStartupEntry, convertLegacyStartupSpend, StartupCostError,
+  addStartupEntry, deleteStartupEntry, convertLegacyStartupSpend,
+  updateStartupPlan, deleteStartupPlan, StartupCostError,
 } from '../src/startupCosts.js';
 import { postSource, seedChartOfAccounts, COL } from '../src/ledger.js';
 import {
   startupEntryProblems as serverEntryProblems,
   startupConversionProblems as serverConversionProblems,
   startupRollup as serverRollup,
+  startupParentHasLegacySpend as serverHasLegacy,
+  startupPlanUpdateProblems as serverPlanProblems,
 } from '../src/startupMigration.js';
 import {
   startupEntryProblems as clientEntryProblems,
   startupConversionProblems as clientConversionProblems,
   startupRollup as clientRollup,
+  startupParentHasLegacySpend as clientHasLegacy,
+  startupPlanUpdateProblems as clientPlanProblems,
 } from '../../src/lib/accounting/startupMigration.js';
 
 const EMU = process.env.FIRESTORE_EMULATOR_HOST;
@@ -389,6 +394,273 @@ d('سجل مصاريف بند التأسيس على الخادم', () => {
     await expect(deleteStartupEntry(db, FieldValue, { entryId: rows[0].id }, AS('accountant')))
       .rejects.toThrow(/مُرحّل بالقيد رقم/);
   }, 180_000);
+
+  // ═══════════════════════════════════════════════════════════════════
+  // حذف الخطة — رفض، لا cascade
+  // ═══════════════════════════════════════════════════════════════════
+  // `allow delete: if isOperator()` used to sit on `startup_costs`, so a plan
+  // could be removed while its `startup_cost_entries`, their journal entries
+  // and their posting locks stayed behind pointing at a parent that no longer
+  // existed. Nothing detected it afterwards.
+  describe('حذف الخطة', () => {
+    it('يحذف خطة فارغة ويكتب سجل تدقيق', async () => {
+      await db.collection('startup_costs').doc('p1').set(PLAN());
+      const res = await deleteStartupPlan(db, FieldValue, { parentId: 'p1' }, AS('operator'));
+      expect(res).toMatchObject({ id: 'p1', deleted: true });
+      expect((await db.collection('startup_costs').doc('p1').get()).exists).toBe(false);
+      const [rec] = await audits('startup-plan-delete');
+      expect(rec.userId).toBe('operator-uid');
+      expect(rec.before).toMatchObject({ itemName: 'ماكينة ضغط', actualAmount: 0, entryCount: 0 });
+    }, 60_000);
+
+    it('ويرفض خطة لها مصروف غير مُرحّل — بلا cascade', async () => {
+      await db.collection('startup_costs').doc('p1').set(PLAN());
+      await addStartupEntry(db, FieldValue, { parentId: 'p1', entry: ENTRY() }, AS('operator'));
+
+      await expect(deleteStartupPlan(db, FieldValue, { parentId: 'p1' }, AS('admin')))
+        .rejects.toThrow(/احذف المصاريف غير المُرحّلة أولاً/);
+      // Nothing touched: not the plan, not the entry, not the audit trail.
+      expect((await db.collection('startup_costs').doc('p1').get()).exists).toBe(true);
+      expect(await entriesOf('p1')).toHaveLength(1);
+      expect(await parentOf('p1')).toMatchObject({ actual_amount: 400 });
+      expect(await audits('startup-plan-delete')).toHaveLength(0);
+    }, 90_000);
+
+    it('ويرفض خطة لها مصروف مُرحّل — يُعكس قيده أولاً', async () => {
+      await db.collection('startup_costs').doc('p1').set(PLAN());
+      const added = await addStartupEntry(db, FieldValue, {
+        parentId: 'p1',
+        entry: ENTRY({
+          amount: 1150, isTaxInvoice: true, invoiceNumber: 'S-1',
+          invoiceDate: '2026-03-10', supplier: 'مورّد', vatAmount: 150,
+        }),
+      }, AS('accountant'));
+      await postSource(db, FieldValue, { kind: 'startup', sourceId: added.id }, { userId: 'u1' });
+
+      // The entry cannot go while it is in the books…
+      await expect(deleteStartupEntry(db, FieldValue, { entryId: added.id }, AS('accountant')))
+        .rejects.toThrow(/مُرحّل بالقيد رقم/);
+      // …so the plan cannot either.
+      await expect(deleteStartupPlan(db, FieldValue, { parentId: 'p1' }, AS('accountant')))
+        .rejects.toThrow(/احذف المصاريف غير المُرحّلة أولاً/);
+      expect((await db.collection('startup_costs').doc('p1').get()).exists).toBe(true);
+      expect((await db.collection(COL.LOCKS).doc(`startup__${added.id}`).get()).exists).toBe(true);
+    }, 120_000);
+
+    it('ويرفض خطة تحمل مبلغاً فعلياً قديماً بلا مصاريف', async () => {
+      await db.collection('startup_costs').doc('p1').set(LEGACY());
+      await expect(deleteStartupPlan(db, FieldValue, { parentId: 'p1' }, AS('admin')))
+        .rejects.toThrow(/يحمل مبلغاً فعلياً/);
+      expect((await db.collection('startup_costs').doc('p1').get()).exists).toBe(true);
+    }, 60_000);
+
+    it('وسباق الإضافة مع الحذف لا يترك مصروفاً يتيماً', async () => {
+      await db.collection('startup_costs').doc('p1').set(PLAN());
+      // An entry appears after the delete's reads and before its writes. The
+      // transactional query is in the read set, so the commit aborts and the
+      // retry sees the child — either the add wins and the delete is refused,
+      // or the delete wins and the add finds no parent. Never both.
+      const race = once(() => db.collection('startup_cost_entries').doc('raced').set({
+        startup_cost_id: 'p1', description: 'موازية', amount: 250,
+        spent_date: '2026-03-13', is_tax_invoice: false,
+      }));
+      await expect(deleteStartupPlan(db, FieldValue, { parentId: 'p1' }, {
+        ...AS('operator'), onBeforeCommit: race,
+      })).rejects.toThrow(/احذف المصاريف غير المُرحّلة أولاً/);
+
+      expect(race.runs()).toBeGreaterThan(1);
+      expect((await db.collection('startup_costs').doc('p1').get()).exists).toBe(true);
+      expect(await entriesOf('p1')).toHaveLength(1);
+    }, 120_000);
+
+    it('والعكس: إضافة إلى خطة حُذفت أثناء المعاملة تُرفض', async () => {
+      await db.collection('startup_costs').doc('p1').set(PLAN());
+      const race = once(() => db.collection('startup_costs').doc('p1').delete());
+      await expect(addStartupEntry(db, FieldValue, { parentId: 'p1', entry: ENTRY() }, {
+        ...AS('operator'), onBeforeCommit: race,
+      })).rejects.toThrow(/غير موجود/);
+      expect(await entriesOf('p1')).toHaveLength(0);
+    }, 120_000);
+  });
+
+  // ═══════════════════════════════════════════════════════════════════
+  // الحالة مشتقة، لا مختارة
+  // ═══════════════════════════════════════════════════════════════════
+  describe('تعديل الخطة والحالة المشتقة', () => {
+    it('actual=1500 والميزانية 1000→2000 تعيد الحالة إلى in_progress', async () => {
+      await db.collection('startup_costs').doc('p1').set(PLAN({ budgeted_amount: 1000 }));
+      await addStartupEntry(db, FieldValue, { parentId: 'p1', entry: ENTRY({ amount: 1500 }) }, AS('operator'));
+      expect(await parentOf('p1')).toMatchObject({ actual_amount: 1500, status: 'completed' });
+
+      const res = await updateStartupPlan(db, FieldValue, {
+        parentId: 'p1', patch: { plannedAmount: 2000 },
+      }, AS('operator'));
+      expect(res).toMatchObject({ actualAmount: 1500, status: 'in_progress' });
+      expect(await parentOf('p1')).toMatchObject({
+        budgeted_amount: 2000, actual_amount: 1500, status: 'in_progress',
+      });
+    }, 90_000);
+
+    it('والميزانية 2000→1000 تعيدها completed', async () => {
+      await db.collection('startup_costs').doc('p1').set(PLAN({ budgeted_amount: 2000 }));
+      await addStartupEntry(db, FieldValue, { parentId: 'p1', entry: ENTRY({ amount: 1500 }) }, AS('operator'));
+      expect(await parentOf('p1')).toMatchObject({ status: 'in_progress' });
+
+      await updateStartupPlan(db, FieldValue, {
+        parentId: 'p1', patch: { plannedAmount: 1000 },
+      }, AS('operator'));
+      expect(await parentOf('p1')).toMatchObject({
+        budgeted_amount: 1000, actual_amount: 1500, status: 'completed',
+      });
+    }, 90_000);
+
+    it('وتغيير الاسم وحده لا يمسّ المبلغ الفعلي', async () => {
+      await db.collection('startup_costs').doc('p1').set(PLAN());
+      await addStartupEntry(db, FieldValue, { parentId: 'p1', entry: ENTRY({ amount: 400 }) }, AS('operator'));
+      await updateStartupPlan(db, FieldValue, {
+        parentId: 'p1', patch: { itemName: 'ماكينة أخرى' },
+      }, AS('operator'));
+      expect(await parentOf('p1')).toMatchObject({
+        item_name: 'ماكينة أخرى', actual_amount: 400, budgeted_amount: 1000, status: 'in_progress',
+      });
+    }, 90_000);
+
+    it('وإرسال status أو actual_amount أو حقول الضريبة يُرفض بوضوح', async () => {
+      await db.collection('startup_costs').doc('p1').set(PLAN());
+      for (const patch of [
+        { status: 'completed' },
+        { actualAmount: 9999 },
+        { isTaxInvoice: true },
+        { vatAmount: 150 },
+        { itemName: 'اسم', status: 'completed' },
+      ]) {
+        await expect(updateStartupPlan(db, FieldValue, { parentId: 'p1', patch }, AS('admin')))
+          .rejects.toThrow(/يملكها الخادم/);
+      }
+      expect(await parentOf('p1')).toMatchObject({ status: 'in_progress', actual_amount: 0 });
+      expect(await audits('startup-plan-update')).toHaveLength(0);
+    }, 90_000);
+
+    it('وسباق تعديل الميزانية مع إضافة مصروف ينتهي بإجمالي وحالة متوافقين', async () => {
+      await db.collection('startup_costs').doc('p1').set(PLAN({ budgeted_amount: 2000 }));
+      await addStartupEntry(db, FieldValue, { parentId: 'p1', entry: ENTRY({ amount: 900 }) }, AS('operator'));
+
+      // A second entry lands after the plan edit's reads. The transactional
+      // query aborts the edit, and the retry sums BOTH — no lost update.
+      const race = once(() => db.collection('startup_cost_entries').doc('raced').set({
+        startup_cost_id: 'p1', description: 'موازية', amount: 200,
+        spent_date: '2026-03-13', is_tax_invoice: false,
+      }));
+      await updateStartupPlan(db, FieldValue, {
+        parentId: 'p1', patch: { plannedAmount: 1000 },
+      }, { ...AS('operator'), onBeforeCommit: race });
+
+      expect(race.runs()).toBeGreaterThan(1);
+      expect(await parentOf('p1')).toMatchObject({
+        budgeted_amount: 1000, actual_amount: 1100, status: 'completed',
+      });
+    }, 120_000);
+  });
+
+  // ═══════════════════════════════════════════════════════════════════
+  // الصرف القديم لا يُدفن تحت مصروف جديد
+  // ═══════════════════════════════════════════════════════════════════
+  // The reproduction, before the fix: parent `actual_amount = 1150`, no
+  // children, legacy invoice fields. An operator adds 100. The roll-up summed
+  // `children + 100` and wrote 100 — 1,150 gone — and the child's appearance
+  // took the parent out of the VAT report's parent pass, so its invoice
+  // stopped being counted too. Both losses silent.
+  describe('بند يحمل صرفاً قديماً', () => {
+    it('١ — 1150 + إضافة 100 تُرفض، ويبقى كل شيء كما هو', async () => {
+      await db.collection('startup_costs').doc('p1').set(LEGACY());
+      await expect(addStartupEntry(db, FieldValue, {
+        parentId: 'p1', entry: ENTRY({ amount: 100 }),
+      }, AS('operator'))).rejects.toThrow(/يُحوّل المحاسب ذلك المبلغ القديم/);
+
+      const parent = await parentOf('p1');
+      expect(parent.actual_amount).toBe(1150);          // كان يصير 100
+      expect(parent.is_tax_invoice).toBe(true);
+      expect(parent.invoice_number).toBe('S-77');
+      expect(parent.vat_amount).toBe(150);
+      expect(await entriesOf('p1')).toHaveLength(0);
+      expect(await audits('startup-entry-add')).toHaveLength(0);
+    }, 60_000);
+
+    it('٢ — والمشغّل لا يستطيع إجراء التحويل بنفسه', async () => {
+      await db.collection('startup_costs').doc('p1').set(LEGACY());
+      await expect(convertLegacyStartupSpend(db, FieldValue, { parentId: 'p1', form: FORM() }, AS('operator')))
+        .rejects.toThrow(/مقصور على المدير أو المحاسب/);
+      expect(await entriesOf('p1')).toHaveLength(0);
+    }, 60_000);
+
+    it('٣ — المحاسب يحوّل 1150 ثم تُقبل إضافة 100 فيصير الإجمالي 1250', async () => {
+      await db.collection('startup_costs').doc('p1').set(LEGACY());
+      await convertLegacyStartupSpend(db, FieldValue, { parentId: 'p1', form: FORM() }, AS('accountant'));
+      expect(await parentOf('p1')).toMatchObject({ actual_amount: 1150, is_tax_invoice: false });
+
+      const add = await addStartupEntry(db, FieldValue, {
+        parentId: 'p1', entry: ENTRY({ amount: 100 }),
+      }, AS('operator'));
+      expect(add.actualAmount).toBe(1250);
+      expect(await parentOf('p1')).toMatchObject({ actual_amount: 1250 });
+      expect(await entriesOf('p1')).toHaveLength(2);
+    }, 120_000);
+
+    it('٤ — سباق التحويل مع الإضافة لا يكرّر 1150 ولا يفقده', async () => {
+      await db.collection('startup_costs').doc('p1').set(LEGACY());
+      // The add arrives after the conversion's reads. Whichever way the
+      // emulator orders them, the total is 1150 exactly once: the conversion
+      // sees the sibling and refuses, or the add sees the legacy parent and
+      // refuses.
+      const race = once(() => addStartupEntry(db, FieldValue, {
+        parentId: 'p1', entry: ENTRY({ amount: 100 }),
+      }, AS('operator')).catch(() => {}));
+      await convertLegacyStartupSpend(db, FieldValue, { parentId: 'p1', form: FORM() }, {
+        ...AS('accountant'), onBeforeCommit: race,
+      }).catch(() => {});
+
+      const rows = await entriesOf('p1');
+      const total = rows.reduce((s2, r) => s2 + r.amount, 0);
+      const parent = await parentOf('p1');
+      // 1150 appears once, or not at all — never twice, and never lost.
+      expect(rows.filter((r) => r.amount === 1150).length).toBeLessThanOrEqual(1);
+      expect(parent.actual_amount).toBe(rows.length ? total : 1150);
+      if (!rows.length) expect(parent.is_tax_invoice).toBe(true);
+    }, 120_000);
+
+    it('٥ — صفر فعلي بلا بيانات قديمة يقبل أول مصروف طبيعياً', async () => {
+      await db.collection('startup_costs').doc('p1').set(PLAN());
+      const add = await addStartupEntry(db, FieldValue, { parentId: 'p1', entry: ENTRY() }, AS('operator'));
+      expect(add.actualAmount).toBe(400);
+    }, 60_000);
+
+    it('٦ — وحقول فاتورة قديمة بصفر تمنع الإضافة، وتُمسح بقرار محاسب لا بصمت', async () => {
+      await db.collection('startup_costs').doc('p1').set(PLAN({
+        actual_amount: 0, is_tax_invoice: true, invoice_number: 'S-9',
+        supplier: 'مورّد قديم', vat_amount: 30,
+      }));
+      // Not silently overwritten by the first entry: those fields are a claim
+      // the VAT report reads, and a child would take the parent out of its
+      // parent pass, so the claim would vanish with nobody deciding it should.
+      await expect(addStartupEntry(db, FieldValue, { parentId: 'p1', entry: ENTRY() }, AS('operator')))
+        .rejects.toThrow(/يُحوّل المحاسب/);
+      expect(await parentOf('p1')).toMatchObject({ is_tax_invoice: true, invoice_number: 'S-9' });
+
+      // The accountant clears them EXPLICITLY, and it is audited as its own act.
+      const cleared = await convertLegacyStartupSpend(db, FieldValue, {
+        parentId: 'p1', form: FORM(),
+      }, AS('accountant'));
+      expect(cleared).toMatchObject({ created: false, cleared: true });
+      expect(await parentOf('p1')).toMatchObject({ is_tax_invoice: false, invoice_number: null });
+      const [rec] = await audits('startup-clear-legacy-tax');
+      expect(rec.before).toMatchObject({ actualAmount: 0, invoiceNumber: 'S-9' });
+      expect(await entriesOf('p1')).toHaveLength(0);
+
+      // …ثم تُقبل الإضافة.
+      const add = await addStartupEntry(db, FieldValue, { parentId: 'p1', entry: ENTRY() }, AS('operator'));
+      expect(add.actualAmount).toBe(400);
+    }, 120_000);
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -423,6 +695,36 @@ describe('انحراف قواعد التأسيس بين العميل والخا�
     ['بضريبة فاسدة', ENTRY({ isTaxInvoice: true, vatAmount: -1 })],
   ])('المصروف — %s', (_name, entry) => {
     expect(clientEntryProblems(entry)).toEqual(serverEntryProblems(entry));
+  });
+
+  it('وكشف الصرف القديم واحد', () => {
+    const rows = [
+      { actualAmount: 1150, isTaxInvoice: true },
+      { actualAmount: 0, isTaxInvoice: true },
+      { actualAmount: 0, invoiceNumber: 'S-9' },
+      { actualAmount: 0, supplier: 'مورّد' },
+      { actualAmount: 0, vatAmount: 150 },
+      { actualAmount: 0 },
+      { actualAmount: 1150 },
+    ];
+    for (const r of rows) {
+      expect(clientHasLegacy(r)).toBe(serverHasLegacy(r));
+      expect(clientHasLegacy(r, { hasEntries: true })).toBe(serverHasLegacy(r, { hasEntries: true }));
+      // A parent with entries is never «legacy» — its amount is a roll-up.
+      expect(serverHasLegacy(r, { hasEntries: true })).toBe(false);
+    }
+    expect(serverHasLegacy({ actualAmount: 0 })).toBe(false);
+    expect(serverHasLegacy({ actualAmount: 0, isTaxInvoice: true })).toBe(true);
+  });
+
+  it('وفحص تعديل الخطة واحد', () => {
+    for (const patch of [
+      { itemName: 'x' }, { plannedAmount: 500 }, { status: 'completed' },
+      { actualAmount: 1 }, { vatAmount: 5 }, { quantity: 0 }, { itemName: '  ' },
+      { plannedAmount: -1 }, {},
+    ]) {
+      expect(clientPlanProblems(patch)).toEqual(serverPlanProblems(patch));
+    }
   });
 
   it('والمجموع المشتق واحد', () => {

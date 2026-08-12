@@ -529,6 +529,8 @@ d('قواعد أمان Firestore', () => {
     it('١ — المشغّل لا يكتب actual_amount ولا أي حقل ضريبي على البند', async () => {
       const ref = doc(ctx.op, 'startup_costs', 's1');
       await assertFails(updateDoc(ref, { actual_amount: 1150 }));
+      // …ولا الحالة: هي دالة في المبلغ والميزانية، لا قيمة تُختار.
+      await assertFails(updateDoc(ref, { status: 'completed' }));
       await assertFails(updateDoc(ref, { is_tax_invoice: true }));
       await assertFails(updateDoc(ref, { invoice_number: 'S-77' }));
       await assertFails(updateDoc(ref, { invoice_date: '2026-03-10' }));
@@ -559,7 +561,7 @@ d('قواعد أمان Firestore', () => {
     });
 
     // ═══ ٣ ═══════════════════════════════════════════════════════════
-    it('٣ — إنشاء خطة نظيفة وتعديل اسمها وميزانيتها ينجح', async () => {
+    it('٣ — إنشاء خطة نظيفة ينجح، والتعديل والحذف يمرّان بالخادم', async () => {
       await assertSucceeds(setDoc(doc(ctx.op, 'startup_costs', 's3'), {
         category: 'equipment', item_name: 'خرطوم', quantity: 2,
         budgeted_amount: 300, actual_amount: 0, status: 'in_progress',
@@ -567,15 +569,27 @@ d('قواعد أمان Firestore', () => {
         supplier: null, vat_amount: null, vat_rate: null,
         price_mode: 'inclusive', vat_deductible: true,
       }));
-      await assertSucceeds(updateDoc(doc(ctx.op, 'startup_costs', 's1'), {
-        item_name: 'ماكينة ضغط', budgeted_amount: 1200, quantity: 2,
-        category: 'equipment', status: 'completed',
+      // …وبحالة يختارها العميل: مرفوضة. خطة بلا صرف حالتها in_progress
+      // بالاشتقاق، وصفٌّ يُنشأ completed يكذب من لحظته الأولى.
+      await assertFails(setDoc(doc(ctx.op, 'startup_costs', 's4'), {
+        category: 'equipment', item_name: 'خرطوم', quantity: 2,
+        budgeted_amount: 300, actual_amount: 0, status: 'completed',
+        is_tax_invoice: false,
       }));
+      // التعديل والحذف مغلقان: تغيير الميزانية يجب أن يعيد اشتقاق الحالة في
+      // المعاملة نفسها، والحذف يجب أن يثبت أن لا شيء معلَّق على الخطة.
+      await assertFails(updateDoc(doc(ctx.op, 'startup_costs', 's1'), { item_name: 'ماكينة ضغط' }));
+      await assertFails(updateDoc(doc(ctx.admin, 'startup_costs', 's1'), { budgeted_amount: 1200 }));
+      await assertFails(deleteDoc(doc(ctx.op, 'startup_costs', 's1')));
+      await assertFails(deleteDoc(doc(ctx.admin, 'startup_costs', 's1')));
       // …والقراءة سليمة لكل عضو، بما فيهم الشريك.
       await assertSucceeds(getDoc(doc(ctx.partner, 'startup_costs', 's1')));
       await assertSucceeds(getDoc(doc(ctx.partner, 'startup_cost_entries', 'se1')));
-      // والشريك للاطلاع فقط.
-      await assertFails(updateDoc(doc(ctx.partner, 'startup_costs', 's1'), { item_name: 'x' }));
+      // والشريك لا يُنشئ أصلاً.
+      await assertFails(setDoc(doc(ctx.partner, 'startup_costs', 's5'), {
+        category: 'equipment', item_name: 'x', quantity: 1,
+        budgeted_amount: 1, actual_amount: 0, status: 'in_progress', is_tax_invoice: false,
+      }));
       await assertFails(getDoc(doc(ctx.anon, 'startup_costs', 's1')));
     });
 

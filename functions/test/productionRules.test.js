@@ -248,10 +248,13 @@ d('رحلة الإنتاج تحت firestore.rules الفعلية', () => {
       await postSource(adb, FieldValue, { kind: 'startup', sourceId: 'x1' }, { userId: 'acct1' });
       expect((await adb.collection(COL.LOCKS).doc('startup__x1').get()).exists).toBe(true);
 
-      // والبند نفسه: الخطة تُعدَّل، والأعمدة التي يملكها الخادم لا.
-      await assertSucceeds(updateDoc(doc(ctx.op, 'startup_costs', 'sp1'), { item_name: 'معدات ثقيلة' }));
+      // والبند نفسه مغلق للتعديل والحذف من العميل: تعديل الميزانية يجب أن
+      // يعيد اشتقاق الحالة في المعاملة نفسها، وهو ما لا تفعله قاعدة.
+      await assertFails(updateDoc(doc(ctx.op, 'startup_costs', 'sp1'), { item_name: 'معدات ثقيلة' }));
       await assertFails(updateDoc(doc(ctx.op, 'startup_costs', 'sp1'), { actual_amount: 9999 }));
       await assertFails(updateDoc(doc(ctx.admin, 'startup_costs', 'sp1'), { is_tax_invoice: true }));
+      await assertFails(updateDoc(doc(ctx.admin, 'startup_costs', 'sp1'), { status: 'completed' }));
+      await assertFails(deleteDoc(doc(ctx.admin, 'startup_costs', 'sp1')));
     }, 120_000);
 
     for (const [coll, kind, row] of CASES) {   // eslint-disable-line no-unused-vars

@@ -89,29 +89,6 @@ function FormattedAmountInput({ value, onCommit, ariaLabel, className }) {
 }
 
 // ─── Status toggle pill (in_progress ↔ completed) ──────────────────────────
-function StatusTogglePill({ status, onChange, disabled }) {
-  const isCompleted = status === 'completed';
-  const next        = isCompleted ? 'in_progress' : 'completed';
-  const classes = isCompleted
-    ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-100 dark:border-emerald-500/30 hover:bg-emerald-100 dark:hover:bg-emerald-500/20'
-    : 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-100 dark:border-amber-500/30 hover:bg-amber-100 dark:hover:bg-amber-500/20';
-  const dot = isCompleted ? 'bg-emerald-600' : 'bg-amber-500';
-  return (
-    <button
-      type="button"
-      onClick={() => !disabled && onChange(next)}
-      disabled={disabled}
-      title={disabled
-        ? 'غير متاح في وضع عرض الشريك'
-        : isCompleted ? 'انقر لإعادة الحالة إلى قيد التنفيذ' : 'انقر لإنهاء البند'}
-      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-semibold transition-colors ${classes} ${disabled ? 'cursor-not-allowed opacity-70' : ''}`}
-    >
-      <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />
-      {isCompleted ? 'مكتمل' : 'قيد التنفيذ'}
-    </button>
-  );
-}
-
 // ─── Empty-state for the table area ────────────────────────────────────────
 function EmptyState({ onAdd, canMutate }) {
   return (
@@ -133,7 +110,7 @@ function EmptyState({ onAdd, canMutate }) {
 export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
   const {
     items, loading, error,
-    addItem, updateItem, updateStatus, deleteItem, refetch,
+    addItem, updateItem, deleteItem, refetch,
   } = useStartupCosts();
 
   const { categories, getCategoryLabel, addCategory, deleteCategory } = useCategories();
@@ -216,10 +193,6 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
   async function handleUpdateItem(id, updates) {
     try { await updateItem(id, updates); }
     catch (e) { setMutationError(e); throw e; }
-  }
-  async function handleUpdateStatus(id, status) {
-    try { await updateStatus(id, status); }
-    catch (e) { setMutationError(e); }
   }
   async function handleDelete(id) {
     try { await deleteItem(id); }
@@ -417,11 +390,23 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
                           </span>
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap align-top">
-                          <StatusTogglePill
-                            status={i.status}
-                            onChange={(next) => handleUpdateStatus(i.id, next)}
-                            disabled={!canMutate}
-                          />
+                          {/* ── الحالة مشتقة، لا مبدَّلة ──
+                              `status` is a function of the spend and the
+                              budget (`startupStatusOf`). A manual toggle let
+                              the row say `completed` while its numbers said
+                              otherwise, and editing the budget moved what the
+                              function is computed from without re-running it.
+                              The server re-derives it on every add, delete,
+                              conversion and plan edit. */}
+                          <span
+                            title="تُشتق من المصروفات المسجَّلة والميزانية"
+                            className={`inline-flex text-[11px] font-semibold px-2 py-1 rounded-full border ${
+                              i.status === 'completed'
+                                ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-100 dark:border-emerald-500/30'
+                                : 'bg-amber-50 dark:bg-amber-500/10 text-amber-800 dark:text-amber-300 border-amber-100 dark:border-amber-500/30'
+                            }`}>
+                            {i.status === 'completed' ? 'مكتمل' : 'قيد التنفيذ'}
+                          </span>
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap text-left align-top">
                           {canMutate && (

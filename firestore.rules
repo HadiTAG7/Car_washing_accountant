@@ -311,8 +311,14 @@ service cloud.firestore {
     //
     // What a client may write is the PLAN. What it may not write is anything
     // the ledger or the return reads.
+    // `status` is NOT here. It is a FUNCTION of `actual_amount` and
+    // `budgeted_amount`, so letting a client set it makes the row say
+    // something the numbers do not — and letting a client change the BUDGET
+    // moves what the function is computed from without re-running it. Raising
+    // a budget from 1,000 to 2,000 against 1,500 of spend left the row saying
+    // `completed`. Both now go through `startupUpdatePlan`, which re-derives.
     function startupPlanFields() {
-      return ['category', 'item_name', 'quantity', 'budgeted_amount', 'status'];
+      return ['category', 'item_name', 'quantity', 'budgeted_amount'];
     }
     // The columns the server owns. `actual_amount` is SUM(entries),
     // `converted_*` is the migration's own record, and the tax block belongs
@@ -335,7 +341,11 @@ service cloud.firestore {
         && request.resource.data.get('supplier', null) == null
         && request.resource.data.get('vat_amount', null) == null
         && request.resource.data.get('vat_rate', null) == null
-        && !request.resource.data.keys().hasAny(['converted_at', 'converted_by']);
+        && !request.resource.data.keys().hasAny(['converted_at', 'converted_by'])
+        // A new plan has no spend, so its derived status is `in_progress` and
+        // nothing else. Stated rather than trusted: a row created as
+        // `completed` would be lying from its first moment.
+        && request.resource.data.get('status', 'in_progress') == 'in_progress';
     }
     function startupUpdateTouchesPlanOnly() {
       // `affectedKeys` is the diff, so an unchanged server column is fine —
@@ -353,10 +363,21 @@ service cloud.firestore {
     match /startup_costs/{id} {
       allow read:   if isMember();
       allow create: if isOperator() && startupCreateIsPlanOnly();
-      allow update: if isOperator() && startupUpdateTouchesPlanOnly();
-      // Deleting a plan that has entries would orphan them; the sub-ledger is
-      // emptied first, through the server.
-      allow delete: if isOperator();
+      // ── ولا تعديل ولا حذف من العميل ──
+      // `startupUpdateTouchesPlanOnly` is kept because it states, in one
+      // place, which columns belong to whom — but the update itself goes
+      // through `startupUpdatePlan`, because changing `budgeted_amount` has to
+      // re-derive `status` from the entries in the SAME transaction, and a
+      // rule can neither sum them nor write a second document.
+      //
+      // And delete: `allow delete: if isOperator()` let a plan be removed
+      // while its `startup_cost_entries`, their journal entries and their
+      // posting locks stayed behind pointing at a parent that no longer
+      // existed. Nothing detected it afterwards. `startupDeletePlan` refuses
+      // unless the sub-ledger is empty, the actual amount is zero and no lock
+      // or live entry names it — and it never cascades.
+      allow update: if false;
+      allow delete: if false;
     }
 
     // ── البيانات التشغيلية ───────────────────────────────────────────

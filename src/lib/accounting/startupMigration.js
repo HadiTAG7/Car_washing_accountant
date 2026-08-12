@@ -195,17 +195,113 @@ export function startupEntryProblems(entry = {}) {
 }
 
 /**
- * The parent's roll-up, recomputed from the entries that will exist.
+ * The parent's roll-up — the ONE place `actual_amount` and `status` are
+ * derived, and the only place either is allowed to come from.
  *
- * Derived on the server inside the same transaction that changes the entries,
- * and never taken from the client: a total sent alongside a mutation is a
- * claim about rows the sender may not have seen.
+ * `status` is a FUNCTION of the total and the budget, not a value anyone gets
+ * to choose. It used to be both: `startupRollup` derived it on every entry
+ * change while the client could also set it by hand and could edit
+ * `budgeted_amount` directly. So raising a budget from 1,000 to 2,000 against
+ * 1,500 of spend left the row saying `completed` — the number it was derived
+ * from had moved and the derivation had not been re-run.
+ *
+ * Every caller — add, delete, convert, update-plan — goes through here, so
+ * the formula exists once and cannot drift between them.
  */
 export function startupRollup(entryAmounts = [], plannedAmount = 0) {
   const total = round2(entryAmounts.reduce((s, a) => s + (Number(a) || 0), 0));
   const planned = Math.max(0, Number(plannedAmount) || 0);
-  return {
-    actualAmount: total,
-    status: planned > 0 && total >= planned ? 'completed' : 'in_progress',
-  };
+  return { actualAmount: total, status: startupStatusOf(total, planned) };
 }
+
+/** `completed` once the spend has met the budget — and only if there IS spend. */
+export function startupStatusOf(actualAmount, plannedAmount) {
+  const total = Number(actualAmount) || 0;
+  const planned = Math.max(0, Number(plannedAmount) || 0);
+  return total >= planned && total > 0 ? 'completed' : 'in_progress';
+}
+
+/** The only fields of a plan a caller may change. `status` is NOT one. */
+export const STARTUP_PLAN_FIELDS = ['category', 'itemName', 'quantity', 'plannedAmount'];
+
+/**
+ * What a plan edit may say, and what it may not.
+ *
+ * `status`, `actualAmount` and the tax block are refused OUT LOUD rather than
+ * dropped: a caller that sent them believes they took effect, and silently
+ * ignoring a field is how a UI comes to show something the database does not
+ * hold.
+ */
+export function startupPlanUpdateProblems(patch = {}) {
+  const problems = [];
+  const forbidden = Object.keys(patch).filter((k) => [
+    'status', 'actualAmount', 'actual_amount', 'isTaxInvoice', 'invoiceNumber',
+    'invoiceDate', 'supplier', 'vatAmount', 'vatRate', 'priceMode',
+    'vatDeductible', 'convertedAt', 'convertedBy',
+  ].includes(k));
+  if (forbidden.length) {
+    problems.push(
+      `هذه الحقول يملكها الخادم ولا تُرسل مع تعديل الخطة: ${forbidden.join('، ')}. `
+      + 'الحالة مشتقة من المصروفات والميزانية، والمبلغ الفعلي مجموع سجل المصاريف.',
+    );
+  }
+  if ('itemName' in patch && !String(patch.itemName || '').trim()) {
+    problems.push('اسم البند مطلوب.');
+  }
+  if ('plannedAmount' in patch) {
+    const planned = Number(patch.plannedAmount);
+    if (!Number.isFinite(planned) || planned < 0) {
+      problems.push('الميزانية المخططة يجب أن تكون رقماً غير سالب.');
+    }
+  }
+  if ('quantity' in patch) {
+    const q = Number(patch.quantity);
+    if (!Number.isFinite(q) || q < 1) problems.push('الكمية يجب أن تكون واحداً فأكثر.');
+  }
+  if (!Object.keys(patch).some((k) => STARTUP_PLAN_FIELDS.includes(k))) {
+    problems.push('لا يوجد حقل خطة صالح للتعديل.');
+  }
+  return problems;
+}
+
+/**
+ * ── هل يحمل هذا البند صرفاً قديماً لم يصر مستنداً بعد؟ ──
+ *
+ * The detector both sides use, so the form and the server cannot disagree
+ * about which rows are frozen. It is TRUE while the parent holds either half
+ * of a legacy record and has no sub-ledger yet:
+ *
+ *   • an `actual_amount` of its own, or
+ *   • invoice/tax fields of its own — even at a zero amount, because those
+ *     fields are a claim the VAT report reads, and adding a child would make
+ *     the report stop reading the parent, so the claim would vanish without
+ *     anyone deciding it should.
+ *
+ * Adding an ordinary entry to such a row is refused. It used to be allowed,
+ * and it destroyed the record twice over: `actual_amount` was recomputed as
+ * SUM(children) — 1,150 became 100 — and the appearance of a child took the
+ * parent out of the VAT report's parent pass, so its invoice stopped being
+ * counted at all. Both losses were silent.
+ */
+export function startupParentHasLegacySpend(parent = {}, { hasEntries = false } = {}) {
+  if (hasEntries) return false;
+  if ((Number(parent.actualAmount) || 0) > 0) return true;
+  return startupParentHasLegacyTaxFields(parent);
+}
+
+/** The invoice half of a legacy record, on its own. */
+export function startupParentHasLegacyTaxFields(parent = {}) {
+  return parent.isTaxInvoice === true
+    || Boolean(String(parent.invoiceNumber || '').trim())
+    || Boolean(String(parent.invoiceDate || '').trim())
+    || Boolean(String(parent.supplier || '').trim())
+    || parent.vatAmount != null
+    || parent.vatRate != null;
+}
+
+/** Said once, so the refusal reads the same wherever it is raised. */
+export const LEGACY_BLOCKS_ENTRY =
+  'هذا البند يحمل مبلغاً فعلياً أو بيانات فاتورة مسجَّلة عليه مباشرة من قبل. '
+  + 'لا يُضاف إليه مصروف حتى يُحوّل المحاسب ذلك المبلغ القديم إلى مستند مؤرَّخ '
+  + '(«تحويل مبلغ البند إلى قيد») — وإلا فُقد المبلغ القديم وسقطت فاتورته من '
+  + 'تقرير الضريبة بلا قرار من أحد.';

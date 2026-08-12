@@ -14,7 +14,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
-  toStartupCostInsert, toStartupCostUpdate,
+  toStartupCostInsert,
   mapTaxInvoiceFields, toTaxInvoiceFields, toTaxInvoiceFieldsUpdate,
   mapStartupCostEntry, toStartupCostEntryInsert,
   mapAnnualExpenseEntry, toAnnualExpenseEntryInsert,
@@ -160,19 +160,11 @@ describe('بند رسوم التأسيس لا يقبل مبلغاً فعلياً
     expect(row.vat_rate).toBeNull();
   });
 
-  it('والتعديل لا يمسّ المبلغ الفعلي ولا حقول الضريبة إطلاقاً', () => {
-    const patch = toStartupCostUpdate(ATTEMPT);
-    expect(patch).toEqual({
-      category: 'equipment', item_name: 'ماكينة', quantity: 1, budgeted_amount: 1000,
-    });
-    expect('actual_amount' in patch).toBe(false);
-    expect('is_tax_invoice' in patch).toBe(false);
-    expect('vat_amount' in patch).toBe(false);
-  });
-
-  it('ويظل يعدّل ما هو من الخطة', () => {
-    expect(toStartupCostUpdate({ plannedAmount: 500 })).toEqual({ budgeted_amount: 500 });
-    expect(toStartupCostUpdate({ status: 'completed' })).toEqual({ status: 'completed' });
-    expect(toStartupCostUpdate({})).toEqual({});
+  it('والحالة الابتدائية مشتقة لا مختارة', () => {
+    // A plan with no spend is `in_progress` by derivation. A row created as
+    // `completed` would be lying from its first moment, so the value is
+    // forced here and required by the rules on create.
+    expect(toStartupCostInsert({ ...ATTEMPT, status: 'completed' }).status).toBe('in_progress');
+    expect(toStartupCostInsert({ ...ATTEMPT, status: 'anything' }).status).toBe('in_progress');
   });
 });

@@ -33,7 +33,8 @@ import {
 import { TaxPolicyError } from './src/taxPolicy.js';
 import { PurchaseTaxError } from './src/purchaseTax.js';
 import {
-  addStartupEntry, deleteStartupEntry, convertLegacyStartupSpend, StartupCostError,
+  addStartupEntry, deleteStartupEntry, convertLegacyStartupSpend,
+  updateStartupPlan, deleteStartupPlan, StartupCostError,
 } from './src/startupCosts.js';
 import { canPost } from './src/posting.js';
 
@@ -393,6 +394,40 @@ export const startupConvertLegacySpend = onCall(OPTS, async (req) => {
   try {
     return await convertLegacyStartupSpend(db, FieldValue, {
       parentId: req.data?.parentId, form: req.data?.form,
+    }, { userId: uid, role });
+  } catch (e) { throw toHttps(e); }
+});
+
+/**
+ * Edits a plan and re-derives its status in the same transaction.
+ *
+ * `status` is a function of the spend and the budget, so the budget cannot
+ * move without the function being re-run — which is why this is a callable and
+ * not a rule-guarded client write. The rules refuse `update` on
+ * `startup_costs` outright.
+ */
+export const startupUpdatePlan = onCall(OPTS, async (req) => {
+  const { uid, role } = await requireStartupWriter(req.auth);
+  try {
+    return await updateStartupPlan(db, FieldValue, {
+      parentId: req.data?.parentId, patch: req.data?.patch,
+    }, { userId: uid, role });
+  } catch (e) { throw toHttps(e); }
+});
+
+/**
+ * Deletes a plan — and refuses rather than cascading.
+ *
+ * A plan with spend documents under it cannot go: deleting it would leave
+ * those rows, their journal entries and their posting locks pointing at a
+ * parent that no longer exists. A posted document is reversed first, which
+ * releases its lock, and only then may it be deleted.
+ */
+export const startupDeletePlan = onCall(OPTS, async (req) => {
+  const { uid, role } = await requireStartupWriter(req.auth);
+  try {
+    return await deleteStartupPlan(db, FieldValue, {
+      parentId: req.data?.parentId,
     }, { userId: uid, role });
   } catch (e) { throw toHttps(e); }
 });

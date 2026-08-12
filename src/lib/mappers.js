@@ -47,7 +47,7 @@ export function mapStartupCost(row) {
 // amount are converted through `convertStartupParentSpend`, which asks for
 // what the record does not contain. See src/lib/accounting/startupMigration.js.
 export function toStartupCostInsert({
-  category, itemName, quantity, plannedAmount, status,
+  category, itemName, quantity, plannedAmount,
 }) {
   return {
     category,
@@ -56,22 +56,18 @@ export function toStartupCostInsert({
     budgeted_amount: Math.max(0, Number(plannedAmount) || 0),
     // Always zero on insert. The sub-ledger owns this column from here on.
     actual_amount:   0,
-    status:          status === 'completed' ? 'completed' : 'in_progress',
+    // A plan with no spend is `in_progress` by derivation — see
+    // `startupStatusOf`. It is not a choice the caller gets to make, and the
+    // rules require exactly this value on create.
+    status:          'in_progress',
     // A plan is not a document, so it carries no invoice and no tax claim.
     ...toTaxInvoiceFields({ isTaxInvoice: false }),
   };
 }
-export function toStartupCostUpdate(updates = {}) {
-  const payload = {};
-  if (updates.category      !== undefined) payload.category        = updates.category;
-  if (updates.itemName      !== undefined) payload.item_name       = updates.itemName;
-  if (updates.quantity      !== undefined) payload.quantity        = clampQuantity(updates.quantity);
-  if (updates.plannedAmount !== undefined) payload.budgeted_amount = Math.max(0, Number(updates.plannedAmount) || 0);
-  if (updates.status        !== undefined) payload.status          = updates.status === 'completed' ? 'completed' : 'in_progress';
-  // `actualAmount` and the tax fields are deliberately absent: the sub-ledger
-  // roll-up writes the first directly, and the second belongs to an entry.
-  return payload;
-}
+// `toStartupCostUpdate` is gone: `startup_costs` refuses client updates
+// outright now. Editing a plan changes what `status` is derived FROM, so it
+// has to re-derive in the same transaction — which is `startupUpdatePlan` on
+// the server, not a payload shaped here.
 
 // ── startup_cost_entries (sub-ledger per startup item) ────────────────────
 // App-side shape: { id, startupCostId, description, amount, spentDate, notes, createdAt }.

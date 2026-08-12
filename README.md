@@ -565,8 +565,23 @@ client outright. Three things every write there needs are inexpressible in a
 rule — re-summing the siblings into `actual_amount` (rules have no fold),
 re-deriving `status` from that sum, and doing the posting-lock check and the
 parent update in ONE atomic step — so `startupAddEntry`, `startupDeleteEntry`
-and `startupConvertLegacySpend` are the only door, each reading the parent and
-its entries inside the transaction. A new item is a **plan**, real spend is a
+`startupUpdatePlan` and `startupDeletePlan` are the only door, each reading the
+parent and its entries inside the transaction.
+
+`status` is one of those derived columns, not a stored choice: it is
+`actual >= budget && actual > 0`, so changing the budget has to re-run the
+derivation. A manual toggle plus a client-writable budget meant raising a plan
+from 1,000 to 2,000 against 1,500 of spend left the row saying `completed` —
+the number it was derived from had moved and nothing recomputed it.
+
+Deleting a plan **refuses rather than cascades**: it requires an empty
+sub-ledger, a zero actual amount, and no lock or live entry naming it. A
+posted document is reversed first — that is what releases its lock — and only
+then may it be deleted. And a plan still holding a legacy amount or legacy
+invoice fields refuses new spend documents outright, because the roll-up would
+recompute `actual_amount` as SUM(children) and destroy it (1,150 became 100)
+while the child's appearance dropped the parent's invoice out of the VAT
+report. A new item is a **plan**, real spend is a
 `startup_cost_entries` row, and `actual_amount` is the roll-up of those
 entries, computed on the server and never taken from the client. Legacy rows are listed under **بنود تأسيس تحتاج
 تحويلاً** — out of `input.tax`, never hidden — and converting one asks for the

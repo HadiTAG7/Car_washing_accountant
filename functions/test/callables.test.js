@@ -624,12 +624,16 @@ d('الاستدعاءات الحقيقية عبر محاكي الدوال', () =
     };
 
     it('المشغّل يسجّل مصروفاً، والخادم يشتقّ المجموع', async () => {
+      // The seeded item carries a legacy amount, so the accountant converts it
+      // first — that is the rule this fixture exists to exercise everywhere.
+      const acct = await as('accountant');
+      await acct('startupConvertLegacySpend')({ parentId: 'sp1', form: FORM });
       const call = await as('operator');
       const res = await call('startupAddEntry')({ parentId: 'sp1', entry: ENTRY });
-      expect(res.data).toMatchObject({ actualAmount: 400 });
+      expect(res.data).toMatchObject({ actualAmount: 1550 });
       const parent = (await adb.collection('startup_costs').doc('sp1').get()).data();
-      expect(parent.actual_amount).toBe(400);
-    }, 60_000);
+      expect(parent.actual_amount).toBe(1550);
+    }, 90_000);
 
     it('والشريك مرفوض في الإضافة والحذف والتحويل', async () => {
       const call = await as('partner');
@@ -680,8 +684,58 @@ d('الاستدعاءات الحقيقية عبر محاكي الدوال', () =
       expect(audit[0].after).toMatchObject({ actualAmount: 1150, entryCount: 1, role: 'accountant' });
     }, 90_000);
 
+    it('والخطة تُعدَّل وتُحذف عبر الاستدعاء وحده، والحالة تُشتق', async () => {
+      const call = await as('operator');
+      // Convert first: the plan carries a legacy amount, and adding to it is
+      // refused until that becomes a document.
+      const acct = await as('accountant');
+      await acct('startupConvertLegacySpend')({ parentId: 'sp1', form: FORM });
+      const op = await as('operator');
+      await op('startupAddEntry')({ parentId: 'sp1', entry: { ...ENTRY, amount: 1500 } });
+      expect((await adb.collection('startup_costs').doc('sp1').get()).data())
+        .toMatchObject({ actual_amount: 2650, status: 'completed' });
+
+      // Raising the budget past the spend flips the badge back — the whole
+      // point of `status` being derived rather than stored.
+      await op('startupUpdatePlan')({ parentId: 'sp1', patch: { plannedAmount: 5000 } });
+      expect((await adb.collection('startup_costs').doc('sp1').get()).data())
+        .toMatchObject({ budgeted_amount: 5000, actual_amount: 2650, status: 'in_progress' });
+
+      await expect(op('startupUpdatePlan')({ parentId: 'sp1', patch: { status: 'completed' } }))
+        .rejects.toThrow(/يملكها الخادم/);
+      await expect(op('startupDeletePlan')({ parentId: 'sp1' }))
+        .rejects.toThrow(/احذف المصاريف غير المُرحّلة أولاً/);
+      expect(call).toBeTruthy();
+    }, 120_000);
+
+    it('وخطة فارغة تُحذف عبر الاستدعاء، والشريك مرفوض', async () => {
+      await adb.collection('startup_costs').doc('sp2').set({
+        category: 'equipment', item_name: 'خرطوم', quantity: 1,
+        budgeted_amount: 300, actual_amount: 0, status: 'in_progress', is_tax_invoice: false,
+      });
+      const partner = await as('partner');
+      await expectDenied(partner('startupDeletePlan')({ parentId: 'sp2' }));
+      await expectDenied(partner('startupUpdatePlan')({ parentId: 'sp2', patch: { itemName: 'x' } }));
+
+      const op = await as('operator');
+      const res = await op('startupDeletePlan')({ parentId: 'sp2' });
+      expect(res.data).toMatchObject({ deleted: true });
+      expect((await adb.collection('startup_costs').doc('sp2').get()).exists).toBe(false);
+    }, 90_000);
+
+    it('وإضافة مصروف إلى بند يحمل مبلغاً قديماً تُرفض قبل التحويل', async () => {
+      const op = await as('operator');
+      await expect(op('startupAddEntry')({ parentId: 'sp1', entry: ENTRY }))
+        .rejects.toThrow(/يُحوّل المحاسب/);
+      const parent = (await adb.collection('startup_costs').doc('sp1').get()).data();
+      expect(parent.actual_amount).toBe(1150);
+      expect(parent.invoice_number).toBe('S-77');
+      expect((await adb.collection('startup_cost_entries').get()).size).toBe(0);
+    }, 90_000);
+
     it('والمصروف المُرحّل لا يُحذف عبر الاستدعاء', async () => {
       const acct = await as('accountant');
+      await acct('startupConvertLegacySpend')({ parentId: 'sp1', form: FORM });
       const added = await acct('startupAddEntry')({
         parentId: 'sp1',
         entry: {
@@ -692,7 +746,7 @@ d('الاستدعاءات الحقيقية عبر محاكي الدوال', () =
       await acct('ledgerPostSource')({ kind: 'startup', sourceId: added.data.id });
       await expect(acct('startupDeleteEntry')({ entryId: added.data.id }))
         .rejects.toThrow(/مُرحّل بالقيد رقم/);
-      expect((await adb.collection('startup_cost_entries').get()).size).toBe(1);
+      expect((await adb.collection('startup_cost_entries').get()).size).toBe(2);
     }, 90_000);
   });
 });

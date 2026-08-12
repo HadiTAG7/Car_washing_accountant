@@ -13,8 +13,9 @@ import Toast from './Toast';
 import { downloadFullBackup } from '../lib/backupZip';
 import { usePartners } from '../hooks/usePartners';
 import { usePartnerPayments } from '../hooks/usePartnerPayments';
+import { paidByPartner } from '../lib/accounting/partnerTotals';
 import { useStartupCosts } from '../hooks/useStartupCosts';
-import { isSupabaseConfigured, missingEnvNames } from '../lib/supabaseClient';
+import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 
 // Last N months ending at the current one, as { key:'YYYY-MM', label } —
@@ -47,6 +48,9 @@ export default function OverviewPage() {
   const { partners, loading: pLoading } = usePartners();
   const { items: startupItems, loading: sLoading } = useStartupCosts();
   const { payments } = usePartnerPayments();
+  // Paid-to-date is derived from the receipts themselves; the cached
+  // partners.paid_amount aggregate is never the source of truth.
+  const paidTotals = useMemo(() => paidByPartner(payments), [payments]);
   const {
     scalingFactor, isPartnerView, viewedPartner, canMutate,
   } = usePartnerView();
@@ -91,17 +95,19 @@ export default function OverviewPage() {
       : partners;
     const workers = scoped.reduce((s, p) => s + (p.workersCount || 0), 0);
     const target  = workers * PER_WORKER_FEE;
-    const paid     = scoped.reduce((s, p) => s + (p.paidAmount || 0), 0);
+    // Summed from the receipts, not from the cached partners.paid_amount.
+    const paidOf = (id) => paidTotals.get(String(id)) || 0;
+    const paid     = scoped.reduce((s, p) => s + paidOf(p.id), 0);
     const remaining = Math.max(0, target - paid);
     const pct = target > 0 ? Math.min(100, (paid / target) * 100) : 0;
     const settledCount = scoped.filter(
       (p) => (p.workersCount || 0) * PER_WORKER_FEE > 0
-        && (p.paidAmount || 0) >= (p.workersCount || 0) * PER_WORKER_FEE,
+        && paidOf(p.id) >= (p.workersCount || 0) * PER_WORKER_FEE,
     ).length;
     return {
       partnerCount: scoped.length, workers, target, paid, remaining, pct, settledCount,
     };
-  }, [partners, isPartnerView, viewedPartner]);
+  }, [partners, isPartnerView, viewedPartner, paidTotals]);
 
   // ── Startup spend ────────────────────────────────────────────
   const spend = useMemo(() => {
@@ -127,19 +133,19 @@ export default function OverviewPage() {
     return scoped
       .map((p) => {
         const required = (p.workersCount || 0) * PER_WORKER_FEE;
-        const paid = p.paidAmount || 0;
+        const paid = paidTotals.get(String(p.id)) || 0;
         const pct = required > 0 ? Math.min(100, (paid / required) * 100) : 0;
         return { ...p, required, paid, remaining: Math.max(0, required - paid), pct };
       })
       .sort((a, b) => b.paid - a.paid);
-  }, [partners, isPartnerView, viewedPartner]);
+  }, [partners, isPartnerView, viewedPartner, paidTotals]);
 
   return (
     <>
       <TopBar
         title="نظرة عامة"
         subtitle="ملخص رأس المال المُجمّع وصرف التأسيس"
-        actions={canMutate && isSupabaseConfigured ? (
+        actions={canMutate && isFirebaseConfigured ? (
           <button
             type="button"
             onClick={handleBackup}
@@ -156,7 +162,7 @@ export default function OverviewPage() {
       />
 
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
-        {!isSupabaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
+        {!isFirebaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
 
         {loading && partners.length === 0 && startupItems.length === 0 ? (
           <LoadingState message="جارٍ تحميل النظرة العامة..." />

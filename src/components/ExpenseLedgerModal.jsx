@@ -4,14 +4,19 @@ import {
   Link as LinkIcon, Percent, Upload,
 } from 'lucide-react';
 import {
-  formatCurrency, formatDate, todayISO, extractVat, netOfVat,
+  formatCurrency, formatDate, todayISO, extractVat,
 } from '../data/initialData';
-import { uploadInvoiceFile, isSupabaseConfigured } from '../lib/supabaseClient';
+import { uploadInvoiceFile, isFirebaseConfigured } from '../lib/firebaseClient';
 import { EmptyState } from './UI';
 import DateField from './DateField';
+import TaxInvoiceFields from './TaxInvoiceFields';
+import PurchaseAmountBreakdown from './PurchaseAmountBreakdown';
+import { blockingVatProblems } from '../lib/vatFields';
+import { EMPTY_TAX_INVOICE_FIELDS, submitTaxInvoiceFields } from '../lib/taxInvoiceForm';
 
 const EMPTY_FORM = {
   description: '', amount: '', spentDate: '', notes: '', invoiceUrl: '', isTaxInvoice: false,
+  ...EMPTY_TAX_INVOICE_FIELDS,
 };
 
 // Cheap link detector — anything starting with http:// or https:// is
@@ -90,7 +95,13 @@ export default function ExpenseLedgerModal({
 
   const trimmedDesc   = form.description.trim();
   const parsedAmount  = Math.max(0, parseFloat(form.amount) || 0);
-  const isValid       = trimmedDesc.length > 0 && parsedAmount > 0 && Boolean(form.spentDate);
+  // ── أخطاء الضريبة تمنع الحفظ، لا تُعرَض فقط ──
+  // Serves BOTH sub-ledgers — رسوم التأسيس and المصاريف السنوية — so the two
+  // cannot end up with different ideas of what a valid VAT field is.
+  const vatProblems   = form.isTaxInvoice
+    ? blockingVatProblems(form, { amount: parsedAmount }) : [];
+  const isValid       = trimmedDesc.length > 0 && parsedAmount > 0
+    && Boolean(form.spentDate) && vatProblems.length === 0;
 
   function handleChange(e) {
     const { name, type, value, checked } = e.target;
@@ -109,6 +120,7 @@ export default function ExpenseLedgerModal({
         notes:        form.notes.trim(),
         invoiceUrl:   form.invoiceUrl.trim(),
         isTaxInvoice: form.isTaxInvoice,
+        ...submitTaxInvoiceFields(form),
       });
       setForm({ ...EMPTY_FORM, spentDate: todayISO() });
       onDirty?.(); // tell the parent page to refetch its items so totals update
@@ -291,7 +303,7 @@ export default function ExpenseLedgerModal({
                   className="w-full pr-9 pl-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm font-mono focus:outline-none focus:border-primary-500 transition-colors"
                 />
               </div>
-              {isSupabaseConfigured && (
+              {isFirebaseConfigured && (
                 <>
                   <input
                     ref={fileInputRef}
@@ -352,20 +364,19 @@ export default function ExpenseLedgerModal({
             </label>
 
             {/* Live VAT breakdown — only when taxable AND an amount is set. */}
-            {form.isTaxInvoice && parsedAmount > 0 && (
-              <div
-                role="status"
-                className="flex items-center justify-between gap-3 px-3 py-2 rounded-control bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/30 text-[12px]"
-              >
-                <span className="text-emerald-700 dark:text-emerald-300">
-                  الضريبة المتوقع استردادها:
-                  <span className="font-bold tabular-nums mr-1">{formatCurrency(extractVat(parsedAmount))}</span>
-                </span>
-                <span className="text-slate-500 dark:text-slate-400">
-                  صافي قيمة السلعة:
-                  <span className="font-bold tabular-nums mr-1">{formatCurrency(netOfVat(parsedAmount))}</span>
-                </span>
-              </div>
+            <PurchaseAmountBreakdown form={form} amount={parsedAmount} />
+
+            {/* بيانات الفاتورة — required before the VAT report will
+                deduct this purchase. */}
+            {form.isTaxInvoice && (
+              <TaxInvoiceFields
+                form={form}
+                onChange={(next) => setForm((f) => ({ ...f, ...next }))}
+                idPrefix="ledger"
+                amount={parsedAmount}
+                problems={vatProblems}
+                spendDate={form.spentDate}
+              />
             )}
 
             <button
@@ -393,7 +404,7 @@ export default function ExpenseLedgerModal({
                 className="text-xs text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-500/10 border border-rose-100 dark:border-rose-500/30 rounded-control px-3 py-2.5 mb-2 leading-relaxed"
               >
                 <p className="font-bold mb-1">تعذّر تحميل السجل.</p>
-                {/* Surface the real Supabase error verbatim — most often
+                {/* Surface the real Firestore error verbatim — most often
                     "relation ... does not exist" when the SQL migration
                     hasn't been run yet. Showing the message turns this
                     into a self-diagnosing screen instead of a black box. */}
@@ -408,7 +419,7 @@ export default function ExpenseLedgerModal({
                     <code className="bg-rose-100 dark:bg-rose-500/20 px-1 rounded-control" dir="ltr">
                       {migrationFile}
                     </code>{' '}
-                    في Supabase SQL Editor، شغّله ثم أعد فتح المودال.
+                    — لم يعد مطلوباً على Firestore؛ تحقّق من صلاحيات حسابك ثم أعد فتح المودال.
                   </p>
                 )}
               </div>

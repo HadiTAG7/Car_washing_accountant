@@ -13,6 +13,11 @@ import {
   RefreshCw,
   Percent,
   Loader2,
+  BookOpen,
+  Scale,
+  Lock,
+  FileText,
+  Boxes,
 } from 'lucide-react';
 
 import { lazy, Suspense } from 'react';
@@ -38,9 +43,16 @@ const BudgetsPage          = lazy(() => import('./components/BudgetsPage'));
 const PartnersPage         = lazy(() => import('./components/PartnersPage'));
 const PartnerPaymentsPage  = lazy(() => import('./components/PartnerPaymentsPage'));
 const TemporaryExpensesPage = lazy(() => import('./components/TemporaryExpensesPage'));
+// ── الدفاتر المحاسبية ──────────────────────────────────────────────────
+const GeneralLedgerPage    = lazy(() => import('./components/GeneralLedgerPage'));
+const TrialBalancePage     = lazy(() => import('./components/TrialBalancePage'));
+const BalanceSheetPage     = lazy(() => import('./components/BalanceSheetPage'));
+const SalesDocumentsPage   = lazy(() => import('./components/SalesDocumentsPage'));
+const FixedAssetsPage      = lazy(() => import('./components/FixedAssetsPage'));
+const PeriodClosePage      = lazy(() => import('./components/PeriodClosePage'));
 
 import { useAuth } from './hooks/useAuth';
-import { isSupabaseConfigured, requireAuth, missingEnvNames } from './lib/supabaseClient';
+import { isFirebaseConfigured, requireAuth, missingEnvNames } from './lib/firebaseClient';
 import { MobileMenuProvider, useMobileMenu } from './contexts/MobileMenuContext';
 import { PartnerViewProvider, usePartnerView } from './contexts/PartnerViewContext';
 import PartnerViewBanner from './components/PartnerViewBanner';
@@ -58,6 +70,12 @@ const TABS = [
   { id: 'partners',  label: 'إدارة الشركاء',          icon: Handshake   },
   { id: 'payments',  label: 'مدفوعات الشركاء',        icon: HandCoins   },
   { id: 'temporary_expenses', label: 'المصروفات المؤقتة', icon: RefreshCw },
+  { id: 'ledger',    label: 'دفتر الأستاذ',            icon: BookOpen    },
+  { id: 'trial',     label: 'ميزان المراجعة',          icon: Scale       },
+  { id: 'balance',   label: 'المركز المالي',           icon: Landmark    },
+  { id: 'documents', label: 'المستندات الضريبية',      icon: FileText    },
+  { id: 'assets',    label: 'الأصول الثابتة',          icon: Boxes       },
+  { id: 'periods',   label: 'إقفال الفترة',            icon: Lock        },
 ];
 
 // Inner shell wraps the routed content so it can subscribe to the
@@ -117,7 +135,7 @@ function AppShell() {
   const justSignedOut = typeof window !== 'undefined'
     && new URLSearchParams(window.location.search).has('signedOut');
 
-  const mustAuthenticate = (requireAuth || justSignedOut) && isSupabaseConfigured;
+  const mustAuthenticate = (requireAuth || justSignedOut) && isFirebaseConfigured;
   if (mustAuthenticate && !session) {
     return <LoginScreen />;
   }
@@ -129,7 +147,7 @@ function AppShell() {
         activeTab={activeTab}
         onSelectTab={handleSelectTab}
         user={session?.user}
-        onSignOut={isSupabaseConfigured ? signOut : null}
+        onSignOut={isFirebaseConfigured ? signOut : null}
         // Hide the "+ إضافة سجل مالي" sidebar entrypoint in partner view —
         // a partner has strict read-only access; a simulating admin sees
         // the partner's UX (no shortcut to write).
@@ -142,7 +160,7 @@ function AppShell() {
 
       <div className="min-h-screen md:mr-64 flex flex-col">
         <PartnerViewBanner />
-        {!isSupabaseConfigured && <DemoBanner missing={missingEnvNames} />}
+        {!isFirebaseConfigured && <DemoBanner missing={missingEnvNames} />}
 
         <Suspense fallback={<LoadingState message="جارٍ تحميل الصفحة..." />}>
           {/* key={activeTab} remounts the wrapper per tab so the page-in
@@ -166,6 +184,12 @@ function AppShell() {
             {activeTab === 'partners'  && <PartnersPage />}
             {activeTab === 'payments'  && <PartnerPaymentsPage />}
             {activeTab === 'temporary_expenses' && <TemporaryExpensesPage />}
+            {activeTab === 'ledger'    && <GeneralLedgerPage />}
+            {activeTab === 'trial'     && <TrialBalancePage />}
+            {activeTab === 'balance'   && <BalanceSheetPage />}
+            {activeTab === 'documents' && <SalesDocumentsPage />}
+            {activeTab === 'assets'    && <FixedAssetsPage />}
+            {activeTab === 'periods'   && <PeriodClosePage />}
           </div>
         </Suspense>
       </div>

@@ -3,6 +3,10 @@
 // Keep DB column naming (snake_case) at the edge; internal app uses camelCase.
 // ═══════════════════════════════════════════════════════════════════════════
 
+// "Not stated" vs "stated zero" is decided in ONE place — see vatFields.js for
+// why. Three modules used to answer it separately and disagreed.
+import { statedVatAmount, statedVatRate, normalizedPriceMode } from './vatFields';
+
 // ── startup_costs ─────────────────────────────────────────────────────────
 // App-side shape: { id, category, itemName, quantity, plannedAmount, actualAmount, status }
 // DB column `budgeted_amount` is aliased to `plannedAmount` for the new UI.
@@ -23,41 +27,47 @@ export function mapStartupCost(row) {
     // VAT recovery for items whose spend is entered INLINE. Items managed
     // by the sub-ledger record VAT per entry instead — counting both would
     // double the reclaim, so the report ignores the parent flag for them.
-    isTaxInvoice:  Boolean(row.is_tax_invoice),
-    invoiceUrl:    row.invoice_url || '',
+    ...mapTaxInvoiceFields(row),
     createdAt:     row.created_at || '',
   };
 }
+// ── البند خطة، والصرف مستند ──────────────────────────────────────────────
+// `actual_amount` and the tax-invoice block are NOT writable here, and that
+// is the whole fix rather than a style preference. A parent-level amount has
+// no spend date, no payment method and no invoice identity, so nothing can
+// build a journal entry from it — `ADAPTERS.startup` reads
+// `startup_cost_entries`, and there is deliberately no adapter for the
+// parent. A row that could enter the VAT return and could never reach `1200`
+// left `inputMismatch` permanently open for that item.
+//
+// So a new item is a PLAN: name, category, quantity, budget. Real spend is a
+// `startup_cost_entries` row, which carries all three missing facts, and the
+// parent's `actual_amount` becomes the roll-up of those entries — written by
+// `syncParentTotal`, not by a form. Legacy rows that still hold their own
+// amount are converted through `convertStartupParentSpend`, which asks for
+// what the record does not contain. See src/lib/accounting/startupMigration.js.
 export function toStartupCostInsert({
-  category, itemName, quantity, plannedAmount, actualAmount, status,
-  isTaxInvoice, invoiceUrl,
+  category, itemName, quantity, plannedAmount,
 }) {
   return {
     category,
     item_name:       itemName,
     quantity:        clampQuantity(quantity),
     budgeted_amount: Math.max(0, Number(plannedAmount) || 0),
-    actual_amount:   Math.max(0, Number(actualAmount)  || 0),
-    status:          status === 'completed' ? 'completed' : 'in_progress',
-    is_tax_invoice:  Boolean(isTaxInvoice),
-    invoice_url:     invoiceUrl && String(invoiceUrl).trim() ? String(invoiceUrl).trim() : null,
+    // Always zero on insert. The sub-ledger owns this column from here on.
+    actual_amount:   0,
+    // A plan with no spend is `in_progress` by derivation — see
+    // `startupStatusOf`. It is not a choice the caller gets to make, and the
+    // rules require exactly this value on create.
+    status:          'in_progress',
+    // A plan is not a document, so it carries no invoice and no tax claim.
+    ...toTaxInvoiceFields({ isTaxInvoice: false }),
   };
 }
-export function toStartupCostUpdate(updates = {}) {
-  const payload = {};
-  if (updates.category      !== undefined) payload.category        = updates.category;
-  if (updates.itemName      !== undefined) payload.item_name       = updates.itemName;
-  if (updates.quantity      !== undefined) payload.quantity        = clampQuantity(updates.quantity);
-  if (updates.plannedAmount !== undefined) payload.budgeted_amount = Math.max(0, Number(updates.plannedAmount) || 0);
-  if (updates.actualAmount  !== undefined) payload.actual_amount   = Math.max(0, Number(updates.actualAmount)  || 0);
-  if (updates.status        !== undefined) payload.status          = updates.status === 'completed' ? 'completed' : 'in_progress';
-  if (updates.isTaxInvoice  !== undefined) payload.is_tax_invoice  = Boolean(updates.isTaxInvoice);
-  if (updates.invoiceUrl    !== undefined) {
-    const u = String(updates.invoiceUrl || '').trim();
-    payload.invoice_url = u ? u : null;
-  }
-  return payload;
-}
+// `toStartupCostUpdate` is gone: `startup_costs` refuses client updates
+// outright now. Editing a plan changes what `status` is derived FROM, so it
+// has to re-derive in the same transaction — which is `startupUpdatePlan` on
+// the server, not a payload shaped here.
 
 // ── startup_cost_entries (sub-ledger per startup item) ────────────────────
 // App-side shape: { id, startupCostId, description, amount, spentDate, notes, createdAt }.
@@ -72,13 +82,12 @@ export function mapStartupCostEntry(row) {
     amount:         Number(row.amount) || 0,
     spentDate:      row.spent_date || '',
     notes:          row.notes || '',
-    invoiceUrl:     row.invoice_url || '',
-    isTaxInvoice:   Boolean(row.is_tax_invoice),
+    ...mapTaxInvoiceFields(row),
     createdAt:      row.created_at,
   };
 }
 export function toStartupCostEntryInsert({
-  startupCostId, description, amount, spentDate, notes, invoiceUrl, isTaxInvoice,
+  startupCostId, description, amount, spentDate, notes, ...taxInvoice
 }) {
   return {
     startup_cost_id: startupCostId,
@@ -86,8 +95,7 @@ export function toStartupCostEntryInsert({
     amount:          Math.max(0, Number(amount) || 0),
     spent_date:      spentDate || null,
     notes:           notes && String(notes).trim() ? String(notes).trim() : null,
-    invoice_url:     invoiceUrl && String(invoiceUrl).trim() ? String(invoiceUrl).trim() : null,
-    is_tax_invoice:  Boolean(isTaxInvoice),
+    ...toTaxInvoiceFields(taxInvoice),
   };
 }
 
@@ -103,13 +111,12 @@ export function mapAnnualExpenseEntry(row) {
     amount:           Number(row.amount) || 0,
     spentDate:        row.spent_date || '',
     notes:            row.notes || '',
-    invoiceUrl:       row.invoice_url || '',
-    isTaxInvoice:     Boolean(row.is_tax_invoice),
+    ...mapTaxInvoiceFields(row),
     createdAt:        row.created_at,
   };
 }
 export function toAnnualExpenseEntryInsert({
-  annualExpenseId, description, amount, spentDate, notes, invoiceUrl, isTaxInvoice,
+  annualExpenseId, description, amount, spentDate, notes, ...taxInvoice
 }) {
   return {
     annual_expense_id: annualExpenseId,
@@ -117,8 +124,7 @@ export function toAnnualExpenseEntryInsert({
     amount:            Math.max(0, Number(amount) || 0),
     spent_date:        spentDate || null,
     notes:             notes && String(notes).trim() ? String(notes).trim() : null,
-    invoice_url:       invoiceUrl && String(invoiceUrl).trim() ? String(invoiceUrl).trim() : null,
-    is_tax_invoice:    Boolean(isTaxInvoice),
+    ...toTaxInvoiceFields(taxInvoice),
   };
 }
 
@@ -187,6 +193,89 @@ export function toAnnualExpenseUpdate(updates = {}) {
   return payload;
 }
 
+// ── حقول الفاتورة الضريبية — shared by every purchase source ─────────────
+// Input VAT may only be deducted against a REAL tax invoice, so every
+// purchase record carries the fields that prove one exists: supplier,
+// invoice number and invoice date. A recurring cost is not evidence of an
+// invoice — these fields are, and the VAT report checks them.
+export const EXPENSE_PAYMENT_METHODS = ['cash', 'card', 'transfer', 'credit'];
+export function clampExpensePaymentMethod(value) {
+  return EXPENSE_PAYMENT_METHODS.includes(value) ? value : 'cash';
+}
+function trimOrNull(value) {
+  const s = String(value ?? '').trim();
+  return s ? s : null;
+}
+function normalizeIsoDate(value) {
+  if (!value) return null;
+  const s = String(value);
+  return s.length >= 10 ? s.slice(0, 10) : s;
+}
+/**
+ * Reads the tax-invoice block off a raw row.
+ *
+ * `vatAmount`, `vatRate` and `priceMode` are what let a purchase keep its own
+ * tax. Without them the report had to derive VAT from a rate — and the only
+ * rate it had was today's, so a 5%-era invoice was reclaimed at 15% the moment
+ * the standard rate moved. A tax invoice states its own VAT; that figure is
+ * the deduction, and second-guessing it from a percentage is how a reclaim
+ * stops matching the paper it rests on.
+ */
+export function mapTaxInvoiceFields(row) {
+  return {
+    isTaxInvoice:  Boolean(row.is_tax_invoice),
+    invoiceUrl:    row.invoice_url || '',
+    invoiceNumber: row.invoice_number || '',
+    invoiceDate:   row.invoice_date || '',
+    supplier:      row.supplier || '',
+    // The VAT the SUPPLIER wrote on the document. Null means "not stated",
+    // which is a different fact from "zero".
+    vatAmount:     statedVatAmount(row.vat_amount),
+    // The rate the document was raised at, when it is known but the amount is
+    // not — a 2019 invoice keeps its 5% however many times the rate moves.
+    vatRate:       statedVatRate(row.vat_rate),
+    // Whether `amount` already contains the tax.
+    priceMode:     normalizedPriceMode(row.price_mode),
+    // Absent means "deductible if everything else checks out"; only an
+    // explicit false excludes the tax from the claim.
+    vatDeductible: row.vat_deductible === false ? false : true,
+    paymentMethod: clampExpensePaymentMethod(row.payment_method),
+  };
+}
+/** Writes the same block back, for an insert. */
+export function toTaxInvoiceFields({
+  isTaxInvoice, invoiceUrl, invoiceNumber, invoiceDate, supplier,
+  vatAmount, vatRate, priceMode, vatDeductible, paymentMethod,
+} = {}) {
+  return {
+    is_tax_invoice: Boolean(isTaxInvoice),
+    invoice_url:    trimOrNull(invoiceUrl),
+    invoice_number: trimOrNull(invoiceNumber),
+    invoice_date:   normalizeIsoDate(invoiceDate),
+    supplier:       trimOrNull(supplier),
+    vat_amount:     statedVatAmount(vatAmount),
+    vat_rate:       statedVatRate(vatRate),
+    price_mode:     normalizedPriceMode(priceMode),
+    vat_deductible: vatDeductible === false ? false : true,
+    payment_method: clampExpensePaymentMethod(paymentMethod),
+  };
+}
+/** And for a patch — only the keys actually edited. */
+export function toTaxInvoiceFieldsUpdate(updates = {}) {
+  const payload = {};
+  if (updates.isTaxInvoice  !== undefined) payload.is_tax_invoice = Boolean(updates.isTaxInvoice);
+  if (updates.invoiceUrl    !== undefined) payload.invoice_url    = trimOrNull(updates.invoiceUrl);
+  if (updates.invoiceNumber !== undefined) payload.invoice_number = trimOrNull(updates.invoiceNumber);
+  if (updates.invoiceDate   !== undefined) payload.invoice_date   = normalizeIsoDate(updates.invoiceDate);
+  if (updates.supplier      !== undefined) payload.supplier       = trimOrNull(updates.supplier);
+  if (updates.vatAmount     !== undefined) payload.vat_amount     = statedVatAmount(updates.vatAmount);
+  if (updates.vatRate       !== undefined) payload.vat_rate       = statedVatRate(updates.vatRate);
+  if (updates.priceMode     !== undefined) payload.price_mode     = normalizedPriceMode(updates.priceMode);
+  if (updates.vatDeductible !== undefined) payload.vat_deductible = updates.vatDeductible === false ? false : true;
+  if (updates.paymentMethod !== undefined) payload.payment_method = clampExpensePaymentMethod(updates.paymentMethod);
+  return payload;
+}
+
 // ── monthly_expenses (Module 3) ───────────────────────────────────────────
 // App-side shape: { id, expenseName, categoryId, quantity, unitCost,
 // totalMonthlyCost, paymentDay, paymentStatus }. The recurring `payment_day`
@@ -220,16 +309,14 @@ export function mapMonthlyExpense(row) {
     recurrence:       clampRecurrence(row.recurrence),
     loggedDate:       row.logged_date || null,
     // VAT recovery: when the supplier issued a tax invoice, the stored
-    // cost is VAT-INCLUSIVE and the 15% portion is reclaimable. The
-    // invoice itself is referenced by URL (no upload needed).
-    isTaxInvoice:     Boolean(row.is_tax_invoice),
-    invoiceUrl:       row.invoice_url || '',
+    // cost is VAT-INCLUSIVE and the 15% portion is reclaimable — but only
+    // against a real document, so the invoice block travels with the row.
+    ...mapTaxInvoiceFields(row),
   };
 }
 export function toMonthlyExpenseInsert({
   expenseName, categoryId, quantity, unitCost, totalMonthlyCost,
-  paymentDay, paymentStatus, recurrence, loggedDate,
-  isTaxInvoice, invoiceUrl,
+  paymentDay, paymentStatus, recurrence, loggedDate, ...taxInvoice
 }) {
   const q   = clampExpenseQuantity(quantity);
   const uc  = Math.max(0, Number(unitCost) || 0);
@@ -245,8 +332,7 @@ export function toMonthlyExpenseInsert({
     payment_status:     clampStatus(paymentStatus),
     recurrence:         rec,
     logged_date:        rec === 'one_time' ? normalizeLoggedDate(loggedDate) : null,
-    is_tax_invoice:     Boolean(isTaxInvoice),
-    invoice_url:        invoiceUrl && String(invoiceUrl).trim() ? String(invoiceUrl).trim() : null,
+    ...toTaxInvoiceFields(taxInvoice),
   };
 }
 export function toMonthlyExpenseUpdate(updates = {}) {
@@ -260,11 +346,7 @@ export function toMonthlyExpenseUpdate(updates = {}) {
   if (updates.paymentStatus    !== undefined) payload.payment_status     = clampStatus(updates.paymentStatus);
   if (updates.recurrence       !== undefined) payload.recurrence         = clampRecurrence(updates.recurrence);
   if (updates.loggedDate       !== undefined) payload.logged_date        = normalizeLoggedDate(updates.loggedDate);
-  if (updates.isTaxInvoice     !== undefined) payload.is_tax_invoice     = Boolean(updates.isTaxInvoice);
-  if (updates.invoiceUrl       !== undefined) {
-    const u = String(updates.invoiceUrl || '').trim();
-    payload.invoice_url = u ? u : null;
-  }
+  Object.assign(payload, toTaxInvoiceFieldsUpdate(updates));
   // Keep the two recurrence-dependent columns consistent when recurrence
   // flips: a switch to monthly clears logged_date; a switch to one_time
   // clears payment_day. Skip when only one of the pair was edited.
@@ -295,14 +377,14 @@ export function mapVariableExpense(row) {
     totalVariableCost: Number(row.total_variable_cost) || 0,
     loggedDate:        row.logged_date || '',
     // VAT recovery — same contract as the monthly/startup/annual records:
-    // a flagged cost is VAT-INCLUSIVE and its 15% share is reclaimable.
-    isTaxInvoice:      Boolean(row.is_tax_invoice),
-    invoiceUrl:        row.invoice_url || '',
+    // a flagged cost is VAT-INCLUSIVE and its 15% share is reclaimable,
+    // provided the invoice block below actually identifies an invoice.
+    ...mapTaxInvoiceFields(row),
   };
 }
 export function toVariableExpenseInsert({
   expenseName, categoryId, quantity, unitCost, totalVariableCost, loggedDate,
-  isTaxInvoice, invoiceUrl,
+  ...taxInvoice
 }) {
   const q  = clampExpenseQuantity(quantity);
   const uc = Math.max(0, Number(unitCost) || 0);
@@ -313,8 +395,7 @@ export function toVariableExpenseInsert({
     unit_cost:           uc,
     total_variable_cost: Math.max(0, Number(totalVariableCost) || q * uc),
     logged_date:         loggedDate || null,
-    is_tax_invoice:      Boolean(isTaxInvoice),
-    invoice_url:         invoiceUrl && String(invoiceUrl).trim() ? String(invoiceUrl).trim() : null,
+    ...toTaxInvoiceFields(taxInvoice),
   };
 }
 export function toVariableExpenseUpdate(updates = {}) {
@@ -325,11 +406,7 @@ export function toVariableExpenseUpdate(updates = {}) {
   if (updates.unitCost          !== undefined) payload.unit_cost           = Math.max(0, Number(updates.unitCost) || 0);
   if (updates.totalVariableCost !== undefined) payload.total_variable_cost = Math.max(0, Number(updates.totalVariableCost) || 0);
   if (updates.loggedDate        !== undefined) payload.logged_date         = updates.loggedDate || null;
-  if (updates.isTaxInvoice       !== undefined) payload.is_tax_invoice      = Boolean(updates.isTaxInvoice);
-  if (updates.invoiceUrl         !== undefined) {
-    const u = String(updates.invoiceUrl || '').trim();
-    payload.invoice_url = u ? u : null;
-  }
+  Object.assign(payload, toTaxInvoiceFieldsUpdate(updates));
   return payload;
 }
 
@@ -353,9 +430,12 @@ export function mapWash(row) {
     price:      Number(row.price) || 0,
     status:     clampWashStatus(row.status),
     washDate:   row.wash_date || '',
+    // Which account the money landed in decides the debit side of the entry:
+    // cash, bank, or a receivable when the sale is on credit.
+    paymentMethod: clampExpensePaymentMethod(row.payment_method),
   };
 }
-export function toWashInsert({ bikerName, quantity, price, status, washDate }) {
+export function toWashInsert({ bikerName, quantity, price, status, washDate, paymentMethod }) {
   const trimmed = String(bikerName || '').trim();
   return {
     biker_name: trimmed || null,
@@ -363,6 +443,7 @@ export function toWashInsert({ bikerName, quantity, price, status, washDate }) {
     price:      Math.max(0, Number(price) || 0),
     status:     clampWashStatus(status),
     wash_date:  washDate || null,
+    payment_method: clampExpensePaymentMethod(paymentMethod),
   };
 }
 export function toWashUpdate(updates = {}) {
@@ -375,6 +456,7 @@ export function toWashUpdate(updates = {}) {
   if (updates.price     !== undefined) payload.price      = Math.max(0, Number(updates.price) || 0);
   if (updates.status    !== undefined) payload.status     = clampWashStatus(updates.status);
   if (updates.washDate  !== undefined) payload.wash_date  = updates.washDate || null;
+  if (updates.paymentMethod !== undefined) payload.payment_method = clampExpensePaymentMethod(updates.paymentMethod);
   return payload;
 }
 
@@ -410,7 +492,13 @@ export function toBudgetUpdate(updates = {}) {
 // NOTE: percentage is purely a client-derived display value
 // (workersCount / totalWorkers * 100). It is intentionally NOT mapped /
 // inserted / updated — the DB table doesn't carry that column.
-// NOTE: paid_amount is read-only from the app's perspective — the DB
+// NOTE: paid_amount is a CACHE, not the source of truth. The app derives a
+// partner's paid-to-date by summing `partner_payments` (see
+// lib/accounting/partnerTotals.js), because this aggregate is maintained by a
+// client-side read-then-sum and two devices recording receipts at once can
+// write totals that disagree with the receipts themselves. It is still
+// written so exports and backups stay populated; nothing reads it for display.
+// The original note follows: paid_amount is read-only from the app's perspective — the DB
 // trigger on partner_payments keeps it equal to SUM(receipts), so the
 // insert/update mappers deliberately never write it (a direct write
 // would drift from the receipts ledger until the next receipt).

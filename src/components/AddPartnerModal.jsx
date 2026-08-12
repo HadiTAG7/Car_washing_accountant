@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { X, Plus, Briefcase, Users, Wallet, Mail } from 'lucide-react';
 import { formatCurrency, PER_WORKER_FEE } from '../data/initialData';
 import {
-  lookupUserIdByEmail, createPartnerUser, isValidEmail, isSupabaseConfigured,
-} from '../lib/supabaseClient';
+  lookupUserIdByEmail, createPartnerUser, isValidEmail, isFirebaseConfigured,
+} from '../lib/firebaseClient';
 import { translateAuthError } from '../lib/authErrors';
 import CreateUserConfirm from './CreateUserConfirm';
 import CreatedCredentials from './CreatedCredentials';
@@ -66,7 +66,7 @@ export default function AddPartnerModal({ isOpen, onClose, onAdd, showToast }) {
     if (!isValid || submitting || pendingEmail || createdCreds) return;
     setSubmitting(true);
     try {
-      if (!trimmedEmail || !isSupabaseConfigured) {
+      if (!trimmedEmail || !isFirebaseConfigured) {
         await persistPartner(null);
         return;
       }

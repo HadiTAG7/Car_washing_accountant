@@ -4,7 +4,7 @@ import {
   Percent, Link as LinkIcon,
 } from 'lucide-react';
 import {
-  formatCurrency, formatCurrencyPrecise, formatNumber, extractVat, VARIABLE_EXPENSE_CATEGORIES,
+  formatCurrency, formatNumber, VARIABLE_EXPENSE_CATEGORIES,
 } from '../data/initialData';
 
 // Only http(s) values become clickable — same guard the ledger and the VAT
@@ -24,7 +24,10 @@ import Toast from './Toast';
 import { useVariableExpenses } from '../hooks/useVariableExpenses';
 import { useVariableExpenseCategories } from '../hooks/useVariableExpenseCategories';
 import { useWashes } from '../hooks/useWashes';
-import { isSupabaseConfigured, missingEnvNames, describeSupabaseError } from '../lib/supabaseClient';
+import PurchaseVatBadge from './PurchaseVatBadge';
+import { useAccountingSettings } from '../hooks/useAccountingSettings';
+import { taxPolicyAt } from '../lib/accounting/taxPolicy';
+import { isFirebaseConfigured, missingEnvNames, describeBackendError } from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 import {
   todayMonth,
@@ -143,6 +146,12 @@ export default function VariableExpensesPage() {
 
   const { items: washes } = useWashes();
   const { scalingFactor, canMutate } = usePartnerView();
+  const { settings } = useAccountingSettings();
+  // The dated tax record, so a 5%-era invoice is shown at 5% rather than at
+  // today's rate. `useCallback`-free on purpose: `settings` is the only input
+  // and it changes rarely. See docs/AMOUNT_DEFINITION.md.
+  const policyAt = (date) => taxPolicyAt(date, settings);
+
 
   const [selectedMonth, setSelectedMonth] = useState(todayMonth());
 
@@ -220,8 +229,8 @@ export default function VariableExpensesPage() {
       showToast('تم إضافة التصنيف الجديد بنجاح');
       return newId;
     } catch (e) {
-      console.error('Supabase Category Error:', e, 'label:', label);
-      showToast(describeSupabaseError(e) || 'تعذّر إضافة التصنيف الجديد', 'error');
+      console.error('Firestore Category Error:', e, 'label:', label);
+      showToast(describeBackendError(e) || 'تعذّر إضافة التصنيف الجديد', 'error');
       throw e;
     }
   }
@@ -230,7 +239,7 @@ export default function VariableExpensesPage() {
       await deleteCategory(id);
       showToast('تم حذف التصنيف من القوائم');
     } catch (e) {
-      showToast(describeSupabaseError(e) || 'تعذّر حذف التصنيف', 'error');
+      showToast(describeBackendError(e) || 'تعذّر حذف التصنيف', 'error');
       throw e;
     }
   }
@@ -252,7 +261,7 @@ export default function VariableExpensesPage() {
       />
 
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
-        {!isSupabaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
+        {!isFirebaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
 
         {mutationError && (
           <ErrorState
@@ -363,10 +372,9 @@ export default function VariableExpensesPage() {
                             invoice, so the row is self-verifying at filing time. */}
                         {i.isTaxInvoice && (
                           <div className="flex flex-wrap items-center gap-2 mt-1.5">
-                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-100 dark:border-emerald-500/30 px-2 py-0.5 rounded-full tabular-nums">
-                              <Percent size={11} />
-                              ض.ق.م: {formatCurrencyPrecise(extractVat(i.totalVariableCost) * scalingFactor)}
-                            </span>
+                            <PurchaseVatBadge
+                              row={{ ...i, amount: i.totalVariableCost, recordDate: i.loggedDate }}
+                              policyAt={policyAt} scale={scalingFactor} />
                             {i.invoiceUrl && isSafeHttpUrl(i.invoiceUrl) && (
                               <a
                                 href={i.invoiceUrl}

@@ -3,7 +3,7 @@ import {
   Plus, Trash2, Pencil, Wallet, Receipt, Scale, FileText, Percent, Link as LinkIcon,
 } from 'lucide-react';
 import {
-  formatCurrency, formatCurrencyPrecise, formatNumber, extractVat,
+  formatCurrency, formatNumber,
 } from '../data/initialData';
 
 // Only http(s) values become clickable — same guard the ledger and the VAT
@@ -24,7 +24,13 @@ import Toast from './Toast';
 import { useStartupCosts } from '../hooks/useStartupCosts';
 import { useStartupCostEntries, useStartupLedgerParents } from '../hooks/useStartupCostEntries';
 import { useCategories } from '../hooks/useCategories';
-import { isSupabaseConfigured, missingEnvNames } from '../lib/supabaseClient';
+import PurchaseVatBadge from './PurchaseVatBadge';
+import { useAccountingSettings } from '../hooks/useAccountingSettings';
+import { taxPolicyAt } from '../lib/accounting/taxPolicy';
+import { pendingStartupConversions } from '../lib/accounting/startupMigration';
+import { convertStartupParentSpend } from '../lib/accounting/firestoreStartupMigration';
+import StartupConversionModal from './StartupConversionModal';
+import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 
 // ─── Formatted amount input (thousands separators) ─────────────────────────
@@ -83,29 +89,6 @@ function FormattedAmountInput({ value, onCommit, ariaLabel, className }) {
 }
 
 // ─── Status toggle pill (in_progress ↔ completed) ──────────────────────────
-function StatusTogglePill({ status, onChange, disabled }) {
-  const isCompleted = status === 'completed';
-  const next        = isCompleted ? 'in_progress' : 'completed';
-  const classes = isCompleted
-    ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-100 dark:border-emerald-500/30 hover:bg-emerald-100 dark:hover:bg-emerald-500/20'
-    : 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-100 dark:border-amber-500/30 hover:bg-amber-100 dark:hover:bg-amber-500/20';
-  const dot = isCompleted ? 'bg-emerald-600' : 'bg-amber-500';
-  return (
-    <button
-      type="button"
-      onClick={() => !disabled && onChange(next)}
-      disabled={disabled}
-      title={disabled
-        ? 'غير متاح في وضع عرض الشريك'
-        : isCompleted ? 'انقر لإعادة الحالة إلى قيد التنفيذ' : 'انقر لإنهاء البند'}
-      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-semibold transition-colors ${classes} ${disabled ? 'cursor-not-allowed opacity-70' : ''}`}
-    >
-      <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />
-      {isCompleted ? 'مكتمل' : 'قيد التنفيذ'}
-    </button>
-  );
-}
-
 // ─── Empty-state for the table area ────────────────────────────────────────
 function EmptyState({ onAdd, canMutate }) {
   return (
@@ -127,11 +110,17 @@ function EmptyState({ onAdd, canMutate }) {
 export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
   const {
     items, loading, error,
-    addItem, updateItem, updateActual, updateStatus, deleteItem, refetch,
+    addItem, updateItem, deleteItem, refetch,
   } = useStartupCosts();
 
   const { categories, getCategoryLabel, addCategory, deleteCategory } = useCategories();
   const { scalingFactor, canMutate } = usePartnerView();
+  const { settings } = useAccountingSettings();
+  // The dated tax record, so a 5%-era invoice is shown at 5% rather than at
+  // today's rate. `useCallback`-free on purpose: `settings` is the only input
+  // and it changes rarely. See docs/AMOUNT_DEFINITION.md.
+  const policyAt = (date) => taxPolicyAt(date, settings);
+
 
   const [localOpen, setLocalOpen]       = useState(false);
   const [editingItem, setEditingItem]   = useState(null);
@@ -146,6 +135,19 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
   // locked (the ledger is the single writer for actual_amount there).
   const { parentIds: ledgerManagedIds, refetch: refetchLedgerParents } =
     useStartupLedgerParents();
+  // ── بنود ما زالت تحمل مبلغاً فعلياً بلا قيد ──
+  // Legacy rows from before the actual amount moved to the sub-ledger. They
+  // are neither deducted nor discarded: the VAT report lists them as awaiting
+  // conversion, and this is where the conversion happens.
+  const [convertItem, setConvertItem] = useState(null);
+  const pendingConversions = useMemo(
+    () => pendingStartupConversions(items, ledgerManagedIds),
+    [items, ledgerManagedIds],
+  );
+  const needsConversionIds = useMemo(
+    () => new Set(pendingConversions.map((p) => p.id)),
+    [pendingConversions],
+  );
   const [mutationError, setMutationError] = useState(null);
   // Toast for inline-manager feedback (e.g. "category in use" warning).
   // Same shape as PartnersPage so swapping in the shared Toast UI is
@@ -192,26 +194,6 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
     try { await updateItem(id, updates); }
     catch (e) { setMutationError(e); throw e; }
   }
-  async function handleUpdateActual(id, next, current, planned, currentStatus) {
-    // Derive what the status SHOULD be for the (possibly unchanged)
-    // amount. We skip the DB write only when nothing would change —
-    // both the amount AND the derived status already match. Checking
-    // the status too makes this self-healing: re-blurring a row whose
-    // amount already equals the plan (saved before this auto-status
-    // logic shipped, so its status is stale) still repairs the badge.
-    const desiredStatus = parseFloat(next) >= parseFloat(planned)
-      ? 'completed'
-      : 'in_progress';
-    if (next === current && desiredStatus === currentStatus) return;
-    // Pass plannedAmount so the hook derives the status atomically
-    // and writes both columns in a single UPDATE.
-    try { await updateActual(id, next, planned); }
-    catch (e) { setMutationError(e); }
-  }
-  async function handleUpdateStatus(id, status) {
-    try { await updateStatus(id, status); }
-    catch (e) { setMutationError(e); }
-  }
   async function handleDelete(id) {
     try { await deleteItem(id); }
     catch (e) { setMutationError(e); }
@@ -225,7 +207,7 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
       />
 
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
-        {!isSupabaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
+        {!isFirebaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
 
         {mutationError && (
           <ErrorState
@@ -347,10 +329,9 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
                               actually counts. */}
                           {i.isTaxInvoice && !ledgerManagedIds.has(i.id) && i.actualAmount > 0 && (
                             <div className="flex flex-wrap items-center gap-2 mt-1.5">
-                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-100 dark:border-emerald-500/30 px-2 py-0.5 rounded-full tabular-nums">
-                                <Percent size={11} />
-                                ض.ق.م: {formatCurrencyPrecise(extractVat(i.actualAmount) * scalingFactor)}
-                              </span>
+                              <PurchaseVatBadge
+                                row={{ ...i, amount: i.actualAmount }}
+                                policyAt={policyAt} scale={scalingFactor} />
                               {i.invoiceUrl && isSafeHttpUrl(i.invoiceUrl) && (
                                 <a
                                   href={i.invoiceUrl}
@@ -375,26 +356,30 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
                           {formatCurrency(rowPlanned)}
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap text-left align-top">
-                          {canMutate && !ledgerManagedIds.has(i.id) ? (
-                            <FormattedAmountInput
-                              value={i.actualAmount}
-                              onCommit={(safe) => handleUpdateActual(i.id, safe, i.actualAmount, i.plannedAmount, i.status)}
-                              ariaLabel={`المبلغ الفعلي لـ ${i.itemName}`}
-                              className="w-28 px-2 py-1 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium text-slate-900 dark:text-slate-100 text-left tabular-nums focus:outline-none focus:border-primary-500 transition-colors"
-                            />
-                          ) : (
-                            // Ledger-managed rows lock the inline editor:
-                            // actual_amount is owned by the sub-ledger SUM,
-                            // and a manual overwrite here would be silently
-                            // reverted by the next entry add/delete.
-                            <span
-                              className="tabular-nums text-slate-700 dark:text-slate-300 font-medium"
-                              title={canMutate
-                                ? 'يُدار من سجل المصاريف — اضغط اسم البند لتعديل الدفعات'
-                                : undefined}
+                          {/* ── التكلفة الفعلية تُقرأ ولا تُكتب ──
+                              It is SUM(entries), and every entry carries the
+                              spend date, payment method and invoice identity
+                              that make it postable. A figure typed straight
+                              onto the item has none of the three, so nothing
+                              could ever post it — `ADAPTERS.startup` reads
+                              `startup_cost_entries`, and there is no adapter
+                              for the parent. Rows that still hold a legacy
+                              amount are converted, not edited. */}
+                          <span
+                            className="tabular-nums text-slate-700 dark:text-slate-300 font-medium"
+                            title={canMutate ? 'مجموع سجل المصاريف — اضغط اسم البند لتسجيل دفعة' : undefined}
+                          >
+                            {formatCurrency(rowActual)}
+                          </span>
+                          {needsConversionIds.has(i.id) && (
+                            <button
+                              type="button"
+                              onClick={() => canMutate && setConvertItem(i)}
+                              disabled={!canMutate}
+                              className="block mt-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300 hover:underline disabled:no-underline disabled:opacity-60"
                             >
-                              {formatCurrency(rowActual)}
-                            </span>
+                              يحتاج تحويلاً إلى قيد
+                            </button>
                           )}
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums align-top">
@@ -405,11 +390,23 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
                           </span>
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap align-top">
-                          <StatusTogglePill
-                            status={i.status}
-                            onChange={(next) => handleUpdateStatus(i.id, next)}
-                            disabled={!canMutate}
-                          />
+                          {/* ── الحالة مشتقة، لا مبدَّلة ──
+                              `status` is a function of the spend and the
+                              budget (`startupStatusOf`). A manual toggle let
+                              the row say `completed` while its numbers said
+                              otherwise, and editing the budget moved what the
+                              function is computed from without re-running it.
+                              The server re-derives it on every add, delete,
+                              conversion and plan edit. */}
+                          <span
+                            title="تُشتق من المصروفات المسجَّلة والميزانية"
+                            className={`inline-flex text-[11px] font-semibold px-2 py-1 rounded-full border ${
+                              i.status === 'completed'
+                                ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-100 dark:border-emerald-500/30'
+                                : 'bg-amber-50 dark:bg-amber-500/10 text-amber-800 dark:text-amber-300 border-amber-100 dark:border-amber-500/30'
+                            }`}>
+                            {i.status === 'completed' ? 'مكتمل' : 'قيد التنفيذ'}
+                          </span>
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap text-left align-top">
                           {canMutate && (
@@ -456,7 +453,6 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
         usedCategoryIds={usedCategoryIds}
         showToast={showToast}
         initialValues={editingItem}
-        isLedgerManaged={Boolean(editingItem && ledgerManagedIds.has(editingItem.id))}
       />
 
       <ExpenseLedgerModal
@@ -468,6 +464,17 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
         onDirty={() => { refetch(); refetchLedgerParents(); }}
         migrationFile="2026_06_startup_cost_entries_ALL.sql"
         uploadFolder={detailItem ? `startup/${detailItem.id}` : 'startup'}
+      />
+
+      <StartupConversionModal
+        item={convertItem}
+        onClose={() => setConvertItem(null)}
+        onConvert={async (id, form) => {
+          await convertStartupParentSpend(id, form);
+          await refetch();
+          await refetchLedgerParents();
+          showToast('تم التحويل — صار المبلغ قيداً في سجل مصاريف البند، وقابلاً للترحيل.');
+        }}
       />
 
       <Toast

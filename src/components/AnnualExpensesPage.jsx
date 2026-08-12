@@ -17,7 +17,7 @@ import Toast from './Toast';
 import { useAnnualExpenses } from '../hooks/useAnnualExpenses';
 import { useAnnualExpenseEntries } from '../hooks/useAnnualExpenseEntries';
 import { useAnnualExpenseCategories } from '../hooks/useAnnualExpenseCategories';
-import { isSupabaseConfigured, missingEnvNames, describeSupabaseError } from '../lib/supabaseClient';
+import { isFirebaseConfigured, missingEnvNames, describeBackendError } from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 
 // True when today's month + day match the row's recurring payment date.
@@ -124,8 +124,8 @@ export default function AnnualExpensesPage() {
       showToast('تم إضافة التصنيف الجديد بنجاح');
       return newId;
     } catch (e) {
-      console.error('Supabase Category Error:', e, 'label:', label);
-      const friendly = describeSupabaseError(e) || 'تعذّر إضافة التصنيف الجديد';
+      console.error('Firestore Category Error:', e, 'label:', label);
+      const friendly = describeBackendError(e) || 'تعذّر إضافة التصنيف الجديد';
       showToast(friendly, 'error');
       throw e; // re-throw so the modal can also display the inline error
     }
@@ -135,7 +135,7 @@ export default function AnnualExpensesPage() {
       await deleteCategory(id);
       showToast('تم حذف التصنيف من القوائم');
     } catch (e) {
-      showToast(describeSupabaseError(e) || 'تعذّر حذف التصنيف', 'error');
+      showToast(describeBackendError(e) || 'تعذّر حذف التصنيف', 'error');
       throw e;
     }
   }
@@ -160,7 +160,7 @@ export default function AnnualExpensesPage() {
       />
 
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
-        {!isSupabaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
+        {!isFirebaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
 
         {mutationError && (
           <ErrorState

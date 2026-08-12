@@ -13,7 +13,9 @@ import LoadingState from './LoadingState';
 import ErrorState, { SetupRequiredCard } from './ErrorState';
 import Toast from './Toast';
 import { useWashes } from '../hooks/useWashes';
-import { isSupabaseConfigured, missingEnvNames } from '../lib/supabaseClient';
+import { useAccountingSettings } from '../hooks/useAccountingSettings';
+import { autoPostOnApproval, describeAutoPost, autoPostTone } from '../lib/accounting/autoPost';
+import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 
 // ─── Status toggle pill (مكتملة ↔ قيد التنفيذ) ────────────────────────────
@@ -84,6 +86,7 @@ export default function WashesPage() {
     addItem, updateItem, updateStatus, deleteItem, refetch,
   } = useWashes();
   const { scalingFactor, canMutate } = usePartnerView();
+  const { settings } = useAccountingSettings();
 
   const [localOpen, setLocalOpen]         = useState(false);
   const [editingItem, setEditingItem]     = useState(null);
@@ -130,9 +133,31 @@ export default function WashesPage() {
     try { await updateItem(id, updates); showToast('تم حفظ التعديلات'); }
     catch (e) { setMutationError(e); throw e; }
   }
+  /**
+   * Marking a wash مكتملة is the approval moment: the sale is earned, so
+   * that is when it belongs in the books. Posting is attempted only on the
+   * transition INTO completed, and its result is always shown — a silently
+   * swallowed posting failure is how a ledger goes stale without anyone
+   * noticing.
+   */
   async function handleUpdateStatus(id, status) {
+    const before = items.find((w) => w.id === id);
     try { await updateStatus(id, status); }
-    catch (e) { setMutationError(e); }
+    catch (e) { setMutationError(e); return; }
+    if (!settings.autoPost) return;
+    const result = await autoPostOnApproval({
+      kind: 'wash', id,
+      before: { status: before?.status },
+      after: { status },
+      vatRegistered: settings.vatRegistered,
+      washPriceMode: settings.washPriceMode,
+    });
+    // `null` means it was not an approval transition — nothing to say.
+    if (result && result.status !== 'skipped') {
+      showToast(describeAutoPost(result), autoPostTone(result));
+    } else if (result?.blocking) {
+      showToast(describeAutoPost(result), 'error');
+    }
   }
   async function handleDelete(item) {
     const confirmed = typeof window !== 'undefined'
@@ -151,7 +176,7 @@ export default function WashesPage() {
       />
 
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
-        {!isSupabaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
+        {!isFirebaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
 
         {mutationError && (
           <ErrorState

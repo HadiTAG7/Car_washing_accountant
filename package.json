@@ -7,30 +7,43 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run --exclude \"**/*.emulator.test.js\"",
+    "test:watch": "vitest",
+    "test:emulator": "firebase emulators:exec --only firestore --project demo-sweater --config firebase.test.json \"vitest run --testTimeout=120000 --no-file-parallelism ledger.emulator invoicing.emulator assets.emulator recurring.emulator autoPost.emulator startupMigration.emulator\"",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-sweater --config firebase.test.json \"vitest run --testTimeout=120000 rules.emulator\"",
+    "test:functions": "firebase emulators:exec --only firestore --project demo-sweater --config firebase.test.json \"vitest run --testTimeout=120000 --dir functions --exclude '**/callables.test.js'\"",
+    "test:callables": "firebase emulators:exec --only firestore,functions,auth --project demo-sweater --config firebase.test.json \"vitest run --testTimeout=180000 --dir functions callables\""
   },
   "dependencies": {
-    "@capacitor/android": "^8.4.2",
-    "@capacitor/cli": "^8.4.2",
     "@capacitor/core": "^8.4.2",
-    "@supabase/supabase-js": "^2.103.2",
     "firebase": "^12.16.0",
+    "qrcode-generator": "^2.0.4",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },
   "devDependencies": {
+    "@capacitor/android": "^8.4.2",
+    "@capacitor/cli": "^8.4.2",
     "@eslint/js": "^9.39.4",
+    "@firebase/rules-unit-testing": "^5.0.1",
     "@tailwindcss/vite": "^4.2.2",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
     "eslint": "^9.39.4",
-    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-hooks": "7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
+    "firebase-admin": "^13.10.0",
+    "firebase-tools": "^15.26.0",
     "globals": "^17.4.0",
+    "jsdom": "^26.1.0",
     "lucide-react": "^1.8.0",
     "recharts": "^3.8.1",
     "tailwindcss": "^4.2.2",
-    "vite": "^8.0.4"
+    "vite": "^8.0.4",
+    "vitest": "^4.1.10"
   }
 }

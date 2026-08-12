@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import {
   Percent, Receipt, Coins, Link as LinkIcon, FileText, Download, Calendar,
+  ArrowUpRight, ArrowDownLeft, AlertTriangle, Scale,
 } from 'lucide-react';
 import {
-  formatCurrency, formatCurrencyPrecise, formatDate, formatNumber, extractVat, netOfVat,
+  formatCurrency, formatCurrencyPrecise, formatDate, formatNumber,
 } from '../data/initialData';
 import { downloadCsv } from '../lib/exportCsv';
 import TopBar from './TopBar';
@@ -17,45 +18,30 @@ import { useStartupCosts } from '../hooks/useStartupCosts';
 import { useAnnualExpenses } from '../hooks/useAnnualExpenses';
 import { useMonthlyExpenses } from '../hooks/useMonthlyExpenses';
 import { useVariableExpenses } from '../hooks/useVariableExpenses';
-import { isSupabaseConfigured, missingEnvNames } from '../lib/supabaseClient';
+import { useWashes } from '../hooks/useWashes';
+import { useLedger } from '../hooks/useLedger';
+import { useAccountingSettings } from '../hooks/useAccountingSettings';
+import {
+  buildVatReport, periodLabel, availablePeriods, currentPeriodKey,
+  FILING_PERIOD_LABELS,
+} from '../lib/accounting/vatReturn';
+import { taxPolicyAt } from '../lib/accounting/taxPolicy';
+import { amountRoleOf } from '../lib/accounting/purchaseDisplay';
+import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
+
+/** Where a deducted VAT figure actually came from — shown, never inferred. */
+const TAX_SOURCE_LABELS = {
+  invoice: 'مبلغ الفاتورة',
+  'invoice-rate': 'نسبة الفاتورة',
+  policy: 'سياسة تاريخ الفاتورة',
+  default: 'النسبة الافتراضية',
+};
 
 // Same guard the detail modal uses — only http(s) values become anchors.
 function isSafeHttpUrl(value) {
   return /^https?:\/\//i.test(String(value || '').trim());
 }
-
-// ─── VAT return periods ──────────────────────────────────────────────────
-// ZATCA files QUARTERLY for taxable supplies under SAR 40m (monthly only
-// above that), so the report totals by quarter, not by month.
-const QUARTER_NAMES = ['الأول', 'الثاني', 'الثالث', 'الرابع'];
-const QUARTER_MONTHS = [
-  'يناير – مارس', 'أبريل – يونيو', 'يوليو – سبتمبر', 'أكتوبر – ديسمبر',
-];
-/** '2026-08-11' → '2026-Q3' ('' when the date is missing/invalid). */
-function quarterOf(iso) {
-  const s = String(iso || '');
-  if (s.length < 7) return '';
-  const y = s.slice(0, 4);
-  const m = parseInt(s.slice(5, 7), 10);
-  if (!Number.isFinite(m) || m < 1 || m > 12) return '';
-  return `${y}-Q${Math.floor((m - 1) / 3) + 1}`;
-}
-/** '2026-Q3' → 'الربع الثالث 2026 · يوليو – سبتمبر'. */
-function quarterLabel(q) {
-  const m = /^(\d{4})-Q([1-4])$/.exec(String(q || ''));
-  if (!m) return q;
-  const i = +m[2] - 1;
-  return `الربع ${QUARTER_NAMES[i]} ${m[1]} · ${QUARTER_MONTHS[i]}`;
-}
-/** The quarter containing today, used as the report's default period. */
-function currentQuarter() {
-  const d = new Date();
-  return `${d.getFullYear()}-Q${Math.floor(d.getMonth() / 3) + 1}`;
-}
-// A recurring monthly expense is claimable in each month of the period, so
-// a quarterly return counts it three times.
-const MONTHS_PER_QUARTER = 3;
 
 // Tiny source chip next to the parent item name — tells the admin which
 // page the invoice was logged from.
@@ -64,6 +50,10 @@ const SOURCE_META = {
   annual:  { label: 'سنوي',  cls: 'bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-100 dark:border-amber-500/30' },
   monthly: { label: 'شهري',  cls: 'bg-indigo-50 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-100 dark:border-indigo-500/30' },
   variable:{ label: 'متغيّر', cls: 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700' },
+  // A generated voucher is its own kind — it posts through its own adapter,
+  // is keyed `voucher__<id>`, and carries a real invoice date the template it
+  // came from never had.
+  voucher: { label: 'سند',   cls: 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-100 dark:border-emerald-500/30' },
 };
 function SourceBadge({ source }) {
   const meta = SOURCE_META[source];
@@ -75,45 +65,78 @@ function SourceBadge({ source }) {
   );
 }
 
+/**
+ * تقرير ضريبة القيمة المضافة — output tax, deductible input tax, and the net.
+ *
+ * Named a *report*, not a return: it covers the three headline figures but
+ * not every field of a ZATCA declaration (zero-rated and exempt supplies,
+ * imports, corrections of prior periods), so calling it an إقرار would
+ * overstate what it is.
+ *
+ * The rule this page exists to enforce: **input tax is only deducted against
+ * a real tax invoice**. A cost being recurring is not evidence that three
+ * invoices exist. Anything without a date, an invoice number, a supplier and
+ * an amount of its own is listed as غير مؤهلة with the missing fields named —
+ * excluded from the claim, but never hidden.
+ */
 export default function VatRecoveryPage() {
   const { invoices, loading, error, sourceErrors, refetch } = useTaxInvoices();
   const { items: startupItems } = useStartupCosts();
   const { items: annualItems }  = useAnnualExpenses();
   const { items: monthlyItems } = useMonthlyExpenses();
   const { items: variableItems } = useVariableExpenses();
+  const { items: washes } = useWashes();
+  const { entries, lines } = useLedger();
+  const { settings } = useAccountingSettings();
   const { scalingFactor } = usePartnerView();
 
-  // ZATCA returns are filed per period — let the admin narrow to one
-  // quarter (YYYY-Qn) before totalling / exporting. '' = all periods.
-  // Defaults to the CURRENT quarter: that is the return actually being
-  // prepared, and it is the only view whose totals are directly filable.
-  const [period, setPeriod] = useState(currentQuarter);
+  const filing = settings.vatFilingPeriod || 'quarterly';
+  // Opens on the period actually being prepared — the only view whose totals
+  // are directly usable.
+  const [period, setPeriod] = useState('');
 
-  // Every quarter present in the data, newest first, plus the current one so
-  // a fresh quarter is selectable before its first invoice is logged.
-  const periods = useMemo(() => {
-    const set = new Set(invoices.map((e) => quarterOf(e.spentDate)).filter(Boolean));
-    set.add(currentQuarter());
-    return [...set].sort().reverse();
-  }, [invoices]);
-
-  // A recurring monthly invoice has no single spend date — its VAT is
-  // reclaimable in EVERY return period, so it stays visible whichever quarter
-  // is selected. One-off rows filter by their own date as before.
-  const filtered = useMemo(
-    () => (period
-      ? invoices.filter((e) => e.recurring || quarterOf(e.spentDate) === period)
-      : invoices),
-    [invoices, period],
+  const periods = useMemo(
+    () => availablePeriods(invoices, filing, washes.map((w) => w.washDate)),
+    [invoices, filing, washes],
   );
 
-  // How many times a recurring row counts in the selected view: three within
-  // a quarter, once when no period is chosen (there is no defined span to
-  // multiply across, and over-stating a reclaim is the costlier error).
-  const recurringMultiplier = period ? MONTHS_PER_QUARTER : 1;
+  // Switching the filing frequency changes the shape of a period key
+  // ('2026-Q3' ↔ '2026-08'), so a selection made under the old setting no
+  // longer names anything. Fall back to the current period rather than
+  // rendering a select with no matching option.
+  const selected = period === '__all__' || periods.includes(period)
+    ? period
+    : currentPeriodKey(filing);
+  const activePeriod = selected === '__all__' ? '' : selected;
 
-  // Resolve parentId → item name across both sources (uuids can't
-  // collide, so one merged map is enough).
+  // A posted wash reports what its own entry froze; an unposted one is split
+  // under the policy in force on ITS date. Neither is re-derived from today's
+  // switches — that is what made a July figure move when August changed.
+  const washEntryBySource = useMemo(() => {
+    const m = new Map();
+    for (const e of entries) {
+      if (e.status !== 'posted' || e.reversalOf) continue;
+      if ((e.sourceKind || e.sourceType) !== 'wash') continue;
+      m.set(String(e.sourceId ?? ''), e);
+    }
+    return m;
+  }, [entries]);
+
+  const report = useMemo(() => buildVatReport({
+    inputs: invoices,
+    washes,
+    entries,
+    lines,
+    period: activePeriod,
+    filing,
+    policyAt: (date) => taxPolicyAt(date, settings),
+    postedEntryOf: (w) => washEntryBySource.get(String(w.id)),
+    vatRegistered: settings.vatRegistered,
+    washPriceMode: settings.washPriceMode,
+  }), [invoices, washes, entries, lines, activePeriod, filing, settings, washEntryBySource]);
+
+  // Resolve parentId → item name across all sources (uuids can't collide, so
+  // one merged map is enough).
   const itemNameById = useMemo(() => {
     const m = new Map();
     startupItems.forEach((i) => m.set(i.id, i.itemName));
@@ -123,258 +146,376 @@ export default function VatRecoveryPage() {
     return m;
   }, [startupItems, annualItems, monthlyItems, variableItems]);
 
-  // All money figures are scaled by the viewing partner's share for
-  // consistency with the rest of the dashboard (admin → ×1).
-  const kpis = useMemo(() => {
-    let inclusive = 0, vat = 0, net = 0;
-    filtered.forEach((e) => {
-      // A recurring monthly invoice is claimed in each month of the quarter.
-      const n = e.recurring ? recurringMultiplier : 1;
-      inclusive += (e.amount || 0) * n;
-      vat       += extractVat(e.amount, true) * n;
-      net       += netOfVat(e.amount, true) * n;
-    });
-    return {
-      inclusive: inclusive * scalingFactor,
-      vat:       vat       * scalingFactor,
-      net:       net       * scalingFactor,
-      count:     filtered.length,
-    };
-  }, [filtered, scalingFactor, recurringMultiplier]);
+  // Money is scaled by the viewing partner's share, as elsewhere (admin → ×1).
+  const s = scalingFactor;
+  const outputTax = report.output.tax * s;
+  const inputTax  = report.input.tax * s;
+  const netTax    = report.netTax * s;
 
   function handleExport() {
-    const rows = filtered.map((e) => {
-      const n = e.recurring ? recurringMultiplier : 1;
-      return [
-        itemNameById.get(e.parentId) || '',
-        SOURCE_META[e.source]?.label || e.source,
-        e.description,
-        e.recurring ? 'متكرر شهرياً' : e.spentDate,
-        // The count carried into the period, so the accountant can see why a
-        // recurring line totals more than its single-month value.
-        n,
-        // Amounts as numbers, not strings — the CSV layer's formula-injection
-        // guard neutralizes only text, so numbers keep Excel interpretation.
-        Number(((e.amount || 0) * n * scalingFactor).toFixed(2)),
-        Number((extractVat(e.amount, true) * n * scalingFactor).toFixed(2)),
-        Number((netOfVat(e.amount, true) * n * scalingFactor).toFixed(2)),
-        isSafeHttpUrl(e.invoiceUrl) ? e.invoiceUrl : '',
-      ];
-    });
-    // Totals row for the accountant.
-    rows.push(['الإجمالي', '', '', '', '', Number(kpis.inclusive.toFixed(2)), Number(kpis.vat.toFixed(2)), Number(kpis.net.toFixed(2)), '']);
-    const label = period || 'كل-الفترات';
+    // ── كل عمود يقول ما هو ──
+    // The old export had one money column called «شامل الضريبة» and put the
+    // RAW stored amount into it for the rejected rows. For a record saved
+    // `exclusive` that amount is the NET, so the same column held a gross on
+    // one line and a net on the next with nothing to tell them apart. The
+    // amount now travels in its own column beside the mode that defines it,
+    // and «الإجمالي» means the gross on every line. See
+    // docs/AMOUNT_DEFINITION.md.
+    const roleOf = (r) => amountRoleOf(r).label;
+    const rows = report.eligible.map((e) => [
+      itemNameById.get(e.parentId) || '',
+      SOURCE_META[e.source]?.label || e.source,
+      e.description,
+      e.supplier || '',
+      e.invoiceNumber || '',
+      e.claimDate,
+      roleOf(e),
+      Number(((Number(e.amount) || 0) * s).toFixed(2)),
+      Number((e.gross * s).toFixed(2)),
+      Number((e.net * s).toFixed(2)),
+      Number((e.tax * s).toFixed(2)),
+      TAX_SOURCE_LABELS[e.taxSource] || e.taxSource || '',
+      isSafeHttpUrl(e.invoiceUrl) ? e.invoiceUrl : '',
+    ]);
+    rows.push(['إجمالي ضريبة المدخلات المؤهلة', '', '', '', '', '', '', '',
+      Number((report.input.gross * s).toFixed(2)),
+      Number((report.input.net * s).toFixed(2)),
+      Number(inputTax.toFixed(2)), '', '']);
+    rows.push(['ضريبة المخرجات (الغسلات)', '', '', '', '', '', '', '',
+      Number((report.output.gross * s).toFixed(2)),
+      Number((report.output.net * s).toFixed(2)),
+      Number(outputTax.toFixed(2)), '', '']);
+    rows.push([
+      netTax >= 0 ? 'صافي الضريبة المستحقة للهيئة' : 'صافي الضريبة المستردة',
+      '', '', '', '', '', '', '', '', '', Number(Math.abs(netTax).toFixed(2)), '', '',
+    ]);
+    // Rejected invoices travel with the export: an accountant reviewing the
+    // period needs to see what was NOT claimed and why.
+    for (const r of report.ineligible) {
+      rows.push([
+        itemNameById.get(r.parentId) || '', SOURCE_META[r.source]?.label || r.source,
+        r.description, r.supplier || '', r.invoiceNumber || '', r.claimDate || '',
+        roleOf(r), Number(((Number(r.amount) || 0) * s).toFixed(2)), '', '', 0, '',
+        `غير مؤهلة — ينقصها: ${r.missing.join('، ')}`,
+      ]);
+    }
+    // Unresolved invoices travel too. They are NOT zero-VAT purchases and must
+    // not read as if they were — the export says which they are and why.
+    // Rows that cannot be posted as they stand travel with the export too: a
+    // claim waiting on a conversion is not a claim that vanished.
+    for (const r of report.needsConversion) {
+      rows.push([
+        itemNameById.get(r.parentId) || '', SOURCE_META[r.source]?.label || r.source,
+        r.description, r.supplier || '', r.invoiceNumber || '', r.claimDate || '',
+        roleOf(r), Number(((Number(r.amount) || 0) * s).toFixed(2)), '', '', 0, 'بانتظار التحويل',
+        `غير مُطالَب به — ${r.reason}`,
+      ]);
+    }
+    for (const r of report.unresolved) {
+      rows.push([
+        itemNameById.get(r.parentId) || '', SOURCE_META[r.source]?.label || r.source,
+        r.description, r.supplier || '', r.invoiceNumber || '', r.claimDate || '',
+        roleOf(r), Number(((Number(r.amount) || 0) * s).toFixed(2)), '', '', '',
+        'غير محدَّد', `ضريبة غير محدَّدة — ${r.reason}`,
+      ]);
+    }
     downloadCsv(
-      `الضريبة-المستردة-${label}`,
-      ['البند الأصلي', 'المصدر', 'الوصف', 'التاريخ', 'عدد الأشهر', 'شامل الضريبة', 'الضريبة 15%', 'الصافي', 'رابط الفاتورة'],
+      `تقرير-ضريبة-القيمة-المضافة-${activePeriod || 'كل-الفترات'}`,
+      ['البند', 'المصدر', 'الوصف', 'المورّد', 'رقم الفاتورة', 'تاريخ الفاتورة',
+        'وضع المبلغ المسجَّل', 'المبلغ المسجَّل', 'الإجمالي شامل الضريبة',
+        'الصافي قبل الضريبة', 'الضريبة', 'مصدر الضريبة', 'رابط الفاتورة / ملاحظة'],
       rows,
     );
   }
 
+  const anyRows = report.eligible.length > 0 || report.ineligible.length > 0
+    || report.unresolved.length > 0 || report.needsConversion.length > 0
+    || report.output.count > 0;
+
   return (
     <>
       <TopBar
-        title="الضريبة المستردة"
-        subtitle="الإقرار الضريبي ربع سنوي — إجمالي ضريبة القيمة المضافة المتوقع استردادها"
+        title="تقرير ضريبة القيمة المضافة"
+        subtitle={`ضريبة المخرجات والمدخلات والصافي — إقرار ${FILING_PERIOD_LABELS[filing]}`}
       />
 
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
-        {!isSupabaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
-
-        {/* Full ErrorState only when BOTH sources failed. A single
-            failed source (usually its migration hasn't run yet) gets a
-            compact amber note below while the healthy source's invoices
-            keep rendering. */}
+        {!isFirebaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
         {error && (
-          <ErrorState
-            title="تعذّر تحميل الفواتير الضريبية"
-            error={error}
-            onRetry={refetch}
-          />
+          <ErrorState title="تعذّر تحميل الفواتير الضريبية" error={error} onRetry={refetch} />
         )}
         {!error && sourceErrors.startup && (
           <div role="alert" className="bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/30 text-amber-700 dark:text-amber-300 text-xs px-4 py-2.5 rounded-control leading-relaxed">
-            تعذّر تحميل فواتير <strong>رسوم التأسيس</strong> — إن لم تكن قد شغّلت{' '}
-            <code className="bg-amber-100 dark:bg-amber-500/20 px-1 rounded-control" dir="ltr">2026_06_startup_cost_entries_ALL.sql</code>{' '}
-            في Supabase SQL Editor، شغّله ثم حدّث الصفحة. الفواتير السنوية معروضة أدناه.
+            تعذّر تحميل فواتير <strong>رسوم التأسيس</strong> — تحقّق من اتصالك ومن صلاحيات
+            حسابك، ثم حدّث الصفحة. بقية المصادر معروضة أدناه.
           </div>
         )}
         {!error && sourceErrors.annual && (
           <div role="alert" className="bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/30 text-amber-700 dark:text-amber-300 text-xs px-4 py-2.5 rounded-control leading-relaxed">
-            تعذّر تحميل فواتير <strong>المصاريف السنوية</strong> — إن لم تكن قد شغّلت{' '}
-            <code className="bg-amber-100 dark:bg-amber-500/20 px-1 rounded-control" dir="ltr">2026_06_annual_expense_entries_ALL.sql</code>{' '}
-            في Supabase SQL Editor، شغّله ثم حدّث الصفحة. فواتير التأسيس معروضة أدناه.
+            تعذّر تحميل فواتير <strong>المصاريف السنوية</strong> — تحقّق من اتصالك ومن صلاحيات
+            حسابك، ثم حدّث الصفحة. بقية المصادر معروضة أدناه.
           </div>
         )}
 
-        {/* ── KPI summary ──────────────────────────────────── */}
+        {/* ── ما هذا التقرير، وما ليس هو ─────────────────────────── */}
+        <div role="note" className="flex items-start gap-2.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs px-4 py-3 rounded-control leading-relaxed">
+          <Scale size={16} className="shrink-0 mt-0.5" />
+          <div>
+            <p className="font-bold text-slate-900 dark:text-slate-100">ورقة عمل داخلية — ليست إقراراً ضريبياً.</p>
+            <p className="mt-1">
+              تغطي المخرجات والمدخلات والصافي فقط، ولا تشمل كل حقول الإقرار
+              (التوريدات الصفرية والمعفاة، والاستيراد، وتصحيحات الفترات السابقة).
+              <strong className="mx-1">ضريبة المدخلات تُحتسب من فواتير فعلية فقط</strong>
+              لكل منها تاريخ ورقم فاتورة ومورّد ومبلغ مستقل — تكرار المصروف شهرياً
+              ليس دليلاً على وجود فواتير.
+            </p>
+            <p className="mt-1">
+              دورية الإقرار ({FILING_PERIOD_LABELS[filing]}) تُضبط من «إقفال الفترة ← إعدادات المحاسبة».
+            </p>
+          </div>
+        </div>
+
+        {!settings.vatRegistered && (
+          <div role="alert" className="bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/30 text-amber-700 dark:text-amber-300 text-xs px-4 py-2.5 rounded-control leading-relaxed">
+            المنشأة غير مسجّلة في ضريبة القيمة المضافة في الإعدادات — لذلك ضريبة
+            المخرجات صفر، ويُسجَّل كامل مبلغ الغسلة إيراداً. غيّر ذلك من إعدادات المحاسبة
+            إذا كانت مسجّلة فعلاً.
+          </div>
+        )}
+
+        {/* ── الأرقام الثلاثة ───────────────────────────────────── */}
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3 sm:gap-5">
+          <StatCard
+            icon={ArrowUpRight}
+            tone="indigo"
+            label="ضريبة المخرجات (المبيعات)"
+            value={formatCurrencyPrecise(outputTax)}
+            sub={report.output.source === 'ledger'
+              ? 'من حركة حساب 2100 المُرحّلة — شاملة الإشعارات'
+              : `${formatNumber(report.output.count)} غسلة مكتملة (لا توجد قيود بعد)`}
+          />
+          <StatCard
+            icon={ArrowDownLeft}
+            tone="emerald"
+            label="ضريبة المدخلات المؤهلة"
+            value={formatCurrencyPrecise(inputTax)}
+            sub={`${formatNumber(report.input.count)} فاتورة مستوفية`}
+          />
           <StatCard
             className="col-span-2 md:col-span-1"
             icon={Percent}
-            tone="emerald"
-            label="إجمالي الضريبة المتوقع استردادها"
-            value={formatCurrencyPrecise(kpis.vat)}
-            sub={`${formatNumber(kpis.count)} فاتورة ضريبية${period ? ` · ${period}` : ''}`}
-          />
-          <StatCard
-            icon={Receipt}
-            tone="slate"
-            label="إجمالي الفواتير (شامل الضريبة)"
-            value={formatCurrency(kpis.inclusive)}
-            sub="مجموع المبالغ المدفوعة فعلياً"
-          />
-          <StatCard
-            icon={Coins}
-            tone="primary"
-            label="صافي قيمة السلع (قبل الضريبة)"
-            value={formatCurrency(kpis.net)}
-            sub="الإجمالي مطروحاً منه الضريبة"
+            tone={report.direction === 'refundable' ? 'emerald' : 'primary'}
+            label={report.direction === 'refundable' ? 'صافي الضريبة المستردة' : 'صافي الضريبة المستحقة'}
+            value={formatCurrencyPrecise(Math.abs(netTax))}
+            sub={report.direction === 'refundable'
+              ? 'المدخلات تفوق المخرجات'
+              : report.direction === 'nil' ? 'لا مستحق ولا مسترد' : 'تُسدَّد للهيئة'}
           />
         </div>
 
-        {/* ── Tax invoices table ───────────────────────────── */}
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 sm:gap-5">
+          <StatCard
+            icon={Receipt}
+            tone="slate"
+            label="مشتريات مؤهلة (شامل الضريبة)"
+            value={formatCurrency(report.input.gross * s)}
+          />
+          <StatCard
+            icon={Coins}
+            tone="slate"
+            label="صافي المشتريات (قبل الضريبة)"
+            value={formatCurrency(report.input.net * s)}
+          />
+          <StatCard
+            className="col-span-2 md:col-span-1"
+            icon={AlertTriangle}
+            tone={report.ineligible.length ? 'amber' : 'slate'}
+            label="ضريبة غير مطالَب بها"
+            value={formatCurrencyPrecise(report.forfeitedTax * s)}
+            sub={report.ineligible.length
+              ? `${formatNumber(report.ineligible.length)} فاتورة ناقصة البيانات`
+              : 'كل الفواتير مستوفية'}
+          />
+        </div>
+
+        {/* ── مطابقة التقرير بالدفاتر ────────────────────────────
+            Both sides get the same treatment: a figure the report claims but
+            the ledger has never seen is a gap worth naming, not averaging. */}
+        {(report.outputMismatch !== 0 || report.inputMismatch !== 0) && (
+          <div role="alert" className="flex items-start gap-2.5 bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/30 text-amber-800 dark:text-amber-300 text-xs px-4 py-3 rounded-control leading-relaxed">
+            <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+            <div className="min-w-0">
+              <p className="font-bold">التقرير لا يطابق الدفاتر — عمليات لم تُرحَّل بعد.</p>
+              {report.outputMismatch !== 0 && (
+                <p className="mt-1">
+                  <span className="font-semibold">المخرجات:</span> من الغسلات{' '}
+                  <strong className="tabular-nums">{formatCurrencyPrecise(report.operationalOutput.tax)}</strong>{' '}
+                  · في الدفاتر (حساب 2100){' '}
+                  <strong className="tabular-nums">{formatCurrencyPrecise(report.ledgerOutput.tax)}</strong>{' '}
+                  · الفرق{' '}
+                  <strong className="tabular-nums">{formatCurrencyPrecise(report.outputMismatch)}</strong>
+                </p>
+              )}
+              {report.inputMismatch !== 0 && (
+                <p className="mt-1">
+                  <span className="font-semibold">المدخلات:</span> من الفواتير المؤهلة{' '}
+                  <strong className="tabular-nums">{formatCurrencyPrecise(report.input.tax)}</strong>{' '}
+                  · في الدفاتر (حساب 1200){' '}
+                  <strong className="tabular-nums">{formatCurrencyPrecise(report.ledgerInput.tax)}</strong>{' '}
+                  · الفرق{' '}
+                  <strong className="tabular-nums">{formatCurrencyPrecise(report.inputMismatch)}</strong>
+                </p>
+              )}
+              <p className="mt-1">شغّل «إقفال الفترة ← فحص غير المُرحّل ← ترحيل» لتتطابق الأرقام.</p>
+            </div>
+          </div>
+        )}
+
+        {/* ── المؤهلة غير المُرحّلة ───────────────────────────────── */}
+        {report.unpostedEligible.length > 0 && (
+          <Card className="p-6">
+            <SectionHeader
+              title="فواتير مؤهلة لم تُرحَّل إلى الدفاتر"
+              subtitle={`${formatNumber(report.unpostedEligible.length)} فاتورة بضريبة ${formatCurrencyPrecise(report.unpostedInputTax * s)} — مطالَب بها في التقرير وغير موجودة في حساب 1200`}
+            />
+            <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
+              <table className="w-full min-w-[620px] text-sm">
+                <thead>
+                  <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
+                    <th className="py-3 px-4 whitespace-nowrap">البند</th>
+                    <th className="py-3 px-4 whitespace-nowrap">المورّد</th>
+                    <th className="py-3 px-4 whitespace-nowrap">تاريخ الفاتورة</th>
+                    <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">الضريبة</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {report.unpostedEligible.map((r) => (
+                    <tr key={r.id} className="border-b border-slate-50 dark:border-slate-800/60 last:border-0">
+                      <td className="py-3 px-4 whitespace-normal break-words min-w-[160px] text-slate-800 dark:text-slate-200">
+                        <span className="inline-flex items-center gap-1.5 font-medium">
+                          {r.description}
+                          <SourceBadge source={r.source} />
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 whitespace-nowrap text-slate-700 dark:text-slate-300">{r.supplier}</td>
+                      <td className="py-3 px-4 whitespace-nowrap tabular-nums text-slate-600 dark:text-slate-400">{formatDate(r.claimDate)}</td>
+                      <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums font-bold text-amber-700 dark:text-amber-300">
+                        {formatCurrencyPrecise(r.tax * s)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        )}
+
+        {/* ── فواتير المدخلات المؤهلة ───────────────────────────── */}
         <Card className="p-6">
           <SectionHeader
-            title="الفواتير الضريبية"
-            subtitle={period ? quarterLabel(period) : 'كل الفترات'}
+            title="فواتير المدخلات المؤهلة للخصم"
+            subtitle={activePeriod ? periodLabel(activePeriod) : 'كل الفترات'}
             action={
               <div className="flex items-center gap-2">
-                {/* Period filter */}
                 <div className="relative">
                   <Calendar size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 pointer-events-none" />
                   <select
-                    value={period}
+                    value={selected}
                     onChange={(e) => setPeriod(e.target.value)}
                     className="appearance-none h-10 pr-8 pl-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs font-semibold tabular-nums focus:outline-none focus:border-primary-500 transition-colors"
                     aria-label="فلترة حسب الفترة"
                   >
-                    <option value="">كل الفترات</option>
-                    {periods.map((p) => <option key={p} value={p}>{quarterLabel(p)}</option>)}
+                    {periods.map((p) => <option key={p} value={p}>{periodLabel(p)}</option>)}
+                    <option value="__all__">كل الفترات</option>
                   </select>
                 </div>
-                <SecondaryButton
-                  icon={Download}
-                  onClick={handleExport}
-                  disabled={filtered.length === 0}
-                >
+                <SecondaryButton icon={Download} onClick={handleExport} disabled={!anyRows}>
                   تصدير CSV
                 </SecondaryButton>
               </div>
             }
           />
 
-          {loading && filtered.length === 0 ? (
+          {loading && !anyRows ? (
             <LoadingState message="جارٍ تحميل الفواتير الضريبية..." />
-          ) : filtered.length === 0 ? (
+          ) : report.eligible.length === 0 ? (
             <EmptyState
               icon={FileText}
-              title={period ? 'لا توجد فواتير ضريبية في هذه الفترة' : 'لا توجد فواتير ضريبية مسجّلة بعد'}
-              hint={period
-                ? 'جرّب اختيار فترة أخرى أو "كل الفترات".'
-                : 'افتح أي بند في صفحة "رسوم التأسيس" أو "المصاريف السنوية"، أضف مصروفاً، وفعّل خيار "فاتورة ضريبية" — وسيظهر هنا تلقائياً.'}
+              title="لا توجد فواتير مدخلات مؤهلة في هذه الفترة"
+              hint="الفاتورة تصبح مؤهلة عندما تحمل تاريخاً ورقم فاتورة واسم مورّد ومبلغاً — أكمل هذه الحقول في المصروف ليُحتسب خصمه."
+              compact
             />
           ) : (
             <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
-              <table className="w-full min-w-[820px] text-sm">
+              <table className="w-full min-w-[920px] text-sm">
                 <thead>
                   <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
-                    <th className="py-3 px-4 whitespace-nowrap">البند الأصلي</th>
-                    <th className="py-3 px-4 whitespace-nowrap">الوصف</th>
-                    <th className="py-3 px-4 whitespace-nowrap">التاريخ</th>
-                    <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">شامل الضريبة</th>
-                    <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">الضريبة (15%)</th>
-                    <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">الصافي</th>
+                    <th className="py-3 px-4 whitespace-nowrap">البند</th>
+                    <th className="py-3 px-4 whitespace-nowrap">المورّد</th>
+                    <th className="py-3 px-4 whitespace-nowrap">رقم الفاتورة</th>
+                    <th className="py-3 px-4 whitespace-nowrap">تاريخ الفاتورة</th>
+                    {/* «الإجمالي» always means the gross. What the record
+                        STORES is the gross only in inclusive mode — in
+                        exclusive mode it is the net — so the mode is named
+                        beside it rather than left to the reader.
+                        See docs/AMOUNT_DEFINITION.md. */}
+                    <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">الإجمالي شامل الضريبة</th>
+                    <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">الصافي قبل الضريبة</th>
+                    {/* No fixed «15%» in the caption: a 5%-era purchase keeps
+                        its own rate, so the number is shown with WHERE it came
+                        from rather than a percentage that may contradict it. */}
+                    <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">الضريبة</th>
+                    <th className="py-3 px-4 whitespace-nowrap">مصدر الضريبة</th>
                     <th className="py-3 px-4 whitespace-nowrap">الفاتورة</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((e) => {
-                    // Recurring lines are claimed once per month of the
-                    // period, so the row shows the period total — otherwise
-                    // the column would not add up to the footer.
-                    const times     = e.recurring ? recurringMultiplier : 1;
-                    const inclusive = (e.amount || 0) * times * scalingFactor;
-                    const vat       = extractVat(e.amount, true) * times * scalingFactor;
-                    const net       = netOfVat(e.amount, true) * times * scalingFactor;
-                    return (
-                      <tr
-                        key={e.id}
-                        className="border-b border-slate-50 dark:border-slate-800/60 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors"
-                      >
-                        <td className="py-3 px-4 whitespace-nowrap text-slate-700 dark:text-slate-300">
-                          <span className="inline-flex items-center gap-1.5">
-                            {itemNameById.get(e.parentId) || '—'}
-                            <SourceBadge source={e.source} />
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 whitespace-normal break-words min-w-[160px] font-medium text-slate-800 dark:text-slate-200">
+                  {report.eligible.map((e) => (
+                    <tr key={e.id} className="border-b border-slate-50 dark:border-slate-800/60 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+                      <td className="py-3 px-4 whitespace-normal break-words min-w-[160px] text-slate-800 dark:text-slate-200">
+                        <span className="inline-flex items-center gap-1.5 font-medium">
                           {e.description}
-                          {e.notes && (
-                            <span className="block text-[11px] font-normal text-slate-500 dark:text-slate-400 mt-0.5">
-                              {e.notes}
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-3 px-4 whitespace-nowrap tabular-nums text-slate-600 dark:text-slate-400">
-                          {/* A recurring monthly invoice has no single spend
-                              date — say so instead of rendering an empty cell. */}
-                          {e.recurring
-                            ? (
-                              <span className="text-indigo-700 dark:text-indigo-300 font-semibold">
-                                متكرر شهرياً
-                                {times > 1 && (
-                                  <span className="text-[11px] font-normal text-slate-500 dark:text-slate-400 mr-1 tabular-nums">
-                                    (×{times} أشهر)
-                                  </span>
-                                )}
-                              </span>
-                            )
-                            : formatDate(e.spentDate)}
-                        </td>
-                        <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums text-slate-700 dark:text-slate-300">
-                          {formatCurrency(inclusive)}
-                        </td>
-                        <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums font-bold text-emerald-700 dark:text-emerald-300">
-                          {formatCurrencyPrecise(vat)}
-                        </td>
-                        <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums text-slate-700 dark:text-slate-300">
-                          {formatCurrency(net)}
-                        </td>
-                        <td className="py-3 px-4 whitespace-nowrap">
-                          {e.invoiceUrl && isSafeHttpUrl(e.invoiceUrl) ? (
-                            <a
-                              href={e.invoiceUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 text-primary-700 dark:text-primary-300 hover:underline font-semibold text-[12px]"
-                              title={e.invoiceUrl}
-                            >
-                              <LinkIcon size={12} />
-                              عرض
-                            </a>
-                          ) : (
-                            <span className="text-slate-500 dark:text-slate-400">—</span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
+                          <SourceBadge source={e.source} />
+                        </span>
+                        <span className="block text-[11px] font-normal text-slate-500 dark:text-slate-400 mt-0.5">
+                          {itemNameById.get(e.parentId) || '—'}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 whitespace-nowrap text-slate-700 dark:text-slate-300">{e.supplier}</td>
+                      <td className="py-3 px-4 whitespace-nowrap tabular-nums text-slate-700 dark:text-slate-300" dir="ltr">{e.invoiceNumber}</td>
+                      <td className="py-3 px-4 whitespace-nowrap tabular-nums text-slate-600 dark:text-slate-400">{formatDate(e.claimDate)}</td>
+                      <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums text-slate-700 dark:text-slate-300">
+                        {formatCurrency(e.gross * s)}
+                        <span className="block text-[10px] font-normal text-slate-400 dark:text-slate-500">
+                          المسجَّل {amountRoleOf(e).label}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums text-slate-700 dark:text-slate-300">{formatCurrency(e.net * s)}</td>
+                      <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums font-bold text-emerald-700 dark:text-emerald-300">{formatCurrencyPrecise(e.tax * s)}</td>
+                      <td className="py-3 px-4 whitespace-nowrap text-[11px] text-slate-500 dark:text-slate-400">
+                        {TAX_SOURCE_LABELS[e.taxSource] || e.taxSource || '—'}
+                      </td>
+                      <td className="py-3 px-4 whitespace-nowrap">
+                        {isSafeHttpUrl(e.invoiceUrl) ? (
+                          <a href={e.invoiceUrl} target="_blank" rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-primary-700 dark:text-primary-300 hover:underline font-semibold text-[12px]"
+                            title={e.invoiceUrl}>
+                            <LinkIcon size={12} />
+                            عرض
+                          </a>
+                        ) : (
+                          <span className="text-slate-500 dark:text-slate-400">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
                 <tfoot>
                   <tr className="border-t-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
-                    <td colSpan={3} className="py-3 px-4 text-right font-bold text-slate-900 dark:text-slate-100">
-                      الإجمالي
-                    </td>
-                    <td className="py-3 px-4 text-left font-extrabold text-slate-900 dark:text-slate-100 tabular-nums">
-                      {formatCurrency(kpis.inclusive)}
-                    </td>
-                    <td className="py-3 px-4 text-left font-extrabold text-emerald-700 dark:text-emerald-300 tabular-nums">
-                      {formatCurrency(kpis.vat)}
-                    </td>
-                    <td className="py-3 px-4 text-left font-extrabold text-slate-900 dark:text-slate-100 tabular-nums">
-                      {formatCurrency(kpis.net)}
-                    </td>
+                    <td colSpan={4} className="py-3 px-4 text-right font-bold text-slate-900 dark:text-slate-100">الإجمالي</td>
+                    <td className="py-3 px-4 text-left font-extrabold text-slate-900 dark:text-slate-100 tabular-nums">{formatCurrency(report.input.gross * s)}</td>
+                    <td className="py-3 px-4 text-left font-extrabold text-slate-900 dark:text-slate-100 tabular-nums">{formatCurrency(report.input.net * s)}</td>
+                    <td className="py-3 px-4 text-left font-extrabold text-emerald-700 dark:text-emerald-300 tabular-nums">{formatCurrencyPrecise(inputTax)}</td>
                     <td />
                   </tr>
                 </tfoot>
@@ -382,6 +523,187 @@ export default function VatRecoveryPage() {
             </div>
           )}
         </Card>
+
+        {/* ── فواتير مؤهلة بضريبة غير محدَّدة ─────────────────────
+            These qualify on every field the deduction needs, but nobody can
+            say what their VAT is: no amount on the paper, no rate of their
+            own, and a date the policy record does not reach. Putting them in
+            `eligible` with tax 0 would file a deduction of nothing and call it
+            correct — a deductible tax vanishing in silence is exactly as bad
+            as one appearing from nowhere. */}
+        {report.unresolved.length > 0 && (
+          <Card className="p-6">
+            <SectionHeader
+              title="فواتير بضريبة غير محدَّدة"
+              subtitle="مؤهلة للخصم لكن مبلغ ضريبتها غير معروف — لم تُخصم ولم تُحتسب صفراً"
+            />
+            <div className="flex items-start gap-2.5 bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/30 text-amber-800 dark:text-amber-300 text-xs px-4 py-3 rounded-control leading-relaxed mb-4">
+              <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+              <p>
+                {formatNumber(report.unresolvedCount)} فاتورة بإجمالي{' '}
+                {formatCurrency(report.unresolvedGross * s)}. أدخل مبلغ الضريبة المكتوب عليها
+                أو نسبتها، أو هيّئ السجل التاريخي للسياسة الضريبية من «إقفال الفترة».
+              </p>
+            </div>
+            <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
+              <table className="w-full min-w-[640px] text-sm">
+                <thead>
+                  <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
+                    <th className="py-3 px-4 whitespace-nowrap">البند</th>
+                    <th className="py-3 px-4 whitespace-nowrap">التاريخ</th>
+                    <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">المبلغ المسجَّل</th>
+                    <th className="py-3 px-4 whitespace-nowrap">السبب</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {report.unresolved.map((r) => (
+                    <tr key={r.id} className="border-b border-slate-50 dark:border-slate-800/60 last:border-0">
+                      <td className="py-3 px-4 whitespace-normal break-words min-w-[160px] text-slate-800 dark:text-slate-200">
+                        <span className="inline-flex items-center gap-1.5 font-medium">
+                          {r.description}
+                          <SourceBadge source={r.source} />
+                        </span>
+                        <span className="block text-[11px] font-normal text-slate-500 dark:text-slate-400 mt-0.5">
+                          {itemNameById.get(r.parentId) || '—'}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 whitespace-nowrap tabular-nums text-slate-600 dark:text-slate-400">
+                        {r.claimDate ? formatDate(r.claimDate) : '—'}
+                      </td>
+                      <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums text-slate-700 dark:text-slate-300">
+                        {formatCurrency((Number(r.amount) || 0) * s)}
+                        <span className="block text-[10px] font-normal text-slate-400 dark:text-slate-500">
+                          {amountRoleOf(r).label}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-[11px] leading-relaxed text-amber-800 dark:text-amber-300">
+                        {r.reason}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        )}
+
+        {/* ── بنود تأسيس تنتظر التحويل ──────────────────────────
+            A `startup_costs` parent carrying its own `actual_amount` has no
+            spend date, no payment method and no per-document identity, so no
+            adapter can post it — it used to enter the return anyway, dated by
+            `created_at`, and could never appear on 1200. It is held here
+            instead: visible, totalled, and out of the claim until it becomes
+            a real sub-ledger entry. */}
+        {report.needsConversionCount > 0 && (
+          <Card className="p-6">
+            <SectionHeader
+              title="بنود تأسيس تحتاج تحويلاً قبل الخصم"
+              subtitle="مبالغ مسجَّلة على البند مباشرة — بلا تاريخ صرف ولا طريقة دفع ولا فاتورة، فلا تُرحَّل ولا تُخصم"
+            />
+            <div role="note" className="flex items-start gap-2.5 bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/30 text-amber-800 dark:text-amber-300 text-xs px-4 py-3 rounded-control leading-relaxed mb-4">
+              <AlertTriangle size={15} className="shrink-0 mt-0.5" />
+              <span>
+                هذه المبالغ <strong>غير محتسبة</strong> في ضريبة المدخلات أعلاه.
+                حوّل كلًّا منها إلى قيد في سجل مصاريف بنده من صفحة
+                <strong className="mx-1">رسوم التأسيس</strong> — يُطلب حينها تاريخ
+                الصرف وطريقة الدفع وبيانات الفاتورة، وهي ما يجعلها قابلة للترحيل
+                وللخصم. مجموع ما ينتظر:
+                <strong className="mx-1 tabular-nums">{formatCurrency(report.needsConversionAmount * s)}</strong>
+                وضريبته المقدّرة
+                <strong className="mx-1 tabular-nums">{formatCurrencyPrecise(report.needsConversionTax * s)}</strong>.
+              </span>
+            </div>
+            <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
+              <table className="w-full min-w-[560px] text-sm">
+                <thead>
+                  <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
+                    <th className="py-3 px-4 whitespace-nowrap">البند</th>
+                    <th className="py-3 px-4 whitespace-nowrap">تاريخ الفاتورة</th>
+                    <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">المبلغ المسجَّل</th>
+                    <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">ضريبة منتظرة</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {report.needsConversion.map((r) => (
+                    <tr key={r.sourceKey} className="border-b border-slate-50 dark:border-slate-800/60 last:border-0">
+                      <td className="py-3 px-4 whitespace-normal break-words min-w-[160px] text-slate-800 dark:text-slate-200">
+                        <span className="inline-flex items-center gap-1.5 font-medium">
+                          {r.description}
+                          <SourceBadge source={r.source} />
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 whitespace-nowrap tabular-nums text-slate-600 dark:text-slate-400">
+                        {r.claimDate ? formatDate(r.claimDate) : (
+                          <span className="text-amber-700 dark:text-amber-300 font-semibold">بلا تاريخ</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums text-slate-700 dark:text-slate-300">
+                        {formatCurrency((Number(r.amount) || 0) * s)}
+                      </td>
+                      <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums text-amber-700 dark:text-amber-300">
+                        {r.pendingTax === null ? 'غير محدَّدة' : formatCurrencyPrecise(r.pendingTax * s)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        )}
+
+        {/* ── الفواتير غير المؤهلة ──────────────────────────────── */}
+        {report.ineligible.length > 0 && (
+          <Card className="p-6">
+            <SectionHeader
+              title="فواتير غير مؤهلة للخصم"
+              subtitle="مستبعدة من الإقرار حتى تكتمل بياناتها — لكل صف ما ينقصه بالضبط"
+            />
+            <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
+              <table className="w-full min-w-[680px] text-sm">
+                <thead>
+                  <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
+                    <th className="py-3 px-4 whitespace-nowrap">البند</th>
+                    <th className="py-3 px-4 whitespace-nowrap">التاريخ</th>
+                    <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">المبلغ المسجَّل</th>
+                    <th className="py-3 px-4 whitespace-nowrap">الناقص</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {report.ineligible.map((r) => (
+                    <tr key={r.id} className="border-b border-slate-50 dark:border-slate-800/60 last:border-0">
+                      <td className="py-3 px-4 whitespace-normal break-words min-w-[160px] text-slate-800 dark:text-slate-200">
+                        <span className="inline-flex items-center gap-1.5 font-medium">
+                          {r.description}
+                          <SourceBadge source={r.source} />
+                        </span>
+                        <span className="block text-[11px] font-normal text-slate-500 dark:text-slate-400 mt-0.5">
+                          {itemNameById.get(r.parentId) || '—'}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 whitespace-nowrap tabular-nums text-slate-600 dark:text-slate-400">
+                        {r.claimDate ? formatDate(r.claimDate) : <span className="text-amber-700 dark:text-amber-300 font-semibold">بلا تاريخ</span>}
+                      </td>
+                      <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums text-slate-700 dark:text-slate-300">
+                        {formatCurrency((Number(r.amount) || 0) * s)}
+                        <span className="block text-[10px] font-normal text-slate-400 dark:text-slate-500">
+                          {amountRoleOf(r).label}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-[11px] leading-relaxed text-amber-800 dark:text-amber-300">
+                        {r.missing.join(' · ')}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed mt-3">
+              المصروف المتكرر بلا تاريخ لا يُخصم: تكراره شهرياً لا يثبت استلام فاتورة عن كل شهر.
+              ولّد له سنداً مؤرَّخاً لكل فترة من «إقفال الفترة ← سندات المصاريف المتكررة»،
+              ثم أدخل رقم الفاتورة والمورّد.
+            </p>
+          </Card>
+        )}
       </main>
     </>
   );

@@ -18,8 +18,8 @@ import Toast from './Toast';
 import { usePartners } from '../hooks/usePartners';
 import { usePartnerPayments } from '../hooks/usePartnerPayments';
 import {
-  isSupabaseConfigured, missingEnvNames, describeSupabaseError,
-} from '../lib/supabaseClient';
+  isFirebaseConfigured, missingEnvNames, describeBackendError,
+} from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 
 // Visual treatment for the three payment methods in the table.
@@ -131,9 +131,9 @@ export default function PartnerPaymentsPage() {
       refetchPartners?.();
       showToast('تم تسجيل الدفعة بنجاح');
     } catch (e) {
-      console.error('🔥 Real Supabase Error (PartnerPaymentsPage.handleAddPayment):', e);
+      console.error('🔥 Firestore Error (PartnerPaymentsPage.handleAddPayment):', e);
       setMutationError(e);
-      showToast(describeSupabaseError(e) || e?.message || 'تعذّر تسجيل الدفعة', 'error');
+      showToast(describeBackendError(e) || e?.message || 'تعذّر تسجيل الدفعة', 'error');
       throw e;
     }
   }
@@ -149,9 +149,9 @@ export default function PartnerPaymentsPage() {
       refetchPartners?.();
       showToast('تم حذف الدفعة من السجل');
     } catch (e) {
-      console.error('🔥 Real Supabase Error (PartnerPaymentsPage.handleDelete):', e, { id: payment.id });
+      console.error('🔥 Firestore Error (PartnerPaymentsPage.handleDelete):', e, { id: payment.id });
       setMutationError(e);
-      showToast(describeSupabaseError(e) || e?.message || 'تعذّر حذف الدفعة', 'error');
+      showToast(describeBackendError(e) || e?.message || 'تعذّر حذف الدفعة', 'error');
     }
   }
 
@@ -166,7 +166,7 @@ export default function PartnerPaymentsPage() {
       />
 
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
-        {!isSupabaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
+        {!isFirebaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
 
         {anyError && (
           <ErrorState

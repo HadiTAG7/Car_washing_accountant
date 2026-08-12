@@ -20,7 +20,8 @@ const METHOD_LABEL = {
  *
  * Capital math is the same rule used across the app:
  *   required  = workersCount × PER_WORKER_FEE
- *   paid      = partners.paid_amount (authoritative cached aggregate)
+ *   paid      = SUM(partner_payments) for this partner — the receipts are
+ *               the evidence, so the total always matches the lines shown
  *   remaining = max(0, required − paid)
  * If the partner has dated receipts in partner_payments they're listed;
  * otherwise the statement still shows the paid/remaining summary from
@@ -37,7 +38,9 @@ export default function PartnerStatementModal({ isOpen, onClose, partner }) {
   if (!isOpen || !partner) return null;
 
   const required  = (partner.workersCount || 0) * PER_WORKER_FEE;
-  const paid      = partner.paidAmount || 0;
+  // Summed from the receipts listed below, so the statement's total and its
+  // line items can never disagree — the cached aggregate could.
+  const paid      = rows.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
   const remaining = Math.max(0, required - paid);
   const settled   = required > 0 && remaining === 0;
   const today     = formatDate(new Date().toISOString().slice(0, 10));

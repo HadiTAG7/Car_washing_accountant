@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { LogOut, Plus, X, KeyRound } from 'lucide-react';
 import { SweaterWordmark } from './SweaterLogo';
 import { signOut as fbSignOut } from 'firebase/auth';
-import { auth, isFirebaseConfigured as isSupabaseConfigured } from '../lib/firebaseClient';
+import { auth, isFirebaseConfigured } from '../lib/firebaseClient';
 import ChangePasswordModal from './ChangePasswordModal';
 
 export default function Sidebar({
@@ -12,7 +12,7 @@ export default function Sidebar({
   user,
   // onSignOut is still passed by App.jsx for backwards compat but no
   // longer wired — handleLogout below owns the full sign-out lifecycle
-  // (Supabase signOut → simulation state cleanup → hard reload).
+  // (Firebase signOut → simulation state cleanup → hard reload).
   // eslint-disable-next-line no-unused-vars
   onSignOut,
   onAddEntry,
@@ -26,7 +26,7 @@ export default function Sidebar({
 
   // NON-BLOCKING sign-out. Two reported failure modes informed this
   // shape:
-  //   (a) `await supabase.auth.signOut()` was hanging on slow/expired
+  //   (a) `await signOut()` was hanging on slow/expired
   //       sessions, blocking the storage wipe and navigation that
   //       should fire unconditionally → handler is now a plain (non-
   //       async) function, and the server call is detached as
@@ -63,7 +63,7 @@ export default function Sidebar({
     //    The previous blanket localStorage.clear() also nuked per-device
     //    UI prefs that have nothing to do with auth (dark-mode choice,
     //    hidden budget cards), which reset on every logout. We now
-    //    remove: every Supabase auth token (keys prefixed 'sb-') and
+    //    remove: every Firebase auth token (and legacy 'sb-' keys) and
     //    the admin's simulate-as-partner pick. sessionStorage stays
     //    fully cleared (nothing persistent lives there).
     try {
@@ -193,7 +193,7 @@ export default function Sidebar({
               {user?.email || 'حساب المدير'}
             </p>
           </div>
-          {isSupabaseConfigured && (
+          {isFirebaseConfigured && (
             <>
               <button
                 type="button"

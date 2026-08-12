@@ -1,0 +1,10 @@
+rules_version = '2';
+// TEST-ONLY rules — used exclusively by the emulator run that exercises the
+// LEDGER logic (transactions, atomicity, entry numbering). Security itself is
+// tested against the real firestore.rules by rules.emulator.test.js, which
+// loads them explicitly. This file is never deployed.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} { allow read, write: if true; }
+  }
+}

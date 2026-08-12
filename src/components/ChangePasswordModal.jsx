@@ -7,16 +7,15 @@ import { auth, isFirebaseConfigured } from '../lib/firebaseClient';
 import { translateAuthError } from '../lib/authErrors';
 
 /**
- * In-app password change — for any signed-in user (admin OR partner)
- * who knows their current password and wants to change it. Distinct
- * from the email-based reset flow (forgot password): no email round-
- * trip, no Supabase URL Configuration dependency, just `updateUser`
- * directly with the active session.
+ * In-app password change — for any signed-in user (admin OR partner) who
+ * knows their current password and wants to change it. Distinct from the
+ * email-based reset flow (forgot password): no email round-trip, just
+ * Firebase's `updatePassword` against the active session.
  *
- * The user is already authenticated (session token in localStorage),
- * which Supabase treats as sufficient proof to allow a password
- * change — we don't re-verify the current password. Spec-wise this
- * matches Supabase's own dashboard behavior.
+ * Firebase accepts a password change on a RECENT session without re-asking
+ * for the old one; if the session is stale it returns
+ * `auth/requires-recent-login`, which authErrors turns into an Arabic
+ * "sign in again" message.
  */
 export default function ChangePasswordModal({ isOpen, onClose, userEmail }) {
   const [password,        setPassword]        = useState('');

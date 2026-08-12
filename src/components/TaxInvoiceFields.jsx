@@ -1,0 +1,212 @@
+import { FileText, User, Hash, AlertTriangle } from 'lucide-react';
+import DateField from './DateField';
+import { inputInvoiceEligibility } from '../lib/accounting/vatReturn';
+import { taxSourceFor, validateTaxInvoiceFields, VAT_PROBLEM } from '../lib/vatFields';
+
+const INPUT_CLS = 'w-full min-h-touch px-3 py-2 rounded-control border border-slate-200 '
+  + 'dark:border-slate-700 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-slate-100 '
+  + 'focus:outline-none focus:border-primary-500 transition-colors';
+
+/**
+ * بيانات الفاتورة الضريبية — supplier, invoice number, invoice date.
+ *
+ * These are not decoration: input VAT may only be deducted against a real
+ * tax invoice, so the report checks exactly these fields. The panel tells
+ * the user live whether this record will be deductible and what is still
+ * missing, rather than letting them discover it as a silent absence from
+ * the return three months later.
+ *
+ * `spendDate` is the record's own spend date. It is NOT a substitute for the
+ * invoice date — a purchase paid in April against a March invoice is deducted
+ * in March — so it is offered only as a one-click fill the user chooses,
+ * never as a silent fallback.
+ *
+ * ── العرض والمنع من دالة واحدة ──
+ * `problems` comes from the parent, which computed it with
+ * `blockingVatProblems` for its own `isValid`. The panel used to derive its
+ * own message and the parent used to ignore it, so the form showed «مبلغ
+ * الضريبة يجب أن يكون رقماً موجباً» in red and saved the record anyway — with
+ * the value silently erased to null on the way out. Rendering the SAME list
+ * the save is gated on is what makes the red text mean something.
+ *
+ * `amount` is the figure on the record: the GROSS when `priceMode` is
+ * inclusive, the NET when it is exclusive. See docs/AMOUNT_DEFINITION.md.
+ */
+export default function TaxInvoiceFields({
+  form, onChange, idPrefix = 'inv', amount = 0, spendDate = '', problems = null,
+}) {
+  const check = inputInvoiceEligibility({
+    isTaxInvoice: true,
+    amount,
+    invoiceNumber: form.invoiceNumber,
+    invoiceDate: form.invoiceDate,
+    supplier: form.supplier,
+    vatDeductible: form.vatDeductible,
+  });
+
+  const set = (patch) => onChange({ ...form, ...patch });
+
+  // Falls back to computing them here only when the parent passes nothing —
+  // the same function either way, so the two can never differ.
+  const blocking = (problems
+    ?? validateTaxInvoiceFields(form, { amount }).filter((p) => p.severity === VAT_PROBLEM.BLOCKING));
+  const problemOn = (field) => blocking.find((p) => p.field === field)?.message || '';
+  const vatAmountProblem = problemOn('vatAmount');
+  const vatRateProblem = problemOn('vatRate');
+  const invoiceDateProblem = problemOn('invoiceDate');
+
+  // Which of the three sources will actually be used, decided by the SAME
+  // function the report uses, so the form cannot promise one thing and the
+  // return do another.
+  const SOURCE_LABEL = {
+    invoice: 'مبلغ مكتوب على الفاتورة',
+    'invoice-rate': 'نسبة مثبتة على الفاتورة',
+    policy: 'سياسة تاريخ الفاتورة',
+  };
+  const taxSourceLabel = SOURCE_LABEL[blocking.length ? 'policy' : taxSourceFor(form)];
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div>
+          <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5"
+            htmlFor={`${idPrefix}-supplier`}>
+            <User size={12} className="inline ml-1" />المورّد
+          </label>
+          <input id={`${idPrefix}-supplier`} type="text" value={form.supplier}
+            onChange={(e) => set({ supplier: e.target.value })}
+            placeholder="اسم المنشأة الموردة" className={INPUT_CLS} />
+        </div>
+        <div>
+          <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5"
+            htmlFor={`${idPrefix}-number`}>
+            <Hash size={12} className="inline ml-1" />رقم الفاتورة
+          </label>
+          <input id={`${idPrefix}-number`} type="text" dir="ltr" value={form.invoiceNumber}
+            onChange={(e) => set({ invoiceNumber: e.target.value })}
+            placeholder="INV-000123" className={`${INPUT_CLS} tabular-nums`} />
+        </div>
+        <div>
+          <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+            <FileText size={12} className="inline ml-1" />تاريخ الفاتورة
+          </label>
+          <DateField name={`${idPrefix}-date`} value={form.invoiceDate}
+            onChange={(e) => set({ invoiceDate: e.target.value })}
+            ariaLabel="تاريخ الفاتورة" />
+          {invoiceDateProblem && (
+            <p role="alert" className="text-[11px] text-rose-600 dark:text-rose-400 mt-1">{invoiceDateProblem}</p>
+          )}
+          {spendDate && spendDate !== form.invoiceDate && (
+            <button type="button" onClick={() => set({ invoiceDate: spendDate })}
+              className="mt-1 text-[11px] font-semibold text-primary-700 dark:text-primary-300 hover:underline">
+              نفس تاريخ الصرف ({spendDate})
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ── مبلغ الضريبة كما كتبه المورّد ─────────────────────────────
+          The deduction rests on the paper, and the paper states its own VAT.
+          Without this the report had to derive the tax from a rate — and the
+          only rate it had was TODAY's, so a 5%-era invoice was reclaimed at
+          15% the moment the standard rate moved. The rate below is the
+          fallback for a document whose amount is not itemised; it is the
+          invoice's own rate, not the current one. */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div>
+          <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5"
+            htmlFor={`${idPrefix}-vat-amount`}>
+            مبلغ الضريبة على الفاتورة
+          </label>
+          <input id={`${idPrefix}-vat-amount`} type="number" min="0" step="0.01" dir="ltr"
+            // A stored NaN/Infinity is shown as text rather than dropped: the
+            // field must display what is actually there for the error beneath
+            // it to mean anything.
+            value={form.vatAmount === null || form.vatAmount === undefined ? ''
+              : String(form.vatAmount)}
+            onChange={(e) => set({ vatAmount: e.target.value === '' ? null : e.target.value })}
+            placeholder="اتركه فارغاً إن لم يكن مذكوراً"
+            className={`${INPUT_CLS} tabular-nums`} />
+          {vatAmountProblem && (
+            <p role="alert" className="text-[11px] text-rose-600 dark:text-rose-400 mt-1">{vatAmountProblem}</p>
+          )}
+        </div>
+        <div>
+          <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5"
+            htmlFor={`${idPrefix}-vat-rate`}>
+            نسبة الفاتورة
+          </label>
+          <select id={`${idPrefix}-vat-rate`}
+            value={form.vatRate === null || form.vatRate === undefined ? '' : String(form.vatRate)}
+            onChange={(e) => set({ vatRate: e.target.value === '' ? null : Number(e.target.value) })}
+            className={INPUT_CLS}>
+            <option value="">حسب سياسة تاريخ الفاتورة</option>
+            <option value="0.15">15%</option>
+            <option value="0.05">5%</option>
+            <option value="0">معفاة / صفرية</option>
+          </select>
+          {vatRateProblem && (
+            <p role="alert" className="text-[11px] text-rose-600 dark:text-rose-400 mt-1">{vatRateProblem}</p>
+          )}
+        </div>
+        <div>
+          <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5"
+            htmlFor={`${idPrefix}-price-mode`}>
+            المبلغ المسجَّل
+          </label>
+          <select id={`${idPrefix}-price-mode`} value={form.priceMode || 'inclusive'}
+            onChange={(e) => set({ priceMode: e.target.value })}
+            className={INPUT_CLS}>
+            <option value="inclusive">شامل الضريبة</option>
+            <option value="exclusive">غير شامل الضريبة</option>
+          </select>
+        </div>
+      </div>
+
+      <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+        المصدر المُعتمد للخصم: <span className="font-semibold">{taxSourceLabel}</span>.
+        المبلغ المكتوب على الفاتورة يسبق النسبة، والنسبة المثبتة تسبق سياسة تاريخها.
+        {' '}المبلغ المسجَّل {form.priceMode === 'exclusive'
+          ? 'هو الصافي، والضريبة تُضاف فوقه فيصير إجمالي السداد = المبلغ + الضريبة.'
+          : 'هو الإجمالي شامل الضريبة، والصافي = الإجمالي − الضريبة.'}
+      </p>
+
+      {blocking.length > 0 && (
+        <p role="alert" className="flex items-start gap-1.5 text-[12px] text-rose-700 dark:text-rose-300 leading-relaxed">
+          <AlertTriangle size={13} className="shrink-0 mt-0.5" />
+          <span>
+            لا يمكن الحفظ حتى تُصحَّح بيانات الضريبة — القيمة الخاطئة لا تُحفظ
+            كأنها «غير مذكورة»، لأن ذلك يمحو الخطأ بلا أثر.
+          </span>
+        </p>
+      )}
+
+      <label className="flex items-center gap-2.5 min-h-touch cursor-pointer select-none">
+        <input type="checkbox" checked={form.vatDeductible !== false}
+          onChange={(e) => set({ vatDeductible: e.target.checked })}
+          className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 accent-emerald-600" />
+        <span className="text-sm text-slate-700 dark:text-slate-300">
+          الضريبة قابلة للخصم
+          <span className="text-[11px] text-slate-500 dark:text-slate-400 mr-1">
+            (ألغِ التحديد للمصروفات غير المؤهلة — الضيافة والسيارات الشخصية ونحوها)
+          </span>
+        </span>
+      </label>
+
+      {check.eligible ? (
+        <p role="status" className="text-[12px] text-emerald-700 dark:text-emerald-300 leading-relaxed">
+          مؤهلة للخصم — ستُحتسب ضريبتها في تقرير ضريبة القيمة المضافة.
+        </p>
+      ) : (
+        <p role="status" className="flex items-start gap-1.5 text-[12px] text-amber-800 dark:text-amber-300 leading-relaxed">
+          <AlertTriangle size={13} className="shrink-0 mt-0.5" />
+          <span>
+            لن تُخصم ضريبتها حتى تكتمل: <strong>{check.missing.join(' · ')}</strong>.
+            {' '}الخصم يحتاج فاتورة ضريبية فعلية، وتاريخ الفاتورة هو ما يحدّد
+            فترة الخصم — لا تاريخ الصرف.
+          </span>
+        </p>
+      )}
+    </div>
+  );
+}

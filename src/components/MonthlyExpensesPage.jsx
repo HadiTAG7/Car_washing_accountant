@@ -3,7 +3,7 @@ import {
   Plus, Trash2, Pencil, Wallet, CheckCircle2, Clock, CalendarClock, Calendar, Receipt,
   Percent, Link as LinkIcon,
 } from 'lucide-react';
-import { formatCurrency, formatCurrencyPrecise, formatNumber, extractVat, MONTHLY_EXPENSE_CATEGORIES } from '../data/initialData';
+import { formatCurrency, formatNumber, MONTHLY_EXPENSE_CATEGORIES } from '../data/initialData';
 import TopBar from './TopBar';
 import {
   Card, SectionHeader, StatCard, PrimaryButton,
@@ -16,7 +16,11 @@ import ErrorState, { SetupRequiredCard } from './ErrorState';
 import Toast from './Toast';
 import { useMonthlyExpenses } from '../hooks/useMonthlyExpenses';
 import { useMonthlyExpenseCategories } from '../hooks/useMonthlyExpenseCategories';
-import { isSupabaseConfigured, missingEnvNames, describeSupabaseError } from '../lib/supabaseClient';
+import { useAccountingSettings } from '../hooks/useAccountingSettings';
+import PurchaseVatBadge from './PurchaseVatBadge';
+import { taxPolicyAt } from '../lib/accounting/taxPolicy';
+import { autoPost, describeAutoPost, autoPostTone } from '../lib/accounting/autoPost';
+import { isFirebaseConfigured, missingEnvNames, describeBackendError } from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 
 // Only http(s) values become clickable — mirrors the guard used by the
@@ -80,6 +84,12 @@ export default function MonthlyExpensesPage() {
   } = useMonthlyExpenseCategories();
 
   const { scalingFactor, canMutate } = usePartnerView();
+  // The dated tax record, so a 5%-era invoice is shown at 5% rather than at
+  // today's rate. `useCallback`-free on purpose: `settings` is the only input
+  // and it changes rarely. See docs/AMOUNT_DEFINITION.md.
+  const policyAt = (date) => taxPolicyAt(date, settings);
+
+  const { settings } = useAccountingSettings();
 
   const [localOpen, setLocalOpen]         = useState(false);
   const [editingItem, setEditingItem]     = useState(null);
@@ -122,9 +132,25 @@ export default function MonthlyExpensesPage() {
     try { await updateItem(id, updates); showToast('تم حفظ التعديلات'); }
     catch (e) { setMutationError(e); throw e; }
   }
+  /**
+   * Marking a one-off expense مسدَّد is its approval moment. A RECURRING row
+   * is deliberately excluded: it is a template with no date, and its dated
+   * vouchers are what get posted — auto-posting the template here would put a
+   * dateless cost in the books.
+   */
   async function handleUpdateStatus(id, status) {
+    const before = items.find((m) => m.id === id);
     try { await updateStatus(id, status); }
-    catch (e) { setMutationError(e); }
+    catch (e) { setMutationError(e); return; }
+    if (!settings.autoPost || status !== 'paid') return;
+    if (before?.paymentStatus === 'paid') return;      // not a transition
+    if (!before?.loggedDate) return;                   // recurring template
+    const result = await autoPost({
+      kind: 'monthly', id, vatRegistered: settings.vatRegistered,
+    });
+    if (result.status !== 'skipped' || result.blocking) {
+      showToast(describeAutoPost(result), autoPostTone(result));
+    }
   }
   async function handleAddCategory(label) {
     try {
@@ -132,8 +158,8 @@ export default function MonthlyExpensesPage() {
       showToast('تم إضافة التصنيف الجديد بنجاح');
       return newId;
     } catch (e) {
-      console.error('Supabase Category Error:', e, 'label:', label);
-      showToast(describeSupabaseError(e) || 'تعذّر إضافة التصنيف الجديد', 'error');
+      console.error('Firestore Category Error:', e, 'label:', label);
+      showToast(describeBackendError(e) || 'تعذّر إضافة التصنيف الجديد', 'error');
       throw e;
     }
   }
@@ -142,7 +168,7 @@ export default function MonthlyExpensesPage() {
       await deleteCategory(id);
       showToast('تم حذف التصنيف من القوائم');
     } catch (e) {
-      showToast(describeSupabaseError(e) || 'تعذّر حذف التصنيف', 'error');
+      showToast(describeBackendError(e) || 'تعذّر حذف التصنيف', 'error');
       throw e;
     }
   }
@@ -163,7 +189,7 @@ export default function MonthlyExpensesPage() {
       />
 
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
-        {!isSupabaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
+        {!isFirebaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
 
         {mutationError && (
           <ErrorState
@@ -266,10 +292,9 @@ export default function MonthlyExpensesPage() {
                             filing time. Only http(s) values become anchors. */}
                         {i.isTaxInvoice && (
                           <div className="flex flex-wrap items-center gap-2 mt-1.5">
-                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-100 dark:border-emerald-500/30 px-2 py-0.5 rounded-full tabular-nums">
-                              <Percent size={11} />
-                              ض.ق.م: {formatCurrencyPrecise(extractVat(i.totalMonthlyCost) * scalingFactor)}
-                            </span>
+                            <PurchaseVatBadge
+                              row={{ ...i, amount: i.totalMonthlyCost, recordDate: i.loggedDate }}
+                              policyAt={policyAt} scale={scalingFactor} />
                             {i.invoiceUrl && isSafeHttpUrl(i.invoiceUrl) && (
                               <a
                                 href={i.invoiceUrl}

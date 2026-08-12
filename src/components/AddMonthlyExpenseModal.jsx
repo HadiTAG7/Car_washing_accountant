@@ -1,8 +1,14 @@
 import { useEffect, useState } from 'react';
 import { X, Plus, Pencil, Receipt, Check, AlertTriangle, Repeat, Calendar, Percent, LinkIcon } from 'lucide-react';
-import { formatCurrency, formatCurrencyPrecise, formatNumber, extractVat, netOfVat } from '../data/initialData';
+import { formatCurrency, formatNumber } from '../data/initialData';
 import CategorySelect from './CategorySelect';
 import DateField from './DateField';
+import TaxInvoiceFields from './TaxInvoiceFields';
+import PurchaseAmountBreakdown from './PurchaseAmountBreakdown';
+import { blockingVatProblems } from '../lib/vatFields';
+import {
+  EMPTY_TAX_INVOICE_FIELDS, readTaxInvoiceFields, submitTaxInvoiceFields,
+} from '../lib/taxInvoiceForm';
 
 function todayISO() {
   const d = new Date();
@@ -23,6 +29,7 @@ const EMPTY = {
   loggedDate:    '',
   isTaxInvoice:  false,
   invoiceUrl:    '',
+  ...EMPTY_TAX_INVOICE_FIELDS,
 };
 
 export default function AddMonthlyExpenseModal({
@@ -59,6 +66,7 @@ export default function AddMonthlyExpenseModal({
           : '',
         isTaxInvoice:  Boolean(initialValues.isTaxInvoice),
         invoiceUrl:    initialValues.invoiceUrl || '',
+        ...readTaxInvoiceFields(initialValues),
       });
     } else {
       setForm({ ...EMPTY });
@@ -87,11 +95,19 @@ export default function AddMonthlyExpenseModal({
   const totalMonthlyCost = quantity * unitCost;
   const isOneTime        = form.recurrence === 'one_time';
   const paymentDayNum    = Math.min(31, Math.max(1, parseInt(form.paymentDay, 10) || 1));
+  // ── أخطاء الضريبة تمنع الحفظ، لا تُعرَض فقط ──
+  // The panel used to SHOW a bad VAT amount and save it anyway: the tolerant
+  // reader turned −5 into null on its way out, so the record was stored as
+  // though the field had been left empty and the typo left no trace to find.
+  const vatProblems = form.isTaxInvoice
+    ? blockingVatProblems(form, { amount: totalMonthlyCost }) : [];
+
   const isValid =
     form.expenseName.trim().length > 0 &&
     Boolean(form.categoryId) &&
     quantity > 0 &&
     unitCost > 0 &&
+    vatProblems.length === 0 &&
     (isOneTime
       ? Boolean(form.loggedDate)
       : (paymentDayNum >= 1 && paymentDayNum <= 31));
@@ -113,6 +129,7 @@ export default function AddMonthlyExpenseModal({
         paymentStatus:    form.paymentStatus === 'paid' ? 'paid' : 'pending',
         isTaxInvoice:     form.isTaxInvoice,
         invoiceUrl:       form.invoiceUrl.trim(),
+        ...submitTaxInvoiceFields(form),
       };
       if (editing && onUpdate) {
         await onUpdate(initialValues.id, payload);
@@ -449,21 +466,24 @@ export default function AddMonthlyExpenseModal({
               </span>
             </label>
 
-            {/* Live VAT breakdown — only when taxable AND a total exists. */}
-            {form.isTaxInvoice && totalMonthlyCost > 0 && (
-              <div
-                role="status"
-                className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-control bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/30 text-[12px]"
-              >
-                <span className="text-emerald-700 dark:text-emerald-300">
-                  الضريبة المتوقع استردادها{!isOneTime && ' (شهرياً)'}:
-                  <span className="font-bold tabular-nums mr-1">{formatCurrencyPrecise(extractVat(totalMonthlyCost))}</span>
-                </span>
-                <span className="text-slate-500 dark:text-slate-400">
-                  الصافي قبل الضريبة:
-                  <span className="font-bold tabular-nums mr-1">{formatCurrencyPrecise(netOfVat(totalMonthlyCost))}</span>
-                </span>
-              </div>
+            {/* Live breakdown — from the SAME engine the ledger posts with,
+                so what is on screen while typing is what the entry will say. */}
+            <PurchaseAmountBreakdown
+              form={form} amount={totalMonthlyCost}
+              suffix={isOneTime ? '' : ' (شهرياً)'} />
+
+            {/* بيانات الفاتورة — the fields the VAT report actually checks.
+                Shown only for a tax invoice, because that is the only case
+                where they decide whether the tax is deductible. */}
+            {form.isTaxInvoice && (
+              <TaxInvoiceFields
+                form={form}
+                onChange={(next) => setForm((f) => ({ ...f, ...next }))}
+                idPrefix="monthly"
+                amount={totalMonthlyCost}
+                problems={vatProblems}
+                spendDate={form.loggedDate}
+              />
             )}
 
             {/* Invoice reference. A URL keeps the record verifiable without

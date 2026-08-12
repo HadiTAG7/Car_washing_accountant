@@ -11,6 +11,7 @@
 
 import { initializeApp, getApps, getApp, deleteApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import {
   getAuth, createUserWithEmailAndPassword, signOut as fbSignOut,
 } from 'firebase/auth';
@@ -64,8 +65,32 @@ export const app = isFirebaseConfigured
   ? (getApps().length ? getApp() : initializeApp(firebaseConfig))
   : null;
 export const db      = app ? getFirestore(app) : null;
+// The ledger is written only by callable Cloud Functions — Firestore rules
+// deny every client write to journal_entries, posting_locks, counters/journal,
+// accounting_periods and audit_logs. See functions/ for why.
+export const functions = app ? getFunctions(app, 'us-central1') : null;
 export const auth    = app ? getAuth(app) : null;
 export const storage = app ? getStorage(app) : null;
+
+/**
+ * Calls a ledger function and unwraps its result.
+ *
+ * Callable errors arrive with the server's Arabic message on `.message` and
+ * the full problem list on `.details.problems`, so both are re-raised intact:
+ * the ledger's refusals are meant to be read by the person who caused them.
+ */
+export async function callLedger(name, payload = {}) {
+  if (!functions) throw new Error('Firebase غير مُهيّأ — لا يمكن الترحيل.');
+  try {
+    const res = await httpsCallable(functions, name)(payload);
+    return res.data;
+  } catch (e) {
+    const err = new Error(e?.message || 'تعذّر إتمام العملية.');
+    err.code = e?.code || 'internal';
+    if (e?.details?.problems) err.problems = e.details.problems;
+    throw err;
+  }
+}
 
 export function maskedProjectRef() {
   return firebaseConfig.projectId || '';

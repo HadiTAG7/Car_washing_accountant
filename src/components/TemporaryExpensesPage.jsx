@@ -14,8 +14,8 @@ import ErrorState, { SetupRequiredCard } from './ErrorState';
 import Toast from './Toast';
 import { useTemporaryExpenses } from '../hooks/useTemporaryExpenses';
 import {
-  isSupabaseConfigured, missingEnvNames, describeSupabaseError,
-} from '../lib/supabaseClient';
+  isFirebaseConfigured, missingEnvNames, describeBackendError,
+} from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 
 export default function TemporaryExpensesPage() {
@@ -68,9 +68,9 @@ export default function TemporaryExpensesPage() {
       await addTemporaryExpense(expense);
       showToast('تم تسجيل المصروف المؤقت بنجاح');
     } catch (e) {
-      console.error('🔥 Real Supabase Error (TemporaryExpensesPage.handleAdd):', e);
+      console.error('🔥 Firestore Error (TemporaryExpensesPage.handleAdd):', e);
       setMutationError(e);
-      showToast(describeSupabaseError(e) || e?.message || 'تعذّر تسجيل المصروف', 'error');
+      showToast(describeBackendError(e) || e?.message || 'تعذّر تسجيل المصروف', 'error');
       throw e;
     }
   }
@@ -85,9 +85,9 @@ export default function TemporaryExpensesPage() {
           : 'تم تأكيد استرداد المبلغ',
       );
     } catch (e) {
-      console.error('🔥 Real Supabase Error (TemporaryExpensesPage.handleToggle):', e, { id: expense.id, status: expense.status });
+      console.error('🔥 Firestore Error (TemporaryExpensesPage.handleToggle):', e, { id: expense.id, status: expense.status });
       setMutationError(e);
-      showToast(describeSupabaseError(e) || e?.message || 'تعذّر تحديث الحالة', 'error');
+      showToast(describeBackendError(e) || e?.message || 'تعذّر تحديث الحالة', 'error');
     }
   }
 
@@ -101,9 +101,9 @@ export default function TemporaryExpensesPage() {
       await deleteTemporaryExpense(expense.id);
       showToast('تم حذف السجل');
     } catch (e) {
-      console.error('🔥 Real Supabase Error (TemporaryExpensesPage.handleDelete):', e, { id: expense.id });
+      console.error('🔥 Firestore Error (TemporaryExpensesPage.handleDelete):', e, { id: expense.id });
       setMutationError(e);
-      showToast(describeSupabaseError(e) || e?.message || 'تعذّر حذف السجل', 'error');
+      showToast(describeBackendError(e) || e?.message || 'تعذّر حذف السجل', 'error');
     }
   }
 
@@ -115,7 +115,7 @@ export default function TemporaryExpensesPage() {
       />
 
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
-        {!isSupabaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
+        {!isFirebaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
 
         {error && (
           <ErrorState

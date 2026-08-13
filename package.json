@@ -14,6 +14,11 @@
     "test:rules": "firebase emulators:exec --only firestore --project demo-sweater --config firebase.test.json \"vitest run --testTimeout=120000 rules.emulator\"",
     "test:functions": "firebase emulators:exec --only firestore --project demo-sweater --config firebase.test.json \"vitest run --testTimeout=120000 --dir functions --exclude '**/callables.test.js'\"",
     "test:callables": "firebase emulators:exec --only firestore,functions,auth --project demo-sweater --config firebase.test.json \"vitest run --testTimeout=180000 --dir functions callables\"",
+    "verify": "npm run lint && npm run build && npm test && npm run test:emulator && npm run test:rules && npm run test:functions && npm run test:callables",
+    "deploy": "npm run verify && npm run deploy:backend",
+    "deploy:backend": "firebase deploy --only functions:ledger,firestore:rules",
+    "deploy:functions": "firebase deploy --only functions:ledger",
+    "deploy:rules": "firebase deploy --only firestore:rules",
     "bootstrap:admin": "node scripts/bootstrap-admin.mjs"
   },
   "dependencies": {

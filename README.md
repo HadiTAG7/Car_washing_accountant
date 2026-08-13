@@ -1124,6 +1124,32 @@ Release signing reads `android/keystore.properties` (gitignored, along with
 
 ---
 
+## النشر — Deployment
+
+Three artifacts reach production by three different mechanisms, and the app
+itself is not one of them: `firebase.json` has no `hosting` block, so nothing
+about the UI travels with `firebase deploy` — the web assets ride inside the
+APK.
+
+```bash
+npm run deploy            # verify (lint + build + every suite) then deploy the backend
+npm run deploy:functions  # firebase deploy --only functions:ledger   ← always first
+npm run deploy:rules      # firebase deploy --only firestore:rules    ← the breaking half
+```
+
+`.firebaserc` pins the project, so `firebase use` prints it before anything
+runs. Functions require the **Blaze** plan; `storage.rules` is deliberately
+absent from these scripts because Cloud Storage is not enabled on the project
+and `--only storage` would fail.
+
+Order matters — functions are a pure addition, rules are what refuses an older
+installed APK's direct writes to `startup_costs`. The order, the one real
+breakage window, the post-deploy checks, rollback, and why the first admin
+should be created **before** deploying rather than after are all in
+**[`docs/DEPLOY.md`](docs/DEPLOY.md)**.
+
+---
+
 ## Known limits
 
 - **ZATCA e-invoicing is NOT integrated.** Documents are numbered, carry a

@@ -59,6 +59,15 @@ jobs:
           node-version: '20'
           cache: npm
 
+      # محاكيات Firestore تعمل على الـ JVM، و firebase-tools أسقط دعم ما قبل
+      # Java 21 — والمشغّل يأتي بأقدم منها، فتسقط `emulators:exec` في ثوانٍ
+      # برسالة عن نسخة الـ JDK لا عن الاختبارات. التثبيت صريح هنا حتى لا
+      # تتغيّر النتيجة بتغيّر صورة المشغّل.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
       - run: npm ci
 
       - name: lint

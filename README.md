@@ -195,6 +195,45 @@ Notes that are easy to get wrong, and are handled explicitly:
   `effective_from` date — no percentage is hard-coded, so changing a rate
   cannot silently restate a past period.
 
+### أول تسجيل دخول: الدخول ليس عضوية
+
+Firebase Auth and this app's user directory are two different things. Creating
+an account in the Auth console makes someone able to **sign in**; it does not
+make them a member. Membership is a document:
+
+```
+isMember()  =  exists(users/<uid>)  ||  exists(app_admins/<uid>)
+```
+
+An account with neither is refused **every** read — and because the sidebar
+never consults a role, it still renders every admin page. Each one then shows
+«تم رفض الطلب بواسطة قواعد الأمان», which is true and useless: the account has
+no permissions because it has no record.
+
+It cannot fix itself, by design. `users/{uid}` create requires `isAdmin()`,
+`isAdmin()` requires one of those two documents, and `app_admins` is
+`allow write: if false` for every client — privilege escalation would otherwise
+be one browser write away. So the **first** admin is provisioned out of band,
+once, with credentials a browser never has:
+
+```bash
+export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+#   or:  gcloud auth application-default login
+export FIREBASE_PROJECT_ID=<project-id>
+
+npm run bootstrap:admin -- admin@example.com
+npm run bootstrap:admin -- someone@example.com --role accountant
+```
+
+It is idempotent, writes `users/<uid>` (and `app_admins/<uid>` for an admin),
+and prints the before/after. Afterwards the app provisions everyone else
+normally.
+
+The app detects the gap and says so: `useMembership` reads the signed-in user's
+OWN `users/<uid>` document — which the rules always permit — and renders a
+banner naming the missing document and the exact command, instead of eighteen
+pages each guessing at a generic permission error.
+
 ### The ledger is not client-writable
 `journal_entries`, `journal_lines`, `posting_locks`, `counters/journal`,
 `accounting_periods` and `audit_logs` are **read-only to every client**,

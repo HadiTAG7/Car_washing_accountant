@@ -170,7 +170,11 @@ function AppShell() {
         <PartnerViewBanner />
         {!isFirebaseConfigured && <DemoBanner missing={missingEnvNames} />}
         {!membership.loading && !membership.isMember && (
-          <MembershipBanner user={session?.user} onRecheck={membership.recheck} />
+          <MembershipBanner
+            user={session?.user}
+            membership={membership}
+            onRecheck={membership.recheck}
+          />
         )}
 
         <Suspense fallback={<LoadingState message="جارٍ تحميل الصفحة..." />}>

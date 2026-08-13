@@ -36,6 +36,7 @@ import {
   addStartupEntry, deleteStartupEntry, convertLegacyStartupSpend,
   updateStartupPlan, deleteStartupPlan, StartupCostError,
 } from './src/startupCosts.js';
+import { claimFirstAdmin, directoryIsEmpty, BootstrapError } from './src/bootstrapAdmin.js';
 import { canPost } from './src/posting.js';
 
 initializeApp();
@@ -121,6 +122,9 @@ function toHttps(e) {
   // it names the invoice and says exactly which of the three sources is
   // missing. Folding it into 'internal' would show «حاول مرة أخرى» for a
   // problem retrying cannot fix.
+  if (e instanceof BootstrapError) {
+    return new HttpsError(e.code || 'failed-precondition', e.message);
+  }
   if (e instanceof StartupCostError) {
     return new HttpsError(e.code || 'failed-precondition', e.message);
   }
@@ -429,5 +433,46 @@ export const startupDeletePlan = onCall(OPTS, async (req) => {
     return await deleteStartupPlan(db, FieldValue, {
       parentId: req.data?.parentId,
     }, { userId: uid, role });
+  } catch (e) { throw toHttps(e); }
+});
+
+// ─── تهيئة أول مدير ──────────────────────────────────────────────────────
+/**
+ * Is this installation still unclaimed?
+ *
+ * Asked before the button is offered, so the app never shows an action that
+ * will fail. Authenticated-only — an anonymous probe learns nothing.
+ */
+export const authBootstrapStatus = onCall(OPTS, async (req) => {
+  if (!req.auth?.uid) throw new HttpsError('unauthenticated', 'تسجيل الدخول مطلوب.');
+  try {
+    return { unclaimed: await directoryIsEmpty(db) };
+  } catch (e) { throw toHttps(e); }
+});
+
+/**
+ * Claims the admin role for the CALLING account — once, on an empty directory.
+ *
+ * The deadlock this breaks: creating `users/{uid}` needs `isAdmin()`,
+ * `isAdmin()` needs a `users` or `app_admins` document, and `app_admins` is
+ * closed to every client. Correct on an installed system, and a brick wall on
+ * a fresh one — the owner of a brand-new project cannot make themselves the
+ * admin without a service-account key.
+ *
+ * The identity comes from the verified token; the payload is not read at all.
+ * The emptiness test is a transactional query, so two simultaneous clicks
+ * resolve to exactly one admin.
+ *
+ * ⚠️ Stated plainly: until the first claim, any authenticated account in this
+ * project can make it. The window closes on the first click and never reopens.
+ * `scripts/bootstrap-admin.mjs` is the zero-window alternative.
+ */
+export const authClaimFirstAdmin = onCall(OPTS, async (req) => {
+  if (!req.auth?.uid) throw new HttpsError('unauthenticated', 'تسجيل الدخول مطلوب.');
+  try {
+    return await claimFirstAdmin(db, FieldValue, {
+      uid: req.auth.uid,
+      email: req.auth.token?.email || null,
+    });
   } catch (e) { throw toHttps(e); }
 });

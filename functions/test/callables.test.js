@@ -749,4 +749,45 @@ d('الاستدعاءات الحقيقية عبر محاكي الدوال', () =
       expect((await adb.collection('startup_cost_entries').get()).size).toBe(2);
     }, 90_000);
   });
+
+  // ═══ تهيئة أول مدير عبر الاستدعاء ═══════════════════════════════════
+  // The one path that works WITHOUT already being a member — because on a
+  // fresh project nobody is one, and the rules make that unfixable from a
+  // browser by design.
+  describe('المطالبة بأول مدير', () => {
+    it('على نظام فارغ: المتصل يصير مديراً، والهوية من التوكن لا من الحمولة', async () => {
+      // Emptied so this is a genuine first run.
+      for (const c of ['users', 'app_admins']) {
+        const snap = await adb.collection(c).get();
+        await Promise.all(snap.docs.map((s) => s.ref.delete()));
+      }
+      const call = await as('operator');
+      expect((await call('authBootstrapStatus')({})).data).toEqual({ unclaimed: true });
+
+      // The payload claims another uid; it is never read.
+      const res = await call('authClaimFirstAdmin')({ uid: uids.admin, role: 'admin' });
+      expect(res.data).toMatchObject({ uid: uids.operator, role: 'admin', claimed: true });
+
+      const written = (await adb.collection('users').doc(uids.operator).get()).data();
+      expect(written).toMatchObject({ role: 'admin', email: 'operator@sweater.test' });
+      expect((await adb.collection('app_admins').doc(uids.operator).get()).exists).toBe(true);
+      // …ولا شيء كُتب للحساب الذي ادّعته الحمولة.
+      expect((await adb.collection('users').doc(uids.admin).get()).exists).toBe(false);
+    }, 90_000);
+
+    it('وعلى نظام مُهيَّأ: مرفوضة، والحالة تقول ذلك قبل عرض الزر', async () => {
+      // `beforeEach` seeds the four role documents, so this run is not fresh.
+      const call = await as('operator');
+      expect((await call('authBootstrapStatus')({})).data).toEqual({ unclaimed: false });
+      await expect(call('authClaimFirstAdmin')({})).rejects.toThrow(/مُهيَّأ بالفعل/);
+      expect((await adb.collection('app_admins').get()).size).toBe(0);
+    }, 90_000);
+
+    it('وغير المسجَّل الدخول مرفوض في الاثنين', async () => {
+      await signOut(auth).catch(() => {});
+      const anon = (name) => httpsCallable(fns, name);
+      await expectDenied(anon('authBootstrapStatus')({}));
+      await expectDenied(anon('authClaimFirstAdmin')({}));
+    }, 60_000);
+  });
 });

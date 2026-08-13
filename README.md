@@ -210,11 +210,32 @@ never consults a role, it still renders every admin page. Each one then shows
 «تم رفض الطلب بواسطة قواعد الأمان», which is true and useless: the account has
 no permissions because it has no record.
 
-It cannot fix itself, by design. `users/{uid}` create requires `isAdmin()`,
-`isAdmin()` requires one of those two documents, and `app_admins` is
-`allow write: if false` for every client — privilege escalation would otherwise
-be one browser write away. So the **first** admin is provisioned out of band,
-once, with credentials a browser never has:
+It cannot fix itself through the ordinary rules, by design. `users/{uid}`
+create requires `isAdmin()`, `isAdmin()` requires one of those two documents,
+and `app_admins` is `allow write: if false` for every client — privilege
+escalation would otherwise be one browser write away.
+
+Correct on an installed system, and a brick wall on a fresh one. Three ways
+through it, in order of how little they ask:
+
+**١ — الزر.** `authClaimFirstAdmin` lets the first authenticated caller take
+the admin role, and **only while the directory is completely empty** — no
+`users` document, no `app_admins` document. The emptiness test is a
+transactional query, so two simultaneous clicks resolve to exactly one admin,
+and the door closes permanently on the first success. The app offers the button
+only when `authBootstrapStatus` says the installation is unclaimed.
+
+> ⚠️ Between deploying this and the first claim, any authenticated account in
+> the project could make it. That window is the price of a self-service
+> bootstrap — the same trade Grafana, Jenkins and Sonarr make — and it closes
+> on the first click. Options 2 and 3 have no window at all.
+
+**٢ — يدوياً من Firebase Console.** Firestore → collection `users` → document
+ID = the uid → `role: "admin"`. No tooling, no deploy, no credentials; the
+banner renders the uid with a copy button.
+
+**٣ — بسكربت**, for anyone who has a service-account key and would rather not
+click anything:
 
 ```bash
 export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json

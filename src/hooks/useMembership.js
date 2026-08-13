@@ -1,5 +1,7 @@
+import { useCallback, useState } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../lib/firebaseClient';
+import { callServer } from '../lib/ledgerTransport';
 import { useFirestoreQuery } from './useFirestoreQuery';
 
 /**
@@ -34,9 +36,45 @@ export function useMembership(userId) {
     { enabled: applicable, deps: [userId], fallback: [{ role: null }] },
   );
 
+  // ── هل ما زال النظام بلا مالك؟ ──
+  // Asked only when the account turns out NOT to be a member, and answered by
+  // the server — a client cannot list `users` (that needs `isAdmin()`), so
+  // «is this installation unclaimed» is a question only the server can settle.
+  // Asked before the button is offered, so the app never shows an action that
+  // will fail.
   const row = Array.isArray(data) ? data[0] : null;
+  const missing = applicable && !loading && !error && !row?.role;
+
+  const { data: statusData } = useFirestoreQuery(
+    async () => [await callServer('authBootstrapStatus', {})],
+    { enabled: missing, deps: [missing], fallback: [{ unclaimed: false }] },
+  );
+  const [claiming, setClaiming] = useState(false);
+  const [claimError, setClaimError] = useState(null);
+
+  const claimFirstAdmin = useCallback(async () => {
+    setClaiming(true);
+    setClaimError(null);
+    try {
+      await callServer('authClaimFirstAdmin', {});
+      await refetch();
+      return true;
+    } catch (e) {
+      setClaimError(e);
+      return false;
+    } finally {
+      setClaiming(false);
+    }
+  }, [refetch]);
+
   return {
     loading: applicable && loading,
+    // True only while NOBODY owns this installation. Once anyone does, the
+    // server refuses and the button is not offered.
+    unclaimed: Boolean(statusData?.[0]?.unclaimed),
+    claiming,
+    claimError,
+    claimFirstAdmin,
     // A read error is a connectivity or configuration problem, NOT the
     // membership gap — the two need opposite fixes, so a failure never
     // accuses the account of being unregistered.

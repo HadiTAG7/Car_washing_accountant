@@ -137,6 +137,11 @@ GitHub ← المستودع ← **Settings** ← **Secrets and variables** ← *
 
 ### التشغيل
 
+> ⚠️ **الزر لا يظهر قبل أن يصل هذا الملف إلى الفرع الافتراضي.** GitHub لا يعرض
+> `workflow_dispatch` إلا لسير عمل موجود في الفرع الافتراضي للمستودع
+> (`claude/laundry-accounting-dashboard-rtl-yyUBw` هنا). فادمج الـ PR أولاً،
+> ثم يظهر في تبويب Actions.
+
 تبويب **Actions** ← **نشر إلى Firebase** ← **Run workflow** ← اختر:
 
 | `target` | ماذا يفعل | يحتاج Blaze |

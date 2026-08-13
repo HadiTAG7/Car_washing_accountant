@@ -28,6 +28,7 @@ import {
   addStartupEntry, deleteStartupEntry, convertLegacyStartupSpend,
   updateStartupPlan, deleteStartupPlan,
 } from '../../../../functions/src/startupCosts.js';
+import { claimFirstAdmin, directoryIsEmpty } from '../../../../functions/src/bootstrapAdmin.js';
 import { __setLedgerTransport } from '../../ledgerTransport';
 import { app as clientApp } from '../../firebaseClient';
 
@@ -71,6 +72,10 @@ export function useServerTransport(projectId = clientApp?.options?.projectId || 
       // `startup_cost_entries` is denied to every client in the rules, so the
       // sub-ledger goes through the server like the ledger does. The suites
       // run as an accountant, which is what the conversion requires.
+      case 'authBootstrapStatus':
+        return { unclaimed: await directoryIsEmpty(adb) };
+      case 'authClaimFirstAdmin':
+        return claimFirstAdmin(adb, FieldValue, { uid, email: `${uid}@sweater.test` });
       case 'startupAddEntry':
         return addStartupEntry(adb, FieldValue, payload, { userId: uid, role: 'accountant' });
       case 'startupDeleteEntry':

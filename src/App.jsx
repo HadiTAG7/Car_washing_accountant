@@ -23,6 +23,7 @@ import {
 import { lazy, Suspense } from 'react';
 import Sidebar from './components/Sidebar';
 import LoginScreen from './components/LoginScreen';
+import MembershipBanner from './components/MembershipBanner';
 import UpdatePasswordScreen from './components/UpdatePasswordScreen';
 import { DemoBanner } from './components/ErrorState';
 import LoadingState from './components/LoadingState';
@@ -52,6 +53,7 @@ const FixedAssetsPage      = lazy(() => import('./components/FixedAssetsPage'));
 const PeriodClosePage      = lazy(() => import('./components/PeriodClosePage'));
 
 import { useAuth } from './hooks/useAuth';
+import { useMembership } from './hooks/useMembership';
 import { isFirebaseConfigured, requireAuth, missingEnvNames } from './lib/firebaseClient';
 import { MobileMenuProvider, useMobileMenu } from './contexts/MobileMenuContext';
 import { PartnerViewProvider, usePartnerView } from './contexts/PartnerViewContext';
@@ -83,6 +85,12 @@ const TABS = [
 function AppShell() {
   const [activeTab, setActiveTab] = useState('overview');
   const { session, loading: authLoading, signOut } = useAuth();
+  // ── الدخول ليس عضوية ──
+  // The rules read membership from a document; an account created in the Auth
+  // console has none, so every page shows «لا صلاحيات» while the sidebar
+  // renders everything. Asked once, here, so the answer is given ONCE and by
+  // name instead of eighteen times as a generic permission error.
+  const membership = useMembership(session?.user?.id);
   const { canMutate } = usePartnerView();
 
   const [showEntrySelector, setShowEntrySelector] = useState(false);
@@ -161,6 +169,13 @@ function AppShell() {
       <div className="min-h-screen md:mr-64 flex flex-col">
         <PartnerViewBanner />
         {!isFirebaseConfigured && <DemoBanner missing={missingEnvNames} />}
+        {!membership.loading && !membership.isMember && (
+          <MembershipBanner
+            user={session?.user}
+            membership={membership}
+            onRecheck={membership.recheck}
+          />
+        )}
 
         <Suspense fallback={<LoadingState message="جارٍ تحميل الصفحة..." />}>
           {/* key={activeTab} remounts the wrapper per tab so the page-in

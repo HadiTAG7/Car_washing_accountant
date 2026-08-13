@@ -195,6 +195,66 @@ Notes that are easy to get wrong, and are handled explicitly:
   `effective_from` date — no percentage is hard-coded, so changing a rate
   cannot silently restate a past period.
 
+### أول تسجيل دخول: الدخول ليس عضوية
+
+Firebase Auth and this app's user directory are two different things. Creating
+an account in the Auth console makes someone able to **sign in**; it does not
+make them a member. Membership is a document:
+
+```
+isMember()  =  exists(users/<uid>)  ||  exists(app_admins/<uid>)
+```
+
+An account with neither is refused **every** read — and because the sidebar
+never consults a role, it still renders every admin page. Each one then shows
+«تم رفض الطلب بواسطة قواعد الأمان», which is true and useless: the account has
+no permissions because it has no record.
+
+It cannot fix itself through the ordinary rules, by design. `users/{uid}`
+create requires `isAdmin()`, `isAdmin()` requires one of those two documents,
+and `app_admins` is `allow write: if false` for every client — privilege
+escalation would otherwise be one browser write away.
+
+Correct on an installed system, and a brick wall on a fresh one. Three ways
+through it, in order of how little they ask:
+
+**١ — الزر.** `authClaimFirstAdmin` lets the first authenticated caller take
+the admin role, and **only while the directory is completely empty** — no
+`users` document, no `app_admins` document. The emptiness test is a
+transactional query, so two simultaneous clicks resolve to exactly one admin,
+and the door closes permanently on the first success. The app offers the button
+only when `authBootstrapStatus` says the installation is unclaimed.
+
+> ⚠️ Between deploying this and the first claim, any authenticated account in
+> the project could make it. That window is the price of a self-service
+> bootstrap — the same trade Grafana, Jenkins and Sonarr make — and it closes
+> on the first click. Options 2 and 3 have no window at all.
+
+**٢ — يدوياً من Firebase Console.** Firestore → collection `users` → document
+ID = the uid → `role: "admin"`. No tooling, no deploy, no credentials; the
+banner renders the uid with a copy button.
+
+**٣ — بسكربت**, for anyone who has a service-account key and would rather not
+click anything:
+
+```bash
+export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+#   or:  gcloud auth application-default login
+export FIREBASE_PROJECT_ID=<project-id>
+
+npm run bootstrap:admin -- admin@example.com
+npm run bootstrap:admin -- someone@example.com --role accountant
+```
+
+It is idempotent, writes `users/<uid>` (and `app_admins/<uid>` for an admin),
+and prints the before/after. Afterwards the app provisions everyone else
+normally.
+
+The app detects the gap and says so: `useMembership` reads the signed-in user's
+OWN `users/<uid>` document — which the rules always permit — and renders a
+banner naming the missing document and the exact command, instead of eighteen
+pages each guessing at a generic permission error.
+
 ### The ledger is not client-writable
 `journal_entries`, `journal_lines`, `posting_locks`, `counters/journal`,
 `accounting_periods` and `audit_logs` are **read-only to every client**,
@@ -1061,6 +1121,43 @@ npm run build && npx cap sync android && (cd android && ./gradlew assembleReleas
 
 Release signing reads `android/keystore.properties` (gitignored, along with
 `*.keystore`) — signing material never enters the repo.
+
+---
+
+## النشر — Deployment
+
+Three artifacts reach production by three different mechanisms, and the app
+itself is not one of them: `firebase.json` has no `hosting` block, so nothing
+about the UI travels with `firebase deploy` — the web assets ride inside the
+APK.
+
+```bash
+npm run deploy            # verify (lint + build + every suite) then deploy the backend
+npm run deploy:functions  # firebase deploy --only functions:ledger   ← always first
+npm run deploy:rules      # firebase deploy --only firestore:rules    ← the breaking half
+```
+
+`.firebaserc` pins the project, so `firebase use` prints it before anything
+runs. Functions require the **Blaze** plan; `storage.rules` is deliberately
+absent from these scripts because Cloud Storage is not enabled on the project
+and `--only storage` would fail.
+
+Order matters — functions are a pure addition, rules are what refuses an older
+installed APK's direct writes to `startup_costs`.
+
+Or with no terminal at all: **Actions → نشر إلى Firebase → Run workflow**.
+`.github/workflows/deploy.yml` is `workflow_dispatch` only — no push trigger,
+because deploying to a production project is a decision, not a side effect of
+pushing a branch. It runs lint, build and every emulator suite before it
+touches the real project, writes the service-account key to a temp file that
+is wiped whether the deploy succeeds or fails, and deploys with
+`--non-interactive` and **no** `--force`, so a deploy that would delete
+something stops and asks instead.
+
+The order, the one real breakage window, the one-time secret setup, the
+post-deploy checks, rollback, and why the first admin should be created
+**before** deploying rather than after are all in
+**[`docs/DEPLOY.md`](docs/DEPLOY.md)**.
 
 ---
 

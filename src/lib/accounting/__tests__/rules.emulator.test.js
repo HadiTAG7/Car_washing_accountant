@@ -604,4 +604,72 @@ d('قواعد أمان Firestore', () => {
       }
     });
   });
+
+  // ── حساب مُصادَق عليه بلا وثيقة في users ───────────────────────────
+  // Firebase Auth and the app's user directory are two different things.
+  // Creating an account in the Auth console makes someone able to SIGN IN;
+  // it does not make them a member. `isMember()` is
+  // `hasUserDoc() || isAdminDoc()`, so an account with neither document is
+  // refused EVERY read — and the UI, which never checks a role, still renders
+  // the full admin sidebar. That combination reads as «I am logged in as the
+  // admin and the app says I have no permissions».
+  //
+  // And it cannot fix itself: `/users` create needs `isAdmin()`, `isAdmin()`
+  // needs one of those two documents, and `/app_admins` is closed to every
+  // client. The first admin has to be provisioned out of band —
+  // `npm run bootstrap:admin`.
+  describe('حساب بلا وثيقة مستخدم', () => {
+    let ghost;
+    beforeEach(() => {
+      // Signed in, and unknown to the directory: no `users/ghost1`, no
+      // `app_admins/ghost1`.
+      ghost = env.authenticatedContext('ghost1').firestore();
+    });
+
+    it('يُرفض كل قراءة محاسبية رغم أنه مسجَّل الدخول', async () => {
+      for (const [coll, id] of [
+        ['journal_entries', 'e1'],
+        ['journal_lines', 'l1'],
+        ['chart_of_accounts', '1010'],
+        ['accounting_periods', '2026-08'],
+        ['posting_locks', 'wash__w1'],
+      ]) {
+        await assertFails(getDoc(doc(ghost, coll, id)));
+      }
+    });
+
+    it('ويُرفض في البيانات التشغيلية كذلك — فالمشكلة العضوية لا الصفحة', async () => {
+      await assertFails(getDoc(doc(ghost, 'washes', 'w1')));
+      await assertFails(getDoc(doc(ghost, 'startup_costs', 's1')));
+      await assertFails(getDoc(doc(ghost, 'monthly_expenses', 'm1')));
+    });
+
+    it('ولا يستطيع إصلاح نفسه: كتابة users أو app_admins مرفوضة', async () => {
+      // The bootstrap deadlock, stated as a test so it cannot be «fixed» by
+      // quietly opening one of these.
+      await assertFails(setDoc(doc(ghost, 'users', 'ghost1'), { email: 'g@x.com', role: 'admin' }));
+      await assertFails(setDoc(doc(ghost, 'app_admins', 'ghost1'), { note: 'me' }));
+    });
+
+    it('وبمجرد وجود وثيقة المستخدم يعمل كل شيء', async () => {
+      await env.withSecurityRulesDisabled(async (c) => {
+        await setDoc(doc(c.firestore(), 'users', 'ghost1'), { email: 'g@x.com', role: 'admin' });
+      });
+      const now = env.authenticatedContext('ghost1').firestore();
+      await assertSucceeds(getDoc(doc(now, 'journal_entries', 'e1')));
+      await assertSucceeds(getDoc(doc(now, 'chart_of_accounts', '1010')));
+      await assertSucceeds(getDoc(doc(now, 'washes', 'w1')));
+      // …ومن ثمّ يستطيع تسجيل بقية الحسابات.
+      await assertSucceeds(setDoc(doc(now, 'users', 'someone'), { email: 's@x.com', role: 'operator' }));
+    });
+
+    it('و`app_admins` وحدها تكفي أيضاً — وهو ما يكتبه سكربت التهيئة', async () => {
+      await env.withSecurityRulesDisabled(async (c) => {
+        await setDoc(doc(c.firestore(), 'app_admins', 'ghost1'), { note: 'bootstrap' });
+      });
+      const now = env.authenticatedContext('ghost1').firestore();
+      await assertSucceeds(getDoc(doc(now, 'journal_entries', 'e1')));
+      await assertSucceeds(getDoc(doc(now, 'counters', 'journal')));
+    });
+  });
 });

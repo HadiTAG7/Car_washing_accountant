@@ -70,6 +70,14 @@ jobs:
 
       - run: npm ci
 
+      # `functions/node_modules` مستثنى في .gitignore و`npm ci` في الجذر لا
+      # يمسّه. محاكي الدوال يحمّل `functions/index.js` في عملية مستقلة، فبلا
+      # هذه الخطوة يفشل التحميل بـ «Cannot find module 'firebase-functions'»
+      # ويرجع كل استدعاء `not-found` — أي أن الاختبارات تسقط بحجة صلاحيات
+      # كاذبة بينما المشكلة أن الدوال غير موجودة أصلاً. أُعيد إنتاجها محلياً
+      # بإزالة المجلد: 44/44 تسقط، وبإرجاعه 44/44 تنجح.
+      - run: npm ci --prefix functions
+
       - name: lint
         run: npm run lint
 
@@ -110,6 +118,13 @@ jobs:
           cache: npm
 
       - run: npm ci
+
+      # النشر لا يرفع المصدر ويمضي: firebase-tools يحمّل `functions/index.js`
+      # محلياً أولاً ليكتشف المُشغِّلات. فبلا تبعيات الدوال يسقط النشر عند
+      # الاكتشاف — بعد كتابة المفتاح، وهو أسوأ توقيت للسقوط.
+      - name: تبعيات الدوال
+        if: ${{ inputs.target != 'rules' }}
+        run: npm ci --prefix functions
 
       - name: التأكد من وجود المفتاح
         env:

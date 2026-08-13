@@ -1,0 +1,160 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# النشر إلى Firebase — بضغطة زر، بلا ترمنال
+# ═══════════════════════════════════════════════════════════════════════════
+# يعمل **يدوياً فقط** (`workflow_dispatch`). لا يوجد مشغّل على `push`، وهذا
+# مقصود: النشر إلى مشروع إنتاج قرار، لا أثر جانبي لدفع فرع.
+#
+# الإعداد لمرة واحدة، وخطواته بالتفصيل في docs/DEPLOY.md:
+#   Settings ← Secrets and variables ← Actions ← New repository secret
+#   الاسم:  FIREBASE_SERVICE_ACCOUNT
+#   القيمة: محتوى ملف مفتاح الخدمة JSON كاملاً
+#
+# المفتاح يُكتب في ملف مؤقت داخل المشغّل، ويُمحى في كل الأحوال — نجح النشر أو
+# فشل — ولا يُطبع في أي سجل.
+# ═══════════════════════════════════════════════════════════════════════════
+
+name: نشر إلى Firebase
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'ماذا يُنشر؟ (rules مجاني · functions يحتاج خطة Blaze)'
+        required: true
+        default: rules
+        type: choice
+        options:
+          - rules
+          - functions
+          - rules+functions
+      skip_tests:
+        description: 'تخطّي بوابة الاختبارات — لا يُنصح'
+        required: false
+        default: false
+        type: boolean
+
+# أقل صلاحية ممكنة: هذا السير لا يكتب في المستودع إطلاقاً.
+permissions:
+  contents: read
+
+# نشرتان متزامنتان على مشروع واحد تتسابقان على نفس الإصدار.
+concurrency:
+  group: firebase-deploy
+  cancel-in-progress: false
+
+jobs:
+  # ── البوابة ────────────────────────────────────────────────────────────
+  # النشر بلا تحقّق تخمين. تُشغَّل كل المجموعات — بما فيها محاكيات Firestore
+  # والدوال والمصادقة — قبل أن يلمس أي شيء المشروع الحقيقي.
+  verify:
+    name: التحقق
+    if: ${{ !inputs.skip_tests }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      - name: lint
+        run: npm run lint
+
+      - name: build
+        run: npm run build
+
+      - name: اختبارات الوحدة
+        run: npm test
+
+      # المحاكيات تحتاج Java، وهي مثبَّتة أصلاً على ubuntu-latest.
+      - name: محاكي دفتر الأستاذ
+        run: npm run test:emulator
+
+      - name: قواعد الأمان
+        run: npm run test:rules
+
+      - name: الخادم الموثوق
+        run: npm run test:functions
+
+      - name: الاستدعاءات
+        run: npm run test:callables
+
+  # ── النشر ──────────────────────────────────────────────────────────────
+  deploy:
+    name: النشر
+    needs: verify
+    # `always()` لأن `verify` تُتخطّى كلياً عند skip_tests — والتخطّي ليس نجاحاً،
+    # فلا بد من ذكر الحالتين بالاسم بدل الاعتماد على السلوك الافتراضي.
+    if: ${{ always() && (inputs.skip_tests || needs.verify.result == 'success') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      - name: التأكد من وجود المفتاح
+        env:
+          KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$KEY" ]; then
+            echo "::error::السر FIREBASE_SERVICE_ACCOUNT غير مضبوط. اذهب إلى Settings ← Secrets and variables ← Actions ← New repository secret، وسمّه FIREBASE_SERVICE_ACCOUNT، وألصق فيه محتوى ملف مفتاح الخدمة JSON كاملاً. الخطوات في docs/DEPLOY.md."
+            exit 1
+          fi
+
+      - name: كتابة بيانات الاعتماد
+        env:
+          KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          printf '%s' "$KEY" > "$RUNNER_TEMP/sa.json"
+          chmod 600 "$RUNNER_TEMP/sa.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/sa.json" >> "$GITHUB_ENV"
+
+      # المدخل من نوع `choice`، فقيمه محصورة — ومع ذلك يمرّ عبر متغيّر بيئة
+      # لا عبر الاستبدال المباشر في نص الأمر.
+      - name: تحديد الهدف
+        env:
+          TARGET: ${{ inputs.target }}
+        run: |
+          case "$TARGET" in
+            rules)           ONLY='firestore:rules' ;;
+            functions)       ONLY='functions:ledger' ;;
+            rules+functions) ONLY='firestore:rules,functions:ledger' ;;
+            *) echo "::error::هدف غير معروف: $TARGET"; exit 1 ;;
+          esac
+          echo "DEPLOY_ONLY=$ONLY" >> "$GITHUB_ENV"
+
+      # `--non-interactive` بلا `--force`: لو احتاج النشر تأكيداً — حذف دالة
+      # اختفت من الشيفرة مثلاً — يتوقف ويسأل بدل أن يحذف صامتاً.
+      - name: firebase deploy
+        run: npx firebase deploy --only "$DEPLOY_ONLY" --non-interactive
+
+      - name: محو بيانات الاعتماد
+        if: always()
+        run: rm -f "$RUNNER_TEMP/sa.json"
+
+      - name: الخلاصة
+        if: success()
+        env:
+          TARGET: ${{ inputs.target }}
+        run: |
+          {
+            echo "### ✅ تمّ النشر — \`$TARGET\`"
+            echo ""
+            echo "**الخطوة التالية داخل التطبيق:**"
+            echo ""
+            echo "1. إقفال الفترة ← **تهيئة دليل الحسابات**"
+            echo "2. إقفال الفترة ← **فحص غير المُرحّل** ← **ترحيل**"
+            echo ""
+            echo "الواجهة نفسها لا تُنشر من هنا — أصولها داخل الـ APK:"
+            echo '`npm run build && npx cap sync android && (cd android && ./gradlew assembleRelease)`'
+          } >> "$GITHUB_STEP_SUMMARY"

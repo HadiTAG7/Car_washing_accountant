@@ -1143,9 +1143,20 @@ absent from these scripts because Cloud Storage is not enabled on the project
 and `--only storage` would fail.
 
 Order matters — functions are a pure addition, rules are what refuses an older
-installed APK's direct writes to `startup_costs`. The order, the one real
-breakage window, the post-deploy checks, rollback, and why the first admin
-should be created **before** deploying rather than after are all in
+installed APK's direct writes to `startup_costs`.
+
+Or with no terminal at all: **Actions → نشر إلى Firebase → Run workflow**.
+`.github/workflows/deploy.yml` is `workflow_dispatch` only — no push trigger,
+because deploying to a production project is a decision, not a side effect of
+pushing a branch. It runs lint, build and every emulator suite before it
+touches the real project, writes the service-account key to a temp file that
+is wiped whether the deploy succeeds or fails, and deploys with
+`--non-interactive` and **no** `--force`, so a deploy that would delete
+something stops and asks instead.
+
+The order, the one real breakage window, the one-time secret setup, the
+post-deploy checks, rollback, and why the first admin should be created
+**before** deploying rather than after are all in
 **[`docs/DEPLOY.md`](docs/DEPLOY.md)**.
 
 ---

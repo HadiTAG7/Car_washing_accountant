@@ -1124,6 +1124,36 @@ Release signing reads `android/keystore.properties` (gitignored, along with
 
 ---
 
+## MCP — الدفاتر عبر مساعد ذكي
+
+`mcp/` is an MCP server that lets an assistant read the books and write to
+them. One decision governs it: **it is a client, not a back door.** It signs in
+as a real user and every ledger write goes through the same `httpsCallable`
+door the app uses.
+
+That is not belt-and-braces. Firestore rules have no loop and no fold, so
+"debits equal credits" over a list of unknown length is *inexpressible* in
+them — balance, period derivation, closed-period refusal, atomic numbering,
+the posting lock and the audit record all live in that one callable
+transaction. A service-account key would have skipped every one of them at
+once, and made an assistant the most privileged actor in the system.
+
+A test asserts it against the source: no `setDoc`, no `runTransaction`, no
+`firebase-admin` anywhere in the package.
+
+```bash
+npm install --prefix mcp
+npm test --prefix mcp      # 17
+```
+
+Give it its **own** Firebase Auth account with role `accountant`, so
+`audit_logs.userId` names it and "what did the assistant do this week?" has an
+answer. `SWEATER_MCP_READONLY=1` hides every write tool from the listing
+outright. Setup, the tool surface, and the one risk no gate can close — a
+*balanced but wrong* entry — are in **[`mcp/README.md`](mcp/README.md)**.
+
+---
+
 ## النشر — Deployment
 
 Three artifacts reach production by three different mechanisms, and the app

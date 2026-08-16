@@ -78,6 +78,11 @@ jobs:
       # بإزالة المجلد: 44/44 تسقط، وبإرجاعه 44/44 تنجح.
       - run: npm ci --prefix functions
 
+      # خادم MCP حزمة مستقلة، لكن اختباراته يلتقطها vitest من الجذر — ومنها
+      # واحد يشغّل الخادم كعملية حقيقية. فبلا هذه الخطوة تسقط بـ Cannot find
+      # module بدل أن تفحص شيئاً.
+      - run: npm ci --prefix mcp
+
       - name: lint
         run: npm run lint
 

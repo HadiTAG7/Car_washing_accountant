@@ -56,14 +56,40 @@ function serviceAccount() {
   }
 }
 
+/**
+ * Emulators issue their own unsigned tokens and accept any project, so a real
+ * service-account key is neither needed nor usable there.
+ *
+ * The condition is the emulator's own environment variables, which the
+ * Firebase tooling sets and which are never present on a deployed host. So
+ * this cannot silently disable credentials in production: without those
+ * variables the key is still required, and a missing one still refuses.
+ *
+ * Without this branch, this file would be the one part of the trusted server
+ * that could not be tested end to end — and it is about to become the path
+ * every posting takes.
+ */
+const usingEmulators = () => Boolean(
+  process.env.FIRESTORE_EMULATOR_HOST && process.env.FIREBASE_AUTH_EMULATOR_HOST,
+);
+
 let cached = null;
 function admin() {
   if (cached) return cached;
   // Serverless reuses a warm instance, so initializing twice is a real
   // possibility rather than a theoretical one.
-  const app = getApps().length ? getApps()[0] : initializeApp({ credential: cert(serviceAccount()) });
+  const app = getApps().length
+    ? getApps()[0]
+    : initializeApp(usingEmulators()
+      ? { projectId: process.env.GCLOUD_PROJECT || 'demo-sweater' }
+      : { credential: cert(serviceAccount()) });
   cached = { db: getFirestore(app), auth: getAuth(app) };
   return cached;
+}
+
+/** Test-only: serverless caches a warm app, a suite needs a cold one. */
+export function __resetAdmin() {
+  cached = null;
 }
 
 /** The code vocabulary is the callables'; this maps it to HTTP. */

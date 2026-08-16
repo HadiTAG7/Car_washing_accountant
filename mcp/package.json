@@ -1,0 +1,25 @@
+{
+  "name": "sweater-mcp",
+  "description": "خادم MCP لسويتر — يقرأ الدفاتر ويكتب فيها كعميلٍ عادي، لا كباب خلفي.",
+  "type": "module",
+  "private": true,
+  "version": "1.0.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "sweater-mcp": "./server.js"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.20.0",
+    "firebase": "^12.16.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.10"
+  }
+}

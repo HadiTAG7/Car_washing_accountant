@@ -80,6 +80,7 @@ export const storage = app ? getStorage(app) : null;
  * the ledger's refusals are meant to be read by the person who caused them.
  */
 export async function callLedger(name, payload = {}) {
+  if (ledgerApiUrl) return callLedgerApi(name, payload);
   if (!functions) throw new Error('Firebase غير مُهيّأ — لا يمكن الترحيل.');
   try {
     const res = await httpsCallable(functions, name)(payload);
@@ -90,6 +91,61 @@ export async function callLedger(name, payload = {}) {
     if (e?.details?.problems) err.problems = e.details.problems;
     throw err;
   }
+}
+
+// ── الباب الثاني: الخادم الموثوق على HTTP ────────────────────────────────
+// Cloud Functions need the Blaze plan. Where that is not available, the same
+// trusted server runs as an ordinary HTTP endpoint (`api/ledger.js`) sharing
+// the same `functions/src/handlers.js` — same guards, same accounting, same
+// refusals. Setting `VITE_LEDGER_API_URL` switches this one function over;
+// nothing else in the app knows which door it went through.
+//
+// Empty by default, so an install that has Cloud Functions keeps using them.
+export const ledgerApiUrl = String(import.meta.env.VITE_LEDGER_API_URL || '').trim();
+
+/**
+ * Deliberately reproduces `callLedger`'s failure shape — `.message`, `.code`,
+ * `.problems` — rather than inventing its own.
+ *
+ * Every caller in the app already reads those three, and `describeBackendError`
+ * maps them to Arabic. A different shape here would make the same refusal
+ * render differently depending on where the server happens to be hosted, which
+ * is the kind of difference nobody would think to test for.
+ */
+async function callLedgerApi(name, payload = {}) {
+  if (!auth?.currentUser) {
+    const err = new Error('تسجيل الدخول مطلوب.');
+    err.code = 'unauthenticated';
+    throw err;
+  }
+  // A fresh ID token per call: `getIdToken()` returns the cached one until it
+  // is close to expiry, so this is not a round trip every time — but it does
+  // mean a revoked account stops working within the hour rather than at the
+  // end of a long-lived session.
+  const token = await auth.currentUser.getIdToken();
+
+  let res;
+  try {
+    res = await fetch(ledgerApiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ name, data: payload }),
+    });
+  } catch {
+    const err = new Error('تعذّر الوصول إلى الخادم — تحقّق من الاتصال.');
+    err.code = 'unavailable';
+    throw err;
+  }
+
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok || body?.error) {
+    const e = body?.error || {};
+    const err = new Error(e.message || 'تعذّر إتمام العملية.');
+    err.code = e.code || 'internal';
+    if (e.details?.problems) err.problems = e.details.problems;
+    throw err;
+  }
+  return body?.result;
 }
 
 export function maskedProjectRef() {

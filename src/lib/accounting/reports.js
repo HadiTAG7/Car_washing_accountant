@@ -10,8 +10,8 @@
 // reporting layer is unit-tested without a database.
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { round2, MONEY_EPSILON } from './journal';
-import { indexAccounts } from './chartOfAccounts';
+import { round2, MONEY_EPSILON } from './journal.js';
+import { indexAccounts } from './chartOfAccounts.js';
 
 /**
  * Keeps only lines belonging to POSTED entries, optionally within a date

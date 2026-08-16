@@ -23,10 +23,10 @@
 // same numbers and cannot drift apart.
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { round2 } from './journal';
-import { splitVat, VAT_RATE } from './vat';
-import { ACC } from './chartOfAccounts';
-import { incomeStatement, movementBySource } from './reports';
+import { round2 } from './journal.js';
+import { splitVat, VAT_RATE } from './vat.js';
+import { ACC } from './chartOfAccounts.js';
+import { incomeStatement, movementBySource } from './reports.js';
 
 /**
  * The fees that apply when `fee_rules` has not been configured.

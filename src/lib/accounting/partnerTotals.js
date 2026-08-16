@@ -14,8 +14,8 @@
 // saying out loud rather than averaging away.
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { round2 } from './journal';
-import { partnerCapitalCode } from './chartOfAccounts';
+import { round2 } from './journal.js';
+import { partnerCapitalCode } from './chartOfAccounts.js';
 
 /** partnerId → total received, summed from the receipts themselves. */
 export function paidByPartner(payments) {

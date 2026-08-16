@@ -35,8 +35,8 @@
 //     twice writes the same document rather than a second one.
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { blockingVatProblems, isRealCalendarDate } from '../vatFields';
-import { periodKeyOf, round2 } from './journal';
+import { blockingVatProblems, isRealCalendarDate } from '../vatFields.js';
+import { periodKeyOf, round2 } from './journal.js';
 
 /** `legacy__<parentId>` — the id IS the idempotency key, as with vouchers. */
 export function legacyEntryIdFor(parentId) {

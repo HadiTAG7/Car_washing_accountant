@@ -19,16 +19,16 @@ import {
   collection, doc, getDoc, getDocs, query, where,
   addDoc, setDoc, updateDoc, serverTimestamp,
 } from 'firebase/firestore';
-import { db, isFirebaseConfigured } from '../firebaseClient';
-import { fetchRows } from '../firestoreCrud';
-import { postEntry, fetchEntries, ensureAccount } from './firestoreLedger';
-import { ACC } from './chartOfAccounts';
+import { db, isFirebaseConfigured } from '../firebaseClient.js';
+import { fetchRows } from '../firestoreCrud.js';
+import { postEntry, fetchEntries, ensureAccount } from './firestoreLedger.js';
+import { ACC } from './chartOfAccounts.js';
 import {
   normalizeAsset, validateAsset, buildDepreciationEntry, buildDisposalEntry,
   depreciationForPeriod, unpostedDepreciationPeriods, accumulatedThrough,
   hasChargedPeriods, missingChargedPeriods, reconcileDepreciation, addMonths,
-} from './depreciation';
-import { periodKeyOf } from './journal';
+} from './depreciation.js';
+import { periodKeyOf } from './journal.js';
 
 export const ASSETS_COL = 'fixed_assets';
 

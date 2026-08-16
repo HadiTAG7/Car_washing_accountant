@@ -10,8 +10,8 @@
 // `zatcaIntegration.js` for the boundary where a real integration attaches.
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { round2 } from './journal';
-import { splitVatBalanced, VAT_RATE } from './vat';
+import { round2 } from './journal.js';
+import { splitVatBalanced, VAT_RATE } from './vat.js';
 
 export const DOCUMENT_TYPES = ['invoice', 'credit_note', 'debit_note'];
 export const DOCUMENT_STATUSES = ['draft', 'issued', 'cancelled'];

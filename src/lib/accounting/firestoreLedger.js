@@ -26,13 +26,13 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
-import { db, isFirebaseConfigured } from '../firebaseClient';
-import { callServer as call } from '../ledgerTransport';
+import { db, isFirebaseConfigured } from '../firebaseClient.js';
+import { callServer as call } from '../ledgerTransport.js';
 
 
-import { fetchRows } from '../firestoreCrud';
-import { validateEntry, normalizeEntry, periodKeyOf } from './journal';
-import { DEFAULT_CHART_OF_ACCOUNTS, validateChart } from './chartOfAccounts';
+import { fetchRows } from '../firestoreCrud.js';
+import { validateEntry, normalizeEntry, periodKeyOf } from './journal.js';
+import { DEFAULT_CHART_OF_ACCOUNTS, validateChart } from './chartOfAccounts.js';
 
 export const COL = {
   ACCOUNTS: 'chart_of_accounts',

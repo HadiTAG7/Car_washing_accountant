@@ -6,7 +6,7 @@
 // a rate change or a rounding decision is a single edit.
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { round2 } from './journal';
+import { round2 } from './journal.js';
 
 /** KSA standard rate. */
 export const VAT_RATE = 0.15;

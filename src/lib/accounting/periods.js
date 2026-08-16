@@ -13,7 +13,7 @@
 // to record business just because nobody has opened this month yet.
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { periodKeyOf, isBalanced, totalsOf, MONEY_EPSILON } from './journal';
+import { periodKeyOf, isBalanced, totalsOf, MONEY_EPSILON } from './journal.js';
 
 export const PERIOD_STATUSES = ['open', 'closed'];
 

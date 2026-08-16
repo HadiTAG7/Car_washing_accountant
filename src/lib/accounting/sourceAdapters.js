@@ -19,7 +19,7 @@
 import {
   buildWashEntry, buildExpenseEntry, buildPartnerPaymentEntry,
   buildTemporaryExpenseEntry, buildRecoveryEntry, canPostWash, expenseAccountFor,
-} from './postingRules';
+} from './postingRules.js';
 
 /**
  * The tax fields every purchase carries, read off a RAW row.

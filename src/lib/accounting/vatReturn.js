@@ -19,16 +19,16 @@
 // vanishing from a return is as bad as one quietly appearing in it.
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { round2 } from './journal';
-import { splitVatBalanced, VAT_RATE } from './vat';
+import { round2 } from './journal.js';
+import { splitVatBalanced, VAT_RATE } from './vat.js';
 // One definition of "stated vs not stated", shared with the mappers and the
 // form — see src/lib/vatFields.js for what went wrong when there were three.
-import { normalizedPriceMode } from '../vatFields';
+import { normalizedPriceMode } from '../vatFields.js';
 // ── قرار واحد للدفاتر وللإقرار ──
 // The report does NOT re-implement the priority (stated amount → invoice rate
 // → dated policy), the registration test or the deductibility test. It calls
 // the same engine the server posts with; a second copy is a second answer.
-import { resolvePurchaseTax } from './purchaseTax';
+import { resolvePurchaseTax } from './purchaseTax.js';
 
 export const FILING_PERIODS = ['monthly', 'quarterly'];
 export const FILING_PERIOD_LABELS = {

@@ -66,10 +66,33 @@ describe('الحدّ المعماري: هذا الخادم عميل، لا با�
   // not enforced by rules alone — rules have no fold, so «debits equal
   // credits» is INEXPRESSIBLE in them. It lives in the callable transaction.
   // A direct Firestore write from here would bypass it completely.
-  it('لا يستورد أي بدائية كتابة من Firestore', async () => {
+  it('لا يكتب في أي مجموعة دفترية — ولا يملك الأدوات التي تسمح بذلك', async () => {
+    // أول صياغة لهذا الاختبار منعت `addDoc` مطلقاً. وكان ذلك **بديلاً عن
+    // القاعدة لا القاعدة**: المجموعات التشغيلية — الغسلات والمصروفات — تسمح
+    // بها `firestore.rules` لدور operator، فالكتابة فيها لا تتجاوز شيئاً بل
+    // تفعل ما يفعله التطبيق. ولمّا لزم تسجيل مصروف من فاتورة، كان المنع
+    // سيوقف عملاً مشروعاً ويترك القاعدة الحقيقية بلا حارس.
+    //
+    // فالقاعدة، مكتوبةً كما هي: **لا كتابة في مجموعة دفترية، بأي وسيلة.**
+    const { DIRECT_WRITE_COLLECTIONS } = await import('../src/tools.js');
+    const { OPERATIONAL } = await import('../src/fetch.js');
+
+    for (const [kind, coll] of Object.entries(DIRECT_WRITE_COLLECTIONS)) {
+      expect(OPERATIONAL, `${kind} → ${coll} ليست مجموعة تشغيلية`).toContain(coll);
+    }
+
+    const LEDGER = ['journal_entries', 'journal_lines', 'posting_locks', 'counters',
+      'accounting_periods', 'audit_logs', 'chart_of_accounts', 'sales_documents',
+      'startup_costs', 'startup_cost_entries', 'app_admins', 'users'];
+    for (const c of LEDGER) {
+      expect(Object.values(DIRECT_WRITE_COLLECTIONS), `${c} في قائمة الكتابة المباشرة`).not.toContain(c);
+    }
+
+    // والوسائل التي تسمح بتعديل مستند قائم أو بحزمة ذرّية تظل ممنوعة: الإنشاء
+    // وحده كافٍ لتسجيل مصروف، وأي شيء أوسع يعني تعديل ما قد يكون مُرحّلاً.
     for (const file of ['tools.js', 'fetch.js', 'client.js']) {
       const code = src(file);
-      for (const forbidden of ['setDoc', 'addDoc', 'updateDoc', 'deleteDoc', 'writeBatch', 'runTransaction']) {
+      for (const forbidden of ['setDoc', 'updateDoc', 'deleteDoc', 'writeBatch', 'runTransaction']) {
         expect(code.includes(forbidden), `${file} يستعمل ${forbidden}`).toBe(false);
       }
     }
@@ -84,9 +107,16 @@ describe('الحدّ المعماري: هذا الخادم عميل، لا با�
     }
   });
 
-  it('وكل أداة كتابة تمرّ بـ callServer', async () => {
+  it('وكل عملية دفترية تمرّ بـ callServer', async () => {
     const { tools } = await load();
+    // `sweater_record_expense` هو الاستثناء الوحيد وهو ليس عملية دفترية:
+    // ينشئ سجلاً تشغيلياً فقط، ولا يلمس الدفاتر — إدخاله إليها يبقى نداءً
+    // منفصلاً بـ `sweater_post_source`، أي فعلاً واعياً لا أثراً جانبياً.
     for (const t of tools.writeTools) {
+      if (t.name === 'sweater_record_expense') {
+        expect(String(t.run).includes('callServer'), 'تسجيل المصروف يجب ألا يرحّل تلقائياً').toBe(false);
+        continue;
+      }
       expect(String(t.run).includes('callServer'), `${t.name} لا يمرّ بالخادم`).toBe(true);
     }
   });
@@ -167,5 +197,60 @@ describe('المخطَّطات ترفض ما لا يصح قبل أن يصل ال
     const s = await schemaOf('sweater_startup_entry');
     expect(Object.keys(s)).not.toContain('actualAmount');
     expect(Object.keys(s)).not.toContain('status');
+  });
+});
+
+describe('تسجيل مصروف من فاتورة — المعاينة قبل الكتابة', () => {
+  const tool = async () => {
+    const { tools } = await load();
+    return tools.allTools.find((t) => t.name === 'sweater_record_expense');
+  };
+
+  it('بلا confirm: يُرجع معاينة ولا يتصل بقاعدة البيانات أصلاً', async () => {
+    // بلا اعتماد في البيئة، أي محاولة اتصال ترمي «بيانات الدخول مفقودة».
+    // فنجاح هذا النداء هو نفسه الدليل على أن المعاينة لا تكتب ولا تتصل.
+    const t = await tool();
+    const body = JSON.parse((await t.run({
+      kind: 'variable', description: 'زيت وفلاتر', amount: 340, date: '2026-08-14',
+    })).content[0].text);
+    expect(body.preview).toBe(true);
+    expect(body['سيُكتب_في']).toBe('variable_expenses');
+    expect(body['البيانات'].total_variable_cost).toBe(340);
+    expect(body['تنبيه']).toMatch(/confirm/);
+  });
+
+  it('والمعاينة تقول هل الضريبة قابلة للخصم ولماذا لا', async () => {
+    const t = await tool();
+    const plain = JSON.parse((await t.run({
+      kind: 'variable', description: 'قهوة', amount: 25, date: '2026-08-14',
+    })).content[0].text);
+    expect(plain['المعاملة_الضريبية'].deductible).toBe(false);
+    expect(plain['المعاملة_الضريبية'].reason).toBeTruthy();
+  });
+
+  it('ولا يقبل ما لا يصح قبل أن يصل شيء إلى قاعدة البيانات', async () => {
+    const s = (await tool()).schema;
+    expect(s.amount.safeParse(-5).success).toBe(false);
+    expect(s.amount.safeParse(0).success).toBe(false);
+    expect(s.date.safeParse('14/08/2026').success).toBe(false);
+    expect(s.description.safeParse('').success).toBe(false);
+    expect(s.kind.safeParse('wash').success).toBe(false);
+  });
+
+  it('والقيمة صفر للضريبة ليست «غير مذكورة»', async () => {
+    // توريد معفى أو بنسبة صفر إجابةٌ حقيقية. `?? null` لا `|| null`.
+    const t = await tool();
+    const body = JSON.parse((await t.run({
+      kind: 'variable', description: 'توريد معفى', amount: 100, date: '2026-08-14',
+      isTaxInvoice: true, supplier: 'مورّد', invoiceNumber: 'A-1',
+      invoiceDate: '2026-08-14', vatAmount: 0,
+    })).content[0].text);
+    expect(body['البيانات'].vat_amount).toBe(0);
+  });
+
+  it('وهي أداة كتابة — فتختفي في وضع القراءة فقط', async () => {
+    const { tools } = await load();
+    expect(tools.writeTools.map((t) => t.name)).toContain('sweater_record_expense');
+    expect(tools.readTools.map((t) => t.name)).not.toContain('sweater_record_expense');
   });
 });

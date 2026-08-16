@@ -24,6 +24,7 @@
 
 import { z } from 'zod';
 import { connect, callServer, readOnly, SweaterMcpError } from './client.js';
+import { collection, addDoc } from 'firebase/firestore';
 import { COL, OPERATIONAL, rows, row, ledgerBundle, lockId } from './fetch.js';
 
 import {
@@ -33,6 +34,24 @@ import { buildVatReport, currentPeriodKey } from '../../src/lib/accounting/vatRe
 import { DEFAULT_CHART_OF_ACCOUNTS } from '../../src/lib/accounting/chartOfAccounts.js';
 import { taxPolicyAt } from '../../src/lib/accounting/taxPolicy.js';
 import { startupRollup } from '../../src/lib/accounting/startupMigration.js';
+import { validateTaxInvoiceFields, VAT_PROBLEM } from '../../src/lib/vatFields.js';
+import { resolvePurchaseTax, PurchaseTaxError } from '../../src/lib/accounting/purchaseTax.js';
+
+/**
+ * المجموعات الوحيدة التي يجوز لهذا الخادم أن ينشئ فيها مستنداً **مباشرةً**.
+ *
+ * تشغيلية بحتة، تسمح بها `firestore.rules` لدور `operator` فما فوق — أي أن
+ * الكتابة هنا لا تتجاوز شيئاً، بل تفعل ما يفعله التطبيق حرفياً. ولا مجموعة
+ * دفترية واحدة فيها: القيود والأقفال والعدّادات والفترات وسجل التدقيق كلها
+ * `allow write: if false`، ولا يصلها إلا الخادم الموثوق عبر `callServer`.
+ *
+ * مُصدَّرة ليفحصها اختبار: إضافة اسم دفتري هنا تُسقطه.
+ */
+export const DIRECT_WRITE_COLLECTIONS = {
+  variable: 'variable_expenses',
+  monthly: 'monthly_expenses',
+  annual: 'annual_expense_entries',
+};
 
 const ISO = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'التاريخ بصيغة YYYY-MM-DD');
 const text = (t) => ({ content: [{ type: 'text', text: typeof t === 'string' ? t : JSON.stringify(t, null, 2) }] });
@@ -227,6 +246,114 @@ export const readTools = [
 // point: there is no logic here that could disagree with the app's.
 
 export const writeTools = [
+  {
+    name: 'sweater_record_expense',
+    title: 'تسجيل مصروف من فاتورة',
+    description:
+      'يسجّل مصروفاً جديداً — مثلاً من فاتورة صوّرها المستخدم. **يعرض أولاً ولا يكتب**: '
+      + 'بلا `confirm: true` يُرجع ما سيُكتب بالضبط ومعاملته الضريبية، فيراجعه المستخدم. '
+      + 'اعرض عليه المبلغ والتاريخ والمورّد ورقم الفاتورة والضريبة، واطلب تأكيده صراحةً، ثم أعد '
+      + 'النداء بـ `confirm: true`. لا تؤكّد نيابةً عنه أبداً. '
+      + 'kind: variable (شراء عادي) · monthly (فاتورة متكررة) · annual (بند سنوي).',
+    schema: {
+      kind: z.enum(['variable', 'monthly', 'annual']),
+      description: z.string().min(2),
+      amount: z.number().positive(),
+      date: ISO,
+      confirm: z.boolean().optional(),
+      paymentMethod: z.enum(['cash', 'bank', 'credit']).optional(),
+      category: z.string().optional(),
+      // ── كتلة الفاتورة الضريبية ──
+      // اتركها فارغة إن لم تكن فاتورة ضريبية. لا تخترع رقم ضريبي ولا نسبة:
+      // الخادم يرفض افتراض 15% ويقول إن الضريبة غير قابلة للخصم، وهذا أصدق
+      // من خصمٍ لا يسنده مستند.
+      isTaxInvoice: z.boolean().optional(),
+      supplier: z.string().optional(),
+      invoiceNumber: z.string().optional(),
+      invoiceDate: ISO.optional(),
+      vatAmount: z.number().optional(),
+      vatRate: z.number().optional(),
+      priceMode: z.enum(['inclusive', 'exclusive']).optional(),
+    },
+    async run(a) {
+      // لا `connect()` هنا: المعاينة لا تكتب شيئاً، فلا تحتاج قاعدة بيانات —
+      // والاتصال يأتي عند الكتابة وحدها، أدناه.
+      const coll = DIRECT_WRITE_COLLECTIONS[a.kind];
+      const amountField = { variable: 'total_variable_cost', monthly: 'total_monthly_cost', annual: 'amount' }[a.kind];
+
+      const row = {
+        [amountField]: a.amount,
+        description: a.description,
+        logged_date: a.date,
+        ...(a.kind === 'annual' ? { paid_date: a.date } : {}),
+        ...(a.category ? { category: a.category } : {}),
+        payment_method: a.paymentMethod || 'cash',
+        is_tax_invoice: a.isTaxInvoice === true,
+        supplier: a.supplier ?? null,
+        invoice_number: a.invoiceNumber ?? null,
+        invoice_date: a.invoiceDate ?? null,
+        // `?? null` لا `|| null`: صفرٌ صريح إجابة حقيقية — توريد معفى أو
+        // بنسبة صفر — و`||` كان سيمحوها إلى «غير مذكورة».
+        vat_amount: a.vatAmount ?? null,
+        vat_rate: a.vatRate ?? null,
+        price_mode: a.priceMode || 'inclusive',
+        created_at: new Date().toISOString(),
+      };
+
+      // ما يقوله المحرّك عن هذي الفاتورة قبل أن تُكتب: هل تدخل ضريبة المدخلات
+      // أصلاً، ولماذا لا. نفس المحرّك الذي سيقرّر لحظة الترحيل، لا تخمين موازٍ.
+      let tax;
+      try {
+        const r = resolvePurchaseTax({
+          amount: a.amount, isTaxInvoice: row.is_tax_invoice, vatDeductible: true,
+          invoiceNumber: row.invoice_number, invoiceDate: row.invoice_date,
+          supplier: row.supplier, vatAmount: row.vat_amount, vatRate: row.vat_rate,
+          priceMode: row.price_mode, recordDate: a.date,
+        });
+        tax = { net: r.net, vat: r.vat, gross: r.gross, deductible: r.deductible, reason: r.noInputVatReason || null };
+      } catch (e) {
+        // **فقط** رفض المحرّك المتعمَّد يُبتلع هنا. أول صياغة ابتلعت كل شيء،
+        // فحوّلت `resolvePurchaseTax is not defined` — خطأ برمجي محض — إلى
+        // «غير قابلة للخصم»: جوابٌ محاسبي معقول المظهر، كان سيمرّ بصمت ويترك
+        // كل فاتورة بلا خصم بسببٍ يبدو مشروعاً. العطب الذي يلبس ثوب النتيجة
+        // أخطر من العطب الذي ينهار.
+        if (!(e instanceof PurchaseTaxError)) throw e;
+        tax = { deductible: false, refused: e.message, reason: e.reason || null };
+      }
+
+      const problems = validateTaxInvoiceFields({
+        isTaxInvoice: row.is_tax_invoice, supplier: row.supplier,
+        invoiceNumber: row.invoice_number, invoiceDate: row.invoice_date,
+        vatAmount: row.vat_amount, vatRate: row.vat_rate, priceMode: row.price_mode,
+      }, { amount: a.amount }).filter((p) => p.severity === VAT_PROBLEM.BLOCKING);
+
+      if (problems.length) {
+        throw new SweaterMcpError(
+          `لا يمكن تسجيلها كفاتورة ضريبية: ${problems.map((p) => p.message).join(' · ')}`,
+          { code: 'invalid-argument' },
+        );
+      }
+
+      if (a.confirm !== true) {
+        return text({
+          preview: true,
+          سيُكتب_في: coll,
+          البيانات: row,
+          المعاملة_الضريبية: tax,
+          تنبيه: 'لم يُكتب شيء بعد. اعرض هذي الأرقام على المستخدم واطلب تأكيده، '
+            + 'ثم أعد النداء بـ confirm: true. لا تؤكّد نيابةً عنه.',
+        });
+      }
+
+      const { db } = await connect();
+      const ref = await addDoc(collection(db, coll), row);
+      return text({
+        created: true, id: ref.id, collection: coll,
+        المعاملة_الضريبية: tax,
+        التالي: `سجّل المصروف. لترحيله إلى الدفاتر: sweater_post_source بـ kind='${a.kind}' و sourceId='${ref.id}'.`,
+      });
+    },
+  },
   {
     name: 'sweater_post_source',
     title: 'ترحيل سجل إلى الدفاتر',

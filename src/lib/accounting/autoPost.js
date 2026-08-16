@@ -24,11 +24,11 @@
 // ledger is what was actually stored, not what the client believed it sent.
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { getRow } from '../firestoreCrud';
-import { postSource, hasPostedEntryFor, fetchEntries, fetchPeriods } from './firestoreLedger';
-import { ADAPTERS, adapterFor, AUTO_POSTABLE_KINDS } from './sourceAdapters';
-import { isPeriodClosed, indexPeriods } from './periods';
-import { periodKeyOf } from './journal';
+import { getRow } from '../firestoreCrud.js';
+import { postSource, hasPostedEntryFor, fetchEntries, fetchPeriods } from './firestoreLedger.js';
+import { ADAPTERS, adapterFor, AUTO_POSTABLE_KINDS } from './sourceAdapters.js';
+import { isPeriodClosed, indexPeriods } from './periods.js';
+import { periodKeyOf } from './journal.js';
 
 export { AUTO_POSTABLE_KINDS };
 

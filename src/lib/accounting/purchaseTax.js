@@ -42,7 +42,7 @@
 import {
   readStatedVatAmount, readStatedVatRate, normalizedPriceMode,
   isRealCalendarDate, validateTaxInvoiceFields, VAT_PROBLEM,
-} from '../vatFields';
+} from '../vatFields.js';
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 

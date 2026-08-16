@@ -15,8 +15,8 @@
 // being missed. See functions/src/startupCosts.js.
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { callServer } from '../ledgerTransport';
-import { legacyEntryIdFor } from './startupMigration';
+import { callServer } from '../ledgerTransport.js';
+import { legacyEntryIdFor } from './startupMigration.js';
 
 /**
  * Turns a legacy parent-level `actual_amount` into a real spend document.

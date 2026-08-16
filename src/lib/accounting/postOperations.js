@@ -15,13 +15,13 @@
 // skipped. Re-running the whole sweep is therefore always safe.
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { fetchRows } from '../firestoreCrud';
-import { postSource, hasPostedEntryFor, fetchEntries, fetchAccounts, ensureAccount } from './firestoreLedger';
-import { ADAPTERS } from './sourceAdapters';
-import { partnerCapitalAccount, partnerCapitalCode } from './chartOfAccounts';
-import { isPeriodClosed, indexPeriods } from './periods';
-import { periodKeyOf } from './journal';
-import { fetchPeriods } from './firestoreLedger';
+import { fetchRows } from '../firestoreCrud.js';
+import { postSource, hasPostedEntryFor, fetchEntries, fetchAccounts, ensureAccount } from './firestoreLedger.js';
+import { ADAPTERS } from './sourceAdapters.js';
+import { partnerCapitalAccount, partnerCapitalCode } from './chartOfAccounts.js';
+import { isPeriodClosed, indexPeriods } from './periods.js';
+import { periodKeyOf } from './journal.js';
+import { fetchPeriods } from './firestoreLedger.js';
 
 /**
  * Collects every operational record that is eligible to post but has no

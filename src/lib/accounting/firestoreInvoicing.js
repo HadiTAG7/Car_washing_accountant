@@ -19,10 +19,10 @@
 import {
   collection, doc, getDoc, getDocs, query, where, serverTimestamp, setDoc,
 } from 'firebase/firestore';
-import { db, isFirebaseConfigured } from '../firebaseClient';
-import { callServer as callLedger } from '../ledgerTransport';
-import { fetchRows } from '../firestoreCrud';
-import { buildCreditNote, buildDebitNote } from './invoicing';
+import { db, isFirebaseConfigured } from '../firebaseClient.js';
+import { callServer as callLedger } from '../ledgerTransport.js';
+import { fetchRows } from '../firestoreCrud.js';
+import { buildCreditNote, buildDebitNote } from './invoicing.js';
 
 export const DOC_COL = {
   DOCUMENTS: 'sales_documents',

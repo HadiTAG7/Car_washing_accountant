@@ -20,8 +20,8 @@
 //   • A disposed asset stops depreciating in the month it leaves.
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { round2, periodKeyOf } from './journal';
-import { ACC } from './chartOfAccounts';
+import { round2, periodKeyOf } from './journal.js';
+import { ACC } from './chartOfAccounts.js';
 
 export const DEPRECIATION_METHODS = ['straight_line'];
 

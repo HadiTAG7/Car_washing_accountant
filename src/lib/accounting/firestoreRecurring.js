@@ -16,18 +16,18 @@
 import {
   doc, getDoc, writeBatch, serverTimestamp, updateDoc,
 } from 'firebase/firestore';
-import { db, isFirebaseConfigured } from '../firebaseClient';
-import { fetchRows } from '../firestoreCrud';
-import { mapMonthlyExpense } from '../mappers';
-import { fetchEntries, isLiveSourceEntry } from './firestoreLedger';
+import { db, isFirebaseConfigured } from '../firebaseClient.js';
+import { fetchRows } from '../firestoreCrud.js';
+import { mapMonthlyExpense } from '../mappers.js';
+import { fetchEntries, isLiveSourceEntry } from './firestoreLedger.js';
 import {
   missingVouchers, ungeneratableTemplates, voucherId, summariseVouchers,
-} from './recurring';
+} from './recurring.js';
 // The same gate the expense forms use. A voucher's invoice fields reach
 // Firestore through this function instead of a form, and «the form checked it»
 // is not a guarantee about a door the form does not stand in front of.
-import { blockingVatProblems } from '../vatFields';
-import { submitTaxInvoiceFields } from '../taxInvoiceForm';
+import { blockingVatProblems } from '../vatFields.js';
+import { submitTaxInvoiceFields } from '../taxInvoiceForm.js';
 
 export const VOUCHERS_COL = 'expense_vouchers';
 

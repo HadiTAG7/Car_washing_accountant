@@ -12,12 +12,12 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { doc, getDoc } from 'firebase/firestore';
-import { db, isFirebaseConfigured } from '../firebaseClient';
-import { callServer } from '../ledgerTransport';
+import { db, isFirebaseConfigured } from '../firebaseClient.js';
+import { callServer } from '../ledgerTransport.js';
 import {
   normalizeTaxPolicyHistory, taxPolicyAt, taxPolicyBaselineDate,
   hasTaxPolicyHistory, DEFAULT_VAT_RATE,
-} from './taxPolicy';
+} from './taxPolicy.js';
 
 const SETTINGS_DOC = 'accounting';
 

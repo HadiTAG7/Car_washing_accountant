@@ -17,11 +17,11 @@
 // rather than a second one. There is no counter to race and no flag to trust.
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { round2 } from './journal';
+import { round2 } from './journal.js';
 // The same gate the expense forms use — a template that would generate a
 // voucher nobody can post is refused before it generates twelve of them.
-import { blockingVatProblems } from '../vatFields';
-import { addMonths, periodEndDate } from './depreciation';
+import { blockingVatProblems } from '../vatFields.js';
+import { addMonths, periodEndDate } from './depreciation.js';
 
 export const VOUCHER_STATUSES = ['active', 'cancelled'];
 

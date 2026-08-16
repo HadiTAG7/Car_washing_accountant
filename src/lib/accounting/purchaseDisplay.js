@@ -19,8 +19,8 @@
 // a softer rule; it is the same rule, which is that 15% is never assumed.
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { resolvePurchaseTax } from './purchaseTax';
-import { normalizedPriceMode } from '../vatFields';
+import { resolvePurchaseTax } from './purchaseTax.js';
+import { normalizedPriceMode } from '../vatFields.js';
 
 /** What the stored amount IS, named so a column header can say it. */
 export const AMOUNT_ROLE = {

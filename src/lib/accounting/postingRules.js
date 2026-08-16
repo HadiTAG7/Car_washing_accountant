@@ -17,13 +17,13 @@
 //     unpaid invoice becomes a payable rather than a phantom cash movement.
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { ACC, partnerCapitalCode } from './chartOfAccounts';
-import { periodKeyOf, round2 } from './journal';
-import { splitVatBalanced } from './vat';
+import { ACC, partnerCapitalCode } from './chartOfAccounts.js';
+import { periodKeyOf, round2 } from './journal.js';
+import { splitVatBalanced } from './vat.js';
 // The purchase side is not split here: it is decided by the shared engine, so
 // this preview and the server's posting cannot disagree about a reclaim.
-import { resolvePurchaseTax } from './purchaseTax';
-import { isRealCalendarDate } from '../vatFields';
+import { resolvePurchaseTax } from './purchaseTax.js';
+import { isRealCalendarDate } from '../vatFields.js';
 
 /** طرق الدفع. `credit` = آجل (ذمم). */
 export const PAYMENT_METHODS = ['cash', 'card', 'transfer', 'credit'];

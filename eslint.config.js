@@ -31,8 +31,9 @@ export default defineConfig([
   },
   // The trusted server runs under Node with the Admin SDK, not in a browser.
   {
-    // الخادمان: الموثوق، وخادم MCP. كلاهما Node لا متصفّح.
-    files: ['functions/**/*.js', 'mcp/**/*.js'],
+    // ما يعمل على Node لا في المتصفّح: الخادم الموثوق بمنفذَيه (Cloud
+    // Functions و`api/`)، وخادم MCP.
+    files: ['functions/**/*.js', 'mcp/**/*.js', 'api/**/*.js'],
     languageOptions: { globals: { ...globals.node } },
   },
   // Test files execute under Node (vitest), so they legitimately touch

@@ -63,19 +63,6 @@ export function useStartupCostEntries(parentId) {
     return res;
   }, [refetch]);
 
-  // ── النقل بين البنود ──
-  // Reassigns a spend row to a different item. Unlike delete, this is allowed
-  // on a POSTED entry: the ledger never knew which parent the row belonged to
-  // — the journal entry carries the entry's own description, a constant debit
-  // account and `sourceId = entryId` — so the books do not move with it. Both
-  // parents' roll-ups are re-derived in the server's single transaction.
-  const moveEntry = useCallback(async (id, toParentId) => {
-    if (!isFirebaseConfigured) return null;
-    const res = await callServer('startupMoveEntry', { entryId: id, toParentId });
-    await refetch();
-    return res;
-  }, [refetch]);
-
   // ── إسناد السكنات دفعةً واحدة ──
   // Filing already-recorded spend under the housing unit it belongs to. One
   // call for the whole distribution, because that is how the owner does it —
@@ -89,5 +76,5 @@ export function useStartupCostEntries(parentId) {
   }, [refetch]);
 
   const entries = isFirebaseConfigured ? (data ?? []) : (data || []);
-  return { entries, loading, error, addEntry, deleteEntry, moveEntry, assignUnits, refetch };
+  return { entries, loading, error, addEntry, deleteEntry, assignUnits, refetch };
 }

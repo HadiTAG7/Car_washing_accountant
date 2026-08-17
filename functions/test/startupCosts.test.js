@@ -24,7 +24,7 @@ import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { initializeApp, deleteApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import {
-  addStartupEntry, deleteStartupEntry, moveStartupEntry, assignStartupUnits,
+  addStartupEntry, deleteStartupEntry, assignStartupUnits,
   convertLegacyStartupSpend,
   updateStartupPlan, deleteStartupPlan, StartupCostError,
 } from '../src/startupCosts.js';
@@ -778,122 +778,6 @@ d('سجل مصاريف بند التأسيس على الخادم', () => {
       }, AS('operator'))).rejects.toThrow(/مكرر/);
       expect((await parentOf('h1')).units).toEqual(['سكن النزهة', 'سكن الروضة']);
     }, 60_000);
-  });
-
-  // ═══ النقل بين البنود ═══════════════════════════════════════════════
-  // Splitting one lumped item into several — five housing units, say — is
-  // worth nothing unless the spend already recorded can follow. These prove
-  // the move re-derives BOTH parents as one, and that it leaves the books
-  // untouched even when the row is already posted.
-  describe('نقل مصروف بين بندين', () => {
-    beforeEach(async () => {
-      await db.collection('startup_costs').doc('src1').set(PLAN({
-        item_name: 'رسوم تجهيز السكن', budgeted_amount: 1000,
-      }));
-      await db.collection('startup_costs').doc('dst1').set(PLAN({
-        item_name: 'سكن الشمال', budgeted_amount: 300,
-      }));
-    });
-
-    it('ينقل، ويعيد اشتقاق تجميعتَي الأبوين معاً', async () => {
-      const a = await addStartupEntry(db, FieldValue, { parentId: 'src1', entry: ENTRY({ amount: 400 }) }, AS('operator'));
-      await addStartupEntry(db, FieldValue, { parentId: 'src1', entry: ENTRY({ amount: 100, description: 'يبقى' }) }, AS('operator'));
-      expect((await parentOf('src1')).actual_amount).toBe(500);
-
-      const res = await moveStartupEntry(db, FieldValue, { entryId: a.id, toParentId: 'dst1' }, AS('operator'));
-
-      // المصدر ينقص، والهدف يزيد — والحالة تُشتق لكلٍّ مقابل ميزانيته هو:
-      // 100 من 1000 «جارٍ»، و400 من 300 «مكتمل».
-      expect(res.from).toEqual({ actualAmount: 100, status: 'in_progress' });
-      expect(res.to).toEqual({ actualAmount: 400, status: 'completed' });
-      expect((await parentOf('src1'))).toMatchObject({ actual_amount: 100, status: 'in_progress' });
-      expect((await parentOf('dst1'))).toMatchObject({ actual_amount: 400, status: 'completed' });
-      expect((await entriesOf('src1')).map((e) => e.amount)).toEqual([100]);
-      expect((await entriesOf('dst1')).map((e) => e.amount)).toEqual([400]);
-
-      const [rec] = await audits('startup-entry-move');
-      expect(rec.before.from).toMatchObject({ id: 'src1', actualAmount: 500 });
-      expect(rec.after.to).toMatchObject({ id: 'dst1', actualAmount: 400 });
-    }, 60_000);
-
-    // ── الادّعاء المركزي، مُبرهناً لا مقولاً ──
-    // The whole design rests on the ledger not knowing which parent a row
-    // belongs to. So: post the entry, move it, and demand the journal entry
-    // and its lock come back byte-identical.
-    it('ومصروف مُرحَّل يُنقل والقيد والقفل لا يتغيّران', async () => {
-      const a = await addStartupEntry(db, FieldValue, { parentId: 'src1', entry: ENTRY({ amount: 400 }) }, AS('operator'));
-      const posted = await postSource(db, FieldValue, { kind: 'startup', sourceId: a.id }, { userId: 'u1' });
-
-      const before = (await db.collection(COL.ENTRIES).doc(posted.entryId).get()).data();
-      const lockBefore = (await db.collection(COL.LOCKS).doc(`startup__${a.id}`).get()).data();
-      expect(lockBefore).toBeTruthy();
-
-      await moveStartupEntry(db, FieldValue, { entryId: a.id, toParentId: 'dst1' }, AS('operator'));
-
-      const after = (await db.collection(COL.ENTRIES).doc(posted.entryId).get()).data();
-      const lockAfter = (await db.collection(COL.LOCKS).doc(`startup__${a.id}`).get()).data();
-      expect(after).toEqual(before);
-      expect(lockAfter).toEqual(lockBefore);
-      // ولا قيد جديد وُلد من النقل.
-      expect((await db.collection(COL.ENTRIES).get()).size).toBe(1);
-      // بينما التجميعتان تحرّكتا فعلاً.
-      expect((await parentOf('src1')).actual_amount).toBe(0);
-      expect((await parentOf('dst1')).actual_amount).toBe(400);
-    }, 90_000);
-
-    it('والهدف نفسه الأب: يُرفض ولا يُكتب تدقيق', async () => {
-      const a = await addStartupEntry(db, FieldValue, { parentId: 'src1', entry: ENTRY() }, AS('operator'));
-      await expect(moveStartupEntry(db, FieldValue, { entryId: a.id, toParentId: 'src1' }, AS('operator')))
-        .rejects.toThrow(/مسجَّل على هذا البند أصلاً/);
-      expect(await audits('startup-entry-move')).toHaveLength(0);
-      expect((await parentOf('src1')).actual_amount).toBe(400);
-    }, 60_000);
-
-    it('ومصروف أو بند مجهول يُرفض', async () => {
-      const a = await addStartupEntry(db, FieldValue, { parentId: 'src1', entry: ENTRY() }, AS('operator'));
-      await expect(moveStartupEntry(db, FieldValue, { entryId: 'nope', toParentId: 'dst1' }, AS('operator')))
-        .rejects.toThrow(/المصروف غير موجود/);
-      await expect(moveStartupEntry(db, FieldValue, { entryId: a.id, toParentId: 'nope' }, AS('operator')))
-        .rejects.toThrow(/غير موجود/);
-      await expect(moveStartupEntry(db, FieldValue, { entryId: a.id, toParentId: '' }, AS('operator')))
-        .rejects.toThrow(/معرّف البند المنقول إليه مطلوب/);
-      expect(await audits('startup-entry-move')).toHaveLength(0);
-    }, 60_000);
-
-    it('وهدفٌ يحمل صرفاً قديماً يُرفض — كما تُرفض الإضافة إليه', async () => {
-      // Same guard as `addStartupEntry`: gaining a child would silently
-      // replace the parent's own 1,150 with SUM(children).
-      await db.collection('startup_costs').doc('old1').set(LEGACY());
-      const a = await addStartupEntry(db, FieldValue, { parentId: 'src1', entry: ENTRY() }, AS('operator'));
-      await expect(moveStartupEntry(db, FieldValue, { entryId: a.id, toParentId: 'old1' }, AS('operator')))
-        .rejects.toThrow();
-      expect((await parentOf('old1')).actual_amount).toBe(1150);
-      expect((await entriesOf('old1'))).toHaveLength(0);
-    }, 60_000);
-
-    it('والشريك لا ينقل', async () => {
-      const a = await addStartupEntry(db, FieldValue, { parentId: 'src1', entry: ENTRY() }, AS('operator'));
-      await expect(moveStartupEntry(db, FieldValue, { entryId: a.id, toParentId: 'dst1' }, AS('partner')))
-        .rejects.toThrow();
-      expect((await entriesOf('dst1'))).toHaveLength(0);
-    }, 60_000);
-
-    it('وتزامنٌ على الهدف: التجميعة النهائية تشمل الوافد', async () => {
-      // The transactional query over the TARGET's children is the phantom
-      // guard: a sibling arriving mid-flight aborts and the retry sums both.
-      const a = await addStartupEntry(db, FieldValue, { parentId: 'src1', entry: ENTRY({ amount: 400 }) }, AS('operator'));
-      const race = once(() => db.collection('startup_cost_entries').doc('late').set({
-        startup_cost_id: 'dst1', description: 'وصل أثناء النقل', amount: 50,
-        spent_date: '2026-03-13',
-      }));
-
-      await moveStartupEntry(db, FieldValue, { entryId: a.id, toParentId: 'dst1' }, {
-        ...AS('operator'), onBeforeCommit: race,
-      });
-
-      expect(race.runs()).toBeGreaterThan(1);
-      expect((await parentOf('dst1')).actual_amount).toBe(450);
-    }, 90_000);
   });
 });
 

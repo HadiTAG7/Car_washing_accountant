@@ -176,31 +176,6 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
     [items],
   );
 
-  // ── وجهات النقل: كل بند آخر، باسمه وتصنيفه ──
-  // The label carries the category because five items called سكن الشمال /
-  // الشرق / … are told apart by name, but a list of twenty bare names is not
-  // navigable. Excludes the open item: moving a row onto its own parent is
-  // refused by the server, so it should not be offered here.
-  const moveTargets = useMemo(() => items
-    .filter((i) => i.id !== detailItem?.id)
-    .map((i) => ({
-      id: i.id,
-      label: `${i.itemName}${i.category ? ` — ${getCategoryLabel(i.category)}` : ''}`,
-    })), [items, detailItem, getCategoryLabel]);
-
-  const handleMoveEntry = useCallback(async (entryId, toParentId) => {
-    try {
-      setMutationError(null);
-      await detailLedger.moveEntry(entryId, toParentId);
-      const target = items.find((i) => i.id === toParentId);
-      showToast(`نُقل المصروف إلى «${target?.itemName || 'بند آخر'}» — القيد في الدفاتر لم يتغيّر`);
-    } catch (e) {
-      console.error('🔥 Firestore Error (StartupPage.handleMoveEntry):', e);
-      setMutationError(e);
-      showToast(describeBackendError(e) || e?.message || 'تعذّر نقل المصروف', 'error');
-    }
-  }, [detailLedger, items, showToast]);
-
   const handleAssignUnits = useCallback(async (assignments) => {
     try {
       setMutationError(null);
@@ -550,8 +525,6 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
         onDirty={() => { refetch(); refetchLedgerParents(); }}
         migrationFile="2026_06_startup_cost_entries_ALL.sql"
         uploadFolder={detailItem ? `startup/${detailItem.id}` : 'startup'}
-        moveTargets={canMutate ? moveTargets : null}
-        onMoveEntry={canMutate ? handleMoveEntry : null}
         units={detailItem?.units || null}
         onAssignUnits={canMutate ? handleAssignUnits : null}
       />

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { Fragment, useCallback, useMemo, useState } from 'react';
 import {
   Plus, Trash2, Pencil, Wallet, Receipt, Scale, FileText, Percent, Link as LinkIcon,
 } from 'lucide-react';
@@ -28,9 +28,10 @@ import PurchaseVatBadge from './PurchaseVatBadge';
 import { useAccountingSettings } from '../hooks/useAccountingSettings';
 import { taxPolicyAt } from '../lib/accounting/taxPolicy';
 import { pendingStartupConversions } from '../lib/accounting/startupMigration';
+import { groupStartupItems } from '../lib/startupGrouping';
 import { convertStartupParentSpend } from '../lib/accounting/firestoreStartupMigration';
 import StartupConversionModal from './StartupConversionModal';
-import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
+import { isFirebaseConfigured, missingEnvNames, describeBackendError } from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 
 // ─── Formatted amount input (thousands separators) ─────────────────────────
@@ -167,6 +168,43 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
     [items],
   );
 
+  // ── وجهات النقل: كل بند آخر، باسمه وتصنيفه ──
+  // The label carries the category because five items called سكن الشمال /
+  // الشرق / … are told apart by name, but a list of twenty bare names is not
+  // navigable. Excludes the open item: moving a row onto its own parent is
+  // refused by the server, so it should not be offered here.
+  const moveTargets = useMemo(() => items
+    .filter((i) => i.id !== detailItem?.id)
+    .map((i) => ({
+      id: i.id,
+      label: `${i.itemName}${i.category ? ` — ${getCategoryLabel(i.category)}` : ''}`,
+    })), [items, detailItem, getCategoryLabel]);
+
+  const handleMoveEntry = useCallback(async (entryId, toParentId) => {
+    try {
+      setMutationError(null);
+      await detailLedger.moveEntry(entryId, toParentId);
+      const target = items.find((i) => i.id === toParentId);
+      showToast(`نُقل المصروف إلى «${target?.itemName || 'بند آخر'}» — القيد في الدفاتر لم يتغيّر`);
+    } catch (e) {
+      console.error('🔥 Firestore Error (StartupPage.handleMoveEntry):', e);
+      setMutationError(e);
+      showToast(describeBackendError(e) || e?.message || 'تعذّر نقل المصروف', 'error');
+    }
+  }, [detailLedger, items, showToast]);
+
+  // ── الجدول مجموعات لا صفوفاً مسطّحة ──
+  // One real thing split into several items — five housing units, say —
+  // scatters among unrelated rows, and «كم صرفنا على السكن؟» becomes
+  // arithmetic done by eye. Grouping by the category the rows already carry
+  // answers it without asking for any new data. Subtotals are computed
+  // unscaled; `scalingFactor` is applied at render, exactly as the per-row
+  // figures are, so a partner's view stays internally consistent.
+  const groups = useMemo(
+    () => groupStartupItems(items, categories),
+    [items, categories],
+  );
+
   const isModalOpen = localOpen || Boolean(editingItem) || pendingEntry === 'item';
   function openAddModal()        { setEditingItem(null); setLocalOpen(true); }
   function openEditModal(item)   { setLocalOpen(false); setEditingItem(item); }
@@ -288,7 +326,33 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((i) => {
+                  {groups.map((g) => (
+                    <Fragment key={g.id}>
+                      {/* رأس المجموعة: التصنيف ومجاميعه — يجيب «كم صرفنا على
+                          هذا الباب؟» دون أن يفتح المستخدم آلة حاسبة. */}
+                      <tr className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-100 dark:border-slate-800">
+                        <th
+                          scope="colgroup"
+                          colSpan={2}
+                          className="py-2.5 px-4 text-right text-[12px] font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap"
+                        >
+                          {g.label}
+                          <span className="mr-2 text-[11px] font-normal text-slate-500 dark:text-slate-400">
+                            ({formatNumber(g.items.length)} بند)
+                          </span>
+                        </th>
+                        <td className="py-2.5 px-4 text-left tabular-nums text-[12px] font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                          {formatCurrency(g.planned * scalingFactor)}
+                        </td>
+                        <td className="py-2.5 px-4 text-left tabular-nums text-[12px] font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                          {formatCurrency(g.actual * scalingFactor)}
+                        </td>
+                        <td className="py-2.5 px-4 text-left tabular-nums text-[12px] font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                          {formatCurrency(g.remaining * scalingFactor)}
+                        </td>
+                        <td className="py-2.5 px-4" colSpan={2} />
+                      </tr>
+                      {g.items.map((i) => {
                     const qty = Math.max(1, parseInt(i.quantity, 10) || 1);
                     // Scale displayed per-row figures so the sum of rows
                     // matches the scaled KPI totals above. unit price is
@@ -434,7 +498,9 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
                         </td>
                       </tr>
                     );
-                  })}
+                      })}
+                    </Fragment>
+                  ))}
                 </tbody>
               </table>
             </div>
@@ -464,6 +530,8 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
         onDirty={() => { refetch(); refetchLedgerParents(); }}
         migrationFile="2026_06_startup_cost_entries_ALL.sql"
         uploadFolder={detailItem ? `startup/${detailItem.id}` : 'startup'}
+        moveTargets={canMutate ? moveTargets : null}
+        onMoveEntry={canMutate ? handleMoveEntry : null}
       />
 
       <StartupConversionModal

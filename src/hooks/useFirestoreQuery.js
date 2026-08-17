@@ -25,20 +25,30 @@ export function useFirestoreQuery(fetcher, { deps = [], map, fallback = null, en
   });
   const mounted = useRef(true);
 
+  // ── ولماذا يُرجِع ما وضعه ──
+  // React state is not readable by the caller that awaited the refetch — it
+  // sees the previous render's `data`. A caller that needs to CHECK what the
+  // server actually stored (did the field it just sent come back?) would
+  // otherwise be reading a stale list and concluding the wrong thing.
+  // Returns null when there is nothing fresh to report: disabled, unmounted,
+  // or the fetch threw.
   const run = useCallback(async () => {
     if (!enabled) {
       setState({ data: fallback, loading: false, error: null });
-      return;
+      return null;
     }
     setState((prev) => ({ ...prev, loading: true, error: null }));
     try {
       const rows = await fetcher();
-      if (!mounted.current) return;
+      if (!mounted.current) return null;
       const list = Array.isArray(rows) ? rows : [];
-      setState({ data: map ? list.map(map) : list, loading: false, error: null });
+      const mapped = map ? list.map(map) : list;
+      setState({ data: mapped, loading: false, error: null });
+      return mapped;
     } catch (err) {
-      if (!mounted.current) return;
+      if (!mounted.current) return null;
       setState({ data: null, loading: false, error: err });
+      return null;
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, ...deps]);

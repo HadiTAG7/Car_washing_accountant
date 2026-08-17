@@ -49,7 +49,26 @@ export function useStartupCosts() {
     }
     if (Object.keys(patch).length === 0) return null;
     const res = await callServer('startupUpdatePlan', { parentId: id, patch });
-    await refetch();
+    const fresh = await refetch();
+
+    // ── كاشف الإسقاط الصامت ──
+    // `units` was born on the server in the same commit as the UI. A backend
+    // older than that has no `'units' in patch` branch and no complaint to
+    // make: it accepts the call, drops the field, and answers OK. The screen
+    // then shows an empty list the user just filled — the exact failure that
+    // cost a day. So the one thing a stale server cannot fake is checked: is
+    // the list there when we read it back?
+    if (Array.isArray(patch.units) && patch.units.length && Array.isArray(fresh)) {
+      const saved = fresh.find((i) => i.id === id);
+      if (saved && (saved.units?.length ?? 0) === 0) {
+        const err = new Error(
+          'الخادم لم يحفظ التقسيمات — النسخة المنشورة أقدم من هذه الميزة. '
+          + 'أعِد النشر من Vercel ثم أعِد المحاولة.',
+        );
+        err.code = 'units-dropped';
+        throw err;
+      }
+    }
     return res;
   }, [refetch]);
 

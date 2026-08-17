@@ -128,7 +128,15 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
   // The item whose sub-ledger is open. The detail modal renders only
   // when this is non-null. Distinct from `editingItem` (which opens
   // the legacy "edit name/category/amounts" modal).
-  const [detailItem, setDetailItem]     = useState(null);
+  // ── المعرّف يُخزَّن، والبند يُشتقّ ──
+  // Storing the object froze it at click time: divisions added afterwards —
+  // or a budget edited in another tab — never reached the open modal, which
+  // kept serving a snapshot while the page around it had moved on.
+  const [detailItemId, setDetailItemId] = useState(null);
+  const detailItem = useMemo(
+    () => (detailItemId ? items.find((i) => i.id === detailItemId) ?? null : null),
+    [items, detailItemId],
+  );
   // Entries hook lives at page level so the shared ExpenseLedgerModal
   // stays a pure-UI component; null parentId disables the fetch.
   const detailLedger = useStartupCostEntries(detailItem?.id ?? null);
@@ -385,7 +393,7 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
                           {canMutate ? (
                             <button
                               type="button"
-                              onClick={() => setDetailItem(i)}
+                              onClick={() => setDetailItemId(i.id)}
                               className="font-medium text-slate-800 dark:text-slate-200 hover:text-primary-700 dark:hover:text-primary-400 hover:underline decoration-dotted underline-offset-4 transition-colors text-right"
                               title="فتح سجل المصاريف التفصيلي"
                             >
@@ -535,7 +543,7 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
 
       <ExpenseLedgerModal
         isOpen={Boolean(detailItem)}
-        onClose={() => setDetailItem(null)}
+        onClose={() => setDetailItemId(null)}
         title={detailItem ? `سجل مصاريف: ${detailItem.itemName}` : ''}
         plannedAmount={detailItem?.plannedAmount || 0}
         ledger={detailLedger}

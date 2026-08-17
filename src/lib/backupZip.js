@@ -119,6 +119,7 @@ const BACKUP_TABLES = [
   'variable_expense_categories',
   'variable_expenses',
   'washes',
+  'bikers',
   'category_budgets',
   'partners',
   'partner_payments',

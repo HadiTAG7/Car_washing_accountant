@@ -287,11 +287,32 @@ service cloud.firestore {
       allow write: if false;
     }
     // An advance produces two entries — the outlay and its recovery — so both
-    // locks have to be clear before the row may change.
+    // locks have to be clear before the row may be freely edited or deleted.
+    //
+    // ── التحويل الضيّق: صرفٌ مُرحَّل يجمّد المبلغ، لا الاسترداد ──
+    // Blocking EVERY update once the outlay posted made recovery impossible
+    // to record at all: close a month (outlay posts), and the advance can
+    // never be marked recovered — which is exactly when salary-deduction
+    // needs to mark it. Same design as the journal-entry reversal transition:
+    // `hasOnly` on the transition fields, so amount, date and title stay
+    // frozen, and the status/recovered_date pairing the DB CHECK demands is
+    // enforced here too. Once the RECOVERY itself posts, even this closes.
+    function recoveryFlipOnly() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'recovered_date', 'recovery_method'])
+        && (
+          (request.resource.data.status == 'recovered'
+            && request.resource.data.recovered_date is string)
+          || (request.resource.data.status == 'pending'
+            && request.resource.data.recovered_date == null)
+        );
+    }
     match /temporary_expenses/{id} {
       allow read:   if isMember();
       allow create: if isOperator();
-      allow update, delete: if isOperator()
+      allow update: if isOperator() && notPosted('recovery', id)
+        && (notPosted('temporary_expense', id) || recoveryFlipOnly());
+      allow delete: if isOperator()
         && notPosted('temporary_expense', id) && notPosted('recovery', id);
     }
 
@@ -387,7 +408,7 @@ service cloud.firestore {
     function isOperationalColl(c) {
       return c in [
         'annual_expense_categories', 'annual_expenses',
-        'auth_users_backup', 'categories', 'category_budgets',
+        'auth_users_backup', 'bikers', 'categories', 'category_budgets',
         'monthly_expense_categories', 'partners',
         'transactions', 'variable_expense_categories'
       ];

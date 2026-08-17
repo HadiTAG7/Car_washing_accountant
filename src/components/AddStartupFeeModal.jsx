@@ -27,6 +27,8 @@ const EMPTY = {
   category:         '',
   quantity:         '1',
   plannedUnitPrice: '',
+  // تقسيمات داخل البند — السكنات مثلاً. سطرٌ لكل اسم.
+  unitsText:        '',
 };
 
 function toPositive(value) {
@@ -88,6 +90,7 @@ export default function AddStartupFeeModal({
         category:         initialValues.category || categories[0]?.id || '',
         quantity:         String(qty),
         plannedUnitPrice: formatUnitPriceForInput(initialValues.plannedAmount, qty),
+        unitsText:        (initialValues.units || []).join('\n'),
 
         invoiceUrl:       initialValues.invoiceUrl || '',
       });
@@ -515,6 +518,33 @@ export default function AddStartupFeeModal({
                 {formatCurrency(actualTotal)}
               </div>
             </div>
+          </div>
+
+          {/* ── تقسيمات داخل البند ──
+              «لما أفتح تجهيز السكن يظهر لي أنواع السكن اللي عندنا». The list
+              lives on the PLAN, not derived from the expenses, so it shows
+              before anything has been spent — and the item keeps ONE budget,
+              with the units as a breakdown under it rather than five budgets
+              of their own. */}
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5" htmlFor="unitsText">
+              تقسيمات البند
+              <span className="text-[11px] font-normal text-slate-500 dark:text-slate-400 mr-1">— اختياري، اسم في كل سطر</span>
+            </label>
+            <textarea
+              id="unitsText"
+              name="unitsText"
+              value={form.unitsText}
+              onChange={handleChange}
+              rows={4}
+              placeholder={'سكن النزهة\nسكن الشمال\nسكن الروضة'}
+              className="w-full px-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm leading-relaxed focus:outline-none focus:border-primary-500 transition-colors"
+            />
+            <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+              تظهر داخل سجل المصاريف، ويُنسب كل مصروف لواحدٍ منها مع مجموعه.
+              الميزانية تبقى واحدة للبند كله.
+              {' '}<strong>إعادة تسمية تقسيم تترك مصاريفه تحت الاسم القديم</strong> حتى تُعيد إسنادها.
+            </p>
           </div>
 
           <div className="flex items-start gap-2 px-3 py-2.5 rounded-control bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/30 text-[12px] text-indigo-700 dark:text-indigo-300 leading-relaxed">

@@ -228,7 +228,62 @@ export function startupStatusOf(actualAmount, plannedAmount) {
 }
 
 /** The only fields of a plan a caller may change. `status` is NOT one. */
-export const STARTUP_PLAN_FIELDS = ['category', 'itemName', 'quantity', 'plannedAmount'];
+export const STARTUP_PLAN_FIELDS = ['category', 'itemName', 'quantity', 'plannedAmount', 'units'];
+
+/** حدّان يمنعان قائمةً لا يمكن عرضها ولا قراءتها. */
+export const MAX_UNITS = 40;
+export const MAX_UNIT_NAME = 60;
+
+/**
+ * تطبيع عربي للمقارنة — لا للعرض.
+ *
+ * Two spellings of one place are one place: ة/ه, أإآ/ا, ى/ي, tatweel and
+ * repeated spaces. Without this, «سكن النزهه» and «سكن النزهة» are two
+ * different housing units on the same page, and the money splits between a
+ * typo and its correction.
+ */
+export function normalizeUnitName(value) {
+  return String(value ?? '')
+    .replace(/[\u064B-\u0652\u0640]/g, '')
+    .replace(/[أإآٱ]/g, 'ا')
+    .replace(/ة/g, 'ه')
+    .replace(/ى/g, 'ي')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+/**
+ * ما يجب أن تكونه قائمة السكنات قبل أن تُحفظ.
+ *
+ * Returned as messages, not booleans, because the caller shows them: a list
+ * silently truncated or de-duplicated is a list the user believes they saved.
+ */
+export function unitListProblems(units) {
+  if (!Array.isArray(units)) return ['قائمة السكنات يجب أن تكون قائمة أسماء.'];
+  if (units.length > MAX_UNITS) return [`عدد السكنات أكثر من ${MAX_UNITS}.`];
+  const problems = [];
+  const seen = new Set();
+  for (const raw of units) {
+    const name = String(raw ?? '').trim();
+    if (!name) { problems.push('اسم سكن فارغ — احذف السطر أو سمِّه.'); continue; }
+    if (name.length > MAX_UNIT_NAME) {
+      problems.push(`اسم السكن أطول من ${MAX_UNIT_NAME} حرفاً: ${name.slice(0, 20)}…`);
+      continue;
+    }
+    const key = normalizeUnitName(name);
+    if (seen.has(key)) problems.push(`اسم سكن مكرر: ${name}`);
+    seen.add(key);
+  }
+  return problems;
+}
+
+/** هل هذا الاسم أحد سكنات البند؟ بالمقارنة المطبَّعة لا الحرفية. */
+export function unitIsListed(unit, units = []) {
+  const key = normalizeUnitName(unit);
+  if (!key) return false;
+  return units.some((u) => normalizeUnitName(u) === key);
+}
 
 /**
  * What a plan edit may say, and what it may not.
@@ -264,6 +319,7 @@ export function startupPlanUpdateProblems(patch = {}) {
     const q = Number(patch.quantity);
     if (!Number.isFinite(q) || q < 1) problems.push('الكمية يجب أن تكون واحداً فأكثر.');
   }
+  if ('units' in patch) problems.push(...unitListProblems(patch.units));
   if (!Object.keys(patch).some((k) => STARTUP_PLAN_FIELDS.includes(k))) {
     problems.push('لا يوجد حقل خطة صالح للتعديل.');
   }

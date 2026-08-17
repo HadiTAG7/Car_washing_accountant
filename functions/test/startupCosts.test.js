@@ -24,7 +24,8 @@ import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { initializeApp, deleteApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import {
-  addStartupEntry, deleteStartupEntry, moveStartupEntry, convertLegacyStartupSpend,
+  addStartupEntry, deleteStartupEntry, moveStartupEntry, assignStartupUnits,
+  convertLegacyStartupSpend,
   updateStartupPlan, deleteStartupPlan, StartupCostError,
 } from '../src/startupCosts.js';
 import { postSource, seedChartOfAccounts, COL } from '../src/ledger.js';
@@ -662,6 +663,123 @@ d('سجل مصاريف بند التأسيس على الخادم', () => {
     }, 120_000);
   });
 
+  // ═══ إسناد المصاريف إلى تقسيمات البند ═══════════════════════════════
+  // «لما أفتح تجهيز السكن يظهر لي أنواع السكن اللي عندنا، وبعدين نسجّل مصروف
+  // كل سكن» — one budget, several places under it. The claim to prove is that
+  // filing a row under a place moves no money and touches no book.
+  describe('إسناد المصاريف إلى السكنات', () => {
+    const UNITS = ['سكن النزهة', 'سكن الشمال'];
+    beforeEach(async () => {
+      await db.collection('startup_costs').doc('h1').set(PLAN({
+        item_name: 'تجهيز السكن', budgeted_amount: 15000, units: UNITS,
+      }));
+    });
+
+    it('يُسند دفعةً واحدة — ومجموع البند لا يتغيّر', async () => {
+      const a = await addStartupEntry(db, FieldValue, { parentId: 'h1', entry: ENTRY({ amount: 139, description: 'مروحة لسكن النزهه' }) }, AS('operator'));
+      const b = await addStartupEntry(db, FieldValue, { parentId: 'h1', entry: ENTRY({ amount: 200, description: 'دهان' }) }, AS('operator'));
+      const before = (await parentOf('h1')).actual_amount;
+      expect(before).toBe(339);
+
+      const res = await assignStartupUnits(db, FieldValue, {
+        parentId: 'h1',
+        assignments: [
+          { entryId: a.id, unit: 'سكن النزهة' },
+          { entryId: b.id, unit: 'سكن الشمال' },
+        ],
+      }, AS('operator'));
+
+      expect(res.count).toBe(2);
+      const rows = await entriesOf('h1');
+      expect(rows.find((r) => r.id === a.id).unit).toBe('سكن النزهة');
+      expect(rows.find((r) => r.id === b.id).unit).toBe('سكن الشمال');
+      // الإسناد ليس نقل مال: نفس المصاريف تحت نفس الأب.
+      expect((await parentOf('h1')).actual_amount).toBe(before);
+
+      const [rec] = await audits('startup-units-assign');
+      expect(rec.after.count).toBe(2);
+      expect(rec.after.byUnit).toEqual({ 'سكن النزهة': 1, 'سكن الشمال': 1 });
+    }, 60_000);
+
+    it('ومصروف مُرحَّل يُسنَد وقيده وقفله لا يتغيّران', async () => {
+      const a = await addStartupEntry(db, FieldValue, { parentId: 'h1', entry: ENTRY({ amount: 139 }) }, AS('operator'));
+      const posted = await postSource(db, FieldValue, { kind: 'startup', sourceId: a.id }, { userId: 'u1' });
+      const entryBefore = (await db.collection(COL.ENTRIES).doc(posted.entryId).get()).data();
+      const lockBefore = (await db.collection(COL.LOCKS).doc(`startup__${a.id}`).get()).data();
+
+      await assignStartupUnits(db, FieldValue, {
+        parentId: 'h1', assignments: [{ entryId: a.id, unit: 'سكن الشمال' }],
+      }, AS('operator'));
+
+      expect((await db.collection(COL.ENTRIES).doc(posted.entryId).get()).data()).toEqual(entryBefore);
+      expect((await db.collection(COL.LOCKS).doc(`startup__${a.id}`).get()).data()).toEqual(lockBefore);
+      expect((await db.collection(COL.ENTRIES).get()).size).toBe(1);
+    }, 90_000);
+
+    it('و«غير محدد» إسنادٌ صالح — يُعيد المصروف بلا سكن', async () => {
+      const a = await addStartupEntry(db, FieldValue, { parentId: 'h1', entry: ENTRY() }, AS('operator'));
+      await assignStartupUnits(db, FieldValue, { parentId: 'h1', assignments: [{ entryId: a.id, unit: 'سكن النزهة' }] }, AS('operator'));
+      await assignStartupUnits(db, FieldValue, { parentId: 'h1', assignments: [{ entryId: a.id, unit: null }] }, AS('operator'));
+      expect((await entriesOf('h1'))[0].unit).toBeNull();
+    }, 60_000);
+
+    it('وسكنٌ ليس في قائمة البند يُرفض — ولا يُكتب شيء من الدفعة', async () => {
+      const a = await addStartupEntry(db, FieldValue, { parentId: 'h1', entry: ENTRY() }, AS('operator'));
+      const b = await addStartupEntry(db, FieldValue, { parentId: 'h1', entry: ENTRY({ description: 'ثانٍ' }) }, AS('operator'));
+      // الأول صالح والثاني لا — ويجب ألا يُطبَّق نصف الدفعة.
+      await expect(assignStartupUnits(db, FieldValue, {
+        parentId: 'h1',
+        assignments: [{ entryId: a.id, unit: 'سكن النزهة' }, { entryId: b.id, unit: 'سكن الوهم' }],
+      }, AS('operator'))).rejects.toThrow(/ليس من سكنات هذا البند/);
+      expect((await entriesOf('h1')).every((r) => !r.unit)).toBe(true);
+      expect(await audits('startup-units-assign')).toHaveLength(0);
+    }, 60_000);
+
+    it('ومصروف تحت أبٍ آخر أو قائمة فارغة يُرفضان', async () => {
+      await db.collection('startup_costs').doc('other').set(PLAN({ item_name: 'آخر' }));
+      const foreign = await addStartupEntry(db, FieldValue, { parentId: 'other', entry: ENTRY() }, AS('operator'));
+      await expect(assignStartupUnits(db, FieldValue, {
+        parentId: 'h1', assignments: [{ entryId: foreign.id, unit: 'سكن النزهة' }],
+      }, AS('operator'))).rejects.toThrow(/ليس ضمن مصاريف هذا البند/);
+      await expect(assignStartupUnits(db, FieldValue, { parentId: 'h1', assignments: [] }, AS('operator')))
+        .rejects.toThrow(/لا توجد إسنادات/);
+      expect(await audits('startup-units-assign')).toHaveLength(0);
+    }, 60_000);
+
+    it('والشريك لا يُسند', async () => {
+      const a = await addStartupEntry(db, FieldValue, { parentId: 'h1', entry: ENTRY() }, AS('operator'));
+      await expect(assignStartupUnits(db, FieldValue, {
+        parentId: 'h1', assignments: [{ entryId: a.id, unit: 'سكن النزهة' }],
+      }, AS('partner'))).rejects.toThrow();
+    }, 60_000);
+
+    it('وإضافة مصروف بسكنٍ غير مُدرَج تُرفض عند الكتابة', async () => {
+      await expect(addStartupEntry(db, FieldValue, {
+        parentId: 'h1', entry: ENTRY({ unit: 'سكن الوهم' }),
+      }, AS('operator'))).rejects.toThrow(/ليس من سكنات هذا البند/);
+      expect(await entriesOf('h1')).toHaveLength(0);
+    }, 60_000);
+
+    it('وتعديل قائمة السكنات: يُقبل الصالح ويُرفض الفاسد', async () => {
+      await updateStartupPlan(db, FieldValue, {
+        parentId: 'h1', patch: { units: ['سكن النزهة', ' سكن الروضة '] },
+      }, AS('operator'));
+      expect((await parentOf('h1')).units).toEqual(['سكن النزهة', 'سكن الروضة']);
+
+      await expect(updateStartupPlan(db, FieldValue, { parentId: 'h1', patch: { units: 'ليست قائمة' } }, AS('operator')))
+        .rejects.toThrow(/قائمة أسماء/);
+      await expect(updateStartupPlan(db, FieldValue, { parentId: 'h1', patch: { units: ['سكن', '  '] } }, AS('operator')))
+        .rejects.toThrow(/فارغ/);
+      // ── التكرار يُرفض ولا يُحذف صامتاً ──
+      // «النزهة» و«النزهه» مكانٌ واحد بإملاءين. حذف أحدهما بلا قول يترك
+      // المستخدم يظن أنه حفظ سكنين. والقائمة القديمة تبقى كما هي.
+      await expect(updateStartupPlan(db, FieldValue, {
+        parentId: 'h1', patch: { units: ['سكن النزهة', 'سكن النزهه'] },
+      }, AS('operator'))).rejects.toThrow(/مكرر/);
+      expect((await parentOf('h1')).units).toEqual(['سكن النزهة', 'سكن الروضة']);
+    }, 60_000);
+  });
+
   // ═══ النقل بين البنود ═══════════════════════════════════════════════
   // Splitting one lumped item into several — five housing units, say — is
   // worth nothing unless the spend already recorded can follow. These prove
@@ -838,6 +956,8 @@ describe('انحراف قواعد التأسيس بين العميل والخا�
       { itemName: 'x' }, { plannedAmount: 500 }, { status: 'completed' },
       { actualAmount: 1 }, { vatAmount: 5 }, { quantity: 0 }, { itemName: '  ' },
       { plannedAmount: -1 }, {},
+      { units: ['سكن أ'] }, { units: 'نص' }, { units: ['', 'سكن'] },
+      { units: ['سكن النزهة', 'سكن النزهه'] },
     ]) {
       expect(clientPlanProblems(patch)).toEqual(serverPlanProblems(patch));
     }

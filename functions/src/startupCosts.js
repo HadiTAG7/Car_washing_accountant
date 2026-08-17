@@ -40,6 +40,7 @@ import {
   buildStartupConversionEntry, legacyEntryIdFor,
   startupParentHasLegacySpend, startupParentHasLegacyTaxFields,
   startupPlanUpdateProblems, LEGACY_BLOCKS_ENTRY,
+  unitIsListed,
 } from './startupMigration.js';
 
 const COL = {
@@ -170,6 +171,11 @@ function entryDocument(parentId, entry, FieldValue, userId, extra = {}) {
     vat_deductible: entry.vatDeductible !== false,
     payment_method: ['cash', 'card', 'transfer', 'credit'].includes(entry.paymentMethod)
       ? entry.paymentMethod : 'cash',
+    // السكن الذي يخصّه هذا المصروف — تفصيلٌ داخل البند، لا بندٌ آخر.
+    // Null is a real answer («غير محدد»), not a missing one: an expense that
+    // belongs to the item as a whole has no unit and must not be forced into
+    // one.
+    unit: entry.unit ? String(entry.unit).trim() : null,
     created_at: FieldValue.serverTimestamp(),
     created_by: userId,
     ...extra,
@@ -207,6 +213,18 @@ export async function addStartupEntry(db, FieldValue, { parentId, entry = {} }, 
     // being counted. Two silent losses from one write.
     if (startupParentHasLegacySpend(parentAsApp(id, parent), { hasEntries: entries.length > 0 })) {
       throw new StartupCostError(LEGACY_BLOCKS_ENTRY);
+    }
+
+    // ── السكن يُتحقَّق داخل المعاملة، لا في النموذج ──
+    // Checked against the list the transaction can SEE, so a unit renamed or
+    // removed a moment ago cannot be written against. A typo here would mint
+    // a phantom housing unit that shows as its own group with its own total —
+    // money filed under a place that does not exist.
+    if (entry.unit && !unitIsListed(entry.unit, parent.units || [])) {
+      throw new StartupCostError(
+        `«${entry.unit}» ليس من سكنات هذا البند. أضِفه إلى قائمة السكنات أولاً من تعديل البند.`,
+        { code: 'invalid-argument' },
+      );
     }
 
     const entryRef = db.collection(COL.ENTRIES).doc();
@@ -384,6 +402,98 @@ export async function moveStartupEntry(db, FieldValue, { entryId, toParentId }, 
   });
 }
 
+// ─── إسناد المصاريف إلى السكنات ──────────────────────────────────────────
+/**
+ * يُسند سكناً لكل مصروف من قائمة، دفعةً واحدة.
+ *
+ * ── لماذا دفعة ──
+ * The job this exists for is distributing twenty-seven already-recorded
+ * expenses across the housing units they belong to. Twenty-seven separate
+ * calls would leave the item half-assigned if the tenth failed, and would
+ * write twenty-seven audit records for what the owner did as one act.
+ *
+ * ── ولماذا لا تجميعة هنا ──
+ * Assigning a unit moves no money. The parent's `actual_amount` is
+ * SUM(children) and the children are the same children — so `applyRollup` is
+ * deliberately NOT called, and a test reads the total before and after and
+ * demands it identical. Journal entries and locks are likewise untouched: the
+ * parent's name is not in a journal entry, and a unit is a detail inside the
+ * parent, further still.
+ *
+ * `unit: null` is a legitimate assignment — it puts a row back under «غير
+ * محدد» rather than forcing every expense to belong to a place.
+ */
+export async function assignStartupUnits(db, FieldValue, { parentId, assignments = [] }, {
+  userId = null, role = 'operator', onBeforeCommit = null,
+} = {}) {
+  requireRole(role, WRITE_ROLES, 'إسناد مصاريف إلى السكنات');
+  const id = String(parentId ?? '').trim();
+  if (!id) throw new StartupCostError('معرّف البند مطلوب.', { code: 'invalid-argument' });
+  if (!Array.isArray(assignments) || assignments.length === 0) {
+    throw new StartupCostError('لا توجد إسنادات لتنفيذها.', { code: 'invalid-argument' });
+  }
+  if (assignments.length > 500) {
+    throw new StartupCostError('عدد الإسنادات أكبر مما تحتمله عملية واحدة.', { code: 'invalid-argument' });
+  }
+
+  return db.runTransaction(async (tx) => {
+    const { parent, entries } = await readParentAndEntries(db, tx, id);
+    const units = parent.units || [];
+    const byId = new Map(entries.map((e) => [e.id, e]));
+
+    // Everything is validated BEFORE anything is written: a half-applied
+    // batch is worse than a refused one, because the owner cannot tell which
+    // half took.
+    const planned = [];
+    for (const a of assignments) {
+      const eid = String(a?.entryId ?? '').trim();
+      const entry = byId.get(eid);
+      if (!entry) {
+        throw new StartupCostError(
+          `المصروف ${eid || '(بلا معرّف)'} ليس ضمن مصاريف هذا البند.`,
+          { code: 'not-found' },
+        );
+      }
+      const unit = a?.unit ? String(a.unit).trim() : null;
+      if (unit && !unitIsListed(unit, units)) {
+        throw new StartupCostError(
+          `«${unit}» ليس من سكنات هذا البند. أضِفه إلى قائمة السكنات أولاً.`,
+          { code: 'invalid-argument' },
+        );
+      }
+      planned.push({ eid, unit, before: entry.unit ?? null });
+    }
+
+    if (onBeforeCommit) await onBeforeCommit();
+
+    for (const { eid, unit } of planned) {
+      tx.update(db.collection(COL.ENTRIES).doc(eid), {
+        unit,
+        updated_at: FieldValue.serverTimestamp(),
+        updated_by: userId,
+      });
+    }
+
+    tx.set(db.collection(COL.AUDIT).doc(), auditRecord({
+      action: 'startup-units-assign', documentId: id, userId,
+      before: { assigned: planned.filter((x) => x.before).length, total: entries.length },
+      after: {
+        count: planned.length,
+        // The distribution as applied, so the audit says WHAT was filed where
+        // and not merely that something was.
+        byUnit: planned.reduce((acc, x) => {
+          const key = x.unit || 'غير محدد';
+          acc[key] = (acc[key] || 0) + 1;
+          return acc;
+        }, {}),
+      },
+      note: `إسناد ${planned.length} مصروفاً إلى سكنات البند ${id} — المجموع والقيود لم تتغيّر`,
+    }, FieldValue));
+
+    return { parentId: id, count: planned.length };
+  });
+}
+
 // ─── ترحيل المبلغ القديم ─────────────────────────────────────────────────
 /**
  * Turns a legacy parent-level `actual_amount` into a real spend document.
@@ -543,6 +653,14 @@ export async function updateStartupPlan(db, FieldValue, { parentId, patch = {} }
     if ('itemName' in patch) next.item_name = String(patch.itemName).trim();
     if ('quantity' in patch) next.quantity = Math.max(1, Math.trunc(Number(patch.quantity)));
     if ('plannedAmount' in patch) next.budgeted_amount = round2(patch.plannedAmount);
+    // Trimmed only. Blanks and near-duplicates («النزهة» vs «النزهه») were
+    // already REFUSED by `unitListProblems` — loudly, because a list quietly
+    // shortened on save is a list the user believes they saved. De-duplicating
+    // here as well would be a second, contradictory answer to the same
+    // question: tolerate, or refuse? The codebase refuses.
+    if ('units' in patch) {
+      next.units = (patch.units || []).map((u) => String(u ?? '').trim());
+    }
 
     // The budget the roll-up is judged against is the one being written, so a
     // 1,000 → 2,000 edit takes effect in the SAME snapshot that re-derives.

@@ -4,7 +4,7 @@ import {
   Link as LinkIcon, Percent, Upload,
 } from 'lucide-react';
 import {
-  formatCurrency, formatDate, todayISO, extractVat,
+  formatCurrency, formatDate, formatNumber, todayISO, extractVat,
 } from '../data/initialData';
 import { uploadInvoiceFile, isFirebaseConfigured } from '../lib/firebaseClient';
 import { EmptyState } from './UI';
@@ -13,9 +13,12 @@ import TaxInvoiceFields from './TaxInvoiceFields';
 import PurchaseAmountBreakdown from './PurchaseAmountBreakdown';
 import { blockingVatProblems } from '../lib/vatFields';
 import { EMPTY_TAX_INVOICE_FIELDS, submitTaxInvoiceFields } from '../lib/taxInvoiceForm';
+import { groupEntriesByUnit, unassignedCount } from '../lib/unitSuggest';
+import AssignUnitsPanel from './AssignUnitsPanel';
 
 const EMPTY_FORM = {
   description: '', amount: '', spentDate: '', notes: '', invoiceUrl: '', isTaxInvoice: false,
+  unit: '',
   ...EMPTY_TAX_INVOICE_FIELDS,
 };
 
@@ -53,18 +56,26 @@ function isSafeHttpUrl(value) {
  *   migrationFile      — SQL filename shown in the self-diagnosing error
  *                        banner when the entries table doesn't exist yet
  */
+// السكنات (أو أي تقسيم داخل البند) تُمرَّر اختياريةً — المكوّن مشترك مع
+// المصاريف السنوية التي لا تقسيم لها، فغيابها لا يعرض شيئاً.
 export default function ExpenseLedgerModal({
   isOpen, onClose, title, plannedAmount = 0, plannedLabel = 'المخطط',
   ledger, onDirty, migrationFile, uploadFolder = 'misc',
   moveTargets = null, onMoveEntry = null,
+  units = null, onAssignUnits = null,
 }) {
   const { entries, loading, error, addEntry, deleteEntry } = ledger;
   const canMove = Boolean(onMoveEntry) && Array.isArray(moveTargets) && moveTargets.length > 0;
+  const unitList = Array.isArray(units) ? units.filter(Boolean) : [];
+  const hasUnits = unitList.length > 0;
+  const unitGroups = hasUnits ? groupEntriesByUnit(entries, unitList) : [];
+  const pendingUnits = hasUnits ? unassignedCount(entries) : 0;
 
   const [form, setForm] = useState(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
   const [movingId, setMovingId] = useState(null);
+  const [assignOpen, setAssignOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
 
@@ -306,6 +317,27 @@ export default function ExpenseLedgerModal({
                 placeholder="ملاحظات اختيارية (رقم الفاتورة، الجهة...)"
                 className="w-full px-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:border-primary-500 transition-colors"
               />
+
+              {/* «وبعدين نسجّل مصروف كل سكن» — the picker that makes the new
+                  expense belong to a place. Absent when the item has no
+                  units, so every other ledger looks exactly as before. */}
+              {hasUnits && (
+                <div className="relative">
+                  <Home size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 pointer-events-none" />
+                  <select
+                    name="unit"
+                    value={form.unit}
+                    onChange={handleChange}
+                    aria-label="السكن الذي يخصّه هذا المصروف"
+                    className="w-full pr-9 pl-3 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:border-primary-500 transition-colors"
+                  >
+                    <option value="">السكن — غير محدد</option>
+                    {unitList.map((u) => (
+                      <option key={u} value={u}>{u}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
 
             {/* Invoice: paste a link OR upload a file. The upload lands in
@@ -423,6 +455,51 @@ export default function ExpenseLedgerModal({
               المصاريف المسجّلة ({entries.length})
             </p>
 
+            {/* ── السكنات: القائمة ومجاميعها ──
+                «لما أفتح تجهيز السكن يظهر لي أنواع السكن اللي عندنا» — so the
+                list is shown from the plan, before any expense is filed under
+                it, and each carries its own total. */}
+            {hasUnits && (
+              <div className="mb-3 space-y-2">
+                <div className="flex flex-wrap gap-2">
+                  {unitGroups.map((g) => (
+                    <span
+                      key={g.key}
+                      className={`inline-flex items-baseline gap-1.5 text-[11px] px-2.5 py-1.5 rounded-control border tabular-nums ${
+                        g.key === '__unassigned__'
+                          ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-800 dark:text-amber-300 border-amber-100 dark:border-amber-500/30'
+                          : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-100 dark:border-slate-700'
+                      }`}
+                      title={`${formatNumber(g.items.length)} مصروفاً`}
+                    >
+                      <span className="font-semibold">{g.label}</span>
+                      <span>{formatCurrency(g.total)}</span>
+                      <span className="opacity-60">({formatNumber(g.items.length)})</span>
+                    </span>
+                  ))}
+                </div>
+
+                {onAssignUnits && pendingUnits > 0 && !assignOpen && (
+                  <button
+                    type="button"
+                    onClick={() => setAssignOpen(true)}
+                    className="sw-button sw-button--sm sw-button--secondary"
+                  >
+                    <Wand2 size={15} />
+                    اقتراح توزيع {formatNumber(pendingUnits)} مصروفاً على السكنات
+                  </button>
+                )}
+                {onAssignUnits && assignOpen && (
+                  <AssignUnitsPanel
+                    entries={entries}
+                    units={unitList}
+                    onApply={async (assignments) => { await onAssignUnits(assignments); onDirty?.(); }}
+                    onClose={() => setAssignOpen(false)}
+                  />
+                )}
+              </div>
+            )}
+
             {error && (
               <div
                 role="alert"
@@ -476,6 +553,11 @@ export default function ExpenseLedgerModal({
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-semibold text-slate-900 dark:text-slate-100 leading-snug">
                           {e.description}
+                          {hasUnits && e.unit && (
+                            <span className="mr-2 text-[10px] font-normal px-1.5 py-0.5 rounded-control bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 align-middle">
+                              {e.unit}
+                            </span>
+                          )}
                         </p>
                         <div className="flex items-center gap-2 mt-1 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums flex-wrap">
                           <span className="inline-flex items-center gap-1">

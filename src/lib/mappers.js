@@ -426,6 +426,10 @@ export function mapWash(row) {
   return {
     id:         row.id,
     bikerName:  row.biker_name || '',
+    // Registry link, written alongside the name for NEW washes. Display and
+    // aggregation still key on the NAME (legacy rows have only that), so this
+    // is forward provisioning, not the join key.
+    bikerId:    row.biker_id || null,
     quantity:   clampWashQuantity(row.quantity),
     price:      Number(row.price) || 0,
     status:     clampWashStatus(row.status),
@@ -435,10 +439,11 @@ export function mapWash(row) {
     paymentMethod: clampExpensePaymentMethod(row.payment_method),
   };
 }
-export function toWashInsert({ bikerName, quantity, price, status, washDate, paymentMethod }) {
+export function toWashInsert({ bikerName, bikerId, quantity, price, status, washDate, paymentMethod }) {
   const trimmed = String(bikerName || '').trim();
   return {
     biker_name: trimmed || null,
+    biker_id:   bikerId || null,
     quantity:   clampWashQuantity(quantity),
     price:      Math.max(0, Number(price) || 0),
     status:     clampWashStatus(status),
@@ -452,6 +457,7 @@ export function toWashUpdate(updates = {}) {
     const trimmed = String(updates.bikerName || '').trim();
     payload.biker_name = trimmed || null;
   }
+  if (updates.bikerId   !== undefined) payload.biker_id   = updates.bikerId || null;
   if (updates.quantity  !== undefined) payload.quantity   = clampWashQuantity(updates.quantity);
   if (updates.price     !== undefined) payload.price      = Math.max(0, Number(updates.price) || 0);
   if (updates.status    !== undefined) payload.status     = clampWashStatus(updates.status);
@@ -588,6 +594,15 @@ function clampTemporaryAmount(value) {
   return Math.max(0, n);
 }
 
+// The posting adapters read `payment_method` on the outlay entry and
+// `recovery_method` on the recovery entry, defaulting anything missing to
+// cash. Until the biker advances arrived, the UI never wrote either — every
+// advance silently posted against 1010. Two values only, because the two
+// entries only ever choose between the two money accounts.
+function clampAdvanceMethod(value) {
+  return value === 'bank' ? 'bank' : 'cash';
+}
+
 export function mapTemporaryExpense(row) {
   return {
     id:             row.id,
@@ -597,9 +612,13 @@ export function mapTemporaryExpense(row) {
     status:         clampRecoveryStatus(row.status),
     recoveredDate:  row.recovered_date || '',
     notes:          row.notes || '',
+    // Who took the advance — a registry link, null for the general
+    // (non-biker) outlays the page has always recorded.
+    bikerId:        row.biker_id || null,
+    paymentMethod:  clampAdvanceMethod(row.payment_method),
   };
 }
-export function toTemporaryExpenseInsert({ title, amount, spentDate, status, recoveredDate, notes }) {
+export function toTemporaryExpenseInsert({ title, amount, spentDate, status, recoveredDate, notes, bikerId, paymentMethod }) {
   const s = clampRecoveryStatus(status);
   return {
     title:          String(title || '').trim(),
@@ -608,6 +627,8 @@ export function toTemporaryExpenseInsert({ title, amount, spentDate, status, rec
     status:         s,
     recovered_date: s === 'recovered' ? (recoveredDate || null) : null,
     notes:          notes && String(notes).trim() ? String(notes).trim() : null,
+    biker_id:       bikerId || null,
+    payment_method: clampAdvanceMethod(paymentMethod),
   };
 }
 export function toTemporaryExpenseUpdate(updates = {}) {
@@ -616,6 +637,9 @@ export function toTemporaryExpenseUpdate(updates = {}) {
   if (updates.amount        !== undefined) payload.amount      = clampTemporaryAmount(updates.amount);
   if (updates.spentDate     !== undefined) payload.spent_date  = updates.spentDate || null;
   if (updates.notes         !== undefined) payload.notes       = updates.notes && String(updates.notes).trim() ? String(updates.notes).trim() : null;
+  // How the money CAME BACK. Deducted from a bank-paid salary → 'bank', so
+  // the recovery entry debits the same account the salary credited.
+  if (updates.recoveryMethod !== undefined) payload.recovery_method = clampAdvanceMethod(updates.recoveryMethod);
   // status + recovered_date are coupled by the DB CHECK constraint: keep
   // them in lock-step so callers can't accidentally violate it.
   if (updates.status !== undefined) {
@@ -627,5 +651,47 @@ export function toTemporaryExpenseUpdate(updates = {}) {
   } else if (updates.recoveredDate !== undefined) {
     payload.recovered_date = updates.recoveredDate || null;
   }
+  return payload;
+}
+
+// ── bikers (سجل البايكرات) ────────────────────────────────────────────────
+// The people who wash the cars. Until this registry existed a biker was a
+// free-text `biker_name` typed onto each wash — so the NAME stays the join
+// key for washes and commissions (legacy rows carry only that), and this
+// collection carries what a name cannot: phone, residence, salary, iqama.
+// Salary here is INFORMATION; the actual payment is a monthly_expenses row
+// created the day it is paid, so the books only ever say what happened.
+export function mapBiker(row) {
+  return {
+    id:            row.id,
+    name:          row.name || '',
+    contactNumber: row.contact_number || '',
+    residence:     row.residence || '',
+    salary:        Math.max(0, Number(row.salary) || 0),
+    startDate:     row.start_date || '',
+    iqamaNumber:   row.iqama_number || '',
+    iqamaExpiry:   row.iqama_expiry || '',
+  };
+}
+export function toBikerInsert({ name, contactNumber, residence, salary, startDate, iqamaNumber, iqamaExpiry }) {
+  return {
+    name:           String(name || '').trim(),
+    contact_number: String(contactNumber || '').trim() || null,
+    residence:      String(residence || '').trim() || null,
+    salary:         Math.max(0, Number(salary) || 0),
+    start_date:     startDate || null,
+    iqama_number:   String(iqamaNumber || '').trim() || null,
+    iqama_expiry:   iqamaExpiry || null,
+  };
+}
+export function toBikerUpdate(updates = {}) {
+  const payload = {};
+  if (updates.name          !== undefined) payload.name           = String(updates.name || '').trim();
+  if (updates.contactNumber !== undefined) payload.contact_number = String(updates.contactNumber || '').trim() || null;
+  if (updates.residence     !== undefined) payload.residence      = String(updates.residence || '').trim() || null;
+  if (updates.salary        !== undefined) payload.salary         = Math.max(0, Number(updates.salary) || 0);
+  if (updates.startDate     !== undefined) payload.start_date     = updates.startDate || null;
+  if (updates.iqamaNumber   !== undefined) payload.iqama_number   = String(updates.iqamaNumber || '').trim() || null;
+  if (updates.iqamaExpiry   !== undefined) payload.iqama_expiry   = updates.iqamaExpiry || null;
   return payload;
 }

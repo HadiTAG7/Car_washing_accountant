@@ -40,6 +40,21 @@ export function useTemporaryExpenses() {
     await refetch();
   }, [refetch]);
 
+  // Recovery with an EXPLICIT date and money account — salary deduction is
+  // the caller: the advance comes back on the salary's date through the
+  // salary's account, not on «today» through cash. Only the transition
+  // fields are written, which is also all the rules allow once the outlay
+  // has been posted.
+  const markRecovered = useCallback(async (id, { recoveredDate, recoveryMethod }) => {
+    if (!isFirebaseConfigured) return null;
+    await updateRow('temporary_expenses', id, toTemporaryExpenseUpdate({
+      status: 'recovered',
+      recoveredDate: recoveredDate || todayISO(),
+      recoveryMethod,
+    }));
+    await refetch();
+  }, [refetch]);
+
   const deleteTemporaryExpense = useCallback(async (id) => {
     if (!isFirebaseConfigured) return null;
     await deleteRow('temporary_expenses', id);
@@ -53,6 +68,7 @@ export function useTemporaryExpenses() {
     error,
     addTemporaryExpense,
     toggleRecoveryStatus,
+    markRecovered,
     deleteTemporaryExpense,
     refetch,
   };

@@ -314,5 +314,83 @@ d('رحلة الإنتاج تحت firestore.rules الفعلية', () => {
       await assertFails(updateDoc(doc(ctx.op, 'partner_payments', 'pp9'), { amount: 1 }));
       await assertFails(deleteDoc(doc(ctx.admin, 'partner_payments', 'pp9')));
     }, 120_000);
+
+    // ═══ تحويل الاسترداد الضيّق ═══════════════════════════════════════
+    // Blocking every update once the outlay posted made recovery impossible
+    // to record at all: close a month, and the advance is frozen forever —
+    // exactly when salary-deduction needs to mark it recovered. The narrow
+    // transition opens ONLY the status/recovered_date/recovery_method trio,
+    // and only until the recovery itself posts.
+    it('عهدة مُرحَّلة الصرف: المبلغ مجمَّد والاسترداد يُسجَّل', async () => {
+      await adb.collection('temporary_expenses').doc('adv1').set({
+        title: 'سلفة — أحمد', amount: 500, spent_date: '2026-08-03',
+        status: 'pending', recovered_date: null, payment_method: 'cash',
+        biker_id: 'b1',
+      });
+      await postSource(adb, FieldValue, { kind: 'temporary_expense', sourceId: 'adv1' }, { userId: 'acct1' });
+
+      // المبلغ والتاريخ والعنوان مجمَّدون — الصرف في الدفاتر.
+      await assertFails(updateDoc(doc(ctx.op, 'temporary_expenses', 'adv1'), { amount: 1 }));
+      await assertFails(updateDoc(doc(ctx.op, 'temporary_expenses', 'adv1'), { spent_date: '2026-08-04' }));
+      // وخلط التحويل بحقل مجمَّد يسقط الطلب كله.
+      await assertFails(updateDoc(doc(ctx.op, 'temporary_expenses', 'adv1'), {
+        status: 'recovered', recovered_date: '2026-08-31', amount: 1,
+      }));
+      // والزوج غير المتّسق مرفوض حتى داخل الحقول المسموحة.
+      await assertFails(updateDoc(doc(ctx.op, 'temporary_expenses', 'adv1'), {
+        status: 'recovered', recovered_date: null,
+      }));
+
+      // التحويل الصحيح يمرّ: يوم صرف الراتب، بنفس حساب النقد.
+      await assertSucceeds(updateDoc(doc(ctx.op, 'temporary_expenses', 'adv1'), {
+        status: 'recovered', recovered_date: '2026-08-31', recovery_method: 'cash',
+      }));
+      // والتراجع عنه — ما دام الاسترداد نفسه لم يُرحَّل — يمرّ كذلك.
+      await assertSucceeds(updateDoc(doc(ctx.op, 'temporary_expenses', 'adv1'), {
+        status: 'pending', recovered_date: null,
+      }));
+      await assertSucceeds(updateDoc(doc(ctx.op, 'temporary_expenses', 'adv1'), {
+        status: 'recovered', recovered_date: '2026-08-31', recovery_method: 'cash',
+      }));
+
+      // يُرحَّل الاسترداد → يُغلق حتى هذا الباب، ويبقى الحذف مرفوضاً.
+      await postSource(adb, FieldValue, { kind: 'recovery', sourceId: 'adv1' }, { userId: 'acct1' });
+      await assertFails(updateDoc(doc(ctx.op, 'temporary_expenses', 'adv1'), {
+        status: 'pending', recovered_date: null,
+      }));
+      await assertFails(deleteDoc(doc(ctx.admin, 'temporary_expenses', 'adv1')));
+    }, 120_000);
+
+    // ═══ سجل البايكرات ═════════════════════════════════════════════════
+    // Plain operational collection: members read, operators and above write,
+    // a partner reads and touches nothing, an account with no membership
+    // document sees nothing at all.
+    it('بايكرات: العضو يقرأ، المشغّل يكتب، الشريك والغريب لا', async () => {
+      await env.withSecurityRulesDisabled(async (c) => {
+        await setDoc(doc(c.firestore(), 'users', 'partner1'), { email: 'p@x.com', role: 'partner' });
+      });
+      const partner = env.authenticatedContext('partner1').firestore();
+      const ghost = env.authenticatedContext('ghost1').firestore();
+
+      const biker = {
+        name: 'أحمد محمد', contact_number: '0555555555', residence: 'حي النسيم',
+        salary: 2000, start_date: '2026-06-01',
+        iqama_number: '2222222222', iqama_expiry: '2027-01-01',
+      };
+      await assertSucceeds(setDoc(doc(ctx.op, 'bikers', 'b1'), biker));
+      await assertSucceeds(updateDoc(doc(ctx.op, 'bikers', 'b1'), { salary: 2200 }));
+      await assertSucceeds(getDoc(doc(ctx.acct, 'bikers', 'b1')));
+
+      // الشريك للاطلاع فقط — يقرأ ولا يكتب ولا يحذف.
+      await assertSucceeds(getDoc(doc(partner, 'bikers', 'b1')));
+      await assertFails(setDoc(doc(partner, 'bikers', 'b2'), biker));
+      await assertFails(updateDoc(doc(partner, 'bikers', 'b1'), { salary: 1 }));
+      await assertFails(deleteDoc(doc(partner, 'bikers', 'b1')));
+
+      // وحساب بلا مستند عضوية لا يقرأ أصلاً.
+      await assertFails(getDoc(doc(ghost, 'bikers', 'b1')));
+
+      await assertSucceeds(deleteDoc(doc(ctx.op, 'bikers', 'b1')));
+    }, 120_000);
   });
 });

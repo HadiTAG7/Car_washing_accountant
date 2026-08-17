@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { X, Plus, Pencil, Car } from 'lucide-react';
 import { formatCurrency, formatNumber } from '../data/initialData';
+import { useBikers } from '../hooks/useBikers';
 import DateField from './DateField';
 
 function todayISO() {
@@ -32,6 +33,9 @@ export default function AddWashModal({
   const editing = Boolean(initialValues?.id);
   const [form, setForm] = useState(EMPTY_TEMPLATE);
   const [submitting, setSubmitting] = useState(false);
+  // سجل البايكرات يغذّي الاقتراحات — والحقل يبقى نصاً حراً، لأن السجلات
+  // القديمة أسماء حرة ولأن فريقاً مؤقتاً بلا ملف يظل غسلةً تستحق التسجيل.
+  const { bikers } = useBikers();
 
   useEffect(() => {
     if (!isOpen) return;
@@ -62,8 +66,14 @@ export default function AddWashModal({
     if (!isValid || submitting) return;
     setSubmitting(true);
     try {
+      const trimmedName = form.bikerName.trim();
+      // Exact-name match links the wash to the registry. The NAME stays the
+      // display/aggregation key (legacy rows carry only that); the id is
+      // forward provisioning so a future rename can follow its washes.
+      const registered = bikers.find((b) => b.name === trimmedName);
       const payload = {
-        bikerName: form.bikerName.trim(),
+        bikerName: trimmedName,
+        bikerId:   registered?.id || null,
         quantity,
         price,
         washDate:  form.washDate || '',
@@ -124,8 +134,19 @@ export default function AddWashModal({
               onChange={handleChange}
               placeholder="مثال: أحمد، أو فريق الورديّة الصباحية"
               autoFocus
+              list="wash-bikers-list"
               className="w-full px-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:border-primary-500 transition-colors"
             />
+            <datalist id="wash-bikers-list">
+              {bikers.map((b) => (
+                <option key={b.id} value={b.name} />
+              ))}
+            </datalist>
+            {bikers.length > 0 && (
+              <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                اكتب بنفس الاسم المسجّل في تبويب «البايكر» لتظهر الغسلة في ملفه.
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">

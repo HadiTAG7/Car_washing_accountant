@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import {
   X, Plus, Trash2, FileText, Wallet, Calendar, Tag, Loader2, Inbox,
-  Link as LinkIcon, Percent, Upload,
+  Link as LinkIcon, Percent, Upload, Home, Wand2,
 } from 'lucide-react';
 import {
   formatCurrency, formatDate, formatNumber, todayISO, extractVat,
@@ -139,6 +139,14 @@ export default function ExpenseLedgerModal({
         notes:        form.notes.trim(),
         invoiceUrl:   form.invoiceUrl.trim(),
         isTaxInvoice: form.isTaxInvoice,
+        // ── التقسيم يُرسَل فقط حين يوجد ──
+        // The picker was shipped without this line, so choosing a housing
+        // unit changed the screen and nothing else: the row saved as «غير
+        // محدد» and nothing said so. Spread conditionally rather than always
+        // — the annual ledger shares this component and has no divisions, and
+        // a `unit: ''` on its payload would be a field the server never asked
+        // for.
+        ...(hasUnits ? { unit: form.unit } : {}),
         ...submitTaxInvoiceFields(form),
       });
       setForm({ ...EMPTY_FORM, spentDate: todayISO() });
@@ -290,6 +298,37 @@ export default function ExpenseLedgerModal({
               </div>
             </div>
 
+            {/* ── التقسيم: أين يقع المصروف، قبل كم كلّف ──
+                Its own full-width row. It first shipped as a third child of a
+                two-column grid, which dropped it into a 180px cell under the
+                amount with no label — present in the DOM and invisible in
+                practice, which is exactly how it was reported. Classification
+                is a decision about WHERE the expense lands, so it precedes the
+                money; and it renders only when the item has divisions, leaving
+                every other ledger (the annual one shares this component)
+                byte-identical. */}
+            {hasUnits && (
+              <div className="relative">
+                <Home
+                  size={15}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 pointer-events-none"
+                />
+                <select
+                  id="ledgerUnit"
+                  name="unit"
+                  value={form.unit}
+                  onChange={handleChange}
+                  aria-label="التقسيم الذي يخصّه هذا المصروف"
+                  className="w-full pr-9 pl-3 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:border-primary-500 transition-colors"
+                >
+                  <option value="">اختر التقسيم — يبقى «غير محدد» إن تركته</option>
+                  {unitList.map((u) => (
+                    <option key={u} value={u}>{u}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             {/* Amount + Notes */}
             <div className="grid grid-cols-1 sm:grid-cols-[180px_1fr] gap-3">
               <div className="relative">
@@ -318,26 +357,6 @@ export default function ExpenseLedgerModal({
                 className="w-full px-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:border-primary-500 transition-colors"
               />
 
-              {/* «وبعدين نسجّل مصروف كل سكن» — the picker that makes the new
-                  expense belong to a place. Absent when the item has no
-                  units, so every other ledger looks exactly as before. */}
-              {hasUnits && (
-                <div className="relative">
-                  <Home size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 pointer-events-none" />
-                  <select
-                    name="unit"
-                    value={form.unit}
-                    onChange={handleChange}
-                    aria-label="السكن الذي يخصّه هذا المصروف"
-                    className="w-full pr-9 pl-3 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:border-primary-500 transition-colors"
-                  >
-                    <option value="">السكن — غير محدد</option>
-                    {unitList.map((u) => (
-                      <option key={u} value={u}>{u}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
             </div>
 
             {/* Invoice: paste a link OR upload a file. The upload lands in
@@ -455,30 +474,12 @@ export default function ExpenseLedgerModal({
               المصاريف المسجّلة ({entries.length})
             </p>
 
-            {/* ── السكنات: القائمة ومجاميعها ──
-                «لما أفتح تجهيز السكن يظهر لي أنواع السكن اللي عندنا» — so the
-                list is shown from the plan, before any expense is filed under
-                it, and each carries its own total. */}
+            {/* ── الشرائح ذهبت والرؤوس حلّت محلّها ──
+                They showed the same per-division totals the group headers now
+                carry. Two renderings of one number on one screen is an
+                invitation for them to disagree one day. */}
             {hasUnits && (
               <div className="mb-3 space-y-2">
-                <div className="flex flex-wrap gap-2">
-                  {unitGroups.map((g) => (
-                    <span
-                      key={g.key}
-                      className={`inline-flex items-baseline gap-1.5 text-[11px] px-2.5 py-1.5 rounded-control border tabular-nums ${
-                        g.key === '__unassigned__'
-                          ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-800 dark:text-amber-300 border-amber-100 dark:border-amber-500/30'
-                          : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-100 dark:border-slate-700'
-                      }`}
-                      title={`${formatNumber(g.items.length)} مصروفاً`}
-                    >
-                      <span className="font-semibold">{g.label}</span>
-                      <span>{formatCurrency(g.total)}</span>
-                      <span className="opacity-60">({formatNumber(g.items.length)})</span>
-                    </span>
-                  ))}
-                </div>
-
                 {onAssignUnits && pendingUnits > 0 && !assignOpen && (
                   <button
                     type="button"
@@ -543,99 +544,118 @@ export default function ExpenseLedgerModal({
               </div>
             ) : (
               <ul className="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-100 dark:border-slate-800 rounded-smallcard overflow-hidden">
-                {entries.map((e) => {
-                  const busy = deletingId === e.id || movingId === e.id;
-                  return (
-                    <li
-                      key={e.id}
-                      className="flex items-start justify-between gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold text-slate-900 dark:text-slate-100 leading-snug">
-                          {e.description}
-                          {hasUnits && e.unit && (
-                            <span className="mr-2 text-[10px] font-normal px-1.5 py-0.5 rounded-control bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 align-middle">
-                              {e.unit}
-                            </span>
-                          )}
-                        </p>
-                        <div className="flex items-center gap-2 mt-1 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums flex-wrap">
-                          <span className="inline-flex items-center gap-1">
-                            <Calendar size={11} />
-                            {formatDate(e.spentDate)}
+                {/* ── القائمة أقسامٌ لا صفوفٌ مسطّحة ──
+                    `unitGroups` was already computed for the chips; the rows
+                    stayed flat, so the divisions were a summary above a list
+                    that ignored them. Now each division is a section with its
+                    own total, «غير محدد» last, and a division with no spend
+                    still shows its header at zero — the list describes what
+                    exists, not only what has been paid for. */}
+                {(hasUnits ? unitGroups : [{ key: '__all__', items: entries }]).map((g) => (
+                  <Fragment key={g.key}>
+                    {hasUnits && (
+                      <li className="flex items-baseline justify-between gap-3 px-4 py-2 bg-slate-50 dark:bg-slate-800/60">
+                        <span className="text-[12px] font-bold text-slate-700 dark:text-slate-300 truncate">
+                          {g.label}
+                          <span className="mr-1.5 text-[11px] font-normal text-slate-500 dark:text-slate-400">
+                            ({formatNumber(g.items.length)})
                           </span>
-                          {e.isTaxInvoice && (
-                            <>
-                              <span className="text-slate-300 dark:text-slate-600">·</span>
-                              <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400 font-semibold">
-                                <Percent size={11} />
-                                ض.ق.م: {formatCurrency(extractVat(e.amount))}
-                              </span>
-                            </>
-                          )}
-                          {e.invoiceUrl && (
-                            <>
-                              <span className="text-slate-300 dark:text-slate-600">·</span>
-                              {isSafeHttpUrl(e.invoiceUrl) ? (
-                                <a
-                                  href={e.invoiceUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1 text-primary-700 dark:text-primary-300 hover:underline font-semibold"
-                                  title={e.invoiceUrl}
-                                >
-                                  <LinkIcon size={11} />
-                                  عرض الفاتورة
-                                </a>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 text-slate-500 dark:text-slate-400 truncate max-w-[200px]" title={e.invoiceUrl}>
-                                  <LinkIcon size={11} />
-                                  {e.invoiceUrl}
-                                </span>
-                              )}
-                            </>
-                          )}
-                          {e.notes && (
-                            <>
-                              <span className="text-slate-300 dark:text-slate-600">·</span>
-                              <span className="truncate">{e.notes}</span>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                      <span className="text-sm font-bold text-slate-900 dark:text-slate-100 tabular-nums shrink-0">
-                        {formatCurrency(e.amount)}
-                      </span>
-                      {canMove && (
-                        <select
-                          value=""
-                          disabled={busy}
-                          onChange={(ev) => handleMove(e, ev.target.value)}
-                          aria-label={`نقل ${e.description} إلى بند آخر`}
-                          title="نقل هذا المصروف إلى بند آخر — القيد في الدفاتر لا يتغيّر"
-                          className="shrink-0 max-w-[9rem] text-[11px] px-2 py-1.5 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 disabled:opacity-60 focus:outline-none focus:border-primary-500 transition-colors"
+                        </span>
+                        <span className="text-[12px] font-bold text-slate-700 dark:text-slate-300 tabular-nums shrink-0">
+                          {formatCurrency(g.total)}
+                        </span>
+                      </li>
+                    )}
+                    {g.items.map((e) => {
+                      const busy = deletingId === e.id || movingId === e.id;
+                      return (
+                        <li
+                          key={e.id}
+                          className="flex items-start justify-between gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors"
                         >
-                          <option value="">نقل إلى…</option>
-                          {moveTargets.map((t) => (
-                            <option key={t.id} value={t.id}>{t.label}</option>
-                          ))}
-                        </select>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(e)}
-                        disabled={busy}
-                        title="حذف هذا المصروف من السجل"
-                        aria-label={`حذف ${e.description}`}
-                        className="sw-tap inline-flex items-center justify-center p-1.5 rounded-control text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/15 disabled:opacity-60 transition-colors shrink-0"
-                      >
-                        {busy
-                          ? <Loader2 size={14} className="animate-spin" />
-                          : <Trash2 size={14} />}
-                      </button>
-                    </li>
-                  );
-                })}
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-semibold text-slate-900 dark:text-slate-100 leading-snug">
+                              {e.description}
+                            </p>
+                            <div className="flex items-center gap-2 mt-1 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums flex-wrap">
+                              <span className="inline-flex items-center gap-1">
+                                <Calendar size={11} />
+                                {formatDate(e.spentDate)}
+                              </span>
+                              {e.isTaxInvoice && (
+                                <>
+                                  <span className="text-slate-300 dark:text-slate-600">·</span>
+                                  <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400 font-semibold">
+                                    <Percent size={11} />
+                                    ض.ق.م: {formatCurrency(extractVat(e.amount))}
+                                  </span>
+                                </>
+                              )}
+                              {e.invoiceUrl && (
+                                <>
+                                  <span className="text-slate-300 dark:text-slate-600">·</span>
+                                  {isSafeHttpUrl(e.invoiceUrl) ? (
+                                    <a
+                                      href={e.invoiceUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex items-center gap-1 text-primary-700 dark:text-primary-300 hover:underline font-semibold"
+                                      title={e.invoiceUrl}
+                                    >
+                                      <LinkIcon size={11} />
+                                      عرض الفاتورة
+                                    </a>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 text-slate-500 dark:text-slate-400 truncate max-w-[200px]" title={e.invoiceUrl}>
+                                      <LinkIcon size={11} />
+                                      {e.invoiceUrl}
+                                    </span>
+                                  )}
+                                </>
+                              )}
+                              {e.notes && (
+                                <>
+                                  <span className="text-slate-300 dark:text-slate-600">·</span>
+                                  <span className="truncate">{e.notes}</span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                          <span className="text-sm font-bold text-slate-900 dark:text-slate-100 tabular-nums shrink-0">
+                            {formatCurrency(e.amount)}
+                          </span>
+                          {canMove && (
+                            <select
+                              value=""
+                              disabled={busy}
+                              onChange={(ev) => handleMove(e, ev.target.value)}
+                              aria-label={`نقل ${e.description} إلى بند آخر`}
+                              title="نقل هذا المصروف إلى بند آخر — القيد في الدفاتر لا يتغيّر"
+                              className="shrink-0 max-w-[9rem] text-[11px] px-2 py-1.5 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 disabled:opacity-60 focus:outline-none focus:border-primary-500 transition-colors"
+                            >
+                              <option value="">نقل إلى…</option>
+                              {moveTargets.map((t) => (
+                                <option key={t.id} value={t.id}>{t.label}</option>
+                              ))}
+                            </select>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(e)}
+                            disabled={busy}
+                            title="حذف هذا المصروف من السجل"
+                            aria-label={`حذف ${e.description}`}
+                            className="sw-tap inline-flex items-center justify-center p-1.5 rounded-control text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/15 disabled:opacity-60 transition-colors shrink-0"
+                          >
+                            {busy
+                              ? <Loader2 size={14} className="animate-spin" />
+                              : <Trash2 size={14} />}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </Fragment>
+                ))}
               </ul>
             )}
           </div>

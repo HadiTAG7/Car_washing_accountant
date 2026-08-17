@@ -1,5 +1,6 @@
 import js from '@eslint/js'
 import globals from 'globals'
+import react from 'eslint-plugin-react'
 import reactHooks from 'eslint-plugin-react-hooks'
 import reactRefresh from 'eslint-plugin-react-refresh'
 import { defineConfig, globalIgnores } from 'eslint/config'
@@ -22,11 +23,18 @@ export default defineConfig([
         sourceType: 'module',
       },
     },
+    plugins: { react },
     rules: {
       'no-unused-vars': [
         'error',
         { varsIgnorePattern: '^[A-Z_]', argsIgnorePattern: '^[A-Z_]' },
       ],
+      // ── الأيقونة غير المستورَدة تمرّ من كل شيء إلا المتصفّح ──
+      // `<Home/>` بلا `import` شحنت خضراء: `no-undef` لا يفحص `JSXIdentifier`
+      // — لذلك وُجد هذا القواعد أصلاً — و esbuild لا يفحص شيئاً. النتيجة كانت
+      // ReferenceError في الصفحة الوحيدة التي فُتحت، فبقيت شاشة بيضاء عند
+      // المستخدم حتى أبلغ عنها. القاعدة هنا هي التي تجعل ذلك مستحيلاً.
+      'react/jsx-no-undef': 'error',
     },
   },
   // The trusted server runs under Node with the Admin SDK, not in a browser.

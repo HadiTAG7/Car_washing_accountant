@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import {
   X, Plus, Trash2, FileText, Wallet, Calendar, Tag, Loader2, Inbox,
   Link as LinkIcon, Percent, Upload, Home, Wand2,
@@ -6,7 +6,7 @@ import {
 import {
   formatCurrency, formatDate, formatNumber, todayISO, extractVat,
 } from '../data/initialData';
-import { uploadInvoiceFile, isFirebaseConfigured } from '../lib/firebaseClient';
+import { uploadInvoiceFile, isFirebaseConfigured, describeBackendError } from '../lib/firebaseClient';
 import { EmptyState } from './UI';
 import DateField from './DateField';
 import TaxInvoiceFields from './TaxInvoiceFields';
@@ -66,7 +66,17 @@ export default function ExpenseLedgerModal({
 }) {
   const { entries, loading, error, addEntry, deleteEntry } = ledger;
   const canMove = Boolean(onMoveEntry) && Array.isArray(moveTargets) && moveTargets.length > 0;
-  const unitList = Array.isArray(units) ? units.filter(Boolean) : [];
+  // ── الهوية تُثبَّت، لا القيمة فقط ──
+  // Rebuilt inline, this array was a NEW identity on every render — and it is
+  // passed down to `AssignUnitsPanel`, whose `useMemo`/`useEffect` pair then
+  // refired and overwrote the user's per-row corrections with the machine's
+  // suggestions. Typing one character in the form above was enough to wipe a
+  // review in progress. The names are what matter, so they key the memo.
+  // JSON rather than a `join` separator: a separator is a character a housing
+  // name is allowed to contain, and splitting on it would silently invent a
+  // unit that does not exist.
+  const unitKey = JSON.stringify(Array.isArray(units) ? units.filter(Boolean) : []);
+  const unitList = useMemo(() => JSON.parse(unitKey), [unitKey]);
   const hasUnits = unitList.length > 0;
   const unitGroups = hasUnits ? groupEntriesByUnit(entries, unitList) : [];
   const pendingUnits = hasUnits ? unassignedCount(entries) : 0;
@@ -78,11 +88,19 @@ export default function ExpenseLedgerModal({
   const [assignOpen, setAssignOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
+  // ── ما يرفضه الخادم يجب أن يُقرأ ──
+  // `handleAdd` and `handleDelete` were `try`/`finally` with no `catch`, and
+  // the app has no ErrorBoundary and no `unhandledrejection` listener. So a
+  // refusal the server had already written in Arabic FOR THIS USER — «س ليس
+  // من سكنات هذا البند» — died in the console: the spinner stopped, the form
+  // stayed full, nothing was added, and nothing said why.
+  const [actionError, setActionError] = useState('');
 
   // Reset form on every open; seed today's date.
   useEffect(() => {
     if (!isOpen) return;
     setForm({ ...EMPTY_FORM, spentDate: todayISO() });
+    setActionError('');
   }, [isOpen]);
 
   const fileInputRef = useRef(null);
@@ -131,6 +149,7 @@ export default function ExpenseLedgerModal({
     e.preventDefault();
     if (!isValid || submitting) return;
     setSubmitting(true);
+    setActionError('');
     try {
       await addEntry({
         description:  trimmedDesc,
@@ -151,6 +170,10 @@ export default function ExpenseLedgerModal({
       });
       setForm({ ...EMPTY_FORM, spentDate: todayISO() });
       onDirty?.(); // tell the parent page to refetch its items so totals update
+    } catch (err) {
+      // The form keeps its values — the user re-reads the message and fixes
+      // the one field it names, rather than retyping an invoice.
+      setActionError(describeBackendError(err) || err?.message || 'تعذّر تسجيل المصروف.');
     } finally {
       setSubmitting(false);
     }
@@ -162,9 +185,15 @@ export default function ExpenseLedgerModal({
       : true;
     if (!confirmed) return;
     setDeletingId(entry.id);
+    setActionError('');
     try {
       await deleteEntry(entry.id);
       onDirty?.();
+    } catch (err) {
+      // A posted entry is refused deletion on purpose («لا يمكن حذف مصروف
+      // مُرحَّل…»). That refusal is the answer to the user's question, so it
+      // belongs on the screen, not in the console.
+      setActionError(describeBackendError(err) || err?.message || 'تعذّر حذف المصروف.');
     } finally {
       setDeletingId(null);
     }
@@ -453,6 +482,15 @@ export default function ExpenseLedgerModal({
                 problems={vatProblems}
                 spendDate={form.spentDate}
               />
+            )}
+
+            {actionError && (
+              <p
+                role="alert"
+                className="text-xs text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-500/10 border border-rose-100 dark:border-rose-500/30 rounded-control px-3 py-2.5 leading-relaxed"
+              >
+                {actionError}
+              </p>
             )}
 
             <button

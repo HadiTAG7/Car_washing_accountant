@@ -165,6 +165,24 @@ describe('ExpenseLedgerModal — بند له تقسيمات', () => {
     submit();
     expect(addEntry.mock.calls[0][0].unit).toBe('');
   });
+
+  it('ورفضُ الخادم يُقرأ على الشاشة، والقيم تبقى في النموذج', async () => {
+    // كان `try`/`finally` بلا `catch`، ولا ErrorBoundary في التطبيق: فرسالةٌ
+    // كتبها الخادم بالعربية لهذا المستخدم تموت في الـ console — يتوقّف المؤشّر
+    // ولا يُضاف شيء ولا يُقال لماذا.
+    const addEntry = vi.fn().mockRejectedValue(
+      new Error('«سكن الروضة» ليس من سكنات هذا البند. أضِفه إلى قائمة السكنات أولاً.'),
+    );
+    renderLedger({ units: UNITS, addEntry });
+    set('input[name="description"]', 'مكيّف');
+    set('input[name="amount"]', '2500');
+    submit();
+
+    await vi.waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+    expect(screen.getByRole('alert').textContent).toContain('ليس من سكنات هذا البند');
+    // الفاتورة لا تُعاد كتابتها: القيم في مكانها ليصحّح الحقل الذي سُمّي.
+    expect($('input[name="description"]').value).toBe('مكيّف');
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -192,6 +210,48 @@ describe('ExpenseLedgerModal — توزيع المصاريف القديمة', ()
     // «سكن النزهه» في الوصف ⇒ «سكن النزهة» في القائمة، رغم ة/ه.
     expect(screen.getByLabelText('سكن تزويد سكن النزهه بمروحة اضافية').value).toBe('سكن النزهة');
     expect(screen.getByLabelText('سكن دهان عام').value).toBe('');
+  });
+
+  it('والبحث يضيّق الصفوف رغم ة/ه، و«عيّن الظاهر» يمسّ المُرشَّح وحده', () => {
+    // «أي شي في سكن النزهة اعتبره في الشمال» — قاعدةٌ يعرفها المالك وحده،
+    // فتُنفَّذ بخطوتين بدل أن تُرمَّز في الشيفرة.
+    const onAssignUnits = vi.fn();
+    renderLedger({ units: UNITS, entries: OLD, onAssignUnits });
+    fireEvent.click(screen.getByRole('button', { name: /اقتراح توزيع/ }));
+
+    // «النزهة» بالتاء المربوطة تجد «النزهه» في الوصف.
+    fireEvent.change(screen.getByLabelText('ابحث في وصف المصاريف'), {
+      target: { value: 'النزهة' },
+    });
+    expect(screen.queryByLabelText('سكن دهان عام')).toBeNull();
+
+    const bulk = screen.getByLabelText(/عيّن 1 مصروفاً ظاهراً/);
+    fireEvent.change(bulk, { target: { value: 'سكن الشمال' } });
+
+    // المُرشَّح تغيّر، والمخفيّ لم يُمَسّ.
+    expect(screen.getByLabelText('سكن تزويد سكن النزهه بمروحة اضافية').value)
+      .toBe('سكن الشمال');
+    fireEvent.change(screen.getByLabelText('ابحث في وصف المصاريف'), { target: { value: '' } });
+    expect(screen.getByLabelText('سكن دهان عام').value).toBe('');
+    // ولا كتابة بعد — الحفظ بزر التأكيد وحده.
+    expect(onAssignUnits).not.toHaveBeenCalled();
+  });
+
+  it('وتصحيح المستخدم يبقى بعد أي رندر للأب — لا يمحوه الاقتراح', () => {
+    // `unitList` كان يُبنى كل رندر بهوية جديدة، فيبطل `useMemo` في اللوحة
+    // ويعيد `useEffect` كتابة الاختيارات باقتراحات الآلة. حرفٌ واحد في نموذج
+    // الإضافة فوقها كان يكفي لمسح مراجعةً كاملة.
+    renderLedger({ units: UNITS, entries: OLD, onAssignUnits: vi.fn() });
+    fireEvent.click(screen.getByRole('button', { name: /اقتراح توزيع/ }));
+
+    const row = screen.getByLabelText('سكن تزويد سكن النزهه بمروحة اضافية');
+    expect(row.value).toBe('سكن النزهة');          // الاقتراح
+    fireEvent.change(row, { target: { value: 'سكن الروضة' } }); // تصحيح المستخدم
+
+    // رندر للأب: حرفٌ في وصف المصروف الجديد.
+    set('input[name="description"]', 'أ');
+    expect(screen.getByLabelText('سكن تزويد سكن النزهه بمروحة اضافية').value)
+      .toBe('سكن الروضة');
   });
 
   it('والتأكيد يرسل ما اختير فقط — والمجهول يبقى «غير محدد»', async () => {

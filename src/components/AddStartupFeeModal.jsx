@@ -6,6 +6,8 @@ import {
 import {
   formatCurrency, formatNumber,
 } from '../data/initialData';
+import { unitListProblems } from '../lib/accounting/startupMigration';
+import { describeBackendError } from '../lib/firebaseClient';
 
 // Sentinel value for the synthetic "⚙️ إدارة وتعديل التصنيفات..." option
 // in the category dropdown. Picking it toggles the modal into the
@@ -36,6 +38,22 @@ function toPositive(value) {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
+/**
+ * أسطر المربّع ⇐ قائمة أسماء.
+ *
+ * The textarea shipped without this: `handleSubmit` built its payload from
+ * four fields and `unitsText` was never read, so five housing names were
+ * discarded in the browser before any network call — no error, no save, and
+ * a screen that looked like it had worked. Kept as a named function so the
+ * test names the thing it is testing.
+ */
+function parseUnitsText(text) {
+  return String(text ?? '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
 function formatUnitPriceForInput(total, quantity) {
   if (!total || !quantity || quantity <= 0) return '';
   const unit = total / quantity;
@@ -56,6 +74,11 @@ export default function AddStartupFeeModal({
   // nothing in the ledger can ever post against.
   const [form, setForm] = useState(EMPTY);
   const [submitting, setSubmitting] = useState(false);
+  // ── الرفض يُقال، لا يُبتلع ──
+  // `handleSubmit` used to be `try`/`finally` with no `catch`: any refusal —
+  // the server's or the validator's — died as an unhandled rejection while
+  // the modal closed as though the save had taken.
+  const [saveError, setSaveError] = useState('');
   // Inline category-manager state. `managerOpen` is the boolean
   // toggle; when true, the <select> swaps for the manager panel
   // (existing categories list with delete + new-category input row).
@@ -104,7 +127,16 @@ export default function AddStartupFeeModal({
     setNewCategoryError('');
     setNewCategoryBusy(false);
     setDeletingCategoryId(null);
-  }, [isOpen, categories, initialValues]);
+    setSaveError('');
+    // ── ولماذا ليست `categories` ولا `initialValues` في الاعتماديات ──
+    // `useCategories` returns `data ?? []`, and while `data` is null that `[]`
+    // is a NEW identity on every render — so listing it here re-ran this
+    // effect continuously and wiped the form under the user's fingers, the
+    // units textarea included. `initialValues` is a fresh object each render
+    // of the page for the same reason. The identity that actually decides
+    // what to seed is the item's id, so that is what is watched.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, initialValues?.id]);
 
   function handleChange(e) {
     // The category <select> handles its own toggle to the manager
@@ -238,13 +270,32 @@ export default function AddStartupFeeModal({
   async function handleSubmit(e) {
     e.preventDefault();
     if (!isValid || submitting) return;
+
+    // ── التقسيمات تُتحقَّق هنا بنفس دالة الخادم ──
+    // `unitListProblems` is the same function `startupUpdatePlan` runs, so a
+    // duplicate or an over-long name is refused with the SAME sentence on both
+    // sides — the client never grows a second opinion about a valid name. And
+    // it is refused OUT LOUD: a list quietly shortened on save is a list the
+    // user believes they saved.
+    const units = parseUnitsText(form.unitsText);
+    const unitProblems = unitListProblems(units);
+    if (unitProblems.length) {
+      setSaveError(unitProblems[0]);
+      return;
+    }
+
     setSubmitting(true);
+    setSaveError('');
     try {
       const payload = {
         itemName:      form.itemName.trim(),
         category:      form.category,
         quantity,
         plannedAmount: plannedTotal,
+        // The line this form shipped without. Sent on BOTH paths and always —
+        // an emptied list must be able to clear a previous one, and `units`
+        // absent would mean "leave it alone" to `useStartupCosts.updateItem`.
+        units,
       };
       // No `actualAmount`, no tax fields, no invoice: `toStartupCostInsert`
       // and `toStartupCostUpdate` do not carry them at all any more. The
@@ -256,6 +307,10 @@ export default function AddStartupFeeModal({
         await onAdd({ ...payload, status: 'in_progress' });
       }
       onClose();
+    } catch (err) {
+      // Stay open with the values intact. Closing on a refusal is what made
+      // this bug invisible for a day.
+      setSaveError(describeBackendError(err) || err?.message || 'تعذّر حفظ البند.');
     } finally {
       setSubmitting(false);
     }
@@ -573,6 +628,15 @@ export default function AddStartupFeeModal({
               </span>
             </div>
           </div>
+
+          {saveError && (
+            <p
+              role="alert"
+              className="text-xs text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-500/10 border border-rose-100 dark:border-rose-500/30 rounded-control px-3 py-2.5 leading-relaxed"
+            >
+              {saveError}
+            </p>
+          )}
 
           <div className="flex items-center gap-3 pt-2">
             <button

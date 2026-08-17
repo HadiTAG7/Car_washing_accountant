@@ -339,7 +339,7 @@ service cloud.firestore {
     // a budget from 1,000 to 2,000 against 1,500 of spend left the row saying
     // `completed`. Both now go through `startupUpdatePlan`, which re-derives.
     function startupPlanFields() {
-      return ['category', 'item_name', 'quantity', 'budgeted_amount'];
+      return ['category', 'item_name', 'quantity', 'budgeted_amount', 'units'];
     }
     // The columns the server owns. `actual_amount` is SUM(entries),
     // `converted_*` is the migration's own record, and the tax block belongs

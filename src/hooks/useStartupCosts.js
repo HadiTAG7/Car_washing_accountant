@@ -44,7 +44,7 @@ export function useStartupCosts() {
   const updateItem = useCallback(async (id, updates) => {
     if (!isFirebaseConfigured) return null;
     const patch = {};
-    for (const key of ['category', 'itemName', 'quantity', 'plannedAmount']) {
+    for (const key of ['category', 'itemName', 'quantity', 'plannedAmount', 'units']) {
       if (updates[key] !== undefined) patch[key] = updates[key];
     }
     if (Object.keys(patch).length === 0) return null;

@@ -81,6 +81,7 @@ export const ledgerEnsureAccount = callable('ledgerEnsureAccount');
 export const startupAddEntry = callable('startupAddEntry');
 export const startupDeleteEntry = callable('startupDeleteEntry');
 export const startupMoveEntry = callable('startupMoveEntry');
+export const startupAssignUnits = callable('startupAssignUnits');
 export const startupConvertLegacySpend = callable('startupConvertLegacySpend');
 export const startupUpdatePlan = callable('startupUpdatePlan');
 export const startupDeletePlan = callable('startupDeletePlan');

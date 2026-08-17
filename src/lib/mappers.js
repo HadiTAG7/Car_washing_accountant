@@ -24,6 +24,10 @@ export function mapStartupCost(row) {
     plannedAmount: Number(row.budgeted_amount) || 0,
     actualAmount:  Number(row.actual_amount)   || 0,
     status:        row.status === 'completed' ? 'completed' : 'in_progress',
+    // أسماء التقسيمات داخل البند — السكنات مثلاً — تحت ميزانيته الواحدة.
+    // Lives on the PLAN rather than being derived from the entries, so the
+    // list is visible before a single expense has been filed under it.
+    units:         Array.isArray(row.units) ? row.units : [],
     // VAT recovery for items whose spend is entered INLINE. Items managed
     // by the sub-ledger record VAT per entry instead — counting both would
     // double the reclaim, so the report ignores the parent flag for them.
@@ -47,13 +51,17 @@ export function mapStartupCost(row) {
 // amount are converted through `convertStartupParentSpend`, which asks for
 // what the record does not contain. See src/lib/accounting/startupMigration.js.
 export function toStartupCostInsert({
-  category, itemName, quantity, plannedAmount,
+  category, itemName, quantity, plannedAmount, units,
 }) {
   return {
     category,
     item_name:       itemName,
     quantity:        clampQuantity(quantity),
     budgeted_amount: Math.max(0, Number(plannedAmount) || 0),
+    // Trimmed and emptied of blanks here; the server de-duplicates on the
+    // normalised key when the list is later edited.
+    units:           Array.isArray(units)
+      ? units.map((u) => String(u || '').trim()).filter(Boolean) : [],
     // Always zero on insert. The sub-ledger owns this column from here on.
     actual_amount:   0,
     // A plan with no spend is `in_progress` by derivation — see
@@ -81,6 +89,9 @@ export function mapStartupCostEntry(row) {
     description:    row.description || '',
     amount:         Number(row.amount) || 0,
     spentDate:      row.spent_date || '',
+    // '' means «غير محدد» — a real answer for spend that belongs to the item
+    // as a whole, not a missing one.
+    unit:           row.unit || '',
     notes:          row.notes || '',
     ...mapTaxInvoiceFields(row),
     createdAt:      row.created_at,

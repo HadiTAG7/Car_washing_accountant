@@ -76,6 +76,18 @@ export function useStartupCostEntries(parentId) {
     return res;
   }, [refetch]);
 
+  // ── إسناد السكنات دفعةً واحدة ──
+  // Filing already-recorded spend under the housing unit it belongs to. One
+  // call for the whole distribution, because that is how the owner does it —
+  // and because a half-applied batch leaves them unable to tell which half.
+  // Moves no money: the parent's total is the same entries either way.
+  const assignUnits = useCallback(async (parentId, assignments) => {
+    if (!isFirebaseConfigured) return null;
+    const res = await callServer('startupAssignUnits', { parentId, assignments });
+    await refetch();
+    return res;
+  }, [refetch]);
+
   const entries = isFirebaseConfigured ? (data ?? []) : (data || []);
-  return { entries, loading, error, addEntry, deleteEntry, moveEntry, refetch };
+  return { entries, loading, error, addEntry, deleteEntry, moveEntry, assignUnits, refetch };
 }

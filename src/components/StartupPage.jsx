@@ -193,6 +193,18 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
     }
   }, [detailLedger, items, showToast]);
 
+  const handleAssignUnits = useCallback(async (assignments) => {
+    try {
+      setMutationError(null);
+      await detailLedger.assignUnits(detailItem.id, assignments);
+      showToast(`أُسند ${assignments.length} مصروفاً إلى تقسيماته — المجموع والقيود لم تتغيّر`);
+    } catch (e) {
+      console.error('🔥 Firestore Error (StartupPage.handleAssignUnits):', e);
+      setMutationError(e);
+      showToast(describeBackendError(e) || e?.message || 'تعذّر إسناد المصاريف', 'error');
+    }
+  }, [detailLedger, detailItem, showToast]);
+
   // ── الجدول مجموعات لا صفوفاً مسطّحة ──
   // One real thing split into several items — five housing units, say —
   // scatters among unrelated rows, and «كم صرفنا على السكن؟» becomes
@@ -532,6 +544,8 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
         uploadFolder={detailItem ? `startup/${detailItem.id}` : 'startup'}
         moveTargets={canMutate ? moveTargets : null}
         onMoveEntry={canMutate ? handleMoveEntry : null}
+        units={detailItem?.units || null}
+        onAssignUnits={canMutate ? handleAssignUnits : null}
       />
 
       <StartupConversionModal

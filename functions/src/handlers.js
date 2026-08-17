@@ -39,7 +39,8 @@ import {
 import { TaxPolicyError } from './taxPolicy.js';
 import { PurchaseTaxError } from './purchaseTax.js';
 import {
-  addStartupEntry, deleteStartupEntry, moveStartupEntry, convertLegacyStartupSpend,
+  addStartupEntry, deleteStartupEntry, moveStartupEntry, assignStartupUnits,
+  convertLegacyStartupSpend,
   updateStartupPlan, deleteStartupPlan, StartupCostError,
 } from './startupCosts.js';
 import { claimFirstAdmin, directoryIsEmpty, BootstrapError } from './bootstrapAdmin.js';
@@ -303,6 +304,16 @@ export const HANDLERS = {
     guard: 'startupWriter',
     run: ({ db, FieldValue, data, uid, role }) => moveStartupEntry(db, FieldValue, {
       entryId: data?.entryId, toParentId: data?.toParentId,
+    }, { userId: uid, role }),
+  },
+
+  // Filing already-recorded spend under the housing unit it belongs to. One
+  // call for the whole distribution: a half-applied batch is worse than a
+  // refused one. Moves no money — the parent's total is unchanged by design.
+  startupAssignUnits: {
+    guard: 'startupWriter',
+    run: ({ db, FieldValue, data, uid, role }) => assignStartupUnits(db, FieldValue, {
+      parentId: data?.parentId, assignments: data?.assignments,
     }, { userId: uid, role }),
   },
 

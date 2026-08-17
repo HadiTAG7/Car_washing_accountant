@@ -127,7 +127,7 @@ export default function AssignUnitsPanel({ entries, units, onApply, onClose }) {
             className="w-full pr-8 pl-3 py-2 text-[12px] rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:border-primary-500 transition-colors"
           />
         </div>
-        {/* فعلٌ لا حالة — يعود فارغاً بعد كل تعيين، كمنتقي «نقل إلى…». */}
+        {/* فعلٌ لا حالة — يعود فارغاً بعد كل تعيين، فيُقرأ كزرٍّ لا كاختيارٍ قائم. */}
         <select
           value=""
           onChange={(e) => assignVisible(e.target.value)}

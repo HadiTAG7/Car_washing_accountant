@@ -41,6 +41,11 @@ function isSafeHttpUrl(value) {
  *   plannedLabel       — label over that figure (default "المخطط";
  *                        annual passes "التكلفة السنوية")
  *   ledger             — { entries, loading, error, addEntry, deleteEntry }
+ *   moveTargets        — optional [{ id, label }]. Startup only: the annual
+ *                        ledger shares this component and has no move
+ *                        callable, so an absent list renders no control at
+ *                        all rather than a button that would fail.
+ *   onMoveEntry        — optional (entryId, toParentId) => Promise
  *                        from useStartupCostEntries / useAnnualExpenseEntries
  *   onDirty            — called after every successful add/delete so the
  *                        parent page can refetch its items (the hook has
@@ -51,12 +56,15 @@ function isSafeHttpUrl(value) {
 export default function ExpenseLedgerModal({
   isOpen, onClose, title, plannedAmount = 0, plannedLabel = 'المخطط',
   ledger, onDirty, migrationFile, uploadFolder = 'misc',
+  moveTargets = null, onMoveEntry = null,
 }) {
   const { entries, loading, error, addEntry, deleteEntry } = ledger;
+  const canMove = Boolean(onMoveEntry) && Array.isArray(moveTargets) && moveTargets.length > 0;
 
   const [form, setForm] = useState(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
+  const [movingId, setMovingId] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
 
@@ -140,6 +148,23 @@ export default function ExpenseLedgerModal({
       onDirty?.();
     } finally {
       setDeletingId(null);
+    }
+  }
+
+  // ── النقل بين البنود ──
+  // Allowed on a POSTED entry, unlike delete — and that asymmetry is the whole
+  // point. Deleting a posted row would leave its journal entry describing a
+  // document that no longer exists; moving it leaves the journal entry exactly
+  // as it was, because the ledger never recorded which parent the row belonged
+  // to. Only the two parents' totals change, and the server moves them as one.
+  async function handleMove(entry, toParentId) {
+    if (!toParentId || !onMoveEntry) return;
+    setMovingId(entry.id);
+    try {
+      await onMoveEntry(entry.id, toParentId);
+      onDirty?.();
+    } finally {
+      setMovingId(null);
     }
   }
 
@@ -442,7 +467,7 @@ export default function ExpenseLedgerModal({
             ) : (
               <ul className="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-100 dark:border-slate-800 rounded-smallcard overflow-hidden">
                 {entries.map((e) => {
-                  const busy = deletingId === e.id;
+                  const busy = deletingId === e.id || movingId === e.id;
                   return (
                     <li
                       key={e.id}
@@ -499,6 +524,21 @@ export default function ExpenseLedgerModal({
                       <span className="text-sm font-bold text-slate-900 dark:text-slate-100 tabular-nums shrink-0">
                         {formatCurrency(e.amount)}
                       </span>
+                      {canMove && (
+                        <select
+                          value=""
+                          disabled={busy}
+                          onChange={(ev) => handleMove(e, ev.target.value)}
+                          aria-label={`نقل ${e.description} إلى بند آخر`}
+                          title="نقل هذا المصروف إلى بند آخر — القيد في الدفاتر لا يتغيّر"
+                          className="shrink-0 max-w-[9rem] text-[11px] px-2 py-1.5 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 disabled:opacity-60 focus:outline-none focus:border-primary-500 transition-colors"
+                        >
+                          <option value="">نقل إلى…</option>
+                          {moveTargets.map((t) => (
+                            <option key={t.id} value={t.id}>{t.label}</option>
+                          ))}
+                        </select>
+                      )}
                       <button
                         type="button"
                         onClick={() => handleDelete(e)}

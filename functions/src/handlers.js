@@ -39,7 +39,7 @@ import {
 import { TaxPolicyError } from './taxPolicy.js';
 import { PurchaseTaxError } from './purchaseTax.js';
 import {
-  addStartupEntry, deleteStartupEntry, convertLegacyStartupSpend,
+  addStartupEntry, deleteStartupEntry, moveStartupEntry, convertLegacyStartupSpend,
   updateStartupPlan, deleteStartupPlan, StartupCostError,
 } from './startupCosts.js';
 import { claimFirstAdmin, directoryIsEmpty, BootstrapError } from './bootstrapAdmin.js';
@@ -291,6 +291,18 @@ export const HANDLERS = {
     guard: 'startupWriter',
     run: ({ db, FieldValue, data, uid, role }) => deleteStartupEntry(db, FieldValue, {
       entryId: data?.entryId,
+    }, { userId: uid, role }),
+  },
+
+  // Reassigning a spend row to a different item is operational work — the same
+  // people who recorded it. It is also LEDGER-NEUTRAL: the parent's name is in
+  // no journal entry, no lock and no account, so a posted row may be moved
+  // without touching the books. Server-side because the two parents' roll-ups
+  // must move as one, which a rule cannot express.
+  startupMoveEntry: {
+    guard: 'startupWriter',
+    run: ({ db, FieldValue, data, uid, role }) => moveStartupEntry(db, FieldValue, {
+      entryId: data?.entryId, toParentId: data?.toParentId,
     }, { userId: uid, role }),
   },
 

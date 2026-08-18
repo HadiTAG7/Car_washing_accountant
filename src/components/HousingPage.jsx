@@ -226,15 +226,27 @@ export default function HousingPage() {
               ? `التقدير: ${formatCurrency(kpis.benchmark)} للساكن`
               : 'اربط الساكنين ليُحسب'}
           />
-          {/* الإيجار بطاقةٌ مستقلة، لا يُضاف إلى التجهيز: ذاك رأسمالٌ صُرف
-              مرةً وهذا تكلفةٌ تتكرر كل سنة. جمعهما يعطي رقماً بلا معنى. */}
+          {/* الإيجار بطاقتان مستقلتان، لا يُضاف إلى التجهيز: ذاك رأسمالٌ صُرف
+              مرةً وهذا تكلفةٌ تتكرر كل سنة. جمعهما يعطي رقماً بلا معنى.
+              و«للساكن» بطاقةٌ كاملة لا سطرٌ صغير — التوازي نفسه الذي بين
+              «تكلفة التجهيز» و«تجهيز · للساكن». */}
           <StatCard
             icon={KeyRound}
             label="الإيجار السنوي"
             value={kpis.rent > 0 ? formatCurrency(kpis.rent) : '—'}
-            sub={kpis.rentPer !== null && kpis.rentPer > 0
-              ? `${formatCurrency(kpis.rentPer)} للساكن سنوياً · ${formatCurrency(kpis.rentPer / 12)} شهرياً`
+            sub={kpis.rent > 0
+              ? 'من المصاريف السنوية — دفعات بند الإيجار الموسومة بسكناتها'
               : 'من المصاريف السنوية — قسِّم بند الإيجار على السكنات'}
+          />
+          <StatCard
+            icon={KeyRound}
+            tone="indigo"
+            label="الإيجار · للساكن"
+            value={kpis.rentPer !== null && kpis.rentPer > 0
+              ? formatCurrency(kpis.rentPer) : '—'}
+            sub={kpis.rentPer !== null && kpis.rentPer > 0
+              ? `سنوياً · ${formatCurrency(kpis.rentPer / 12)} ر.س شهرياً`
+              : (kpis.rent > 0 ? 'اربط الساكنين ليُحسب' : 'يظهر بعد وسم دفعات الإيجار')}
           />
         </div>
 

@@ -20,11 +20,23 @@
 //   --find "نص"                ← قراءة محضة
 //   --id <المعرّف> [--apply]   ← معاينة ثم حذف
 //
+// ── وتصحيحٌ داخل فترةٍ مقفلة، حين يكون هو الصواب ──
+// `--reverse-date YYYY-MM-DD` يعكس قيد الغسلة بهذا التاريخ ثم يحذفها. وإن
+// كانت فترة ذلك التاريخ مقفلة، `--reopen "السبب"` يفتحها قبل العكس ويعيد
+// إقفالها بعده — بإعادة فحص التوازن التي يجريها الإقفال دائماً.
+//
+// ولماذا يُسمح بهذا أصلاً: عكسٌ في شهرٍ لاحق هو العلاج الصحيح لخطأ في حدثٍ
+// وقع. لكن سجلاً تجريبياً لم يقع أصلاً ليس خطأً يُصحَّح بل ضجيجٌ يُزال — وترك
+// شهرٍ مقفلاً على حدثٍ لم يحدث، مع إيرادٍ سالبٍ وهمي في شهرٍ حقيقي لاحق،
+// يُشوّه شهرين بدل أن يُصلح واحداً. فالقرار يبقى للمالك، والأداة تنفّذ ما
+// يختاره صراحةً — بسببٍ مكتوب يبقى في سجل التدقيق.
+//
 // يحتاج GOOGLE_APPLICATION_CREDENTIALS (سير العمل يكتبه من سرّ المستودع).
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { initializeApp, applicationDefault } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { reverseEntry, closePeriod, reopenPeriod } from '../functions/src/ledger.js';
 import { tolerantArabicPattern } from '../src/lib/unitSuggest.js';
 
 function arg(name, fallback = null) {
@@ -37,6 +49,9 @@ const has = (name) => process.argv.includes(`--${name}`);
 const find = arg('find');
 const id = arg('id');
 const apply = has('apply');
+const reverseDate = arg('reverse-date');
+const reopenReason = arg('reopen');
+const actor = process.env.MAINT_ACTOR || 'maintenance-script';
 
 if (!find && !id) {
   console.error('الاستعمال: --find "نص"   أو   --id <المعرّف> [--apply]');
@@ -106,6 +121,10 @@ console.log(`\n${apply ? '⇉ الحذف' : '👁 معاينة (لا يُحذف 
 const { live } = describe(id, row, st);
 
 if (!apply) {
+  if (st.lock && reverseDate) {
+    console.log(`\nسيُعكس القيد رقم ${st.lock.entryNumber ?? '—'} بتاريخ ${reverseDate}`
+      + `${reopenReason ? `، بعد فتح فترته وإعادة إقفالها («${reopenReason}»)` : ''}، ثم تُحذف الدفعة.`);
+  }
   console.log('\nمعاينة فقط. أعِد التشغيل بـ --apply للحذف.');
   process.exit(0);
 }
@@ -120,9 +139,43 @@ if (live.length) {
 }
 
 // ── ثم الترحيل: القواعد ترفضه أيضاً، لكنها لا تقول لماذا ──
-if (st.lock) {
+if (st.lock && !reverseDate) {
   console.error(`\n✗ مُرحّلة بالقيد رقم ${st.lock.entryNumber ?? '—'} — لا تُحذف. يُعكس القيد أولاً؛ العكس هو ما يحرّر السجل.`);
+  console.error('  أضِف --reverse-date YYYY-MM-DD (ومعه --reopen "السبب" إن كانت فترته مقفلة).');
   process.exit(1);
+}
+
+if (st.lock) {
+  const revPeriod = String(reverseDate).slice(0, 7);
+  const revSnap = await db.collection('accounting_periods').doc(revPeriod).get();
+  const revClosed = revSnap.exists && revSnap.data().status === 'closed';
+
+  if (revClosed && !reopenReason) {
+    console.error(`\n✗ فترة العكس ${revPeriod} مقفلة. أضِف --reopen "السبب" لفتحها ثم إعادة إقفالها، أو اختر تاريخاً في فترة مفتوحة.`);
+    process.exit(1);
+  }
+  if (revClosed) {
+    await reopenPeriod(db, FieldValue, revPeriod, { userId: actor, reason: reopenReason });
+    console.log(`\n↺ فُتحت الفترة ${revPeriod} — ${reopenReason}`);
+  }
+
+  const rev = await reverseEntry(db, FieldValue, st.lock.entryId, {
+    entryDate: reverseDate,
+    description: `عكس قيد رقم ${st.lock.entryNumber ?? '—'} — غسلة سُجّلت خطأً: ${row.biker_name || ''}`.trim(),
+    userId: actor,
+  });
+  console.log(`✓ عُكس القيد رقم ${st.lock.entryNumber ?? '—'} بقيدٍ عكسي رقم ${rev.entryNumber ?? '—'} بتاريخ ${reverseDate}.`);
+
+  await db.collection('washes').doc(id).delete();
+  console.log('✓ حُذفت الدفعة.');
+
+  if (revClosed) {
+    // الإقفال يعيد فحص التوازن على البيانات الطازجة — فلو ترك العكس شيئاً
+    // غير متوازن، يُرفض الإقفال هنا ويُقال، بدل أن يُقفل على خلل.
+    await closePeriod(db, FieldValue, revPeriod, { userId: actor });
+    console.log(`↻ أُعيد إقفال الفترة ${revPeriod}.`);
+  }
+  process.exit(0);
 }
 
 if (st.periodClosed) {

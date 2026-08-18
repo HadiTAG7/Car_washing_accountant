@@ -39,7 +39,7 @@ import {
 import { TaxPolicyError } from './taxPolicy.js';
 import { PurchaseTaxError } from './purchaseTax.js';
 import {
-  addStartupEntry, deleteStartupEntry, assignStartupUnits,
+  addStartupEntry, deleteStartupEntry, updateStartupEntry, assignStartupUnits,
   convertLegacyStartupSpend,
   updateStartupPlan, deleteStartupPlan, StartupCostError,
 } from './startupCosts.js';
@@ -292,6 +292,19 @@ export const HANDLERS = {
     guard: 'startupWriter',
     run: ({ db, FieldValue, data, uid, role }) => deleteStartupEntry(db, FieldValue, {
       entryId: data?.entryId,
+    }, { userId: uid, role }),
+  },
+
+  // ── تعديل مصروف مسجَّل ──
+  // Operational work, same guard as recording it. The interesting half is on
+  // the server: what may change depends on whether the row is already in the
+  // books, and a description change carries into the journal narration in the
+  // same transaction — so the ledger never describes a document that no longer
+  // says that.
+  startupUpdateEntry: {
+    guard: 'startupWriter',
+    run: ({ db, FieldValue, data, uid, role }) => updateStartupEntry(db, FieldValue, {
+      entryId: data?.entryId, patch: data?.patch,
     }, { userId: uid, role }),
   },
 

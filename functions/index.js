@@ -80,6 +80,7 @@ export const ledgerEnsureAccount = callable('ledgerEnsureAccount');
 // ─── سجل مصاريف بند التأسيس ──────────────────────────────────────────────
 export const startupAddEntry = callable('startupAddEntry');
 export const startupDeleteEntry = callable('startupDeleteEntry');
+export const startupUpdateEntry = callable('startupUpdateEntry');
 export const startupAssignUnits = callable('startupAssignUnits');
 export const startupConvertLegacySpend = callable('startupConvertLegacySpend');
 export const startupUpdatePlan = callable('startupUpdatePlan');

@@ -38,6 +38,7 @@ const ENTRIES = [
 
 function renderLedger({
   units = null, entries = ENTRIES, addEntry = vi.fn(), onAssignUnits = null,
+  updateEntry = undefined,
 } = {}) {
   render(
     <ExpenseLedgerModal
@@ -52,6 +53,7 @@ function renderLedger({
         loading: false,
         error: null,
         addEntry,
+        updateEntry,
         deleteEntry: vi.fn(),
       }}
     />,
@@ -292,5 +294,77 @@ describe('ExpenseLedgerModal — بند بلا تقسيمات', () => {
     submit();
     expect(addEntry).toHaveBeenCalledTimes(1);
     expect(addEntry.mock.calls[0][0].unit).toBeUndefined();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// تعديل مصروف مسجَّل
+// ═══════════════════════════════════════════════════════════════════════════
+// «أبغى أعدّل في اسم الفواتير — حالياً ما أقدر.» صحيح: لم يكن هناك استدعاء
+// تعديل أصلاً. وما يحرسه هذا الملف هو نصف الواجهة: أن القلم يظهر فقط حين
+// يملك السجلّ استدعاءً، وأن النموذج يُعبَّأ بالقيم القائمة، وأن ما يصل
+// `updateEntry` هو المعرّف والحمولة كاملةً.
+describe('ExpenseLedgerModal — تعديل مصروف', () => {
+  it('لا قلم حين لا يملك السجلّ استدعاء تعديل — المصاريف السنوية تشارك المكوّن', () => {
+    renderLedger({ units: UNITS });
+    expect(screen.queryByLabelText(/^تعديل /)).toBeNull();
+  });
+
+  it('والقلم يُعبّئ النموذج بقيم المصروف ويقلبه إلى وضع تعديل', () => {
+    renderLedger({ units: UNITS, updateEntry: vi.fn() });
+    fireEvent.click(screen.getByLabelText('تعديل مروحة سقف'));
+
+    expect($('input[name="description"]').value).toBe('مروحة سقف');
+    expect($('input[name="amount"]').value).toBe('1200');
+    expect($('select[name="unit"]').value).toBe('سكن النزهة');
+    expect(clean(document.body.textContent)).toContain('تعديل مصروف مسجَّل');
+    const btn = [...document.querySelectorAll('button')].find((b) => b.type === 'submit');
+    expect(clean(btn.textContent)).toBe('حفظ التعديل');
+  });
+
+  it('و`updateEntry` يستلم المعرّف والحمولة — لا `addEntry`', () => {
+    const updateEntry = vi.fn();
+    const addEntry = vi.fn();
+    renderLedger({ units: UNITS, updateEntry, addEntry });
+    fireEvent.click(screen.getByLabelText('تعديل مروحة سقف'));
+    set('input[name="description"]', 'مروحة سقف — سكن الشمال');
+    set('select[name="unit"]', 'سكن الشمال');
+    submit();
+
+    expect(addEntry).not.toHaveBeenCalled();
+    expect(updateEntry).toHaveBeenCalledTimes(1);
+    expect(updateEntry.mock.calls[0][0]).toBe('e1');
+    expect(updateEntry.mock.calls[0][1]).toMatchObject({
+      description: 'مروحة سقف — سكن الشمال',
+      unit: 'سكن الشمال',
+      amount: 1200,
+      spentDate: '2026-08-01',
+    });
+  });
+
+  it('و«إلغاء التعديل» يعيد النموذج فارغاً إلى وضع الإضافة', () => {
+    renderLedger({ units: UNITS, updateEntry: vi.fn() });
+    fireEvent.click(screen.getByLabelText('تعديل مروحة سقف'));
+    fireEvent.click(screen.getByRole('button', { name: 'إلغاء التعديل' }));
+
+    expect($('input[name="description"]').value).toBe('');
+    const btn = [...document.querySelectorAll('button')].find((b) => b.type === 'submit');
+    expect(clean(btn.textContent)).toBe('إضافة المصروف');
+  });
+
+  it('ورفضُ الخادم للتعديل يُقرأ، والنموذج يبقى في وضع التعديل', async () => {
+    // رسالة «المبلغ والتاريخ لا تتغيّر بعد الترحيل» يكتبها الخادم لهذا
+    // المستخدم — فلو ابتُلعت لظنّ أن التعديل تمّ.
+    const updateEntry = vi.fn().mockRejectedValue(
+      new Error('هذا المصروف مُرحّل بالقيد رقم 12 — المبلغ والتاريخ لا تتغيّر بعده.'),
+    );
+    renderLedger({ units: UNITS, updateEntry });
+    fireEvent.click(screen.getByLabelText('تعديل مروحة سقف'));
+    set('input[name="amount"]', '900');
+    submit();
+
+    await vi.waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+    expect(screen.getByRole('alert').textContent).toContain('مُرحّل بالقيد رقم');
+    expect($('input[name="amount"]').value).toBe('900');
   });
 });

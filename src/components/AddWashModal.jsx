@@ -10,7 +10,12 @@ function todayISO() {
   return new Date(d.getTime() - tzOffsetMs).toISOString().slice(0, 10);
 }
 
+// `bikerPick` هو معرّف البايكر، أو `OTHER` حين يكون الغاسل غير مسجّل.
+// و`bikerName` يبقى موجوداً في الحالة لأنه ما يُكتب فعلاً على الغسلة.
+export const OTHER_BIKER = '__other__';
+
 const EMPTY_TEMPLATE = {
+  bikerPick:  '',
   bikerName:  '',
   quantity:   '1',
   price:      '40',
@@ -33,14 +38,24 @@ export default function AddWashModal({
   const editing = Boolean(initialValues?.id);
   const [form, setForm] = useState(EMPTY_TEMPLATE);
   const [submitting, setSubmitting] = useState(false);
-  // سجل البايكرات يغذّي الاقتراحات — والحقل يبقى نصاً حراً، لأن السجلات
-  // القديمة أسماء حرة ولأن فريقاً مؤقتاً بلا ملف يظل غسلةً تستحق التسجيل.
+  // ── منتقٍ بمخرج، لا نصٌّ حرّ ولا قائمةٌ مغلقة ──
+  // كان الحقل نصاً حراً باقتراحات، فيُكتب «أحمد» مرةً و«احمد» أخرى ولا
+  // يجمعهما شيء — والاسم هو مفتاح ربط الغسلة بملف صاحبها وعمولته. فصار
+  // منتقياً: الاسم يأتي من السجل لا من الكتابة. وبقي المخرج «اسم آخر» لأن
+  // فريقاً مؤقتاً بلا ملف يظل غسلةً تستحق التسجيل، والسجلات القديمة أسماء
+  // حرة يجب أن تبقى قابلة للتحرير كما هي.
   const { bikers } = useBikers();
 
   useEffect(() => {
     if (!isOpen) return;
     if (initialValues?.id) {
+      // لا يُستشار السجل هنا: `bikers` مصفوفةٌ بهوية جديدة كل رندر ما دامت
+      // تُحمَّل، فوضعها في الاعتماديات يُشعل حلقة رندر لا تنتهي — وحذفها من
+      // الاعتماديات مع قراءتها هنا يجمّد القرار على لحظةٍ كانت القائمة فيها
+      // فارغة. فالقرار يُؤجَّل إلى الرندر (`pickValue` أدناه).
       setForm({
+        bikerPick: initialValues.bikerId
+          || (initialValues.bikerName ? OTHER_BIKER : ''),
         bikerName: initialValues.bikerName || '',
         quantity:  String(Math.max(1, parseInt(initialValues.quantity, 10) || 1)),
         price:     initialValues.price ? String(initialValues.price) : '0',
@@ -56,6 +71,14 @@ export default function AddWashModal({
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   }
 
+  // ── معرّفٌ لم يعد في السجل يسقط إلى «اسم آخر» ──
+  // يُحسب عند الرندر لا في الحالة: البايكرية قد يصلون بعد فتح المودال، وقد
+  // يُحذف ملفٌ بعد تسجيل غسلته. وفي الحالة الثانية يبقى الاسم المحفوظ ظاهراً
+  // — وهو ما تقرؤه الإحصاءات، فاختفاؤه من الشاشة يجعل التحرير يمحوه.
+  const pickValue = form.bikerPick && form.bikerPick !== OTHER_BIKER
+    && !bikers.some((b) => b.id === form.bikerPick)
+    ? OTHER_BIKER : form.bikerPick;
+
   const quantity     = Math.max(1, parseInt(form.quantity, 10) || 0);
   const price        = Math.max(0, parseFloat(form.price) || 0);
   const batchRevenue = quantity * price;
@@ -66,14 +89,16 @@ export default function AddWashModal({
     if (!isValid || submitting) return;
     setSubmitting(true);
     try {
-      const trimmedName = form.bikerName.trim();
-      // Exact-name match links the wash to the registry. The NAME stays the
-      // display/aggregation key (legacy rows carry only that); the id is
-      // forward provisioning so a future rename can follow its washes.
-      const registered = bikers.find((b) => b.name === trimmedName);
+      // ── الاسم يُكتب دائماً، والمعرّف معه حين يوجد ──
+      // `bikerName` هو مفتاح الربط الذي تقرؤه إحصاءات البايكر وسطر العمولات
+      // وزر «استيراد الأسماء» — ثلاثة مستهلكين ينهارون بصمت لو كُتب المعرّف
+      // وحده. فالمنتقي يأخذ الاسم من صفّ السجل نفسه (لا من كتابة المستخدم)،
+      // فينتهي اختلاف الإملاء بالبناء بدل أن يُطارَد بالتطبيع.
+      const picked = pickValue && pickValue !== OTHER_BIKER
+        ? bikers.find((b) => b.id === pickValue) : null;
       const payload = {
-        bikerName: trimmedName,
-        bikerId:   registered?.id || null,
+        bikerName: picked ? picked.name : form.bikerName.trim(),
+        bikerId:   picked ? picked.id : null,
         quantity,
         price,
         washDate:  form.washDate || '',
@@ -123,30 +148,40 @@ export default function AddWashModal({
 
         <form onSubmit={handleSubmit} className="p-5 sm:p-6 space-y-5">
           <div>
-            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5" htmlFor="bikerName">
-              اسم البايكر المسؤول <span className="text-[11px] font-normal text-slate-500 dark:text-slate-400">(اختياري)</span>
+            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5" htmlFor="bikerPick">
+              البايكر المسؤول <span className="text-[11px] font-normal text-slate-500 dark:text-slate-400">(اختياري)</span>
             </label>
-            <input
-              id="bikerName"
-              type="text"
-              name="bikerName"
-              value={form.bikerName}
+            <select
+              id="bikerPick"
+              name="bikerPick"
+              value={pickValue}
               onChange={handleChange}
-              placeholder="مثال: أحمد، أو فريق الورديّة الصباحية"
               autoFocus
-              list="wash-bikers-list"
               className="w-full px-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:border-primary-500 transition-colors"
-            />
-            <datalist id="wash-bikers-list">
+            >
+              <option value="">— بلا اسم —</option>
               {bikers.map((b) => (
-                <option key={b.id} value={b.name} />
+                <option key={b.id} value={b.id}>{b.name}</option>
               ))}
-            </datalist>
-            {bikers.length > 0 && (
-              <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                اكتب بنفس الاسم المسجّل في تبويب «البايكر» لتظهر الغسلة في ملفه.
-              </p>
+              <option value={OTHER_BIKER}>اسم آخر (غير مسجّل)…</option>
+            </select>
+            {/* المخرج: يظهر عند اختيار «اسم آخر» فقط، بنفس الحقل الحر القديم. */}
+            {pickValue === OTHER_BIKER && (
+              <input
+                id="bikerName"
+                type="text"
+                name="bikerName"
+                value={form.bikerName}
+                onChange={handleChange}
+                placeholder="مثال: فريق الورديّة الصباحية، أو بديل مؤقت"
+                className="mt-2 w-full px-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:border-primary-500 transition-colors"
+              />
             )}
+            <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+              {bikers.length === 0
+                ? 'لا بايكر مسجّلاً بعد — سجّلهم في تبويب «البايكر» ليظهروا هنا.'
+                : 'الاختيار من السجل يربط الغسلة بملف صاحبها وعمولته تلقائياً.'}
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-4">

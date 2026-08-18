@@ -15,7 +15,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   suggestUnitFor, suggestUnitAssignments, unassignedCount,
-  groupEntriesByUnit, UNASSIGNED,
+  groupEntriesByUnit, UNASSIGNED, tolerantArabicPattern, replaceTolerant,
 } from '../unitSuggest';
 
 const UNITS = ['سكن النزهة', 'سكن الشمال', 'سكن الروضة'];
@@ -130,5 +130,46 @@ describe('groupEntriesByUnit', () => {
     ];
     const total = groupEntriesByUnit(entries, UNITS).reduce((s, g) => s + g.total, 0);
     expect(total).toBe(700);
+  });
+});
+
+describe('replaceTolerant — الاستبدال في النص الأصلي', () => {
+  // التطبيع يجيب عن «هل يتطابقان؟» ولا يكفي للاستبدال: يحذف حركات ويطوي
+  // مسافات، فتضيع خريطة المواضع بين المطبَّع والأصل. فالنمط هو الحل.
+  it('يستبدل رغم ة/ه، وما حول الاسم لا يُمَسّ', () => {
+    expect(replaceTolerant('تزويد سكن النزهه بمروحة اضافية', 'سكن النزهة', 'سكن الشمال'))
+      .toBe('تزويد سكن الشمال بمروحة اضافية');
+  });
+
+  it('ويتجاوز الحركات والتطويل والمسافات المكرّرة في النص الأصلي', () => {
+    expect(replaceTolerant('صيانة تكييف سِكن  النَزهــة رقم 3', 'سكن النزهة', 'سكن الشمال'))
+      .toBe('صيانة تكييف سكن الشمال رقم 3');
+  });
+
+  it('ويعامل أ/إ/آ و ى/ي كحرفٍ واحد', () => {
+    expect(replaceTolerant('اثاث لسكن الأحمدي', 'سكن الاحمدى', 'سكن الغرب'))
+      .toBe('اثاث لسكن الغرب');
+  });
+
+  it('ونصٌّ لا يذكره يعود كما هو — لا استبدال بالتقريب', () => {
+    expect(replaceTolerant('ثلاجة لسكن الروضة', 'سكن النزهة', 'سكن الشمال'))
+      .toBe('ثلاجة لسكن الروضة');
+  });
+
+  it('ويستبدل كل ظهور، لا الأول وحده', () => {
+    expect(replaceTolerant('نقل من سكن النزهة إلى سكن النزهه', 'سكن النزهة', 'سكن الشمال'))
+      .toBe('نقل من سكن الشمال إلى سكن الشمال');
+  });
+
+  it('ومطلوبٌ فارغ لا نمط له، فلا يُبدّل شيئاً', () => {
+    expect(tolerantArabicPattern('   ')).toBeNull();
+    expect(tolerantArabicPattern('ًٌٍ')).toBeNull();
+    expect(replaceTolerant('نص', '', 'س')).toBe('نص');
+  });
+
+  it('والرموز التنظيمية تُهرَّب فلا تصير نمطاً', () => {
+    // «سكن (أ)» فيه قوسان — لو لم يُهرَّبا لصارا مجموعةً في التعبير النمطي.
+    expect(replaceTolerant('فاتورة سكن (أ) رقم 5', 'سكن (أ)', 'سكن الشمال'))
+      .toBe('فاتورة سكن الشمال رقم 5');
   });
 });

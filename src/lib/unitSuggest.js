@@ -133,3 +133,52 @@ export function groupEntriesByUnit(entries = [], units = []) {
   }
   return rows;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// نمطٌ عربيٌّ متسامح — للبحث والاستبدال في النص الأصلي
+// ═══════════════════════════════════════════════════════════════════════════
+// `normalizeUnitName` تُجيب عن «هل يتطابقان؟» وتكفي للمطابقة. لكنها لا تكفي
+// للاستبدال: التطبيع يحذف حركات ويطوي مسافات، فيتغيّر الطول وتضيع خريطة
+// المواضع بين النص المطبَّع والنص الأصلي — فلا يُعرف أين يقع البديل.
+//
+// فبدل تطبيع النص، يُطبَّع **المطلوب** إلى نمطٍ يقبل كل إملاءاته: «سكن النزهة»
+// يصير نمطاً يطابق «سِكن  النزهه» في مكانه من الجملة، فيحلّ البديل محلّه
+// بالضبط وما حوله لا يُمَسّ.
+const EQUIVALENTS = ['أإآٱا', 'ةه', 'ىي'];
+const MARKS = '[\u064B-\u0652\u0640]*';
+
+function escapeRegex(ch) {
+  return ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** فئة الحرف: كل ما يُعامَل مثله حرفاً واحداً. */
+function charClass(ch) {
+  const cls = EQUIVALENTS.find((c) => c.includes(ch));
+  return cls ? `[${cls}]` : escapeRegex(ch);
+}
+
+/**
+ * نمطٌ يطابق هذا النص بأي إملاءٍ من إملاءاته — أو `null` إن لم يبقَ منه شيء.
+ *
+ * The needle's own diacritics are dropped and the haystack's are tolerated
+ * between letters, spaces match any run of whitespace, and ة/ه · أإآٱ/ا · ى/ي
+ * are one letter each — the same equivalences `normalizeUnitName` applies,
+ * expressed as a pattern instead of a transformation.
+ */
+export function tolerantArabicPattern(text) {
+  const src = String(text ?? '').replace(/\s+/g, ' ').trim();
+  const parts = [];
+  for (const ch of src) {
+    if (/[\u064B-\u0652\u0640]/.test(ch)) continue;
+    parts.push(/\s/.test(ch) ? '\\s+' : charClass(ch));
+  }
+  if (!parts.length) return null;
+  return new RegExp(parts.join(MARKS), 'g');
+}
+
+/** يستبدل كل ظهورٍ للنص المطلوب — ويُرجع النص كما هو إن لم يظهر. */
+export function replaceTolerant(text, from, to) {
+  const pattern = tolerantArabicPattern(from);
+  if (!pattern) return String(text ?? '');
+  return String(text ?? '').replace(pattern, to);
+}

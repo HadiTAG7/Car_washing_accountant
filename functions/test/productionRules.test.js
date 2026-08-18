@@ -222,6 +222,48 @@ d('رحلة الإنتاج تحت firestore.rules الفعلية', () => {
       }, 120_000);
     }
 
+    // ── الاستثناء الوحيد: وسم السكن على دفعة إيجار مُرحَّلة ───────────
+    // Rent is recorded and posted long before anyone asks «كم إيجار سكن
+    // الشمال للساكن؟». If tagging the unit needed an unposted entry, the
+    // housing tab could never read a riyal of rent already in the books.
+    //
+    // Both directions are asserted, and the SECOND is the load-bearing one:
+    // a `hasOnly(['unit'])` written wrong — or widened later by someone
+    // adding a field to the list — reopens amount and date on a posted,
+    // possibly period-closed entry. The smuggling case (unit AND amount in
+    // one write) is the exact shape that mistake would take.
+    it('annual_expense_entries: يُقبل وسم السكن بعد الترحيل، ويبقى المال مرفوضاً', async () => {
+      await adb.collection('annual_expense_entries').doc('r1').set({
+        annual_expense_id: 'rent1', description: 'إيجار سكن', amount: 24000,
+        spent_date: '2026-01-05', unit: '',
+      });
+      await postSource(adb, FieldValue, { kind: 'annual', sourceId: 'r1' }, { userId: 'acct1' });
+      expect((await adb.collection(COL.LOCKS).doc('annual__r1').get()).exists).toBe(true);
+
+      // ١) الوسم وحده يمرّ — تحليلٌ لا مال.
+      await assertSucceeds(updateDoc(doc(ctx.op, 'annual_expense_entries', 'r1'), { unit: 'سكن الشمال' }));
+      expect((await adb.collection('annual_expense_entries').doc('r1').get()).data().unit)
+        .toBe('سكن الشمال');
+
+      // ٢) والمال والتاريخ يبقيان مرفوضين على نفس القيد.
+      await assertFails(updateDoc(doc(ctx.op, 'annual_expense_entries', 'r1'), { amount: 1 }));
+      await assertFails(updateDoc(doc(ctx.op, 'annual_expense_entries', 'r1'), { spent_date: '2026-02-01' }));
+
+      // ٣) ولا يُهرَّب المبلغ بجوار الوسم في كتابةٍ واحدة.
+      await assertFails(updateDoc(doc(ctx.op, 'annual_expense_entries', 'r1'), {
+        unit: 'سكن الغرب', amount: 1,
+      }));
+      expect((await adb.collection('annual_expense_entries').doc('r1').get()).data().amount)
+        .toBe(24000);
+
+      // ٤) والحذف يبقى ممنوعاً — الوسم ليس بوّابة.
+      await assertFails(deleteDoc(doc(ctx.op, 'annual_expense_entries', 'r1')));
+
+      // ٥) والاستثناء ليس بوّابةً لغير المخوّل — `isOperator()` ما زال شرطاً.
+      const outsider = env.unauthenticatedContext().firestore();
+      await assertFails(updateDoc(doc(outsider, 'annual_expense_entries', 'r1'), { unit: 'سكن الغرب' }));
+    }, 120_000);
+
     // ── سجل مصاريف التأسيس: مغلق تماماً، لا «حرّ ثم محميّ» ─────────────
     // The other four are free until their posting lock exists. This one is
     // never free: every write re-sums the siblings into the parent's

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { X, Plus, Pencil, Repeat, Check, AlertTriangle } from 'lucide-react';
 import { formatCurrency, formatNumber } from '../data/initialData';
+import { unitListProblems, parseUnitsText } from '../lib/accounting/startupMigration';
 import CategorySelect from './CategorySelect';
 
 const EMPTY = {
@@ -11,6 +12,7 @@ const EMPTY = {
   paymentMonth:   '1',
   paymentDay:     '1',
   paymentStatus:  'pending',
+  unitsText:      '',
 };
 
 const MONTH_NAMES = [
@@ -44,6 +46,10 @@ export default function AddAnnualExpenseModal({
   const editing = Boolean(initialValues?.id);
   const [form, setForm] = useState(EMPTY);
   const [submitting, setSubmitting] = useState(false);
+  // ── ما يرفضه الخادم يجب أن يُقرأ ──
+  // `handleSubmit` was try/finally with no catch, so a rejected save closed
+  // the modal exactly like an accepted one and the typed values were gone.
+  const [saveError, setSaveError] = useState('');
 
   // Inline "add new category" UI state.
   const [showNewCat, setShowNewCat] = useState(false);
@@ -70,6 +76,7 @@ export default function AddAnnualExpenseModal({
         paymentMonth:   clampMonthString(initialValues.paymentMonth, '1'),
         paymentDay:     clampDayString(initialValues.paymentDay, '1'),
         paymentStatus:  initialValues.paymentStatus === 'paid' ? 'paid' : 'pending',
+        unitsText:      (initialValues.units || []).join('\n'),
       });
     } else {
       setForm({ ...EMPTY });
@@ -107,7 +114,19 @@ export default function AddAnnualExpenseModal({
   async function handleSubmit(e) {
     e.preventDefault();
     if (!isValid || submitting) return;
+
+    // نفس دالة التحقق التي يستعملها بند التأسيس — فاسمٌ مكرّر أو مفرط الطول
+    // يُرفض بالجملة نفسها في النموذجين، ويُرفض بصوتٍ مسموع: قائمةٌ تُقصَّر
+    // بصمت عند الحفظ هي قائمةٌ يظنّ صاحبها أنه حفظها.
+    const units = parseUnitsText(form.unitsText);
+    const unitProblems = unitListProblems(units);
+    if (unitProblems.length) {
+      setSaveError(unitProblems[0]);
+      return;
+    }
+
     setSubmitting(true);
+    setSaveError('');
     try {
       const payload = {
         expenseName:   form.expenseName.trim(),
@@ -117,6 +136,9 @@ export default function AddAnnualExpenseModal({
         paymentMonth,
         paymentDay,
         paymentStatus: form.paymentStatus === 'paid' ? 'paid' : 'pending',
+        // يُرسَل دائماً وعلى المسارين — قائمةٌ أُفرغت يجب أن تمحو سابقتها،
+        // و`units` غائبةً تعني «لا تمسّها» في `toAnnualExpenseUpdate`.
+        units,
       };
       if (editing && onUpdate) {
         await onUpdate(initialValues.id, payload);
@@ -124,6 +146,8 @@ export default function AddAnnualExpenseModal({
         await onAdd(payload);
       }
       onClose();
+    } catch (err) {
+      setSaveError(err?.message || 'تعذّر الحفظ — لم يُسجَّل شيء.');
     } finally {
       setSubmitting(false);
     }
@@ -353,6 +377,44 @@ export default function AddAnnualExpenseModal({
               <option value="paid">مدفوع</option>
             </select>
           </div>
+
+          {/* ── تقسيمات البند ──
+              «الإيجار مسجّل في المصاريف السنوية — أبغاه يظهر في صفحة السكن».
+              The list lives on the PLAN, not derived from the payments, so it
+              shows before anything has been paid — and the item keeps ONE
+              annual cost, with the units as a breakdown under it. Naming the
+              housing units here is what lets the housing tab read this item's
+              rent per unit instead of one lump nobody can divide. */}
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5" htmlFor="unitsText">
+              تقسيمات البند
+              <span className="text-[11px] font-normal text-slate-500 dark:text-slate-400 mr-1">— اختياري، اسم في كل سطر</span>
+            </label>
+            <textarea
+              id="unitsText"
+              name="unitsText"
+              value={form.unitsText}
+              onChange={handleChange}
+              rows={3}
+              placeholder={'سكن الشمال\nسكن الغرب'}
+              className="w-full px-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm leading-relaxed focus:outline-none focus:border-primary-500 transition-colors"
+            />
+            <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+              تظهر داخل سجل المصاريف، ويُنسب كل دفعة لواحدٍ منها. لبند الإيجار:
+              اكتب أسماء السكنات كما هي في تبويب «السكن» ليقرأ إيجار كلٍّ منها.
+              التكلفة السنوية تبقى واحدة للبند كله.
+            </p>
+          </div>
+
+          {saveError && (
+            <div
+              role="alert"
+              className="flex items-start gap-2 bg-rose-50 dark:bg-rose-500/10 border border-rose-100 dark:border-rose-500/30 rounded-control px-3 py-2.5 text-[12px] text-rose-700 dark:text-rose-300 font-medium leading-relaxed"
+            >
+              <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+              <span className="flex-1 break-words">{saveError}</span>
+            </div>
+          )}
 
           {/* Live total — quantity × annual unit cost */}
           <div className="bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-smallcard p-4 text-sm">

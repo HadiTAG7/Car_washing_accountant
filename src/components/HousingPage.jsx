@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
-  Home, Users, Wallet, Scale, Pencil, UserPlus, X as XIcon, Inbox,
+  Home, Users, Wallet, Scale, Pencil, UserPlus, X as XIcon, Inbox, KeyRound,
 } from 'lucide-react';
 import TopBar from './TopBar';
 import { Card, SectionHeader, StatCard, EmptyState } from './UI';
@@ -11,11 +11,13 @@ import EditHousingUnitModal from './EditHousingUnitModal';
 import { useBikers } from '../hooks/useBikers';
 import { useStartupCosts } from '../hooks/useStartupCosts';
 import { useAllStartupEntries } from '../hooks/useStartupCostEntries';
+import { useAnnualExpenses } from '../hooks/useAnnualExpenses';
+import { useAllAnnualEntries } from '../hooks/useAnnualExpenseEntries';
 import { useHousingUnits } from '../hooks/useHousingUnits';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 import { describeBackendError } from '../lib/firebaseClient';
 import { formatCurrency, formatNumber } from '../data/initialData';
-import { buildHousingRows, unhousedBikers } from '../lib/housingStats';
+import { buildHousingRows, unhousedBikers, rentByUnit, rentOnlyUnits } from '../lib/housingStats';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // السكن — من يسكن أين، وكم كلّف السكن للساكن الواحد مقابل التقدير
@@ -47,6 +49,9 @@ export default function HousingPage() {
   const { bikers, loading: bikersLoading, error: bikersError, updateBiker } = useBikers();
   const { items, loading: itemsLoading, error: itemsError, refetch: refetchItems } = useStartupCosts();
   const { entries, loading: entriesLoading, error: entriesError, refetch: refetchEntries } = useAllStartupEntries();
+  // الإيجار يُقرأ من الدفاتر حيث هو مسجَّل — لا يُكتب هنا مرةً ثانية.
+  const { items: annualItems, error: annualError, refetch: refetchAnnual } = useAnnualExpenses();
+  const { entries: annualEntries, refetch: refetchAnnualEntries } = useAllAnnualEntries();
   const { metaRows, error: metaError, upsertUnitMeta, refetch: refetchMeta } = useHousingUnits();
   const { canMutate } = usePartnerView();
 
@@ -60,12 +65,17 @@ export default function HousingPage() {
   const closeToast = useCallback(() => setToast((t) => ({ ...t, open: false })), []);
 
   const loading = bikersLoading || itemsLoading || entriesLoading;
-  const queryError = bikersError || itemsError || entriesError;
+  const queryError = bikersError || itemsError || entriesError || annualError;
+
+  const rentIndex = useMemo(
+    () => rentByUnit({ annualItems, annualEntries }),
+    [annualItems, annualEntries],
+  );
 
   // الصورة كلها مشتقة في خطوة واحدة — البنود ذات التقسيمات، بساكنيها وتكلفتها.
   const housingRows = useMemo(
-    () => buildHousingRows({ items, entries, bikers, metaRows }),
-    [items, entries, bikers, metaRows],
+    () => buildHousingRows({ items, entries, bikers, metaRows, rentIndex }),
+    [items, entries, bikers, metaRows, rentIndex],
   );
 
   const allUnitNames = useMemo(
@@ -76,6 +86,12 @@ export default function HousingPage() {
   const unhoused = useMemo(
     () => unhousedBikers(bikers, allUnitNames),
     [bikers, allUnitNames],
+  );
+
+  // إيجارٌ لسكنٍ لا بطاقة له — لأن التجهيز لم يُقسَّم عليه. يُسمّى بدل أن يسقط.
+  const strayRent = useMemo(
+    () => rentOnlyUnits(rentIndex, allUnitNames),
+    [rentIndex, allUnitNames],
   );
 
   const kpis = useMemo(() => {
@@ -89,8 +105,13 @@ export default function HousingPage() {
       : null;
     // التقدير المعروض إجمالاً هو تقدير أول بندٍ له تقسيمات — عملياً بند واحد.
     const benchmark = housingRows[0]?.benchmark ?? null;
-    return { unitCount: units.length, residents, capacity, cost, per, benchmark };
-  }, [housingRows]);
+    // الإيجار لا يُجمع مع التجهيز — رأسماليٌّ مرةً واحدة مقابل سنويٍّ متكرر.
+    const rent = units.reduce((s, u) => s + u.rent, 0) + rentIndex.unassigned;
+    const rentPer = residents > 0
+      ? units.reduce((s, u) => s + u.rent, 0) / residents
+      : null;
+    return { unitCount: units.length, residents, capacity, cost, per, benchmark, rent, rentPer };
+  }, [housingRows, rentIndex]);
 
   async function guarded(label, fn) {
     try {
@@ -122,7 +143,10 @@ export default function HousingPage() {
     if (!ok) throw new Error('save-failed'); // المودال يبقى مفتوحاً عند الفشل
   };
 
-  const refetchAll = () => { refetchItems(); refetchEntries(); refetchMeta(); };
+  const refetchAll = () => {
+    refetchItems(); refetchEntries(); refetchMeta();
+    refetchAnnual(); refetchAnnualEntries();
+  };
 
   /** منتقي إسكانٍ يُقرأ كزرّ: يعود فارغاً بعد كل اختيار، كمنتقي التعيين الجماعي. */
   function AssignSelect({ unitName, exclude }) {
@@ -196,11 +220,21 @@ export default function HousingPage() {
           <StatCard
             icon={Scale}
             tone={kpis.per !== null && kpis.benchmark && kpis.per > kpis.benchmark ? 'amber' : 'emerald'}
-            label="التكلفة للساكن"
+            label="تجهيز · للساكن"
             value={kpis.per === null ? '—' : formatCurrency(kpis.per)}
             sub={kpis.benchmark
               ? `التقدير: ${formatCurrency(kpis.benchmark)} للساكن`
               : 'اربط الساكنين ليُحسب'}
+          />
+          {/* الإيجار بطاقةٌ مستقلة، لا يُضاف إلى التجهيز: ذاك رأسمالٌ صُرف
+              مرةً وهذا تكلفةٌ تتكرر كل سنة. جمعهما يعطي رقماً بلا معنى. */}
+          <StatCard
+            icon={KeyRound}
+            label="الإيجار السنوي"
+            value={kpis.rent > 0 ? formatCurrency(kpis.rent) : '—'}
+            sub={kpis.rentPer !== null && kpis.rentPer > 0
+              ? `${formatCurrency(kpis.rentPer)} للساكن سنوياً · ${formatCurrency(kpis.rentPer / 12)} شهرياً`
+              : 'من المصاريف السنوية — قسِّم بند الإيجار على السكنات'}
           />
         </div>
 
@@ -306,6 +340,35 @@ export default function HousingPage() {
                       </div>
                     </div>
 
+                    {/* ── الإيجار: سطرٌ ثانٍ لا يُجمع مع الأول ──
+                        التجهيز صرفةٌ رأسمالية مرةً واحدة، والإيجار تكلفةٌ
+                        سنوية تتكرر. لهما مرجعان مختلفان، فيُعرضان منفصلين. */}
+                    <div className="grid grid-cols-2 gap-3 text-sm border-t border-slate-100 dark:border-slate-800 pt-3">
+                      <div>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                          <KeyRound size={11} className="shrink-0" />
+                          الإيجار السنوي
+                          {u.rentEntryCount > 0 && <> ({formatNumber(u.rentEntryCount)} دفعة)</>}
+                        </p>
+                        <p className="font-bold text-slate-900 dark:text-slate-100 tabular-nums">
+                          {u.rent > 0 ? formatCurrency(u.rent) : '—'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400">إيجار الساكن</p>
+                        <p className="font-bold text-slate-900 dark:text-slate-100 tabular-nums">
+                          {u.rentPerResident === null || u.rent === 0
+                            ? '—'
+                            : <>
+                                {formatCurrency(u.rentPerResident)}
+                                <span className="mr-1 text-[11px] font-normal text-slate-500 dark:text-slate-400">
+                                  ({formatCurrency(u.rentPerResident / 12)} شهرياً)
+                                </span>
+                              </>}
+                        </p>
+                      </div>
+                    </div>
+
                     {u.notes && (
                       <p className="text-[12px] text-slate-600 dark:text-slate-400 leading-relaxed border-t border-slate-100 dark:border-slate-800 pt-2 whitespace-pre-wrap">
                         {u.notes}
@@ -325,6 +388,34 @@ export default function HousingPage() {
             )}
           </Card>
         ))}
+
+        {/* ── إيجارٌ في الدفاتر لم يصل بطاقةً ──
+            دفعةٌ بلا تقسيم، أو تقسيمٌ باسمٍ لا بطاقة له. الرقمان يُقالان
+            صراحةً: إيجارٌ مسجَّل لا يراه أحد أسوأ من إيجارٍ لم يُسجَّل. */}
+        {housingRows.length > 0 && (rentIndex.unassigned > 0 || strayRent.length > 0) && (
+          <Card className="p-4">
+            <div className="space-y-2 text-[12px] leading-relaxed">
+              {rentIndex.unassigned > 0 && (
+                <p className="text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/30 rounded-control px-3 py-2.5">
+                  {formatNumber(rentIndex.unassignedCount)} دفعة إيجار بمجموع{' '}
+                  <strong className="tabular-nums">{formatCurrency(rentIndex.unassigned)}</strong>{' '}
+                  بلا سكن — افتح بند الإيجار في تاب «المصاريف السنوية» وأسنِد كل دفعة لسكنها.
+                </p>
+              )}
+              {strayRent.length > 0 && (
+                <p className="text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/30 rounded-control px-3 py-2.5">
+                  إيجارٌ مُسنَد إلى سكناتٍ لا بطاقة لها هنا:{' '}
+                  {strayRent.map((u) => (
+                    <strong key={u.key} className="whitespace-nowrap">
+                      {u.name} ({formatCurrency(u.total)})
+                    </strong>
+                  )).reduce((acc, el) => (acc === null ? [el] : [...acc, '، ', el]), null)}
+                  {' '}— الاسم غير مذكور في تقسيمات بند التجهيز، فوحِّد التسمية بين البندين.
+                </p>
+              )}
+            </div>
+          </Card>
+        )}
 
         {/* من لا سكن معروفاً له — بنصّه الخام، فلا يختفي «حي النسيم» القديم */}
         {unhoused.length > 0 && housingRows.length > 0 && (

@@ -12,6 +12,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   housingUnitDocId, residentsOf, unhousedBikers, perResident, buildHousingRows,
+  rentByUnit, rentOnlyUnits,
 } from '../housingStats';
 
 const UNITS = ['سكن الشمال', 'سكن الغرب'];
@@ -144,5 +145,119 @@ describe('buildHousingRows', () => {
     const north = alone[0].units.find((u) => u.name === 'سكن الشمال');
     expect(north.perResident).toBeNull();
     expect(north.vsBenchmarkPct).toBeNull();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// الإيجار — يُقرأ من المصاريف السنوية، ولا يُجمع مع التجهيز
+// ═══════════════════════════════════════════════════════════════════════════
+// الإيجار مسجَّل في الدفاتر أصلاً؛ حقلٌ ثانٍ على بطاقة السكن كان سيعني رقمين
+// لشيءٍ واحد ينجرفان. فالادعاءات الحاملة ثلاثة: أن الإيجار يُقرأ من حيث هو
+// مقسوماً بالتطبيع نفسه؛ أن دفعةً بلا سكن **تُعَدّ ولا تُبتلع**؛ وأن الإيجار
+// يبقى حقلاً مستقلاً لا يُضاف إلى `cost` أبداً — فالتجهيز رأسمالٌ صُرف مرةً
+// والإيجار تكلفةٌ تتكرر كل سنة، ولهما مرجعان مختلفان.
+
+const RENT_ITEMS = [
+  { id: 'a1', expenseName: 'إيجار السكن', annualCost: 40000, units: UNITS },
+  // بندٌ سنويٌّ بلا تقسيمات — لا يدخل الحساب إطلاقاً.
+  { id: 'a2', expenseName: 'رخصة البلدية', annualCost: 1200, units: [] },
+];
+
+const RENT_ENTRIES = [
+  { id: 'r1', annualExpenseId: 'a1', amount: 24000, unit: 'سكن الشمال' },
+  { id: 'r2', annualExpenseId: 'a1', amount: 16000, unit: 'سكن  الغرب ' },  // إملاء آخر
+  { id: 'r3', annualExpenseId: 'a1', amount: 3000,  unit: '' },             // بلا سكن
+  { id: 'r4', annualExpenseId: 'a2', amount: 1200,  unit: '' },             // بندٌ بلا تقسيم
+];
+
+describe('rentByUnit', () => {
+  it('يجمع الإيجار لكل سكن بالتطبيع، ويتجاهل بنداً بلا تقسيمات', () => {
+    const idx = rentByUnit({ annualItems: RENT_ITEMS, annualEntries: RENT_ENTRIES });
+    // المفتاح هو الاسم المطبَّع، لا النص كما ورد على الدفعة.
+    expect([...idx.byUnit.keys()].sort()).toEqual(['سكن الغرب', 'سكن الشمال'].sort());
+    const north = [...idx.byUnit.values()].find((u) => u.name === 'سكن الشمال');
+    const west  = [...idx.byUnit.values()].find((u) => u.name === 'سكن الغرب');
+    expect(north.total).toBe(24000);
+    expect(west.total).toBe(16000);   // «سكن  الغرب » طابق «سكن الغرب»
+    expect(west.entryCount).toBe(1);
+    expect(north.itemNames).toEqual(['إيجار السكن']);
+  });
+
+  it('ودفعةٌ بلا سكن تُعَدّ صراحةً — مالٌ لا يختفي خلف تجميعٍ لم يسعه', () => {
+    const idx = rentByUnit({ annualItems: RENT_ITEMS, annualEntries: RENT_ENTRIES });
+    // ٣٠٠٠ من بند الإيجار وحده؛ الـ١٢٠٠ في بندٍ بلا تقسيمات فخارج الحساب كلياً.
+    expect(idx.unassigned).toBe(3000);
+    expect(idx.unassignedCount).toBe(1);
+  });
+
+  it('وبنودٌ عدّة على سكنٍ واحد تُجمع فيه — السكن مكانٌ لا ميزانية', () => {
+    const idx = rentByUnit({
+      annualItems: [...RENT_ITEMS, { id: 'a3', expenseName: 'كهرباء السكن', units: ['سكن الشمال'] }],
+      annualEntries: [...RENT_ENTRIES, { id: 'r5', annualExpenseId: 'a3', amount: 5000, unit: 'سكن الشمال' }],
+    });
+    const north = [...idx.byUnit.values()].find((u) => u.name === 'سكن الشمال');
+    expect(north.total).toBe(29000);
+    expect(north.itemNames).toEqual(['إيجار السكن', 'كهرباء السكن']);
+  });
+
+  it('وبلا بنودٍ سنوية: خريطةٌ فارغة لا انهيار', () => {
+    expect(rentByUnit().byUnit.size).toBe(0);
+    expect(rentByUnit({}).unassigned).toBe(0);
+  });
+});
+
+describe('buildHousingRows مع الإيجار', () => {
+  const rentIndex = rentByUnit({ annualItems: RENT_ITEMS, annualEntries: RENT_ENTRIES });
+  const rows = buildHousingRows({
+    items: [ITEM], entries: ENTRIES, bikers: BIKERS, rentIndex,
+  });
+  const north = rows[0].units.find((u) => u.name === 'سكن الشمال');
+
+  it('الإيجار يصل بطاقة السكن مقسوماً على ساكنيه', () => {
+    expect(north.rent).toBe(24000);
+    expect(north.residents).toHaveLength(2);
+    expect(north.rentPerResident).toBe(12000);
+  });
+
+  it('ولا يُجمع مع التجهيز — الحقلان منفصلان لأن مرجعيهما مختلفان', () => {
+    // الادعاء الحامل: `cost` هو التجهيز وحده. لو جُمعا لصار ٢٤٬١٠٠٠ ولانهارت
+    // المقارنة بالتقدير ٣٠٠ التي بُني التاب كله عليها.
+    expect(north.cost).toBe(1000);
+    expect(north.perResident).toBe(500);
+    expect(north.cost + north.rent).not.toBe(north.cost);
+  });
+
+  it('وسكنٌ بلا إيجار موسوم يقرأ صفراً لا undefined — والقسمة null', () => {
+    const bare = buildHousingRows({ items: [ITEM], entries: ENTRIES, bikers: [] })[0]
+      .units.find((u) => u.name === 'سكن الغرب');
+    expect(bare.rent).toBe(0);
+    expect(bare.rentPerResident).toBeNull();   // لا ساكن ⇒ لا قسمة
+  });
+});
+
+describe('rentOnlyUnits', () => {
+  it('يُسمّي سكناً عليه إيجار ولا بطاقة له — إيجارٌ لا يراه أحد أسوأ من إيجارٍ لم يُسجَّل', () => {
+    const idx = rentByUnit({
+      annualItems: [{ id: 'a1', expenseName: 'إيجار', units: ['سكن الشمال', 'سكن الشرق'] }],
+      annualEntries: [
+        { id: 'r1', annualExpenseId: 'a1', amount: 10000, unit: 'سكن الشمال' },
+        { id: 'r2', annualExpenseId: 'a1', amount: 8000,  unit: 'سكن الشرق' },
+      ],
+    });
+    const stray = rentOnlyUnits(idx, ['سكن الشمال', 'سكن الغرب']);
+    expect(stray.map((u) => u.name)).toEqual(['سكن الشرق']);
+    expect(stray[0].total).toBe(8000);
+  });
+
+  it('ويطابق بالتطبيع — «سكن الشمال» المغطّى لا يُبلَّغ عنه بإملاءٍ آخر', () => {
+    const idx = rentByUnit({
+      annualItems: [{ id: 'a1', expenseName: 'إيجار', units: ['سكن  الشمال '] }],
+      annualEntries: [{ id: 'r1', annualExpenseId: 'a1', amount: 10000, unit: 'سكن  الشمال ' }],
+    });
+    expect(rentOnlyUnits(idx, ['سكن الشمال'])).toEqual([]);
+  });
+
+  it('وبلا فهرسٍ إطلاقاً: قائمةٌ فارغة', () => {
+    expect(rentOnlyUnits(null, ['سكن الشمال'])).toEqual([]);
   });
 });

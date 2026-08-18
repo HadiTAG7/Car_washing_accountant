@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { X, Plus, Pencil, Bike, Phone, MapPin, Banknote, IdCard, ShieldUser } from 'lucide-react';
+import { X, Plus, Pencil, Bike, Phone, MapPin, Banknote, IdCard, ShieldUser, Flag } from 'lucide-react';
 import { formatCurrency } from '../data/initialData';
 import { normalizeUnitName } from '../lib/accounting/startupMigration';
 import DateField from './DateField';
@@ -11,6 +11,7 @@ const EMPTY = {
   contactNumber: '',
   residence:     '',
   sponsor:       '',
+  nationality:   '',
   salary:        '',
   startDate:     '',
   iqamaNumber:   '',
@@ -18,19 +19,21 @@ const EMPTY = {
 };
 
 /**
- * الكفلاء المكتوبون سابقاً — للاقتراح لا للحبس.
+ * القيم المكتوبة سابقاً على حقلٍ ما — للاقتراح لا للحبس.
  *
- * Compared normalized («مؤسسة النور» and «مؤسسه النور» are one sponsor) but
- * shown in the FIRST spelling as it was typed: the normalizer strips the
- * hamza and the ta-marbuta, so displaying its output would suggest names
- * nobody wrote. Normalization answers "same?", it does not answer "what to
- * show".
+ * One function for the sponsor AND the nationality datalists, because a
+ * copied dedup is how the two drift apart. Compared normalized («مؤسسة
+ * النور» and «مؤسسه النور» are one sponsor, «أفغاني» and «افغاني» one
+ * nationality) but shown in the FIRST spelling as it was typed: the
+ * normalizer strips the hamza and the ta-marbuta, so displaying its output
+ * would suggest words nobody wrote. Normalization answers "same?", it does
+ * not answer "what to show".
  */
-function sponsorOptions(bikers) {
+function suggestionsFrom(bikers, pick) {
   const seen = new Set();
   const out = [];
   for (const b of bikers || []) {
-    const raw = String(b?.sponsor || '').trim();
+    const raw = String(pick(b) || '').trim();
     if (!raw) continue;
     const key = normalizeUnitName(raw);
     if (!key || seen.has(key)) continue;
@@ -49,7 +52,8 @@ export default function AddBikerModal({ isOpen, onClose, onAdd, onUpdate, initia
   const [submitting, setSubmitting] = useState(false);
   // useMemo, never a useEffect dep: `bikers` is a fresh array identity on
   // every render while the query loads, and an effect on it would spin.
-  const sponsors = useMemo(() => sponsorOptions(bikers), [bikers]);
+  const sponsors = useMemo(() => suggestionsFrom(bikers, (b) => b?.sponsor), [bikers]);
+  const nationalities = useMemo(() => suggestionsFrom(bikers, (b) => b?.nationality), [bikers]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -59,6 +63,7 @@ export default function AddBikerModal({ isOpen, onClose, onAdd, onUpdate, initia
         contactNumber: initialValues.contactNumber || '',
         residence:     initialValues.residence || '',
         sponsor:       initialValues.sponsor || '',
+        nationality:   initialValues.nationality || '',
         salary:        initialValues.salary ? String(initialValues.salary) : '',
         startDate:     initialValues.startDate || '',
         iqamaNumber:   initialValues.iqamaNumber || '',
@@ -89,6 +94,7 @@ export default function AddBikerModal({ isOpen, onClose, onAdd, onUpdate, initia
         contactNumber: form.contactNumber.trim(),
         residence:     form.residence.trim(),
         sponsor:       form.sponsor.trim(),
+        nationality:   form.nationality.trim(),
         salary,
         startDate:     form.startDate || '',
         iqamaNumber:   form.iqamaNumber.trim(),
@@ -225,6 +231,28 @@ export default function AddBikerModal({ isOpen, onClose, onAdd, onUpdate, initia
                   الحقل يقترح الكفلاء المسجّلين على بايكرية آخرين — والكتابة الحرّة مسموحة.
                 </p>
               )}
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5" htmlFor="bikerFormNationality">
+                الجنسية <span className="text-[11px] font-normal text-slate-500 dark:text-slate-400">— اختياري</span>
+              </label>
+              <div className="relative">
+                <Flag size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 pointer-events-none" />
+                <input
+                  id="bikerFormNationality"
+                  type="text"
+                  name="nationality"
+                  value={form.nationality}
+                  onChange={handleChange}
+                  list="bikerNationalityOptions"
+                  placeholder="مثال: باكستاني"
+                  className="w-full pr-9 pl-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:border-primary-500 transition-colors"
+                />
+                {/* نفس منطق الكفيل: يقترح المكتوب سابقاً ولا يمنع جديداً. */}
+                <datalist id="bikerNationalityOptions">
+                  {nationalities.map((name) => <option key={name} value={name} />)}
+                </datalist>
+              </div>
             </div>
           </div>
 

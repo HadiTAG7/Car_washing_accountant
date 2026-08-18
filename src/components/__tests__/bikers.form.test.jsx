@@ -148,6 +148,68 @@ describe('AddBikerModal — اسم الكفيل', () => {
   });
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+// الجنسية — نفس عقد الكفيل، ودالة اقتراحٍ واحدة تخدم الحقلين
+// ═══════════════════════════════════════════════════════════════════════════
+// التعميم أدخل خطراً جديداً لم يكن في النسختين المنفصلتين: أن تتقاطع
+// القائمتان — فيقترح حقلُ الجنسية كفيلاً. فالاختبار الحامل هنا هو الفصل،
+// لا التشذيب.
+const MIXED = [
+  { id: 'b1', name: 'أحمد', sponsor: 'مؤسسة النور', nationality: 'أفغاني' },
+  { id: 'b2', name: 'سالم', sponsor: 'شركة الفجر',  nationality: 'افغاني' },   // همزة مختلفة
+  { id: 'b3', name: 'خالد', nationality: 'باكستاني' },
+];
+
+const optionsOf = (id) => [...document.querySelectorAll(`#${id} option`)].map((o) => o.value);
+
+describe('AddBikerModal — الجنسية', () => {
+  it('الجنسية تصل مُشذَّبة إلى onAdd، والفراغ يصل \'\'', () => {
+    const onAdd = vi.fn();
+    render(<AddBikerModal isOpen onClose={() => {}} onAdd={onAdd} />);
+    set('#bikerFormName', 'أحمد');
+    set('#bikerFormNationality', '  باكستاني  ');
+    submit();
+    expect(onAdd.mock.calls[0][0].nationality).toBe('باكستاني');
+
+    cleanup();
+    const onAdd2 = vi.fn();
+    render(<AddBikerModal isOpen onClose={() => {}} onAdd={onAdd2} />);
+    set('#bikerFormName', 'سالم');
+    submit();
+    expect(onAdd2.mock.calls[0][0].nationality).toBe('');
+  });
+
+  it('والتحرير يُعبّئ الجنسية ويعيدها كما هي إن لم تُلمَس', () => {
+    const onUpdate = vi.fn();
+    render(
+      <AddBikerModal
+        isOpen
+        onClose={() => {}}
+        onUpdate={onUpdate}
+        initialValues={{ id: 'b1', name: 'أحمد', salary: 2000, nationality: 'باكستاني' }}
+      />,
+    );
+    expect($('#bikerFormNationality').value).toBe('باكستاني');
+    submit();
+    expect(onUpdate).toHaveBeenCalledWith('b1', expect.objectContaining({ nationality: 'باكستاني' }));
+  });
+
+  it('والاقتراحات تجمع الهمزتين في واحدة — وتعرضها كما كُتبت أولاً', () => {
+    render(<AddBikerModal isOpen onClose={() => {}} onAdd={vi.fn()} bikers={MIXED} />);
+    expect(optionsOf('bikerNationalityOptions')).toEqual(['أفغاني', 'باكستاني']);
+  });
+
+  it('والقائمتان لا تتقاطعان — لا كفيل في اقتراحات الجنسية ولا العكس', () => {
+    // الادعاء الحامل للتعميم: دالةٌ واحدة تخدم الحقلين يجب ألّا تخلطهما.
+    render(<AddBikerModal isOpen onClose={() => {}} onAdd={vi.fn()} bikers={MIXED} />);
+    const nat = optionsOf('bikerNationalityOptions');
+    const spo = optionsOf('bikerSponsorOptions');
+    expect(nat).not.toContain('مؤسسة النور');
+    expect(spo).not.toContain('أفغاني');
+    expect(spo).toEqual(['شركة الفجر', 'مؤسسة النور']);
+  });
+});
+
 describe('AddBikerAdvanceModal', () => {
   it('يرسل السلفة باسم البايكر ومعرّفه وطريقة الصرف', () => {
     const onAdd = vi.fn();

@@ -1,0 +1,105 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# صيانة — نقل مصروف من الشهرية إلى المتغيرة
+# ═══════════════════════════════════════════════════════════════════════════
+# يشغّل `move-monthly-to-variable.mjs`: بحثٌ قراءةً محضة، ومعاينة افتراضاً،
+# وبتفعيل apply يعكس القيد القديم ويعيد الترحيل على حساب التكاليف المتغيرة
+# ويحذف الصف الشهري — وفترةٌ مقفلة تُفتح بسببٍ مكتوب ثم تُقفل بإعادة فحص
+# التوازن. المفتاح في ملف مؤقت يُمحى في كل الأحوال ولا يُطبع.
+# ═══════════════════════════════════════════════════════════════════════════
+
+name: صيانة — نقل مصروف إلى المتغيرة
+
+on:
+  workflow_dispatch:
+    inputs:
+      find:
+        description: 'بحث بالاسم (قراءة فقط) — اتركه فارغاً عند استعمال id'
+        required: false
+        default: ''
+        type: string
+      id:
+        description: 'معرّف المصروف الشهري المراد نقله'
+        required: false
+        default: ''
+        type: string
+      category:
+        description: 'تصنيف المتغيرة — فارغاً: يُطابَق تصنيف الشهري بالاسم'
+        required: false
+        default: ''
+        type: string
+      reopen:
+        description: 'سبب فتح الفترة المقفلة إن لزم'
+        required: false
+        default: ''
+        type: string
+      apply:
+        description: 'نفّذ فعلاً (بلا تفعيله: معاينة فقط)'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: data-maintenance
+  cancel-in-progress: false
+
+jobs:
+  run:
+    name: ${{ inputs.apply && 'تنفيذ' || 'معاينة' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: تثبيت الاعتماديات
+        run: npm ci
+
+      - name: التحقق من وجود السرّ
+        env:
+          KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$KEY" ]; then
+            echo "::error::السر FIREBASE_SERVICE_ACCOUNT غير مضبوط. الخطوات في docs/DEPLOY.md."
+            exit 1
+          fi
+
+      - name: كتابة المفتاح في ملف مؤقت
+        env:
+          KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          printf '%s' "$KEY" > "$RUNNER_TEMP/sa.json"
+          chmod 600 "$RUNNER_TEMP/sa.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/sa.json" >> "$GITHUB_ENV"
+
+      - name: التشغيل
+        env:
+          MAINT_ACTOR: ${{ github.actor }}
+        run: |
+          node scripts/move-monthly-to-variable.mjs \
+            ${{ inputs.find && format('--find "{0}"', inputs.find) || '' }} \
+            ${{ inputs.id && format('--id "{0}"', inputs.id) || '' }} \
+            ${{ inputs.category && format('--category "{0}"', inputs.category) || '' }} \
+            ${{ inputs.reopen && format('--reopen "{0}"', inputs.reopen) || '' }} \
+            ${{ inputs.apply && '--apply' || '' }} \
+            | tee "$RUNNER_TEMP/out.txt"
+
+      - name: الخلاصة
+        if: always()
+        run: |
+          {
+            echo '### نتيجة الصيانة'
+            echo '```'
+            cat "$RUNNER_TEMP/out.txt" 2>/dev/null || echo 'لا مخرجات.'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: محو المفتاح
+        if: always()
+        run: rm -f "$RUNNER_TEMP/sa.json"

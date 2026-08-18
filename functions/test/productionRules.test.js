@@ -392,5 +392,31 @@ d('رحلة الإنتاج تحت firestore.rules الفعلية', () => {
 
       await assertSucceeds(deleteDoc(doc(ctx.op, 'bikers', 'b1')));
     }, 120_000);
+
+    // ═══ ميتا السكنات ══════════════════════════════════════════════════
+    // Same operational semantics as bikers: the tab stores per-unit capacity
+    // and notes here, so an operator writes, a partner only reads, and an
+    // account with no membership document sees nothing.
+    it('سكنات: العضو يقرأ، المشغّل يكتب، الشريك والغريب لا', async () => {
+      await env.withSecurityRulesDisabled(async (c) => {
+        await setDoc(doc(c.firestore(), 'users', 'partner2'), { email: 'p2@x.com', role: 'partner' });
+      });
+      const partner = env.authenticatedContext('partner2').firestore();
+      const ghost = env.authenticatedContext('ghost2').firestore();
+
+      const unit = { name: 'سكن الشمال', capacity: 14, notes: 'عقد 4821' };
+      await assertSucceeds(setDoc(doc(ctx.op, 'housing_units', 'u1'), unit));
+      await assertSucceeds(updateDoc(doc(ctx.op, 'housing_units', 'u1'), { capacity: 16 }));
+      await assertSucceeds(getDoc(doc(ctx.acct, 'housing_units', 'u1')));
+
+      await assertSucceeds(getDoc(doc(partner, 'housing_units', 'u1')));
+      await assertFails(setDoc(doc(partner, 'housing_units', 'u2'), unit));
+      await assertFails(updateDoc(doc(partner, 'housing_units', 'u1'), { capacity: 1 }));
+      await assertFails(deleteDoc(doc(partner, 'housing_units', 'u1')));
+
+      await assertFails(getDoc(doc(ghost, 'housing_units', 'u1')));
+
+      await assertSucceeds(deleteDoc(doc(ctx.op, 'housing_units', 'u1')));
+    }, 120_000);
   });
 });

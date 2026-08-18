@@ -23,6 +23,23 @@ export function useStartupLedgerParents() {
 }
 
 /**
+ * كل مصاريف التأسيس، بحقولها الكاملة — لتاب السكن.
+ *
+ * One line apart from `useStartupLedgerParents` above, and the line is the
+ * point: that hook throws the fields away (a Set of parent ids); this one
+ * keeps them, because the housing tab needs `unit` and `amount` across ALL
+ * items at once. Full fetch + client grouping is the house pattern — the
+ * collections are tiny and no composite index is ever needed.
+ */
+export function useAllStartupEntries() {
+  const { data, loading, error, refetch } = useFirestoreQuery(
+    () => fetchRows('startup_cost_entries'),
+    { enabled: isFirebaseConfigured, map: mapStartupCostEntry, fallback: [] },
+  );
+  return { entries: data ?? [], loading, error, refetch };
+}
+
+/**
  * Sub-ledger for one startup_costs row. Keeps the parent's actual_amount =
  * SUM(entries) and derives its status vs budgeted_amount on every mutation
  * (client-driven roll-up — same pattern the app has always used).

@@ -19,14 +19,17 @@
 // أي فترة، ومفتوحةٌ هي أم مقفلة — فيُعرف قبل الكتابة ما سيمرّ وما سيُرفض.
 //
 //   node scripts/rename-annual-entries.mjs --from "سكن النزهة" --to "سكن الشمال"
-//   … --apply     ← يكتب
+//   … --apply                ← يكتب
+//   … --reopen "السبب"       ← وإن كانت فترة القيد مقفلة: تُفتح بسببٍ مكتوب،
+//                              يُبدَّل النص، ثم تُقفل فوراً — والإقفال يعيد
+//                              فحص التوازن، فلو اختلّ شيء رُفض وقيل
 //
 // يحتاج GOOGLE_APPLICATION_CREDENTIALS (سير العمل يكتبه من سرّ المستودع).
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { initializeApp, applicationDefault } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
-import { COL } from '../functions/src/ledger.js';
+import { COL, reopenPeriod, closePeriod } from '../functions/src/ledger.js';
 import { replaceTolerant, tolerantArabicPattern } from '../src/lib/unitSuggest.js';
 
 function arg(name, fallback = null) {
@@ -39,6 +42,7 @@ const has = (name) => process.argv.includes(`--${name}`);
 const from  = arg('from');
 const to    = arg('to');
 const apply = has('apply');
+const reopenReason = arg('reopen');
 const actor = process.env.MAINT_ACTOR || 'maintenance-script';
 
 if (!from || !to) {
@@ -99,12 +103,25 @@ for (const t of targets) {
   console.log(`      قبل : ${t.before}`);
   console.log(`      بعد : ${t.after}`);
   console.log(`      المبلغ: ${t.amount} ر.س · التاريخ: ${t.date} · السكن: ${t.unit}`);
-  console.log(`      الدفاتر: ${t.lock ? `مُرحَّلة بالقيد رقم ${t.lock.entryNumber ?? '—'} — فترة ${t.periodKey ?? '—'} ${t.periodClosed ? '(مقفلة — سيُرفض)' : '(مفتوحة — سيُزامَن نصّ القيد)'}` : 'غير مُرحَّلة'}`);
+  console.log(`      الدفاتر: ${t.lock ? `مُرحَّلة بالقيد رقم ${t.lock.entryNumber ?? '—'} — فترة ${t.periodKey ?? '—'} ${t.periodClosed ? `(مقفلة — ${reopenReason ? 'ستُفتح ثم تُقفل' : 'سيُرفض بلا --reopen'})` : '(مفتوحة — سيُزامَن نصّ القيد)'}` : 'غير مُرحَّلة'}`);
 }
 
 if (!apply) {
   console.log('\nمعاينة فقط. أعِد التشغيل بـ --apply للكتابة.');
   process.exit(0);
+}
+
+// ── الفترات المقفلة: تُفتح بسببٍ مكتوب قبل الكتابة، وتُقفل بعدها دائماً ──
+// The re-close runs even when a row fails: a period left open because a
+// rename was refused would be a bigger wound than the refusal itself.
+const closedPeriods = [...new Set(targets.filter((t) => t.periodClosed).map((t) => t.periodKey))];
+if (closedPeriods.length && !reopenReason) {
+  console.error(`\n✗ ${closedPeriods.length} فترة مقفلة (${closedPeriods.join('، ')}) — أضِف --reopen "السبب" لفتحها ثم إعادة إقفالها، أو استثنِ صفوفها.`);
+  process.exit(1);
+}
+for (const pk of closedPeriods) {
+  await reopenPeriod(db, FieldValue, pk, { userId: actor, reason: reopenReason });
+  console.log(`↺ فُتحت الفترة ${pk} — ${reopenReason}`);
 }
 
 let ok = 0;
@@ -131,7 +148,7 @@ for (const t of targets) {
           const j = jSnap.data();
           const pSnap = await tx.get(db.collection(COL.PERIODS).doc(String(j.periodKey || '')));
           if (pSnap.exists && pSnap.data().status === 'closed') {
-            throw new Error(`قيدها في فترة ${j.periodKey} وهي مقفلة — لا يتغيّر نصّه. افتح الفترة أو اتركها.`);
+            throw new Error(`قيدها في فترة ${j.periodKey} وهي مقفلة — لا يتغيّر نصّه. أضِف --reopen "السبب" أو اتركها.`);
           }
           // السرد يحمل الوصف حرفياً (label = «الوصف — التاريخ»)، فالاستبدال دقيق.
           renarrations.push([jRef, {
@@ -172,6 +189,13 @@ for (const t of targets) {
     console.log(`  ✗ ${t.id} — ${e?.message || e}`);
   }
 }
+for (const pk of closedPeriods) {
+  // الإقفال يعيد فحص التوازن على البيانات الطازجة — استبدال نصٍّ لا يحرّك
+  // رقماً، فإن رُفض الإقفال هنا فذلك اكتشافٌ لا عرَض.
+  await closePeriod(db, FieldValue, pk, { userId: actor });
+  console.log(`↻ أُعيد إقفال الفترة ${pk}.`);
+}
+
 console.log(`\nتمّ: ${ok} · رُفض: ${failures.length}`);
 if (failures.length) {
   console.log('\nالمرفوضة تحتاج قراراً:');

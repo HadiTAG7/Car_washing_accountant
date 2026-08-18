@@ -21,6 +21,11 @@ on:
         description: 'النص الجديد'
         required: true
         type: string
+      reopen:
+        description: 'سبب فتح الفترة المقفلة إن لزم — اتركه فارغاً لرفض صفوفها'
+        required: false
+        default: ''
+        type: string
       apply:
         description: 'اكتب فعلاً (بلا تفعيله: معاينة فقط)'
         required: false
@@ -75,6 +80,7 @@ jobs:
           node scripts/rename-annual-entries.mjs \
             --from "${{ inputs.from }}" \
             --to "${{ inputs.to }}" \
+            ${{ inputs.reopen && format('--reopen "{0}"', inputs.reopen) || '' }} \
             ${{ inputs.apply && '--apply' || '' }} \
             | tee "$RUNNER_TEMP/out.txt"
 

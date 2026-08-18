@@ -9,6 +9,13 @@
 //                      وهل هو مُرحّل في الدفاتر.
 //   --id <المعرّف>    ← معاينة الصف بعينه. و`--apply` وحده يحذف.
 //
+// ── والمُرحّل يحتاج عكساً قبل الحذف ──
+// `--reverse-date YYYY-MM-DD` يعكس قيده أولاً بهذا التاريخ ثم يحذف. والتاريخ
+// صريحٌ لا افتراضي، لأن `reverseEntry` نفسها ترفض أن تختاره: «العكس يقع في
+// فترة ويغيّر ما تقوله تلك الفترة، فاختيار (اليوم) نيابةً عن صاحب الدفاتر هو
+// كيف ينتهي تصحيحٌ في الشهر الخطأ». وخطأٌ اكتُشف بعد إقفال شهره يُعكس في شهر
+// مفتوح، لا يُعاد كتابة الشهر المقفل.
+//
 // ── ولا يكتب هذا السكربت في Firestore ──
 // يستدعي `deleteStartupEntry` — نفس دالة الخادم. فترفض الحذف إن كان المصروف
 // مُرحّلاً وتسمّي رقم قيده (العكس هو ما يفكّ القفل)، وتُعيد اشتقاق تجميعة
@@ -20,6 +27,7 @@
 import { initializeApp, applicationDefault } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { deleteStartupEntry } from '../functions/src/startupCosts.js';
+import { reverseEntry } from '../functions/src/ledger.js';
 import { tolerantArabicPattern } from '../src/lib/unitSuggest.js';
 
 function arg(name, fallback = null) {
@@ -30,6 +38,7 @@ function arg(name, fallback = null) {
 const has = (name) => process.argv.includes(`--${name}`);
 
 const find  = arg('find');
+const reverseDate = arg('reverse-date');
 const id    = arg('id');
 const apply = has('apply');
 const actor = process.env.MAINT_ACTOR || 'maintenance-script';
@@ -90,14 +99,28 @@ console.log(`\n${apply ? '⇉ الحذف' : '👁 معاينة (لا يُحذف 
 const lock = await describe(id, snap.data());
 
 if (!apply) {
+  if (lock && reverseDate) {
+    console.log(`\nسيُعكس القيد رقم ${lock.entryNumber ?? '—'} بتاريخ ${reverseDate}، ثم يُحذف الصف.`);
+  }
   console.log('\nمعاينة فقط. أعِد التشغيل بـ --apply للحذف.');
   process.exit(0);
 }
-if (lock) {
+if (lock && !reverseDate) {
   // The server refuses this too; saying it here first makes the reason the
   // first thing read rather than a stack trace.
   console.error('\n✗ مُرحّل في الدفاتر — لا يُحذف. اعكس قيده أولاً؛ العكس هو ما يحرّر السجل.');
+  console.error('  أضِف --reverse-date YYYY-MM-DD (في فترة مفتوحة) ليُعكس ثم يُحذف.');
   process.exit(1);
+}
+
+if (lock) {
+  const rev = await reverseEntry(db, FieldValue, lock.entryId, {
+    entryDate: reverseDate,
+    description: `عكس قيد رقم ${lock.entryNumber ?? '—'} — مصروف سُجّل خطأً: ${snap.data().description}`,
+    userId: actor,
+  });
+  console.log(`\n✓ عُكس القيد رقم ${lock.entryNumber ?? '—'} بقيدٍ عكسي رقم ${rev.entryNumber ?? '—'} بتاريخ ${reverseDate}.`);
+  console.log('  القفل تحرّر، والصف صار قابلاً للحذف.');
 }
 
 const res = await deleteStartupEntry(db, FieldValue, { entryId: id }, { userId: actor, role: 'admin' });

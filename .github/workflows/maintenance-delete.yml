@@ -26,6 +26,11 @@ on:
         required: false
         default: ''
         type: string
+      reverse_date:
+        description: 'إن كان المصروف مُرحّلاً: تاريخ القيد العكسي YYYY-MM-DD (في فترة مفتوحة)'
+        required: false
+        default: ''
+        type: string
       apply:
         description: 'احذف فعلاً (بلا تفعيله: معاينة فقط)'
         required: false
@@ -79,6 +84,7 @@ jobs:
           node scripts/delete-startup-entry.mjs \
             ${{ inputs.find && format('--find "{0}"', inputs.find) || '' }} \
             ${{ inputs.entry_id && format('--id "{0}"', inputs.entry_id) || '' }} \
+            ${{ inputs.reverse_date && format('--reverse-date "{0}"', inputs.reverse_date) || '' }} \
             ${{ inputs.apply && '--apply' || '' }} \
             | tee "$RUNNER_TEMP/out.txt"
 

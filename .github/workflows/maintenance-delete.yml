@@ -1,0 +1,97 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# صيانة البيانات — البحث عن مصروف تأسيس وحذفه
+# ═══════════════════════════════════════════════════════════════════════════
+# منفصلٌ عن سير الاستبدال عمداً: الحذف لا رجعة فيه، فلا يُقاد بمطابقةٍ نصّية.
+# البحث يقرأ فقط ويطبع المعرّفات؛ والحذف يأخذ **معرّفاً واحداً صريحاً**، وبلا
+# تفعيل `apply` يعرض الصف ولا يمسّه.
+#
+# ومصروفٌ مُرحّل في الدفاتر لا يُحذف من هنا ولا من غيره: تُعكس قيده أولاً،
+# والعكس هو ما يفكّ القفل — وإلا بقي القيد يصف مستنداً لم يعد موجوداً.
+#
+# المفتاح هو سرّ النشر نفسه: يُكتب في ملف مؤقت، ويُمحى في كل الأحوال.
+# ═══════════════════════════════════════════════════════════════════════════
+
+name: صيانة — بحث/حذف مصروف تأسيس
+
+on:
+  workflow_dispatch:
+    inputs:
+      find:
+        description: 'ابحث بهذا النص (يقرأ فقط — اتركه فارغاً إن كنت تحذف بمعرّف)'
+        required: false
+        default: ''
+        type: string
+      entry_id:
+        description: 'معرّف المصروف المراد حذفه (من نتيجة البحث)'
+        required: false
+        default: ''
+        type: string
+      apply:
+        description: 'احذف فعلاً (بلا تفعيله: معاينة فقط)'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: data-maintenance
+  cancel-in-progress: false
+
+jobs:
+  run:
+    name: ${{ inputs.find && 'بحث' || (inputs.apply && 'حذف' || 'معاينة') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: تثبيت الاعتماديات
+        run: npm ci
+
+      - name: التحقق من وجود السرّ
+        env:
+          KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$KEY" ]; then
+            echo "::error::السر FIREBASE_SERVICE_ACCOUNT غير مضبوط. الخطوات في docs/DEPLOY.md."
+            exit 1
+          fi
+
+      - name: كتابة المفتاح في ملف مؤقت
+        env:
+          KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          printf '%s' "$KEY" > "$RUNNER_TEMP/sa.json"
+          chmod 600 "$RUNNER_TEMP/sa.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/sa.json" >> "$GITHUB_ENV"
+
+      - name: التشغيل
+        env:
+          MAINT_ACTOR: ${{ github.actor }}
+        run: |
+          node scripts/delete-startup-entry.mjs \
+            ${{ inputs.find && format('--find "{0}"', inputs.find) || '' }} \
+            ${{ inputs.entry_id && format('--id "{0}"', inputs.entry_id) || '' }} \
+            ${{ inputs.apply && '--apply' || '' }} \
+            | tee "$RUNNER_TEMP/out.txt"
+
+      - name: الخلاصة
+        if: always()
+        run: |
+          {
+            echo '### نتيجة الصيانة'
+            echo '```'
+            cat "$RUNNER_TEMP/out.txt" 2>/dev/null || echo 'لا مخرجات.'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: محو المفتاح
+        if: always()
+        run: rm -f "$RUNNER_TEMP/sa.json"

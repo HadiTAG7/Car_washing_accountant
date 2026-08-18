@@ -24,7 +24,7 @@ import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { initializeApp, deleteApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import {
-  addStartupEntry, deleteStartupEntry, assignStartupUnits,
+  addStartupEntry, deleteStartupEntry, updateStartupEntry, assignStartupUnits,
   convertLegacyStartupSpend,
   updateStartupPlan, deleteStartupPlan, StartupCostError,
 } from '../src/startupCosts.js';
@@ -777,6 +777,153 @@ d('سجل مصاريف بند التأسيس على الخادم', () => {
         parentId: 'h1', patch: { units: ['سكن النزهة', 'سكن النزهه'] },
       }, AS('operator'))).rejects.toThrow(/مكرر/);
       expect((await parentOf('h1')).units).toEqual(['سكن النزهة', 'سكن الروضة']);
+    }, 60_000);
+  });
+
+  // ═══ تعديل مصروف مسجَّل ═══════════════════════════════════════════════
+  // Three layers with three different verdicts, and the middle one is the
+  // whole point: a description reaches the books as TEXT, so it is changed
+  // there too rather than left to contradict the document it describes.
+  describe('تعديل مصروف تأسيس', () => {
+    beforeEach(async () => {
+      await db.collection('startup_costs').doc('u1p').set(PLAN({
+        item_name: 'رسوم تجهيز السكن', budgeted_amount: 15000,
+        units: ['سكن الشمال', 'سكن الجنوب'],
+      }));
+    });
+
+    const addOne = (over = {}) => addStartupEntry(db, FieldValue, {
+      parentId: 'u1p', entry: ENTRY({ description: 'تزويد سكن النزهة بمروحة', ...over }),
+    }, AS('operator'));
+
+    const rowOf = async (id) => (await db.collection('startup_cost_entries').doc(id).get()).data();
+    const journalOf = async (entryId) => {
+      const lock = (await db.collection(COL.LOCKS).doc(`startup__${entryId}`).get()).data();
+      const ids = [lock.entryId, lock.settlementEntryId].filter(Boolean);
+      return Promise.all(ids.map(async (jid) => ({
+        id: jid, ...(await db.collection(COL.ENTRIES).doc(jid).get()).data(),
+      })));
+    };
+
+    it('يعدّل الاسم والملاحظات والتقسيم — ولا يمسّ مبلغاً', async () => {
+      const a = await addOne();
+      const res = await updateStartupEntry(db, FieldValue, {
+        entryId: a.id,
+        patch: { description: 'تزويد سكن الشمال بمروحة', notes: 'فاتورة 25', unit: 'سكن الشمال' },
+      }, AS('operator'));
+
+      expect(await rowOf(a.id)).toMatchObject({
+        description: 'تزويد سكن الشمال بمروحة', notes: 'فاتورة 25',
+        unit: 'سكن الشمال', amount: 400,
+      });
+      expect(res.changed).toEqual(expect.arrayContaining(['description', 'notes', 'unit']));
+      expect(await parentOf('u1p')).toMatchObject({ actual_amount: 400 });
+      expect(await audits('startup-entry-update')).toHaveLength(1);
+    }, 60_000);
+
+    it('وتغيير المبلغ قبل الترحيل يُعيد اشتقاق تجميعة البند', async () => {
+      const a = await addOne();
+      await addOne({ description: 'ثلاجة', amount: 100 });
+      await updateStartupEntry(db, FieldValue, {
+        entryId: a.id, patch: { amount: 900 },
+      }, AS('operator'));
+      expect(await parentOf('u1p')).toMatchObject({ actual_amount: 1000 });
+    }, 60_000);
+
+    it('ويرفض المبلغ والتاريخ والضريبة بعد الترحيل — ويسمّي القيد', async () => {
+      const a = await addOne();
+      await postSource(db, FieldValue, { kind: 'startup', sourceId: a.id }, { userId: 'u1' });
+
+      for (const patch of [{ amount: 900 }, { spentDate: '2026-04-01' }, { isTaxInvoice: true }]) {
+        await expect(updateStartupEntry(db, FieldValue, { entryId: a.id, patch }, AS('operator')))
+          .rejects.toThrow(/مُرحّل بالقيد رقم/);
+      }
+      // ولا شيء كُتب.
+      expect(await rowOf(a.id)).toMatchObject({ amount: 400, spent_date: '2026-03-12' });
+      expect(await audits('startup-entry-update')).toHaveLength(0);
+    }, 90_000);
+
+    it('وتغيير الاسم بعد الترحيل يُبدّله في نصّ القيد وسطوره — ولا يمسّ رقماً ولا حساباً', async () => {
+      // الادعاء الحامل: تتغيّر الكلمات وحدها. كل ما عداها يُقارَن حرفياً.
+      const a = await addOne();
+      await postSource(db, FieldValue, { kind: 'startup', sourceId: a.id }, { userId: 'u1' });
+      const before = await journalOf(a.id);
+      expect(before.length).toBeGreaterThan(0);
+      expect(JSON.stringify(before)).toContain('النزهة');
+
+      const res = await updateStartupEntry(db, FieldValue, {
+        entryId: a.id, patch: { description: 'تزويد سكن الشمال بمروحة' },
+      }, AS('operator'));
+      expect(res.renarrated).toBe(before.length);
+
+      const after = await journalOf(a.id);
+      expect(JSON.stringify(after)).not.toContain('النزهة');
+      expect(JSON.stringify(after)).toContain('سكن الشمال');
+
+      for (const [i, j] of after.entries()) {
+        const was = before[i];
+        expect(j.id).toBe(was.id);
+        expect(j.entryNumber).toBe(was.entryNumber);
+        expect(j.entryDate).toBe(was.entryDate);
+        expect(j.periodKey).toBe(was.periodKey);
+        expect(j.status).toBe(was.status);
+        expect(j.totalDebit).toBe(was.totalDebit);
+        expect(j.totalCredit).toBe(was.totalCredit);
+        // كل سطر: نفس الحساب ونفس المدين والدائن، والوصف وحده تغيّر.
+        expect(j.lines.map((l) => [l.accountId, l.debit, l.credit]))
+          .toEqual(was.lines.map((l) => [l.accountId, l.debit, l.credit]));
+      }
+      // والقفل لم يُمسّ، فالمصروف ما زال مُرحّلاً.
+      expect((await db.collection(COL.LOCKS).doc(`startup__${a.id}`).get()).exists).toBe(true);
+    }, 120_000);
+
+    it('وفي فترة مقفلة لا يتغيّر نصّ القيد — تُسمّى الفترة ولا يُكتب شيء', async () => {
+      const a = await addOne();
+      await postSource(db, FieldValue, { kind: 'startup', sourceId: a.id }, { userId: 'u1' });
+      await db.collection(COL.PERIODS).doc('2026-03').set({ periodKey: '2026-03', status: 'closed' });
+
+      await expect(updateStartupEntry(db, FieldValue, {
+        entryId: a.id, patch: { description: 'اسم جديد' },
+      }, AS('operator'))).rejects.toThrow(/مقفلة/);
+      expect(await rowOf(a.id)).toMatchObject({ description: 'تزويد سكن النزهة بمروحة' });
+    }, 120_000);
+
+    it('والملاحظة والتقسيم يمرّان بعد الترحيل — لأنهما لا يصلان الدفاتر', async () => {
+      const a = await addOne();
+      await postSource(db, FieldValue, { kind: 'startup', sourceId: a.id }, { userId: 'u1' });
+      await updateStartupEntry(db, FieldValue, {
+        entryId: a.id, patch: { notes: 'مراجَعة', unit: 'سكن الجنوب' },
+      }, AS('operator'));
+      expect(await rowOf(a.id)).toMatchObject({ notes: 'مراجَعة', unit: 'سكن الجنوب' });
+    }, 90_000);
+
+    it('ويرفض حقلاً لا يُعدَّل، وسكناً ليس من سكنات البند، ووصفاً فارغاً', async () => {
+      const a = await addOne();
+      await expect(updateStartupEntry(db, FieldValue, {
+        entryId: a.id, patch: { status: 'completed' },
+      }, AS('operator'))).rejects.toThrow(/لا تُعدَّل من هنا/);
+      await expect(updateStartupEntry(db, FieldValue, {
+        entryId: a.id, patch: { unit: 'سكن الشرق' },
+      }, AS('operator'))).rejects.toThrow(/ليس من سكنات هذا البند/);
+      await expect(updateStartupEntry(db, FieldValue, {
+        entryId: a.id, patch: { description: '   ' },
+      }, AS('operator'))).rejects.toThrow(/وصف المصروف مطلوب/);
+    }, 60_000);
+
+    it('ورقعةٌ لا تغيّر شيئاً لا تكتب ولا تُدقَّق', async () => {
+      const a = await addOne();
+      const res = await updateStartupEntry(db, FieldValue, {
+        entryId: a.id, patch: { description: 'تزويد سكن النزهة بمروحة' },
+      }, AS('operator'));
+      expect(res.changed).toEqual([]);
+      expect(await audits('startup-entry-update')).toHaveLength(0);
+    }, 60_000);
+
+    it('والشريك لا يعدّل', async () => {
+      const a = await addOne();
+      await expect(updateStartupEntry(db, FieldValue, {
+        entryId: a.id, patch: { description: 'شيء' },
+      }, AS('partner'))).rejects.toThrow();
     }, 60_000);
   });
 });

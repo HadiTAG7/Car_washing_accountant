@@ -63,6 +63,18 @@ export function useStartupCostEntries(parentId) {
     return res;
   }, [refetch]);
 
+  // ── التعديل ──
+  // The server decides what may change: notes/invoice/unit always, money and
+  // date only before posting, and a description change carries into the
+  // journal narration in the same transaction. None of that is re-stated here
+  // — a client copy of the rule is a second opinion waiting to drift.
+  const updateEntry = useCallback(async (id, patch) => {
+    if (!isFirebaseConfigured) return null;
+    const res = await callServer('startupUpdateEntry', { entryId: id, patch });
+    await refetch();
+    return res;
+  }, [refetch]);
+
   // ── إسناد السكنات دفعةً واحدة ──
   // Filing already-recorded spend under the housing unit it belongs to. One
   // call for the whole distribution, because that is how the owner does it —
@@ -76,5 +88,5 @@ export function useStartupCostEntries(parentId) {
   }, [refetch]);
 
   const entries = isFirebaseConfigured ? (data ?? []) : (data || []);
-  return { entries, loading, error, addEntry, deleteEntry, assignUnits, refetch };
+  return { entries, loading, error, addEntry, updateEntry, deleteEntry, assignUnits, refetch };
 }

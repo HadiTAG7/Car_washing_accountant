@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import {
   X, Plus, Trash2, FileText, Wallet, Calendar, Tag, Loader2, Inbox,
-  Link as LinkIcon, Percent, Upload, Home, Wand2,
+  Link as LinkIcon, Percent, Upload, Home, Wand2, Pencil, Check,
 } from 'lucide-react';
 import {
   formatCurrency, formatDate, formatNumber, todayISO, extractVat,
@@ -12,7 +12,9 @@ import DateField from './DateField';
 import TaxInvoiceFields from './TaxInvoiceFields';
 import PurchaseAmountBreakdown from './PurchaseAmountBreakdown';
 import { blockingVatProblems } from '../lib/vatFields';
-import { EMPTY_TAX_INVOICE_FIELDS, submitTaxInvoiceFields } from '../lib/taxInvoiceForm';
+import {
+  EMPTY_TAX_INVOICE_FIELDS, submitTaxInvoiceFields, readTaxInvoiceFields,
+} from '../lib/taxInvoiceForm';
 import { groupEntriesByUnit, unassignedCount } from '../lib/unitSuggest';
 import AssignUnitsPanel from './AssignUnitsPanel';
 
@@ -21,6 +23,26 @@ const EMPTY_FORM = {
   unit: '',
   ...EMPTY_TAX_INVOICE_FIELDS,
 };
+
+/**
+ * مصروفٌ مسجَّل ⇐ حالةُ النموذج.
+ *
+ * The edit form IS the add form: one set of fields, one validator, one VAT
+ * block. A second «edit» form would be a second answer to «ما المصروف الصحيح؟»
+ * and the two drift the first time one of them gains a field.
+ */
+function formFromEntry(e) {
+  return {
+    description:  e.description || '',
+    amount:       String(e.amount ?? ''),
+    spentDate:    e.spentDate || '',
+    notes:        e.notes || '',
+    invoiceUrl:   e.invoiceUrl || '',
+    isTaxInvoice: e.isTaxInvoice === true,
+    unit:         e.unit || '',
+    ...readTaxInvoiceFields(e),
+  };
+}
 
 // Cheap link detector — anything starting with http:// or https:// is
 // rendered as a clickable anchor in the list. Anything else (the admin
@@ -57,7 +79,10 @@ export default function ExpenseLedgerModal({
   ledger, onDirty, migrationFile, uploadFolder = 'misc',
   units = null, onAssignUnits = null,
 }) {
-  const { entries, loading, error, addEntry, deleteEntry } = ledger;
+  const { entries, loading, error, addEntry, deleteEntry, updateEntry } = ledger;
+  // المصاريف السنوية تشارك هذا المكوّن ولا تملك استدعاء تعديل — فغيابه
+  // لا يعرض قلماً أصلاً، بدل زرٍّ يفشل.
+  const canEdit = typeof updateEntry === 'function';
   // ── الهوية تُثبَّت، لا القيمة فقط ──
   // Rebuilt inline, this array was a NEW identity on every render — and it is
   // passed down to `AssignUnitsPanel`, whose `useMemo`/`useEffect` pair then
@@ -76,6 +101,7 @@ export default function ExpenseLedgerModal({
   const [form, setForm] = useState(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
+  const [editingId, setEditingId] = useState(null);
   const [assignOpen, setAssignOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
@@ -92,9 +118,11 @@ export default function ExpenseLedgerModal({
     if (!isOpen) return;
     setForm({ ...EMPTY_FORM, spentDate: todayISO() });
     setActionError('');
+    setEditingId(null);
   }, [isOpen]);
 
   const fileInputRef = useRef(null);
+  const formRef = useRef(null);
 
   async function handleUpload(e) {
     const file = e.target.files?.[0];
@@ -136,13 +164,29 @@ export default function ExpenseLedgerModal({
     setForm((prev) => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
   }
 
+  function startEdit(entry) {
+    setForm(formFromEntry(entry));
+    setEditingId(entry.id);
+    setActionError('');
+    // `?.` on the METHOD too — jsdom has no `scrollIntoView`, and neither do
+    // some embedded webviews. Scrolling is a courtesy; throwing here would
+    // abort the edit itself.
+    formRef.current?.scrollIntoView?.({ block: 'nearest' });
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setForm({ ...EMPTY_FORM, spentDate: todayISO() });
+    setActionError('');
+  }
+
   async function handleAdd(e) {
     e.preventDefault();
     if (!isValid || submitting) return;
     setSubmitting(true);
     setActionError('');
     try {
-      await addEntry({
+      const payload = {
         description:  trimmedDesc,
         amount:       parsedAmount,
         spentDate:    form.spentDate,
@@ -158,13 +202,22 @@ export default function ExpenseLedgerModal({
         // for.
         ...(hasUnits ? { unit: form.unit } : {}),
         ...submitTaxInvoiceFields(form),
-      });
+      };
+      // ── نفس الحمولة للمسارين ──
+      // The edit sends every field, not a diff: the server compares against
+      // what it reads inside the transaction and acts on what actually moved.
+      // A diff computed here would be computed against a row this screen may
+      // have been holding for a while.
+      if (editingId) await updateEntry(editingId, payload);
+      else await addEntry(payload);
+      setEditingId(null);
       setForm({ ...EMPTY_FORM, spentDate: todayISO() });
       onDirty?.(); // tell the parent page to refetch its items so totals update
     } catch (err) {
       // The form keeps its values — the user re-reads the message and fixes
       // the one field it names, rather than retyping an invoice.
-      setActionError(describeBackendError(err) || err?.message || 'تعذّر تسجيل المصروف.');
+      setActionError(describeBackendError(err) || err?.message
+        || (editingId ? 'تعذّر حفظ التعديل.' : 'تعذّر تسجيل المصروف.'));
     } finally {
       setSubmitting(false);
     }
@@ -265,10 +318,39 @@ export default function ExpenseLedgerModal({
           </div>
 
           {/* Add form */}
-          <form onSubmit={handleAdd} className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-smallcard p-4 space-y-3">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-              إضافة مصروف جديد
-            </p>
+          <form
+            ref={formRef}
+            onSubmit={handleAdd}
+            className={`border rounded-smallcard p-4 space-y-3 ${
+              editingId
+                ? 'bg-amber-50/60 dark:bg-amber-500/5 border-amber-200 dark:border-amber-500/30'
+                : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800'
+            }`}
+          >
+            {/* ── النموذج يقول أي عملٍ هو ──
+                نفس الحقول للإضافة والتعديل، فلولا هذا السطر واللون لَما عرف
+                المستخدم أنه يعدّل صفاً قائماً بدل أن يضيف صفاً جديداً. */}
+            <div className="flex items-start justify-between gap-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                {editingId ? 'تعديل مصروف مسجَّل' : 'إضافة مصروف جديد'}
+              </p>
+              {editingId && (
+                <button
+                  type="button"
+                  onClick={cancelEdit}
+                  className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 underline decoration-dotted underline-offset-4"
+                >
+                  إلغاء التعديل
+                </button>
+              )}
+            </div>
+            {editingId && (
+              <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
+                الاسم والملاحظات والفاتورة والتقسيم تُعدَّل دائماً — وتغيير الاسم يُحدِّث
+                نصّ القيد في الدفاتر معه. أما المبلغ والتاريخ وبيانات الضريبة فلا تتغيّر
+                بعد ترحيل المصروف؛ يُعكس القيد أولاً.
+              </p>
+            )}
 
             {/* Description + Date */}
             <div className="grid grid-cols-1 sm:grid-cols-[1fr_180px] gap-3">
@@ -473,7 +555,9 @@ export default function ExpenseLedgerModal({
               className="sw-button sw-button--sm sw-button--primary w-full"
             >
               {submitting ? (
-                <><Loader2 size={16} className="animate-spin" /> جارٍ التسجيل...</>
+                <><Loader2 size={16} className="animate-spin" /> {editingId ? 'جارٍ الحفظ...' : 'جارٍ التسجيل...'}</>
+              ) : editingId ? (
+                <><Check size={16} /> حفظ التعديل</>
               ) : (
                 <><Plus size={16} /> إضافة المصروف</>
               )}
@@ -636,6 +720,22 @@ export default function ExpenseLedgerModal({
                           <span className="text-sm font-bold text-slate-900 dark:text-slate-100 tabular-nums shrink-0">
                             {formatCurrency(e.amount)}
                           </span>
+                          {canEdit && (
+                            <button
+                              type="button"
+                              onClick={() => startEdit(e)}
+                              disabled={busy}
+                              title="تعديل هذا المصروف"
+                              aria-label={`تعديل ${e.description}`}
+                              className={`sw-tap inline-flex items-center justify-center p-1.5 rounded-control transition-colors shrink-0 disabled:opacity-60 ${
+                                editingId === e.id
+                                  ? 'text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/15'
+                                  : 'text-slate-500 dark:text-slate-400 hover:text-primary-700 dark:hover:text-primary-300 hover:bg-primary-50 dark:hover:bg-primary-500/15'
+                              }`}
+                            >
+                              <Pencil size={14} />
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => handleDelete(e)}

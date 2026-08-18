@@ -299,6 +299,218 @@ export async function deleteStartupEntry(db, FieldValue, { entryId }, {
   });
 }
 
+// ─── التعديل ─────────────────────────────────────────────────────────────
+
+/** الأعمدة التي تصل الدفاتر برقمٍ أو بتاريخ — لا تتغيّر بعد الترحيل. */
+const LEDGER_BOUND_COLUMNS = [
+  'amount', 'spent_date', 'is_tax_invoice', 'invoice_number', 'invoice_date',
+  'supplier', 'vat_amount', 'vat_rate', 'price_mode', 'vat_deductible',
+  'payment_method',
+];
+
+/** ما يُقبل في رقعة التعديل — بأسماء التطبيق كما يرسلها النموذج. */
+const EDITABLE_FIELDS = [
+  'description', 'amount', 'spentDate', 'notes', 'invoiceUrl', 'unit',
+  'isTaxInvoice', 'invoiceNumber', 'invoiceDate', 'supplier',
+  'vatAmount', 'vatRate', 'priceMode', 'vatDeductible', 'paymentMethod',
+];
+
+/**
+ * الصف المخزَّن بشكل التطبيق.
+ *
+ * Exists so an edit is validated by `startupEntryProblems` — the SAME function
+ * that guards creation. A second validator for edits is a second opinion about
+ * what a valid expense is, and the two drift.
+ */
+function entryAsApp(row = {}) {
+  return {
+    description:   row.description || '',
+    amount:        Number(row.amount) || 0,
+    spentDate:     row.spent_date || '',
+    notes:         row.notes || '',
+    invoiceUrl:    row.invoice_url || '',
+    isTaxInvoice:  row.is_tax_invoice === true,
+    invoiceNumber: row.invoice_number || '',
+    invoiceDate:   row.invoice_date || '',
+    supplier:      row.supplier || '',
+    vatAmount:     row.vat_amount ?? null,
+    vatRate:       row.vat_rate ?? null,
+    priceMode:     row.price_mode || 'inclusive',
+    vatDeductible: row.vat_deductible !== false,
+    paymentMethod: row.payment_method || 'cash',
+    unit:          row.unit || '',
+  };
+}
+
+/** أعمدة المستند بلا طوابع الإنشاء — للمقارنة وللكتابة معاً. */
+function entryColumns(parentId, app, FieldValue, userId) {
+  const doc = entryDocument(parentId, app, FieldValue, userId);
+  delete doc.created_at;
+  delete doc.created_by;
+  return doc;
+}
+
+/**
+ * يُبدّل الوصف القديم بالجديد أينما ظهر في نصّ القيد.
+ *
+ * ── لماذا استبدالٌ لا إعادة بناء ──
+ * The journal narration is not the description; it WRAPS it — «سداد تزويد سكن
+ * النزهه بمروحة» on the settlement line, the bare text on the expense line.
+ * Rebuilding the entry from the posting rules would re-derive amounts and
+ * accounts too, which is exactly what must not move. Substituting the old
+ * text for the new changes the words and nothing else, and a narration that
+ * never contained the old description is simply left alone.
+ */
+function renarrate(text, from, to) {
+  const s = String(text ?? '');
+  if (!from || !s.includes(from)) return s;
+  return s.split(from).join(to);
+}
+
+/**
+ * يعدّل مصروفاً مسجَّلاً — والقيد المُرحّل يتحدّث معه.
+ *
+ * ── ثلاث طبقات، لكلٍّ حكمٌ مختلف ──
+ * `notes`, `invoice_url`, `unit` لا تصل الدفاتر إطلاقاً، فتُعدَّل دائماً.
+ * والمبلغ والتاريخ وبيانات الضريبة تصل الدفاتر **برقم**: تغييرها بعد الترحيل
+ * يجعل القيد يصف مستنداً لم يعد يقول ما قاله، فتُرفض — والتصحيح عكسٌ ثم
+ * إعادة. والوصف حالةٌ ثالثة: يصل الدفاتر **نصّاً** فقط. فبدل أن يُترك القيد
+ * يقول «النزهة» بينما المستند صار يقول «الشمال» — شاشتان تتناقضان — يُبدَّل
+ * النص في القيد وسطوره في **نفس المعاملة**. لا مبلغ يتحرّك، ولا حساب، ولا
+ * تاريخ، ولا رقم قيد.
+ *
+ * ── وحدّ ذلك: الفترة المقفلة ──
+ * A closed period is closed for words as well as for numbers — its statements
+ * have been read and its narration is part of what was read. So the refusal
+ * there is the same refusal a posting gets, and it names the period.
+ */
+export async function updateStartupEntry(db, FieldValue, { entryId, patch = {} }, {
+  userId = null, role = 'operator', onBeforeCommit = null,
+} = {}) {
+  requireRole(role, WRITE_ROLES, 'تعديل مصروف تأسيس');
+  const eid = String(entryId ?? '').trim();
+  if (!eid) throw new StartupCostError('معرّف المصروف مطلوب.', { code: 'invalid-argument' });
+
+  const keys = Object.keys(patch || {});
+  if (!keys.length) {
+    throw new StartupCostError('لا حقول للتعديل.', { code: 'invalid-argument' });
+  }
+  const unknown = keys.filter((k) => !EDITABLE_FIELDS.includes(k));
+  if (unknown.length) {
+    // Refused out loud rather than dropped: a caller that sent a field and got
+    // OK back believes it took effect.
+    throw new StartupCostError(
+      `حقول لا تُعدَّل من هنا: ${unknown.join('، ')}.`, { code: 'invalid-argument' },
+    );
+  }
+
+  return db.runTransaction(async (tx) => {
+    // ── كل القراءات أولاً ──
+    // Firestore forbids a read after a write in the same transaction, and the
+    // journal reads below depend on the lock read above.
+    const entryRef = db.collection(COL.ENTRIES).doc(eid);
+    const entrySnap = await tx.get(entryRef);
+    if (!entrySnap.exists) {
+      throw new StartupCostError('المصروف غير موجود.', { code: 'not-found' });
+    }
+    const row = entrySnap.data();
+    const parentId = String(row.startup_cost_id ?? '');
+    const [{ parentRef, parent, entries }, lock] = await Promise.all([
+      readParentAndEntries(db, tx, parentId),
+      entryIsPosted(db, tx, eid),
+    ]);
+
+    const before = entryAsApp(row);
+    const next = { ...before, ...patch };
+
+    const problems = startupEntryProblems(next);
+    if (problems.length) throw new StartupCostError(problems[0], { code: 'invalid-argument' });
+
+    const beforeCols = entryColumns(parentId, before, FieldValue, userId);
+    const nextCols   = entryColumns(parentId, next, FieldValue, userId);
+    const changed    = Object.keys(nextCols).filter((c) => !Object.is(nextCols[c], beforeCols[c]));
+    if (!changed.length) {
+      return { id: eid, parentId, changed: [], actualAmount: round2(parent.actual_amount), status: parent.status };
+    }
+
+    if (next.unit && !unitIsListed(next.unit, parent.units || [])) {
+      throw new StartupCostError(
+        `«${next.unit}» ليس من سكنات هذا البند. أضِفه إلى قائمة السكنات أولاً من تعديل البند.`,
+        { code: 'invalid-argument' },
+      );
+    }
+
+    // ── ما يصل الدفاتر برقم لا يتغيّر بعد الترحيل ──
+    const blocked = changed.filter((c) => LEDGER_BOUND_COLUMNS.includes(c));
+    if (lock && blocked.length) {
+      throw new StartupCostError(
+        `هذا المصروف مُرحّل بالقيد رقم ${lock.entryNumber ?? '—'} — المبلغ والتاريخ وبيانات `
+        + 'الضريبة لا تتغيّر بعده. اعكس القيد أولاً؛ العكس هو ما يحرّر السجل. '
+        + 'أما الاسم والملاحظات والتقسيم فتُعدَّل الآن.',
+      );
+    }
+
+    // ── نصّ القيد يُقرأ الآن ليُكتب بعد قليل ──
+    const renarrations = [];
+    if (lock && changed.includes('description')) {
+      const journalIds = [lock.entryId, lock.settlementEntryId].filter(Boolean);
+      for (const jid of journalIds) {
+        const jRef  = db.collection(COL.JOURNAL).doc(jid);
+        const jSnap = await tx.get(jRef);
+        if (!jSnap.exists) continue;
+        const j = jSnap.data();
+        const pSnap = await tx.get(db.collection(COL.PERIODS).doc(String(j.periodKey || '')));
+        if (pSnap.exists && pSnap.data().status === 'closed') {
+          throw new StartupCostError(
+            `قيد هذا المصروف في فترة ${j.periodKey} وهي مقفلة — لا يتغيّر نصّه. `
+            + 'افتح الفترة أو صحّح بقيد تسوية.',
+          );
+        }
+        renarrations.push([jRef, {
+          description: renarrate(j.description, before.description, next.description),
+          lines: (j.lines || []).map((l) => ({
+            ...l,
+            description: renarrate(l.description, before.description, next.description),
+          })),
+        }]);
+      }
+    }
+
+    if (onBeforeCommit) await onBeforeCommit();
+
+    // ── ثم الكتابات ──
+    tx.update(entryRef, {
+      ...nextCols,
+      updated_at: FieldValue.serverTimestamp(),
+      updated_by: userId,
+    });
+    for (const [ref, payload] of renarrations) tx.update(ref, payload);
+
+    // The roll-up is re-derived only when the money moved; an unposted amount
+    // edit is the one case, and it must land in the same snapshot.
+    const rollup = changed.includes('amount')
+      ? applyRollup(
+        tx, parentRef, parent,
+        entries.map((e) => (e.id === eid ? round2(next.amount) : e.amount)),
+        FieldValue, userId,
+      )
+      : { actualAmount: round2(parent.actual_amount), status: parent.status };
+
+    tx.set(db.collection(COL.AUDIT).doc(), auditRecord({
+      action: 'startup-entry-update', documentId: eid, userId,
+      before: { description: before.description, amount: round2(before.amount), unit: before.unit || null },
+      after: {
+        description: next.description, amount: round2(next.amount), unit: next.unit || null,
+        changed, renarrated: renarrations.length,
+      },
+      note: `تعديل مصروف تأسيس على البند ${parentId}`
+        + (renarrations.length ? ` — وتحديث نصّ ${renarrations.length} قيد` : ''),
+    }, FieldValue));
+
+    return { id: eid, parentId, changed, renarrated: renarrations.length, ...rollup };
+  });
+}
+
 // ─── إسناد المصاريف إلى السكنات ──────────────────────────────────────────
 /**
  * يُسند سكناً لكل مصروف من قائمة، دفعةً واحدة.

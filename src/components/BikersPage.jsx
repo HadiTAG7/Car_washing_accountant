@@ -274,13 +274,14 @@ export default function BikersPage() {
           />
 
           <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
-            <table className="w-full min-w-[1220px] text-sm">
+            <table className="w-full min-w-[1320px] text-sm">
               <thead>
                 <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
                   <th className="py-3 px-4 whitespace-nowrap">الاسم</th>
                   <th className="py-3 px-4 whitespace-nowrap">الجوال</th>
                   <th className="py-3 px-4 whitespace-nowrap">السكن</th>
                   <th className="py-3 px-4 whitespace-nowrap">الكفيل</th>
+                  <th className="py-3 px-4 whitespace-nowrap">الجنسية</th>
                   <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">الراتب</th>
                   <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">سلف قائمة</th>
                   <th className="py-3 px-4 whitespace-nowrap text-center">غسلات الشهر</th>
@@ -292,14 +293,14 @@ export default function BikersPage() {
               <tbody>
                 {loading && bikers.length === 0 && (
                   <tr>
-                    <td colSpan={10} className="py-10">
+                    <td colSpan={11} className="py-10">
                       <LoadingState message="جارٍ تحميل سجل البايكرات..." />
                     </td>
                   </tr>
                 )}
                 {!loading && bikers.length === 0 && !error && (
                   <tr>
-                    <td colSpan={10}>
+                    <td colSpan={11}>
                       <EmptyState
                         compact
                         icon={Bike}
@@ -338,6 +339,9 @@ export default function BikersPage() {
                     </td>
                     <td className="py-3 px-4 whitespace-normal break-words text-slate-600 dark:text-slate-400">
                       {r.sponsor || '—'}
+                    </td>
+                    <td className="py-3 px-4 whitespace-nowrap text-slate-600 dark:text-slate-400">
+                      {r.nationality || '—'}
                     </td>
                     <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums font-semibold">
                       {r.salary > 0 ? formatCurrency(r.salary) : '—'}

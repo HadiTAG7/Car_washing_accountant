@@ -753,8 +753,8 @@ export function toHousingUnitUpdate(updates = {}) {
 // The people who wash the cars. Until this registry existed a biker was a
 // free-text `biker_name` typed onto each wash — so the NAME stays the join
 // key for washes and commissions (legacy rows carry only that), and this
-// collection carries what a name cannot: phone, residence, sponsor, salary,
-// iqama.
+// collection carries what a name cannot: phone, residence, sponsor,
+// nationality, salary, iqama.
 // Salary here is INFORMATION; the actual payment is a monthly_expenses row
 // created the day it is paid, so the books only ever say what happened.
 export function mapBiker(row) {
@@ -764,18 +764,22 @@ export function mapBiker(row) {
     contactNumber: row.contact_number || '',
     residence:     row.residence || '',
     sponsor:       row.sponsor || '',
+    nationality:   row.nationality || '',
     salary:        Math.max(0, Number(row.salary) || 0),
     startDate:     row.start_date || '',
     iqamaNumber:   row.iqama_number || '',
     iqamaExpiry:   row.iqama_expiry || '',
   };
 }
-export function toBikerInsert({ name, contactNumber, residence, sponsor, salary, startDate, iqamaNumber, iqamaExpiry }) {
+export function toBikerInsert({
+  name, contactNumber, residence, sponsor, nationality, salary, startDate, iqamaNumber, iqamaExpiry,
+}) {
   return {
     name:           String(name || '').trim(),
     contact_number: String(contactNumber || '').trim() || null,
     residence:      String(residence || '').trim() || null,
     sponsor:        String(sponsor || '').trim() || null,
+    nationality:    String(nationality || '').trim() || null,
     salary:         Math.max(0, Number(salary) || 0),
     start_date:     startDate || null,
     iqama_number:   String(iqamaNumber || '').trim() || null,
@@ -788,6 +792,7 @@ export function toBikerUpdate(updates = {}) {
   if (updates.contactNumber !== undefined) payload.contact_number = String(updates.contactNumber || '').trim() || null;
   if (updates.residence     !== undefined) payload.residence      = String(updates.residence || '').trim() || null;
   if (updates.sponsor       !== undefined) payload.sponsor        = String(updates.sponsor || '').trim() || null;
+  if (updates.nationality   !== undefined) payload.nationality    = String(updates.nationality || '').trim() || null;
   if (updates.salary        !== undefined) payload.salary         = Math.max(0, Number(updates.salary) || 0);
   if (updates.startDate     !== undefined) payload.start_date     = updates.startDate || null;
   if (updates.iqamaNumber   !== undefined) payload.iqama_number   = String(updates.iqamaNumber || '').trim() || null;

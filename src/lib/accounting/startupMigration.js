@@ -248,6 +248,23 @@ export function normalizeUnitName(value) {
 }
 
 /**
+ * أسطر المربّع ⇐ قائمة أسماء.
+ *
+ * The startup textarea shipped without this being CALLED: `handleSubmit`
+ * built its payload from four fields and `unitsText` was never read, so five
+ * housing names were discarded in the browser before any network call — no
+ * error, no save, and a screen that looked like it had worked. It lives here
+ * rather than inside one modal because a second form now needs the same
+ * parse, and a copied parser is how that bug gets a second chance.
+ */
+export function parseUnitsText(text) {
+  return String(text ?? '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+/**
  * ما يجب أن تكونه قائمة السكنات قبل أن تُحفظ.
  *
  * Returned as messages, not booleans, because the caller shows them: a list

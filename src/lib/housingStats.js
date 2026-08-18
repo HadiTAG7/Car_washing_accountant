@@ -75,6 +75,63 @@ export function perResident(cost, count) {
 }
 
 /**
+ * الإيجار لكل سكن — من المصاريف السنوية، لا من رقمٍ يُكتب على البطاقة.
+ *
+ * الإيجار مسجَّل أصلاً في الدفاتر. فحقلٌ ثانٍ على السكن يعني رقمين لشيءٍ
+ * واحد ينجرفان، وإيجاراً خارج قائمة الدخل. فيُقرأ من حيث هو.
+ *
+ * Keyed by NORMALIZED unit name, and deliberately flat across items: the
+ * housing tab groups by the physical place, not by which annual item paid
+ * for it, so two items naming the same unit add up into one figure for it.
+ * That is the opposite of `buildHousingRows`, which keeps items apart on
+ * purpose — there, two items sharing a unit name are two different budgets
+ * and merging them would be a lie. Here they are the same rent for the same
+ * roof.
+ *
+ * `unassigned` rides along because rent nobody has filed under a unit is the
+ * normal starting state, and money that hides behind a grouping it did not
+ * fit is money the owner cannot see.
+ */
+export function rentByUnit({ annualItems = [], annualEntries = [] } = {}) {
+  const byUnit = new Map();
+  let unassigned = 0;
+  let unassignedCount = 0;
+
+  for (const item of annualItems) {
+    if (!Array.isArray(item.units) || item.units.length === 0) continue;
+    const own = annualEntries.filter((e) => e.annualExpenseId === item.id);
+    for (const g of groupEntriesByUnit(own, item.units)) {
+      if (g.key === UNASSIGNED) {
+        unassigned += g.total;
+        unassignedCount += g.items.length;
+        continue;
+      }
+      const prev = byUnit.get(g.key)
+        || { key: g.key, name: g.label, total: 0, entryCount: 0, itemNames: [] };
+      prev.total += g.total;
+      prev.entryCount += g.items.length;
+      if (!prev.itemNames.includes(item.expenseName)) prev.itemNames.push(item.expenseName);
+      byUnit.set(g.key, prev);
+    }
+  }
+  return { byUnit, unassigned, unassignedCount };
+}
+
+/**
+ * سكناتٌ عليها إيجار ولا بطاقة لها — لأن التجهيز لم يُقسَّم عليها.
+ *
+ * The unit CARDS come from the startup item's `units`. A unit named only on
+ * the rent item would therefore have rent and no card at all, and the money
+ * would vanish from the screen while sitting in the books. Named instead, so
+ * the owner sees the mismatch and can fix whichever list is wrong.
+ */
+export function rentOnlyUnits(rentIndex, coveredNames = []) {
+  const covered = new Set(coveredNames.map(normalizeUnitName).filter(Boolean));
+  if (!rentIndex?.byUnit) return [];
+  return [...rentIndex.byUnit.values()].filter((u) => !covered.has(u.key));
+}
+
+/**
  * الصورة الكاملة: لكل بندٍ له تقسيمات — سكناته بساكنيها وتكلفتها وسعتها.
  *
  * Entries are filtered to THEIR item before grouping, so two items that
@@ -83,8 +140,17 @@ export function perResident(cost, count) {
  * the owner wants every measured figure compared against. Unassigned spend
  * («غير محدد») is returned as an explicit amount: money never hides behind
  * a grouping it did not fit.
+ *
+ * ── والإيجار سطرٌ ثانٍ، لا يُجمع مع التجهيز ──
+ * `rent` arrives from `rentByUnit` and stays BESIDE the setup cost, never
+ * added to it. The setup is capital spent once; the rent is an annual cost
+ * that repeats. «٣٩١ للساكن تجهيزاً» and «١٬٧١٤ للساكن إيجاراً سنوياً» are
+ * two facts with two different benchmarks — adding them yields a number
+ * that answers no question and can be compared to no budget.
  */
-export function buildHousingRows({ items = [], entries = [], bikers = [], metaRows = [] } = {}) {
+export function buildHousingRows({
+  items = [], entries = [], bikers = [], metaRows = [], rentIndex = null,
+} = {}) {
   const metaByKey = new Map(
     metaRows.map((m) => [normalizeUnitName(m.name), m]).filter(([k]) => k),
   );
@@ -103,6 +169,8 @@ export function buildHousingRows({ items = [], entries = [], bikers = [], metaRo
           const residents = residentsOf(g.label, bikers);
           const meta = metaByKey.get(g.key) || null;
           const per = perResident(g.total, residents.length);
+          const rentRow = rentIndex?.byUnit?.get(g.key) || null;
+          const rent = rentRow ? rentRow.total : 0;
           return {
             key: g.key,
             name: g.label,
@@ -112,6 +180,12 @@ export function buildHousingRows({ items = [], entries = [], bikers = [], metaRo
             cost: g.total,
             entryCount: g.items.length,
             perResident: per,
+            // الإيجار السنوي لهذا السكن — صفرٌ يعني «لا دفعة موسومة به»،
+            // وهو ما تعرضه الشاشة «—» لا «٠ ر.س».
+            rent,
+            rentEntryCount: rentRow ? rentRow.entryCount : 0,
+            rentSources: rentRow ? rentRow.itemNames : [],
+            rentPerResident: perResident(rent, residents.length),
             // نسبة الفارق عن التقدير — لا تُحسب إلا حين يكون الطرفان حقيقيين.
             vsBenchmarkPct: per !== null && benchmark
               ? ((per - benchmark) / benchmark) * 100

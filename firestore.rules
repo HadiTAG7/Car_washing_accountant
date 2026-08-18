@@ -264,6 +264,19 @@ service cloud.firestore {
       allow read:   if isMember();
       allow create: if isOperator();
       allow update, delete: if isOperator() && notPostedExpense('annual', id);
+      // ── وسم السكن بعد الترحيل ──
+      // Rent for worker housing is recorded, and posted, long before anyone
+      // asks «كم إيجار سكن الشمال للساكن؟». If tagging which unit a payment
+      // belongs to required an unposted entry, the housing tab could never
+      // read a single riyal of rent that was already in the books.
+      //
+      // So `unit` — and ONLY `unit` — passes on a posted entry. It is an
+      // ANALYSIS LABEL: it moves no money, appears on no journal line, and
+      // changes no total in a closed period. `hasOnly` is what keeps that
+      // true: amount, date and invoice all still die at the rule above, and
+      // a field nobody has heard of cannot ride in beside the tag.
+      allow update: if isOperator()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['unit']);
     }
     // ── سجل مصاريف بند التأسيس — للقراءة فقط من العميل ──────────────
     // Every entry here is a purchase document: it carries the spend date, the

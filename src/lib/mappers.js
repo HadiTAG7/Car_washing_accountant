@@ -50,6 +50,19 @@ export function mapStartupCost(row) {
 // `syncParentTotal`, not by a form. Legacy rows that still hold their own
 // amount are converted through `convertStartupParentSpend`, which asks for
 // what the record does not contain. See src/lib/accounting/startupMigration.js.
+/**
+ * قائمة التقسيمات كما تُحفَظ — نصوصٌ مُشذَّبة بلا فراغات.
+ *
+ * Shared by the startup plan and the annual expense so one list can never be
+ * cleaned two ways. Not `Set`-deduplicated here: the FORM says «مكرّر» to the
+ * user's face (unitListProblems), and silently swallowing a duplicate would
+ * save a list the user did not write.
+ */
+export function normalizeUnitList(units) {
+  return Array.isArray(units)
+    ? units.map((u) => String(u || '').trim()).filter(Boolean) : [];
+}
+
 export function toStartupCostInsert({
   category, itemName, quantity, plannedAmount, units,
 }) {
@@ -60,8 +73,7 @@ export function toStartupCostInsert({
     budgeted_amount: Math.max(0, Number(plannedAmount) || 0),
     // Trimmed and emptied of blanks here; the server de-duplicates on the
     // normalised key when the list is later edited.
-    units:           Array.isArray(units)
-      ? units.map((u) => String(u || '').trim()).filter(Boolean) : [],
+    units:           normalizeUnitList(units),
     // Always zero on insert. The sub-ledger owns this column from here on.
     actual_amount:   0,
     // A plan with no spend is `in_progress` by derivation — see
@@ -121,22 +133,54 @@ export function mapAnnualExpenseEntry(row) {
     description:      row.description || '',
     amount:           Number(row.amount) || 0,
     spentDate:        row.spent_date || '',
+    // '' means «غير محدد» — the same real-answer-not-missing-one convention
+    // mapStartupCostEntry uses, and what lets the housing tab read annual
+    // rent per unit without a second grouping vocabulary.
+    unit:             row.unit || '',
     notes:            row.notes || '',
     ...mapTaxInvoiceFields(row),
     createdAt:        row.created_at,
   };
 }
 export function toAnnualExpenseEntryInsert({
-  annualExpenseId, description, amount, spentDate, notes, ...taxInvoice
+  annualExpenseId, description, amount, spentDate, unit, notes, ...taxInvoice
 }) {
   return {
     annual_expense_id: annualExpenseId,
     description:       String(description || '').trim(),
     amount:            Math.max(0, Number(amount) || 0),
     spent_date:        spentDate || null,
+    unit:              String(unit || '').trim(),
     notes:             notes && String(notes).trim() ? String(notes).trim() : null,
     ...toTaxInvoiceFields(taxInvoice),
   };
+}
+/**
+ * تعديل قيدٍ سنوي — والحقول المسموحة تُذكر بالاسم.
+ *
+ * `unit` is the one field the security rules let through even on a POSTED
+ * entry (`affectedKeys().hasOnly(['unit'])`), because tagging which housing
+ * unit a rent payment belongs to moves no money and touches no journal line.
+ * Everything else here still dies at the rule if the entry is posted — this
+ * function shapes the write, it does not authorize it.
+ */
+export function toAnnualExpenseEntryUpdate(updates = {}) {
+  const payload = {};
+  if (updates.description !== undefined) payload.description = String(updates.description || '').trim();
+  if (updates.amount      !== undefined) payload.amount      = Math.max(0, Number(updates.amount) || 0);
+  if (updates.spentDate   !== undefined) payload.spent_date  = updates.spentDate || null;
+  if (updates.unit        !== undefined) payload.unit        = String(updates.unit || '').trim();
+  if (updates.notes       !== undefined) {
+    payload.notes = updates.notes && String(updates.notes).trim() ? String(updates.notes).trim() : null;
+  }
+  // حقول الفاتورة الضريبية — بالشرط نفسه، مفتاحاً مفتاحاً.
+  // Key-conditional matters twice over here. Dropping them would make the
+  // ledger's pencil silently discard an invoice edit; emitting them ALWAYS
+  // would put unrelated keys in `affectedKeys()` and turn a unit-only tag on
+  // a posted entry into a permission-denied. `assignUnits` passes `{ unit }`
+  // alone, so this adds nothing to that write.
+  Object.assign(payload, toTaxInvoiceFieldsUpdate(updates));
+  return payload;
 }
 
 // ── annual_expenses (Module 2) ────────────────────────────────────────────
@@ -176,17 +220,22 @@ export function mapAnnualExpense(row) {
     paymentMonth:  row.payment_month != null ? Number(row.payment_month) : null,
     paymentDay:    row.payment_day   != null ? Number(row.payment_day)   : null,
     paymentStatus: clampStatus(row.payment_status),
+    // أسماء التقسيمات داخل البند — السكنات مثلاً — تحت تكلفته السنوية
+    // الواحدة. On the PLAN, exactly as on the startup item, so the list is
+    // visible before a single payment has been filed under it.
+    units:         Array.isArray(row.units) ? row.units : [],
   };
 }
 export function toAnnualExpenseInsert({
   expenseName, category, quantity, annualCost,
-  paymentMonth, paymentDay, paymentStatus,
+  paymentMonth, paymentDay, paymentStatus, units,
 }) {
   return {
     expense_name:   expenseName,
     category,
     quantity:       clampExpenseQuantity(quantity),
     annual_cost:    Math.max(0, Number(annualCost) || 0),
+    units:          normalizeUnitList(units),
     payment_month:  clampPaymentMonth(paymentMonth),
     payment_day:    clampPaymentDay(paymentDay),
     payment_status: clampStatus(paymentStatus),
@@ -201,6 +250,7 @@ export function toAnnualExpenseUpdate(updates = {}) {
   if (updates.paymentMonth  !== undefined) payload.payment_month  = clampPaymentMonth(updates.paymentMonth);
   if (updates.paymentDay    !== undefined) payload.payment_day    = clampPaymentDay(updates.paymentDay);
   if (updates.paymentStatus !== undefined) payload.payment_status = clampStatus(updates.paymentStatus);
+  if (updates.units         !== undefined) payload.units          = normalizeUnitList(updates.units);
   return payload;
 }
 

@@ -66,7 +66,16 @@ export default function AnnualExpensesPage() {
   const [editingItem, setEditingItem]     = useState(null);
   // The expense whose payment sub-ledger is open (click on the expense
   // name). Distinct from `editingItem` (the edit-fields modal).
-  const [detailItem, setDetailItem]       = useState(null);
+  // ── المعرّف يُخزَّن، والبند يُقرأ من القائمة الحيّة ──
+  // Holding the OBJECT froze it: the modal kept showing the divisions the
+  // item had when it was clicked, so a list edited while the ledger was open
+  // rendered a picker for units that no longer existed. Same fix StartupPage
+  // carries — one id in state, the row derived from the live list.
+  const [detailItemId, setDetailItemId]   = useState(null);
+  const detailItem = useMemo(
+    () => (detailItemId ? items.find((i) => i.id === detailItemId) ?? null : null),
+    [items, detailItemId],
+  );
   // Entries hook lives at page level so the shared ExpenseLedgerModal
   // stays a pure-UI component; null parentId disables the fetch.
   const detailLedger = useAnnualExpenseEntries(detailItem?.id ?? null);
@@ -79,6 +88,22 @@ export default function AnnualExpensesPage() {
   const closeToast = useCallback(() => {
     setToast((t) => ({ ...t, open: false }));
   }, []);
+
+  // ── إسناد الدفعات إلى سكناتها ──
+  // Filing already-recorded rent under the housing unit it paid for. Moves no
+  // money — the item's total is the same payments either way — which is also
+  // why the rules let it through on a POSTED entry.
+  const handleAssignUnits = useCallback(async (assignments) => {
+    try {
+      setMutationError(null);
+      await detailLedger.assignUnits(detailItemId, assignments);
+      showToast(`أُسند ${assignments.length} دفعةً إلى تقسيماتها — المجموع والقيود لم تتغيّر`);
+    } catch (e) {
+      console.error('🔥 Firestore Error (AnnualExpensesPage.handleAssignUnits):', e);
+      setMutationError(e);
+      showToast(describeBackendError(e) || e?.message || 'تعذّر إسناد الدفعات', 'error');
+    }
+  }, [detailLedger, detailItemId, showToast]);
 
   const isModalOpen = localOpen || Boolean(editingItem);
   function openAddModal()      { setEditingItem(null); setLocalOpen(true); }
@@ -260,7 +285,7 @@ export default function AnnualExpensesPage() {
                         {canMutate ? (
                           <button
                             type="button"
-                            onClick={() => setDetailItem(i)}
+                            onClick={() => setDetailItemId(i.id)}
                             className="font-medium text-slate-800 dark:text-slate-200 hover:text-primary-700 dark:hover:text-primary-400 hover:underline decoration-dotted underline-offset-4 transition-colors text-right"
                             title="فتح سجل المصاريف التفصيلي"
                           >
@@ -350,7 +375,7 @@ export default function AnnualExpensesPage() {
 
       <ExpenseLedgerModal
         isOpen={Boolean(detailItem)}
-        onClose={() => setDetailItem(null)}
+        onClose={() => setDetailItemId(null)}
         title={detailItem ? `سجل مصاريف: ${detailItem.expenseName}` : ''}
         plannedAmount={detailItem?.annualCost || 0}
         plannedLabel="التكلفة السنوية"
@@ -358,6 +383,8 @@ export default function AnnualExpensesPage() {
         onDirty={refetch}
         migrationFile="2026_06_annual_expense_entries_ALL.sql"
         uploadFolder={detailItem ? `annual/${detailItem.id}` : 'annual'}
+        units={detailItem?.units || null}
+        onAssignUnits={canMutate ? handleAssignUnits : null}
       />
 
       <Toast

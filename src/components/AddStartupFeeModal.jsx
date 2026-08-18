@@ -6,7 +6,7 @@ import {
 import {
   formatCurrency, formatNumber,
 } from '../data/initialData';
-import { unitListProblems } from '../lib/accounting/startupMigration';
+import { unitListProblems, parseUnitsText } from '../lib/accounting/startupMigration';
 import { describeBackendError } from '../lib/firebaseClient';
 
 // Sentinel value for the synthetic "⚙️ إدارة وتعديل التصنيفات..." option
@@ -36,22 +36,6 @@ const EMPTY = {
 function toPositive(value) {
   const n = parseFloat(value);
   return Number.isFinite(n) && n > 0 ? n : 0;
-}
-
-/**
- * أسطر المربّع ⇐ قائمة أسماء.
- *
- * The textarea shipped without this: `handleSubmit` built its payload from
- * four fields and `unitsText` was never read, so five housing names were
- * discarded in the browser before any network call — no error, no save, and
- * a screen that looked like it had worked. Kept as a named function so the
- * test names the thing it is testing.
- */
-function parseUnitsText(text) {
-  return String(text ?? '')
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean);
 }
 
 function formatUnitPriceForInput(total, quantity) {

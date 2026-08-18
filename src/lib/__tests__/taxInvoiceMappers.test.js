@@ -17,7 +17,7 @@ import {
   toStartupCostInsert,
   mapTaxInvoiceFields, toTaxInvoiceFields, toTaxInvoiceFieldsUpdate,
   mapStartupCostEntry, toStartupCostEntryInsert,
-  mapAnnualExpenseEntry, toAnnualExpenseEntryInsert,
+  mapAnnualExpenseEntry, toAnnualExpenseEntryInsert, toAnnualExpenseEntryUpdate,
   mapMonthlyExpense, toMonthlyExpenseInsert,
   mapVariableExpense, toVariableExpenseInsert,
 } from '../mappers';
@@ -166,5 +166,42 @@ describe('بند رسوم التأسيس لا يقبل مبلغاً فعلياً
     // forced here and required by the rules on create.
     expect(toStartupCostInsert({ ...ATTEMPT, status: 'completed' }).status).toBe('in_progress');
     expect(toStartupCostInsert({ ...ATTEMPT, status: 'anything' }).status).toBe('in_progress');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// تعديل القيد السنوي — الحمولة تُكتب مفتاحاً مفتاحاً، ولسببٍ أمني
+// ═══════════════════════════════════════════════════════════════════════════
+// قاعدة `annual_expense_entries` تسمح بتعديل قيدٍ **مُرحَّل** حين يكون `unit`
+// هو المفتاح الوحيد الذي تغيّر — لأن وسم السكن تحليلٌ لا مال. فمفتاحٌ واحد
+// زائد في الحمولة يقلب إسناداً صحيحاً إلى `permission-denied` لا يفهم أحد
+// سببه. ومن الجهة الأخرى، إسقاط حقول الفاتورة كان سيجعل قلم سجلّ المصاريف
+// يبتلع تعديل فاتورةٍ بصمت. فالادعاءان متقابلان ويُختبران معاً.
+describe('toAnnualExpenseEntryUpdate', () => {
+  it('وسمُ السكن وحده يُنتج مفتاحاً واحداً — لا حقل فاتورة يتسلّل معه', () => {
+    expect(toAnnualExpenseEntryUpdate({ unit: '  سكن الشمال  ' }))
+      .toEqual({ unit: 'سكن الشمال' });
+  });
+
+  it('وحمولةٌ فارغة لا تكتب شيئاً', () => {
+    expect(toAnnualExpenseEntryUpdate({})).toEqual({});
+    expect(toAnnualExpenseEntryUpdate()).toEqual({});
+  });
+
+  it('وحقول الفاتورة تمرّ حين تُذكر — القلم لا يبتلع تعديلاً', () => {
+    const out = toAnnualExpenseEntryUpdate({
+      description: ' إيجار ', amount: 24000, spentDate: '2026-01-05',
+      invoiceNumber: 'INV-9', supplier: ' المؤجر ', isTaxInvoice: true,
+    });
+    expect(out).toMatchObject({
+      description: 'إيجار',
+      amount: 24000,
+      spent_date: '2026-01-05',
+      invoice_number: 'INV-9',
+      supplier: 'المؤجر',
+      is_tax_invoice: true,
+    });
+    // ولا `unit` بينها — ما لم يُذكر لا يُكتب.
+    expect(out).not.toHaveProperty('unit');
   });
 });

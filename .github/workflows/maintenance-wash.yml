@@ -26,6 +26,16 @@ on:
         required: false
         default: ''
         type: string
+      reverse_date:
+        description: 'إن كانت مُرحّلة: تاريخ القيد العكسي YYYY-MM-DD'
+        required: false
+        default: ''
+        type: string
+      reopen:
+        description: 'إن كانت فترة العكس مقفلة: سبب فتحها (تُقفل تلقائياً بعد التصحيح)'
+        required: false
+        default: ''
+        type: string
       apply:
         description: 'احذف فعلاً (بلا تفعيله: معاينة فقط)'
         required: false
@@ -79,6 +89,8 @@ jobs:
           node scripts/delete-wash.mjs \
             ${{ inputs.find && format('--find "{0}"', inputs.find) || '' }} \
             ${{ inputs.entry_id && format('--id "{0}"', inputs.entry_id) || '' }} \
+            ${{ inputs.reverse_date && format('--reverse-date "{0}"', inputs.reverse_date) || '' }} \
+            ${{ inputs.reopen && format('--reopen "{0}"', inputs.reopen) || '' }} \
             ${{ inputs.apply && '--apply' || '' }} \
             | tee "$RUNNER_TEMP/out.txt"
 

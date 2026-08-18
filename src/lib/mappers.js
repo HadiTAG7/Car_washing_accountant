@@ -665,6 +665,40 @@ export function toTemporaryExpenseUpdate(updates = {}) {
   return payload;
 }
 
+// ── housing_units (سعة السكن وملاحظاته) ──────────────────────────────────
+// The unit LIST lives on the startup item and the RESIDENTS live on the
+// bikers; this collection carries only what neither knows — the planned
+// capacity and free notes. Doc ids are deterministic (housingUnitDocId) so
+// one unit can never grow two meta documents.
+export function mapHousingUnit(row) {
+  return {
+    id:       row.id,
+    name:     row.name || '',
+    // Null is «لم تُذكر السعة», a different fact from an explicit number —
+    // the same not-stated-vs-zero line the tax fields draw.
+    capacity: row.capacity == null ? null : Math.max(0, Math.trunc(Number(row.capacity)) || 0),
+    notes:    row.notes || '',
+  };
+}
+export function toHousingUnitInsert({ id, name, capacity, notes }) {
+  return {
+    id,
+    name:     String(name || '').trim(),
+    capacity: capacity == null || capacity === '' ? null : Math.max(0, Math.trunc(Number(capacity)) || 0),
+    notes:    String(notes || '').trim() || null,
+  };
+}
+export function toHousingUnitUpdate(updates = {}) {
+  const payload = {};
+  if (updates.name     !== undefined) payload.name     = String(updates.name || '').trim();
+  if (updates.capacity !== undefined) {
+    payload.capacity = updates.capacity == null || updates.capacity === ''
+      ? null : Math.max(0, Math.trunc(Number(updates.capacity)) || 0);
+  }
+  if (updates.notes    !== undefined) payload.notes    = String(updates.notes || '').trim() || null;
+  return payload;
+}
+
 // ── bikers (سجل البايكرات) ────────────────────────────────────────────────
 // The people who wash the cars. Until this registry existed a biker was a
 // free-text `biker_name` typed onto each wash — so the NAME stays the join

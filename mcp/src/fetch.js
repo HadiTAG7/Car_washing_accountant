@@ -29,7 +29,7 @@ export const COL = {
 
 /** Collections a person records day-to-day work in. */
 export const OPERATIONAL = [
-  'washes', 'bikers', 'monthly_expenses', 'variable_expenses', 'annual_expenses',
+  'washes', 'bikers', 'housing_units', 'monthly_expenses', 'variable_expenses', 'annual_expenses',
   'annual_expense_entries', 'temporary_expenses', 'partner_payments',
   'partners', 'transactions', 'categories', 'expense_vouchers', 'fixed_assets',
 ];

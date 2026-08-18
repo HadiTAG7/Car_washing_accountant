@@ -409,6 +409,7 @@ service cloud.firestore {
       return c in [
         'annual_expense_categories', 'annual_expenses',
         'auth_users_backup', 'bikers', 'categories', 'category_budgets',
+        'housing_units',
         'monthly_expense_categories', 'partners',
         'transactions', 'variable_expense_categories'
       ];

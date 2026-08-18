@@ -7,6 +7,7 @@ import {
   Activity,
   Car,
   Bike,
+  Home,
   BarChart3,
   Target,
   Handshake,
@@ -45,6 +46,7 @@ const BudgetsPage          = lazy(() => import('./components/BudgetsPage'));
 const PartnersPage         = lazy(() => import('./components/PartnersPage'));
 const PartnerPaymentsPage  = lazy(() => import('./components/PartnerPaymentsPage'));
 const BikersPage           = lazy(() => import('./components/BikersPage'));
+const HousingPage          = lazy(() => import('./components/HousingPage'));
 const TemporaryExpensesPage = lazy(() => import('./components/TemporaryExpensesPage'));
 // ── الدفاتر المحاسبية ──────────────────────────────────────────────────
 const GeneralLedgerPage    = lazy(() => import('./components/GeneralLedgerPage'));
@@ -69,6 +71,7 @@ const TABS = [
   { id: 'variable',  label: 'المصاريف المتغيرة',      icon: Activity    },
   { id: 'washes',    label: 'الغسلات',                icon: Car         },
   { id: 'bikers',    label: 'البايكر',                 icon: Bike        },
+  { id: 'housing',   label: 'السكن',                   icon: Home        },
   { id: 'summary',   label: 'قائمة الدخل',            icon: BarChart3   },
   { id: 'vat',       label: 'الضريبة المستردة',       icon: Percent     },
   { id: 'budgets',   label: 'الرقابة والميزانيات',    icon: Target      },
@@ -197,6 +200,7 @@ function AppShell() {
             {activeTab === 'variable'  && <VariableExpensesPage />}
             {activeTab === 'washes'    && <WashesPage />}
             {activeTab === 'bikers'    && <BikersPage />}
+            {activeTab === 'housing'   && <HousingPage />}
             {activeTab === 'summary'   && <FinancialSummaryPage />}
             {activeTab === 'vat'       && <VatRecoveryPage />}
             {activeTab === 'budgets'   && <BudgetsPage />}

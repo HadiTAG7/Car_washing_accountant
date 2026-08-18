@@ -1,0 +1,67 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# تقرير بند تأسيس — قراءةٌ محضة
+# ═══════════════════════════════════════════════════════════════════════════
+# لا `apply` ولا وضع كتابة: السكربت الذي يشغّله لا يستدعي أي دالة تغيّر شيئاً.
+# فُصل عن سيرَي التعديل والحذف لهذا السبب وحده — أداة القراءة يجب أن يكون
+# واضحاً من اسمها ومن مدخلاتها أنها لا تمسّ شيئاً.
+# ═══════════════════════════════════════════════════════════════════════════
+
+name: صيانة — تقرير بند تأسيس (قراءة فقط)
+
+on:
+  workflow_dispatch:
+    inputs:
+      item:
+        description: 'اسم البند — مثال: تجهيز السكن'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    name: تقرير
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+
+      - name: التحقق من وجود السرّ
+        env:
+          KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$KEY" ]; then
+            echo "::error::السر FIREBASE_SERVICE_ACCOUNT غير مضبوط. الخطوات في docs/DEPLOY.md."
+            exit 1
+          fi
+
+      - name: كتابة المفتاح في ملف مؤقت
+        env:
+          KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          printf '%s' "$KEY" > "$RUNNER_TEMP/sa.json"
+          chmod 600 "$RUNNER_TEMP/sa.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/sa.json" >> "$GITHUB_ENV"
+
+      - name: التشغيل
+        run: node scripts/startup-item-report.mjs --item "${{ inputs.item }}" | tee "$RUNNER_TEMP/out.txt"
+
+      - name: الخلاصة
+        if: always()
+        run: |
+          {
+            echo '### التقرير'
+            echo '```'
+            cat "$RUNNER_TEMP/out.txt" 2>/dev/null || echo 'لا مخرجات.'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: محو المفتاح
+        if: always()
+        run: rm -f "$RUNNER_TEMP/sa.json"

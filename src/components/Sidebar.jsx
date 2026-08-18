@@ -1,12 +1,26 @@
-import { useState } from 'react';
-import { LogOut, Plus, X, KeyRound } from 'lucide-react';
+import { useCallback, useState } from 'react';
+import { LogOut, Plus, X, KeyRound, ChevronDown } from 'lucide-react';
 import { SweaterWordmark } from './SweaterLogo';
 import { signOut as fbSignOut } from 'firebase/auth';
 import { auth, isFirebaseConfigured } from '../lib/firebaseClient';
 import ChangePasswordModal from './ChangePasswordModal';
 
+// ── طيُّ المجموعات يُحفظ على الجهاز ──
+// Same shape as `useDarkMode`'s persistence: an `mw:` key, JSON, and every
+// touch wrapped — localStorage throws in private mode and in some embedded
+// webviews, and a nav that crashes because it could not remember a
+// preference is worse than a nav that forgets.
+const COLLAPSE_KEY = 'mw:navCollapsed';
+
+function readCollapsed() {
+  try {
+    const raw = window.localStorage.getItem(COLLAPSE_KEY);
+    return new Set(raw ? JSON.parse(raw) : []);
+  } catch { return new Set(); }
+}
+
 export default function Sidebar({
-  tabs,
+  groups = [],
   activeTab,
   onSelectTab,
   user,
@@ -23,6 +37,18 @@ export default function Sidebar({
   // كلمة المرور" button. Distinct from the email-based forgot-password
   // flow on LoginScreen.
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(readCollapsed);
+
+  const toggleGroup = useCallback((groupId) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupId)) next.delete(groupId);
+      else next.add(groupId);
+      try { window.localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...next])); }
+      catch { /* localStorage might be blocked */ }
+      return next;
+    });
+  }, []);
 
   // NON-BLOCKING sign-out. Two reported failure modes informed this
   // shape:
@@ -133,39 +159,66 @@ export default function Sidebar({
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto px-3 py-4">
-          <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest px-3 mb-2">
-            القائمة الرئيسية
-          </p>
-          <ul className="space-y-0.5">
-            {tabs.map(({ id, label, icon: Icon }) => {
-              const isActive = activeTab === id;
-              return (
-                <li key={id}>
+        <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
+          {groups.map((group) => {
+            const holdsActive = group.tabs.some((t) => t.id === activeTab);
+            // ── المجموعة النشطة تُعرض مفتوحةً ولو كانت مطويّة ──
+            // An override at RENDER time, not a write to the preference: the
+            // group re-collapses the moment the user navigates away. Without
+            // it the active tab — and the orange bar marking it — could sit
+            // hidden behind a folded header, and the nav would be lying about
+            // where the user is.
+            const isOpen = !collapsed.has(group.id) || holdsActive;
+            return (
+              <div key={group.id}>
+                {group.title && (
                   <button
                     type="button"
-                    onClick={() => onSelectTab(id)}
-                    aria-current={isActive ? 'page' : undefined}
-                    className={`relative w-full flex items-center gap-3 px-3.5 py-3 md:py-2.5 text-sm font-semibold transition-colors duration-200
-                      ${isActive
-                        ? 'bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300'
-                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
-                    style={{ borderRadius: 'var(--sw-radius-control)', minHeight: 'var(--sw-tap-min)' }}
+                    onClick={() => toggleGroup(group.id)}
+                    aria-expanded={isOpen}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
                   >
-                    {/* Brand bar marks the active route (RTL: right edge). */}
-                    {isActive && (
-                      <span
-                        className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-primary-500"
-                        style={{ borderRadius: 'var(--sw-radius-round)' }}
-                      />
-                    )}
-                    <Icon size={18} strokeWidth={isActive ? 2.4 : 2} />
-                    <span className="flex-1 text-right">{label}</span>
+                    <ChevronDown
+                      size={13}
+                      className={`transition-transform duration-200 ${isOpen ? '' : '-rotate-90'}`}
+                    />
+                    <span className="flex-1 text-right">{group.title}</span>
                   </button>
-                </li>
-              );
-            })}
-          </ul>
+                )}
+                {isOpen && (
+                  <ul className="space-y-0.5">
+                    {group.tabs.map(({ id, label, icon: Icon }) => {
+                      const isActive = activeTab === id;
+                      return (
+                        <li key={id}>
+                          <button
+                            type="button"
+                            onClick={() => onSelectTab(id)}
+                            aria-current={isActive ? 'page' : undefined}
+                            className={`relative w-full flex items-center gap-3 px-3.5 py-3 md:py-2.5 text-sm font-semibold transition-colors duration-200
+                              ${isActive
+                                ? 'bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300'
+                                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                            style={{ borderRadius: 'var(--sw-radius-control)', minHeight: 'var(--sw-tap-min)' }}
+                          >
+                            {/* Brand bar marks the active route (RTL: right edge). */}
+                            {isActive && (
+                              <span
+                                className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-primary-500"
+                                style={{ borderRadius: 'var(--sw-radius-round)' }}
+                              />
+                            )}
+                            <Icon size={18} strokeWidth={isActive ? 2.4 : 2} />
+                            <span className="flex-1 text-right">{label}</span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            );
+          })}
         </nav>
 
         {/* Financial Entry CTA — the system's pill action button */}

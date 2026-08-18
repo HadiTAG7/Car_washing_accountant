@@ -63,27 +63,72 @@ import { MobileMenuProvider, useMobileMenu } from './contexts/MobileMenuContext'
 import { PartnerViewProvider, usePartnerView } from './contexts/PartnerViewContext';
 import PartnerViewBanner from './components/PartnerViewBanner';
 
-const TABS = [
-  { id: 'overview',  label: 'نظرة عامة',              icon: LayoutDashboard },
-  { id: 'startup',   label: 'رسوم التأسيس',           icon: Landmark    },
-  { id: 'annual',    label: 'المصاريف السنوية',       icon: Repeat      },
-  { id: 'monthly',   label: 'المصاريف الشهرية',       icon: Receipt     },
-  { id: 'variable',  label: 'المصاريف المتغيرة',      icon: Activity    },
-  { id: 'washes',    label: 'الغسلات',                icon: Car         },
-  { id: 'bikers',    label: 'البايكر',                 icon: Bike        },
-  { id: 'housing',   label: 'السكن',                   icon: Home        },
-  { id: 'summary',   label: 'قائمة الدخل',            icon: BarChart3   },
-  { id: 'vat',       label: 'الضريبة المستردة',       icon: Percent     },
-  { id: 'budgets',   label: 'الرقابة والميزانيات',    icon: Target      },
-  { id: 'partners',  label: 'إدارة الشركاء',          icon: Handshake   },
-  { id: 'payments',  label: 'مدفوعات الشركاء',        icon: HandCoins   },
-  { id: 'temporary_expenses', label: 'المصروفات المؤقتة', icon: RefreshCw },
-  { id: 'ledger',    label: 'دفتر الأستاذ',            icon: BookOpen    },
-  { id: 'trial',     label: 'ميزان المراجعة',          icon: Scale       },
-  { id: 'balance',   label: 'المركز المالي',           icon: Landmark    },
-  { id: 'documents', label: 'المستندات الضريبية',      icon: FileText    },
-  { id: 'assets',    label: 'الأصول الثابتة',          icon: Boxes       },
-  { id: 'periods',   label: 'إقفال الفترة',            icon: Lock        },
+// ── القائمة مجموعاتٌ لا سطراً واحداً ──
+// Nineteen flat entries stopped being a list and became a scroll — worst on
+// the phone, where the owner works. The grouping is by the QUESTION each tab
+// answers, not by data model: «ماذا حدث اليوم؟» vs «كم أنفقنا؟» vs «ما تقوله
+// الدفاتر؟». `overview` stays titleless at the top because a summary belongs
+// to no category — it is the answer before the questions.
+//
+// Tab ids are untouched: the render chain below keys off them, so regrouping
+// is a presentation change that cannot break a route.
+const TAB_GROUPS = [
+  {
+    id: 'top',
+    title: null,
+    tabs: [
+      { id: 'overview',  label: 'نظرة عامة',              icon: LayoutDashboard },
+    ],
+  },
+  {
+    id: 'ops',
+    title: 'التشغيل اليومي',
+    tabs: [
+      { id: 'washes',    label: 'الغسلات',                icon: Car         },
+      { id: 'bikers',    label: 'البايكر',                 icon: Bike        },
+      { id: 'housing',   label: 'السكن',                   icon: Home        },
+      { id: 'temporary_expenses', label: 'المصروفات المؤقتة', icon: RefreshCw },
+    ],
+  },
+  {
+    id: 'expenses',
+    title: 'المصاريف',
+    tabs: [
+      { id: 'startup',   label: 'رسوم التأسيس',           icon: Landmark    },
+      { id: 'annual',    label: 'المصاريف السنوية',       icon: Repeat      },
+      { id: 'monthly',   label: 'المصاريف الشهرية',       icon: Receipt     },
+      { id: 'variable',  label: 'المصاريف المتغيرة',      icon: Activity    },
+    ],
+  },
+  {
+    id: 'reports',
+    title: 'التقارير والرقابة',
+    tabs: [
+      { id: 'summary',   label: 'قائمة الدخل',            icon: BarChart3   },
+      { id: 'vat',       label: 'الضريبة المستردة',       icon: Percent     },
+      { id: 'budgets',   label: 'الرقابة والميزانيات',    icon: Target      },
+    ],
+  },
+  {
+    id: 'partners',
+    title: 'الشركاء',
+    tabs: [
+      { id: 'partners',  label: 'إدارة الشركاء',          icon: Handshake   },
+      { id: 'payments',  label: 'مدفوعات الشركاء',        icon: HandCoins   },
+    ],
+  },
+  {
+    id: 'books',
+    title: 'الدفاتر المحاسبية',
+    tabs: [
+      { id: 'ledger',    label: 'دفتر الأستاذ',            icon: BookOpen    },
+      { id: 'trial',     label: 'ميزان المراجعة',          icon: Scale       },
+      { id: 'balance',   label: 'المركز المالي',           icon: Landmark    },
+      { id: 'documents', label: 'المستندات الضريبية',      icon: FileText    },
+      { id: 'assets',    label: 'الأصول الثابتة',          icon: Boxes       },
+      { id: 'periods',   label: 'إقفال الفترة',            icon: Lock        },
+    ],
+  },
 ];
 
 // Inner shell wraps the routed content so it can subscribe to the
@@ -157,7 +202,7 @@ function AppShell() {
   return (
     <div className="min-h-screen">
       <Sidebar
-        tabs={TABS}
+        groups={TAB_GROUPS}
         activeTab={activeTab}
         onSelectTab={handleSelectTab}
         user={session?.user}

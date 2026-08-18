@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
-import { X, Plus, Pencil, Bike, Phone, MapPin, Banknote, IdCard } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { X, Plus, Pencil, Bike, Phone, MapPin, Banknote, IdCard, ShieldUser } from 'lucide-react';
 import { formatCurrency } from '../data/initialData';
+import { normalizeUnitName } from '../lib/accounting/startupMigration';
 import DateField from './DateField';
 
 // One modal for add AND edit, keyed on `initialValues?.id` — the same
@@ -9,16 +10,46 @@ const EMPTY = {
   name:          '',
   contactNumber: '',
   residence:     '',
+  sponsor:       '',
   salary:        '',
   startDate:     '',
   iqamaNumber:   '',
   iqamaExpiry:   '',
 };
 
-export default function AddBikerModal({ isOpen, onClose, onAdd, onUpdate, initialValues = null }) {
+/**
+ * الكفلاء المكتوبون سابقاً — للاقتراح لا للحبس.
+ *
+ * Compared normalized («مؤسسة النور» and «مؤسسه النور» are one sponsor) but
+ * shown in the FIRST spelling as it was typed: the normalizer strips the
+ * hamza and the ta-marbuta, so displaying its output would suggest names
+ * nobody wrote. Normalization answers "same?", it does not answer "what to
+ * show".
+ */
+function sponsorOptions(bikers) {
+  const seen = new Set();
+  const out = [];
+  for (const b of bikers || []) {
+    const raw = String(b?.sponsor || '').trim();
+    if (!raw) continue;
+    const key = normalizeUnitName(raw);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(raw);
+  }
+  return out.sort((a, b) => a.localeCompare(b, 'ar'));
+}
+
+// `bikers` arrives as a PROP, not from `useBikers()` — BikersPage already
+// holds the list, so a hook here would open a second read of the same
+// collection and drag firebaseClient into a modal that has none.
+export default function AddBikerModal({ isOpen, onClose, onAdd, onUpdate, initialValues = null, bikers = [] }) {
   const editing = Boolean(initialValues?.id);
   const [form, setForm] = useState(EMPTY);
   const [submitting, setSubmitting] = useState(false);
+  // useMemo, never a useEffect dep: `bikers` is a fresh array identity on
+  // every render while the query loads, and an effect on it would spin.
+  const sponsors = useMemo(() => sponsorOptions(bikers), [bikers]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -27,6 +58,7 @@ export default function AddBikerModal({ isOpen, onClose, onAdd, onUpdate, initia
         name:          initialValues.name || '',
         contactNumber: initialValues.contactNumber || '',
         residence:     initialValues.residence || '',
+        sponsor:       initialValues.sponsor || '',
         salary:        initialValues.salary ? String(initialValues.salary) : '',
         startDate:     initialValues.startDate || '',
         iqamaNumber:   initialValues.iqamaNumber || '',
@@ -56,6 +88,7 @@ export default function AddBikerModal({ isOpen, onClose, onAdd, onUpdate, initia
         name:          form.name.trim(),
         contactNumber: form.contactNumber.trim(),
         residence:     form.residence.trim(),
+        sponsor:       form.sponsor.trim(),
         salary,
         startDate:     form.startDate || '',
         iqamaNumber:   form.iqamaNumber.trim(),
@@ -162,6 +195,36 @@ export default function AddBikerModal({ isOpen, onClose, onAdd, onUpdate, initia
                   className="w-full pr-9 pl-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:border-primary-500 transition-colors"
                 />
               </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5" htmlFor="bikerFormSponsor">
+                اسم الكفيل <span className="text-[11px] font-normal text-slate-500 dark:text-slate-400">— اختياري</span>
+              </label>
+              <div className="relative">
+                <ShieldUser size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 pointer-events-none" />
+                <input
+                  id="bikerFormSponsor"
+                  type="text"
+                  name="sponsor"
+                  value={form.sponsor}
+                  onChange={handleChange}
+                  list="bikerSponsorOptions"
+                  placeholder="مثال: مؤسسة النور للخدمات"
+                  className="w-full pr-9 pl-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:border-primary-500 transition-colors"
+                />
+                {/* اقتراح لا حصر: اكتب كفيلاً جديداً متى شئت. */}
+                <datalist id="bikerSponsorOptions">
+                  {sponsors.map((name) => <option key={name} value={name} />)}
+                </datalist>
+              </div>
+              {sponsors.length > 0 && (
+                <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                  الحقل يقترح الكفلاء المسجّلين على بايكرية آخرين — والكتابة الحرّة مسموحة.
+                </p>
+              )}
             </div>
           </div>
 

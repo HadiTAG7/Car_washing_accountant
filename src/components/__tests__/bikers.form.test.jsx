@@ -70,6 +70,84 @@ describe('AddBikerModal', () => {
   });
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+// اسم الكفيل — نصٌّ حرّ يقترح ولا يحبس
+// ═══════════════════════════════════════════════════════════════════════════
+// A closed picker would block the first biker of a new sponsor; free text with
+// no memory would grow «مؤسسة النور» and «مؤسسه النور» side by side. The claim
+// under test is the middle: the payload is whatever was typed, and the
+// SUGGESTIONS are de-duplicated by Arabic normalization while still being
+// shown in the spelling a human actually wrote.
+const SPONSORED = [
+  { id: 'b1', name: 'أحمد', sponsor: 'مؤسسة النور' },
+  { id: 'b2', name: 'سالم', sponsor: 'مؤسسه النور' },   // نفس الكفيل بإملاء آخر
+  { id: 'b3', name: 'خالد', sponsor: 'شركة الفجر' },
+  { id: 'b4', name: 'ماجد', sponsor: '   ' },            // فراغ لا يصير اقتراحاً
+  { id: 'b5', name: 'فهد' },                             // بلا كفيل أصلاً
+];
+
+const options = () => [...document.querySelectorAll('#bikerSponsorOptions option')]
+  .map((o) => o.value);
+
+describe('AddBikerModal — اسم الكفيل', () => {
+  it('الكفيل يصل مُشذَّباً إلى onAdd', () => {
+    const onAdd = vi.fn();
+    render(<AddBikerModal isOpen onClose={() => {}} onAdd={onAdd} />);
+    set('#bikerFormName', 'أحمد');
+    set('#bikerFormSponsor', '  مؤسسة النور للخدمات  ');
+    submit();
+    expect(onAdd.mock.calls[0][0].sponsor).toBe('مؤسسة النور للخدمات');
+  });
+
+  it('والفراغ يصل \'\' لا undefined — «بلا كفيل» حقيقةٌ تُكتب، لا حقلٌ غائب', () => {
+    // المحوِّل يقلب '' إلى null؛ وundefined يجعل toBikerUpdate يتخطّى الحقل
+    // كلياً، فلا يُمحى كفيلٌ أُزيل عمداً.
+    const onAdd = vi.fn();
+    render(<AddBikerModal isOpen onClose={() => {}} onAdd={onAdd} />);
+    set('#bikerFormName', 'أحمد');
+    submit();
+    expect(onAdd.mock.calls[0][0].sponsor).toBe('');
+  });
+
+  it('والتحرير يُعبّئ الكفيل القائم ويعيده كما هو إن لم يُلمَس', () => {
+    const onUpdate = vi.fn();
+    render(
+      <AddBikerModal
+        isOpen
+        onClose={() => {}}
+        onUpdate={onUpdate}
+        initialValues={{ id: 'b1', name: 'أحمد', salary: 2000, sponsor: 'مؤسسة النور' }}
+      />,
+    );
+    expect($('#bikerFormSponsor').value).toBe('مؤسسة النور');
+    submit();
+    expect(onUpdate).toHaveBeenCalledWith('b1', expect.objectContaining({ sponsor: 'مؤسسة النور' }));
+  });
+
+  it('والاقتراحات تجمع الإملاءين في واحد — وتعرضه كما كُتب لا مُطبَّعاً', () => {
+    // الادعاء الحامل: التطبيع للمقارنة لا للعرض. لو عُرض ناتجه لظهر
+    // «مؤسسه النور» — اسمٌ لم يكتبه أحد.
+    render(<AddBikerModal isOpen onClose={() => {}} onAdd={vi.fn()} bikers={SPONSORED} />);
+    expect(options()).toEqual(['شركة الفجر', 'مؤسسة النور']);
+  });
+
+  it('وبلا كفلاء سابقين: لا اقتراحات ولا سطر شرح — والحقل يبقى صالحاً', () => {
+    render(<AddBikerModal isOpen onClose={() => {}} onAdd={vi.fn()} />);
+    expect(options()).toEqual([]);
+    expect(document.body.textContent).not.toContain('يقترح الكفلاء');
+    expect($('#bikerFormSponsor')).toBeTruthy();
+  });
+
+  it('وكفيلٌ جديد لا يمنعه المنتقي — الاقتراح ليس حصراً', () => {
+    const onAdd = vi.fn();
+    render(<AddBikerModal isOpen onClose={() => {}} onAdd={onAdd} bikers={SPONSORED} />);
+    set('#bikerFormName', 'ناصر');
+    set('#bikerFormSponsor', 'مكتب لم يُسجَّل من قبل');
+    submit();
+    expect(onAdd.mock.calls[0][0].sponsor).toBe('مكتب لم يُسجَّل من قبل');
+  });
+});
+
 describe('AddBikerAdvanceModal', () => {
   it('يرسل السلفة باسم البايكر ومعرّفه وطريقة الصرف', () => {
     const onAdd = vi.fn();

@@ -64,6 +64,8 @@ export default function PeriodClosePage() {
   // guessed baseline is the same bug wearing a timestamp.
   const [baselineDraft, setBaselineDraft] = useState('');
   const [policyReason, setPolicyReason] = useState('');
+  const [reopenKey, setReopenKey] = useState('');
+  const [reopenReason, setReopenReason] = useState('');
   const [toast, setToast] = useState({ open: false, message: '', tone: 'success', duration: 3000 });
 
   const showToast = useCallback((message, tone = 'success') => {
@@ -320,17 +322,14 @@ export default function PeriodClosePage() {
     // A reason is required by the rules, not just asked for here: re-opening
     // a filed period is the one action that can change what a filed month
     // says, so it needs an admin and a stated why.
-    const reason = typeof window === 'undefined' ? '' : window.prompt(
-      `سبب إعادة فتح الفترة ${key}؟\n\n`
-      + 'العملية مقصورة على المدير وتُسجَّل في سجل التدقيق باسمك مع السبب.',
-      '',
-    );
-    if (reason == null) return;
-    if (!reason.trim()) { showToast('سبب إعادة الفتح مطلوب.', 'error'); return; }
+    const reason = reopenReason.trim();
+    if (!reason) { showToast('سبب إعادة الفتح مطلوب.', 'error'); return; }
     setBusy(key);
     try {
-      await reopenPeriod(key, { reason: reason.trim() });
+      await reopenPeriod(key, { reason });
       showToast(`تمت إعادة فتح الفترة ${key}.`);
+      setReopenKey('');
+      setReopenReason('');
       await refetch();
     } catch (e) {
       showToast(e?.message || 'تعذّرت إعادة الفتح', 'error');
@@ -959,14 +958,37 @@ export default function PeriodClosePage() {
                                 <p key={w} className="text-[11px] text-amber-700 dark:text-amber-300 mt-1 leading-relaxed">{w}</p>
                               ))}
                             </td>
-                            <td className="py-3 px-4 text-left whitespace-nowrap">
+                            <td className="py-3 px-4 text-left">
                               {!canMutate ? (
                                 <span className="text-[11px] text-slate-400 dark:text-slate-500">للعرض فقط</span>
                               ) : isClosed ? (
-                                <SecondaryButton icon={Unlock} onClick={() => handleReopen(key)}
-                                  disabled={busy === key}>
-                                  {busy === key ? '...' : 'إعادة فتح'}
-                                </SecondaryButton>
+                                reopenKey === key ? (
+                                  <div className="min-w-[17rem] space-y-2">
+                                    <input
+                                      type="text"
+                                      value={reopenReason}
+                                      onChange={(e) => setReopenReason(e.target.value)}
+                                      aria-label={`سبب إعادة فتح الفترة ${key}`}
+                                      placeholder="سبب إعادة الفتح (يُسجّل في التدقيق)"
+                                      className="w-full px-3 py-2 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs"
+                                    />
+                                    <div className="flex gap-2 justify-end">
+                                      <SecondaryButton onClick={() => { setReopenKey(''); setReopenReason(''); }}
+                                        disabled={busy === key}>إلغاء</SecondaryButton>
+                                      <PrimaryButton icon={busy === key ? Loader2 : Unlock}
+                                        onClick={() => handleReopen(key)}
+                                        disabled={busy === key || !reopenReason.trim()}>
+                                        {busy === key ? '...' : 'تأكيد إعادة الفتح'}
+                                      </PrimaryButton>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <SecondaryButton icon={Unlock}
+                                    onClick={() => { setReopenKey(key); setReopenReason(''); }}
+                                    disabled={busy === key}>
+                                    إعادة فتح
+                                  </SecondaryButton>
+                                )
                               ) : (
                                 <PrimaryButton icon={Lock} onClick={() => handleClose(key)}
                                   disabled={busy === key || !pre.ok}

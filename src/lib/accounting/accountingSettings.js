@@ -40,6 +40,16 @@ export const DEFAULT_ACCOUNTING_SETTINGS = {
   taxPolicyHistory: [],
 };
 
+/** Return a finite JSON-safe VAT rate for a callable payload. */
+export function vatRateForWrite(value, fallback = DEFAULT_VAT_RATE) {
+  const rate = Number(value);
+  if (value !== null && value !== undefined && String(value).trim() !== ''
+    && Number.isFinite(rate) && rate >= 0 && rate < 1) return rate;
+  const fallbackRate = Number(fallback);
+  return Number.isFinite(fallbackRate) && fallbackRate >= 0 && fallbackRate < 1
+    ? fallbackRate : DEFAULT_VAT_RATE;
+}
+
 export async function fetchAccountingSettings() {
   if (!isFirebaseConfigured) return { ...DEFAULT_ACCOUNTING_SETTINGS };
   const snap = await getDoc(doc(db, 'app_settings', SETTINGS_DOC));
@@ -73,7 +83,7 @@ export async function setTaxPolicy({
   return callServer('accountingSetTaxPolicy', {
     vatRegistered: Boolean(vatRegistered),
     washPriceMode: washPriceMode === 'exclusive' ? 'exclusive' : 'inclusive',
-    vatRate: Number(vatRate),
+    vatRate: vatRateForWrite(vatRate),
     effectiveFrom, baselineFrom, baselineNote, reason,
   });
 }

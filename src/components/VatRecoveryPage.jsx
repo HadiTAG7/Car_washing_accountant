@@ -333,7 +333,7 @@ export default function VatRecoveryPage() {
             label="ضريبة غير مطالَب بها"
             value={formatCurrencyPrecise(report.forfeitedTax * s)}
             sub={report.ineligible.length
-              ? `${formatNumber(report.ineligible.length)} فاتورة ناقصة البيانات`
+              ? `${formatNumber(report.ineligible.length)} فاتورة غير مؤهلة للخصم`
               : 'كل الفواتير مستوفية'}
           />
         </div>

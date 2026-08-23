@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import {
   X, Plus, Trash2, FileText, Wallet, Calendar, Tag, Loader2, Inbox,
-  Link as LinkIcon, Percent, Upload, Home, Wand2, Pencil, Check,
+  Link as LinkIcon, Percent, Upload, Home, Wand2, Pencil, Check, RotateCcw, Send,
 } from 'lucide-react';
 import {
   formatCurrency, formatDate, formatNumber, todayISO, extractVat,
@@ -17,6 +17,10 @@ import {
 } from '../lib/taxInvoiceForm';
 import { groupEntriesByUnit, unassignedCount } from '../lib/unitSuggest';
 import AssignUnitsPanel from './AssignUnitsPanel';
+import { useFirestoreQuery } from '../hooks/useFirestoreQuery';
+import {
+  fetchEntries, isLiveSourceEntry, postSource, reverseEntry,
+} from '../lib/accounting/firestoreLedger';
 
 const EMPTY_FORM = {
   description: '', amount: '', spentDate: '', notes: '', invoiceUrl: '', isTaxInvoice: false,
@@ -77,7 +81,7 @@ function isSafeHttpUrl(value) {
 export default function ExpenseLedgerModal({
   isOpen, onClose, title, plannedAmount = 0, plannedLabel = 'المخطط',
   ledger, onDirty, migrationFile, uploadFolder = 'misc',
-  units = null, onAssignUnits = null,
+  units = null, onAssignUnits = null, sourceKind = null,
 }) {
   const { entries, loading, error, addEntry, deleteEntry, updateEntry } = ledger;
   // المصاريف السنوية تشارك هذا المكوّن ولا تملك استدعاء تعديل — فغيابه
@@ -105,6 +109,14 @@ export default function ExpenseLedgerModal({
   const [assignOpen, setAssignOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
+  const [postingId, setPostingId] = useState(null);
+  const [reverseTarget, setReverseTarget] = useState(null);
+  const [reverseDate, setReverseDate] = useState('');
+  const [reverseReason, setReverseReason] = useState('');
+  const bookEntriesQ = useFirestoreQuery(fetchEntries, {
+    enabled: Boolean(isOpen && sourceKind && isFirebaseConfigured),
+    fallback: [],
+  });
   // ── ما يرفضه الخادم يجب أن يُقرأ ──
   // `handleAdd` and `handleDelete` were `try`/`finally` with no `catch`, and
   // the app has no ErrorBoundary and no `unhandledrejection` listener. So a
@@ -119,6 +131,9 @@ export default function ExpenseLedgerModal({
     setForm({ ...EMPTY_FORM, spentDate: todayISO() });
     setActionError('');
     setEditingId(null);
+    setReverseTarget(null);
+    setReverseDate('');
+    setReverseReason('');
   }, [isOpen]);
 
   const fileInputRef = useRef(null);
@@ -240,6 +255,60 @@ export default function ExpenseLedgerModal({
       setActionError(describeBackendError(err) || err?.message || 'تعذّر حذف المصروف.');
     } finally {
       setDeletingId(null);
+    }
+  }
+
+  function liveEntryFor(sourceId) {
+    return (bookEntriesQ.data || []).find((row) => (
+      String(row.sourceId ?? '') === String(sourceId ?? '')
+      && isLiveSourceEntry(row, sourceKind, 'expense')
+    )) || null;
+  }
+
+  async function handlePost(entry) {
+    if (!sourceKind || postingId) return;
+    const confirmed = typeof window === 'undefined' || window.confirm(
+      `ترحيل "${entry.description}" إلى دفتر الأستاذ؟`,
+    );
+    if (!confirmed) return;
+    setPostingId(entry.id);
+    setActionError('');
+    try {
+      await postSource(sourceKind, entry.id);
+      await bookEntriesQ.refetch();
+      onDirty?.();
+    } catch (err) {
+      setActionError(describeBackendError(err) || err?.message || 'تعذّر ترحيل المصروف.');
+    } finally {
+      setPostingId(null);
+    }
+  }
+
+  function startReverse(entry, postedEntry) {
+    setReverseTarget({ entry, postedEntry });
+    setReverseDate(entry.spentDate || todayISO());
+    setReverseReason(`تصحيح بيانات فاتورة المورد للمصروف: ${entry.description}`);
+    setActionError('');
+  }
+
+  async function handleReverse() {
+    if (!reverseTarget || !reverseDate || !reverseReason.trim() || postingId) return;
+    setPostingId(reverseTarget.entry.id);
+    setActionError('');
+    try {
+      await reverseEntry(reverseTarget.postedEntry.id, {
+        entryDate: reverseDate,
+        description: reverseReason.trim(),
+      });
+      await bookEntriesQ.refetch();
+      setReverseTarget(null);
+      setReverseDate('');
+      setReverseReason('');
+      onDirty?.();
+    } catch (err) {
+      setActionError(describeBackendError(err) || err?.message || 'تعذّر عكس القيد.');
+    } finally {
+      setPostingId(null);
     }
   }
 
@@ -570,6 +639,40 @@ export default function ExpenseLedgerModal({
               المصاريف المسجّلة ({entries.length})
             </p>
 
+            {reverseTarget && (
+              <div className="mb-3 rounded-smallcard border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 p-3 space-y-3">
+                <p className="text-xs font-bold text-amber-800 dark:text-amber-300">
+                  عكس قيد «{reverseTarget.entry.description}» قبل تعديل بياناته المالية
+                </p>
+                <DateField
+                  name="reverseDate"
+                  value={reverseDate}
+                  onChange={(e) => setReverseDate(e.target.value)}
+                  ariaLabel="تاريخ القيد العكسي"
+                  required
+                />
+                <input
+                  type="text"
+                  value={reverseReason}
+                  onChange={(e) => setReverseReason(e.target.value)}
+                  aria-label="سبب عكس القيد"
+                  className="w-full px-3 py-2 rounded-control border border-amber-200 dark:border-amber-500/30 bg-white dark:bg-slate-900 text-sm"
+                />
+                <div className="flex gap-2">
+                  <button type="button" onClick={handleReverse}
+                    disabled={!reverseDate || !reverseReason.trim() || Boolean(postingId)}
+                    className="sw-button sw-button--sm sw-button--primary">
+                    {postingId ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
+                    تنفيذ العكس
+                  </button>
+                  <button type="button" onClick={() => setReverseTarget(null)}
+                    disabled={Boolean(postingId)} className="sw-button sw-button--sm sw-button--secondary">
+                    إلغاء
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* ── الشرائح ذهبت والرؤوس حلّت محلّها ──
                 They showed the same per-division totals the group headers now
                 carry. Two renderings of one number on one screen is an
@@ -664,6 +767,8 @@ export default function ExpenseLedgerModal({
                     )}
                     {g.items.map((e) => {
                       const busy = deletingId === e.id;
+                      const postedEntry = sourceKind ? liveEntryFor(e.id) : null;
+                      const accountingBusy = postingId === e.id;
                       return (
                         <li
                           key={e.id}
@@ -736,6 +841,29 @@ export default function ExpenseLedgerModal({
                               <Pencil size={14} />
                             </button>
                           )}
+                          {sourceKind && (postedEntry ? (
+                            <button
+                              type="button"
+                              onClick={() => startReverse(e, postedEntry)}
+                              disabled={busy || accountingBusy}
+                              title={`عكس القيد رقم ${postedEntry.entryNumber ?? '—'}`}
+                              aria-label={`عكس قيد ${e.description}`}
+                              className="sw-tap inline-flex items-center justify-center p-1.5 rounded-control text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-500/15 disabled:opacity-60 transition-colors shrink-0"
+                            >
+                              {accountingBusy ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handlePost(e)}
+                              disabled={busy || accountingBusy || bookEntriesQ.loading}
+                              title="ترحيل هذا المصروف إلى دفتر الأستاذ"
+                              aria-label={`ترحيل ${e.description}`}
+                              className="sw-tap inline-flex items-center justify-center p-1.5 rounded-control text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/15 disabled:opacity-60 transition-colors shrink-0"
+                            >
+                              {accountingBusy ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                            </button>
+                          ))}
                           <button
                             type="button"
                             onClick={() => handleDelete(e)}

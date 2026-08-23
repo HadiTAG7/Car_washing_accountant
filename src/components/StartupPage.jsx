@@ -527,6 +527,7 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
         uploadFolder={detailItem ? `startup/${detailItem.id}` : 'startup'}
         units={detailItem?.units || null}
         onAssignUnits={canMutate ? handleAssignUnits : null}
+        sourceKind={canMutate ? 'startup' : null}
       />
 
       <StartupConversionModal

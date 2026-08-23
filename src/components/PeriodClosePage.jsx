@@ -64,6 +64,7 @@ export default function PeriodClosePage() {
   // guessed baseline is the same bug wearing a timestamp.
   const [baselineDraft, setBaselineDraft] = useState('');
   const [policyReason, setPolicyReason] = useState('');
+  const [closeKey, setCloseKey] = useState('');
   const [reopenKey, setReopenKey] = useState('');
   const [reopenReason, setReopenReason] = useState('');
   const [toast, setToast] = useState({ open: false, message: '', tone: 'success', duration: 3000 });
@@ -299,19 +300,11 @@ export default function PeriodClosePage() {
   }
 
   async function handleClose(key) {
-    const pre = preflights.get(key);
-    const ok = typeof window === 'undefined' || window.confirm(
-      `إقفال الفترة ${key}؟\n\n`
-      + `عدد القيود: ${pre.entryCount}\n`
-      + `إجمالي المدين: ${pre.totals.debit.toFixed(2)}\n\n`
-      + 'بعد الإقفال لن يمكن الترحيل أو التعديل في هذه الفترة — '
-      + 'وأي تصحيح يكون بقيد في فترة مفتوحة.',
-    );
-    if (!ok) return;
     setBusy(key);
     try {
       await closePeriod(key);
       showToast(`تم إقفال الفترة ${key}.`);
+      setCloseKey('');
       await refetch();
     } catch (e) {
       showToast(e?.message || 'تعذّر الإقفال', 'error');
@@ -990,11 +983,28 @@ export default function PeriodClosePage() {
                                   </SecondaryButton>
                                 )
                               ) : (
-                                <PrimaryButton icon={Lock} onClick={() => handleClose(key)}
-                                  disabled={busy === key || !pre.ok}
-                                  title={pre.ok ? undefined : 'صحّح المشاكل أعلاه أولاً'}>
-                                  {busy === key ? '...' : 'إقفال'}
-                                </PrimaryButton>
+                                closeKey === key ? (
+                                  <div className="min-w-[17rem] space-y-2 text-right">
+                                    <p className="text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">
+                                      تأكيد إقفال {key}: {pre.entryCount} قيد، وإجمالي المدين {formatCurrency(pre.totals.debit)}.
+                                      بعد الإقفال لا يمكن الترحيل أو التعديل في هذه الفترة.
+                                    </p>
+                                    <div className="flex gap-2 justify-end">
+                                      <SecondaryButton onClick={() => setCloseKey('')}
+                                        disabled={busy === key}>إلغاء</SecondaryButton>
+                                      <PrimaryButton icon={busy === key ? Loader2 : Lock}
+                                        onClick={() => handleClose(key)} disabled={busy === key}>
+                                        {busy === key ? '...' : 'تأكيد الإقفال'}
+                                      </PrimaryButton>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <PrimaryButton icon={Lock} onClick={() => setCloseKey(key)}
+                                    disabled={busy === key || !pre.ok}
+                                    title={pre.ok ? undefined : 'صحّح المشاكل أعلاه أولاً'}>
+                                    إقفال
+                                  </PrimaryButton>
+                                )
                               )}
                             </td>
                           </tr>

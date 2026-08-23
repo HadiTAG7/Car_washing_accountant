@@ -20,6 +20,10 @@ export function useAccountingSettings() {
   const { data, loading, error, refetch } = useFirestoreQuery(fetchAccountingSettings, {
     enabled: isFirebaseConfigured,
     fallback: DEFAULT_ACCOUNTING_SETTINGS,
+    // Settings are one document, not a collection query. Without preserving
+    // the object, the generic row hook normalises it to [] and the controlled
+    // VAT fields render as unchecked/undefined even after the server saved it.
+    preserveResult: true,
   });
 
   const settings = data || DEFAULT_ACCOUNTING_SETTINGS;

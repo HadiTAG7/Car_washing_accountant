@@ -17,7 +17,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  *   - `fallback` is returned while loading / on error / in demo mode.
  *   - `deps` trigger a refetch when changed.
  */
-export function useFirestoreQuery(fetcher, { deps = [], map, fallback = null, enabled = true } = {}) {
+export function useFirestoreQuery(fetcher, {
+  deps = [], map, fallback = null, enabled = true, preserveResult = false,
+} = {}) {
   const [state, setState] = useState({
     data:    enabled ? null : fallback,
     loading: enabled,
@@ -41,10 +43,11 @@ export function useFirestoreQuery(fetcher, { deps = [], map, fallback = null, en
     try {
       const rows = await fetcher();
       if (!mounted.current) return null;
-      const list = Array.isArray(rows) ? rows : [];
-      const mapped = map ? list.map(map) : list;
-      setState({ data: mapped, loading: false, error: null });
-      return mapped;
+      const result = preserveResult
+        ? rows
+        : (map ? (Array.isArray(rows) ? rows.map(map) : []) : (Array.isArray(rows) ? rows : []));
+      setState({ data: result, loading: false, error: null });
+      return result;
     } catch (err) {
       if (!mounted.current) return null;
       setState({ data: null, loading: false, error: err });

@@ -17,6 +17,8 @@
  */
 import { describe, it, expect } from 'vitest';
 import { ACC as SERVER_ACC } from '../src/posting.js';
+import { SOURCE_TYPES as SERVER_SOURCES } from '../src/invariants.js';
+import { SOURCE_TYPES as CLIENT_SOURCES } from '../../src/lib/accounting/journal.js';
 import { ACC as CLIENT_ACC, DEFAULT_CHART_OF_ACCOUNTS } from '../../src/lib/accounting/chartOfAccounts.js';
 
 describe('انجراف دليل الحسابات بين الخادم والعميل', () => {
@@ -53,5 +55,20 @@ describe('انجراف دليل الحسابات بين الخادم والعم�
 
   it('وخصومات سويتر ليست حساب مردودات المبيعات — سببان مختلفان لا يُدمجان', () => {
     expect(CLIENT_ACC.SWEATER_DEDUCTIONS).not.toBe(CLIENT_ACC.SALES_RETURNS);
+  });
+});
+
+describe('انجراف أنواع المصادر بين الخادم والعميل', () => {
+  it('نفس القائمة تماماً', () => {
+    // نوعٌ يعرفه أحدهما ويجهله الآخر: إمّا قيدٌ يرفضه الخادم بعد أن وعدت به
+    // الشاشة، وإمّا قيدٌ يمرّ ولا تعرف الشاشة كيف تعرضه.
+    expect([...SERVER_SOURCES].sort()).toEqual([...CLIENT_SOURCES].sort());
+  });
+
+  it('وأنواع سويتر الثلاثة موجودة', () => {
+    for (const t of ['sweater_settlement', 'sweater_adjustment', 'sweater_collection']) {
+      expect(SERVER_SOURCES, t).toContain(t);
+      expect(CLIENT_SOURCES, t).toContain(t);
+    }
   });
 });

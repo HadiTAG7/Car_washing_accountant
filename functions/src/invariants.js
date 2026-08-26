@@ -24,6 +24,10 @@ export const SOURCE_TYPES = [
   // because it must never be mistaken for a wash: a wash already carries its
   // revenue into the books, and posting it twice is the whole hazard here.
   'sales_invoice',
+  // ── تكامل سويتر: ثلاثة أنواع لا نوعٌ واحد ──
+  // الخدمات تُعتمد شهرياً، والخصومات كلٌّ بمستنده وقد يُعترض عليها بعد
+  // أسابيع، والتحصيل يصل في يومه. نوعٌ واحد يجعل عكسَ خصمٍ عكساً للشهر كله.
+  'sweater_settlement', 'sweater_adjustment', 'sweater_collection',
 ];
 
 // Money compares at 2 decimals: 0.1 + 0.2 !== 0.3 in binary floating point,

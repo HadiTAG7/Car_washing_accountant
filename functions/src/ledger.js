@@ -232,7 +232,11 @@ export async function postSource(db, FieldValue, { kind, sourceId }, { userId = 
     }
     const row = sourceSnap.data();
     if (adapter.approved && !adapter.approved(row)) {
-      throw new LedgerError(adapter.notApproved || 'السجل غير معتمد للترحيل بعد.');
+      // نصٌّ أو دالة: معظم المُحوِّلات لها سببٌ واحد ثابت، وغسلةُ سويتر لها
+      // سببان مختلفان (غير مكتملة / مصدرها المنصة) فتحتاج أن تنظر في الصف.
+      const why = typeof adapter.notApproved === 'function'
+        ? adapter.notApproved(row) : adapter.notApproved;
+      throw new LedgerError(why || 'السجل غير معتمد للترحيل بعد.');
     }
     // Locks written before locks were keyed on the kind still count.
     const existing = (lockSnap.exists && lockSnap) || (legacySnap?.exists && legacySnap) || null;

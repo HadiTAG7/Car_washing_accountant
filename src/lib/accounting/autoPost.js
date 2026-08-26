@@ -87,7 +87,9 @@ export async function autoPost({ kind, id }) {
     if (!row) return { status: 'skipped', reason: 'السجل غير موجود.', blocking: false };
 
     if (!a.isApproved(row)) {
-      return { status: 'skipped', reason: a.notApprovedReason || 'غير معتمد بعد.', blocking: false };
+      const why = typeof a.notApprovedReason === 'function'
+        ? a.notApprovedReason(row) : a.notApprovedReason;
+      return { status: 'skipped', reason: why || 'غير معتمد بعد.', blocking: false };
     }
 
     const sourceId = a.sourceId(row);

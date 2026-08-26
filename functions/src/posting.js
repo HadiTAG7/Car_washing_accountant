@@ -19,6 +19,7 @@
 
 import { round2 } from './invariants.js';
 import { resolvePurchaseTax } from './purchaseTax.js';
+import { washPostabilityProblem } from './sweater/revenueOrigin.js';
 
 // ── نسخة الخادم من أرقام الحسابات ──
 // نسختان لأن الخادم لا يستورد من `src/` — لكنهما كانتا تختلفان فعلاً (نقص
@@ -270,8 +271,14 @@ export const ADAPTERS = {
     collection: 'washes',
     lockKind: 'wash',
     dateOf: (r) => String(r.wash_date || '').slice(0, 10),
-    approved: (r) => r.status === 'مكتملة',
-    notApproved: 'الغسلة غير مكتملة — لا يُعترف بالإيراد قبل إتمامها.',
+    // ── شرطان لا واحد ──
+    // «مكتملة» تكفي للغسلة المباشرة. أما غسلةٌ مصدرها سويتر فإيرادها يُعترف
+    // به من التسوية الشهرية على الذمم — وترحيلها هنا أيضاً يُظهر الإيراد
+    // مرتين. والمنع في **المُحوِّل** عمداً: منعٌ في الواجهة يمرّ من أي مسارٍ
+    // آخر — أداة صيانة، أو استدعاءٍ مباشر، أو زرٍّ يُضاف بعد سنة.
+    approved: (r) => r.status === 'مكتملة' && !washPostabilityProblem(r),
+    notApproved: (r) => washPostabilityProblem(r)
+      || 'الغسلة غير مكتملة — لا يُعترف بالإيراد قبل إتمامها.',
     build: (row, id, { vatRegistered, washPriceMode, vatRate = VAT_RATE }) => {
       const qty = Math.max(0, Number(row.quantity) || 0);
       const price = Math.max(0, Number(row.price) || 0);

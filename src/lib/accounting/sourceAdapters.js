@@ -16,6 +16,7 @@
 // UI, and re-reading the stored row means posting what was actually saved.
 // ═══════════════════════════════════════════════════════════════════════════
 
+import { washPostabilityProblem } from '../sweater/revenueOriginClient.js';
 import {
   buildWashEntry, buildExpenseEntry, buildPartnerPaymentEntry,
   buildTemporaryExpenseEntry, buildRecoveryEntry, canPostWash, expenseAccountFor,
@@ -82,8 +83,9 @@ export const ADAPTERS = {
     dateOf: (r) => r.wash_date,
     // Revenue belongs to a COMPLETED wash. An in-progress job is not an
     // earned sale, and posting it would overstate income in the period.
-    isApproved: (r) => canPostWash({ status: r.status }),
-    notApprovedReason: 'غير مكتملة — لا يُعترف بالإيراد بعد',
+    // نفس شرطَي الخادم — معاينةٌ تَعِد بما يرفضه الخادم أسوأ من غياب المعاينة.
+    isApproved: (r) => canPostWash({ status: r.status }) && !washPostabilityProblem(r),
+    notApprovedReason: (r) => washPostabilityProblem(r) || 'غير مكتملة — لا يُعترف بالإيراد بعد',
     label: (r) => `غسلات ${r.biker_name || ''} ${r.wash_date || ''}`.trim(),
     build: (r, { vatRegistered = true, washPriceMode = 'inclusive' } = {}) => buildWashEntry({
       id: r.id, bikerName: r.biker_name, quantity: r.quantity, price: r.price,

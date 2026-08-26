@@ -54,7 +54,9 @@ export async function collectUnposted() {
     const label = a.label(row, ctx);
     const kind = adapterKey;
     if (!a.isApproved(row)) {
-      skipped.push({ kind, label, reason: a.notApprovedReason || 'غير معتمد بعد' });
+      const why = typeof a.notApprovedReason === 'function'
+        ? a.notApprovedReason(row) : a.notApprovedReason;
+      skipped.push({ kind, label, reason: why || 'غير معتمد بعد' });
       return;
     }
     const sourceId = a.sourceId(row);

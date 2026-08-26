@@ -32,6 +32,8 @@ export const OPERATIONAL = [
   'washes', 'bikers', 'housing_units', 'monthly_expenses', 'variable_expenses', 'annual_expenses',
   'annual_expense_entries', 'temporary_expenses', 'partner_payments',
   'partners', 'transactions', 'categories', 'expense_vouchers', 'fixed_assets',
+  'sweater_bookings', 'sweater_settlements', 'sweater_adjustments',
+  'sweater_price_list', 'sweater_variances',
 ];
 
 export async function rows(name) {

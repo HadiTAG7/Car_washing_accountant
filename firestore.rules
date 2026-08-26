@@ -428,6 +428,29 @@ service cloud.firestore {
       ];
     }
 
+    // ── تكامل سويتر ──────────────────────────────────────────────────
+    // ثلاث طبقات بثلاث صلاحيات مختلفة، والفرق بينها ليس تنظيماً:
+    //
+    //   • **الخام والحجوزات والتسويات والفروق ومحاولات الاستيراد** — يكتبها
+    //     الخادم وحده. الخام `append-only` بحكم القاعدة نفسها: لا تعديل ولا
+    //     حذف لأي عميل مهما كان دوره، فالمصدر لا يُفقد ولو أراد مديرٌ ذلك.
+    //   • **الإعدادات المؤرخة** (الأسعار، أنواع الخصومات، سياسة الاعتراف) —
+    //     يقرؤها العضو ويكتبها المحاسب: قواعدُ مالية لا تشغيل يومي.
+    //   • **حال التكامل** — يُقرأ للعرض ويكتبه الخادم؛ ولا يحمل سرّاً أصلاً،
+    //     المفتاح لا يدخل Firestore بل بيئة الخادم، وبصمته وحدها تُخزَّن.
+    function isSweaterServerColl(c) {
+      return c in [
+        'sweater_raw_payloads', 'sweater_bookings', 'sweater_settlements',
+        'sweater_variances', 'sweater_import_runs', 'sweater_integration_state',
+        'sweater_adjustments', 'sweater_integration_keys'
+      ];
+    }
+    function isSweaterConfigColl(c) {
+      return c in [
+        'sweater_price_list', 'sweater_adjustment_types', 'sweater_recognition_policy'
+      ];
+    }
+
     // NOTE: in Firestore every matching rule is evaluated and access is
     // granted if ANY allows, so a collection protected above must NOT also
     // appear in this list — the wildcard would hand back what the specific
@@ -435,6 +458,14 @@ service cloud.firestore {
     match /{coll}/{doc} {
       allow read:  if isOperationalColl(coll) && isMember();
       allow write: if isOperationalColl(coll) && isOperator();
+
+      // سويتر: قراءةٌ للعضو، وكتابةُ الخادم وحده — والخام لا يُعدَّل ولا يُحذف.
+      allow read:  if isSweaterServerColl(coll) && isMember();
+      allow write: if isSweaterServerColl(coll) && false;
+
+      // إعدادات سويتر المؤرخة: قاعدةٌ مالية يكتبها المحاسب.
+      allow read:  if isSweaterConfigColl(coll) && isMember();
+      allow write: if isSweaterConfigColl(coll) && isAccountant();
     }
   }
 }

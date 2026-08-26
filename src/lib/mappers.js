@@ -1,3 +1,4 @@
+import { clampRevenueOrigin } from './sweater/revenueOriginClient.js';
 // ═══════════════════════════════════════════════════════════════════════════
 // Row ↔ model mappers
 // Keep DB column naming (snake_case) at the edge; internal app uses camelCase.
@@ -498,9 +499,17 @@ export function mapWash(row) {
     // Which account the money landed in decides the debit side of the entry:
     // cash, bank, or a receivable when the sale is on credit.
     paymentMethod: clampExpensePaymentMethod(row.payment_method),
+    // ── مصدر الإيراد ──
+    // الغياب يعني `direct` — كل الغسلات القديمة سُجّلت قبل التكامل وهي فعلاً
+    // مباشرة، فالافتراض يصف الواقع ولا يعيد كتابته.
+    revenueOrigin: clampRevenueOrigin(row.revenue_origin),
+    sspBookingId: row.ssp_booking_id || null,
   };
 }
-export function toWashInsert({ bikerName, bikerId, quantity, price, status, washDate, paymentMethod }) {
+export function toWashInsert({
+  bikerName, bikerId, quantity, price, status, washDate, paymentMethod,
+  revenueOrigin, sspBookingId,
+}) {
   const trimmed = String(bikerName || '').trim();
   return {
     biker_name: trimmed || null,
@@ -510,6 +519,8 @@ export function toWashInsert({ bikerName, bikerId, quantity, price, status, wash
     status:     clampWashStatus(status),
     wash_date:  washDate || null,
     payment_method: clampExpensePaymentMethod(paymentMethod),
+    revenue_origin: clampRevenueOrigin(revenueOrigin),
+    ssp_booking_id: String(sspBookingId || '').trim() || null,
   };
 }
 export function toWashUpdate(updates = {}) {

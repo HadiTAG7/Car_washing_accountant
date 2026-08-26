@@ -125,6 +125,16 @@ const BACKUP_TABLES = [
   'partners',
   'partner_payments',
   'temporary_expenses',
+  // تكامل سويتر — الخام أولاً: هو المصدر الذي يُعاد منه البناء لو ضاع غيره.
+  'sweater_raw_payloads',
+  'sweater_bookings',
+  'sweater_price_list',
+  'sweater_adjustment_types',
+  'sweater_recognition_policy',
+  'sweater_adjustments',
+  'sweater_settlements',
+  'sweater_variances',
+  'sweater_import_runs',
   'app_settings',
 ];
 

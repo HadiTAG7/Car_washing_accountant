@@ -55,11 +55,17 @@ const JOURNAL_COUNTER = 'journal';
  *   note        إشعار دائن/مدين — always posts, and only against an invoice
  *               that has a real ledger effect to adjust.
  */
-export const ISSUE_MODES = ['linked', 'standalone', 'note'];
+/*
+ *   settlement  فاتورة تسوية سويتر الشهرية — **لا تُرحِّل**. الإيراد أُثبت
+ *               يوم اعتماد الشهر (مدين ذمم سويتر / دائن إيراد سويتر)، وهذه
+ *               توثّق المطالبة به. ترحيلُها ثانيةً يضاعف إيراد شهرٍ كامل.
+ */
+export const ISSUE_MODES = ['linked', 'standalone', 'note', 'settlement'];
 
 export function issueModeFor(input = {}) {
   const type = String(input.type || 'invoice');
   if (type !== 'invoice') return 'note';
+  if (String(input.settlementPeriodKey ?? '').trim()) return 'settlement';
   return String(input.washId ?? '').trim() ? 'linked' : 'standalone';
 }
 
@@ -434,13 +440,26 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
         { code: 'invalid-argument' },
       );
     }
+    // ── والثغرة التي كان الحارس أعلاه أضيق منها ──
+    // كان الشرط `sourceType === 'wash'` وحده، فأي مصدرٍ آخر سبق ترحيله يمرّ
+    // من هذا الباب ويُرحّل إيراده مرة ثانية. وتسوية سويتر أول من كشفها:
+    // إيراد الشهر أُثبت يوم الاعتماد، وفاتورةٌ مستقلة عنه تضاعفه كاملاً.
+    if (String(input.sourceType ?? '').startsWith('sweater_')) {
+      throw new InvoicingError(
+        'فاتورة سويتر تُصدر بإرسال settlementPeriodKey — إيراد الشهر أُثبت يوم '
+        + 'اعتماده، وفاتورةٌ مستقلة تضاعفه.',
+        { code: 'invalid-argument' },
+      );
+    }
   }
 
   // Both a standalone invoice and a note write a journal entry, so their
   // accounts have to exist. Read before the transaction: a collection read
   // inside one would be a query, and the answer cannot change in a way that
   // matters here.
-  const posts = mode !== 'linked';
+  // `linked` و`settlement` كلاهما يوثّق إيراداً **أُثبت من قبل**: الأول قيدَ
+  // غسلةٍ مُرحَّلة، والثاني قيدَ تسويةٍ شهرية معتمدة. فلا ينشئان قيداً.
+  const posts = mode !== 'linked' && mode !== 'settlement';
   let knownAccountCodes = null;
   if (posts) {
     const chart = await db.collection('chart_of_accounts').get();
@@ -453,12 +472,13 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
   // Only an INVOICE claims a source record. A note is an adjustment to a
   // document, not a second document for the same wash, so it must not take
   // the claim — that would block the very note that corrects it.
-  const claimType = mode === 'linked'
-    ? 'wash'
-    : (mode === 'standalone' && input.sourceType ? String(input.sourceType) : null);
-  const claimId = mode === 'linked'
-    ? washId
-    : (mode === 'standalone' && input.sourceId ? String(input.sourceId) : null);
+  const settlementKey = mode === 'settlement' ? String(input.settlementPeriodKey).trim() : '';
+  const claimType = mode === 'linked' ? 'wash'
+    : mode === 'settlement' ? 'sweater_settlement'
+      : (mode === 'standalone' && input.sourceType ? String(input.sourceType) : null);
+  const claimId = mode === 'linked' ? washId
+    : mode === 'settlement' ? settlementKey
+      : (mode === 'standalone' && input.sourceId ? String(input.sourceId) : null);
 
   return db.runTransaction(async (tx) => {
     // ══ reads, phase 1: the wash this invoice documents ══════════════════
@@ -467,6 +487,38 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
     let wash = null;
     let washEntry = null;
     let linkedEntryId = null;
+    let settlementRef = null;
+
+    // ── فاتورة التسوية: تُوثّق قيداً قائماً ولا تُنشئ غيره ──
+    // نفس منطق `linked` حرفياً: يُقرأ قفل المصدر، ويُتبع إلى قيده، ويُشترط
+    // أن يكون مُرحّلاً — ثم يُكتب `linkedJournalEntryId` بلا قيدٍ جديد.
+    if (mode === 'settlement') {
+      settlementRef = db.collection('sweater_settlements').doc(settlementKey);
+      const [setSnap, lockSnap] = await Promise.all([
+        tx.get(settlementRef),
+        tx.get(db.collection(DOC_COL.LOCKS).doc(postingLockId('sweater_settlement', settlementKey))),
+      ]);
+      if (!setSnap.exists) {
+        throw new InvoicingError(`لا تسوية للشهر ${settlementKey}.`, { code: 'not-found' });
+      }
+      if (!lockSnap.exists) {
+        throw new InvoicingError(
+          `تسوية ${settlementKey} لم تُعتمد ولم تُرحّل بعد — الفاتورة توثّق مطالبةً مُثبتة، `
+          + 'فلا تسبقها.',
+          { code: 'failed-precondition' },
+        );
+      }
+      const entryId = lockSnap.data().entryId;
+      const entrySnap = await tx.get(db.collection(DOC_COL.ENTRIES).doc(entryId));
+      if (!entrySnap.exists || entrySnap.data().status !== 'posted') {
+        throw new InvoicingError('قيد التسوية غير مُرحّل — لا تُوثَّق مطالبةٌ بلا قيد.', {
+          code: 'failed-precondition',
+        });
+      }
+      washEntry = entrySnap.data();
+      linkedEntryId = entryId;
+    }
+
     if (mode === 'linked') {
       // The collection and the lock key come from the SAME adapter the poster
       // used, so the two cannot drift apart behind a rename.
@@ -801,12 +853,14 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
       : (input.customer?.name ? { name: String(input.customer.name).slice(0, 200) } : null);
     const sourceType = reference
       ? (reference.sourceType || null)
-      : mode === 'linked'
-        ? 'wash'
-        : (input.sourceType ? String(input.sourceType) : null);
+      : mode === 'linked' ? 'wash'
+        : mode === 'settlement' ? 'sweater_settlement'
+          : (input.sourceType ? String(input.sourceType) : null);
     const sourceId = reference
       ? null
-      : mode === 'linked' ? washId : (input.sourceId ? String(input.sourceId) : null);
+      : mode === 'linked' ? washId
+        : mode === 'settlement' ? settlementKey
+          : (input.sourceId ? String(input.sourceId) : null);
 
     const totals = totalsFromLines(documentLines, { priceMode, taxable, rate: vatRate });
     if (!Number.isFinite(totals.gross) || !(totals.gross > 0)) {
@@ -879,7 +933,11 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
       ? (entrySale.settlementAccount || settlementForSale(wash.payment_method || 'cash'))
       : mode === 'standalone'
         ? saleSettlementAccount(paymentMethod, paymentStatus)
-        : null;
+        // تسوية سويتر ذمّةٌ بحكم قيدها المُرحَّل — يُقرأ الحساب من القيد نفسه
+        // لا يُخمَّن، فلو أُعيدت هيكلة الحسابات يوماً تبع المستندُ دفترَه.
+        : mode === 'settlement'
+          ? (saleTotalsOfEntry(washEntry.lines).settlementAccount || ACC.SWEATER_RECEIVABLE)
+          : null;
     let entryRef = null;
     let entryNumber = null;
     if (posts) {
@@ -964,6 +1022,19 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
       tx.set(journalCounterRef,
         journalCounterUpdate(journalCounterSnap, entryNumber, draftEntry.entryDate, FieldValue),
         { merge: true });
+    }
+
+    // ── الفاتورة تُصدَر والحالة تتقدّم معاً، أو لا يحدث أيٌّ منهما ──
+    // فصلُهما يترك تسويةً معتمدةً وفاتورةً صادرة لا تعرف إحداهما الأخرى،
+    // فيُصدَر لها ثانيةٌ أو يُرفض تحصيلُها.
+    if (settlementRef) {
+      tx.set(settlementRef, {
+        status: 'invoiced',
+        invoiceDocumentId: ref.id,
+        invoiceNumber: documentNumber,
+        invoicedAt: FieldValue.serverTimestamp(),
+        invoicedAtIso: new Date().toISOString(),
+      }, { merge: true });
     }
 
     tx.set(ref, {

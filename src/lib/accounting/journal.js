@@ -23,6 +23,10 @@ export const SOURCE_TYPES = [
   // distinct from `wash` so a standalone invoice can never be confused with a
   // wash whose revenue is already in the books.
   'sales_invoice',
+  // ── تكامل سويتر: ثلاثة أنواع لا نوعٌ واحد ──
+  // الخدمات تُعتمد شهرياً، والخصومات كلٌّ بمستنده وقد يُعترض عليها بعد
+  // أسابيع، والتحصيل يصل في يومه. نوعٌ واحد يجعل عكسَ خصمٍ عكساً للشهر كله.
+  'sweater_settlement', 'sweater_adjustment', 'sweater_collection',
 ];
 export const ENTRY_STATUSES = ['draft', 'posted', 'reversed'];
 

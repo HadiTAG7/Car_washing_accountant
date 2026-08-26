@@ -222,6 +222,65 @@ d('رحلة الإنتاج تحت firestore.rules الفعلية', () => {
       }, 120_000);
     }
 
+    // ── تكامل سويتر: ثلاث طبقات بثلاث صلاحيات ────────────────────────
+    // الادعاء الحامل هنا هو **الطبقة الخام**: `append-only` تعني أن لا أحد —
+    // ولا المدير — يعدّلها أو يحذفها. المصدر الذي يُعاد منه البناء لا يجوز أن
+    // يكون قابلاً للمحو بيد من قد يريد إخفاء ما ورد فيه.
+    it('سويتر: الخام يُقرأ ولا يُكتب ولا يُعدَّل ولا يُحذف من أي دور', async () => {
+      await adb.collection('sweater_raw_payloads').doc('r1').set({
+        importRunId: 'run-1', sspBookingId: 'B1', sourceHash: 'abc', rawPayload: {},
+      });
+      for (const [name, db] of [['operator', ctx.op], ['accountant', ctx.acct], ['admin', ctx.admin]]) {
+        // القراءة مسموحة — التدقيق يحتاج أن يرى المصدر.
+        await assertSucceeds(getDoc(doc(db, 'sweater_raw_payloads', 'r1')));
+        // والكتابة والتعديل والحذف ممنوعة على الجميع.
+        await assertFails(setDoc(doc(db, 'sweater_raw_payloads', 'r2'), { importRunId: 'x' }));
+        await assertFails(updateDoc(doc(db, 'sweater_raw_payloads', 'r1'), { sourceHash: 'tampered' }));
+        await assertFails(deleteDoc(doc(db, 'sweater_raw_payloads', 'r1')));
+        expect(name).toBeTruthy();
+      }
+    }, 120_000);
+
+    it('وحجوزات سويتر وتسوياتها يكتبها الخادم وحده', async () => {
+      await adb.collection('sweater_bookings').doc('B1').set({ sspBookingId: 'B1' });
+      await adb.collection('sweater_settlements').doc('2026-05').set({ periodKey: '2026-05' });
+      for (const db of [ctx.op, ctx.acct, ctx.admin]) {
+        await assertSucceeds(getDoc(doc(db, 'sweater_bookings', 'B1')));
+        await assertFails(updateDoc(doc(db, 'sweater_bookings', 'B1'), { note: 'يدوي' }));
+        await assertFails(updateDoc(doc(db, 'sweater_settlements', '2026-05'), { status: 'closed' }));
+        await assertFails(deleteDoc(doc(db, 'sweater_bookings', 'B1')));
+      }
+    }, 120_000);
+
+    it('وإعدادات سويتر المؤرخة: المحاسب يكتبها والمشغّل لا — قاعدةٌ مالية لا تشغيل', async () => {
+      // سعرٌ تعاقدي يقرّر ما يُطالَب به سويتر شهرياً؛ فليس بيد من يسجّل غسلة.
+      await assertFails(setDoc(doc(ctx.op, 'sweater_price_list', 'x1'), {
+        serviceType: 'wash', effectiveFrom: '2026-01-01', netRate: 20, vatRate: 0.15,
+      }));
+      await assertSucceeds(setDoc(doc(ctx.acct, 'sweater_price_list', 'x1'), {
+        serviceType: 'wash', effectiveFrom: '2026-01-01', netRate: 20, vatRate: 0.15,
+      }));
+      await assertSucceeds(setDoc(doc(ctx.admin, 'sweater_adjustment_types', 'a1'), {
+        key: 'lateness', kind: 'deduction', effectiveFrom: '2026-01-01',
+      }));
+      // والقراءة للجميع — المشغّل يرى السعر ولا يغيّره.
+      await assertSucceeds(getDoc(doc(ctx.op, 'sweater_price_list', 'x1')));
+    }, 120_000);
+
+    it('وحال التكامل لا يحمل سرّاً — والمفتاح لا يدخل Firestore أصلاً', async () => {
+      await adb.collection('sweater_integration_state').doc('current').set({
+        lastRunId: 'run-1', lastAgentStatus: 'ok', keyFingerprint: 'a1b2c3d4',
+      });
+      const snap = await adb.collection('sweater_integration_state').doc('current').get();
+      const body = JSON.stringify(snap.data());
+      for (const secretish of ['secret', 'apiKey', 'password', 'token', 'cookie']) {
+        expect(body.toLowerCase()).not.toContain(secretish.toLowerCase());
+      }
+      // ويُقرأ للعرض، ولا يُكتب من العميل.
+      await assertSucceeds(getDoc(doc(ctx.op, 'sweater_integration_state', 'current')));
+      await assertFails(updateDoc(doc(ctx.admin, 'sweater_integration_state', 'current'), { alert: false }));
+    }, 120_000);
+
     // ── الاستثناء الوحيد: وسم السكن على دفعة إيجار مُرحَّلة ───────────
     // Rent is recorded and posted long before anyone asks «كم إيجار سكن
     // الشمال للساكن؟». If tagging the unit needed an unposted entry, the

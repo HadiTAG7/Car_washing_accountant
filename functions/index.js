@@ -92,3 +92,18 @@ export const startupDeletePlan = callable('startupDeletePlan');
 // `scripts/bootstrap-admin.mjs` is the zero-window alternative.
 export const authBootstrapStatus = callable('authBootstrapStatus');
 export const authClaimFirstAdmin = callable('authClaimFirstAdmin');
+
+// ─── تكامل سويتر ─────────────────────────────────────────────────────────
+// باب الوكيل ليس هنا: `api/integrations/sweater/import.js` بابٌ مستقل بمفتاحه
+// الخاص، لا يعرف `dispatch` ولا يصل إلى أيٍّ من هذه.
+export const sweaterCalculateSettlement = callable('sweaterCalculateSettlement');
+export const sweaterRecordStatement = callable('sweaterRecordStatement');
+export const sweaterApproveSettlement = callable('sweaterApproveSettlement');
+export const sweaterCreateAdjustment = callable('sweaterCreateAdjustment');
+export const sweaterApproveAdjustment = callable('sweaterApproveAdjustment');
+export const sweaterRecordCollection = callable('sweaterRecordCollection');
+export const sweaterResolveVariance = callable('sweaterResolveVariance');
+export const sweaterCloseSettlement = callable('sweaterCloseSettlement');
+export const sweaterCreateIntegrationKey = callable('sweaterCreateIntegrationKey');
+export const sweaterRevokeIntegrationKey = callable('sweaterRevokeIntegrationKey');
+export const sweaterListIntegrationKeys = callable('sweaterListIntegrationKeys');

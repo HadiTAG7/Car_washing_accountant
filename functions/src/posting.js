@@ -19,18 +19,35 @@
 
 import { round2 } from './invariants.js';
 import { resolvePurchaseTax } from './purchaseTax.js';
+import { washPostabilityProblem } from './sweater/revenueOrigin.js';
+import {
+  buildRecognitionEntry, buildAdjustmentEntry, buildCollectionEntry,
+} from './sweater/settlement.js';
 
+// ── نسخة الخادم من أرقام الحسابات ──
+// نسختان لأن الخادم لا يستورد من `src/` — لكنهما كانتا تختلفان فعلاً (نقص
+// الخادمَ ٣١٠٠ و٤١٠٠ و٥٥٠٠)، وحسابٌ موجود هنا ومفقود هناك يُرحّل إلى رقمٍ لا
+// يعرفه الدليل. فأصبحتا مقفلتين باختبار انجراف:
+// `functions/test/chartDrift.test.js`.
 export const ACC = {
-  CASH: '1010', BANK: '1020', RECEIVABLE: '1100', INPUT_VAT: '1200',
+  CASH: '1010', BANK: '1020', RECEIVABLE: '1100',
+  SWEATER_RECEIVABLE: '1101',
+  INPUT_VAT: '1200',
   EMPLOYEE_ADVANCE: '1300', FIXED_ASSETS: '1500', ACCUM_DEPRECIATION: '1510',
-  PAYABLE: '2000', OUTPUT_VAT: '2100', PARTNER_CAPITAL: '3000',
+  PAYABLE: '2000', OUTPUT_VAT: '2100',
+  PARTNER_CAPITAL: '3000', RETAINED_EARNINGS: '3100',
   WASH_REVENUE: '4000',
   // مردودات وخصومات المبيعات — a CONTRA-revenue account. A credit note
   // reduces revenue, but netting it against 4000 would hide the return; a
   // separate debit-side account keeps gross sales and returns both visible.
   SALES_RETURNS: '4010',
+  SWEATER_REVENUE: '4001',
+  SWEATER_DEDUCTIONS: '4020',
+  OTHER_OPERATING_INCOME: '4110',
+  ASSET_DISPOSAL_GAIN: '4100',
   BIKER_COMMISSION: '5000', VARIABLE_COSTS: '5100',
   RENT_MONTHLY: '5200', ADMIN_EXPENSES: '5300', DEPRECIATION: '5400',
+  ASSET_DISPOSAL_LOSS: '5500',
 };
 
 export const VAT_RATE = 0.15;
@@ -257,8 +274,14 @@ export const ADAPTERS = {
     collection: 'washes',
     lockKind: 'wash',
     dateOf: (r) => String(r.wash_date || '').slice(0, 10),
-    approved: (r) => r.status === 'مكتملة',
-    notApproved: 'الغسلة غير مكتملة — لا يُعترف بالإيراد قبل إتمامها.',
+    // ── شرطان لا واحد ──
+    // «مكتملة» تكفي للغسلة المباشرة. أما غسلةٌ مصدرها سويتر فإيرادها يُعترف
+    // به من التسوية الشهرية على الذمم — وترحيلها هنا أيضاً يُظهر الإيراد
+    // مرتين. والمنع في **المُحوِّل** عمداً: منعٌ في الواجهة يمرّ من أي مسارٍ
+    // آخر — أداة صيانة، أو استدعاءٍ مباشر، أو زرٍّ يُضاف بعد سنة.
+    approved: (r) => r.status === 'مكتملة' && !washPostabilityProblem(r),
+    notApproved: (r) => washPostabilityProblem(r)
+      || 'الغسلة غير مكتملة — لا يُعترف بالإيراد قبل إتمامها.',
     build: (row, id, { vatRegistered, washPriceMode, vatRate = VAT_RATE }) => {
       const qty = Math.max(0, Number(row.quantity) || 0);
       const price = Math.max(0, Number(row.price) || 0);
@@ -400,6 +423,52 @@ export const ADAPTERS = {
         ],
       };
     },
+  },
+
+  // ── تكامل سويتر: ثلاثة أنواع لا نوعٌ واحد ─────────────────────────────
+  // الخدمات تُعتمد شهرياً، والخصومات كلٌّ بمستنده وقد يُعترض عليها بعد
+  // أسابيع، والتحصيل يصل في يومه. جمعُها في قيدٍ واحد يجعل عكسَ خصمٍ واحد
+  // عكساً للشهر كله. فلكلٍّ قفلُه، ويُعكس وحده.
+  //
+  // و`sourceId` في الأول هو **مفتاح الفترة نفسه** — فترحيل شهرٍ مرتين
+  // مستحيلٌ بالبناء، تماماً كما يفعل الإهلاك.
+  sweater_settlement: {
+    collection: 'sweater_settlements',
+    lockKind: 'sweater_settlement',
+    dateOf: (r) => String(r.recognitionDate || r.periodEndDate || '').slice(0, 10),
+    approved: (r) => r.status === 'approved' && Number(r.figures?.services?.gross) > 0,
+    notApproved: (r) => (Number(r?.figures?.services?.gross) > 0
+      ? 'التسوية لم تُعتمد بعد — الاعتماد قرارٌ شهري صريح.'
+      : 'لا خدمات مؤهّلة في هذا الشهر — لا شيء يُرحَّل.'),
+    build: (row, id) => buildRecognitionEntry(id, row.figures, {
+      entryDate: String(row.recognitionDate || row.periodEndDate || '').slice(0, 10),
+    }),
+  },
+
+  sweater_adjustment: {
+    collection: 'sweater_adjustments',
+    lockKind: 'sweater_adjustment',
+    dateOf: (r) => String(r.effectiveDate || '').slice(0, 10),
+    // لا ترحيل بمجرد الاستيراد: الاعتماد الصريح شرط، والمستند شرطٌ لنوعه.
+    approved: (r) => r.approvalStatus === 'approved',
+    notApproved: (r) => (r?.approvalStatus === 'disputed'
+      ? 'التسوية معترَضٌ عليها — لا تُرحَّل حتى يُحسم الاعتراض.'
+      : 'التسوية لم تُعتمد بعد — استيرادُ رقمٍ ليس إقراراً به.'),
+    build: (row, id) => buildAdjustmentEntry({ ...row, id }, {
+      entryDate: String(row.effectiveDate || '').slice(0, 10),
+      accountCode: row.accountCode,
+    }),
+  },
+
+  sweater_collection: {
+    collection: 'sweater_collections',
+    lockKind: 'sweater_collection',
+    dateOf: (r) => String(r.receivedDate || '').slice(0, 10),
+    approved: (r) => Number(r.amount) > 0 && Boolean(r.receivedDate),
+    notApproved: 'التحصيل بلا مبلغ أو بلا تاريخ استلام.',
+    build: (row, id) => buildCollectionEntry({ ...row, id }, {
+      entryDate: String(row.receivedDate || '').slice(0, 10),
+    }),
   },
 };
 

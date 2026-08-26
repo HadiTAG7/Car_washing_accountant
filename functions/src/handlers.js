@@ -139,6 +139,15 @@ export const GUARDS = {
 
 const MANUAL_SOURCE_TYPES = ['manual', 'adjustment', 'opening', 'depreciation', 'disposal'];
 
+import {
+  sweaterCalculateSettlement, sweaterRecordStatement, sweaterApproveSettlement,
+  sweaterApproveAdjustment, sweaterRecordCollection, sweaterCloseSettlement,
+  sweaterResolveVariance, sweaterCreateAdjustment,
+} from './sweater/handlers.js';
+import {
+  createIntegrationKey, revokeIntegrationKey, listIntegrationKeys,
+} from './sweater/integrationKeys.js';
+
 export const HANDLERS = {
   // ── الترحيل ──
   // `{ kind, sourceId }` is the whole contract — no entry, no lines, no
@@ -358,6 +367,85 @@ export const HANDLERS = {
       uid: auth.uid, email: auth.token?.email || null,
     }),
   },
+  // ── تكامل سويتر ──────────────────────────────────────────────────────
+  // الوكيل ينقل بيانات ولا شيء غيرها. وكل ما هنا قرارٌ بشري: يمرّ بهوية
+  // Firebase ودورها، ويُسجَّل في التدقيق باسم صاحبه.
+  //
+  // والاحتساب `accountant` لأنه اشتقاقٌ لا يمسّ الدفاتر؛ أما **الاعتماد
+  // والإقفال وإنشاء المفاتيح** فـ`admin`: الأول يُثبت إيراد شهرٍ كامل، والثاني
+  // قد يُقفل على فرقٍ غير محلول، والثالث يفتح باباً إلى بياناتنا.
+  sweaterCalculateSettlement: {
+    guard: 'accountant',
+    run: ({ db, FieldValue, data, uid }) => sweaterCalculateSettlement(db, FieldValue, {
+      periodKey: data?.periodKey, dryRun: data?.dryRun === true,
+    }, { userId: uid }),
+  },
+  sweaterRecordStatement: {
+    guard: 'accountant',
+    run: ({ db, FieldValue, data, uid }) => sweaterRecordStatement(db, FieldValue, {
+      periodKey: data?.periodKey, statedNetDue: data?.statedNetDue,
+      documentUrl: data?.documentUrl ?? null, note: data?.note ?? null,
+    }, { userId: uid }),
+  },
+  sweaterApproveSettlement: {
+    guard: 'admin',
+    run: ({ db, FieldValue, data, uid }) => sweaterApproveSettlement(db, FieldValue, {
+      periodKey: data?.periodKey, note: data?.note ?? null,
+    }, { userId: uid }),
+  },
+  sweaterCreateAdjustment: {
+    guard: 'accountant',
+    run: ({ db, FieldValue, data, uid }) => sweaterCreateAdjustment(db, FieldValue, {
+      adjustment: data?.adjustment,
+    }, { userId: uid }),
+  },
+  sweaterApproveAdjustment: {
+    guard: 'accountant',
+    run: ({ db, FieldValue, data, uid }) => sweaterApproveAdjustment(db, FieldValue, {
+      adjustmentId: data?.adjustmentId, note: data?.note ?? null,
+    }, { userId: uid }),
+  },
+  sweaterRecordCollection: {
+    guard: 'accountant',
+    run: ({ db, FieldValue, data, uid }) => sweaterRecordCollection(db, FieldValue, {
+      periodKey: data?.periodKey, amount: data?.amount, receivedDate: data?.receivedDate,
+      bankAccountId: data?.bankAccountId ?? null, reference: data?.reference ?? null,
+    }, { userId: uid }),
+  },
+  sweaterResolveVariance: {
+    guard: 'accountant',
+    run: ({ db, FieldValue, data, uid }) => sweaterResolveVariance(db, FieldValue, {
+      varianceId: data?.varianceId, resolution: data?.resolution,
+      reasonCode: data?.reasonCode ?? null, reasonAr: data?.reasonAr ?? null,
+      documentUrl: data?.documentUrl ?? null, reviewerNote: data?.reviewerNote ?? null,
+    }, { userId: uid }),
+  },
+  sweaterCloseSettlement: {
+    guard: 'admin',
+    run: ({ db, FieldValue, data, uid, role }) => sweaterCloseSettlement(db, FieldValue, {
+      periodKey: data?.periodKey, reason: data?.reason ?? null,
+    }, { userId: uid, role }),
+  },
+
+  // مفاتيح الوكيل: إنشاؤها وإلغاؤها للمدير وحده — وهي الباب إلى بياناتنا.
+  // والقائمة للمحاسب لأنها بلا أسرار: معرّفات وبصمات وحالات.
+  sweaterCreateIntegrationKey: {
+    guard: 'admin',
+    run: ({ db, FieldValue, data, uid }) => createIntegrationKey(db, FieldValue, {
+      label: data?.label ?? null, actor: uid,
+    }),
+  },
+  sweaterRevokeIntegrationKey: {
+    guard: 'admin',
+    run: ({ db, FieldValue, data, uid }) => revokeIntegrationKey(db, FieldValue, {
+      keyId: data?.keyId, actor: uid, reason: data?.reason ?? null,
+    }),
+  },
+  sweaterListIntegrationKeys: {
+    guard: 'accountant',
+    run: ({ db }) => listIntegrationKeys(db),
+  },
+
 };
 
 export const HANDLER_NAMES = Object.keys(HANDLERS);

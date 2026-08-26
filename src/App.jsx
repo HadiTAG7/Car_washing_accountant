@@ -10,7 +10,7 @@ import {
   Home,
   BarChart3,
   Target,
-  Handshake,
+  Handshake, Plug,
   HandCoins,
   RefreshCw,
   Percent,
@@ -37,6 +37,8 @@ import FinancialEntrySelector from './components/FinancialEntrySelector';
 const OverviewPage         = lazy(() => import('./components/OverviewPage'));
 const StartupPage          = lazy(() => import('./components/StartupPage'));
 const AnnualExpensesPage   = lazy(() => import('./components/AnnualExpensesPage'));
+const SweaterSettlementsPage = lazy(() => import('./components/SweaterSettlementsPage'));
+const SweaterIntegrationPage = lazy(() => import('./components/SweaterIntegrationPage'));
 const MonthlyExpensesPage  = lazy(() => import('./components/MonthlyExpensesPage'));
 const VariableExpensesPage = lazy(() => import('./components/VariableExpensesPage'));
 const WashesPage           = lazy(() => import('./components/WashesPage'));
@@ -88,6 +90,14 @@ const TAB_GROUPS = [
       { id: 'bikers',    label: 'البايكر',                 icon: Bike        },
       { id: 'housing',   label: 'السكن',                   icon: Home        },
       { id: 'temporary_expenses', label: 'المصروفات المؤقتة', icon: RefreshCw },
+    ],
+  },
+  {
+    id: 'sweater',
+    title: 'منصة سويتر',
+    tabs: [
+      { id: 'sweater_settlements', label: 'تسويات سويتر',  icon: Handshake },
+      { id: 'sweater_integration', label: 'تكامل سويتر',   icon: Plug      },
     ],
   },
   {
@@ -241,6 +251,8 @@ function AppShell() {
               />
             )}
             {activeTab === 'annual'    && <AnnualExpensesPage />}
+            {activeTab === 'sweater_settlements' && <SweaterSettlementsPage />}
+            {activeTab === 'sweater_integration' && <SweaterIntegrationPage />}
             {activeTab === 'monthly'   && <MonthlyExpensesPage />}
             {activeTab === 'variable'  && <VariableExpensesPage />}
             {activeTab === 'washes'    && <WashesPage />}

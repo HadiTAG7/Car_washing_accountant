@@ -34,6 +34,7 @@ export const ACC = {
   CASH:              '1010', // الصندوق
   BANK:              '1020', // البنك
   RECEIVABLE:        '1100', // العملاء / الذمم المدينة
+  SWEATER_RECEIVABLE:'1101', // ذمم منصة سويتر
   INPUT_VAT:         '1200', // ضريبة مدخلات قابلة للاسترداد
   EMPLOYEE_ADVANCE:  '1300', // عهد ومصروفات قابلة للاسترداد
   FIXED_ASSETS:      '1500', // أصول ثابتة
@@ -44,6 +45,9 @@ export const ACC = {
   RETAINED_EARNINGS: '3100', // أرباح محتجزة
   WASH_REVENUE:      '4000', // إيرادات غسيل السيارات
   SALES_RETURNS:     '4010', // مردودات وخصومات المبيعات (حساب مقابل)
+  SWEATER_REVENUE:   '4001', // إيرادات خدمات سويتر
+  SWEATER_DEDUCTIONS:'4020', // خصومات سويتر التشغيلية (حساب مقابل)
+  OTHER_OPERATING_INCOME:'4110', // إيرادات تشغيلية أخرى (حوافز وتعويضات)
   ASSET_DISPOSAL_GAIN:'4100',// أرباح استبعاد أصول
   BIKER_COMMISSION:  '5000', // عمولات البايكرز
   VARIABLE_COSTS:    '5100', // مواد تشغيل ومصروفات متغيرة
@@ -62,6 +66,10 @@ export const DEFAULT_CHART_OF_ACCOUNTS = [
   { code: ACC.CASH,               nameArabic: 'الصندوق',                       accountType: 'asset' },
   { code: ACC.BANK,               nameArabic: 'البنك',                          accountType: 'asset' },
   { code: ACC.RECEIVABLE,         nameArabic: 'العملاء / الذمم المدينة',        accountType: 'asset' },
+  // منصة سويتر ذمّةٌ واحدة تُسوّى شهرياً بكشفٍ وفاتورة وتحويل — فخلطها بذمم
+  // العملاء يجعل «كم على سويتر؟» جمعاً بالعين. حساب فرعي، فيتجمّع في الأب.
+  { code: ACC.SWEATER_RECEIVABLE, nameArabic: 'ذمم منصة سويتر',                 accountType: 'asset',
+    parentId: ACC.RECEIVABLE },
   { code: ACC.INPUT_VAT,          nameArabic: 'ضريبة مدخلات قابلة للاسترداد',   accountType: 'asset' },
   { code: ACC.EMPLOYEE_ADVANCE,   nameArabic: 'عهد ومصروفات قابلة للاسترداد',   accountType: 'asset' },
   { code: ACC.FIXED_ASSETS,       nameArabic: 'أصول ثابتة',                     accountType: 'asset' },
@@ -84,6 +92,16 @@ export const DEFAULT_CHART_OF_ACCOUNTS = [
   // would hide the return. Debit-side, under revenue.
   { code: ACC.SALES_RETURNS,      nameArabic: 'مردودات وخصومات المبيعات',       accountType: 'revenue',
     parentId: ACC.WASH_REVENUE, normalBalance: 'debit', contra: true },
+  // إيراد سويتر منفصلٌ عن إيراد الغسيل المباشر عمداً: مصدره عقدٌ يُسوّى شهرياً
+  // لا نقدٌ يُقبض عند الخدمة، والفصل هو ما يجعل ازدواج الإيراد مرئياً لو حدث.
+  { code: ACC.SWEATER_REVENUE,    nameArabic: 'إيرادات خدمات سويتر',            accountType: 'revenue' },
+  // خصومات المنصة التشغيلية حسابٌ مقابل **مستقل** عن مردودات المبيعات: تلك
+  // ردٌّ على العميل، وهذه اقتطاعٌ تعاقدي من مستحق الشريك — ودمجهما يخلط
+  // سببين مختلفين في سطرٍ واحد لا يُفسَّر.
+  { code: ACC.SWEATER_DEDUCTIONS, nameArabic: 'خصومات سويتر التشغيلية',         accountType: 'revenue',
+    parentId: ACC.SWEATER_REVENUE, normalBalance: 'debit', contra: true },
+  // الحوافز والتعويضات ليست ثمن خدمة — فلا تُضخّم سطر الإيراد التشغيلي.
+  { code: ACC.OTHER_OPERATING_INCOME, nameArabic: 'إيرادات تشغيلية أخرى',       accountType: 'revenue' },
   // Disposing of an asset is not trading income, so it gets its own account
   // and never inflates the wash revenue line.
   { code: ACC.ASSET_DISPOSAL_GAIN, nameArabic: 'أرباح استبعاد أصول',            accountType: 'revenue' },

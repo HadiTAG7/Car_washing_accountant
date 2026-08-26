@@ -20,17 +20,30 @@
 import { round2 } from './invariants.js';
 import { resolvePurchaseTax } from './purchaseTax.js';
 
+// ── نسخة الخادم من أرقام الحسابات ──
+// نسختان لأن الخادم لا يستورد من `src/` — لكنهما كانتا تختلفان فعلاً (نقص
+// الخادمَ ٣١٠٠ و٤١٠٠ و٥٥٠٠)، وحسابٌ موجود هنا ومفقود هناك يُرحّل إلى رقمٍ لا
+// يعرفه الدليل. فأصبحتا مقفلتين باختبار انجراف:
+// `functions/test/chartDrift.test.js`.
 export const ACC = {
-  CASH: '1010', BANK: '1020', RECEIVABLE: '1100', INPUT_VAT: '1200',
+  CASH: '1010', BANK: '1020', RECEIVABLE: '1100',
+  SWEATER_RECEIVABLE: '1101',
+  INPUT_VAT: '1200',
   EMPLOYEE_ADVANCE: '1300', FIXED_ASSETS: '1500', ACCUM_DEPRECIATION: '1510',
-  PAYABLE: '2000', OUTPUT_VAT: '2100', PARTNER_CAPITAL: '3000',
+  PAYABLE: '2000', OUTPUT_VAT: '2100',
+  PARTNER_CAPITAL: '3000', RETAINED_EARNINGS: '3100',
   WASH_REVENUE: '4000',
   // مردودات وخصومات المبيعات — a CONTRA-revenue account. A credit note
   // reduces revenue, but netting it against 4000 would hide the return; a
   // separate debit-side account keeps gross sales and returns both visible.
   SALES_RETURNS: '4010',
+  SWEATER_REVENUE: '4001',
+  SWEATER_DEDUCTIONS: '4020',
+  OTHER_OPERATING_INCOME: '4110',
+  ASSET_DISPOSAL_GAIN: '4100',
   BIKER_COMMISSION: '5000', VARIABLE_COSTS: '5100',
   RENT_MONTHLY: '5200', ADMIN_EXPENSES: '5300', DEPRECIATION: '5400',
+  ASSET_DISPOSAL_LOSS: '5500',
 };
 
 export const VAT_RATE = 0.15;

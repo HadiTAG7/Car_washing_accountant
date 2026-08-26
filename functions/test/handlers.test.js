@@ -167,3 +167,59 @@ describe('خريطة HTTP تغطي كل ما تنتجه الطبقة المشت�
     expect(api).toContain('dispatch(');
   });
 });
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// عزل باب وكيل سويتر — بنيويٌّ لا شرطيّ
+// ═══════════════════════════════════════════════════════════════════════════
+// الوكيل لا يملك دوراً في المنظومة؛ يملك مفتاحاً يفتح باباً واحداً. وهذه
+// الاختبارات تقفل ذلك على مستوى **المصدر**: لو أُضيف يوماً دور
+// `integration_ingest` إلى حُرّاس `dispatch`، أو استورد باب الوكيل `dispatch`،
+// لسقط الملف هنا قبل أن يصل الإنتاج.
+describe('عزل باب وكيل سويتر', () => {
+  // الشيفرة وحدها تُفحَص: التعليقات تشرح العزل بذكر ما تتجنّبه، ولو فُحص
+  // النصّ الخام لأسقط الشرحُ الاختبارَ الذي يشرحه.
+  const stripComments = (src) => src
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
+  const ingestDoor = stripComments(readFileSync('api/integrations/sweater/import.js', 'utf8'));
+
+  it('باب الوكيل لا يستورد `dispatch` ولا يعرف سجل المعالجات', () => {
+    // لو مرّ به لصار كل معالجٍ في المنظومة على بُعد اسمٍ من الوكيل.
+    expect(ingestDoor).not.toMatch(/dispatch\s*\(/);
+    expect(ingestDoor).not.toMatch(/from\s+['"].*handlers/);
+    expect(ingestDoor).not.toMatch(/HANDLER_NAMES/);
+    expect(ingestDoor).not.toMatch(/GUARDS/);
+  });
+
+  it('ولا يعرف طريقاً إلى الترحيل أو الإقفال أو الفوترة', () => {
+    // ما لا يستطيعه الوكيل ليس ممنوعاً بفحص — هو غير موجود في ملفه.
+    for (const forbidden of [
+      'postSource', 'postEntry', 'reverseEntry', 'closePeriod', 'reopenPeriod',
+      'issueDocument', 'voidDocument', 'seedChartOfAccounts',
+    ]) {
+      expect(ingestDoor, `باب الوكيل يذكر ${forbidden}`).not.toMatch(new RegExp(forbidden));
+    }
+  });
+
+  it('ولا يلمس Firestore بغير ما تمرّره دوال الاستلام', () => {
+    // الباب ينقل ويتحقق؛ الكتابة في `ingest.js` وحدها.
+    expect(ingestDoor).not.toMatch(/\.collection\(/);
+    expect(ingestDoor).toMatch(/ingestSweaterOperations/);
+  });
+
+  it('وصلاحية الوكيل ليست دوراً في حُرّاس `dispatch`', () => {
+    // الخطر الذي يقفله هذا: قيمةٌ في `callerRole` قد يقبلها حارسٌ آخر يوماً.
+    const handlersSrc = stripComments(readFileSync('functions/src/handlers.js', 'utf8'));
+    expect(handlersSrc).not.toMatch(/integration_ingest/);
+    expect(handlersSrc).not.toMatch(/sweater-browser-agent/);
+    expect(Object.keys(GUARDS)).not.toContain('integrationIngest');
+  });
+
+  it('وباب الدفاتر ما زال يطلب هوية Firebase — لا مفتاح تكامل', () => {
+    const ledgerDoor = stripComments(readFileSync('api/ledger.js', 'utf8'));
+    expect(ledgerDoor).toMatch(/verifyIdToken/);
+    expect(ledgerDoor).not.toMatch(/x-sweater-key-id/i);
+    expect(ledgerDoor).not.toMatch(/SWEATER_INGEST/);
+  });
+});

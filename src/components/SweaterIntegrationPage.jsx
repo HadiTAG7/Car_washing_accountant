@@ -7,6 +7,7 @@ import { Card, SectionHeader, StatCard, EmptyState } from './UI';
 import LoadingState from './LoadingState';
 import ErrorState from './ErrorState';
 import Toast from './Toast';
+import SweaterActionDialog from './SweaterActionDialog';
 import { useSweaterIntegration, useSweaterConfig } from '../hooks/useSweater';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 import { describeBackendError } from '../lib/firebaseClient';
@@ -42,8 +43,11 @@ export default function SweaterIntegrationPage() {
   // جاهزية الخادم — تُقرأ من مسبارٍ لا يعرض قيمةً، فيُعرف أن الإعداد ناقص
   // قبل الضغط على الزر لا بعد فشله.
   const [readiness, setReadiness] = useState(null);
+  // نوافذ داخلية بدل `prompt` — الأخيرة محجوبةٌ في المتصفح الآلي.
+  const [createOpen, setCreateOpen] = useState(false);
+  const [revokeKeyRow, setRevokeKey] = useState(null);
+  const [dialogError, setDialogError] = useState(null);
   const [busy, setBusy] = useState(null);
-  const [actionError, setActionError] = useState(null);
   const [freshSecret, setFreshSecret] = useState(null);
   const [toast, setToast] = useState({ open: false, message: '', tone: 'success', duration: 3000 });
 
@@ -52,19 +56,9 @@ export default function SweaterIntegrationPage() {
   }, []);
   const closeToast = useCallback(() => setToast((t) => ({ ...t, open: false })), []);
 
-  const guarded = useCallback(async (name, fn, okMsg = 'تمّ') => {
-    setBusy(name); setActionError(null);
-    try {
-      const r = await fn();
-      showToast(okMsg);
-      return r;
-    } catch (e) {
-      console.error('🔥 SweaterIntegration:', e);
-      const msg = describeBackendError(e) || e?.message || 'تعذّر تنفيذ العملية';
-      setActionError(msg); showToast(msg, 'error');
-      return null;
-    } finally { setBusy(null); }
-  }, [showToast]);
+  // لا `guarded` هنا بعد اليوم: كل فعلٍ صار وراء نافذة تعرض رفض الخادم
+  // **داخلها** وتبقى بقيمها. لافتةٌ عامة فوق الصفحة كانت تترك المستخدم يبحث
+  // عن سبب فشلٍ وقع في نافذةٍ أُغلقت.
 
   useEffect(() => {
     let alive = true;
@@ -89,12 +83,6 @@ export default function SweaterIntegrationPage() {
 
       <main className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5">
         {integ.error && <ErrorState error={integ.error} />}
-        {actionError && (
-          <div role="alert" className="flex items-start gap-2 bg-rose-50 dark:bg-rose-500/10 border border-rose-100 dark:border-rose-500/30 rounded-control px-3 py-2.5 text-[12px] text-rose-700 dark:text-rose-300 font-medium leading-relaxed">
-            <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-            <span className="flex-1 break-words">{actionError}</span>
-          </div>
-        )}
 
         {/* ── السرّ يُعرض مرة واحدة ── */}
         {freshSecret && (
@@ -213,12 +201,7 @@ export default function SweaterIntegrationPage() {
               <button
                 type="button"
                 disabled={busy !== null}
-                onClick={async () => {
-                  const label = window.prompt('اسم المفتاح (للتمييز):', 'وكيل المتصفح');
-                  if (label == null) return;
-                  const r = await guarded('key', () => integ.createKey(label), 'أُنشئ المفتاح');
-                  if (r?.secret) setFreshSecret(r);
-                }}
+                onClick={() => { setDialogError(null); setCreateOpen(true); }}
                 className="sw-button sw-button--sm sw-button--primary"
               >
                 <KeyRound size={16} /> أنشئ مفتاحاً
@@ -266,11 +249,7 @@ export default function SweaterIntegrationPage() {
                           <button
                             type="button"
                             disabled={busy !== null}
-                            onClick={() => {
-                              const reason = window.prompt('سبب الإلغاء:');
-                              if (reason == null) return;
-                              guarded('revoke', () => integ.revokeKey(k.keyId, reason), 'أُلغي المفتاح');
-                            }}
+                            onClick={() => { setDialogError(null); setRevokeKey(k); }}
                             className="text-[12px] px-2.5 py-1.5 rounded-control border border-slate-200 dark:border-slate-700 hover:border-rose-500 text-slate-600 dark:text-slate-400 transition-colors inline-flex items-center gap-1"
                           >
                             <Ban size={13} /> ألغِ
@@ -378,6 +357,84 @@ export default function SweaterIntegrationPage() {
           </div>
         </Card>
       </main>
+
+      {/* ── إنشاء مفتاح ── */}
+      <SweaterActionDialog
+        open={createOpen}
+        title="إنشاء مفتاح تكامل"
+        subtitle="السرّ يُعرض مرة واحدة بعد الإنشاء ولا يُسترجَع بعدها."
+        icon={KeyRound}
+        busy={busy === 'key'}
+        error={dialogError}
+        confirmLabel="أنشئ المفتاح"
+        busyLabel="جارٍ الإنشاء…"
+        fields={[{
+          name: 'label',
+          label: 'اسم المفتاح',
+          type: 'text',
+          required: true,
+          defaultValue: 'الوكيل الرابع — Codex',
+          hint: 'للتمييز في القائمة وسجل الاستعمال — لا يدخل التوقيع.',
+        }]}
+        onClose={() => { setCreateOpen(false); setDialogError(null); }}
+        onConfirm={async ({ label }) => {
+          setDialogError(null);
+          setBusy('key');
+          try {
+            const r = await integ.createKey(label);
+            setCreateOpen(false);
+            // السرّ يُعرض هنا مرةً واحدة — وبعدها لا سبيل إليه.
+            if (r?.secret) setFreshSecret(r);
+            showToast('أُنشئ المفتاح');
+          } catch (e) {
+            console.error('🔥 SweaterIntegration.createKey:', e);
+            setDialogError(describeBackendError(e) || e?.message || 'تعذّر إنشاء المفتاح');
+          } finally { setBusy(null); }
+        }}
+      />
+
+      {/* ── إلغاء مفتاح ── */}
+      <SweaterActionDialog
+        open={Boolean(revokeKeyRow)}
+        title="إلغاء مفتاح التكامل"
+        subtitle="الإلغاء نهائي — الوكيل الذي يوقّع به يتوقف فوراً."
+        icon={Ban}
+        tone="danger"
+        busy={busy === 'revoke'}
+        error={dialogError}
+        confirmLabel="ألغِ المفتاح"
+        busyLabel="جارٍ الإلغاء…"
+        context={revokeKeyRow ? (
+          // المعرّف والبصمة يكفيان للتمييز — والسرّ لا يُعرض هنا ولا في أي
+          // مكانٍ بعد لحظة إنشائه.
+          <div className="bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-control px-3 py-2.5 text-[12px] text-slate-600 dark:text-slate-400 space-y-1">
+            <p>الاسم: <strong className="text-slate-800 dark:text-slate-200">{revokeKeyRow.label || '—'}</strong></p>
+            <p>المعرّف: <code className="font-mono">{revokeKeyRow.keyId}</code></p>
+            <p>البصمة: <code className="font-mono">…{String(revokeKeyRow.fingerprint || '').slice(-8)}</code></p>
+          </div>
+        ) : null}
+        fields={[{
+          name: 'reason',
+          label: 'سبب الإلغاء',
+          type: 'textarea',
+          required: true,
+          placeholder: 'تدوير دوري، أو اشتباه تسريب، أو إيقاف الوكيل…',
+          hint: 'يبقى في سجل التدقيق.',
+        }]}
+        onClose={() => { setRevokeKey(null); setDialogError(null); }}
+        onConfirm={async ({ reason }) => {
+          setDialogError(null);
+          setBusy('revoke');
+          try {
+            await integ.revokeKey(revokeKeyRow.keyId, reason);
+            setRevokeKey(null);
+            showToast('أُلغي المفتاح');
+          } catch (e) {
+            console.error('🔥 SweaterIntegration.revokeKey:', e);
+            setDialogError(describeBackendError(e) || e?.message || 'تعذّر إلغاء المفتاح');
+          } finally { setBusy(null); }
+        }}
+      />
 
       <Toast open={toast.open} message={toast.message} tone={toast.tone} duration={toast.duration} onClose={closeToast} />
     </>

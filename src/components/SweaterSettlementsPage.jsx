@@ -8,6 +8,7 @@ import { Card, SectionHeader, StatCard, EmptyState } from './UI';
 import LoadingState from './LoadingState';
 import ErrorState from './ErrorState';
 import Toast from './Toast';
+import SweaterActionDialog from './SweaterActionDialog';
 import {
   useSweaterSettlements, useSweaterBookings, useSweaterAdjustments, useSweaterVariances,
 } from '../hooks/useSweater';
@@ -65,6 +66,10 @@ export default function SweaterSettlementsPage() {
   const [periodKey, setPeriodKey] = useState(currentPeriod());
   const [filters, setFilters] = useState({ driver: '', region: '', serviceType: '' });
   const [busy, setBusy] = useState(null);
+  // نوافذ داخلية بدل `prompt` — الأخيرة محجوبةٌ في المتصفح الآلي، ولا تتحقق
+  // من رقمٍ ولا تاريخ. `dialog` اسمُ النافذة المفتوحة، أو `null`.
+  const [dialog, setDialog] = useState(null);
+  const [dialogError, setDialogError] = useState(null);
   const [actionError, setActionError] = useState(null);
   const [toast, setToast] = useState({ open: false, message: '', tone: 'success', duration: 3000 });
   const [newKeySecret] = useState(null);
@@ -269,13 +274,7 @@ export default function SweaterSettlementsPage() {
                   <button
                     type="button"
                     disabled={busy !== null || !figures}
-                    onClick={() => {
-                      const v = window.prompt('صافي المستحق كما في كشف سويتر:');
-                      if (v == null) return;
-                      guarded('stmt', () => settlementsApi.recordStatement({
-                        periodKey, statedNetDue: Number(v),
-                      }));
-                    }}
+                    onClick={() => { setDialogError(null); setDialog('statement'); }}
                     className="sw-button sw-button--sm sw-button--secondary"
                   >
                     <FileText size={16} /> سجّل كشف سويتر
@@ -291,15 +290,7 @@ export default function SweaterSettlementsPage() {
                   <button
                     type="button"
                     disabled={busy !== null}
-                    onClick={() => {
-                      const amt = window.prompt('المبلغ المُحصَّل:');
-                      if (amt == null) return;
-                      const date = window.prompt('تاريخ الاستلام (YYYY-MM-DD):');
-                      if (!date) return;
-                      guarded('collect', () => settlementsApi.recordCollection({
-                        periodKey, amount: Number(amt), receivedDate: date,
-                      }));
-                    }}
+                    onClick={() => { setDialogError(null); setDialog('collection'); }}
                     className="sw-button sw-button--sm sw-button--secondary"
                   >
                     <Landmark size={16} /> سجّل تحصيلاً بنكياً
@@ -307,13 +298,7 @@ export default function SweaterSettlementsPage() {
                   <button
                     type="button"
                     disabled={busy !== null}
-                    onClick={() => {
-                      const reason = unresolved.length
-                        ? window.prompt('فروقٌ غير محلولة — اكتب سبب الإقفال:')
-                        : null;
-                      if (unresolved.length && !reason) return;
-                      guarded('close', () => settlementsApi.close(periodKey, reason));
-                    }}
+                    onClick={() => { setDialogError(null); setDialog('close'); }}
                     className="sw-button sw-button--sm sw-button--secondary"
                   >
                     <Lock size={16} /> أقفل التسوية
@@ -511,6 +496,138 @@ export default function SweaterSettlementsPage() {
           </>
         )}
       </main>
+
+      {/* ── كشف سويتر ── */}
+      <SweaterActionDialog
+        open={dialog === 'statement'}
+        title={`كشف سويتر — ${periodKey}`}
+        subtitle="الرقم كما ورد في الكشف، لا كما نتوقّعه. والفرق يُسجَّل بسببه."
+        icon={FileText}
+        busy={busy === 'stmt'}
+        error={dialogError}
+        confirmLabel="سجّل الكشف"
+        busyLabel="جارٍ التسجيل…"
+        context={figures ? (
+          <div className="bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-control px-3 py-2.5 text-[12px] text-slate-600 dark:text-slate-400">
+            صافي المستحق المتوقع: <strong className="tabular-nums text-slate-800 dark:text-slate-200">{MONEY(figures.netDue)}</strong>
+          </div>
+        ) : null}
+        fields={[{
+          name: 'statedNetDue',
+          label: 'صافي المستحق في الكشف (ر.س)',
+          type: 'number',
+          required: true,
+          min: 0,
+          hint: 'اختلافه عن المتوقع يُنشئ فرقاً يمنع الإقفال حتى يُحسم.',
+        }]}
+        onClose={() => { setDialog(null); setDialogError(null); }}
+        onConfirm={async ({ statedNetDue }) => {
+          setDialogError(null);
+          setBusy('stmt');
+          try {
+            await settlementsApi.recordStatement({ periodKey, statedNetDue });
+            setDialog(null);
+            showToast('سُجّل الكشف');
+          } catch (e) {
+            console.error('🔥 Sweater.recordStatement:', e);
+            setDialogError(describeBackendError(e) || e?.message || 'تعذّر تسجيل الكشف');
+          } finally { setBusy(null); }
+        }}
+      />
+
+      {/* ── التحصيل: المبلغ والتاريخ في نافذةٍ واحدة ──
+          كانا سؤالين متتاليين بـ`prompt`، فإلغاءُ الثاني يترك المستخدم وقد
+          أجاب الأول بلا أثر — والأسوأ أن فراغ المبلغ كان يمرّ صفراً. */}
+      <SweaterActionDialog
+        open={dialog === 'collection'}
+        title={`تسجيل تحصيل — ${periodKey}`}
+        subtitle="تحويلٌ بنكي وارد من سويتر. لا يُسجَّل في الصندوق."
+        icon={Landmark}
+        busy={busy === 'collect'}
+        error={dialogError}
+        confirmLabel="سجّل التحصيل"
+        busyLabel="جارٍ التسجيل…"
+        context={figures ? (
+          <div className="bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-control px-3 py-2.5 text-[12px] text-slate-600 dark:text-slate-400 space-y-1">
+            <p>صافي المستحق: <strong className="tabular-nums text-slate-800 dark:text-slate-200">{MONEY(figures.netDue)}</strong></p>
+            {settlement?.collectedTotal > 0 && (
+              <p>المُحصَّل حتى الآن: <strong className="tabular-nums">{MONEY(settlement.collectedTotal)}</strong></p>
+            )}
+          </div>
+        ) : null}
+        fields={[
+          {
+            name: 'amount',
+            label: 'المبلغ المُحصَّل (ر.س)',
+            type: 'number',
+            required: true,
+            positive: true,
+            hint: 'تحصيلٌ جزئي مقبول — الحالة تتبع المجموع.',
+          },
+          {
+            name: 'receivedDate',
+            label: 'تاريخ الاستلام',
+            type: 'date',
+            required: true,
+            hint: 'تاريخ وصول التحويل إلى الحساب البنكي، وبه يُؤرَّخ القيد.',
+          },
+        ]}
+        onClose={() => { setDialog(null); setDialogError(null); }}
+        onConfirm={async ({ amount, receivedDate }) => {
+          setDialogError(null);
+          setBusy('collect');
+          try {
+            await settlementsApi.recordCollection({ periodKey, amount, receivedDate });
+            setDialog(null);
+            showToast('سُجّل التحصيل');
+          } catch (e) {
+            console.error('🔥 Sweater.recordCollection:', e);
+            setDialogError(describeBackendError(e) || e?.message || 'تعذّر تسجيل التحصيل');
+          } finally { setBusy(null); }
+        }}
+      />
+
+      {/* ── الإقفال: السبب إلزامي عند وجود فروق ── */}
+      <SweaterActionDialog
+        open={dialog === 'close'}
+        title={`إقفال تسوية ${periodKey}`}
+        subtitle={unresolved.length
+          ? 'فروقٌ غير محلولة — الإقفال بقرار المدير وسببٍ مكتوب.'
+          : 'لا فروق معلّقة. الإقفال نهائي ولا تتغيّر حالته بعده.'}
+        icon={Lock}
+        tone={unresolved.length ? 'danger' : 'primary'}
+        busy={busy === 'close'}
+        error={dialogError}
+        confirmLabel="أقفل التسوية"
+        busyLabel="جارٍ الإقفال…"
+        context={unresolved.length ? (
+          <div className="bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/30 rounded-control px-3 py-2.5 text-[12px] text-amber-800 dark:text-amber-300 leading-relaxed">
+            {formatNumber(unresolved.length)} فرقٌ غير محلول سيبقى مسجَّلاً بعد الإقفال،
+            ويُكتب عددُه وسببُك في سجل التدقيق.
+          </div>
+        ) : null}
+        fields={unresolved.length ? [{
+          name: 'reason',
+          label: 'سبب الإقفال رغم الفروق',
+          type: 'textarea',
+          required: true,
+          placeholder: 'مثال: فرقٌ بـ١٢ ريالاً قيد التفاوض مع سويتر، وسيُسوّى الشهر القادم.',
+          hint: 'يُقرأ في المراجعة — تسويةٌ أُقفلت على فرقٍ بلا تفسير لا يُدافَع عنها.',
+        }] : []}
+        onClose={() => { setDialog(null); setDialogError(null); }}
+        onConfirm={async ({ reason }) => {
+          setDialogError(null);
+          setBusy('close');
+          try {
+            await settlementsApi.close(periodKey, reason ?? null);
+            setDialog(null);
+            showToast('أُقفلت التسوية');
+          } catch (e) {
+            console.error('🔥 Sweater.closeSettlement:', e);
+            setDialogError(describeBackendError(e) || e?.message || 'تعذّر إقفال التسوية');
+          } finally { setBusy(null); }
+        }}
+      />
 
       <Toast open={toast.open} message={toast.message} tone={toast.tone} duration={toast.duration} onClose={closeToast} />
     </>

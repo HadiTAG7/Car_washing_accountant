@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Plug, KeyRound, ShieldAlert, CheckCircle2, Clock, AlertTriangle, Copy, Ban, Inbox,
 } from 'lucide-react';
@@ -39,6 +39,9 @@ export default function SweaterIntegrationPage() {
   const integ = useSweaterIntegration();
   const config = useSweaterConfig();
 
+  // جاهزية الخادم — تُقرأ من مسبارٍ لا يعرض قيمةً، فيُعرف أن الإعداد ناقص
+  // قبل الضغط على الزر لا بعد فشله.
+  const [readiness, setReadiness] = useState(null);
   const [busy, setBusy] = useState(null);
   const [actionError, setActionError] = useState(null);
   const [freshSecret, setFreshSecret] = useState(null);
@@ -62,6 +65,16 @@ export default function SweaterIntegrationPage() {
       return null;
     } finally { setBusy(null); }
   }, [showToast]);
+
+  useEffect(() => {
+    let alive = true;
+    fetch('/api/integrations/sweater/health', { headers: { Accept: 'application/json' } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (alive && j?.result) setReadiness(j.result); })
+      // مسبارٌ لا يُجيب لا يعطّل الصفحة: الجاهزية معلومةٌ مساعدة لا شرط عرض.
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
   const st = integ.current;
   const lastHours = hoursSince(st?.lastSuccessAtIso);
@@ -115,6 +128,22 @@ export default function SweaterIntegrationPage() {
           </Card>
         )}
 
+        {/* ── جاهزية الخادم ── */}
+        {readiness && !readiness.ready && (
+          <div role="alert" className="flex items-start gap-2 bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/30 rounded-control px-3 py-2.5 text-[12px] text-amber-800 dark:text-amber-300 font-medium leading-relaxed">
+            <ShieldAlert size={14} className="mt-0.5 shrink-0" />
+            <span className="flex-1 break-words">
+              <strong>إعداد الخادم ناقص.</strong>{' '}
+              {readiness.checks?.filter((c) => !c.present).map((c) => (
+                <span key={c.name} className="block mt-1">
+                  <code className="font-mono">{c.name}</code> — {c.why}
+                </span>
+              ))}
+              <span className="block mt-1">{readiness.hint}</span>
+            </span>
+          </div>
+        )}
+
         {/* ── الحال ── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
           <StatCard
@@ -145,7 +174,9 @@ export default function SweaterIntegrationPage() {
             tone={activeKeys.length ? 'emerald' : 'amber'}
             label="مفاتيح فعّالة"
             value={formatNumber(activeKeys.length)}
-            sub={activeKeys.length ? 'الوكيل يوقّع بها' : 'أنشئ مفتاحاً ليعمل الوكيل'}
+            sub={readiness && !readiness.ready
+              ? 'إعداد الخادم ناقص — انظر التنبيه أعلاه'
+              : activeKeys.length ? 'الوكيل يوقّع بها' : 'أنشئ مفتاحاً ليعمل الوكيل'}
           />
         </div>
 
@@ -178,7 +209,7 @@ export default function SweaterIntegrationPage() {
           <SectionHeader
             title="مفاتيح الوكيل"
             subtitle="السرّ يُعرض مرة واحدة عند الإنشاء. المخزَّن مُعمّى ولا يُسترجَع — والتدوير إنشاءٌ ثم إلغاء."
-            actions={canMutate ? (
+            action={canMutate ? (
               <button
                 type="button"
                 disabled={busy !== null}
@@ -194,7 +225,11 @@ export default function SweaterIntegrationPage() {
               </button>
             ) : null}
           />
-          {integ.keys.length === 0 ? (
+          {integ.keysError ? (
+            <p className="mt-4 text-[12px] text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-control px-3 py-2.5 leading-relaxed">
+              قائمة المفاتيح متاحة للمحاسب فأعلى — وبقية هذه الصفحة مقروءة لك.
+            </p>
+          ) : integ.keys.length === 0 ? (
             <div className="mt-4">
               <EmptyState compact icon={KeyRound} title="لا مفاتيح بعد"
                 hint="أنشئ مفتاحاً وضعه في إعداد وكيل المتصفح ليبدأ الاستيراد." />

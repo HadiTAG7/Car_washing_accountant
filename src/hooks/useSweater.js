@@ -119,7 +119,13 @@ export function useSweaterIntegration() {
     runs: (runs.data ?? []).slice(0, 30),
     keys: keys.data ?? [],
     loading: state.loading || runs.loading,
-    error: state.error || runs.error || keys.error,
+    // ── خطأ القائمة لا يبتلع الصفحة ──
+    // `sweaterListIntegrationKeys` للمحاسب فأعلى، فمشغّلٌ يفتح الصفحة يتلقّى
+    // رفضاً. وضمُّه إلى `error` العام كان يغطّي الصفحة بلافتة خطأ — بينما
+    // حالُ الوصلة وسجلُّ الاستيراد مقروءان لأي عضو. فيُفصَل ويُعرض بجوار
+    // جدوله وحده.
+    error: state.error || runs.error,
+    keysError: keys.error ?? null,
     refetch: refetchAll,
     createKey: useCallback(async (label) => {
       // السرّ يعود مرة واحدة — يُعرض فوراً ولا يُخزَّن في أي حال.

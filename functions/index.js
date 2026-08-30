@@ -107,3 +107,12 @@ export const sweaterCloseSettlement = callable('sweaterCloseSettlement');
 export const sweaterCreateIntegrationKey = callable('sweaterCreateIntegrationKey');
 export const sweaterRevokeIntegrationKey = callable('sweaterRevokeIntegrationKey');
 export const sweaterListIntegrationKeys = callable('sweaterListIntegrationKeys');
+
+// ─── مسير رواتب البايكر ────────────────────────────────────────────────
+export const payrollPreview = callable('payrollPreview');
+export const payrollSaveDraft = callable('payrollSaveDraft');
+export const payrollApprove = callable('payrollApprove');
+export const payrollUnapprove = callable('payrollUnapprove');
+export const payrollPay = callable('payrollPay');
+export const payrollReverse = callable('payrollReverse');
+export const payrollCancel = callable('payrollCancel');

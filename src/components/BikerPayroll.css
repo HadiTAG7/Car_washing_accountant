@@ -1,0 +1,10 @@
+@media print {
+  body { background: #fff !important; color: #111 !important; }
+  aside, header, .payroll-no-print, button { display: none !important; }
+  .payroll-print-root { display: block !important; padding: 0 !important; }
+  .payroll-print-root * { color: #111 !important; box-shadow: none !important; }
+  .payroll-print-root table { min-width: 100% !important; font-size: 9px !important; }
+  .payroll-print-root .hidden.lg\:block { display: block !important; }
+  .payroll-print-root .lg\:hidden { display: none !important; }
+  @page { size: A4 landscape; margin: 10mm; }
+}

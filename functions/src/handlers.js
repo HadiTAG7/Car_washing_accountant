@@ -45,6 +45,16 @@ import {
 } from './startupCosts.js';
 import { claimFirstAdmin, directoryIsEmpty, BootstrapError } from './bootstrapAdmin.js';
 import { canPost } from './posting.js';
+import {
+  PayrollError,
+  approvePayroll,
+  cancelPayroll,
+  payPayroll,
+  previewPayroll,
+  reversePayroll,
+  savePayrollDraft,
+  unapprovePayroll,
+} from './payroll.js';
 
 /** A refusal with a code the transport can translate. Never a bug. */
 export class AuthError extends Error {
@@ -446,6 +456,38 @@ export const HANDLERS = {
     run: ({ db }) => listIntegrationKeys(db),
   },
 
+  // ── مسير رواتب البايكر ─────────────────────────────────────────────
+  // المعاينة والمسودة حسابٌ خادمي ولا تمسان الدفاتر. الاعتماد والصرف والعكس
+  // قرارات مدير، ولا يحمل أي طلبٍ من العميل مبلغاً نهائياً أو سطر قيد.
+  payrollPreview: {
+    guard: 'accountant',
+    run: ({ db, data }) => previewPayroll(db, data || {}),
+  },
+  payrollSaveDraft: {
+    guard: 'accountant',
+    run: ({ db, FieldValue, data, uid }) => savePayrollDraft(db, FieldValue, data || {}, { userId: uid }),
+  },
+  payrollApprove: {
+    guard: 'admin',
+    run: ({ db, FieldValue, data, uid }) => approvePayroll(db, FieldValue, data || {}, { userId: uid }),
+  },
+  payrollUnapprove: {
+    guard: 'admin',
+    run: ({ db, FieldValue, data, uid }) => unapprovePayroll(db, FieldValue, data || {}, { userId: uid }),
+  },
+  payrollPay: {
+    guard: 'admin',
+    run: ({ db, FieldValue, data, uid }) => payPayroll(db, FieldValue, data || {}, { userId: uid }),
+  },
+  payrollReverse: {
+    guard: 'admin',
+    run: ({ db, FieldValue, data, uid }) => reversePayroll(db, FieldValue, data || {}, { userId: uid }),
+  },
+  payrollCancel: {
+    guard: 'admin',
+    run: ({ db, FieldValue, data, uid }) => cancelPayroll(db, FieldValue, data || {}, { userId: uid }),
+  },
+
 };
 
 export const HANDLER_NAMES = Object.keys(HANDLERS);
@@ -485,6 +527,9 @@ export function normalizeError(e) {
       code: e.code || 'failed-precondition', message: e.message,
       details: e.reason ? { reason: e.reason } : null,
     };
+  }
+  if (e instanceof PayrollError) {
+    return { code: e.code || 'failed-precondition', message: e.message, details: e.details || null };
   }
   // Anything else is a bug: log it in full, tell the caller nothing internal.
   console.error('[ledger] unexpected failure', e);

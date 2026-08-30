@@ -688,6 +688,8 @@ export function mapTemporaryExpense(row) {
     // (non-biker) outlays the page has always recorded.
     bikerId:        row.biker_id || null,
     paymentMethod:  clampAdvanceMethod(row.payment_method),
+    recoveredAmount: Math.max(0, Number(row.recovered_amount) || 0),
+    payrollLockId:   row.payroll_lock_id || null,
   };
 }
 export function toTemporaryExpenseInsert({ title, amount, spentDate, status, recoveredDate, notes, bikerId, paymentMethod }) {
@@ -778,12 +780,13 @@ export function mapBiker(row) {
     nationality:   row.nationality || '',
     salary:        Math.max(0, Number(row.salary) || 0),
     startDate:     row.start_date || '',
+    endDate:       row.end_date || '',
     iqamaNumber:   row.iqama_number || '',
     iqamaExpiry:   row.iqama_expiry || '',
   };
 }
 export function toBikerInsert({
-  name, contactNumber, residence, sponsor, nationality, salary, startDate, iqamaNumber, iqamaExpiry,
+  name, contactNumber, residence, sponsor, nationality, salary, startDate, endDate, iqamaNumber, iqamaExpiry,
 }) {
   return {
     name:           String(name || '').trim(),
@@ -793,6 +796,7 @@ export function toBikerInsert({
     nationality:    String(nationality || '').trim() || null,
     salary:         Math.max(0, Number(salary) || 0),
     start_date:     startDate || null,
+    end_date:       endDate || null,
     iqama_number:   String(iqamaNumber || '').trim() || null,
     iqama_expiry:   iqamaExpiry || null,
   };
@@ -806,6 +810,7 @@ export function toBikerUpdate(updates = {}) {
   if (updates.nationality   !== undefined) payload.nationality    = String(updates.nationality || '').trim() || null;
   if (updates.salary        !== undefined) payload.salary         = Math.max(0, Number(updates.salary) || 0);
   if (updates.startDate     !== undefined) payload.start_date     = updates.startDate || null;
+  if (updates.endDate       !== undefined) payload.end_date       = updates.endDate || null;
   if (updates.iqamaNumber   !== undefined) payload.iqama_number   = String(updates.iqamaNumber || '').trim() || null;
   if (updates.iqamaExpiry   !== undefined) payload.iqama_expiry   = updates.iqamaExpiry || null;
   return payload;

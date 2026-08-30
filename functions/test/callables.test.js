@@ -94,10 +94,16 @@ d('الاستدعاءات الحقيقية عبر محاكي الدوال', () =
   });
 
   beforeEach(async () => {
+    const priorRuns = await adb.collection('payroll_runs').get();
+    for (const run of priorRuns.docs) {
+      const items = await run.ref.collection('items').get();
+      await Promise.all(items.docs.map((item) => item.ref.delete()));
+    }
     for (const c of ['users', 'app_admins', 'chart_of_accounts', 'journal_entries',
       'posting_locks', 'counters', 'audit_logs', 'accounting_periods',
       'sales_documents', 'sales_document_sources', 'app_settings',
-      'washes', 'monthly_expenses', 'startup_costs', 'startup_cost_entries']) {
+      'washes', 'monthly_expenses', 'startup_costs', 'startup_cost_entries',
+      'bikers', 'temporary_expenses', 'payroll_runs', 'payroll_periods', 'payroll_payment_locks']) {
       const snap = await adb.collection(c).get();
       await Promise.all(snap.docs.map((s) => s.ref.delete()));
     }
@@ -747,6 +753,46 @@ d('الاستدعاءات الحقيقية عبر محاكي الدوال', () =
       await expect(acct('startupDeleteEntry')({ entryId: added.data.id }))
         .rejects.toThrow(/مُرحّل بالقيد رقم/);
       expect((await adb.collection('startup_cost_entries').get()).size).toBe(2);
+    }, 90_000);
+  });
+
+  describe('PAYROLL — مسير الرواتب عبر الصلاحيات الحقيقية', () => {
+    const payload = {
+      periodKey: '2026-08', periodStart: '2026-08-01', periodEnd: '2026-08-31', adjustments: [],
+    };
+
+    beforeEach(async () => {
+      await adb.collection('bikers').doc('b1').set({
+        name: 'أحمد', salary: 3100, start_date: '2026-08-16', status: 'active',
+      });
+      await adb.collection('washes').doc('payroll-w1').set({
+        biker_id: 'b1', biker_name: 'أحمد', quantity: 1, status: 'مكتملة', wash_date: '2026-08-20',
+      });
+    });
+
+    it('المحاسب يعاين ويحفظ، لكن المدير وحده يعتمد — والاعتماد بلا قيد', async () => {
+      const accountant = await as('accountant');
+      const preview = (await accountant('payrollPreview')(payload)).data;
+      expect(preview).toMatchObject({
+        periodKey: '2026-08', distributionDate: '2026-09-01', estimated: expect.any(Boolean),
+      });
+      expect(preview.lines[0]).toMatchObject({ daysEntitled: 16, monthDays: 31, basicDue: 1600, commission: 2 });
+
+      const saved = (await accountant('payrollSaveDraft')(payload)).data;
+      expect(saved).toMatchObject({ runId: '2026-08__r1', status: 'draft' });
+      await expectDenied(accountant('payrollApprove')({ runId: saved.runId }));
+
+      const admin = await as('admin');
+      const approved = (await admin('payrollApprove')({ runId: saved.runId })).data;
+      expect(approved.status).toBe('approved');
+      expect((await adb.collection('journal_entries').get()).size).toBe(0);
+    }, 120_000);
+
+    it('المشغّل والشريك لا يصلان حتى إلى المعاينة', async () => {
+      const operator = await as('operator');
+      await expectDenied(operator('payrollPreview')(payload));
+      const partner = await as('partner');
+      await expectDenied(partner('payrollPreview')(payload));
     }, 90_000);
   });
 

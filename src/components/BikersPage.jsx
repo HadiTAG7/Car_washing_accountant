@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
   Bike, Plus, Pencil, Trash2, Banknote, HandCoins, Users, Wallet,
-  Car, Import,
+  Car, Import, ClipboardList,
 } from 'lucide-react';
 import TopBar from './TopBar';
 import { Card, SectionHeader, StatCard, EmptyState, StatusBadge, PrimaryButton } from './UI';
@@ -10,16 +10,14 @@ import ErrorState from './ErrorState';
 import Toast from './Toast';
 import AddBikerModal from './AddBikerModal';
 import AddBikerAdvanceModal from './AddBikerAdvanceModal';
-import PaySalaryModal from './PaySalaryModal';
+import BikerPayroll from './BikerPayroll';
 import { useBikers } from '../hooks/useBikers';
 import { useWashes } from '../hooks/useWashes';
 import { useTemporaryExpenses } from '../hooks/useTemporaryExpenses';
-import { useMonthlyExpenses } from '../hooks/useMonthlyExpenses';
-import { useMonthlyExpenseCategories } from '../hooks/useMonthlyExpenseCategories';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 import { describeBackendError } from '../lib/firebaseClient';
 import { formatCurrency, formatNumber, formatDate } from '../data/initialData';
-import { todayMonth, formatMonthLabel, monthOf } from '../lib/variableExpenseTotals';
+import { todayMonth, formatMonthLabel } from '../lib/variableExpenseTotals';
 import {
   washStatsFor, pendingAdvancesFor, iqamaStatus, unregisteredBikerNames,
 } from '../lib/bikerStats';
@@ -42,11 +40,6 @@ import {
 // this page unscaled; mutations stay behind canMutate like everywhere else.
 // ═══════════════════════════════════════════════════════════════════════════
 
-const SALARY_CATEGORY_LABEL = 'رواتب وأجور';
-
-/** «راتب أحمد — أغسطس 2026»: the string the duplicate warning greps for. */
-const salaryPrefix = (name) => `راتب ${name}`;
-
 function IqamaBadge({ expiry }) {
   const state = iqamaStatus(expiry);
   if (!state) return <span className="text-slate-400 dark:text-slate-500">—</span>;
@@ -59,18 +52,16 @@ function IqamaBadge({ expiry }) {
   return <StatusBadge status="good">سارية حتى {formatDate(expiry)}</StatusBadge>;
 }
 
-export default function BikersPage() {
+export default function BikersPage({ role, payrollPreview = false }) {
   const { bikers, loading, error, addBiker, updateBiker, deleteBiker, refetch } = useBikers();
   const { items: washes } = useWashes();
-  const { expenses: temps, addTemporaryExpense, markRecovered } = useTemporaryExpenses();
-  const { items: monthlyExpenses, addItem: addMonthlyExpense } = useMonthlyExpenses();
-  const { addCategory } = useMonthlyExpenseCategories();
+  const { expenses: temps, addTemporaryExpense } = useTemporaryExpenses();
   const { canMutate } = usePartnerView();
 
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [editingBiker, setEditingBiker] = useState(null);
   const [advanceBiker, setAdvanceBiker] = useState(null);
-  const [salaryBiker, setSalaryBiker] = useState(null);
+  const [activeSection, setActiveSection] = useState(payrollPreview ? 'payroll' : 'registry');
   const [importing, setImporting] = useState(false);
   const [mutationError, setMutationError] = useState(null);
   const [toast, setToast] = useState({ open: false, message: '', tone: 'success', duration: 3000 });
@@ -102,18 +93,6 @@ export default function BikersPage() {
     () => unregisteredBikerNames(washes || [], bikers),
     [washes, bikers],
   );
-
-  // «سبق صرف راتب هذا الشهر؟» — checked against the recorded expenses, so it
-  // survives a page reload, not just this session.
-  const salaryMonthOf = useCallback((biker) => {
-    const prefix = salaryPrefix(biker.name);
-    const hit = (monthlyExpenses || []).find(
-      (m) => m.recurrence === 'one_time'
-        && String(m.expenseName || '').startsWith(prefix)
-        && monthOf(m.loggedDate) === month,
-    );
-    return hit ? month : null;
-  }, [monthlyExpenses, month]);
 
   async function guarded(label, fn) {
     try {
@@ -152,36 +131,6 @@ export default function BikersPage() {
     () => addTemporaryExpense(advance),
   );
 
-  // ── صرف الراتب: قيدان صادقان ──
-  // The salary in FULL as a paid one-time expense, then each deducted advance
-  // marked recovered on the same date through the same money account. Net
-  // cash = what actually left; the wage and the repayment both stay visible.
-  async function handlePaySalary(biker, { amount, payDate, paymentMethod, recoveryMethod, monthLabel, deductedAdvances }) {
-    return guarded(
-      deductedAdvances.length
-        ? `صُرف الراتب وخُصمت ${formatNumber(deductedAdvances.length)} سلفة`
-        : 'صُرف الراتب',
-      async () => {
-        const categoryId = await addCategory({ label: SALARY_CATEGORY_LABEL });
-        await addMonthlyExpense({
-          expenseName:      `${salaryPrefix(biker.name)} — ${monthLabel}`,
-          categoryId,
-          quantity:         1,
-          unitCost:         amount,
-          totalMonthlyCost: amount,
-          recurrence:       'one_time',
-          loggedDate:       payDate,
-          paymentStatus:    'paid',
-          paymentMethod,
-          isTaxInvoice:     false,
-        });
-        for (const adv of deductedAdvances) {
-          await markRecovered(adv.id, { recoveredDate: payDate, recoveryMethod });
-        }
-      },
-    );
-  }
-
   async function handleImportNames() {
     if (!importableNames.length || importing) return;
     setImporting(true);
@@ -205,15 +154,25 @@ export default function BikersPage() {
     <>
       <TopBar
         title="البايكر"
-        subtitle="سجل العاملين: بياناتهم ورواتبهم وسلفهم، وغسلات كل واحد وعمولته"
+        subtitle="سجل العاملين ومسير رواتبهم الشهري من المعاينة حتى الصرف"
       />
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
         {mutationError && (
           <ErrorState title="تعذّر تنفيذ العملية" error={mutationError} onRetry={() => setMutationError(null)} />
         )}
-        {error && (
+        {error && !(payrollPreview && activeSection === 'payroll') && (
           <ErrorState title="تعذّر تحميل سجل البايكرات" error={error} onRetry={refetch} />
         )}
+
+        <div className="inline-flex items-center gap-1 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-control p-1 payroll-no-print" role="tablist" aria-label="أقسام صفحة البايكر">
+          <button type="button" role="tab" aria-selected={activeSection === 'registry'} onClick={() => setActiveSection('registry')} className={`sw-button sw-button--sm ${activeSection === 'registry' ? 'sw-button--primary' : 'sw-button--secondary'}`}><Bike size={16} /> سجل البايكرات</button>
+          <button type="button" role="tab" aria-selected={activeSection === 'payroll'} onClick={() => setActiveSection('payroll')} className={`sw-button sw-button--sm ${activeSection === 'payroll' ? 'sw-button--primary' : 'sw-button--secondary'}`}><ClipboardList size={16} /> مسير الرواتب</button>
+        </div>
+
+        {activeSection === 'payroll' ? (
+          <BikerPayroll role={role} previewMode={payrollPreview} />
+        ) : (
+          <>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
           <StatCard
@@ -371,15 +330,6 @@ export default function BikersPage() {
                           <>
                             <button
                               type="button"
-                              onClick={() => setSalaryBiker(r)}
-                              className="sw-tap inline-flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors duration-150 p-1.5 rounded-control hover:bg-emerald-50 dark:hover:bg-emerald-500/15 cursor-pointer"
-                              aria-label={`صرف راتب ${r.name}`}
-                              title="صرف الراتب — مع خصم السلف إن وُجدت"
-                            >
-                              <Banknote size={15} />
-                            </button>
-                            <button
-                              type="button"
                               onClick={() => setAdvanceBiker(r)}
                               className="sw-tap inline-flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 transition-colors duration-150 p-1.5 rounded-control hover:bg-amber-50 dark:hover:bg-amber-500/15 cursor-pointer"
                               aria-label={`سلفة لـ ${r.name}`}
@@ -415,6 +365,8 @@ export default function BikersPage() {
             </table>
           </div>
         </Card>
+          </>
+        )}
       </main>
 
       <AddBikerModal
@@ -435,14 +387,6 @@ export default function BikersPage() {
         onClose={() => setAdvanceBiker(null)}
         biker={advanceBiker}
         onAdd={handleAdvance}
-      />
-      <PaySalaryModal
-        isOpen={Boolean(salaryBiker)}
-        onClose={() => setSalaryBiker(null)}
-        biker={salaryBiker}
-        pendingAdvances={salaryBiker ? pendingAdvancesFor(salaryBiker.id, temps || []).advances : []}
-        salaryPaidInMonth={salaryBiker ? salaryMonthOf(salaryBiker) : null}
-        onPay={(payload) => handlePaySalary(salaryBiker, payload)}
       />
       <Toast
         open={toast.open}

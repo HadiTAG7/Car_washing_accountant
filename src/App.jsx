@@ -150,8 +150,12 @@ function AppShell() {
   const previewCommandCenter = import.meta.env.DEV
     && typeof window !== 'undefined'
     && new URLSearchParams(window.location.search).has('previewCommandCenter');
+  const previewPayroll = import.meta.env.DEV
+    && typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).has('previewPayroll');
+  const localPreview = previewCommandCenter || previewPayroll;
   const [activeTab, setActiveTab] = useState(
-    previewCommandCenter ? 'agent_command_center' : 'overview',
+    previewCommandCenter ? 'agent_command_center' : (previewPayroll ? 'bikers' : 'overview'),
   );
   const { session, loading: authLoading, signOut } = useAuth();
   // ── الدخول ليس عضوية ──
@@ -161,7 +165,7 @@ function AppShell() {
   // name instead of eighteen times as a generic permission error.
   const membership = useMembership(session?.user?.id);
   const { canMutate } = usePartnerView();
-  const visibleRole = previewCommandCenter ? 'admin' : membership.role;
+  const visibleRole = localPreview ? 'admin' : membership.role;
   const visibleGroups = TAB_GROUPS.map((group) => ({
     ...group,
     tabs: group.tabs.filter((tab) => !tab.roles || tab.roles.includes(visibleRole)),
@@ -218,7 +222,7 @@ function AppShell() {
     && new URLSearchParams(window.location.search).has('signedOut');
 
   const mustAuthenticate = (requireAuth || justSignedOut) && isFirebaseConfigured;
-  if (mustAuthenticate && !session && !previewCommandCenter) {
+  if (mustAuthenticate && !session && !localPreview) {
     return <LoginScreen />;
   }
 
@@ -243,7 +247,7 @@ function AppShell() {
       <div className="min-h-screen md:mr-64 flex flex-col">
         <PartnerViewBanner />
         {!isFirebaseConfigured && <DemoBanner missing={missingEnvNames} />}
-        {!previewCommandCenter && !membership.loading && !membership.isMember && (
+        {!localPreview && !membership.loading && !membership.isMember && (
           <MembershipBanner
             user={session?.user}
             membership={membership}
@@ -275,7 +279,7 @@ function AppShell() {
             {activeTab === 'monthly'   && <MonthlyExpensesPage />}
             {activeTab === 'variable'  && <VariableExpensesPage />}
             {activeTab === 'washes'    && <WashesPage />}
-            {activeTab === 'bikers'    && <BikersPage />}
+            {activeTab === 'bikers'    && <BikersPage role={visibleRole} payrollPreview={previewPayroll} />}
             {activeTab === 'housing'   && <HousingPage />}
             {activeTab === 'summary'   && <FinancialSummaryPage />}
             {activeTab === 'vat'       && <VatRecoveryPage />}

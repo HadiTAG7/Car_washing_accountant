@@ -40,6 +40,7 @@ export const ACC = {
   FIXED_ASSETS:      '1500', // أصول ثابتة
   ACCUM_DEPRECIATION:'1510', // مجمع الإهلاك
   PAYABLE:           '2000', // الموردون / الذمم الدائنة
+  PAYROLL_PAYABLE:   '2010', // رواتب مستحقة
   OUTPUT_VAT:        '2100', // ضريبة مخرجات مستحقة
   PARTNER_CAPITAL:   '3000', // رأس مال الشركاء
   RETAINED_EARNINGS: '3100', // أرباح محتجزة
@@ -50,6 +51,7 @@ export const ACC = {
   OTHER_OPERATING_INCOME:'4110', // إيرادات تشغيلية أخرى (حوافز وتعويضات)
   ASSET_DISPOSAL_GAIN:'4100',// أرباح استبعاد أصول
   BIKER_COMMISSION:  '5000', // عمولات البايكرز
+  SALARY_EXPENSE:    '5010', // رواتب وأجور البايكرز
   VARIABLE_COSTS:    '5100', // مواد تشغيل ومصروفات متغيرة
   RENT_MONTHLY:      '5200', // الإيجار والمصروفات الشهرية
   ADMIN_EXPENSES:    '5300', // المصروفات الإدارية
@@ -80,6 +82,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS = [
 
   // ── الالتزامات ──────────────────────────────────────────────────────
   { code: ACC.PAYABLE,            nameArabic: 'الموردون / الذمم الدائنة',       accountType: 'liability' },
+  { code: ACC.PAYROLL_PAYABLE,    nameArabic: 'رواتب مستحقة',                   accountType: 'liability' },
   { code: ACC.OUTPUT_VAT,         nameArabic: 'ضريبة مخرجات مستحقة',            accountType: 'liability' },
 
   // ── حقوق الملكية ────────────────────────────────────────────────────
@@ -108,6 +111,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS = [
 
   // ── المصروفات ───────────────────────────────────────────────────────
   { code: ACC.BIKER_COMMISSION,   nameArabic: 'عمولات البايكرز',                accountType: 'expense' },
+  { code: ACC.SALARY_EXPENSE,     nameArabic: 'رواتب وأجور البايكرز',           accountType: 'expense' },
   { code: ACC.VARIABLE_COSTS,     nameArabic: 'مواد تشغيل ومصروفات متغيرة',     accountType: 'expense' },
   { code: ACC.RENT_MONTHLY,       nameArabic: 'الإيجار والمصروفات الشهرية',     accountType: 'expense' },
   { code: ACC.ADMIN_EXPENSES,     nameArabic: 'المصروفات الإدارية',             accountType: 'expense' },

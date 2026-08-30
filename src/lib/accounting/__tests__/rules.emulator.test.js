@@ -80,6 +80,20 @@ d('قواعد أمان Firestore', () => {
       await setDoc(doc(db, 'posting_locks', 'expense__m1'), {
         sourceType: 'expense', sourceId: 'm1', entryId: 'e1',
       });
+      await setDoc(doc(db, 'payroll_runs', '2026-08__r1'), {
+        periodKey: '2026-08', status: 'approved', distributionDate: '2026-09-01',
+      });
+      await setDoc(doc(db, 'payroll_runs', '2026-08__r1', 'items', 'b1'), {
+        bikerId: 'b1', name: 'أحمد', status: 'approved', netDue: 1000,
+      });
+      await setDoc(doc(db, 'payroll_periods', '2026-08'), { currentRunId: '2026-08__r1' });
+      await setDoc(doc(db, 'payroll_payment_locks', '2026-08__b1'), {
+        periodKey: '2026-08', bikerId: 'b1', runId: '2026-08__r1',
+      });
+      await setDoc(doc(db, 'temporary_expenses', 'advance1'), {
+        biker_id: 'b1', title: 'سلفة — أحمد', amount: 300, recovered_amount: 100,
+        status: 'pending', payroll_lock_id: '2026-08__r1',
+      });
     });
     ctx.admin   = env.authenticatedContext('admin1').firestore();
     ctx.acct    = env.authenticatedContext('acct1').firestore();
@@ -602,6 +616,43 @@ d('قواعد أمان Firestore', () => {
         await assertFails(updateDoc(doc(db, 'startup_cost_entries', 'se1'), { amount: 999 }));
         await assertFails(deleteDoc(doc(db, 'startup_cost_entries', 'se1')));
       }
+    });
+  });
+
+  describe('مسير الرواتب لا يُكتب من المتصفح', () => {
+    it('المدير والمحاسب يقرآن المسير وسطوره، وبقية الأدوار لا', async () => {
+      for (const db of [ctx.admin, ctx.acct]) {
+        await assertSucceeds(getDoc(doc(db, 'payroll_runs', '2026-08__r1')));
+        await assertSucceeds(getDoc(doc(db, 'payroll_runs', '2026-08__r1', 'items', 'b1')));
+      }
+      await assertFails(getDoc(doc(ctx.op, 'payroll_runs', '2026-08__r1')));
+      await assertFails(getDoc(doc(ctx.partner, 'payroll_runs', '2026-08__r1')));
+      await assertFails(getDoc(doc(ctx.anon, 'payroll_runs', '2026-08__r1')));
+    });
+
+    it('لا يستطيع أي دور تغيير الحالة أو المبلغ أو إنشاء سطر', async () => {
+      for (const db of [ctx.admin, ctx.acct, ctx.op]) {
+        await assertFails(updateDoc(doc(db, 'payroll_runs', '2026-08__r1'), { status: 'paid' }));
+        await assertFails(updateDoc(doc(db, 'payroll_runs', '2026-08__r1', 'items', 'b1'), { netDue: 1 }));
+        await assertFails(setDoc(doc(db, 'payroll_runs', '2026-08__r1', 'items', 'hack'), {
+          bikerId: 'hack', status: 'paid', netDue: 1,
+        }));
+      }
+    });
+
+    it('بيانات النسخة الحالية وأقفال عدم التكرار خادمية بالكامل', async () => {
+      for (const db of [ctx.admin, ctx.acct, ctx.op]) {
+        await assertFails(getDoc(doc(db, 'payroll_periods', '2026-08')));
+        await assertFails(setDoc(doc(db, 'payroll_payment_locks', 'hack'), { bikerId: 'b1' }));
+        await assertFails(deleteDoc(doc(db, 'payroll_payment_locks', '2026-08__b1')));
+      }
+    });
+
+    it('السلفة المرتبطة بمسير مصروف لا تُعدّل أو تُحذف من العميل', async () => {
+      await assertFails(updateDoc(doc(ctx.admin, 'temporary_expenses', 'advance1'), {
+        status: 'recovered', recovered_date: '2026-09-01', recovery_method: 'bank',
+      }));
+      await assertFails(deleteDoc(doc(ctx.admin, 'temporary_expenses', 'advance1')));
     });
   });
 

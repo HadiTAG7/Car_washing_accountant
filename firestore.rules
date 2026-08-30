@@ -246,6 +246,25 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // ── مسير رواتب البايكر ────────────────────────────────────────────
+    // المعاينة والحساب والاعتماد والصرف والعكس كلها خادمية. حتى المدير لا
+    // يكتب سطراً أو مبلغاً مباشرة: المبلغ النهائي ولقطات الراتب/الأيام/
+    // العمولة/السلفة والحسابات تأتي من المعاملة الموثوقة فقط.
+    match /payroll_runs/{runId} {
+      allow read:  if isAccountant();
+      allow write: if false;
+      match /items/{bikerId} {
+        allow read:  if isAccountant();
+        allow write: if false;
+      }
+    }
+    match /payroll_periods/{periodKey} {
+      allow read, write: if false;
+    }
+    match /payroll_payment_locks/{lockId} {
+      allow read, write: if false;
+    }
+
     // ── الحسابات والصلاحيات ──────────────────────────────────────────
     // A user reads their OWN record; only admins list users. Nobody edits
     // roles from the client — that is a console/server operation.
@@ -358,8 +377,10 @@ service cloud.firestore {
       allow read:   if isMember();
       allow create: if isOperator();
       allow update: if isOperator() && notPosted('recovery', id)
+        && !resource.data.keys().hasAny(['payroll_lock_id'])
         && (notPosted('temporary_expense', id) || recoveryFlipOnly());
       allow delete: if isOperator()
+        && !resource.data.keys().hasAny(['payroll_lock_id'])
         && notPosted('temporary_expense', id) && notPosted('recovery', id);
     }
 

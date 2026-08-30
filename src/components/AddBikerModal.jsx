@@ -14,6 +14,7 @@ const EMPTY = {
   nationality:   '',
   salary:        '',
   startDate:     '',
+  endDate:       '',
   iqamaNumber:   '',
   iqamaExpiry:   '',
 };
@@ -66,6 +67,7 @@ export default function AddBikerModal({ isOpen, onClose, onAdd, onUpdate, initia
         nationality:   initialValues.nationality || '',
         salary:        initialValues.salary ? String(initialValues.salary) : '',
         startDate:     initialValues.startDate || '',
+        endDate:       initialValues.endDate || '',
         iqamaNumber:   initialValues.iqamaNumber || '',
         iqamaExpiry:   initialValues.iqamaExpiry || '',
       });
@@ -82,7 +84,8 @@ export default function AddBikerModal({ isOpen, onClose, onAdd, onUpdate, initia
   // empty (unknown yet) but never negative; the name is the join key to the
   // wash log, so it is the one non-negotiable field.
   const salary  = form.salary === '' ? 0 : Math.max(0, parseFloat(form.salary) || 0);
-  const isValid = form.name.trim().length > 0 && !(parseFloat(form.salary) < 0);
+  const datesValid = !form.startDate || !form.endDate || form.endDate >= form.startDate;
+  const isValid = form.name.trim().length > 0 && !(parseFloat(form.salary) < 0) && datesValid;
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -97,6 +100,7 @@ export default function AddBikerModal({ isOpen, onClose, onAdd, onUpdate, initia
         nationality:   form.nationality.trim(),
         salary,
         startDate:     form.startDate || '',
+        endDate:       form.endDate || '',
         iqamaNumber:   form.iqamaNumber.trim(),
         iqamaExpiry:   form.iqamaExpiry || '',
       };
@@ -276,7 +280,7 @@ export default function AddBikerModal({ isOpen, onClose, onAdd, onUpdate, initia
                 />
               </div>
               <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                معلومة على الملف — الصرف الفعلي يُسجَّل من زر «صرف الراتب».
+                معلومة على الملف — الصرف الفعلي يتم من «مسير الرواتب» بعد الاعتماد.
               </p>
             </div>
             <div>
@@ -290,6 +294,22 @@ export default function AddBikerModal({ isOpen, onClose, onAdd, onUpdate, initia
                 onChange={handleChange}
               />
             </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5" htmlFor="bikerFormEndDate">
+              تاريخ نهاية الخدمة / الإيقاف <span className="text-[11px] font-normal text-slate-500 dark:text-slate-400">— اختياري</span>
+            </label>
+            <DateField
+              id="bikerFormEndDate"
+              name="endDate"
+              value={form.endDate}
+              onChange={handleChange}
+            />
+            <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+              يُحتسب هذا اليوم ضمن الاستحقاق، ولا تتغير بيانات العامل الحالية إن تُرك الحقل فارغاً.
+            </p>
+            {!datesValid && <p role="alert" className="mt-1 text-[11px] font-semibold text-rose-600">تاريخ نهاية الخدمة لا يسبق تاريخ بداية العمل.</p>}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

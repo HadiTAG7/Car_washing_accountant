@@ -23,6 +23,11 @@ afterEach(cleanup);
 
 const $ = (sel) => document.querySelector(sel);
 const set = (sel, value) => fireEvent.change($(sel), { target: { value } });
+const chooseDay = (field, day) => {
+  fireEvent.click($(field));
+  const calendar = screen.getByRole('dialog', { name: 'التقويم' });
+  fireEvent.click([...calendar.querySelectorAll('button')].find((button) => button.textContent === String(day)));
+};
 
 function submit() {
   const btn = [...document.querySelectorAll('button')].find((b) => b.type === 'submit');
@@ -67,6 +72,23 @@ describe('AddBikerModal', () => {
     set('#bikerFormSalary', '2500');
     submit();
     expect(onUpdate).toHaveBeenCalledWith('b1', expect.objectContaining({ salary: 2500 }));
+  });
+
+  it('نهاية الخدمة لا تسبق المباشرة وكلا اليومين يصلان للحفظ', () => {
+    const onAdd = vi.fn();
+    render(<AddBikerModal isOpen onClose={() => {}} onAdd={onAdd} />);
+    set('#bikerFormName', 'أحمد');
+    chooseDay('#bikerFormStartDate', 10);
+    chooseDay('#bikerFormEndDate', 9);
+    submit();
+    expect(onAdd).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert').textContent).toContain('لا يسبق');
+
+    chooseDay('#bikerFormEndDate', 10);
+    submit();
+    expect(onAdd).toHaveBeenCalledWith(expect.objectContaining({
+      startDate: '2026-08-10', endDate: '2026-08-10',
+    }));
   });
 });
 

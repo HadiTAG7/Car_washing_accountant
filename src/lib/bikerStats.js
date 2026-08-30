@@ -47,12 +47,16 @@ export function washStatsFor(bikerName, washes = [], monthKey, unitCost = DEFAUL
  */
 export function pendingAdvancesFor(bikerId, temporaryExpenses = []) {
   if (!bikerId) return { advances: [], total: 0 };
-  const advances = temporaryExpenses.filter(
-    (t) => t.bikerId === bikerId && t.status === 'pending',
-  );
+  const advances = temporaryExpenses
+    .filter((t) => t.bikerId === bikerId && t.status === 'pending')
+    .map((t) => ({
+      ...t,
+      outstandingAmount: Math.max(0, (Number(t.amount) || 0) - (Number(t.recoveredAmount) || 0)),
+    }))
+    .filter((t) => t.outstandingAmount > 0);
   return {
     advances,
-    total: advances.reduce((s, t) => s + (Number(t.amount) || 0), 0),
+    total: advances.reduce((s, t) => s + t.outstandingAmount, 0),
   };
 }
 

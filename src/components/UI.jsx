@@ -17,11 +17,12 @@
  */
 
 /** Container card (page sections, modals, KPI shells). */
-export function Card({ className = '', children }) {
+export function Card({ className = '', children, style, ...props }) {
   return (
     <div
+      {...props}
       className={`bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 transition-colors duration-200 ${className}`}
-      style={{ borderRadius: 'var(--sw-radius-card)', boxShadow: 'var(--sw-shadow-card)' }}
+      style={{ borderRadius: 'var(--sw-radius-card)', boxShadow: 'var(--sw-shadow-card)', ...style }}
     >
       {children}
     </div>

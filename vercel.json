@@ -1,0 +1,18 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "functions": {
+    "api/agent-command-center-ingest.js": {
+      "maxDuration": 30
+    },
+    "api/agent-command-center-cleanup.js": {
+      "maxDuration": 30
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/agent-command-center-cleanup",
+      "schedule": "15 1 * * *"
+    }
+  ]
+}

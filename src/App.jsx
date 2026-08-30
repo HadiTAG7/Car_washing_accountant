@@ -20,6 +20,7 @@ import {
   Lock,
   FileText,
   Boxes,
+  Gauge,
 } from 'lucide-react';
 
 import { lazy, Suspense } from 'react';
@@ -50,6 +51,7 @@ const PartnerPaymentsPage  = lazy(() => import('./components/PartnerPaymentsPage
 const BikersPage           = lazy(() => import('./components/BikersPage'));
 const HousingPage          = lazy(() => import('./components/HousingPage'));
 const TemporaryExpensesPage = lazy(() => import('./components/TemporaryExpensesPage'));
+const AgentCommandCenterPage = lazy(() => import('./components/AgentCommandCenterPage'));
 // ── الدفاتر المحاسبية ──────────────────────────────────────────────────
 const GeneralLedgerPage    = lazy(() => import('./components/GeneralLedgerPage'));
 const TrialBalancePage     = lazy(() => import('./components/TrialBalancePage'));
@@ -80,6 +82,7 @@ const TAB_GROUPS = [
     title: null,
     tabs: [
       { id: 'overview',  label: 'نظرة عامة',              icon: LayoutDashboard },
+      { id: 'agent_command_center', label: 'مركز قيادة الوكلاء', icon: Gauge, roles: ['admin', 'accountant'] },
     ],
   },
   {
@@ -144,7 +147,12 @@ const TAB_GROUPS = [
 // Inner shell wraps the routed content so it can subscribe to the
 // MobileMenuContext (provider is one level up).
 function AppShell() {
-  const [activeTab, setActiveTab] = useState('overview');
+  const previewCommandCenter = import.meta.env.DEV
+    && typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).has('previewCommandCenter');
+  const [activeTab, setActiveTab] = useState(
+    previewCommandCenter ? 'agent_command_center' : 'overview',
+  );
   const { session, loading: authLoading, signOut } = useAuth();
   // ── الدخول ليس عضوية ──
   // The rules read membership from a document; an account created in the Auth
@@ -153,6 +161,11 @@ function AppShell() {
   // name instead of eighteen times as a generic permission error.
   const membership = useMembership(session?.user?.id);
   const { canMutate } = usePartnerView();
+  const visibleRole = previewCommandCenter ? 'admin' : membership.role;
+  const visibleGroups = TAB_GROUPS.map((group) => ({
+    ...group,
+    tabs: group.tabs.filter((tab) => !tab.roles || tab.roles.includes(visibleRole)),
+  })).filter((group) => group.tabs.length > 0);
 
   const [showEntrySelector, setShowEntrySelector] = useState(false);
   const [pendingEntry, setPendingEntry] = useState(null);
@@ -205,14 +218,14 @@ function AppShell() {
     && new URLSearchParams(window.location.search).has('signedOut');
 
   const mustAuthenticate = (requireAuth || justSignedOut) && isFirebaseConfigured;
-  if (mustAuthenticate && !session) {
+  if (mustAuthenticate && !session && !previewCommandCenter) {
     return <LoginScreen />;
   }
 
   return (
     <div className="min-h-screen">
       <Sidebar
-        groups={TAB_GROUPS}
+        groups={visibleGroups}
         activeTab={activeTab}
         onSelectTab={handleSelectTab}
         user={session?.user}
@@ -230,7 +243,7 @@ function AppShell() {
       <div className="min-h-screen md:mr-64 flex flex-col">
         <PartnerViewBanner />
         {!isFirebaseConfigured && <DemoBanner missing={missingEnvNames} />}
-        {!membership.loading && !membership.isMember && (
+        {!previewCommandCenter && !membership.loading && !membership.isMember && (
           <MembershipBanner
             user={session?.user}
             membership={membership}
@@ -244,6 +257,12 @@ function AppShell() {
               prefers-reduced-motion). */}
           <div key={activeTab} className="animate-page-in flex-1 flex flex-col">
             {activeTab === 'overview'  && <OverviewPage />}
+            {activeTab === 'agent_command_center' && (
+              <AgentCommandCenterPage
+                role={previewCommandCenter ? undefined : membership.role}
+                preview={previewCommandCenter}
+              />
+            )}
             {activeTab === 'startup'   && (
               <StartupPage
                 pendingEntry={pendingEntry}

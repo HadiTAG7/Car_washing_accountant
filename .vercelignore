@@ -1,0 +1,8 @@
+work/
+outputs/
+functions/node_modules/
+functions/test/
+**/__tests__/
+*.log
+firestore-debug.log
+firebase-debug.log

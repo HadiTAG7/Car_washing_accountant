@@ -38,3 +38,8 @@ functions/node_modules/
 
 # MCP server dependencies (installed per-machine)
 mcp/node_modules/
+
+# Vercel's local project metadata and real environment files.
+.vercel
+.env*
+!.env.example

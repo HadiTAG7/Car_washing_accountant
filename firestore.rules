@@ -212,6 +212,40 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ── مركز قيادة الوكلاء ────────────────────────────────────────────
+    // Financial oversight metadata can expose exceptions, employees and
+    // pending decisions, so only accountants/admins may read it. Every write
+    // comes from the HMAC-verified HTTP function. In particular, a browser
+    // cannot forge a green state, dismiss an alert, complete an approval or
+    // inject a report. Idempotency markers are private even to administrators.
+    match /agent_command_agents/{agentId} {
+      allow read:  if isAccountant();
+      allow write: if false;
+    }
+    match /agent_command_reports/{reportId} {
+      allow read:  if isAccountant();
+      allow write: if false;
+    }
+    match /agent_command_alerts/{alertId} {
+      allow read:  if isAccountant();
+      allow write: if false;
+    }
+    match /agent_command_approvals/{approvalId} {
+      allow read:  if isAccountant();
+      allow write: if false;
+    }
+    match /agent_command_sources/{sourceId} {
+      allow read:  if isAccountant();
+      allow write: if false;
+    }
+    match /agent_command_activity/{activityId} {
+      allow read:  if isAccountant();
+      allow write: if false;
+    }
+    match /agent_command_ingestion/{requestHash} {
+      allow read, write: if false;
+    }
+
     // ── الحسابات والصلاحيات ──────────────────────────────────────────
     // A user reads their OWN record; only admins list users. Nobody edits
     // roles from the client — that is a console/server operation.

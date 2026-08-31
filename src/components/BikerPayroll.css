@@ -19,6 +19,7 @@
 }
 
 .payroll-print-sheet {
+  box-sizing: border-box;
   width: 1120px;
   padding: 0 28px 22px;
   background: #ffffff;
@@ -26,6 +27,8 @@
   font-family: "IBM Plex Sans Arabic", "Segoe UI", Tahoma, Arial, sans-serif;
   font-size: 11px;
 }
+
+.payroll-print-sheet * { box-sizing: border-box; }
 
 .payroll-print-header {
   display: flex;

@@ -165,12 +165,18 @@ function normalizeAdjustment(raw = {}) {
   const bikerId = cleanText(raw.bikerId, 'معرّف العامل', { required: true, max: 180 });
   const bonus = money(raw.bonus, 'البونص');
   const deduction = money(raw.deduction, 'الخصم');
-  const requestedAdvanceDeduction = money(raw.advanceDeduction, 'السلفة المراد خصمها');
+  const hasAdvanceDeduction = Object.prototype.hasOwnProperty.call(raw, 'advanceDeduction')
+    && raw.advanceDeduction !== null && raw.advanceDeduction !== undefined;
+  const requestedAdvanceDeduction = hasAdvanceDeduction
+    ? money(raw.advanceDeduction, 'السلفة المراد خصمها') : null;
   const bonusReason = cleanText(raw.bonusReason, 'سبب البونص');
   const deductionReason = cleanText(raw.deductionReason, 'سبب الخصم');
   if (bonus > 0 && !bonusReason) fail(`سبب البونص مطلوب للعامل ${bikerId}.`, { code: 'invalid-argument' });
   if (deduction > 0 && !deductionReason) fail(`سبب الخصم مطلوب للعامل ${bikerId}.`, { code: 'invalid-argument' });
-  return { bikerId, bonus, bonusReason, deduction, deductionReason, requestedAdvanceDeduction };
+  return {
+    bikerId, bonus, bonusReason, deduction, deductionReason,
+    hasAdvanceDeduction, requestedAdvanceDeduction,
+  };
 }
 
 function completedWash(row) {
@@ -281,14 +287,17 @@ export function calculatePayrollPreview({
     }
     const bikerAdvances = advanceMap.get(biker.id) || [];
     const advanceOutstanding = round2(bikerAdvances.reduce((sum, row) => sum + outstandingOfAdvance(row), 0));
-    if (adj.requestedAdvanceDeduction > advanceOutstanding) {
+    const advanceDeductionMax = round2(Math.min(advanceOutstanding, Math.max(0, beforeAdvance)));
+    const advanceDeduction = adj.hasAdvanceDeduction
+      ? adj.requestedAdvanceDeduction : advanceDeductionMax;
+    if (advanceDeduction > advanceOutstanding) {
       fail(`خصم سلفة ${biker.name || biker.id} يتجاوز الرصيد القائم.`, { code: 'invalid-argument' });
     }
-    if (adj.requestedAdvanceDeduction > beforeAdvance) {
+    if (advanceDeduction > beforeAdvance) {
       fail(`خصم سلفة ${biker.name || biker.id} يجعل صافي المستحق سالباً.`, { code: 'invalid-argument' });
     }
-    const advanceAllocations = allocationsFor(adj.requestedAdvanceDeduction, bikerAdvances);
-    const netDue = round2(beforeAdvance - adj.requestedAdvanceDeduction);
+    const advanceAllocations = allocationsFor(advanceDeduction, bikerAdvances);
+    const netDue = round2(beforeAdvance - advanceDeduction);
     lines.push({
       bikerId: biker.id,
       name: String(biker.name || 'عامل بلا اسم'),
@@ -306,7 +315,9 @@ export function calculatePayrollPreview({
       deduction: adj.deduction,
       deductionReason: adj.deductionReason || null,
       advanceOutstanding,
-      advanceDeduction: adj.requestedAdvanceDeduction,
+      advanceDeduction,
+      advanceDeductionMax,
+      advanceDeductionMode: adj.hasAdvanceDeduction ? 'manual' : 'default_full',
       advanceAllocations,
       netDue,
       status: PAYROLL_STATUS.DRAFT,
@@ -314,7 +325,7 @@ export function calculatePayrollPreview({
         text: 'صافي المستحق = الراتب المستحق + العمولة + البونص − الخصومات − السلفة المخصومة',
         values: {
           basicDue, commission, bonus: adj.bonus, deduction: adj.deduction,
-          advanceDeduction: adj.requestedAdvanceDeduction, netDue,
+          advanceDeduction, netDue,
         },
       },
     });
@@ -397,7 +408,7 @@ function adjustmentPayload(preview) {
     bonusReason: row.bonusReason,
     deduction: row.deduction,
     deductionReason: row.deductionReason,
-    advanceDeduction: row.requestedAdvanceDeduction,
+    ...(row.hasAdvanceDeduction ? { advanceDeduction: row.requestedAdvanceDeduction } : {}),
   }));
 }
 

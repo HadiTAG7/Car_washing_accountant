@@ -2,6 +2,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import BikerPayroll from '../BikerPayroll';
+import {
+  adjustmentsFromPayrollLines, payrollAdjustmentPayload, payrollAdvanceMax,
+} from '../../lib/payrollUi';
 
 afterEach(() => {
   cleanup();
@@ -16,6 +19,7 @@ describe('واجهة مسير رواتب البايكر', () => {
     expect(section.textContent).toContain('السياسة المعتمدة: أيام الشهر الفعلية');
     expect(section.textContent).toContain('عن الشهر السابق · بلا تحويل تلقائي');
     expect(section.textContent).toContain('صافي المستحق = الراتب المستحق + العمولة + البونص − الخصومات − السلفة المخصومة');
+    expect(section.textContent).toContain('يُخصم كامل الرصيد القائم افتراضيًا، ويمكن تخفيضه قبل الاعتماد');
     expect(screen.getByText('تقديري قبل اكتمال الشهر')).toBeTruthy();
 
     for (const heading of [
@@ -41,5 +45,21 @@ describe('واجهة مسير رواتب البايكر', () => {
     fireEvent.click(screen.getByRole('button', { name: /طباعة/ }));
     expect(print).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('button', { name: /صرف نقدي\/بنكي/ })).toBeNull();
+  });
+
+  it('يميز الافتراضي عن الصفر اليدوي في حمولة المعاينة ويعيد حساب الحد', () => {
+    const defaulted = adjustmentsFromPayrollLines([{
+      bikerId: 'b1', advanceDeduction: 200, advanceDeductionMode: 'default_full',
+    }]);
+    expect(payrollAdjustmentPayload(defaulted)[0]).not.toHaveProperty('advanceDeduction');
+
+    const manual = adjustmentsFromPayrollLines([{
+      bikerId: 'b1', advanceDeduction: 0, advanceDeductionMode: 'manual',
+    }]);
+    expect(payrollAdjustmentPayload(manual)[0]).toMatchObject({ advanceDeduction: 0 });
+    expect(payrollAdvanceMax(
+      { basicDue: 300, commission: 0, advanceOutstanding: 400 },
+      { bonus: 100, deduction: 50 },
+    )).toBe(350);
   });
 });

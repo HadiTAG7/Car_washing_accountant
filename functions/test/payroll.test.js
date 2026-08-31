@@ -74,6 +74,79 @@ describe('احتساب مسير الرواتب — أيام الشهر الفع�
     expect(eligibleActualDays({ periodKey: '2026-08', startDate: '', endDate: '' }).daysEntitled).toBe(31);
   });
 
+  it('يخصم كامل السلفة افتراضياً: مستحق 523 وسلفة 200 ينتجان صافي 323', () => {
+    const p = preview({
+      bikers: [BIKER({ salary: 523 })],
+      advances: [ADVANCE({ amount: 200 })],
+    });
+    expect(p.lines[0]).toMatchObject({
+      basicDue: 523, advanceOutstanding: 200, advanceDeduction: 200,
+      advanceDeductionMax: 200, advanceDeductionMode: 'default_full', netDue: 323,
+    });
+    expect(p.totals).toMatchObject({ basic: 523, advances: 200, net: 323 });
+  });
+
+  it('22 عاملاً × سلفة 200: الأساسي 11,439 والسلف 4,400 والصافي 7,039', () => {
+    const bikers = Array.from({ length: 22 }, (_, index) => ({
+      id: `b${index + 1}`, name: `عامل ${index + 1}`,
+      salary: index === 21 ? 519 : 520, start_date: '2026-08-01',
+    }));
+    const advances = bikers.map((biker, index) => ({
+      id: `a${index + 1}`, biker_id: biker.id, amount: 200, recovered_amount: 0,
+      status: 'pending', spent_date: '2026-08-01',
+    }));
+    const p = preview({ bikers, advances });
+    expect(p.lines).toHaveLength(22);
+    expect(p.totals).toMatchObject({ basic: 11439, advances: 4400, net: 7039 });
+  });
+
+  it('إذا تجاوز رصيد السلفة المستحق يخصم المستحق فقط ولا يصنع صافيًا سالبًا', () => {
+    const p = preview({
+      bikers: [BIKER({ salary: 100 })], advances: [ADVANCE({ amount: 200 })],
+    });
+    expect(p.lines[0]).toMatchObject({
+      advanceOutstanding: 200, advanceDeductionMax: 100, advanceDeduction: 100, netDue: 0,
+    });
+  });
+
+  it('تعدد السلف يوزع الخصم الافتراضي على الأقدم أولاً ويثبّت allocations', () => {
+    const p = preview({
+      bikers: [BIKER({ salary: 523 })],
+      advances: [
+        ADVANCE({ id: 'newer', amount: 150, spent_date: '2026-08-10' }),
+        ADVANCE({ id: 'older', amount: 50, spent_date: '2026-08-01' }),
+      ],
+    });
+    expect(p.lines[0].advanceDeduction).toBe(200);
+    expect(p.lines[0].advanceAllocations.map(({ advanceId, amount }) => ({ advanceId, amount })))
+      .toEqual([{ advanceId: 'older', amount: 50 }, { advanceId: 'newer', amount: 150 }]);
+  });
+
+  it('الصفر اليدوي يبقى صفراً، والبونص/الخصم يعيدان حساب الحد الافتراضي', () => {
+    const manualZero = preview({
+      bikers: [BIKER({ salary: 523 })], advances: [ADVANCE({ amount: 200 })],
+      adjustments: [{ bikerId: 'b1', advanceDeduction: 0 }],
+    });
+    expect(manualZero.lines[0]).toMatchObject({
+      advanceDeduction: 0, advanceDeductionMode: 'manual', netDue: 523,
+    });
+
+    const recalculated = preview({
+      bikers: [BIKER({ salary: 300 })], advances: [ADVANCE({ amount: 400 })],
+      adjustments: [{
+        bikerId: 'b1', bonus: 100, bonusReason: 'مكافأة', deduction: 50, deductionReason: 'خصم',
+      }],
+    });
+    expect(recalculated.lines[0]).toMatchObject({ advanceDeductionMax: 350, advanceDeduction: 350, netDue: 0 });
+    expect(() => preview({
+      bikers: [BIKER({ salary: 300 })], advances: [ADVANCE({ amount: 400 })],
+      adjustments: [{
+        bikerId: 'b1', bonus: 100, bonusReason: 'مكافأة', deduction: 50,
+        deductionReason: 'خصم', advanceDeduction: 400,
+      }],
+    })).toThrow(/سالباً/);
+  });
+
   it('عمولة وبونص وخصم وسلفة ينتجون الصافي الصحيح بالهللة', () => {
     const p = preview({
       washes: [{ id: 'w1', biker_id: 'b1', wash_date: '2026-08-12', status: 'مكتملة', quantity: 3 }],
@@ -181,14 +254,43 @@ d('مسير الرواتب — المعاملات الذرية', () => {
   }, 90_000);
 
   it('التزامن لا يصرف العامل أو السلفة مرتين', async () => {
-    const { saved } = await draftAndApprove();
+    const saved = await savePayrollDraft(db, FieldValue, {
+      periodKey: '2026-08', adjustments: [],
+    }, { userId: 'acct', now: new Date('2026-09-01T08:00:00Z') });
+    await approvePayroll(db, FieldValue, { runId: saved.runId }, {
+      userId: 'admin', now: new Date('2026-09-01T08:00:00Z'),
+    });
     const calls = await Promise.allSettled([1, 2].map(() => payPayroll(db, FieldValue, {
       runId: saved.runId, paymentMethod: 'cash', payDate: '2026-09-01',
     }, { userId: 'admin', now: new Date('2026-09-01T08:00:00Z') })));
     expect(calls.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
     expect(calls.filter((r) => r.status === 'rejected')).toHaveLength(1);
     expect((await db.collection('journal_entries').get()).size).toBe(1);
-    expect((await db.collection('temporary_expenses').doc('a1').get()).data().recovered_amount).toBe(100);
+    expect((await db.collection('temporary_expenses').doc('a1').get()).data().recovered_amount).toBe(200);
+  }, 120_000);
+
+  it('الصرف يطبق allocations المتعددة الأقدم أولاً داخل المعاملة نفسها', async () => {
+    await db.collection('temporary_expenses').doc('a0').set({
+      biker_id: 'b1', title: 'سلفة أقدم', amount: 50, recovered_amount: 0,
+      status: 'pending', spent_date: '2026-08-01', recovered_date: null, recovery_method: null,
+    });
+    const saved = await savePayrollDraft(db, FieldValue, {
+      periodKey: '2026-08', adjustments: [],
+    }, { userId: 'acct', now: new Date('2026-09-01T08:00:00Z') });
+    await approvePayroll(db, FieldValue, { runId: saved.runId }, {
+      userId: 'admin', now: new Date('2026-09-01T08:00:00Z'),
+    });
+    const itemBeforePay = (await db.collection('payroll_runs').doc(saved.runId)
+      .collection('items').doc('b1').get()).data();
+    expect(itemBeforePay.advanceAllocations.map((row) => row.advanceId)).toEqual(['a0', 'a1']);
+
+    await payPayroll(db, FieldValue, {
+      runId: saved.runId, paymentMethod: 'bank', payDate: '2026-09-01',
+    }, { userId: 'admin', now: new Date('2026-09-01T08:00:00Z') });
+    expect((await db.collection('temporary_expenses').doc('a0').get()).data())
+      .toMatchObject({ recovered_amount: 50, status: 'recovered', payroll_lock_id: saved.runId });
+    expect((await db.collection('temporary_expenses').doc('a1').get()).data())
+      .toMatchObject({ recovered_amount: 200, status: 'recovered', payroll_lock_id: saved.runId });
   }, 120_000);
 
   it('الفترة المقفلة ترفض الصرف بلا نصف حالة', async () => {

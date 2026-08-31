@@ -12,6 +12,9 @@ import { usePayrollItems, usePayrollRuns } from '../hooks/usePayroll';
 import { describeBackendError } from '../lib/firebaseClient';
 import { downloadCsv } from '../lib/exportCsv';
 import { formatCurrency, formatDate, formatNumber } from '../data/initialData';
+import {
+  adjustmentsFromPayrollLines, payrollAdjustmentPayload, payrollAdvanceMax,
+} from '../lib/payrollUi';
 import './BikerPayroll.css';
 
 const POLICY = 'أيام الشهر الفعلية';
@@ -96,17 +99,6 @@ function previewFromRun(run, items) {
   };
 }
 
-function adjustmentsFromLines(lines) {
-  return Object.fromEntries((lines || []).map((line) => [line.bikerId, {
-    bikerId: line.bikerId,
-    bonus: line.bonus || 0,
-    bonusReason: line.bonusReason || '',
-    deduction: line.deduction || 0,
-    deductionReason: line.deductionReason || '',
-    advanceDeduction: line.advanceDeduction || 0,
-  }]));
-}
-
 function PayrollActionDialog({ action, run, busy, onClose, onSubmit }) {
   const today = todayLocalIso();
   const earlyPay = action === 'pay' && today < (run?.distributionDate || '');
@@ -178,6 +170,7 @@ function AdjustmentInputs({ line, adjustment, disabled, onChange, compact = fals
         onChange={(e) => onChange(key, e.target.value)} className={inputClass} aria-label={`${label} ${line.name}`} />
     </div>
   );
+  const advanceMax = payrollAdvanceMax(line, adjustment);
   return (
     <>
       <div>
@@ -192,8 +185,8 @@ function AdjustmentInputs({ line, adjustment, disabled, onChange, compact = fals
       </div>
       <div>
         {compact && <span className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">السلفة المخصومة</span>}
-        {moneyInput('advanceDeduction', 'خصم السلفة', line.advanceOutstanding)}
-        <span className="block text-[10px] text-slate-500 mt-1">من قائم {formatCurrency(line.advanceOutstanding)}</span>
+        {moneyInput('advanceDeduction', 'خصم السلفة', advanceMax)}
+        <span className="block text-[10px] text-slate-500 mt-1">الحد {formatCurrency(advanceMax)} من قائم {formatCurrency(line.advanceOutstanding)}</span>
       </div>
     </>
   );
@@ -205,7 +198,7 @@ export default function BikerPayroll({ role, previewMode = false }) {
   const [periodStart, setPeriodStart] = useState(bounds.start);
   const [periodEnd, setPeriodEnd] = useState(bounds.end);
   const [preview, setPreview] = useState(previewMode ? DEMO_PREVIEW : null);
-  const [adjustments, setAdjustments] = useState(() => adjustmentsFromLines(previewMode ? DEMO_LINES : []));
+  const [adjustments, setAdjustments] = useState(() => adjustmentsFromPayrollLines(previewMode ? DEMO_LINES : []));
   const [busy, setBusy] = useState(null);
   const [action, setAction] = useState(null);
   const [error, setError] = useState(null);
@@ -227,7 +220,7 @@ export default function BikerPayroll({ role, previewMode = false }) {
     setPreview(next);
     setPeriodStart(activeRun.periodStart || bounds.start);
     setPeriodEnd(activeRun.periodEnd || bounds.end);
-    setAdjustments(adjustmentsFromLines(next.lines));
+    setAdjustments(adjustmentsFromPayrollLines(next.lines));
   }, [activeRun, itemsQuery.data, itemsQuery.loading, bounds.start, bounds.end, previewMode]);
 
   const canDraft = role === 'admin' || role === 'accountant' || previewMode;
@@ -236,12 +229,7 @@ export default function BikerPayroll({ role, previewMode = false }) {
 
   const payload = useCallback(() => ({
     periodKey, periodStart, periodEnd,
-    adjustments: Object.values(adjustments).map((row) => ({
-      ...row,
-      bonus: Number(row.bonus) || 0,
-      deduction: Number(row.deduction) || 0,
-      advanceDeduction: Number(row.advanceDeduction) || 0,
-    })),
+    adjustments: payrollAdjustmentPayload(adjustments),
   }), [periodKey, periodStart, periodEnd, adjustments]);
 
   const guarded = useCallback(async (name, fn, message) => {
@@ -262,21 +250,29 @@ export default function BikerPayroll({ role, previewMode = false }) {
   const runPreview = () => guarded('preview', async () => {
     const result = await api.preview(payload());
     setPreview({ ...result, status: activeRun?.status || 'draft', runId: activeRun?.runId || null });
-    setAdjustments(adjustmentsFromLines(result.lines));
+    setAdjustments(adjustmentsFromPayrollLines(result.lines));
     return result;
   }, 'اكتملت المعاينة الخادمية');
 
   const saveDraft = () => guarded('save', async () => {
     const result = await api.saveDraft(payload());
     setPreview({ ...result, status: 'draft' });
-    setAdjustments(adjustmentsFromLines(result.lines));
+    setAdjustments(adjustmentsFromPayrollLines(result.lines));
     return result;
   }, 'حُفظت المسودة دون إنشاء قيد');
 
-  const updateAdjustment = (line, key, value) => setAdjustments((prev) => ({
-    ...prev,
-    [line.bikerId]: { ...(prev[line.bikerId] || { bikerId: line.bikerId }), [key]: value },
-  }));
+  const updateAdjustment = (line, key, value) => setAdjustments((prev) => {
+    const current = prev[line.bikerId] || { bikerId: line.bikerId };
+    const next = { ...current, [key]: value };
+    if (key === 'advanceDeduction') next.advanceDeductionTouched = true;
+    if (key === 'bonus' || key === 'deduction') {
+      const nextMax = payrollAdvanceMax(line, next);
+      if (!next.advanceDeductionTouched || (Number(next.advanceDeduction) || 0) > nextMax) {
+        next.advanceDeduction = nextMax;
+      }
+    }
+    return { ...prev, [line.bikerId]: next };
+  });
 
   const exportCsv = () => {
     if (!preview?.lines?.length) return;
@@ -365,7 +361,7 @@ export default function BikerPayroll({ role, previewMode = false }) {
       </div>
 
       <Card className="p-4 sm:p-6">
-        <SectionHeader title="تفاصيل الاستحقاق" subtitle="كل مبلغ معروض من معاينة الخادم؛ عدّل المسودة ثم أعد المعاينة قبل الحفظ." action={preview?.lines?.length ? (
+        <SectionHeader title="تفاصيل الاستحقاق" subtitle="يُخصم كامل الرصيد القائم افتراضيًا، ويمكن تخفيضه قبل الاعتماد. عدّل المسودة ثم أعد المعاينة قبل الحفظ." action={preview?.lines?.length ? (
           <div className="flex gap-2 payroll-no-print">
             <button type="button" onClick={exportCsv} className="sw-button sw-button--sm sw-button--secondary"><Download size={16} /> CSV</button>
             <button type="button" onClick={() => window.print()} className="sw-button sw-button--sm sw-button--secondary"><Printer size={16} /> طباعة</button>
@@ -382,7 +378,8 @@ export default function BikerPayroll({ role, previewMode = false }) {
                   {['العامل','الراتب / المباشرة','الأيام','الأساسي','العمولة','البونص + السبب','الخصم + السبب','السلف القائمة','خصم السلفة','الصافي','الحالة'].map((h) => <th key={h} className="py-3 px-3">{h}</th>)}
                 </tr></thead>
                 <tbody>{preview.lines.map((line) => {
-                  const adj = adjustments[line.bikerId] || adjustmentsFromLines([line])[line.bikerId];
+                  const adj = adjustments[line.bikerId] || adjustmentsFromPayrollLines([line])[line.bikerId];
+                  const advanceMax = payrollAdvanceMax(line, adj);
                   return <tr key={line.bikerId} className="border-b border-slate-100 dark:border-slate-800 align-top">
                     <td className="py-3 px-3 font-bold min-w-36">{line.name}</td>
                     <td className="py-3 px-3 min-w-44"><strong className="tabular-nums">{formatCurrency(line.monthlySalary)}</strong><span className="block text-[10px] text-slate-500 mt-1">{line.startDate ? `باشر ${formatDate(line.startDate)}` : 'بلا تاريخ مباشرة'}{line.endDate ? ` · انتهى ${formatDate(line.endDate)}` : ''}</span></td>
@@ -392,7 +389,7 @@ export default function BikerPayroll({ role, previewMode = false }) {
                     <td className="py-3 px-3 min-w-40"><input type="number" min="0" step="0.01" disabled={locked} value={adj.bonus ?? 0} onChange={(e) => updateAdjustment(line, 'bonus', e.target.value)} className={INPUT} aria-label={`بونص ${line.name}`} />{(Number(adj.bonus) || 0) > 0 && <input disabled={locked} value={adj.bonusReason || ''} onChange={(e) => updateAdjustment(line, 'bonusReason', e.target.value)} className={`${INPUT} mt-1`} placeholder="سبب إلزامي" aria-label={`سبب بونص ${line.name}`} />}</td>
                     <td className="py-3 px-3 min-w-40"><input type="number" min="0" step="0.01" disabled={locked} value={adj.deduction ?? 0} onChange={(e) => updateAdjustment(line, 'deduction', e.target.value)} className={INPUT} aria-label={`خصم ${line.name}`} />{(Number(adj.deduction) || 0) > 0 && <input disabled={locked} value={adj.deductionReason || ''} onChange={(e) => updateAdjustment(line, 'deductionReason', e.target.value)} className={`${INPUT} mt-1`} placeholder="سبب إلزامي" aria-label={`سبب خصم ${line.name}`} />}</td>
                     <td className="py-3 px-3 font-semibold text-amber-700 tabular-nums">{formatCurrency(line.advanceOutstanding)}</td>
-                    <td className="py-3 px-3"><input type="number" min="0" max={line.advanceOutstanding} step="0.01" disabled={locked} value={adj.advanceDeduction ?? 0} onChange={(e) => updateAdjustment(line, 'advanceDeduction', e.target.value)} className={`${INPUT} w-28`} aria-label={`خصم السلفة ${line.name}`} /></td>
+                    <td className="py-3 px-3"><input type="number" min="0" max={advanceMax} step="0.01" disabled={locked} value={adj.advanceDeduction ?? 0} onChange={(e) => updateAdjustment(line, 'advanceDeduction', e.target.value)} className={`${INPUT} w-28`} aria-label={`خصم السلفة ${line.name}`} /><span className="block text-[10px] text-slate-500 mt-1">الحد {formatCurrency(advanceMax)}</span></td>
                     <td className="py-3 px-3 font-extrabold text-primary-700 dark:text-primary-300 tabular-nums">{formatCurrency(line.netDue)}</td>
                     <td className="py-3 px-3"><StatusChip status={line.status || status} /></td>
                   </tr>;
@@ -401,7 +398,7 @@ export default function BikerPayroll({ role, previewMode = false }) {
             </div>
 
             <div className="lg:hidden space-y-3">{preview.lines.map((line) => {
-              const adj = adjustments[line.bikerId] || adjustmentsFromLines([line])[line.bikerId];
+              const adj = adjustments[line.bikerId] || adjustmentsFromPayrollLines([line])[line.bikerId];
               return <article key={line.bikerId} className="border border-slate-100 dark:border-slate-800 rounded-smallcard p-4 space-y-3">
                 <div className="flex justify-between gap-3"><div><h3 className="font-bold text-slate-900 dark:text-slate-100">{line.name}</h3><p className="text-[11px] text-slate-500">{formatCurrency(line.monthlySalary)} · {line.daysEntitled}/{line.monthDays} يوماً</p></div><StatusChip status={line.status || status} /></div>
                 <div className="grid grid-cols-3 gap-2 text-center text-[11px]"><div className="bg-slate-50 dark:bg-slate-800 rounded-control p-2"><span className="block text-slate-500">الأساسي</span><strong>{formatCurrency(line.basicDue)}</strong></div><div className="bg-slate-50 dark:bg-slate-800 rounded-control p-2"><span className="block text-slate-500">العمولة</span><strong>{formatCurrency(line.commission)}</strong></div><div className="bg-primary-50 dark:bg-primary-500/10 rounded-control p-2"><span className="block text-slate-500">الصافي</span><strong>{formatCurrency(line.netDue)}</strong></div></div>

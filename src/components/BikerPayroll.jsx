@@ -195,22 +195,44 @@ function AdjustmentInputs({ line, adjustment, disabled, onChange, compact = fals
 
 function PayrollPrintSheet({ preview, periodKey, periodStart, periodEnd, totals, status, printRef }) {
   if (!preview?.lines?.length) return null;
+  const statusLabel = STATUS[status] || status;
   return (
     <div ref={printRef} hidden className="payroll-print-sheet" dir="rtl">
-      <header>
-        <p>شركة هادي الغانم</p>
-        <h1>مسير رواتب البايكر — {periodKey}</h1>
-        <p>{formatDate(periodStart)} — {formatDate(periodEnd)} · الحالة: {STATUS[status] || status}</p>
+      <header className="payroll-print-header">
+        <div className="payroll-print-brand">
+          <div className="payroll-print-logo-panel">
+            <img src="/brand/sweater-logo.png" alt="شعار سويتر" width="194" height="80" loading="eager" decoding="sync" />
+          </div>
+          <div className="payroll-print-company">
+            <strong>شركة هادي الغانم</strong>
+            <span>الإدارة المالية والموارد البشرية</span>
+          </div>
+        </div>
+        <div className="payroll-print-title">
+          <span className={`payroll-print-status payroll-print-status--${status}`}>{statusLabel}</span>
+          <p>مسير رواتب البايكر</p>
+          <h1>{periodKey}</h1>
+          <small>{formatDate(periodStart)} — {formatDate(periodEnd)}</small>
+        </div>
       </header>
+      <div className="payroll-print-meta">
+        <div><span>سياسة الاحتساب</span><strong>{POLICY}</strong></div>
+        <div><span>عدد العاملين</span><strong>{formatNumber(preview.lineCount || preview.lines.length)} عامل</strong></div>
+        <div><span>تاريخ التوزيع</span><strong>{preview.distributionDate ? formatDate(preview.distributionDate) : '—'}</strong></div>
+      </div>
       <div className="payroll-print-totals">
         <div><span>إجمالي الأساسي</span><strong>{formatCurrency(totals.basic)}</strong></div>
         <div><span>العمولات</span><strong>{formatCurrency(totals.commissions)}</strong></div>
         <div><span>البونص</span><strong>{formatCurrency(totals.bonuses)}</strong></div>
-        <div><span>الخصومات</span><strong>{formatCurrency(totals.deductions)}</strong></div>
-        <div><span>السلف المخصومة</span><strong>{formatCurrency(totals.advances)}</strong></div>
-        <div><span>صافي الرواتب</span><strong>{formatCurrency(totals.net)}</strong></div>
+        <div className="payroll-print-stat--deduction"><span>الخصومات</span><strong>{formatCurrency(totals.deductions)}</strong></div>
+        <div className="payroll-print-stat--advance"><span>السلف المخصومة</span><strong>{formatCurrency(totals.advances)}</strong></div>
+        <div className="payroll-print-stat--net"><span>صافي الرواتب</span><strong>{formatCurrency(totals.net)}</strong></div>
       </div>
-      <table>
+      <div className="payroll-print-table-title">
+        <strong>تفاصيل الاستحقاق</strong>
+        <span>المبالغ بالريال السعودي</span>
+      </div>
+      <table aria-label="تفاصيل مسير الرواتب">
         <thead><tr>
           {['العامل', 'الراتب', 'المباشرة', 'الأيام', 'الأساسي', 'العمولة', 'البونص', 'الخصم', 'السلفة', 'الصافي'].map((heading) => <th key={heading}>{heading}</th>)}
         </tr></thead>
@@ -224,10 +246,13 @@ function PayrollPrintSheet({ preview, periodKey, periodStart, periodEnd, totals,
           <td>{formatCurrency(line.bonus)}</td>
           <td>{formatCurrency(line.deduction)}</td>
           <td>{formatCurrency(line.advanceDeduction)}</td>
-          <td><strong>{formatCurrency(line.netDue)}</strong></td>
+          <td className="payroll-print-net"><strong>{formatCurrency(line.netDue)}</strong></td>
         </tr>)}</tbody>
       </table>
-      <footer>أُنشئ من نظام سويتر · {FORMULA}</footer>
+      <footer className="payroll-print-footer">
+        <span>سويتر | مسير رواتب البايكر</span>
+        <span>{FORMULA}</span>
+      </footer>
     </div>
   );
 }

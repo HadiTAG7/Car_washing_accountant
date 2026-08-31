@@ -60,6 +60,19 @@ describe('واجهة مسير رواتب البايكر', () => {
     expect(screen.queryByRole('button', { name: /صرف نقدي\/بنكي/ })).toBeNull();
   });
 
+  it('يبني ورقة PDF بهوية سويتر الرسمية وبيانات المسير', () => {
+    const { container } = render(<BikerPayroll role="admin" previewMode />);
+    const sheet = container.querySelector('.payroll-print-sheet');
+    expect(sheet).toBeTruthy();
+    expect(sheet.querySelector('img[alt="شعار سويتر"]')?.getAttribute('src')).toBe('/brand/sweater-logo.png');
+    expect(sheet.textContent).toContain('الإدارة المالية والموارد البشرية');
+    expect(sheet.textContent).toContain('سياسة الاحتساب');
+    expect(sheet.textContent).toContain('عدد العاملين');
+    expect(sheet.textContent).toContain('تاريخ التوزيع');
+    expect(sheet.querySelector('table')?.getAttribute('aria-label')).toBe('تفاصيل مسير الرواتب');
+    expect(sheet.textContent).toContain('سويتر | مسير رواتب البايكر');
+  });
+
   it('يميز الافتراضي عن الصفر اليدوي في حمولة المعاينة ويعيد حساب الحد', () => {
     const defaulted = adjustmentsFromPayrollLines([{
       bikerId: 'b1', advanceDeduction: 200, advanceDeductionMode: 'default_full',

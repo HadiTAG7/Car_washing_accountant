@@ -244,6 +244,7 @@ export default function BikerPayroll({ role, previewMode = false }) {
   const [error, setError] = useState(null);
   const [toast, setToast] = useState({ open: false, message: '', tone: 'success' });
   const [printing, setPrinting] = useState(false);
+  const [pdfFile, setPdfFile] = useState(null);
   const printRef = useRef(null);
   const api = usePayrollRuns({ enabled: !previewMode });
 
@@ -253,8 +254,13 @@ export default function BikerPayroll({ role, previewMode = false }) {
 
   useEffect(() => {
     setPeriodStart(bounds.start); setPeriodEnd(bounds.end);
+    setPdfFile(null);
     if (!previewMode) { setPreview(null); setAdjustments({}); }
   }, [bounds.start, bounds.end, previewMode]);
+
+  useEffect(() => () => {
+    if (pdfFile?.url && typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(pdfFile.url);
+  }, [pdfFile]);
 
   useEffect(() => {
     if (previewMode || !activeRun || itemsQuery.loading) return;
@@ -333,7 +339,8 @@ export default function BikerPayroll({ role, previewMode = false }) {
   const printPayroll = async () => {
     setPrinting(true);
     try {
-      await downloadPayrollPdf(printRef.current, { periodKey });
+      const file = await downloadPayrollPdf(printRef.current, { periodKey });
+      setPdfFile(file);
       setToast({ open: true, message: 'تم تجهيز ملف PDF للطباعة', tone: 'success' });
     } catch (e) {
       setToast({ open: true, message: e?.message || 'تعذّر تجهيز ملف الطباعة', tone: 'error' });
@@ -419,6 +426,7 @@ export default function BikerPayroll({ role, previewMode = false }) {
           <div className="flex gap-2 payroll-no-print">
             <button type="button" onClick={exportCsv} className="sw-button sw-button--sm sw-button--secondary"><Download size={16} /> CSV</button>
             <button type="button" disabled={printing} onClick={printPayroll} className="sw-button sw-button--sm sw-button--secondary"><Printer size={16} /> {printing ? 'جارٍ تجهيز PDF…' : 'طباعة PDF'}</button>
+            {pdfFile && <a href={pdfFile.url} download={pdfFile.filename} target="_blank" rel="noreferrer" className="sw-button sw-button--sm sw-button--primary"><Download size={16} /> فتح PDF</a>}
           </div>
         ) : null} />
         {loading && !preview ? <LoadingState message="جارٍ تحميل المسير…" /> : null}

@@ -22,7 +22,7 @@ export async function downloadPayrollPdf(source, { periodKey } = {}) {
     const module = await import('html2pdf.js');
     const html2pdf = module.default || module;
     const filename = payrollPdfFilename(periodKey);
-    await html2pdf().set({
+    const blob = await html2pdf().set({
       filename,
       margin: [7, 7, 7, 7],
       image: { type: 'jpeg', quality: 0.98 },
@@ -34,8 +34,16 @@ export async function downloadPayrollPdf(source, { periodKey } = {}) {
       },
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' },
       pagebreak: { mode: ['css', 'legacy'], avoid: ['tr'] },
-    }).from(printable).save();
-    return filename;
+    }).from(printable).outputPdf('blob');
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    return { filename, url };
   } finally {
     shell.remove();
   }

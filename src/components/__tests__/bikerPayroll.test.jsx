@@ -3,7 +3,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 const { downloadPayrollPdf } = vi.hoisted(() => ({
-  downloadPayrollPdf: vi.fn(async () => 'مسير-رواتب-2026-08.pdf'),
+  downloadPayrollPdf: vi.fn(async () => ({
+    filename: 'مسير-رواتب-2026-08.pdf', url: 'blob:payroll',
+  })),
 }));
 vi.mock('../../lib/payrollPdf', () => ({ downloadPayrollPdf }));
 
@@ -54,6 +56,7 @@ describe('واجهة مسير رواتب البايكر', () => {
     ));
     expect(print).not.toHaveBeenCalled();
     expect(await screen.findByText('تم تجهيز ملف PDF للطباعة')).toBeTruthy();
+    expect(screen.getByRole('link', { name: /فتح PDF/ }).getAttribute('href')).toBe('blob:payroll');
     expect(screen.queryByRole('button', { name: /صرف نقدي\/بنكي/ })).toBeNull();
   });
 

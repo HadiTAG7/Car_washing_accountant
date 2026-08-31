@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BadgeDollarSign, Banknote, CalendarDays, CheckCircle2, Download, Eye,
   Landmark, LockKeyhole, Printer, RotateCcw, Save, ShieldAlert, Undo2, WalletCards,
@@ -15,6 +15,7 @@ import { formatCurrency, formatDate, formatNumber } from '../data/initialData';
 import {
   adjustmentsFromPayrollLines, payrollAdjustmentPayload, payrollAdvanceMax,
 } from '../lib/payrollUi';
+import { downloadPayrollPdf } from '../lib/payrollPdf';
 import './BikerPayroll.css';
 
 const POLICY = 'أيام الشهر الفعلية';
@@ -192,6 +193,45 @@ function AdjustmentInputs({ line, adjustment, disabled, onChange, compact = fals
   );
 }
 
+function PayrollPrintSheet({ preview, periodKey, periodStart, periodEnd, totals, status, printRef }) {
+  if (!preview?.lines?.length) return null;
+  return (
+    <div ref={printRef} hidden className="payroll-print-sheet" dir="rtl">
+      <header>
+        <p>شركة هادي الغانم</p>
+        <h1>مسير رواتب البايكر — {periodKey}</h1>
+        <p>{formatDate(periodStart)} — {formatDate(periodEnd)} · الحالة: {STATUS[status] || status}</p>
+      </header>
+      <div className="payroll-print-totals">
+        <div><span>إجمالي الأساسي</span><strong>{formatCurrency(totals.basic)}</strong></div>
+        <div><span>العمولات</span><strong>{formatCurrency(totals.commissions)}</strong></div>
+        <div><span>البونص</span><strong>{formatCurrency(totals.bonuses)}</strong></div>
+        <div><span>الخصومات</span><strong>{formatCurrency(totals.deductions)}</strong></div>
+        <div><span>السلف المخصومة</span><strong>{formatCurrency(totals.advances)}</strong></div>
+        <div><span>صافي الرواتب</span><strong>{formatCurrency(totals.net)}</strong></div>
+      </div>
+      <table>
+        <thead><tr>
+          {['العامل', 'الراتب', 'المباشرة', 'الأيام', 'الأساسي', 'العمولة', 'البونص', 'الخصم', 'السلفة', 'الصافي'].map((heading) => <th key={heading}>{heading}</th>)}
+        </tr></thead>
+        <tbody>{preview.lines.map((line) => <tr key={line.bikerId}>
+          <td>{line.name}</td>
+          <td>{formatCurrency(line.monthlySalary)}</td>
+          <td>{line.startDate ? formatDate(line.startDate) : '—'}</td>
+          <td>{formatNumber(line.daysEntitled)} / {formatNumber(line.monthDays)}</td>
+          <td>{formatCurrency(line.basicDue)}</td>
+          <td>{formatCurrency(line.commission)}</td>
+          <td>{formatCurrency(line.bonus)}</td>
+          <td>{formatCurrency(line.deduction)}</td>
+          <td>{formatCurrency(line.advanceDeduction)}</td>
+          <td><strong>{formatCurrency(line.netDue)}</strong></td>
+        </tr>)}</tbody>
+      </table>
+      <footer>أُنشئ من نظام سويتر · {FORMULA}</footer>
+    </div>
+  );
+}
+
 export default function BikerPayroll({ role, previewMode = false }) {
   const [periodKey, setPeriodKey] = useState(previewMode ? '2026-08' : monthKeyNow());
   const bounds = useMemo(() => boundsOf(periodKey), [periodKey]);
@@ -203,6 +243,8 @@ export default function BikerPayroll({ role, previewMode = false }) {
   const [action, setAction] = useState(null);
   const [error, setError] = useState(null);
   const [toast, setToast] = useState({ open: false, message: '', tone: 'success' });
+  const [printing, setPrinting] = useState(false);
+  const printRef = useRef(null);
   const api = usePayrollRuns({ enabled: !previewMode });
 
   const activeRun = useMemo(() => api.runs.find((run) => run.periodKey === periodKey
@@ -288,6 +330,18 @@ export default function BikerPayroll({ role, previewMode = false }) {
     ]));
   };
 
+  const printPayroll = async () => {
+    setPrinting(true);
+    try {
+      await downloadPayrollPdf(printRef.current, { periodKey });
+      setToast({ open: true, message: 'تم تجهيز ملف PDF للطباعة', tone: 'success' });
+    } catch (e) {
+      setToast({ open: true, message: e?.message || 'تعذّر تجهيز ملف الطباعة', tone: 'error' });
+    } finally {
+      setPrinting(false);
+    }
+  };
+
   async function submitAction(values) {
     const current = action;
     let result = null;
@@ -364,7 +418,7 @@ export default function BikerPayroll({ role, previewMode = false }) {
         <SectionHeader title="تفاصيل الاستحقاق" subtitle="يُخصم كامل الرصيد القائم افتراضيًا، ويمكن تخفيضه قبل الاعتماد. عدّل المسودة ثم أعد المعاينة قبل الحفظ." action={preview?.lines?.length ? (
           <div className="flex gap-2 payroll-no-print">
             <button type="button" onClick={exportCsv} className="sw-button sw-button--sm sw-button--secondary"><Download size={16} /> CSV</button>
-            <button type="button" onClick={() => window.print()} className="sw-button sw-button--sm sw-button--secondary"><Printer size={16} /> طباعة</button>
+            <button type="button" disabled={printing} onClick={printPayroll} className="sw-button sw-button--sm sw-button--secondary"><Printer size={16} /> {printing ? 'جارٍ تجهيز PDF…' : 'طباعة PDF'}</button>
           </div>
         ) : null} />
         {loading && !preview ? <LoadingState message="جارٍ تحميل المسير…" /> : null}
@@ -424,6 +478,7 @@ export default function BikerPayroll({ role, previewMode = false }) {
       )}
 
       <PayrollActionDialog key={action || 'none'} action={action} run={preview} busy={busy !== null} onClose={() => setAction(null)} onSubmit={submitAction} />
+      <PayrollPrintSheet preview={preview} periodKey={periodKey} periodStart={periodStart} periodEnd={periodEnd} totals={totals} status={status} printRef={printRef} />
       <Toast open={toast.open} message={toast.message} tone={toast.tone} duration={toast.tone === 'error' ? 8000 : 3000} onClose={() => setToast((t) => ({ ...t, open: false }))} />
     </section>
   );

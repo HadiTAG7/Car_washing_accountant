@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+
+const { downloadPayrollPdf } = vi.hoisted(() => ({
+  downloadPayrollPdf: vi.fn(async () => 'مسير-رواتب-2026-08.pdf'),
+}));
+vi.mock('../../lib/payrollPdf', () => ({ downloadPayrollPdf }));
+
 import BikerPayroll from '../BikerPayroll';
 import {
   adjustmentsFromPayrollLines, payrollAdjustmentPayload, payrollAdvanceMax,
@@ -39,11 +45,15 @@ describe('واجهة مسير رواتب البايكر', () => {
     expect(screen.getAllByText(/16\/31 يوماً/).length).toBeGreaterThanOrEqual(1);
   });
 
-  it('يستدعي الطباعة من الزر ولا يعرض أزرار الصرف في وضع المعاينة الآمن', () => {
+  it('ينشئ PDF من ورقة الطباعة ولا يعتمد على window.print', async () => {
     const print = vi.spyOn(window, 'print').mockImplementation(() => {});
     render(<BikerPayroll role="admin" previewMode />);
-    fireEvent.click(screen.getByRole('button', { name: /طباعة/ }));
-    expect(print).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: /طباعة PDF/ }));
+    await waitFor(() => expect(downloadPayrollPdf).toHaveBeenCalledWith(
+      expect.any(HTMLElement), { periodKey: '2026-08' },
+    ));
+    expect(print).not.toHaveBeenCalled();
+    expect(await screen.findByText('تم تجهيز ملف PDF للطباعة')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /صرف نقدي\/بنكي/ })).toBeNull();
   });
 

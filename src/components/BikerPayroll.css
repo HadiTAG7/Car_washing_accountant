@@ -8,3 +8,34 @@
   .payroll-print-root .lg\:hidden { display: none !important; }
   @page { size: A4 landscape; margin: 10mm; }
 }
+
+.payroll-pdf-export-shell {
+  position: fixed;
+  inset: 0 auto auto 0;
+  z-index: -2147483648;
+  width: 1120px;
+  background: #fff;
+  pointer-events: none;
+}
+
+.payroll-print-sheet {
+  width: 1120px;
+  padding: 28px;
+  background: #fff;
+  color: #111827;
+  font-family: "Noto Kufi Arabic", "Segoe UI", Tahoma, Arial, sans-serif;
+  font-size: 11px;
+}
+
+.payroll-print-sheet header { text-align: center; margin-bottom: 18px; }
+.payroll-print-sheet header h1 { font-size: 22px; margin: 5px 0; font-weight: 800; }
+.payroll-print-sheet header p { margin: 2px 0; color: #475569; }
+.payroll-print-totals { display: grid; grid-template-columns: repeat(6, 1fr); gap: 7px; margin-bottom: 16px; }
+.payroll-print-totals > div { border: 1px solid #cbd5e1; border-radius: 7px; padding: 8px; text-align: center; }
+.payroll-print-totals span { display: block; color: #64748b; font-size: 9px; margin-bottom: 3px; }
+.payroll-print-totals strong { display: block; font-size: 12px; }
+.payroll-print-sheet table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.payroll-print-sheet th, .payroll-print-sheet td { border: 1px solid #cbd5e1; padding: 6px 4px; text-align: right; overflow-wrap: anywhere; }
+.payroll-print-sheet th { background: #f1f5f9; font-weight: 800; }
+.payroll-print-sheet tr { break-inside: avoid; page-break-inside: avoid; }
+.payroll-print-sheet footer { margin-top: 12px; text-align: center; color: #64748b; font-size: 9px; }

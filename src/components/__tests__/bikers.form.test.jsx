@@ -86,8 +86,12 @@ describe('AddBikerModal', () => {
 
     chooseDay('#bikerFormEndDate', 10);
     submit();
+    // الشهر يُشتقّ من اليوم لا يُثبَّت: التقويم يفتح على الشهر الجاري، فتاريخٌ
+    // مكتوبٌ بيده يمرّ في الشهر الذي كُتب فيه ويسقط في الذي يليه. والمُختبَر
+    // هنا «لا تسبق النهايةُ البدايةَ وكلاهما يصل» — لا أيُّ شهرٍ نحن فيه.
+    const ym = new Date().toISOString().slice(0, 7);
     expect(onAdd).toHaveBeenCalledWith(expect.objectContaining({
-      startDate: '2026-08-10', endDate: '2026-08-10',
+      startDate: `${ym}-10`, endDate: `${ym}-10`,
     }));
   });
 });

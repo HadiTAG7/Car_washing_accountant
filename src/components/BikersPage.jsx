@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
   Bike, Plus, Pencil, Trash2, Banknote, HandCoins, Users, Wallet,
-  Car, Import, ClipboardList,
+  Car, Import, ClipboardList, ArrowUp, ArrowDown, ChevronsUpDown,
 } from 'lucide-react';
 import TopBar from './TopBar';
 import { Card, SectionHeader, StatCard, EmptyState, StatusBadge, PrimaryButton } from './UI';
@@ -18,6 +18,9 @@ import { usePartnerView } from '../contexts/PartnerViewContext';
 import { describeBackendError } from '../lib/firebaseClient';
 import { formatCurrency, formatNumber, formatDate } from '../data/initialData';
 import { todayMonth, formatMonthLabel } from '../lib/variableExpenseTotals';
+import {
+  BIKER_SORT_COLUMNS, sortBikers, nextSort, loadSort, saveSort,
+} from '../lib/bikerSort';
 import {
   washStatsFor, pendingAdvancesFor, iqamaStatus, unregisteredBikerNames,
 } from '../lib/bikerStats';
@@ -52,6 +55,46 @@ function IqamaBadge({ expiry }) {
   return <StatusBadge status="good">سارية حتى {formatDate(expiry)}</StatusBadge>;
 }
 
+/**
+ * رأسُ عمودٍ يُرتَّب بالنقر.
+ *
+ * زرٌّ داخل `<th>` لا `onClick` على `<th>` نفسه: الأخير لا تصله لوحة
+ * المفاتيح ولا قارئ الشاشة. و`aria-sort` على الخليّة هو ما يقول للقارئ —
+ * وللوكيل الآلي — بأي عمودٍ رُتّبت القائمة وباتجاهٍ ماذا.
+ *
+ * ── ولماذا هو **خارج** `BikersPage` ──
+ * لو عُرِّف في جسمها لتغيّرت هويّته مع كل رسمة، فيفكّ React الخليّة ويركّبها
+ * من جديد بدل تحديثها — ويذهب التركيز إلى `<body>` عند أول نقرة. فيفقد
+ * مستخدم لوحة المفاتيح موضعه، ولا يستطيع الضغط ثانيةً ليعكس الاتجاه دون
+ * البحث عن الزر مرّةً أخرى. (وهذا ما رصده اختبار التركيز فعلاً، لا تخميناً.)
+ */
+function SortableTh({ id, sort, onSort, className = '' }) {
+  const col = BIKER_SORT_COLUMNS[id];
+  const active = sort.column === id;
+  const Icon = !active ? ChevronsUpDown : (sort.direction === 'asc' ? ArrowUp : ArrowDown);
+  return (
+    <th
+      className={`py-3 px-4 whitespace-nowrap ${className}`}
+      aria-sort={active ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}
+    >
+      <button
+        type="button"
+        onClick={() => onSort(id)}
+        title={`ترتيب حسب ${col.label}`}
+        className={`inline-flex items-center gap-1 group transition-colors ${
+          active ? 'text-primary-700 dark:text-primary-300' : 'hover:text-slate-700 dark:hover:text-slate-200'
+        }`}
+      >
+        <span>{col.label}</span>
+        <Icon
+          size={12}
+          className={`shrink-0 transition-opacity ${active ? 'opacity-100' : 'opacity-0 group-hover:opacity-60'}`}
+        />
+      </button>
+    </th>
+  );
+}
+
 export default function BikersPage({ role, payrollPreview = false }) {
   const { bikers, loading, error, addBiker, updateBiker, deleteBiker, refetch } = useBikers();
   const { items: washes } = useWashes();
@@ -80,6 +123,19 @@ export default function BikersPage({ role, payrollPreview = false }) {
     const { advances, total: advancesTotal } = pendingAdvancesFor(b.id, temps || []);
     return { ...b, stats, advances, advancesTotal };
   }), [bikers, washes, temps, month]);
+
+  // ── الترتيب باختيار المالك ──
+  // يُقرأ المحفوظ عند أول رسمة فقط (مُهيّئ كسول) — قراءته في كل رسمة تلمس
+  // `localStorage` بلا داعٍ، وتُسقط الصفحة في وضعٍ يمنعه لو لم تُحرَس.
+  const [sort, setSort] = useState(loadSort);
+  const sortedRows = useMemo(() => sortBikers(rows, sort), [rows, sort]);
+  const applySort = useCallback((columnId) => {
+    setSort((prev) => {
+      const next = nextSort(prev, columnId);
+      saveSort(next);
+      return next;
+    });
+  }, []);
 
   const kpis = useMemo(() => ({
     count:          bikers.length,
@@ -236,16 +292,16 @@ export default function BikersPage({ role, payrollPreview = false }) {
             <table className="w-full min-w-[1320px] text-sm">
               <thead>
                 <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
-                  <th className="py-3 px-4 whitespace-nowrap">الاسم</th>
-                  <th className="py-3 px-4 whitespace-nowrap">الجوال</th>
-                  <th className="py-3 px-4 whitespace-nowrap">السكن</th>
-                  <th className="py-3 px-4 whitespace-nowrap">الكفيل</th>
-                  <th className="py-3 px-4 whitespace-nowrap">الجنسية</th>
-                  <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">الراتب</th>
-                  <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">سلف قائمة</th>
-                  <th className="py-3 px-4 whitespace-nowrap text-center">غسلات الشهر</th>
-                  <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">عمولة الشهر</th>
-                  <th className="py-3 px-4 whitespace-nowrap">الإقامة</th>
+                  <SortableTh sort={sort} onSort={applySort} id="name" />
+                  <SortableTh sort={sort} onSort={applySort} id="contact" />
+                  <SortableTh sort={sort} onSort={applySort} id="residence" />
+                  <SortableTh sort={sort} onSort={applySort} id="sponsor" />
+                  <SortableTh sort={sort} onSort={applySort} id="nationality" />
+                  <SortableTh sort={sort} onSort={applySort} id="salary" className="text-left tabular-nums" />
+                  <SortableTh sort={sort} onSort={applySort} id="advances" className="text-left tabular-nums" />
+                  <SortableTh sort={sort} onSort={applySort} id="washCount" className="text-center" />
+                  <SortableTh sort={sort} onSort={applySort} id="commission" className="text-left tabular-nums" />
+                  <SortableTh sort={sort} onSort={applySort} id="iqamaExpiry" />
                   <th className="py-3 px-4 whitespace-nowrap text-left w-36">إجراءات</th>
                 </tr>
               </thead>
@@ -273,7 +329,7 @@ export default function BikersPage({ role, payrollPreview = false }) {
                     </td>
                   </tr>
                 )}
-                {rows.map((r) => (
+                {sortedRows.map((r) => (
                   <tr key={r.id} className="border-b border-slate-50 dark:border-slate-800/60 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
                     <td className="py-3 px-4 whitespace-normal break-words min-w-[160px] font-medium text-slate-800 dark:text-slate-200">
                       <div className="flex items-center gap-2">

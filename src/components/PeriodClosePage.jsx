@@ -444,7 +444,7 @@ export default function PeriodClosePage() {
                       onChange={(e) => handlePolicy({ vatRegistered: e.target.checked })}
                       className="w-4 h-4 accent-primary-600" />
                     <span className="text-sm text-slate-700 dark:text-slate-300">
-                      المنشأة مسجّلة في ضريبة القيمة المضافة
+                      التسجيل الضريبي في سياسة الدفتر (حسب تاريخ السريان)
                     </span>
                   </label>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed mt-1">

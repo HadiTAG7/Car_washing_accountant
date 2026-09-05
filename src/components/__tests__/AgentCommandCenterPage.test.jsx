@@ -18,6 +18,21 @@ afterEach(() => {
 });
 
 describe('Agent command-center view', () => {
+  it('exposes every received entry rather than truncating the counts in the tabs', () => {
+    const snapshot = {
+      ...EMPTY_COMMAND_CENTER_SNAPSHOT,
+      approvals: Array.from({ length: 11 }, (_, id) => ({ id: `a${id}`, title: `طلب ${id}` })),
+      activity: Array.from({ length: 50 }, (_, id) => ({ id: `e${id}`, message: `نشاط ${id}` })),
+      sources: Array.from({ length: 13 }, (_, id) => ({ id: `s${id}`, name: `مصدر ${id}`, status: 'unknown' })),
+      alerts: Array.from({ length: 21 }, (_, id) => ({ id: `n${id}`, title: `تنبيه ${id}` })),
+    };
+    render(<AgentCommandCenterView snapshot={snapshot} />);
+    for (const [name, count] of [['الموافقات', 11], ['آخر النشاط', 50], ['صحة المصادر', 13], ['التنبيهات', 21]]) {
+      fireEvent.click(screen.getByRole('tab', { name: `${name} ${count}` }));
+      expect(within(screen.getByRole('tabpanel')).getAllByRole('listitem')).toHaveLength(count);
+    }
+  });
+
   it('renders one compact zero-state summary and all fifteen registered agents', () => {
     const { container } = render(<AgentCommandCenterView snapshot={EMPTY_COMMAND_CENTER_SNAPSHOT} />);
     const summary = screen.getByRole('region', { name: 'الملخص التنفيذي للوكلاء' });

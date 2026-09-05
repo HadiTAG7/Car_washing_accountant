@@ -1,3 +1,4 @@
+import ModalSurface from './ModalSurface';
 import { useEffect, useState } from 'react';
 import {
   X, Plus, Wallet, Calendar, Landmark, Coins, CreditCard, FileText,
@@ -61,7 +62,7 @@ export default function AddPartnerPaymentModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <ModalSurface onClose={onClose} className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm" onClick={onClose} />
 
       <div
@@ -218,6 +219,6 @@ export default function AddPartnerPaymentModal({
           </div>
         </form>
       </div>
-    </div>
+    </ModalSurface>
   );
 }

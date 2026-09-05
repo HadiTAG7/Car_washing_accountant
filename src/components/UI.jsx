@@ -69,7 +69,7 @@ export function StatCard({ icon: Icon, tone = 'primary', iconColor, iconBg, labe
   const chipColor = iconColor || t.color;
   return (
     <div
-      className={`bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 p-4 sm:p-5 transition-all duration-200 ${className}`}
+      className={`sw-stat-card min-w-0 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 p-4 sm:p-5 transition-all duration-200 ${className}`}
       style={{ borderRadius: 'var(--sw-radius-small-card)', boxShadow: 'var(--sw-shadow-card)' }}
     >
       <div className="flex items-start justify-between">
@@ -92,7 +92,7 @@ export function StatCard({ icon: Icon, tone = 'primary', iconColor, iconBg, labe
         )}
       </div>
       <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mt-3 sm:mt-4 mb-1">{label}</p>
-      <p className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-slate-100 tabular-nums">{value}</p>
+      <p className="sw-stat-value text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-slate-100 tabular-nums">{value}</p>
       {sub && <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5 leading-relaxed">{sub}</p>}
     </div>
   );

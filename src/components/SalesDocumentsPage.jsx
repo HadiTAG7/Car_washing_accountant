@@ -1,3 +1,4 @@
+import { useAccountingSettings } from '../hooks/useAccountingSettings';
 import { useCallback, useMemo, useState } from 'react';
 import {
   FileText, Plus, Trash2, Download, Loader2, Save, ShieldAlert,
@@ -103,6 +104,9 @@ export default function SalesDocumentsPage() {
   const closeToast = useCallback(() => setToast((t) => ({ ...t, open: false })), []);
 
   // The seller card edits a local copy so a half-typed VAT number is never saved.
+  const { policyAt, loading: policyLoading, error: policyError, baselineFrom, policyConfigured } = useAccountingSettings();
+  const ledgerPolicy = policyAt(todayIso());
+  const registrationConflict = !policyLoading && !policyError && policyConfigured && ledgerPolicy.known && seller && Boolean(seller.vatRegistered) !== Boolean(ledgerPolicy.vatRegistered);
   const sellerDraft = profile ?? seller ?? { name: '', vatNumber: '', address: '', vatRegistered: false };
   const patchSeller = (patch) => setProfile({ ...sellerDraft, ...patch });
 
@@ -346,9 +350,11 @@ export default function SalesDocumentsPage() {
               </label>
             </div>
           </div>
+          <p className="text-xs text-slate-600 dark:text-slate-300">هذا إعداد ملف البائع للمستندات الجديدة. سياسة الدفتر المحاسبي مؤرخة وتُراجع في إقفال الفترات{baselineFrom ? `؛ بداية سجلها ${baselineFrom}` : ''}.</p>
+          {registrationConflict && <p role="alert" className="p-3 rounded-control bg-amber-50 text-amber-900 dark:bg-amber-950 dark:text-amber-200">تعارض إعدادات التسجيل: ملف البائع {seller.vatRegistered ? 'مسجّل' : 'غير مسجّل'}، وسياسة الدفتر {ledgerPolicy.vatRegistered ? 'مسجّلة' : 'غير مسجّلة'}. سياسة الدفتر سارية من {ledgerPolicy.effectiveFrom}. راجع المصدرين وتاريخ السريان قبل إصدار مستند؛ لم تُعدّل أي قيمة تلقائيًا.</p>}
           {!seller?.vatRegistered && (
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-3 leading-relaxed">
-              المنشأة غير مسجّلة حالياً — ستصدر المستندات بدون ضريبة وبدون رمز QR،
+              التسجيل الضريبي غير مفعّل في ملف البائع المستخدم لإصدار المستندات — وفق هذا الملف ستصدر المستندات بدون ضريبة وبدون رمز QR،
               لأن رمز QR أثرٌ خاص بالفاتورة الضريبية ولا يجوز طبعه على إيصال غير ضريبي.
             </p>
           )}

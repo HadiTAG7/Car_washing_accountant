@@ -1,3 +1,4 @@
+import ModalSurface from './ModalSurface';
 import { useEffect, useState } from 'react';
 import {
   X, Pencil, Users, Briefcase, Wallet, Mail, CheckCircle2, Link2Off,
@@ -150,7 +151,7 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave, sho
   if (!isOpen || !partner) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <ModalSurface onClose={onClose} className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm" onClick={onClose} />
 
       <div
@@ -406,6 +407,6 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave, sho
           )}
         </form>
       </div>
-    </div>
+    </ModalSurface>
   );
 }

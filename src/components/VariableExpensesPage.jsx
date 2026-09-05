@@ -1,3 +1,4 @@
+import ScrollableTable from './ScrollableTable';
 import { useCallback, useMemo, useState } from 'react';
 import {
   Plus, Trash2, Pencil, Wallet, Layers, Scale, CalendarClock, Activity, Calendar, Car,
@@ -32,7 +33,7 @@ import { usePartnerView } from '../contexts/PartnerViewContext';
 import {
   todayMonth,
   formatMonthLabel,
-  listAvailableMonths,
+  listAvailableMonths, monthOf,
   sumCompletedWashQuantityInMonth,
   variableItemsForMonth,
 } from '../lib/variableExpenseTotals';
@@ -285,6 +286,7 @@ export default function VariableExpensesPage() {
           options={availableMonths}
         />
 
+        {selectedMonth === '__invalid__' && <p role="status" className="text-sm text-amber-800 dark:text-amber-300">هذه سجلات تحتاج مراجعة التاريخ. لا تُولّد عمولات شهرية لهذه المجموعة. عدد الغسلات بتواريخ غير صالحة: {washes.filter((row) => !monthOf(row.washDate)).length}؛ راجع سجل الغسلات.</p>}
         <WashCounterReadout washCount={washCountInMonth} monthLabel={monthLabel} />
 
         {/* ── KPI summary ─────────────────────────────────────────── */}
@@ -340,7 +342,7 @@ export default function VariableExpensesPage() {
           ) : displayedItems.length === 0 ? (
             <EmptyState onAdd={openAddModal} monthLabel={monthLabel} canMutate={canMutate} />
           ) : (
-            <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
+            <ScrollableTable className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
               <table className="w-full min-w-[640px] text-sm">
                 <thead>
                   <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
@@ -454,7 +456,7 @@ export default function VariableExpensesPage() {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </ScrollableTable>
           )}
         </Card>
       </main>

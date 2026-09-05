@@ -61,13 +61,12 @@ export const VARIABLE_EXPENSE_CATEGORIES = [
 const SAR_FMT = new Intl.NumberFormat('ar-SA', {
   style: 'currency',
   currency: 'SAR',
-  minimumFractionDigits: 0,
-  maximumFractionDigits: 0,
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
   numberingSystem: 'latn',
 });
 // Tax figures are declared to the halala on a ZATCA return, so VAT amounts
-// get their own two-decimal formatter. General amounts stay rounded — whole
-// riyals keep six-figure totals readable.
+// use two decimals consistently with all other financial amounts.
 const SAR_FMT_PRECISE = new Intl.NumberFormat('ar-SA', {
   style: 'currency',
   currency: 'SAR',

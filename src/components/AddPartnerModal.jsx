@@ -1,3 +1,4 @@
+import ModalSurface from './ModalSurface';
 import { useEffect, useState } from 'react';
 import { X, Plus, Briefcase, Users, Wallet, Mail } from 'lucide-react';
 import { formatCurrency, PER_WORKER_FEE } from '../data/initialData';
@@ -128,7 +129,7 @@ export default function AddPartnerModal({ isOpen, onClose, onAdd, showToast }) {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <ModalSurface onClose={onClose} className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm" onClick={onClose} />
 
       <div
@@ -333,6 +334,6 @@ export default function AddPartnerModal({ isOpen, onClose, onAdd, showToast }) {
           )}
         </form>
       </div>
-    </div>
+    </ModalSurface>
   );
 }

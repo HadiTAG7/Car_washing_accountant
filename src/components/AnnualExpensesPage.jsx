@@ -1,3 +1,4 @@
+import ScrollableTable from './ScrollableTable';
 import { useCallback, useMemo, useState } from 'react';
 import {
   Plus, Trash2, Pencil, Wallet, CheckCircle2, Clock, CalendarClock, Repeat,
@@ -216,11 +217,11 @@ export default function AnnualExpensesPage() {
           <StatCard
             icon={CheckCircle2}
             tone="emerald"
-            label="المصاريف المدفوعة"
+            label="المدفوع حسب الحالة والدفعات"
             value={formatCurrency(totals.paid)}
             sub={
               totals.total > 0
-                ? `${((totals.paid / totals.total) * 100).toFixed(0)}% من الإجمالي`
+                ? 'يشمل كامل تكلفة البنود المعلّمة مدفوعة يدويًا؛ جدول الدفعات يعرض المسجل فعليًا.'
                 : 'لا توجد مدفوعات بعد'
             }
           />
@@ -256,7 +257,7 @@ export default function AnnualExpensesPage() {
           ) : items.length === 0 ? (
             <EmptyState onAdd={openAddModal} canMutate={canMutate} />
           ) : (
-            <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
+            <ScrollableTable className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
               <table className="w-full min-w-[760px] text-sm">
                 <thead>
                   <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
@@ -320,6 +321,8 @@ export default function AnnualExpensesPage() {
                         </span>
                       </td>
                       <td className="py-3 px-4 whitespace-nowrap">
+                        <span className="block text-xs text-slate-500 mb-1">الحالة المسجلة يدويًا</span>
+                        {((i.paymentStatus === 'paid' && (i.annualCost || 0) - (i.actualAmount || 0) > 0.005) || (i.paymentStatus !== 'paid' && i.annualCost > 0 && (i.actualAmount || 0) >= i.annualCost)) && <p role="status" className="text-xs text-amber-800 dark:text-amber-300 mb-2 whitespace-normal">الحالة تختلف عن سجل الدفعات؛ راجع المصروف قبل الاعتماد.</p>}
                         <PaymentStatusPill
                           status={i.paymentStatus}
                           dueToday={isAnnualDueToday(i.paymentMonth, i.paymentDay)}
@@ -356,7 +359,7 @@ export default function AnnualExpensesPage() {
                   })}
                 </tbody>
               </table>
-            </div>
+            </ScrollableTable>
           )}
         </Card>
       </main>

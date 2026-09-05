@@ -1,3 +1,4 @@
+import ModalSurface from './ModalSurface';
 import { useMemo } from 'react';
 import { X, Printer, Wallet } from 'lucide-react';
 import {
@@ -46,7 +47,7 @@ export default function PartnerStatementModal({ isOpen, onClose, partner }) {
   const today     = formatDate(new Date().toISOString().slice(0, 10));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center print:static print:block">
+    <ModalSurface onClose={onClose} className="fixed inset-0 z-50 flex items-center justify-center print:static print:block">
       <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm print:hidden" onClick={onClose} />
 
       <div
@@ -168,6 +169,6 @@ export default function PartnerStatementModal({ isOpen, onClose, partner }) {
           </p>
         </div>
       </div>
-    </div>
+    </ModalSurface>
   );
 }

@@ -231,7 +231,7 @@ export default function SweaterSettlementsPage() {
                         <td className="py-3 px-4 font-medium text-slate-800 dark:text-slate-200">{r.label}</td>
                         <td className="py-3 px-4 text-left tabular-nums font-semibold">
                           {r.value == null
-                            ? <span className="text-slate-400">لم يصل بعد</span>
+                            ? <span className="text-slate-400">{r.expected ? 'احتسب الشهر أولاً' : 'لم يصل بعد'}</span>
                             : MONEY(r.value)}
                         </td>
                         <td className={`py-3 px-4 text-left tabular-nums font-semibold ${
@@ -239,7 +239,7 @@ export default function SweaterSettlementsPage() {
                             : r.matches ? 'text-emerald-700 dark:text-emerald-400'
                               : 'text-rose-700 dark:text-rose-400'}`}
                         >
-                          {r.difference == null ? '—'
+                          {r.difference == null ? (r.expected ? 'قيمة مرجعية' : 'بانتظار اكتمال البيانات')
                             : r.difference === 0 ? '✓ مطابق'
                               : `${r.difference > 0 ? '+' : ''}${formatCurrency(r.difference)}`}
                         </td>

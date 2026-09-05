@@ -1,3 +1,4 @@
+import ModalSurface from './ModalSurface';
 import { useEffect, useState } from 'react';
 import { X, Plus, Pencil, Receipt, Check, AlertTriangle, Repeat, Calendar, Percent, LinkIcon } from 'lucide-react';
 import { formatCurrency, formatNumber } from '../data/initialData';
@@ -179,7 +180,7 @@ export default function AddMonthlyExpenseModal({
   const HeaderIcon = editing ? Pencil : Receipt;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <ModalSurface onClose={onClose} className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm" onClick={onClose} />
 
       <div
@@ -533,6 +534,6 @@ export default function AddMonthlyExpenseModal({
           </div>
         </form>
       </div>
-    </div>
+    </ModalSurface>
   );
 }

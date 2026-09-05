@@ -1,3 +1,4 @@
+import ModalSurface from './ModalSurface';
 import { useEffect, useState } from 'react';
 import { X, ArrowLeftRight, Loader2, AlertTriangle } from 'lucide-react';
 import DateField from './DateField';
@@ -92,7 +93,7 @@ export default function StartupConversionModal({ item, onClose, onConvert }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/50 p-0 sm:p-4">
+    <ModalSurface onClose={onClose} className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/50 p-0 sm:p-4">
       <div className="bg-white dark:bg-slate-900 w-full sm:max-w-2xl rounded-t-card sm:rounded-card max-h-[92vh] overflow-y-auto">
         <div className="flex items-start justify-between gap-3 p-5 sm:p-6 border-b border-slate-100 dark:border-slate-800">
           <div>
@@ -186,6 +187,6 @@ export default function StartupConversionModal({ item, onClose, onConvert }) {
           </div>
         </form>
       </div>
-    </div>
+    </ModalSurface>
   );
 }

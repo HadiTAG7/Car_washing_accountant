@@ -1,3 +1,4 @@
+import ModalSurface from './ModalSurface';
 import { useEffect, useState } from 'react';
 import { X, Ban, Loader2, AlertTriangle, RotateCcw } from 'lucide-react';
 import { formatCurrencyPrecise } from '../data/initialData';
@@ -45,7 +46,7 @@ export default function VoidDocumentModal({
   const canSubmit = Boolean(reason.trim()) && (!reverses || Boolean(reversalDate)) && !busy;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <ModalSurface onClose={onClose} className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm" onClick={busy ? undefined : onClose} aria-hidden="true" />
 
       <div
@@ -153,6 +154,6 @@ export default function VoidDocumentModal({
           </PrimaryButton>
         </div>
       </div>
-    </div>
+    </ModalSurface>
   );
 }

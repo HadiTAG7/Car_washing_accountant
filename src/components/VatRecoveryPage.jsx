@@ -33,6 +33,7 @@ import { usePartnerView } from '../contexts/PartnerViewContext';
 /** Where a deducted VAT figure actually came from — shown, never inferred. */
 const TAX_SOURCE_LABELS = {
   invoice: 'مبلغ الفاتورة',
+  'invoice-amount': 'مبلغ الضريبة في الفاتورة',
   'invoice-rate': 'نسبة الفاتورة',
   policy: 'سياسة تاريخ الفاتورة',
   default: 'النسبة الافتراضية',

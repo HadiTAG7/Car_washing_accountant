@@ -206,7 +206,7 @@ export default function HousingPage() {
             tone="indigo"
             label="الساكنون المرتبطون"
             value={kpis.capacity > 0
-              ? `${formatNumber(kpis.residents)} / ${formatNumber(kpis.capacity)}`
+              ? `${formatNumber(kpis.residents)} ساكنًا، السعة ${formatNumber(kpis.capacity)}`
               : formatNumber(kpis.residents)}
             sub={kpis.capacity > 0 ? 'من السعة المخطّطة' : 'من سجل البايكر'}
           />
@@ -285,7 +285,7 @@ export default function HousingPage() {
                         </p>
                         <p className={`mt-0.5 text-[12px] tabular-nums ${over ? 'text-amber-700 dark:text-amber-400 font-semibold' : 'text-slate-500 dark:text-slate-400'}`}>
                           {formatNumber(u.residents.length)}
-                          {u.capacity !== null && <> / {formatNumber(u.capacity)}</>}
+                          {u.capacity !== null && <> ساكنًا، السعة {formatNumber(u.capacity)}</>}
                           {' '}ساكناً{over && ' — فوق السعة'}
                         </p>
                       </div>

@@ -56,7 +56,7 @@ export function groupStartupItems(items = [], categories = []) {
       items: groupItems,
       planned,
       actual,
-      remaining: Math.max(0, planned - actual),
+      remaining: planned - actual,
     };
   });
 }

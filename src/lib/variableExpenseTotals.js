@@ -19,7 +19,13 @@ export const ARABIC_MONTHS = [
 
 /** Extract the YYYY-MM prefix from any 'YYYY-MM-DD'-shaped string. */
 export function monthOf(dateStr) {
-  return (dateStr || '').slice(0, 7);
+  const match = String(dateStr || '').match(/^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?$/);
+  if (!match) return '';
+  const [, year, month, day] = match;
+  const m = Number(month);
+  const d = day == null ? 1 : Number(day);
+  if (m < 1 || m > 12 || d < 1 || d > new Date(Number(year), m, 0).getDate()) return '';
+  return `${year}-${String(m).padStart(2, '0')}`;
 }
 
 /** Current local month as YYYY-MM. */
@@ -30,6 +36,7 @@ export function todayMonth() {
 
 /** Render a YYYY-MM as an Arabic-language label, e.g. "مايو 2026". */
 export function formatMonthLabel(ym) {
+  if (ym === '__invalid__') return 'تواريخ غير صالحة أو مفقودة — تحتاج مراجعة';
   if (!ym) return '';
   const [y, m] = ym.split('-');
   const idx = parseInt(m, 10) - 1;
@@ -43,14 +50,14 @@ export function formatMonthLabel(ym) {
 export function listAvailableMonths(washes = [], variables = []) {
   const set = new Set([todayMonth()]);
   washes.forEach((w) => {
-    const ym = monthOf(w.washDate);
+    const ym = monthOf(w.washDate) || '__invalid__';
     if (ym) set.add(ym);
   });
   variables.forEach((v) => {
-    const ym = monthOf(v.loggedDate);
+    const ym = monthOf(v.loggedDate) || '__invalid__';
     if (ym) set.add(ym);
   });
-  return [...set].sort().reverse();
+  return [...set].filter((key) => key !== '__invalid__').sort().reverse().concat(set.has('__invalid__') ? ['__invalid__'] : []);
 }
 
 /**
@@ -98,14 +105,15 @@ export function variableItemsForMonth({
   // 1 + 2. Filter manual rows.
   const manualNonDynamicInMonth = manualItems.filter(
     (row) =>
-      !dynamicIds.has(row.categoryId) &&
-      monthOf(row.loggedDate) === selectedMonth,
+      (selectedMonth === '__invalid__' || !dynamicIds.has(row.categoryId)) &&
+      (monthOf(row.loggedDate) || '__invalid__') === selectedMonth,
   );
 
   // 3. Group completed washes for the selected month by biker name.
   const UNATTRIBUTED = '__UNATTRIBUTED__';
   const byBiker = new Map();
   for (const w of washes) {
+    if (selectedMonth === '__invalid__') break;
     if (w.status !== 'مكتملة') continue;
     if (monthOf(w.washDate) !== selectedMonth) continue;
     const key = (w.bikerName || '').trim() || UNATTRIBUTED;

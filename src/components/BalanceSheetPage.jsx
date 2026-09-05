@@ -1,3 +1,4 @@
+import AccountCode from './AccountCode';
 import { useMemo, useState } from 'react';
 import { Landmark, Download, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { formatCurrency } from '../data/initialData';
@@ -22,9 +23,9 @@ function Section({ title, rows, total, tone }) {
       ) : (
         <ul className="divide-y divide-slate-50 dark:divide-slate-800/60">
           {rows.map((r) => (
-            <li key={r.code} className="flex items-baseline justify-between gap-3 py-2">
+            <li key={r.code} className="flex flex-wrap items-baseline justify-between gap-3 py-2">
               <span className="text-sm text-slate-700 dark:text-slate-300 min-w-0">
-                <span className="tabular-nums text-slate-500 dark:text-slate-400 ml-1">{r.code}</span>
+                <span className="tabular-nums text-slate-500 dark:text-slate-400 ml-1"><AccountCode code={r.code} /></span>
                 {r.nameArabic}
               </span>
               <span className="text-sm font-semibold tabular-nums text-slate-900 dark:text-slate-100 shrink-0">
@@ -145,9 +146,9 @@ export default function BalanceSheetPage() {
                       <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-2">حقوق الملكية</h3>
                       <ul className="divide-y divide-slate-50 dark:divide-slate-800/60">
                         {bs.equity.map((r) => (
-                          <li key={r.code} className="flex items-baseline justify-between gap-3 py-2">
+                          <li key={r.code} className="flex flex-wrap items-baseline justify-between gap-3 py-2">
                             <span className="text-sm text-slate-700 dark:text-slate-300">
-                              <span className="tabular-nums text-slate-500 dark:text-slate-400 ml-1">{r.code}</span>
+                              <span className="tabular-nums text-slate-500 dark:text-slate-400 ml-1"><AccountCode code={r.code} /></span>
                               {r.nameArabic}
                             </span>
                             <span className="text-sm font-semibold tabular-nums text-slate-900 dark:text-slate-100">{formatCurrency(r.amount)}</span>

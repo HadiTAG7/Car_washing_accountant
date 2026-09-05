@@ -28,6 +28,7 @@
   --sw-brand-500: #ef5b0c;
   --sw-brand-600: #d14e09;
   --sw-action: #c74700;
+  --sw-action-fill: #c74700;
   --sw-brand-soft: #fff5f0;
   /* Softer still — for large tinted fills (active nav, icon chips) where
      brand-soft would read as a flat white against the canvas. */
@@ -227,7 +228,7 @@ html[dir="ltr"] .sw-button {
 }
 
 .sw-button--primary {
-  background: var(--sw-action);
+  background: var(--sw-action-fill);
   color: #ffffff;
   box-shadow: var(--sw-shadow-cta);
 }

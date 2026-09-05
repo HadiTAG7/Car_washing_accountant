@@ -1,3 +1,4 @@
+import ScrollableTable from './ScrollableTable';
 import { Fragment, useCallback, useMemo, useState } from 'react';
 import {
   Plus, Trash2, Pencil, Wallet, Receipt, Scale, FileText, Percent, Link as LinkIcon,
@@ -307,7 +308,7 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
           ) : items.length === 0 ? (
             <EmptyState onAdd={openAddModal} canMutate={canMutate} />
           ) : (
-            <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
+            <ScrollableTable className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
               <table className="w-full min-w-[720px] text-sm">
                 <thead>
                   <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
@@ -343,7 +344,7 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
                           {formatCurrency(g.actual * scalingFactor)}
                         </td>
                         <td className="py-2.5 px-4 text-left tabular-nums text-[12px] font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">
-                          {formatCurrency(g.remaining * scalingFactor)}
+                          {g.remaining < 0 ? `تجاوز ${formatCurrency(Math.abs(g.remaining * scalingFactor))}` : formatCurrency(g.remaining * scalingFactor)}
                         </td>
                         <td className="py-2.5 px-4" colSpan={2} />
                       </tr>
@@ -358,7 +359,7 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
                     // Remaining balance for this row, coherent with the
                     // scaled planned/actual shown beside it. Clamped at 0
                     // so an over-spend reads "0 ر.س." not a negative.
-                    const rowRemaining = Math.max(0, rowPlanned - rowActual);
+                    const rowRemaining = rowPlanned - rowActual;
                     return (
                       <tr
                         key={i.id}
@@ -442,10 +443,10 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
                           )}
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums align-top">
-                          <span className={rowRemaining > 0
+                          <span className={rowRemaining < 0 ? 'font-semibold text-rose-700 dark:text-rose-300' : rowRemaining > 0
                             ? 'font-semibold text-amber-700 dark:text-amber-400'
                             : 'font-medium text-emerald-600 dark:text-emerald-400'}>
-                            {formatCurrency(rowRemaining)}
+                            {rowRemaining < 0 ? `تجاوز ${formatCurrency(Math.abs(rowRemaining))}` : formatCurrency(rowRemaining)}
                           </span>
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap align-top">
@@ -498,7 +499,7 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </ScrollableTable>
           )}
         </Card>
       </main>

@@ -60,7 +60,7 @@ const AGENT_RADIUS = 40;
 const MOBILE_MAP_WIDTH = 920;
 const MOBILE_MAP_HEIGHT = 620;
 const MAP_ZOOM_DEFAULT = 0.82;
-const MAP_ZOOM_MIN = 0.72;
+const MAP_ZOOM_MIN = 0.25;
 const MAP_ZOOM_MAX = 1.42;
 const MAP_ZOOM_STEP = 0.12;
 
@@ -238,7 +238,7 @@ function OrganizationMap({ organization, activeTeamId, onSelectTeam, onOpenAgent
     viewport.scrollTo({
       left: Math.max(0, (viewport.scrollWidth - viewport.clientWidth) / 2),
       top: Math.max(0, (viewport.scrollHeight - viewport.clientHeight) / 2),
-      behavior,
+      behavior: behavior === 'auto' ? 'instant' : behavior,
     });
   }, []);
 
@@ -259,7 +259,9 @@ function OrganizationMap({ organization, activeTeamId, onSelectTeam, onOpenAgent
 
   useEffect(() => {
     const timer = window.setTimeout(() => centerMap('auto'), 0);
-    return () => window.clearTimeout(timer);
+    const observer = new ResizeObserver(() => centerMap('auto'));
+    if (viewportRef.current) observer.observe(viewportRef.current);
+    return () => { window.clearTimeout(timer); observer.disconnect(); };
   }, [centerMap]);
 
   useEffect(() => {
@@ -324,12 +326,13 @@ function OrganizationMap({ organization, activeTeamId, onSelectTeam, onOpenAgent
 
   return (
     <div ref={mapShellRef} className="acc-map-wrap" data-fullscreen={isFullscreen ? 'true' : 'false'}>
-      <p id="acc-map-help" className="acc-visually-hidden">اسحب الخريطة أفقيًا أو عموديًا، أو استخدم الأسهم عند التركيز على مساحة الخريطة. تتوفر أزرار للتكبير والتصغير وإعادة تمركز CEO.</p>
+      <p id="acc-map-help" className="acc-map-help">اسحب الخريطة أفقيًا أو عموديًا، أو استخدم الأسهم عند التركيز على مساحة الخريطة. تتوفر أزرار للتكبير والتصغير وإعادة تمركز CEO. عرض الدائرة كاملة للاستعراض؛ كبّرها لقراءة التفاصيل.</p>
       <div className="acc-map-controls" aria-label="أدوات عرض خريطة الوكلاء">
         <button type="button" onClick={() => adjustZoom(MAP_ZOOM_STEP)} disabled={zoom >= MAP_ZOOM_MAX} aria-label="تكبير الخريطة"><Plus size={16} /></button>
         <output className="tabular-nums" aria-live="polite" aria-label={`مستوى التكبير ${Math.round(zoom * 100)} بالمئة`}>{Math.round(zoom * 100)}%</output>
         <button type="button" onClick={() => adjustZoom(-MAP_ZOOM_STEP)} disabled={zoom <= MAP_ZOOM_MIN} aria-label="تصغير الخريطة"><Minus size={16} /></button>
         <button type="button" onClick={() => centerMap()} aria-label="إعادة تمركز CEO"><Focus size={16} /></button>
+        <button type="button" onClick={() => { const viewport = viewportRef.current; if (!viewport) return; setZoom(Math.max(MAP_ZOOM_MIN, Math.min(viewport.clientWidth / MOBILE_MAP_WIDTH, viewport.clientHeight / MOBILE_MAP_HEIGHT))); window.setTimeout(() => centerMap('auto'), 0); }} aria-label="عرض الدائرة كاملة"><RotateCw size={16} /></button>
         <button type="button" onClick={toggleFullscreen} disabled={!fullscreenSupported} aria-label={isFullscreen ? 'إنهاء ملء الشاشة' : 'عرض الخريطة بملء الشاشة'} aria-pressed={isFullscreen}><span aria-hidden="true">{isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}</span></button>
       </div>
       <div
@@ -455,7 +458,7 @@ function ApprovalsContent({ approvals }) {
   if (!approvals.length) return <CompactEmpty icon={ClipboardCheck} title="لا توجد طلبات موافقة" hint="تظهر هنا الطلبات المستلمة من الوكلاء فقط." />;
   return (
     <ul className="acc-event-list">
-      {approvals.slice(0, 6).map((approval) => (
+      {approvals.map((approval) => (
         <li key={approval.id}><span className="acc-event-marker" data-kind="warning" aria-hidden="true" /><div><strong>{approval.title}</strong><p>{approval.summary}</p><time dateTime={approval.createdAt || undefined}>{formatAgentDate(approval.createdAt)}</time><span className="acc-readonly-note">قرار CEO مطلوب — لا يُنفّذ هنا</span></div></li>
       ))}
     </ul>
@@ -464,17 +467,17 @@ function ApprovalsContent({ approvals }) {
 
 function ActivityContent({ activity }) {
   if (!activity.length) return <CompactEmpty icon={FileClock} title="لا يوجد نشاط بعد" hint="سيظهر النشاط الحقيقي القادم من نقطة الإدخال الموقعة." />;
-  return <ol className="acc-event-list">{activity.slice(0, 8).map((item) => <li key={item.id}><span className="acc-event-marker" data-kind={item.kind || 'info'} aria-hidden="true" /><div><p>{item.message}</p><time dateTime={item.occurredAt || undefined}>{formatAgentDate(item.occurredAt)}</time></div></li>)}</ol>;
+  return <ol className="acc-event-list">{activity.map((item) => <li key={item.id}><span className="acc-event-marker" data-kind={item.kind || 'info'} aria-hidden="true" /><div><p>{item.message}</p><time dateTime={item.occurredAt || undefined}>{formatAgentDate(item.occurredAt)}</time></div></li>)}</ol>;
 }
 
 function SourcesContent({ sources }) {
   if (!sources.length) return <CompactEmpty icon={Database} title="لا توجد قياسات مصادر" hint="لن تُعرض صحة مفترضة قبل وصول قياس حقيقي." />;
-  return <ul className="acc-source-list">{sources.slice(0, 10).map((source) => <li key={source.id}><div><strong>{source.name}</strong><time dateTime={source.lastCheckedAt || undefined}>{formatAgentDate(source.lastCheckedAt)}</time></div><StatusPill status={source.status} compact /></li>)}</ul>;
+  return <ul className="acc-source-list">{sources.map((source) => <li key={source.id}><div><strong>{source.name}</strong><time dateTime={source.lastCheckedAt || undefined}>{formatAgentDate(source.lastCheckedAt)}</time></div><StatusPill status={source.status} compact /></li>)}</ul>;
 }
 
 function AlertsContent({ alerts }) {
   if (!alerts.length) return <CompactEmpty icon={BellRing} title="لا توجد تنبيهات تنفيذية" hint="لن يظهر تنبيه قبل استلامه عبر المسار الموقّع." />;
-  return <ul className="acc-executive-alerts">{alerts.slice(0, 8).map((alert) => <li key={alert.id} data-severity={alert.severity}><strong>{alert.title}</strong><p>{alert.message}</p><time dateTime={alert.createdAt || undefined}>{formatAgentDate(alert.createdAt)}</time></li>)}</ul>;
+  return <ul className="acc-executive-alerts">{alerts.map((alert) => <li key={alert.id} data-severity={alert.severity}><strong>{alert.title}</strong><p>{alert.message}</p><time dateTime={alert.createdAt || undefined}>{formatAgentDate(alert.createdAt)}</time></li>)}</ul>;
 }
 
 function ExecutiveConsole({ snapshot }) {
@@ -488,6 +491,7 @@ function ExecutiveConsole({ snapshot }) {
   return (
     <Card className="acc-executive-console">
       <TabList tabs={EXECUTIVE_TABS} activeId={activeTab} onChange={setActiveTab} label="متابعة التنفيذ" idPrefix="acc-executive" counts={counts} />
+      <p className="text-xs text-slate-500 dark:text-slate-300 px-4 py-2">يعرض {counts[activeTab]} من {counts[activeTab]} عنصر مستلم.</p>
       <div className="acc-executive-panel" id={`acc-executive-panel-${activeTab}`} role="tabpanel" aria-labelledby={`acc-executive-tab-${activeTab}`} tabIndex={0}>
         {activeTab === 'approvals' ? <ApprovalsContent approvals={snapshot.approvals} /> : null}
         {activeTab === 'activity' ? <ActivityContent activity={snapshot.activity} /> : null}

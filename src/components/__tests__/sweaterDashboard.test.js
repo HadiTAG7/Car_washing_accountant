@@ -88,7 +88,7 @@ describe('reconciliationRows', () => {
       invoiceGross: 216,
       collectedTotal: 204,
     });
-    expect(rows[0]).toMatchObject({ value: 216, matches: true });
+    expect(rows[0]).toMatchObject({ value: 216, matches: null });
     expect(rows[1]).toMatchObject({ value: 204, difference: -12, matches: false });
     expect(rows[2]).toMatchObject({ value: 216, matches: true });
     expect(rows[3]).toMatchObject({ value: 204, difference: -12 });

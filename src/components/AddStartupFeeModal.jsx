@@ -1,3 +1,4 @@
+import ModalSurface from './ModalSurface';
 import { useEffect, useRef, useState } from 'react';
 import {
   X, Plus, Pencil, Receipt, Tag, Check, Loader2, Settings2, Trash2, ArrowRight,
@@ -305,7 +306,7 @@ export default function AddStartupFeeModal({
   const HeaderIcon = editing ? Pencil : Receipt;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <ModalSurface onClose={onClose} className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm" onClick={onClose} />
 
       <div
@@ -644,6 +645,6 @@ export default function AddStartupFeeModal({
           </div>
         </form>
       </div>
-    </div>
+    </ModalSurface>
   );
 }

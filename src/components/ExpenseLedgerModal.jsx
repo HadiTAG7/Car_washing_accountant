@@ -1,3 +1,4 @@
+import ModalSurface from './ModalSurface';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import {
   X, Plus, Trash2, FileText, Wallet, Calendar, Tag, Loader2, Inbox,
@@ -161,7 +162,7 @@ export default function ExpenseLedgerModal({
 
   const recordedTotal = entries.reduce((s, e) => s + (e.amount || 0), 0);
   const planned       = plannedAmount || 0;
-  const remaining     = Math.max(0, planned - recordedTotal);
+  const remaining     = planned - recordedTotal;
   const overspent     = recordedTotal > planned && planned > 0;
 
   const trimmedDesc   = form.description.trim();
@@ -309,7 +310,7 @@ export default function ExpenseLedgerModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <ModalSurface onClose={onClose} className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm" onClick={onClose} />
 
       <div
@@ -341,7 +342,7 @@ export default function ExpenseLedgerModal({
 
         <div className="p-5 sm:p-6 space-y-5">
           {/* Summary strip */}
-          <div className="grid grid-cols-3 gap-3 text-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
             <div className="bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-smallcard px-3 py-2.5">
               <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">{plannedLabel}</p>
               <p className="font-bold text-slate-900 dark:text-slate-100 tabular-nums mt-0.5">
@@ -422,24 +423,25 @@ export default function ExpenseLedgerModal({
               <div className="relative">
                 <Tag
                   size={15}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 pointer-events-none"
+                  className="absolute right-3 bottom-3.5 text-slate-500 dark:text-slate-400 pointer-events-none"
                 />
-                <input
+                <div><label className="block text-xs font-semibold mb-1" htmlFor="ledger-description">وصف المصروف (مطلوب)</label><input
                   type="text"
-                  name="description"
+                  id="ledger-description" name="description"
                   value={form.description}
                   onChange={handleChange}
                   placeholder="مثال: شراء أثاث المطبخ"
                   required
                   className="w-full pr-9 pl-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:border-primary-500 transition-colors"
-                />
+                /></div>
               </div>
               <div className="relative">
                 <Calendar
                   size={15}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 pointer-events-none"
+                  className="absolute right-3 bottom-3.5 text-slate-500 dark:text-slate-400 pointer-events-none"
                 />
-                <DateField
+                <label className="block text-xs font-semibold mb-1">تاريخ المصروف (مطلوب)</label>
+                <DateField ariaLabel="تاريخ المصروف"
               name="spentDate"
               value={form.spentDate}
               onChange={handleChange}
@@ -461,8 +463,9 @@ export default function ExpenseLedgerModal({
               <div className="relative">
                 <Home
                   size={15}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 pointer-events-none"
+                  className="absolute right-3 bottom-3.5 text-slate-500 dark:text-slate-400 pointer-events-none"
                 />
+                <label className="block text-xs font-semibold mb-1" htmlFor="ledgerUnit">التقسيم (اختياري)</label>
                 <select
                   id="ledgerUnit"
                   name="unit"
@@ -484,11 +487,11 @@ export default function ExpenseLedgerModal({
               <div className="relative">
                 <Wallet
                   size={15}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 pointer-events-none"
+                  className="absolute right-3 bottom-3.5 text-slate-500 dark:text-slate-400 pointer-events-none"
                 />
-                <input
+                <div><label className="block text-xs font-semibold mb-1" htmlFor="ledger-amount">المبلغ بالريال (مطلوب)</label><input
                   type="number"
-                  name="amount"
+                  id="ledger-amount" name="amount"
                   value={form.amount}
                   onChange={handleChange}
                   placeholder="المبلغ (ر.س)"
@@ -496,16 +499,16 @@ export default function ExpenseLedgerModal({
                   step="any"
                   required
                   className="w-full pr-9 pl-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm tabular-nums focus:outline-none focus:border-primary-500 transition-colors"
-                />
+                /></div>
               </div>
-              <input
+              <div><label className="block text-xs font-semibold mb-1" htmlFor="ledger-notes">ملاحظات (اختياري)</label><input
                 type="text"
-                name="notes"
+                id="ledger-notes" name="notes"
                 value={form.notes}
                 onChange={handleChange}
                 placeholder="ملاحظات اختيارية (رقم الفاتورة، الجهة...)"
                 className="w-full px-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:border-primary-500 transition-colors"
-              />
+              /></div>
 
             </div>
 
@@ -516,18 +519,18 @@ export default function ExpenseLedgerModal({
               <div className="relative flex-1">
                 <LinkIcon
                   size={15}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 pointer-events-none"
+                  className="absolute right-3 bottom-3.5 text-slate-500 dark:text-slate-400 pointer-events-none"
                 />
-                <input
+                <div><label className="block text-xs font-semibold mb-1" htmlFor="ledger-invoiceUrl">رابط الفاتورة (اختياري)</label><input
                   type="url"
-                  name="invoiceUrl"
+                  id="ledger-invoiceUrl" name="invoiceUrl"
                   value={form.invoiceUrl}
                   onChange={handleChange}
                   placeholder="رابط الفاتورة، أو ارفع ملفاً ←"
                   dir="ltr"
                   autoComplete="off"
                   className="w-full pr-9 pl-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm font-mono focus:outline-none focus:border-primary-500 transition-colors"
-                />
+                /></div>
               </div>
               {isFirebaseConfigured && (
                 <>
@@ -882,6 +885,6 @@ export default function ExpenseLedgerModal({
           </div>
         </div>
       </div>
-    </div>
+    </ModalSurface>
   );
 }

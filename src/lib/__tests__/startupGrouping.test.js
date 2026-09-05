@@ -31,7 +31,7 @@ describe('groupStartupItems', () => {
     expect(groups[1].items.map((i) => i.id)).toEqual(['a', 'c']);
   });
 
-  it('والمجاميع الفرعية مجموع بنودها، والمتبقي لا يصير سالباً', () => {
+  it('والمجاميع الفرعية مجموع بنودها، والتجاوز يظهر كفرق سالب', () => {
     const [g] = groupStartupItems([
       item({ id: 'a', category: 'housing', plannedAmount: 300, actualAmount: 100 }),
       item({ id: 'b', category: 'housing', plannedAmount: 200, actualAmount: 450 }),
@@ -39,8 +39,8 @@ describe('groupStartupItems', () => {
 
     expect(g.planned).toBe(500);
     expect(g.actual).toBe(550);
-    // تجاوزٌ قدره 50 — يظهر في حالة البند نفسه، لا كـ«متبقٍّ سالب» في المجموع.
-    expect(g.remaining).toBe(0);
+    // تجاوز قدره 50 يبقى ظاهرًا في المجموع.
+    expect(g.remaining).toBe(-50);
   });
 
   it('و«بدون تصنيف» آخر مجموعة دائماً', () => {

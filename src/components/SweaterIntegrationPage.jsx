@@ -174,7 +174,7 @@ export default function SweaterIntegrationPage() {
               ? `الوكيل توقّف بأمان: ${labelOf(AGENT_STATUS_AR, st.lastAgentStatus)}. `
                 + 'المنصة تطلب تدخّلاً بشرياً — سجّل الدخول عندها ثم أعِد تشغيل الوكيل. '
                 + 'الوكيل لا يتجاوز مصادقةً ولا يخزّن رمز تحقق.'
-              : `لم يصل استيرادٌ ناجح منذ ${lastHours === null ? '—' : formatNumber(lastHours)} ساعة. `
+              : (lastHours === null ? 'لم يصل أي استيراد ناجح حتى الآن. ' : `لم يصل استيرادٌ ناجح منذ ${formatNumber(lastHours)} ساعة. `)
                 + 'تحقّق من جدولة الوكيل ومن صلاحية مفتاحه.'}
           </p>
         )}

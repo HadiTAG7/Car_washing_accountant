@@ -595,3 +595,6 @@
 .acc-page[data-motion="reduced"] .acc-finance-flow,
 .acc-page[data-motion="reduced"] .acc-agent-ring,
 .acc-page[data-motion="reduced"] .acc-live-chip span { animation: none; }
+
+.acc-map-help { font-size: 12px; color: var(--sw-text-secondary); margin-block: 8px; }
+@media(max-width: 720px) { .acc-map-controls { position: relative; inset: auto; width: fit-content; max-width: 100%; flex-wrap: wrap; margin-block: 8px; border-radius: 16px; } }

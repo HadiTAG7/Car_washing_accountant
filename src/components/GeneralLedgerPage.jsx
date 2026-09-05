@@ -1,3 +1,5 @@
+import AccountCode from './AccountCode';
+import ScrollableTable from './ScrollableTable';
 import { useMemo, useState } from 'react';
 import { BookOpen, Download, Wallet, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
 import { formatCurrency, formatDate } from '../data/initialData';
@@ -95,10 +97,11 @@ export default function GeneralLedgerPage() {
                 {accounts.length === 0 && <option value="">— لا توجد حسابات —</option>}
                 {accounts.map((a) => (
                   <option key={a.code} value={a.code}>
-                    {a.code} — {a.nameArabic}{usedCodes.has(String(a.code)) ? '' : ' (بلا حركة)'}
+                    {a.nameArabic} — {String(a.code).length > 18 ? `${String(a.code).slice(0, 9)}…${String(a.code).slice(-4)}` : a.code}{usedCodes.has(String(a.code)) ? '' : ' (بلا حركة)'}
                   </option>
                 ))}
               </select>
+              {selected && <p className="text-xs mt-2">رمز الحساب: <AccountCode code={selected} /></p>}
             </div>
             <div>
               <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">من تاريخ</label>
@@ -143,7 +146,7 @@ export default function GeneralLedgerPage() {
                 <EmptyState icon={BookOpen} title="لا توجد حركات على هذا الحساب"
                   hint="جرّب توسيع نطاق التاريخ أو اختيار حساب آخر." compact />
               ) : (
-                <div className="overflow-x-auto">
+                <ScrollableTable className="overflow-x-auto">
                   <table className="w-full text-sm min-w-[46rem]">
                     <thead>
                       <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
@@ -197,7 +200,7 @@ export default function GeneralLedgerPage() {
                       </tr>
                     </tfoot>
                   </table>
-                </div>
+                </ScrollableTable>
               )}
             </Card>
           </>

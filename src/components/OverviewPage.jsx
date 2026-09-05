@@ -228,7 +228,7 @@ export default function OverviewPage() {
                 icon={Receipt}
                 tone="amber"
                 label="بنود التأسيس المكتملة"
-                value={`${formatNumber(spend.completed)} / ${formatNumber(spend.itemCount)}`}
+                value={`${formatNumber(spend.completed)} من ${formatNumber(spend.itemCount)} بنود`}
                 sub="بنود أُنجز صرفها بالكامل"
               />
             </div>

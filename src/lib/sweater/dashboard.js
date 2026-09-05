@@ -101,8 +101,10 @@ export function operationalKpis(bookings, { adjustments = [], graceMinutes = 10 
 
 /** صفوف المطابقة الأربعة: المتوقع مقابل الكشف والفاتورة والتحصيل. */
 export function reconciliationRows(settlement) {
+  const presentNumber = (value) => value != null && String(value).trim() !== '' && Number.isFinite(Number(value));
   const f = settlement?.figures ?? {};
-  const expected = Number(f.netDue) || 0;
+  const hasExpected = presentNumber(f.netDue);
+  const expected = hasExpected ? Number(f.netDue) : null;
   const stated = Number(settlement?.statement?.statedNetDue);
   const invoiced = Number(settlement?.invoiceGross);
   const collected = Number(settlement?.collectedTotal) || 0;
@@ -110,15 +112,15 @@ export function reconciliationRows(settlement) {
   const row = (label, value, hasValue) => ({
     label,
     value: hasValue ? Math.round(value * 100) / 100 : null,
-    difference: hasValue ? Math.round((value - expected) * 100) / 100 : null,
-    matches: hasValue ? Math.abs(value - expected) < 0.01 : null,
+    difference: hasValue && hasExpected ? Math.round((value - expected) * 100) / 100 : null,
+    matches: hasValue && hasExpected ? Math.abs(value - expected) < 0.01 : null,
   });
 
   return [
-    { label: 'صافي المستحق المتوقع', value: Math.round(expected * 100) / 100, difference: 0, matches: true },
-    row('كشف سويتر', stated, Number.isFinite(stated)),
-    row('الفاتورة الصادرة', invoiced, Number.isFinite(invoiced)),
-    row('المُحصَّل', collected, collected > 0 || settlement?.status === 'collected'),
+    { label: 'صافي المستحق المتوقع', value: hasExpected ? Math.round(expected * 100) / 100 : null, difference: null, matches: null, expected: true },
+    row('كشف سويتر', stated, presentNumber(settlement?.statement?.statedNetDue)),
+    row('الفاتورة الصادرة', invoiced, presentNumber(settlement?.invoiceGross)),
+    row('المُحصَّل', collected, presentNumber(settlement?.collectedTotal) && (collected > 0 || settlement?.status === 'collected')),
   ];
 }
 

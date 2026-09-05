@@ -26,7 +26,7 @@ import { isLiveSourceEntry } from '../lib/accounting/firestoreLedger';
 import { taxPolicyAt } from '../lib/accounting/taxPolicy';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 import {
-  todayMonth,
+  todayMonth, monthOf,
   formatMonthLabel,
   listAvailableMonths,
   variableItemsForMonth,
@@ -182,7 +182,7 @@ export default function FinancialSummaryPage() {
   // posts into a month that may hold no wash at all, and a month you cannot
   // select is a month whose figures nobody can read.
   const availableMonths = useMemo(() => {
-    const set = new Set(listAvailableMonths(washes, variables));
+    const set = new Set(listAvailableMonths(washes, variables).filter((key) => key !== '__invalid__'));
     for (const e of entries) {
       const key = String(e.periodKey || String(e.entryDate || '').slice(0, 7));
       if (/^\d{4}-\d{2}$/.test(key)) set.add(key);
@@ -313,7 +313,7 @@ export default function FinancialSummaryPage() {
   // resolution / filtering happens inside the modal.
   const detailData = useMemo(() => {
     const revenue = washes
-      .filter((w) => w.status === 'مكتملة' && (w.washDate || '').slice(0, 7) === selectedMonth)
+      .filter((w) => w.status === 'مكتملة' && monthOf(w.washDate) === selectedMonth)
       .map((w) => ({
         id:       w.id,
         date:     w.washDate,
@@ -336,7 +336,7 @@ export default function FinancialSummaryPage() {
     const monthly = monthlies
       .filter((m) => {
         if (m.recurrence !== 'one_time') return true;
-        return String(m.loggedDate || '').slice(0, 7) === selectedMonth;
+        return monthOf(m.loggedDate) === selectedMonth;
       })
       .map((m) => ({
         id:        m.id,
@@ -411,6 +411,7 @@ export default function FinancialSummaryPage() {
           </div>
         </div>
 
+        {(washes.some((row) => !monthOf(row.washDate)) || variables.some((row) => !monthOf(row.loggedDate))) && <p role="status" className="text-sm text-amber-800 dark:text-amber-300">توجد سجلات تشغيل بتواريخ غير صالحة أو مفقودة لا يمكن إسنادها إلى شهر. راجع مجموعة التواريخ غير الصالحة في المصاريف المتغيرة وسجل الغسلات؛ لم تُحذف هذه السجلات.</p>}
         {anyLoading && noData ? (
           <LoadingState rows={4} />
         ) : (

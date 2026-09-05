@@ -1,3 +1,4 @@
+import ModalSurface from './ModalSurface';
 import { useEffect, useMemo, useState } from 'react';
 import { X, Plus, Pencil, Bike, Phone, MapPin, Banknote, IdCard, ShieldUser, Flag } from 'lucide-react';
 import { formatCurrency } from '../data/initialData';
@@ -120,7 +121,7 @@ export default function AddBikerModal({ isOpen, onClose, onAdd, onUpdate, initia
   const HeaderIcon = editing ? Pencil : Bike;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <ModalSurface onClose={onClose} className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm" onClick={onClose} />
 
       <div
@@ -380,6 +381,6 @@ export default function AddBikerModal({ isOpen, onClose, onAdd, onUpdate, initia
           </div>
         </form>
       </div>
-    </div>
+    </ModalSurface>
   );
 }

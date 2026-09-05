@@ -1,3 +1,5 @@
+import AccountCode from './AccountCode';
+import ScrollableTable from './ScrollableTable';
 import { useMemo, useState } from 'react';
 import { Scale, Download, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { formatCurrency } from '../data/initialData';
@@ -109,12 +111,12 @@ export default function TrialBalancePage() {
           <LoadingState message="جارٍ حساب الأرصدة..." />
         ) : (
           <>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 sm:gap-5">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-5">
               <StatCard icon={Scale} tone="primary" label="إجمالي المدين"
                 value={formatCurrency(tb.totalDebit)} sub={`${tb.rows.length} حساب متحرك`} />
               <StatCard icon={Scale} tone="indigo" label="إجمالي الدائن"
                 value={formatCurrency(tb.totalCredit)} />
-              <StatCard className="col-span-2 md:col-span-1"
+              <StatCard className="col-span-1"
                 icon={tb.balanced ? CheckCircle2 : AlertTriangle}
                 tone={tb.balanced ? 'emerald' : 'rose'} label="الفرق"
                 value={formatCurrency(tb.difference)}
@@ -133,7 +135,7 @@ export default function TrialBalancePage() {
                 <EmptyState icon={Scale} title="لا توجد قيود مرحّلة بعد"
                   hint="سيظهر الميزان تلقائياً بمجرد ترحيل أول عملية." compact />
               ) : (
-                <div className="overflow-x-auto">
+                <ScrollableTable className="overflow-x-auto">
                   <table className="w-full text-sm min-w-[44rem]">
                     <thead>
                       <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
@@ -148,7 +150,7 @@ export default function TrialBalancePage() {
                     <tbody>
                       {tb.rows.map((r) => (
                         <tr key={r.code} className="border-b border-slate-50 dark:border-slate-800/60 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
-                          <td className="py-3 px-4 whitespace-nowrap tabular-nums font-semibold text-slate-700 dark:text-slate-300">{r.code}</td>
+                          <td className="py-3 px-4 whitespace-nowrap tabular-nums font-semibold text-slate-700 dark:text-slate-300"><AccountCode code={r.code} /></td>
                           <td className="py-3 px-4 text-slate-700 dark:text-slate-300">
                             {r.nameArabic}
                             {!r.known && (
@@ -180,7 +182,7 @@ export default function TrialBalancePage() {
                       </tr>
                     </tfoot>
                   </table>
-                </div>
+                </ScrollableTable>
               )}
             </Card>
           </>

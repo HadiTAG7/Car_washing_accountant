@@ -1,3 +1,4 @@
+import ModalSurface from './ModalSurface';
 import { useEffect } from 'react';
 import { X, Receipt, Activity, CalendarClock, Repeat } from 'lucide-react';
 import { formatCurrency, formatNumber, formatDate } from '../data/initialData';
@@ -210,7 +211,7 @@ export default function FinancialDetailsModal({ category, monthLabel, data, onCl
   const rows = data?.[category] ?? [];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <ModalSurface onClose={onClose} className="fixed inset-0 z-50 flex items-center justify-center">
       <div
         className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm"
         onClick={onClose}
@@ -259,6 +260,6 @@ export default function FinancialDetailsModal({ category, monthLabel, data, onCl
           </div>
         </div>
       </div>
-    </div>
+    </ModalSurface>
   );
 }

@@ -1,3 +1,4 @@
+import ScrollableTable from './ScrollableTable';
 import { useCallback, useMemo, useState } from 'react';
 import {
   Plus, Trash2, RefreshCw, Coins, Hourglass, CheckCircle2, Inbox,
@@ -30,6 +31,9 @@ export default function TemporaryExpensesPage() {
   } = useTemporaryExpenses();
   const { scalingFactor, canMutate } = usePartnerView();
 
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const filteredExpenses = expenses.filter((e) => (statusFilter === 'all' || e.status === statusFilter) && `${e.title || ''} ${e.notes || ''}`.toLocaleLowerCase('ar').includes(search.trim().toLocaleLowerCase('ar')));
   const [addOpen, setAddOpen] = useState(false);
   const [mutationError, setMutationError] = useState(null);
   const [toast, setToast] = useState({ open: false, message: '', tone: 'success', duration: 3000 });
@@ -204,7 +208,13 @@ export default function TemporaryExpensesPage() {
               ) : null}
             />
           ) : (
-            <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
+            <><div className="flex flex-wrap gap-3 mb-4">
+              <label>بحث في المصروفات<input className="block border rounded-control p-2 bg-white dark:bg-slate-800" type="search" value={search} onChange={(e) => setSearch(e.target.value)} /></label>
+              <label>حالة الاسترداد<select className="block border rounded-control p-2 bg-white dark:bg-slate-800" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}><option value="all">كل الحالات</option><option value="pending">بانتظار الاسترداد</option><option value="recovered">مسترد</option></select></label>
+              <p className="w-full text-xs">عرض {filteredExpenses.length} من {expenses.length} سجل — إجمالي النتائج {formatCurrency(filteredExpenses.reduce((sum, item) => sum + (item.amount || 0), 0) * scalingFactor)}. البطاقات تلخّص جميع السجلات.</p>
+              {filteredExpenses.length === 0 && <p role="status">لا توجد نتائج مطابقة للبحث.</p>}
+            </div>
+            <ScrollableTable className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
               <table className="w-full min-w-[820px] text-sm">
                 <thead>
                   <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
@@ -217,7 +227,7 @@ export default function TemporaryExpensesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {expenses.map((e) => {
+                  {filteredExpenses.map((e) => {
                     const isRecovered = e.status === 'recovered';
                     return (
                       <tr
@@ -306,7 +316,7 @@ export default function TemporaryExpensesPage() {
                 <tfoot>
                   <tr className="border-t-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
                     <td className="py-3 px-4 text-right font-bold text-slate-900 dark:text-slate-100">
-                      الإجمالي
+                      إجمالي جميع السجلات (قبل التصفية)
                     </td>
                     <td className="py-3 px-4 text-left font-extrabold text-slate-900 dark:text-slate-100 tabular-nums">
                       {formatCurrency(kpis.totalAll)}
@@ -321,7 +331,7 @@ export default function TemporaryExpensesPage() {
                   </tr>
                 </tfoot>
               </table>
-            </div>
+            </ScrollableTable></>
           )}
         </Card>
       </main>

@@ -11,9 +11,21 @@ import { usePartners } from '../hooks/usePartners';
  * aggregates by, and exposes a `canMutate` flag that all "+ إضافة" /
  * row-action / status-toggle controls guard against.
  *
+ * ── إشارتان لا واحدة ──
+ * الدور (`users/{uid}.role`) يجيب «هل هذا الحساب مستثمر؟»، وصفُّ الشريك
+ * المربوط بـ `userId` يجيب «أيُّ مستثمر، وما حصّته؟». كان هذا الملف يسأل
+ * الثاني وحده، فحسابٌ دوره `partner` بلا صفٍّ مربوط كان يُعامَل معاملة
+ * المدير كاملةً — والقواعد وحدها تردّ كتاباته برسالة صلاحيات عامة.
+ *
+ * والآن الدور يقرّر **هل** والصفُّ يقرّر **أيّ**، والنقص يفشل مغلقاً: مستثمر
+ * بلا ربط ليس مديراً، بل حسابٌ مسدود لا يقرأ ولا يكتب حتى تربطه الإدارة.
+ *
  * Contract:
- *   isAdmin            true when the logged-in Supabase user is NOT
- *                      linked to any partner row.
+ *   isAdmin            true when the account is not an investor AND is
+ *                      not linked to any partner row.
+ *   isInvestorAccount  the role says `partner`.
+ *   investorLinkMissing an investor whose `partners` row is unlinked —
+ *                      the fail-closed state.
  *   myPartner          the partner row owned by the current user, or
  *                      null when admin.
  *   viewedPartner      myPartner when partner-logged-in; the admin's
@@ -35,6 +47,9 @@ import { usePartners } from '../hooks/usePartners';
 
 const DEFAULT_VALUE = {
   isAdmin:            true,
+  isInvestorAccount:  false,
+  investorLinkMissing: false,
+  role:               null,
   myPartner:          null,
   viewedPartner:      null,
   actingAsPartnerId:  null,
@@ -48,7 +63,7 @@ const PartnerViewContext = createContext(DEFAULT_VALUE);
 
 const STORAGE_KEY = 'sweater:actingAsPartnerId';
 
-export function PartnerViewProvider({ children }) {
+export function PartnerViewProvider({ children, role = null }) {
   const { user } = useAuth();
   const { partners } = usePartners();
 
@@ -70,12 +85,16 @@ export function PartnerViewProvider({ children }) {
     } catch { /* private mode etc. — silently drop */ }
   }, [actingAsPartnerId]);
 
-  // Find the partner row owned by the current Supabase user. Null = admin.
+  // Find the partner row owned by the current user.
   const myPartner = useMemo(() => {
     if (!user?.id) return null;
     return partners.find((p) => p.userId && p.userId === user.id) || null;
   }, [partners, user]);
-  const isAdmin = !myPartner;
+
+  const isInvestorAccount = role === 'partner';
+  // الحالة التي كانت تُسلّم الواجهة كاملةً: دورٌ مستثمر بلا صفٍّ مربوط.
+  const investorLinkMissing = isInvestorAccount && !myPartner;
+  const isAdmin = !isInvestorAccount && !myPartner;
 
   // Admin override wins for admins; partners always see themselves.
   // If the simulated id no longer matches a row (admin deleted that
@@ -95,15 +114,24 @@ export function PartnerViewProvider({ children }) {
     [partners],
   );
 
-  const scalingFactor = viewedPartner && totalWorkers > 0
-    ? (viewedPartner.workersCount || 0) / totalWorkers
-    : 1;
+  // بلا ربط لا نعرف الحصّة، والواحد الصحيح يعني «أرقام الشركة كاملة» — وهو
+  // آخر ما يُعرض على حسابٍ لم نتحقّق من هويته بعد. الصفر يفشل مغلقاً.
+  const scalingFactor = investorLinkMissing
+    ? 0
+    : (viewedPartner && totalWorkers > 0
+      ? (viewedPartner.workersCount || 0) / totalWorkers
+      : 1);
 
-  const isPartnerView = viewedPartner !== null;
+  // المستثمر المسدود في عرض الشريك أيضاً: كل قمع مشروط بـ `isPartnerView`
+  // يجب أن ينطبق عليه، لا أن يُفلته النقصُ إلى المسار الإداري.
+  const isPartnerView = viewedPartner !== null || investorLinkMissing;
   const canMutate     = isAdmin && actingAsPartnerId === null;
 
   const value = useMemo(() => ({
     isAdmin,
+    isInvestorAccount,
+    investorLinkMissing,
+    role,
     myPartner,
     viewedPartner,
     actingAsPartnerId,
@@ -113,7 +141,8 @@ export function PartnerViewProvider({ children }) {
     canMutate,
     totalWorkers,
   }), [
-    isAdmin, myPartner, viewedPartner, actingAsPartnerId, setActingAsPartnerId,
+    isAdmin, isInvestorAccount, investorLinkMissing, role,
+    myPartner, viewedPartner, actingAsPartnerId, setActingAsPartnerId,
     scalingFactor, isPartnerView, canMutate, totalWorkers,
   ]);
 

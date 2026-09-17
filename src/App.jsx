@@ -1,27 +1,6 @@
 import { useState, useCallback } from 'react';
-import {
-  LayoutDashboard,
-  Landmark,
-  Repeat,
-  Receipt,
-  Activity,
-  Car,
-  Bike,
-  Home,
-  BarChart3,
-  Target,
-  Handshake, Plug,
-  HandCoins,
-  RefreshCw,
-  Percent,
-  Loader2,
-  BookOpen,
-  Scale,
-  Lock,
-  FileText,
-  Boxes,
-  Gauge,
-} from 'lucide-react';
+import { Loader2 } from 'lucide-react';
+import { visibleGroupsFor } from './lib/navGroups';
 
 import { lazy, Suspense } from 'react';
 import Sidebar from './components/Sidebar';
@@ -36,6 +15,7 @@ import FinancialEntrySelector from './components/FinancialEntrySelector';
 // first visit. Trims the initial bundle (recharts, the heavy P&L/budget
 // pages, etc. no longer ship in the first paint) — a real win on mobile.
 const OverviewPage         = lazy(() => import('./components/OverviewPage'));
+const InvestorPage         = lazy(() => import('./components/InvestorPage'));
 const StartupPage          = lazy(() => import('./components/StartupPage'));
 const AnnualExpensesPage   = lazy(() => import('./components/AnnualExpensesPage'));
 const SweaterSettlementsPage = lazy(() => import('./components/SweaterSettlementsPage'));
@@ -74,79 +54,11 @@ import PartnerViewBanner from './components/PartnerViewBanner';
 // الدفاتر؟». `overview` stays titleless at the top because a summary belongs
 // to no category — it is the answer before the questions.
 //
-// Tab ids are untouched: the render chain below keys off them, so regrouping
-// is a presentation change that cannot break a route.
-const TAB_GROUPS = [
-  {
-    id: 'top',
-    title: null,
-    tabs: [
-      { id: 'overview',  label: 'نظرة عامة',              icon: LayoutDashboard },
-      { id: 'agent_command_center', label: 'مركز قيادة الوكلاء', icon: Gauge, roles: ['admin', 'accountant'] },
-    ],
-  },
-  {
-    id: 'ops',
-    title: 'التشغيل اليومي',
-    tabs: [
-      { id: 'washes',    label: 'الغسلات',                icon: Car         },
-      { id: 'bikers',    label: 'البايكر',                 icon: Bike        },
-      { id: 'housing',   label: 'السكن',                   icon: Home        },
-      { id: 'temporary_expenses', label: 'المصروفات المؤقتة', icon: RefreshCw },
-    ],
-  },
-  {
-    id: 'sweater',
-    title: 'منصة سويتر',
-    tabs: [
-      { id: 'sweater_settlements', label: 'تسويات سويتر',  icon: Handshake },
-      { id: 'sweater_integration', label: 'تكامل سويتر',   icon: Plug      },
-    ],
-  },
-  {
-    id: 'expenses',
-    title: 'المصاريف',
-    tabs: [
-      { id: 'startup',   label: 'رسوم التأسيس',           icon: Landmark    },
-      { id: 'annual',    label: 'المصاريف السنوية',       icon: Repeat      },
-      { id: 'monthly',   label: 'المصاريف الشهرية',       icon: Receipt     },
-      { id: 'variable',  label: 'المصاريف المتغيرة',      icon: Activity    },
-    ],
-  },
-  {
-    id: 'reports',
-    title: 'التقارير والرقابة',
-    tabs: [
-      { id: 'summary',   label: 'قائمة الدخل',            icon: BarChart3   },
-      { id: 'vat',       label: 'الضريبة المستردة',       icon: Percent     },
-      { id: 'budgets',   label: 'الرقابة والميزانيات',    icon: Target      },
-    ],
-  },
-  {
-    id: 'partners',
-    title: 'الشركاء',
-    tabs: [
-      { id: 'partners',  label: 'إدارة الشركاء',          icon: Handshake   },
-      { id: 'payments',  label: 'مدفوعات الشركاء',        icon: HandCoins   },
-    ],
-  },
-  {
-    id: 'books',
-    title: 'الدفاتر المحاسبية',
-    tabs: [
-      { id: 'ledger',    label: 'دفتر الأستاذ',            icon: BookOpen    },
-      { id: 'trial',     label: 'ميزان المراجعة',          icon: Scale       },
-      { id: 'balance',   label: 'المركز المالي',           icon: Landmark    },
-      { id: 'documents', label: 'المستندات الضريبية',      icon: FileText    },
-      { id: 'assets',    label: 'الأصول الثابتة',          icon: Boxes       },
-      { id: 'periods',   label: 'إقفال الفترة',            icon: Lock        },
-    ],
-  },
-];
+
 
 // Inner shell wraps the routed content so it can subscribe to the
 // MobileMenuContext (provider is one level up).
-function AppShell() {
+function AppShell({ membership }) {
   const previewCommandCenter = import.meta.env.DEV
     && typeof window !== 'undefined'
     && new URLSearchParams(window.location.search).has('previewCommandCenter');
@@ -158,18 +70,22 @@ function AppShell() {
     previewCommandCenter ? 'agent_command_center' : (previewPayroll ? 'bikers' : 'overview'),
   );
   const { session, loading: authLoading, signOut } = useAuth();
-  // ── الدخول ليس عضوية ──
-  // The rules read membership from a document; an account created in the Auth
-  // console has none, so every page shows «لا صلاحيات» while the sidebar
-  // renders everything. Asked once, here, so the answer is given ONCE and by
-  // name instead of eighteen times as a generic permission error.
-  const membership = useMembership(session?.user?.id);
-  const { canMutate } = usePartnerView();
+  // العضوية تُسأل مرة واحدة في `App` وتنزل من هناك: المزوّد يحتاج الدور ليقرّر
+  // من يرى ماذا، وسؤالها هنا أيضاً يعني جلباً ثانياً ونداءً ثانياً للخادم.
+  const { canMutate, isPartnerView } = usePartnerView();
+  // وضع المستثمر: تبويبٌ واحد، ومسارٌ واحد يُصيَّر. يُشتق من `isPartnerView`
+  // لا من الدور، فيشمل المدير المحاكي — وبه تصبح المحاكاة أمينة.
+  const investorMode = !localPreview && isPartnerView;
+  // يُمرَّر إلى `BikersPage` لتقرير من يسوّد مسير الرواتب — قرارٌ منفصل عن
+  // التنقّل، فيبقى على الدور نفسه.
   const visibleRole = localPreview ? 'admin' : membership.role;
-  const visibleGroups = TAB_GROUPS.map((group) => ({
-    ...group,
-    tabs: group.tabs.filter((tab) => !tab.roles || tab.roles.includes(visibleRole)),
-  })).filter((group) => group.tabs.length > 0);
+  const visibleGroups = visibleGroupsFor({
+    role: membership.role, isPartnerView, localPreview,
+  });
+  // التبويب النشط يُشتق ولا يُخزَّن: مديرٌ واقفٌ على دفتر الأستاذ يختار شريكاً
+  // من القائمة يجب ألا يبقى الدفتر مصيَّراً تحته. والاشتقاق يعني أيضاً أنه
+  // يعود إلى مكانه تماماً حين ينهي المحاكاة.
+  const effectiveTab = investorMode ? 'investor' : activeTab;
 
   const [showEntrySelector, setShowEntrySelector] = useState(false);
   const [pendingEntry, setPendingEntry] = useState(null);
@@ -192,7 +108,13 @@ function AppShell() {
     setMobileMenuOpen(false);
   }
 
-  if (authLoading) {
+  // ── لماذا ننتظر الدور ──
+  // الدور يصل بعد جولة إلى Firestore، وهو `null` حتى يصل. و`null` يبدو
+  // للمرشّح أدناه كأنه مدير، فيومض للمستثمر ثلاثةٌ وعشرون تبويباً قبل أن
+  // تُطوى. الانتظار هنا أرخص من ومضةٍ تُري المستثمر ما لا يخصّه.
+  const rolePending = isFirebaseConfigured && Boolean(session) && membership.loading;
+
+  if (authLoading || rolePending) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="flex flex-col items-center gap-3 text-slate-400">
@@ -259,40 +181,41 @@ function AppShell() {
           {/* key={activeTab} remounts the wrapper per tab so the page-in
               entrance replays on every switch (no-op under
               prefers-reduced-motion). */}
-          <div key={activeTab} className="animate-page-in flex-1 flex flex-col">
-            {activeTab === 'overview'  && <OverviewPage />}
-            {activeTab === 'agent_command_center' && (
+          <div key={effectiveTab} className="animate-page-in flex-1 flex flex-col">
+            {effectiveTab === 'investor' && <InvestorPage />}
+            {effectiveTab === 'overview'  && <OverviewPage />}
+            {effectiveTab === 'agent_command_center' && (
               <AgentCommandCenterPage
                 role={previewCommandCenter ? undefined : membership.role}
                 preview={previewCommandCenter}
               />
             )}
-            {activeTab === 'startup'   && (
+            {effectiveTab === 'startup'   && (
               <StartupPage
                 pendingEntry={pendingEntry}
                 onClearPendingEntry={clearPendingEntry}
               />
             )}
-            {activeTab === 'annual'    && <AnnualExpensesPage />}
-            {activeTab === 'sweater_settlements' && <SweaterSettlementsPage />}
-            {activeTab === 'sweater_integration' && <SweaterIntegrationPage />}
-            {activeTab === 'monthly'   && <MonthlyExpensesPage />}
-            {activeTab === 'variable'  && <VariableExpensesPage />}
-            {activeTab === 'washes'    && <WashesPage />}
-            {activeTab === 'bikers'    && <BikersPage role={visibleRole} payrollPreview={previewPayroll} />}
-            {activeTab === 'housing'   && <HousingPage />}
-            {activeTab === 'summary'   && <FinancialSummaryPage />}
-            {activeTab === 'vat'       && <VatRecoveryPage />}
-            {activeTab === 'budgets'   && <BudgetsPage />}
-            {activeTab === 'partners'  && <PartnersPage />}
-            {activeTab === 'payments'  && <PartnerPaymentsPage />}
-            {activeTab === 'temporary_expenses' && <TemporaryExpensesPage />}
-            {activeTab === 'ledger'    && <GeneralLedgerPage />}
-            {activeTab === 'trial'     && <TrialBalancePage />}
-            {activeTab === 'balance'   && <BalanceSheetPage />}
-            {activeTab === 'documents' && <SalesDocumentsPage />}
-            {activeTab === 'assets'    && <FixedAssetsPage />}
-            {activeTab === 'periods'   && <PeriodClosePage />}
+            {effectiveTab === 'annual'    && <AnnualExpensesPage />}
+            {effectiveTab === 'sweater_settlements' && <SweaterSettlementsPage />}
+            {effectiveTab === 'sweater_integration' && <SweaterIntegrationPage />}
+            {effectiveTab === 'monthly'   && <MonthlyExpensesPage />}
+            {effectiveTab === 'variable'  && <VariableExpensesPage />}
+            {effectiveTab === 'washes'    && <WashesPage />}
+            {effectiveTab === 'bikers'    && <BikersPage role={visibleRole} payrollPreview={previewPayroll} />}
+            {effectiveTab === 'housing'   && <HousingPage />}
+            {effectiveTab === 'summary'   && <FinancialSummaryPage />}
+            {effectiveTab === 'vat'       && <VatRecoveryPage />}
+            {effectiveTab === 'budgets'   && <BudgetsPage />}
+            {effectiveTab === 'partners'  && <PartnersPage />}
+            {effectiveTab === 'payments'  && <PartnerPaymentsPage />}
+            {effectiveTab === 'temporary_expenses' && <TemporaryExpensesPage />}
+            {effectiveTab === 'ledger'    && <GeneralLedgerPage />}
+            {effectiveTab === 'trial'     && <TrialBalancePage />}
+            {effectiveTab === 'balance'   && <BalanceSheetPage />}
+            {effectiveTab === 'documents' && <SalesDocumentsPage />}
+            {effectiveTab === 'assets'    && <FixedAssetsPage />}
+            {effectiveTab === 'periods'   && <PeriodClosePage />}
           </div>
         </Suspense>
       </div>
@@ -311,10 +234,19 @@ export default function App() {
   // on useAuth + usePartners; those hooks are safe to call at any point
   // in the tree, but keeping the auth-aware contexts close to the shell
   // makes the ownership easier to follow.
+  //
+  // ── الدخول ليس عضوية ──
+  // The rules read membership from a document; an account created in the Auth
+  // console has none, so every page shows «لا صلاحيات» while the sidebar
+  // renders everything. Asked once, HERE — أعلى من المزوّد لأنه يحتاج الدور
+  // ليقرّر من هو المستثمر، وأعلى من الشلّ لأن سؤالها مرتين جلبٌ مرتين ونداءٌ
+  // للخادم مرتين.
+  const { session } = useAuth();
+  const membership = useMembership(session?.user?.id);
   return (
     <MobileMenuProvider>
-      <PartnerViewProvider>
-        <AppShell />
+      <PartnerViewProvider role={membership.role}>
+        <AppShell membership={membership} />
       </PartnerViewProvider>
     </MobileMenuProvider>
   );

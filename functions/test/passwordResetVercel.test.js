@@ -1,7 +1,8 @@
 import { Readable } from 'node:stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import handler, {
-  applyActionUrl, applyCustomLinkHost, createPasswordResetHandler, generateLink, safeErrorCode,
+  applyActionUrl, applyCustomLinkHost, createPasswordResetHandler, generateLink,
+  indistinguishableFromUnknownAccount, safeErrorCode,
 } from '../../api/password-reset.js';
 import { PasswordResetEmailError } from '../../server/passwordResetEmail.js';
 import { PasswordResetConfigError } from '../../server/passwordResetRuntime.js';
@@ -56,6 +57,27 @@ afterEach(() => {
   delete process.env.PASSWORD_RESET_LINK_HOST;
   delete process.env.PASSWORD_RESET_ACTION_URL;
   vi.restoreAllMocks();
+});
+
+describe('indistinguishableFromUnknownAccount', () => {
+  it('covers the plain not-found codes', () => {
+    for (const code of ['auth/user-not-found', 'auth/email-not-found']) {
+      expect(indistinguishableFromUnknownAccount({ code })).toBe(true);
+    }
+  });
+
+  it('covers the opaque error that email-enumeration protection returns', () => {
+    // بلا هذا كان الحساب الحقيقي يردّ ٢٠٠ والمجهول ٥٠٠ — عرّافٌ يجيب بنعم ولا.
+    expect(indistinguishableFromUnknownAccount({ code: 'auth/internal-error' })).toBe(true);
+  });
+
+  it('leaves faults that occur for every address alike as real errors', () => {
+    // لا عرّاف فيها: تقع سواء وُجد الحساب أم لا، فإخفاؤها يخفي عطلاً فقط.
+    for (const code of ['auth/insufficient-permission', 'auth/invalid-email',
+      'auth/unauthorized-continue-uri', undefined, '', 'ECONNRESET']) {
+      expect(indistinguishableFromUnknownAccount({ code })).toBe(false);
+    }
+  });
 });
 
 describe('applyActionUrl', () => {
@@ -276,6 +298,37 @@ describe('/api/password-reset', () => {
     const res = response();
     await endpoint(request(), res);
     expect(send.mock.calls[0][1].text).toContain('https://auth.sweater.test/__/auth/action');
+  });
+
+  it('answers the same for an opaque rejection as for a delivered link', async () => {
+    // حماية تعداد البريد تُخفي «لا يوجد حساب» خلف خطأ مبهم؛ الردّ يجب ألا يكشفه.
+    withMailerEnv();
+    vi.spyOn(console, 'info').mockImplementation(() => {});
+    const { endpoint, send } = deps({
+      generatePasswordResetLink: vi.fn(async () => {
+        throw Object.assign(new Error('opaque'), { code: 'auth/internal-error' });
+      }),
+    });
+    const res = response();
+    await endpoint(request(), res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual({ ok: true });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('keeps a permission fault visible, since it happens for every address alike', async () => {
+    withMailerEnv();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { endpoint } = deps({
+      generatePasswordResetLink: vi.fn(async () => {
+        throw Object.assign(new Error('denied'), { code: 'auth/insufficient-permission' });
+      }),
+    });
+    const res = response();
+    await endpoint(request(), res);
+    expect(res.statusCode).toBe(500);
+    expect(res.body.code).toBe('auth/insufficient-permission');
   });
 
   it('answers an unknown account exactly as a known one, and sends nothing', async () => {

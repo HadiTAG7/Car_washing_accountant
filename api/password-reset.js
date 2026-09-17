@@ -90,6 +90,30 @@ async function readJsonBody(request) {
  * اليوم، لكن `mode` و`apiKey` و`continueUrl` و`lang` جزءٌ من عقد Firebase
  * لمعالِج الإجراءات المخصّص — وانتقاءُ ما «يبدو» لازماً الآن يكسر ما يلزم لاحقاً.
  */
+/**
+ * هل هذا الرفض قد يكون «لا حساب بهذا البريد»؟
+ *
+ * الوعد المعلن للمسار أن البريد المعروف والمجهول يردّان الردّ نفسه، وإلا صار
+ * نموذج الاسترجاع أداةَ تعداد حسابات. و`user-not-found` وحده لا يفي به: حين
+ * تكون **حماية تعداد البريد** مفعّلة في المشروع ترفض Firebase أن تبوح بوجود
+ * الحساب، فتردّ خطأً مبهماً يُترجمه Admin SDK إلى `auth/internal-error`.
+ * فكان الحساب الحقيقي يردّ ٢٠٠ والمجهول ٥٠٠ — أي عرّافٌ يجيب بنعم ولا، وهو
+ * العطل نفسه الذي جاء الوعد ليمنعه.
+ *
+ * المقايضة مقصودة ومعروفة: عطلٌ حقيقي في Identity Toolkit يهبط في هذا
+ * التصنيف أيضاً، فيرى المستخدم «أُرسلت» ولا تصله رسالة. قبلناه لأن التسرّب
+ * دائم والعطل عابر، ولأن التفصيل كاملاً يبقى في السجلّ فلا يضيع التشخيص.
+ *
+ * وما لا يتعلّق بوجود الحساب يبقى خطأً صريحاً: `insufficient-permission`
+ * و`invalid-email` يقعان لكل بريدٍ سواء وُجد أم لا، فلا عرّاف فيهما.
+ */
+export function indistinguishableFromUnknownAccount(error) {
+  const code = String(error?.code ?? '');
+  return code.includes('user-not-found')
+    || code.includes('email-not-found')
+    || code.endsWith('/internal-error');
+}
+
 export function applyActionUrl(link, actionUrl) {
   const target = String(actionUrl ?? '').trim();
   if (!target) return link;
@@ -233,11 +257,12 @@ export function createPasswordResetHandler({
         // تعني إعادة توجيه مفتوحة داخل رسالة يثق بها المستخدم.
         link = await generateLink(auth, email, appUrl);
       } catch (error) {
-        const code = String(error?.code ?? '');
-        if (code.includes('user-not-found') || code.includes('email-not-found')) {
+        if (indistinguishableFromUnknownAccount(error)) {
           // بريدٌ لا حساب له: الردّ نفسه تماماً، ولا رسالة تُرسل.
           console.info(JSON.stringify({
             severity: 'INFO', event: 'password-reset-unknown-account',
+            code: safeErrorCode(error),
+            detail: String(error?.message ?? '').slice(0, 300),
           }));
           response.status(200).json({ ok: true });
           return;

@@ -1,6 +1,7 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { deleteExpiredIngestionMarkers } from '../server/agentCommandCenterCleanup.js';
 import { getAgentCommandCenterDatabase } from '../server/agentCommandCenterDatabase.js';
+import { deleteExpiredPasswordResetThrottles } from '../server/passwordResetThrottle.js';
 
 export const config = { maxDuration: 30 };
 
@@ -21,6 +22,9 @@ function validCronAuthorization(provided, secret) {
 export function createAgentCommandCenterCleanupHandler({
   databaseFactory = getAgentCommandCenterDatabase,
   cleanup = deleteExpiredIngestionMarkers,
+  // عدّادات إعادة التعيين تنتهي بعد يوم؛ بلا كنسٍ تتراكم إلى الأبد. نفس
+  // الـ cron اليومي يكفيها — مجموعة أخرى لا جدولٌ آخر.
+  cleanupPasswordResetThrottles = deleteExpiredPasswordResetThrottles,
   now = () => new Date(),
 } = {}) {
   return async function handler(request, response) {
@@ -38,11 +42,14 @@ export function createAgentCommandCenterCleanupHandler({
       }
 
       const { db } = databaseFactory();
-      const result = await cleanup(db, now());
+      const at = now();
+      const result = await cleanup(db, at);
+      const throttles = await cleanupPasswordResetThrottles(db, at);
       console.info(JSON.stringify({
         severity: 'INFO', event: 'agent-command-cleanup-complete', ...result,
+        throttlesDeleted: throttles.deleted,
       }));
-      response.status(200).json({ ok: true, ...result });
+      response.status(200).json({ ok: true, ...result, throttles });
     } catch (error) {
       const incidentId = randomBytes(6).toString('hex');
       console.error(JSON.stringify({

@@ -57,14 +57,35 @@ describe('Vercel agent command-center cleanup cron', () => {
     process.env.CRON_SECRET = SECRET;
     const currentTime = new Date('2026-08-28T12:00:00.000Z');
     const cleanup = vi.fn().mockResolvedValue({ deleted: 3, hasMore: false });
+    const cleanupPasswordResetThrottles = vi.fn().mockResolvedValue({ deleted: 0, hasMore: false });
     const endpoint = createAgentCommandCenterCleanupHandler({
-      databaseFactory: () => ({ db: 'firestore' }), cleanup, now: () => currentTime,
+      databaseFactory: () => ({ db: 'firestore' }),
+      cleanup, cleanupPasswordResetThrottles, now: () => currentTime,
     });
     const res = response();
     await endpoint(request({ authorization: `Bearer ${SECRET}` }), res);
     expect(cleanup).toHaveBeenCalledWith('firestore', currentTime);
     expect(res.statusCode).toBe(200);
-    expect(res.body).toEqual({ ok: true, deleted: 3, hasMore: false });
+    expect(res.body).toEqual({
+      ok: true, deleted: 3, hasMore: false, throttles: { deleted: 0, hasMore: false },
+    });
+  });
+
+  it('sweeps the password-reset counters on the same daily run, at the same instant', async () => {
+    // عدّاد لا يُكنَس يتراكم إلى الأبد؛ وجدولٌ ثانٍ لمجموعة ثانية عملٌ زائد.
+    process.env.CRON_SECRET = SECRET;
+    const currentTime = new Date('2026-08-28T12:00:00.000Z');
+    const cleanupPasswordResetThrottles = vi.fn().mockResolvedValue({ deleted: 7, hasMore: true });
+    const endpoint = createAgentCommandCenterCleanupHandler({
+      databaseFactory: () => ({ db: 'firestore' }),
+      cleanup: vi.fn().mockResolvedValue({ deleted: 0, hasMore: false }),
+      cleanupPasswordResetThrottles,
+      now: () => currentTime,
+    });
+    const res = response();
+    await endpoint(request({ authorization: `Bearer ${SECRET}` }), res);
+    expect(cleanupPasswordResetThrottles).toHaveBeenCalledWith('firestore', currentTime);
+    expect(res.body.throttles).toEqual({ deleted: 7, hasMore: true });
   });
 
   it('deletes only expired ingestion markers in a bounded batch', async () => {

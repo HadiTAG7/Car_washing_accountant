@@ -1,0 +1,192 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// /api/password-reset — الرابط من Firebase، والرسالة من نطاقنا
+// ═══════════════════════════════════════════════════════════════════════════
+// المسار القديم كان سطراً واحداً في المتصفّح: `sendPasswordResetEmail` يولّد
+// الرابط ويرسل الرسالة معاً — من `noreply@<project>.firebaseapp.com`. الرابط
+// كان سليماً دائماً؛ الرسالة هي التي كانت تنتهي في السبام.
+//
+// هنا يُفصَل الأمران: Admin SDK يولّد الرابط (نفس الأمان، نفس مدّة الصلاحية،
+// نفس صفحة Firebase التي تعالج الرمز)، ثم نرسله نحن من نطاقٍ نملكه وبقالبٍ
+// عربي. إن لم يُضبط مزوّد بريد، يردّ هذا المسار `501` والواجهة تعود إلى مسار
+// Firebase — فالأسوأ من رسالة في السبام هو غياب الرسالة.
+//
+// ── ما لا يقوله هذا المسار أبداً ──
+// «لا يوجد حساب بهذا البريد» جوابٌ يحوّل نموذج الاسترجاع إلى أداة تعداد
+// للحسابات. الردّ موحّد: بريدٌ معروف أو مجهول، يرى المتصفّح `200 { ok: true }`.
+//
+// ── متغيّرات البيئة ──
+//   FIREBASE_SERVICE_ACCOUNT            مفتاح الخدمة (موجود أصلاً لـ /api/ledger)
+//   PASSWORD_RESET_EMAIL_PROVIDER       resend | sendgrid | mailgun
+//   PASSWORD_RESET_EMAIL_API_KEY        مفتاح المزوّد
+//   PASSWORD_RESET_EMAIL_FROM           no-reply@your-domain.com  (نطاق موثّق)
+//   PASSWORD_RESET_EMAIL_FROM_NAME      اسم المرسِل الظاهر (اختياري)
+//   PASSWORD_RESET_EMAIL_REPLY_TO       صندوق يقرأه بشر (اختياري، مُستحسن)
+//   PASSWORD_RESET_APP_URL              عنوان اللوحة للعودة إليها بعد التعيين
+//   PASSWORD_RESET_LINK_HOST            نطاق إجراءات مخصّص بعد توثيقه (اختياري)
+// التفاصيل وسجلات DNS في docs/EMAIL_DELIVERABILITY.md
+// ═══════════════════════════════════════════════════════════════════════════
+
+import { randomBytes } from 'node:crypto';
+import {
+  PasswordResetEmailError,
+  normalizeEmail,
+  readMailerConfig,
+  renderPasswordResetEmail,
+  deliverPasswordResetEmail,
+} from '../server/passwordResetEmail.js';
+import { clientIp, consumePasswordResetQuota } from '../server/passwordResetThrottle.js';
+import { getPasswordResetRuntime } from '../server/passwordResetRuntime.js';
+
+export const config = { maxDuration: 30 };
+
+const MAX_BODY_BYTES = 4 * 1024;
+
+/**
+ * الجسم قد يصل مُحلّلاً (Vercel) أو تيّاراً (اختبار، مستضيف آخر).
+ * الحالتان مدعومتان كي لا يعتمد الصواب على مَن يستضيف.
+ */
+async function readJsonBody(request) {
+  const given = request?.body;
+  if (given && typeof given === 'object' && !Buffer.isBuffer(given)) return given;
+  if (typeof given === 'string') {
+    try { return JSON.parse(given); } catch { return {}; }
+  }
+
+  if (typeof request?.[Symbol.asyncIterator] !== 'function') return {};
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of request) {
+    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    size += bytes.length;
+    if (size > MAX_BODY_BYTES) return {};
+    chunks.push(bytes);
+  }
+  if (!chunks.length) return {};
+  try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return {}; }
+}
+
+/**
+ * نطاق إجراءات مخصّص — بعد توثيقه في Firebase وحده.
+ *
+ * لا يُعاد الكتابة إلا على النطاق الافتراضي `*.firebaseapp.com`: إن كان
+ * المشروع يُصدر أصلاً رابطاً على نطاقٍ مخصّص فالمتغيّر زائد، وإعادة كتابته
+ * فوقه تكسر رابطاً يعمل.
+ */
+export function applyCustomLinkHost(link, host) {
+  const target = String(host ?? '').trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+  if (!target) return link;
+  try {
+    const url = new URL(link);
+    if (!url.hostname.endsWith('.firebaseapp.com')) return link;
+    url.hostname = target;
+    return url.toString();
+  } catch {
+    return link;
+  }
+}
+
+export function createPasswordResetHandler({
+  runtimeFactory = getPasswordResetRuntime,
+  mailerConfig = readMailerConfig,
+  render = renderPasswordResetEmail,
+  send = deliverPasswordResetEmail,
+  consumeQuota = consumePasswordResetQuota,
+  now = () => new Date(),
+} = {}) {
+  return async function handler(request, response) {
+    response.setHeader('Cache-Control', 'no-store');
+    if (request.method !== 'POST') {
+      response.setHeader('Allow', 'POST');
+      response.status(405).json({ ok: false, error: 'method-not-allowed' });
+      return;
+    }
+
+    // الضبط يُقرأ قبل أي عمل: بلا مزوّد لا داعي لفتح Firestore ولا لتوليد رابط.
+    let mailer;
+    try {
+      mailer = mailerConfig(process.env);
+    } catch (error) {
+      if (error instanceof PasswordResetEmailError) {
+        console.error(JSON.stringify({
+          severity: 'ERROR', event: 'password-reset-misconfigured', code: error.code,
+        }));
+        response.status(500).json({ ok: false, error: error.code });
+        return;
+      }
+      throw error;
+    }
+    if (!mailer.enabled) {
+      // ليس خطأً: إشارةٌ للواجهة بأن تستخدم مسار Firebase المدمج.
+      response.status(501).json({ ok: false, error: 'not-configured' });
+      return;
+    }
+
+    const body = await readJsonBody(request);
+    const email = normalizeEmail(body?.email);
+    if (!email) {
+      response.status(400).json({ ok: false, error: 'email-invalid' });
+      return;
+    }
+
+    const incidentId = randomBytes(6).toString('hex');
+    try {
+      const { auth, db, FieldValue } = runtimeFactory();
+
+      const quota = await consumeQuota(db, FieldValue, {
+        email, ip: clientIp(request), now: now(),
+      });
+      if (!quota.allowed) {
+        console.info(JSON.stringify({
+          severity: 'INFO', event: 'password-reset-throttled', reason: quota.reason,
+        }));
+        response.status(429).json({ ok: false, error: 'rate-limited', reason: quota.reason });
+        return;
+      }
+
+      const appUrl = String(process.env.PASSWORD_RESET_APP_URL ?? '').trim();
+      let link;
+      try {
+        link = await auth.generatePasswordResetLink(
+          email,
+          // رابط العودة إلى اللوحة يقرّره الخادم لا المتصفّح: قيمةٌ من الجسم
+          // تعني إعادة توجيه مفتوحة داخل رسالة يثق بها المستخدم.
+          appUrl ? { url: appUrl, handleCodeInApp: false } : undefined,
+        );
+      } catch (error) {
+        const code = String(error?.code ?? '');
+        if (code.includes('user-not-found') || code.includes('email-not-found')) {
+          // بريدٌ لا حساب له: الردّ نفسه تماماً، ولا رسالة تُرسل.
+          console.info(JSON.stringify({
+            severity: 'INFO', event: 'password-reset-unknown-account',
+          }));
+          response.status(200).json({ ok: true });
+          return;
+        }
+        throw error;
+      }
+
+      const finalLink = applyCustomLinkHost(link, process.env.PASSWORD_RESET_LINK_HOST);
+      const message = render({ link: finalLink, appUrl });
+      await send(mailer, { to: email, ...message });
+
+      console.info(JSON.stringify({
+        severity: 'INFO', event: 'password-reset-sent', provider: mailer.provider,
+      }));
+      response.status(200).json({ ok: true });
+    } catch (error) {
+      // السبب لا يُشتق من وجود الحساب، فذكره لا يفتح باب التعداد — والواجهة
+      // تحتاجه لتقرّر العودة إلى مسار Firebase بدل ترك المستخدم بلا رسالة.
+      const isProvider = error instanceof PasswordResetEmailError;
+      console.error(JSON.stringify({
+        severity: 'ERROR', event: 'password-reset-failure', incidentId,
+        code: isProvider ? error.code : undefined,
+        errorName: error?.name || 'Error',
+      }));
+      response.status(isProvider ? 502 : 500).json({
+        ok: false, error: isProvider ? error.code : 'internal', incidentId,
+      });
+    }
+  };
+}
+
+export default createPasswordResetHandler();

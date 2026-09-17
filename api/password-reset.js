@@ -85,6 +85,35 @@ export function applyCustomLinkHost(link, host) {
   }
 }
 
+/** رموز رفضِ رابطِ العودة وحده — لا رفضِ الطلب كلّه. */
+const CONTINUE_URI_REJECTED = /(unauthorized|invalid|missing)-continue-uri/;
+
+/**
+ * يولّد رابط إعادة التعيين، ويتخلّى عن رابط العودة قبل أن يتخلّى عن المستخدم.
+ *
+ * رابط العودة إلى اللوحة لا يُقبل إلا إذا كان أصله ضمن «النطاقات المصرّح بها»
+ * في Firebase Auth. ونطاق نشرٍ جديد ليس منها، فيُرفض الطلب كلّه بـ
+ * `auth/unauthorized-continue-uri` — ويسقط معه المسار الوحيد الذي يستعيد به
+ * المستخدم حسابه، من أجل زينةٍ لا من أجل الرابط نفسه.
+ *
+ * الكود الأصلي في `LoginScreen.jsx` كان يحمل هذا الحارس، ونُقل إلى المسار
+ * الاحتياطي في `src/lib/passwordReset.js` — لكنه فات المسار الخادمي، فكان
+ * أول عطل حقيقي في الإنتاج. رابطٌ بلا عودة يعمل؛ وغياب الرسالة لا يعمل.
+ */
+export async function generateLink(auth, email, appUrl) {
+  if (!appUrl) return auth.generatePasswordResetLink(email);
+  try {
+    return await auth.generatePasswordResetLink(email, { url: appUrl, handleCodeInApp: false });
+  } catch (error) {
+    if (!CONTINUE_URI_REJECTED.test(String(error?.code ?? ''))) throw error;
+    console.warn(JSON.stringify({
+      severity: 'WARNING', event: 'password-reset-continue-uri-rejected',
+      hint: 'أضِف نطاق PASSWORD_RESET_APP_URL إلى Firebase Auth ← Settings ← Authorized domains.',
+    }));
+    return auth.generatePasswordResetLink(email);
+  }
+}
+
 export function createPasswordResetHandler({
   runtimeFactory = getPasswordResetRuntime,
   mailerConfig = readMailerConfig,
@@ -153,12 +182,9 @@ export function createPasswordResetHandler({
       stage = 'link';
       let link;
       try {
-        link = await auth.generatePasswordResetLink(
-          email,
-          // رابط العودة إلى اللوحة يقرّره الخادم لا المتصفّح: قيمةٌ من الجسم
-          // تعني إعادة توجيه مفتوحة داخل رسالة يثق بها المستخدم.
-          appUrl ? { url: appUrl, handleCodeInApp: false } : undefined,
-        );
+        // رابط العودة إلى اللوحة يقرّره الخادم لا المتصفّح: قيمةٌ من الجسم
+        // تعني إعادة توجيه مفتوحة داخل رسالة يثق بها المستخدم.
+        link = await generateLink(auth, email, appUrl);
       } catch (error) {
         const code = String(error?.code ?? '');
         if (code.includes('user-not-found') || code.includes('email-not-found')) {

@@ -83,5 +83,5 @@ ChatGPT تتغيّر كثيراً؛ الثابت هو: Developer mode ثم إن�
 ```bash
 npm test                 # server/partnerMcp/__tests__/{scope,tools,remote} · partnerMcpUrl · partnerAssistant
 npm run test:functions   # functions/test/partnerMcpKeys.test.js · productionRules (القواعد)
-npm run test:callables   # functions/test/partnerMcpHttp.test.js
+npm run test:callables   # functions/test/httpApi.partnerMcp.test.js
 ```

@@ -35,7 +35,7 @@ import {
   deliverPasswordResetEmail,
 } from '../server/passwordResetEmail.js';
 import { clientIp, consumePasswordResetQuota } from '../server/passwordResetThrottle.js';
-import { getPasswordResetRuntime } from '../server/passwordResetRuntime.js';
+import { PasswordResetConfigError, getPasswordResetRuntime } from '../server/passwordResetRuntime.js';
 
 export const config = { maxDuration: 30 };
 
@@ -129,9 +129,15 @@ export function createPasswordResetHandler({
     }
 
     const incidentId = randomBytes(6).toString('hex');
+    // أي خطوة كنا فيها حين سقط الطلب. يُعاد إلى المتصفّح لأن «داخلي» وحده
+    // يترك مَن يشخّص بلا شيء: رقم البلاغ لا يُقرأ إلا من سجلات المستضيف،
+    // ومَن يضبط متغيّرات البيئة ليس بالضرورة مَن يملك الوصول إليها. الخطوة
+    // اسمٌ ثابت من عندنا، لا رسالة خطأ ولا أثر مكدّس، فلا تسرّب فيها.
+    let stage = 'runtime';
     try {
       const { auth, db, FieldValue } = runtimeFactory();
 
+      stage = 'quota';
       const quota = await consumeQuota(db, FieldValue, {
         email, ip: clientIp(request), now: now(),
       });
@@ -144,6 +150,7 @@ export function createPasswordResetHandler({
       }
 
       const appUrl = String(process.env.PASSWORD_RESET_APP_URL ?? '').trim();
+      stage = 'link';
       let link;
       try {
         link = await auth.generatePasswordResetLink(
@@ -165,6 +172,7 @@ export function createPasswordResetHandler({
         throw error;
       }
 
+      stage = 'send';
       const finalLink = applyCustomLinkHost(link, process.env.PASSWORD_RESET_LINK_HOST);
       const message = render({ link: finalLink, appUrl });
       await send(mailer, { to: email, ...message });
@@ -177,13 +185,20 @@ export function createPasswordResetHandler({
       // السبب لا يُشتق من وجود الحساب، فذكره لا يفتح باب التعداد — والواجهة
       // تحتاجه لتقرّر العودة إلى مسار Firebase بدل ترك المستخدم بلا رسالة.
       const isProvider = error instanceof PasswordResetEmailError;
+      const isConfig = error instanceof PasswordResetConfigError;
       console.error(JSON.stringify({
-        severity: 'ERROR', event: 'password-reset-failure', incidentId,
-        code: isProvider ? error.code : undefined,
+        severity: 'ERROR', event: 'password-reset-failure', incidentId, stage,
+        code: isProvider || isConfig ? error.code : undefined,
         errorName: error?.name || 'Error',
       }));
+      // سوء الضبط ليس خطأ المتصل ولا عطلاً في الكود: ٥٠٣ ورسالة تسمّي
+      // المتغيّر، كما يفعل /api/ledger — نصّها من عندنا لا من الاستثناء.
+      if (isConfig) {
+        response.status(503).json({ ok: false, error: 'configuration', message: error.message });
+        return;
+      }
       response.status(isProvider ? 502 : 500).json({
-        ok: false, error: isProvider ? error.code : 'internal', incidentId,
+        ok: false, error: isProvider ? error.code : 'internal', stage, incidentId,
       });
     }
   };

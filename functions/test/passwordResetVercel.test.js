@@ -2,6 +2,7 @@ import { Readable } from 'node:stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import handler, { applyCustomLinkHost, createPasswordResetHandler } from '../../api/password-reset.js';
 import { PasswordResetEmailError } from '../../server/passwordResetEmail.js';
+import { PasswordResetConfigError } from '../../server/passwordResetRuntime.js';
 
 const LINK = 'https://gemini-eed4a.firebaseapp.com/__/auth/action?mode=resetPassword&oobCode=abc';
 
@@ -206,7 +207,7 @@ describe('/api/password-reset', () => {
   it('hides an unexpected failure behind an incident id', async () => {
     withMailerEnv();
     const { endpoint } = deps({
-      runtimeFactory: vi.fn(() => { throw new Error('service-account-missing'); }),
+      runtimeFactory: vi.fn(() => { throw new Error('unexpected-internal-detail'); }),
     });
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const res = response();
@@ -215,7 +216,59 @@ describe('/api/password-reset', () => {
     expect(res.statusCode).toBe(500);
     expect(res.body.error).toBe('internal');
     expect(res.body.incidentId).toMatch(/^[0-9a-f]{12}$/);
-    expect(JSON.stringify(res.body)).not.toContain('service-account-missing');
+    expect(JSON.stringify(res.body)).not.toContain('unexpected-internal-detail');
+  });
+
+  it('names the missing variable on a configuration fault instead of hiding it', async () => {
+    // «خطأ داخلي» أرسل التشخيص إلى الكود بينما العطل متغيّر بيئة ناقص —
+    // ومَن يضبط المتغيّرات لا يملك بالضرورة سجلات المستضيف ليقرأ رقم بلاغ.
+    withMailerEnv();
+    const { endpoint } = deps({
+      runtimeFactory: vi.fn(() => {
+        throw new PasswordResetConfigError('FIREBASE_SERVICE_ACCOUNT غير مضبوط.');
+      }),
+    });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const res = response();
+    await endpoint(request(), res);
+
+    expect(res.statusCode).toBe(503);
+    expect(res.body.error).toBe('configuration');
+    expect(res.body.message).toContain('FIREBASE_SERVICE_ACCOUNT');
+  });
+
+  it('reports which step failed, so the fault is placed without host logs', async () => {
+    withMailerEnv();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const atQuota = deps({ consumeQuota: vi.fn(async () => { throw new Error('boom'); }) });
+    const res1 = response();
+    await atQuota.endpoint(request(), res1);
+    expect(res1.body).toMatchObject({ stage: 'quota' });
+
+    const atLink = deps({
+      generatePasswordResetLink: vi.fn(async () => { throw new Error('boom'); }),
+    });
+    const res2 = response();
+    await atLink.endpoint(request(), res2);
+    expect(res2.body).toMatchObject({ stage: 'link' });
+
+    const atRuntime = deps({ runtimeFactory: vi.fn(() => { throw new Error('boom'); }) });
+    const res3 = response();
+    await atRuntime.endpoint(request(), res3);
+    expect(res3.body).toMatchObject({ stage: 'runtime' });
+  });
+
+  it('keeps the stage out of a provider failure, which already names itself', async () => {
+    withMailerEnv();
+    const { endpoint } = deps({
+      send: vi.fn(async () => {
+        throw new PasswordResetEmailError('رفض', { code: 'provider-rejected' });
+      }),
+    });
+    const res = response();
+    await endpoint(request(), res);
+    expect(res.body.error).toBe('provider-rejected');
   });
 
   it('refuses an unsupported provider as misconfiguration, not as a caller error', async () => {

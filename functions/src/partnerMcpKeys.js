@@ -26,8 +26,10 @@ export const HASHES_COL = 'partner_mcp_key_hashes';
 export const RATE_COL = 'partner_mcp_rate_limits';
 
 /**
- * ٦٠ لا ٣٠: عميل MCP بلا جلسة يرسل `initialize` و`notifications/initialized`
- * و`tools/list` قبل كل `tools/call` — فالسؤال الواحد ثلاثة أو أربعة طلبات.
+ * ٦٠ لا ٣٠: قبل أول سؤالٍ يرسل عميل MCP `initialize` و`notifications/initialized`
+ * و`tools/list`، وكلٌّ منها طلب HTTP مستقل على خادمٍ بلا جلسة — فالمحادثة
+ * الواحدة عدّة طلباتٍ فوق استدعاءات الأدوات نفسها، والمساعد قد يستدعي
+ * أداتين أو ثلاثاً لسؤالٍ واحد.
  */
 export const RATE_MAX_PER_WINDOW = 60;
 

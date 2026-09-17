@@ -246,17 +246,17 @@ export default function PartnerAssistantPage({ partner, meta }) {
             <details className="rounded-control border border-slate-200 dark:border-slate-700 p-4 group" open>
               <summary className="cursor-pointer font-bold text-slate-900 dark:text-slate-100 text-sm">Claude (claude.ai)</summary>
               <ol className="mt-3 space-y-2 text-[13px] text-slate-700 dark:text-slate-300 leading-relaxed list-decimal pr-5">
-                <li>الإعدادات ← <strong>Connectors</strong> (الموصِّلات).</li>
-                <li>اضغط <strong>Add custom connector</strong>.</li>
+                <li><strong>Customize</strong> ← <strong>Connectors</strong> (الموصِّلات) — في حسابات الشركات: Organization settings ← Connectors.</li>
+                <li>اضغط <strong>+</strong> ثم <strong>Add custom connector</strong> (في حسابات الشركات: Add ← Custom ← Web).</li>
                 <li>الاسم: «حصّتي في سويتر» مثلاً، والرابط: الصق رابطك كما هو.</li>
-                <li>لا تسجيل دخول ولا OAuth — اترك حقول المصادقة فارغة ثم <strong>Add</strong>.</li>
+                <li><strong>Advanced settings</strong> (بيانات OAuth) اختيارية — لا تحتاجها؛ اضغط <strong>Add</strong>.</li>
                 <li>في المحادثة فعّل الموصِّل من أيقونة الأدوات، واسأل: «كم صافي ربحي هذا الشهر؟».</li>
               </ol>
             </details>
             <details className="rounded-control border border-slate-200 dark:border-slate-700 p-4 group">
               <summary className="cursor-pointer font-bold text-slate-900 dark:text-slate-100 text-sm">ChatGPT (chatgpt.com)</summary>
               <ol className="mt-3 space-y-2 text-[13px] text-slate-700 dark:text-slate-300 leading-relaxed list-decimal pr-5">
-                <li>الإعدادات ← <strong>Apps &amp; Connectors</strong> ← <strong>Advanced</strong> وفعّل <strong>Developer mode</strong>.</li>
+                <li>الإعدادات ← <strong>Apps &amp; Connectors</strong> (قد يظهر باسم Connectors أو Plugins) ← <strong>Advanced</strong> وفعّل <strong>Developer mode</strong>.</li>
                 <li>عد إلى Connectors واضغط <strong>Create</strong>.</li>
                 <li>الاسم: «حصّتي في سويتر»، ورابط الخادم (MCP Server URL): الصق رابطك.</li>
                 <li>المصادقة: <strong>No authentication</strong>، ثم احفظ.</li>

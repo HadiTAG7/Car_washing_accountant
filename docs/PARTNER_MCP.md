@@ -45,11 +45,15 @@ https://<نطاقك>/api/partner-mcp/<الرمز>
 من التطبيق: **حسابي كشريك ← المساعد الذكي ← إنشاء رابط**. الرابط يُعرض **مرة واحدة**
 (مع رمز QR للجوال). إن فقدته: **تبديل الرابط**.
 
-**Claude (claude.ai)**: الإعدادات ← Connectors ← Add custom connector ← الاسم والرابط ←
-لا مصادقة ← Add. ثم فعّل الموصِّل في المحادثة واسأل.
+**Claude (claude.ai)** — حسابات Pro/Max: **Customize ← Connectors ← «+» ← Add custom connector**
+← الصق الرابط ← (Advanced settings لبيانات OAuth: اختيارية، لا تحتاجها) ← Add. حسابات
+Team/Enterprise: يضيفه مالك المنظمة من **Organization settings ← Connectors ← Add ← Custom ← Web**.
+ثم فعّل الموصِّل في المحادثة واسأل. (المرجع: مركز مساعدة Claude، محدَّث ٢٠٢٦-٠٨-١١.)
 
-**ChatGPT**: الإعدادات ← Apps & Connectors ← Advanced ← فعّل Developer mode ← Create ←
-الاسم ورابط الخادم ← No authentication ← احفظ. ثم اختره من «+» في محادثةٍ جديدة.
+**ChatGPT**: الإعدادات ← **Apps & Connectors** (قد يظهر باسم *Connectors* أو *Plugins* بحسب
+إصدار الواجهة) ← Advanced ← فعّل **Developer mode** ← Create ← الاسم ورابط الخادم ← المصادقة:
+بلا مصادقة (No authentication) ← احفظ. ثم اختره من «+» في محادثةٍ جديدة. أسماء القوائم في
+ChatGPT تتغيّر كثيراً؛ الثابت هو: Developer mode ثم إنشاء موصِّل برابط MCP.
 
 ## ٤ — للمدير
 

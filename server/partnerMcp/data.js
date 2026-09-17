@@ -85,6 +85,12 @@ export async function loadAvailableMonths(db) {
   return months.length ? months : [todayMonth()];
 }
 
+/** حال كل فترة: `closed` نهائية، `open` قد تتغيّر — لعلامة «نهائي/مبدئي». */
+export async function loadPeriodStatuses(db) {
+  const snap = await db.collection('accounting_periods').select('status').get();
+  return new Map(snap.docs.map((d) => [d.id, d.get('status') === 'closed' ? 'closed' : 'open']));
+}
+
 export async function loadAccounts(db) {
   return rowsOf(await db.collection('chart_of_accounts').get());
 }
@@ -155,6 +161,7 @@ export function makeLoader(db, { partnerId }) {
     feeRules: () => once('feeRules', () => loadFeeRules(db)),
     months:   () => once('months', () => loadAvailableMonths(db)),
     accounts: () => once('accounts', () => loadAccounts(db)),
+    periodStatuses: () => once('periodStatuses', () => loadPeriodStatuses(db)),
     settings: () => once('settings', () => loadAccountingSettings(db)),
     ledger:   (fromKey, toKey) => once(`ledger:${fromKey}..${toKey}`, () => loadLedgerRange(db, { fromKey, toKey })),
     washes:   (periodKey) => once(`washes:${periodKey}`, () => loadWashes(db, periodKey)),

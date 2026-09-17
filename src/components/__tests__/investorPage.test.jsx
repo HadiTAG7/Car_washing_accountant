@@ -9,12 +9,14 @@ const partnerView = {
   totalWorkers: 10,
 };
 const paymentsState = { payments: [], loading: false, error: null };
-const ledgerState = { accounts: [], entries: [], lines: [], loading: false, error: null };
+const ledgerState = { accounts: [], entries: [], lines: [], periods: [], loading: false, error: null };
+const insightsState = { insights: null, washMonths: [], loading: false, error: null };
 
 vi.mock('../../contexts/PartnerViewContext', () => ({ usePartnerView: () => partnerView }));
 vi.mock('../../hooks/usePartnerPayments', () => ({ usePartnerPayments: () => paymentsState }));
 vi.mock('../../hooks/useLedger', () => ({ useLedger: () => ledgerState }));
 vi.mock('../../hooks/useFeeRules', () => ({ useFeeRules: () => ({ rules: [] }) }));
+vi.mock('../../hooks/usePartnerInsights', () => ({ usePartnerInsights: () => insightsState }));
 
 const COMPANY_NET = 50000;
 // قائمة جاهزة بأرقام الشركة — المكوّن يقسمها بـ scalingFactor.
@@ -56,6 +58,9 @@ afterEach(() => {
   partnerView.scalingFactor = 0.3;
   paymentsState.payments = [];
   ledgerState.entries = [];
+  ledgerState.periods = [];
+  insightsState.insights = null;
+  insightsState.washMonths = [];
 });
 
 describe('صفحة المستثمر — قائمة الدخل', () => {
@@ -171,5 +176,72 @@ describe('صفحة المستثمر — الخيارات الأربعة', () => 
       expect(screen.queryByText('سندات قبضك')).toBeNull();
       cleanup();
     }
+  });
+});
+
+describe('صفحة المستثمر — المؤشرات الجديدة', () => {
+  // شهران مُرحّلان كي يكون للاسترداد والتغيّر معنى.
+  const twoMonths = () => {
+    ledgerState.entries = [
+      { id: 'e1', entryDate: '2026-07-10', periodKey: '2026-07', status: 'posted', lines: [] },
+      { id: 'e2', entryDate: '2026-08-10', periodKey: '2026-08', status: 'posted', lines: [] },
+    ];
+  };
+
+  it('نظرة عامة: استرداد رأس المال من حصّته مقابل سنداته', () => {
+    twoMonths();
+    paymentsState.payments = [{ id: 'r1', partnerId: 'p1', amount: 20000, paymentDate: '2026-07-01', paymentMethod: 'cash' }];
+    render(<InvestorPage view="overview" />);
+    expect(screen.getByText('استرداد رأس مالك')).toBeTruthy();
+    // شهران × 50000 × 0.3 = 30000 من 20000 → استُردّ.
+    expect(screen.getByText('150.0%')).toBeTruthy();
+    expect(screen.getByText('✓ تم')).toBeTruthy();
+    expect(screen.getByText(/صافي ربحك منذ بداية 2026/)).toBeTruthy();
+  });
+
+  it('والتغيّر عن الشهر السابق يظهر تحت صافي الربح', () => {
+    twoMonths();
+    render(<InvestorPage view="overview" />);
+    // الشهران متساويان في القائمة المزيّفة → «= 0.0% عن الشهر السابق».
+    expect(screen.getByText(/عن الشهر السابق/)).toBeTruthy();
+  });
+
+  it('وغسلاتٌ تعادل حصّته من الخادم لا من `washes`', () => {
+    twoMonths();
+    insightsState.washMonths = [{ month: '2026-08', companyCount: 100, shareCount: 30 }];
+    insightsState.insights = { sharePercent: 30, months: insightsState.washMonths };
+    render(<InvestorPage view="overview" />);
+    expect(screen.getByText('غسلات تعادل حصّتك')).toBeTruthy();
+    expect(screen.getByText(/من أصل 100 غسلة مكتملة/)).toBeTruthy();
+  });
+
+  it('قائمة الدخل: «نهائي» للشهر المُقفَل و«مبدئي» للمفتوح', () => {
+    ledgerState.entries = [{ id: 'e1', entryDate: '2026-08-10', periodKey: '2026-08', status: 'posted', lines: [] }];
+    ledgerState.periods = [{ id: '2026-08', status: 'closed' }];
+    render(<InvestorPage view="income" />);
+    expect(screen.getByText('نهائي')).toBeTruthy();
+    cleanup();
+    ledgerState.periods = [{ id: '2026-08', status: 'open' }];
+    render(<InvestorPage view="income" />);
+    expect(screen.getByText('مبدئي')).toBeTruthy();
+  });
+
+  it('رأس مالي: رصيده في الدفاتر، وما لم يُرحَّل بعد يُسمّى «قيد الترحيل»', () => {
+    paymentsState.payments = [{ id: 'r1', partnerId: 'p1', amount: 20000, paymentDate: '2026-07-01', paymentMethod: 'cash' }];
+    ledgerState.entries = [{ id: 'e1', entryDate: '2026-07-02', periodKey: '2026-07', status: 'posted', lines: [] }];
+    // حساب رأس مال الشريك 3000-p1 مُرحَّل بـ 15000 فقط.
+    ledgerState.lines = [{ id: 'l1', entryId: 'e1', accountId: '3000-p1', debit: 0, credit: 15000 }];
+    render(<InvestorPage view="capital" />);
+    expect(screen.getByText('رصيدك في الدفاتر')).toBeTruthy();
+    expect(screen.getByText('قيد الترحيل')).toBeTruthy();
+    // 20000 بالسندات − 15000 في الدفاتر = 5000 قيد الترحيل (لا 15,000 ولا 20,000).
+    // النصّ يبدأ بعلامة اتجاهٍ (U+200F) قبل الرقم، فتُجرَّد قبل المطابقة.
+    expect(screen.getByText((t) => t.replace(/[\u200e\u200f]/g, '').trim().startsWith('5,000'))).toBeTruthy();
+  });
+
+  it('وبلا حسابٍ في الدفاتر لا تُعرض بطاقةٌ تدّعي المطابقة', () => {
+    paymentsState.payments = [{ id: 'r1', partnerId: 'p1', amount: 20000, paymentDate: '2026-07-01', paymentMethod: 'cash' }];
+    render(<InvestorPage view="capital" />);
+    expect(screen.queryByText('رصيدك في الدفاتر')).toBeNull();
   });
 });

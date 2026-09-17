@@ -118,6 +118,27 @@ d('روابط المساعد الذكي عبر HTTP', () => {
     expect(byAdmin.statusCode).toBe(200);
   }, 60_000);
 
+  it('المؤشرات: الشريك عن نفسه ولو سمّى غيره، والمدير عن من يسمّيه، وغير المربوط 412', async () => {
+    await db.collection('washes').add({ biker_name: 'خالد', quantity: 100, status: 'مكتملة', wash_date: new Date().toISOString().slice(0, 10), price: 10 });
+    // الشريك المربوط بـ pl (عمالة 2 من 5 = 40%) يطلب po — يُتجاهَل ويحصل على حصّته هو.
+    const mine = await post('partnerInsights', { partnerId: 'po', months: 1 }, tokens.linked);
+    expect(mine.statusCode).toBe(200);
+    expect(mine.body.result.partnerId).toBe('pl');
+    expect(mine.body.result.sharePercent).toBe(40);
+    expect(mine.body.result.months[0].shareCount).toBe(40);
+    expect(JSON.stringify(mine.body)).not.toContain('خالد');
+
+    const asAdmin = await post('partnerInsights', { partnerId: 'po', months: 1 }, tokens.admin);
+    expect(asAdmin.statusCode).toBe(200);
+    expect(asAdmin.body.result.partnerId).toBe('po');
+    expect(asAdmin.body.result.sharePercent).toBe(60);
+
+    expect((await post('partnerInsights', { partnerId: 'nope' }, tokens.admin)).statusCode).toBe(404);
+    expect((await post('partnerInsights', {}, tokens.unlinked)).statusCode).toBe(412);
+    const snap = await db.collection('washes').get();
+    await Promise.all(snap.docs.map((x) => x.ref.delete()));
+  }, 60_000);
+
   it('ومعرّفٌ لا وجود له: 404، وبلا توكن: 401', async () => {
     expect((await post('partnerMcpRevokeKey', { keyId: 'pmk_nope' }, tokens.admin)).statusCode).toBe(404);
     expect((await post('partnerMcpCreateKey', {}, null)).statusCode).toBe(401);

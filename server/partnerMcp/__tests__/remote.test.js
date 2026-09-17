@@ -24,6 +24,7 @@ const fakeLoad = {
   feeRules: async () => [],
   months: async () => ['2026-08'],
   accounts: async () => [],
+  periodStatuses: async () => new Map(),
   settings: async () => ({}),
   ledger: async () => ({ entries: [], lines: [] }),
   washes: async () => [],

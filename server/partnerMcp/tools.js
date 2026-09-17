@@ -16,6 +16,7 @@
 import { z } from 'zod';
 import { monthlyStatement, operationalWashSales } from '../../src/lib/accounting/monthlyStatement.js';
 import { taxPolicyAt } from '../../src/lib/accounting/taxPolicy.js';
+import { roiSummary, momChange, ytdTotal } from '../../src/lib/accounting/partnerInsights.js';
 import {
   assertScoped, shareOf, scaleMoney, scaleCount, shareLine, capitalOf,
   lastMonths, receiptsByMonth, rowsByAccount, METHOD_LABEL,
@@ -133,9 +134,13 @@ export const partnerTools = [
       const id = await identity(ctx);
       if (!id.hasShare) return reply({ hasShare: false, sharePercent: 0, hint: NO_SHARE_HINT, availableMonths: id.availableMonths });
       const chosen = pickMonth(month, id.availableMonths);
-      const st = await statementFor(ctx, chosen, id);
+      const [st, statuses] = await Promise.all([statementFor(ctx, chosen, id), ctx.load.periodStatuses()]);
+      const periodStatus = statuses.get(chosen) ?? null;
       return reply({
         ...statementView(st, id),
+        // «نهائي» شهرٌ مُقفَل لا يتغيّر؛ «مبدئي» مفتوحٌ قد يُضاف إليه قيد.
+        periodStatus,
+        periodStatusLabel: periodStatus === 'closed' ? 'نهائي — الشهر مُقفَل' : (periodStatus === 'open' ? 'مبدئي — الشهر مفتوح وقد يتغيّر' : null),
         availableMonths: id.availableMonths,
         note: st.hasActivity
           ? `الأرقام حصّتك (${id.sharePercent}%) من نتائج الشركة، محسوبة على عدد العمالة، ومبنيّة على القيود المُرحّلة.`
@@ -212,6 +217,44 @@ export const partnerTools = [
         availableMonths: id.availableMonths,
         note: 'العدّ من سجل الغسلات المكتملة في الشهر؛ المبالغ والمصاريف من القيود المُرحّلة في الدفاتر. '
           + 'مبيعات الغسلات هنا تقديرٌ من السجل التشغيلي، والمعتمَد هو رقم الدفاتر في `ledger`.',
+      });
+    },
+  },
+  {
+    name: 'partner_roi',
+    title: 'استرداد رأس مالي',
+    description:
+      'حصّتك من صافي الربح منذ أول شهرٍ مُرحَّل مقابل ما دفعته من رأس المال: نسبة الاسترداد، '
+      + 'والمتبقّي، وتقدير الأشهر حتى الاسترداد بمتوسط آخر ستة أشهر فيها حركة، والتغيّر عن الشهر '
+      + 'السابق، ومجموع حصّتك منذ بداية السنة. يجيب «متى يرجع رأس مالي؟».',
+    schema: {},
+    async run(_args, ctx) {
+      const [id, receipts] = await Promise.all([identity(ctx), ctx.load.receipts()]);
+      const paid = receipts.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+      if (!id.hasShare) return reply({ hasShare: false, sharePercent: 0, paid, hint: NO_SHARE_HINT });
+      const months = [...id.availableMonths].sort();
+      const [{ entries, lines }, accounts, feeRules] = await Promise.all([
+        ctx.load.ledger(months[0], months[months.length - 1]), ctx.load.accounts(), ctx.load.feeRules(),
+      ]);
+      const nets = months.map((k) => {
+        const st = monthlyStatement({ accounts, entries, lines, periodKey: k, feeRules, scalingFactor: id.factor });
+        return { month: k, netProfit: st.netProfit, hasActivity: st.hasActivity };
+      });
+      const roi = roiSummary({ nets, paid });
+      const active = nets.filter((n) => n.hasActivity);
+      const latest = active[active.length - 1] ?? null;
+      const previous = active.length > 1 ? active[active.length - 2] : null;
+      return reply({
+        sharePercent: id.sharePercent,
+        ...roi,
+        estimate: roi.recovered
+          ? 'استُردّ رأس مالك بالكامل.'
+          : (roi.monthsToRecover === null
+            ? 'لا تقدير — متوسط آخر الأشهر صفرٌ أو سالب.'
+            : `بمتوسط آخر ${roi.monthsAveraged} أشهر يكتمل الاسترداد في نحو ${roi.monthsToRecover} شهراً.`),
+        latestMonth: latest ? { month: latest.month, netProfit: latest.netProfit, ...momChange(latest.netProfit, previous?.netProfit ?? null) } : null,
+        yearToDate: latest ? { year: latest.month.slice(0, 4), netProfit: ytdTotal(nets, latest.month.slice(0, 4)) } : null,
+        note: 'الأرباح حصّتك من القيود المُرحّلة؛ الأشهر المفتوحة قد تتغيّر حتى تُقفل.',
       });
     },
   },

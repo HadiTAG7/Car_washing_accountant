@@ -146,7 +146,7 @@ const TAB_GROUPS = [
 
 // Inner shell wraps the routed content so it can subscribe to the
 // MobileMenuContext (provider is one level up).
-function AppShell() {
+function AppShell({ membership }) {
   const previewCommandCenter = import.meta.env.DEV
     && typeof window !== 'undefined'
     && new URLSearchParams(window.location.search).has('previewCommandCenter');
@@ -158,12 +158,8 @@ function AppShell() {
     previewCommandCenter ? 'agent_command_center' : (previewPayroll ? 'bikers' : 'overview'),
   );
   const { session, loading: authLoading, signOut } = useAuth();
-  // ── الدخول ليس عضوية ──
-  // The rules read membership from a document; an account created in the Auth
-  // console has none, so every page shows «لا صلاحيات» while the sidebar
-  // renders everything. Asked once, here, so the answer is given ONCE and by
-  // name instead of eighteen times as a generic permission error.
-  const membership = useMembership(session?.user?.id);
+  // العضوية تُسأل مرة واحدة في `App` وتنزل من هناك: المزوّد يحتاج الدور ليقرّر
+  // من يرى ماذا، وسؤالها هنا أيضاً يعني جلباً ثانياً ونداءً ثانياً للخادم.
   const { canMutate } = usePartnerView();
   const visibleRole = localPreview ? 'admin' : membership.role;
   const visibleGroups = TAB_GROUPS.map((group) => ({
@@ -192,7 +188,13 @@ function AppShell() {
     setMobileMenuOpen(false);
   }
 
-  if (authLoading) {
+  // ── لماذا ننتظر الدور ──
+  // الدور يصل بعد جولة إلى Firestore، وهو `null` حتى يصل. و`null` يبدو
+  // للمرشّح أدناه كأنه مدير، فيومض للمستثمر ثلاثةٌ وعشرون تبويباً قبل أن
+  // تُطوى. الانتظار هنا أرخص من ومضةٍ تُري المستثمر ما لا يخصّه.
+  const rolePending = isFirebaseConfigured && Boolean(session) && membership.loading;
+
+  if (authLoading || rolePending) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="flex flex-col items-center gap-3 text-slate-400">
@@ -311,10 +313,19 @@ export default function App() {
   // on useAuth + usePartners; those hooks are safe to call at any point
   // in the tree, but keeping the auth-aware contexts close to the shell
   // makes the ownership easier to follow.
+  //
+  // ── الدخول ليس عضوية ──
+  // The rules read membership from a document; an account created in the Auth
+  // console has none, so every page shows «لا صلاحيات» while the sidebar
+  // renders everything. Asked once, HERE — أعلى من المزوّد لأنه يحتاج الدور
+  // ليقرّر من هو المستثمر، وأعلى من الشلّ لأن سؤالها مرتين جلبٌ مرتين ونداءٌ
+  // للخادم مرتين.
+  const { session } = useAuth();
+  const membership = useMembership(session?.user?.id);
   return (
     <MobileMenuProvider>
-      <PartnerViewProvider>
-        <AppShell />
+      <PartnerViewProvider role={membership.role}>
+        <AppShell membership={membership} />
       </PartnerViewProvider>
     </MobileMenuProvider>
   );

@@ -581,14 +581,28 @@ export function toBudgetUpdate(updates = {}) {
 // insert/update mappers deliberately never write it (a direct write
 // would drift from the receipts ledger until the next receipt).
 
-// Loose UUID validator: 8-4-4-4-12 hex with dashes. Used by the Add /
-// Edit partner modals to gate the "link to Supabase user" field. Returns
-// the trimmed UUID if valid, null otherwise.
+// ── مُعرّف الحساب المرتبط بالشريك ─────────────────────────────────────────
+// كان هذا الفحص يقبل UUID الخاص بـ Supabase وحده (`8-4-4-4-12` بشرطات)،
+// وبقي كما هو بعد الهجرة إلى Firebase. ومُعرّف Firebase ثمانيةٌ وعشرون حرفاً
+// من base62 بلا شرطات، فكان يُرفض دائماً ويُكتب `user_id: null`.
+//
+// وأثر ذلك لم يكن حقلاً فارغاً: `PartnerViewContext` يتعرّف على الشريك بهذا
+// الحقل وحده، فلمّا لم يمتلئ قط صار كل مستخدم — بما فيهم المستثمر — يُعامَل
+// معاملة المدير: بلا قسمةٍ بنسبته وبلا منعٍ للكتابة. أي أن بوابة الشريك لم
+// تعمل يوماً منذ الهجرة.
+//
+// والحرفُ الصغير كان عطلاً ثانياً بجواره: `toLowerCase()` كان سيفسد المُعرّف
+// حتى لو نجا من النمط — مُعرّفات Firebase حسّاسة لحالة الأحرف، فـ `aB3` و
+// `ab3` حسابان مختلفان. لذلك يُشذَّب الطرفان ولا يُغيَّر شيء بينهما.
+//
+// النمط أدناه متساهل عمداً: الغرض رفض ما لا يمكن أن يكون مُعرّفاً (فراغ،
+// مسافات، نصّ حرّ) لا محاكاة صيغة يملك Google حقّ تغييرها. والمرجع الحقيقي
+// هو Firebase نفسه: مُعرّفٌ لا حساب له لا يطابق أحداً على أي حال.
 function clampUserId(value) {
   if (value === null || value === undefined || value === '') return null;
-  const s = String(value).trim().toLowerCase();
+  const s = String(value).trim();
   if (!s) return null;
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(s) ? s : null;
+  return /^[A-Za-z0-9_-]{20,128}$/.test(s) ? s : null;
 }
 
 export function mapPartner(row) {

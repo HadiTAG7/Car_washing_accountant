@@ -114,6 +114,21 @@ export async function generateLink(auth, email, appUrl) {
   }
 }
 
+/**
+ * رمز الخطأ متى كان آمناً للعرض.
+ *
+ * رموز Firebase (`auth/…`, `app/…`) تعدادٌ منشور في التوثيق، لا نصٌّ حرّ:
+ * لا تحمل مفتاحاً ولا عنوان بريد ولا أثر مكدّس. وما يخصّ وجود الحساب
+ * (`user-not-found`) لا يصل هنا أصلاً — يُعترض قبله ويُردّ بـ ٢٠٠.
+ *
+ * الكتم الكامل بدا حصافةً وكان عطلاً: أول عطل حقيقي في الإنتاج قضى جولتين
+ * كاملتين من النشر قبل أن يُعرف موضعه، لأن الردّ لم يقل غير «داخلي».
+ */
+export function safeErrorCode(error) {
+  const code = String(error?.code ?? '');
+  return /^(auth|app|messaging|firestore)\/[a-z0-9-]+$/.test(code) ? code : undefined;
+}
+
 export function createPasswordResetHandler({
   runtimeFactory = getPasswordResetRuntime,
   mailerConfig = readMailerConfig,
@@ -214,8 +229,12 @@ export function createPasswordResetHandler({
       const isConfig = error instanceof PasswordResetConfigError;
       console.error(JSON.stringify({
         severity: 'ERROR', event: 'password-reset-failure', incidentId, stage,
-        code: isProvider || isConfig ? error.code : undefined,
+        code: isProvider || isConfig ? error.code : safeErrorCode(error),
         errorName: error?.name || 'Error',
+        // نصّ الخطأ في السجلّ وحده. سجلّ المستضيف ليس مقروءاً للعامة، ورسالة
+        // Firebase هي ما يسمّي الصلاحية الناقصة بالضبط — وحجبها عن السجل
+        // أيضاً حِرصٌ لا يحمي أحداً ويُعمي مَن يصلح.
+        detail: isProvider ? undefined : String(error?.message ?? '').slice(0, 300),
       }));
       // سوء الضبط ليس خطأ المتصل ولا عطلاً في الكود: ٥٠٣ ورسالة تسمّي
       // المتغيّر، كما يفعل /api/ledger — نصّها من عندنا لا من الاستثناء.
@@ -224,7 +243,8 @@ export function createPasswordResetHandler({
         return;
       }
       response.status(isProvider ? 502 : 500).json({
-        ok: false, error: isProvider ? error.code : 'internal', stage, incidentId,
+        ok: false, error: isProvider ? error.code : 'internal',
+        stage, code: isProvider ? undefined : safeErrorCode(error), incidentId,
       });
     }
   };

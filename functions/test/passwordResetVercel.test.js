@@ -1,7 +1,7 @@
 import { Readable } from 'node:stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import handler, {
-  applyCustomLinkHost, createPasswordResetHandler, generateLink,
+  applyCustomLinkHost, createPasswordResetHandler, generateLink, safeErrorCode,
 } from '../../api/password-reset.js';
 import { PasswordResetEmailError } from '../../server/passwordResetEmail.js';
 import { PasswordResetConfigError } from '../../server/passwordResetRuntime.js';
@@ -124,6 +124,23 @@ describe('generateLink', () => {
     await expect(generateLink({ generatePasswordResetLink }, 'u@e.test', APP))
       .rejects.toMatchObject({ code: 'auth/user-not-found' });
     expect(generatePasswordResetLink).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('safeErrorCode', () => {
+  it('passes a published Firebase code through', () => {
+    for (const code of ['auth/insufficient-permission', 'app/invalid-credential',
+      'firestore/permission-denied']) {
+      expect(safeErrorCode({ code })).toBe(code);
+    }
+  });
+
+  it('withholds anything that is not one, so free text cannot ride out', () => {
+    // الرمز تعدادٌ منشور؛ أي نصّ حرّ قد يحمل مفتاحاً أو عنواناً.
+    for (const code of [undefined, '', 'ECONNRESET', 'Error: key sk_live_abc leaked',
+      'auth/UPPER', 'auth/x y', 'notaprefix/code']) {
+      expect(safeErrorCode({ code })).toBeUndefined();
+    }
   });
 });
 
@@ -284,6 +301,28 @@ describe('/api/password-reset', () => {
     expect(res.body.error).toBe('internal');
     expect(res.body.incidentId).toMatch(/^[0-9a-f]{12}$/);
     expect(JSON.stringify(res.body)).not.toContain('unexpected-internal-detail');
+  });
+
+  it('returns the Firebase error code so the fault is nameable from outside', async () => {
+    // بلا هذا قضى أول عطل حقيقي جولتَي نشر قبل أن يُعرف موضعه.
+    withMailerEnv();
+    const lines = [];
+    vi.spyOn(console, 'error').mockImplementation((line) => lines.push(line));
+    const { endpoint } = deps({
+      generatePasswordResetLink: vi.fn(async () => {
+        throw Object.assign(new Error('Permission firebaseauth.users.sendEmail denied'), {
+          code: 'auth/insufficient-permission',
+        });
+      }),
+    });
+    const res = response();
+    await endpoint(request(), res);
+
+    expect(res.statusCode).toBe(500);
+    expect(res.body).toMatchObject({ stage: 'link', code: 'auth/insufficient-permission' });
+    // النصّ في السجلّ وحده، لا في الردّ.
+    expect(JSON.stringify(res.body)).not.toContain('firebaseauth.users.sendEmail');
+    expect(lines.join()).toContain('firebaseauth.users.sendEmail');
   });
 
   it('names the missing variable on a configuration fault instead of hiding it', async () => {

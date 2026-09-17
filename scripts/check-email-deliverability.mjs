@@ -153,7 +153,20 @@ export function inspectDkim(hits, provider) {
 
 // ─── DMARC ─────────────────────────────────────────────────────────────────
 
-export function inspectDmarc(records) {
+/**
+ * النطاق التنظيمي لنطاقٍ فرعي: آخر مقطعين.
+ *
+ * تقريبٌ مقصود. القاعدة الدقيقة تحتاج قائمة اللواحق العامة (`co.uk` لاحقة
+ * لا نطاق)، وحملها هنا اعتمادية كاملة لأجل حالة واحدة. الخطأ في اتجاه آمن:
+ * أسوأ ما يحدث أننا نبحث عن DMARC في مكانٍ لا وجود له فنقول «غير منشور»،
+ * وهو ما كنا سنقوله أصلاً بلا هذه الدالة.
+ */
+export function organizationalDomain(domain) {
+  const labels = String(domain).split('.');
+  return labels.length > 2 ? labels.slice(-2).join('.') : domain;
+}
+
+export function inspectDmarc(records, { inheritedFrom = '' } = {}) {
   const dmarc = records.filter((r) => /^v=DMARC1\b/i.test(r.trim()));
   if (!dmarc.length) {
     return {
@@ -165,13 +178,18 @@ export function inspectDmarc(records) {
   }
   const record = dmarc[0];
   const policy = (record.match(/\bp\s*=\s*([a-z]+)/i)?.[1] ?? 'none').toLowerCase();
+  // `sp=` تحكم النطاقات الفرعية وحدها؛ فحين نرث السجل من النطاق الأعلى، هي
+  // السياسة السارية علينا لا `p=`.
+  const subPolicy = (record.match(/\bsp\s*=\s*([a-z]+)/i)?.[1] ?? '').toLowerCase();
+  const effective = inheritedFrom && subPolicy ? subPolicy : policy;
   const strict = /\badkim\s*=\s*s\b/i.test(record) && /\baspf\s*=\s*s\b/i.test(record);
+  const source = inheritedFrom ? ` (موروث من ${inheritedFrom})` : '';
   return {
     ok: true,
-    level: policy === 'none' ? 'warn' : 'ok',
+    level: effective === 'none' ? 'warn' : 'ok',
     found: record,
-    message: `DMARC منشور بسياسة p=${policy}${strict ? ' ومحاذاة صارمة' : ''}.`,
-    fix: policy === 'none'
+    message: `DMARC منشور بسياسة p=${effective}${strict ? ' ومحاذاة صارمة' : ''}${source}.`,
+    fix: effective === 'none'
       ? 'ابدأ بـ p=none وراقب تقارير rua أسبوعين، ثم تدرّج إلى quarantine فـ reject.'
       : '',
   };
@@ -188,9 +206,15 @@ export async function checkDomain(domain, providerKey, { resolver = new Resolver
     throw new Error(`نطاق غير صالح: «${domain}»`);
   }
 
-  const [rootTxt, dmarcTxt, ...dkim] = await Promise.all([
+  // DMARC يُنشر عادةً على النطاق التنظيمي ويرثه كل نطاق فرعي (RFC 7489).
+  // بلا هذا الاستدراك كان الفاحص يقول «لا يوجد DMARC» لـ
+  // mail.example.com بينما هو منشور على example.com ويحكمها فعلاً — أي
+  // يرسل صاحبه يصلح ما ليس مكسوراً.
+  const parent = organizationalDomain(domain);
+  const [rootTxt, dmarcTxt, parentDmarcTxt, ...dkim] = await Promise.all([
     txt(resolver, domain),
     txt(resolver, `_dmarc.${domain}`),
+    parent === domain ? Promise.resolve([]) : txt(resolver, `_dmarc.${parent}`),
     ...provider.dkimSelectors.map(async (selector) => {
       const name = `${selector}._domainkey.${domain}`;
       const [asTxt, asCname] = await Promise.all([txt(resolver, name), cname(resolver, name)]);
@@ -198,10 +222,11 @@ export async function checkDomain(domain, providerKey, { resolver = new Resolver
     }),
   ]);
 
+  const own = inspectDmarc(dmarcTxt);
   const checks = {
     spf: inspectSpf(rootTxt, provider),
     dkim: inspectDkim(dkim, provider),
-    dmarc: inspectDmarc(dmarcTxt),
+    dmarc: own.ok ? own : inspectDmarc(parentDmarcTxt, { inheritedFrom: parent }),
   };
   return {
     domain,

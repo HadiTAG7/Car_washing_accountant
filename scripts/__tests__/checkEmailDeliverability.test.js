@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  PROVIDERS, checkDomain, formatReport, inspectDkim, inspectDmarc, inspectSpf, parseArgs,
+  PROVIDERS, checkDomain, formatReport, inspectDkim, inspectDmarc, inspectSpf,
+  organizationalDomain, parseArgs,
 } from '../check-email-deliverability.mjs';
 
 const RESEND = PROVIDERS.resend;
@@ -85,6 +86,29 @@ describe('inspectDmarc', () => {
     expect(result).toMatchObject({ ok: true, level: 'ok' });
     expect(result.message).toContain('محاذاة صارمة');
   });
+
+  it('names the parent when the record was inherited', () => {
+    const result = inspectDmarc(['v=DMARC1; p=reject'], { inheritedFrom: 'example.com' });
+    expect(result.message).toContain('موروث من example.com');
+  });
+
+  it('reads sp= as the policy that actually governs an inherited subdomain', () => {
+    // p= تحكم النطاق الأعلى؛ الفرعيّ تحكمه sp= متى وُجدت.
+    expect(inspectDmarc(['v=DMARC1; p=reject; sp=none'], { inheritedFrom: 'example.com' }))
+      .toMatchObject({ level: 'warn' });
+    expect(inspectDmarc(['v=DMARC1; p=none; sp=reject'], { inheritedFrom: 'example.com' }))
+      .toMatchObject({ level: 'ok' });
+    // وبلا وراثة، sp= لا تخصّنا.
+    expect(inspectDmarc(['v=DMARC1; p=reject; sp=none'])).toMatchObject({ level: 'ok' });
+  });
+});
+
+describe('organizationalDomain', () => {
+  it('reduces a sub-domain to its last two labels, and leaves a root alone', () => {
+    expect(organizationalDomain('mail.example.com')).toBe('example.com');
+    expect(organizationalDomain('a.b.example.com')).toBe('example.com');
+    expect(organizationalDomain('example.com')).toBe('example.com');
+  });
 });
 
 describe('checkDomain', () => {
@@ -124,6 +148,38 @@ describe('checkDomain', () => {
       resolveCname: async () => { throw new Error('ESERVFAIL'); } };
     await expect(checkDomain('sweater.test', 'resend', { resolver })).resolves
       .toMatchObject({ ready: false });
+  });
+
+  it('inherits the DMARC record from the organizational domain', async () => {
+    // بلا هذا كان الفاحص يقول «لا يوجد DMARC» لنطاق فرعي محميّ فعلاً،
+    // فيرسل صاحبه يصلح ما ليس مكسوراً.
+    const resolver = resolverFor({
+      'mail.sweater.test': ['v=spf1 include:_spf.resend.com ~all'],
+      'resend._domainkey.mail.sweater.test': ['k=rsa; p=MII...'],
+      '_dmarc.sweater.test': ['v=DMARC1; p=quarantine; adkim=s; aspf=s'],
+    });
+    const result = await checkDomain('mail.sweater.test', 'resend', { resolver });
+    expect(result.checks.dmarc.ok).toBe(true);
+    expect(result.checks.dmarc.message).toContain('موروث من sweater.test');
+    expect(result.ready).toBe(true);
+  });
+
+  it('prefers the sub-domain own record over the inherited one', async () => {
+    const resolver = resolverFor({
+      'mail.sweater.test': ['v=spf1 include:_spf.resend.com ~all'],
+      'resend._domainkey.mail.sweater.test': ['k=rsa; p=MII...'],
+      '_dmarc.mail.sweater.test': ['v=DMARC1; p=reject; adkim=s; aspf=s'],
+      '_dmarc.sweater.test': ['v=DMARC1; p=none'],
+    });
+    const result = await checkDomain('mail.sweater.test', 'resend', { resolver });
+    expect(result.checks.dmarc.message).not.toContain('موروث');
+    expect(result.checks.dmarc.level).toBe('ok');
+  });
+
+  it('does not look for a parent when the domain is already organizational', async () => {
+    const resolver = resolverFor({ 'sweater.test': ['v=spf1 include:_spf.resend.com ~all'] });
+    const result = await checkDomain('sweater.test', 'resend', { resolver });
+    expect(result.checks.dmarc.ok).toBe(false);
   });
 
   it('refuses an unknown provider and an invalid domain', async () => {

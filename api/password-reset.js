@@ -23,6 +23,8 @@
 //   PASSWORD_RESET_EMAIL_REPLY_TO       صندوق يقرأه بشر (اختياري، مُستحسن)
 //   PASSWORD_RESET_APP_URL              عنوان اللوحة للعودة إليها بعد التعيين
 //   PASSWORD_RESET_LINK_HOST            نطاق إجراءات مخصّص بعد توثيقه (اختياري)
+//   PASSWORD_RESET_ACTION_URL           صفحة التعيين في تطبيقنا، مثل
+//                                       https://<اللوحة>/update-password
 // التفاصيل وسجلات DNS في docs/EMAIL_DELIVERABILITY.md
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -72,6 +74,36 @@ async function readJsonBody(request) {
  * المشروع يُصدر أصلاً رابطاً على نطاقٍ مخصّص فالمتغيّر زائد، وإعادة كتابته
  * فوقه تكسر رابطاً يعمل.
  */
+/**
+ * يحوّل الرابط إلى صفحة التعيين في تطبيقنا بدل صفحة Firebase المستضافة.
+ *
+ * صفحة Firebase تعمل، لكنها بيضاء وإنجليزية وتحمل اسم المشروع المولّد
+ * (`gemini-eed4a`) وزرّاً بنفسجياً — فآخر خطوة في الاسترجاع تنقض كل ما بنته
+ * الرسالة قبلها، وهي أدقّ خطوة: المستخدم يكتب فيها كلمة مرور. صفحةٌ لا تشبه
+ * ما جاء منه تُعلّمه أن يثق بما لا يعرف.
+ *
+ * و`UpdatePasswordScreen` في هذا التطبيق تفعل الشيء نفسه بالعربية وبهوية
+ * سويتر، عبر `verifyPasswordResetCode` و`confirmPasswordReset` — أي بنفس
+ * الرمز ونفس الأمان، لا بمسارٍ موازٍ.
+ *
+ * تُنقل معاملات الاستعلام كما هي لا منتقاةً: `oobCode` هو ما تقرؤه الصفحة
+ * اليوم، لكن `mode` و`apiKey` و`continueUrl` و`lang` جزءٌ من عقد Firebase
+ * لمعالِج الإجراءات المخصّص — وانتقاءُ ما «يبدو» لازماً الآن يكسر ما يلزم لاحقاً.
+ */
+export function applyActionUrl(link, actionUrl) {
+  const target = String(actionUrl ?? '').trim();
+  if (!target) return link;
+  try {
+    const source = new URL(link);
+    const destination = new URL(target);
+    for (const [key, value] of source.searchParams) destination.searchParams.set(key, value);
+    return destination.toString();
+  } catch {
+    // هدفٌ غير صالح: صفحة Firebase القبيحة تعمل، والرابط المكسور لا يعمل.
+    return link;
+  }
+}
+
 export function applyCustomLinkHost(link, host) {
   const target = String(host ?? '').trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '');
   if (!target) return link;
@@ -214,7 +246,12 @@ export function createPasswordResetHandler({
       }
 
       stage = 'send';
-      const finalLink = applyCustomLinkHost(link, process.env.PASSWORD_RESET_LINK_HOST);
+      // صفحتنا حين تُضبط، وإلا فنطاق الإجراءات المخصّص إن وُجد: الأولى تستبدل
+      // الصفحة كلها، والثاني يغيّر مضيفها فقط، فلا معنى لاجتماعهما.
+      const actionUrl = String(process.env.PASSWORD_RESET_ACTION_URL ?? '').trim();
+      const finalLink = actionUrl
+        ? applyActionUrl(link, actionUrl)
+        : applyCustomLinkHost(link, process.env.PASSWORD_RESET_LINK_HOST);
       const message = render({ link: finalLink, appUrl });
       await send(mailer, { to: email, ...message });
 

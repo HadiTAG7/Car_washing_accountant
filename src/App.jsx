@@ -1,6 +1,8 @@
 import { useState, useCallback } from 'react';
 import { Loader2 } from 'lucide-react';
-import { visibleGroupsFor } from './lib/navGroups';
+import {
+  visibleGroupsFor, resolveTab, investorViewFor, INVESTOR_TAB_IDS,
+} from './lib/navGroups';
 
 import { lazy, Suspense } from 'react';
 import Sidebar from './components/Sidebar';
@@ -73,8 +75,8 @@ function AppShell({ membership }) {
   // العضوية تُسأل مرة واحدة في `App` وتنزل من هناك: المزوّد يحتاج الدور ليقرّر
   // من يرى ماذا، وسؤالها هنا أيضاً يعني جلباً ثانياً ونداءً ثانياً للخادم.
   const { canMutate, isPartnerView } = usePartnerView();
-  // وضع المستثمر: تبويبٌ واحد، ومسارٌ واحد يُصيَّر. يُشتق من `isPartnerView`
-  // لا من الدور، فيشمل المدير المحاكي — وبه تصبح المحاكاة أمينة.
+  // وضع المستثمر: تبويباته وحدها تُصيَّر. يُشتق من `isPartnerView` لا من
+  // الدور، فيشمل المدير المحاكي — وبه تصبح المحاكاة أمينة.
   const investorMode = !localPreview && isPartnerView;
   // يُمرَّر إلى `BikersPage` لتقرير من يسوّد مسير الرواتب — قرارٌ منفصل عن
   // التنقّل، فيبقى على الدور نفسه.
@@ -85,7 +87,15 @@ function AppShell({ membership }) {
   // التبويب النشط يُشتق ولا يُخزَّن: مديرٌ واقفٌ على دفتر الأستاذ يختار شريكاً
   // من القائمة يجب ألا يبقى الدفتر مصيَّراً تحته. والاشتقاق يعني أيضاً أنه
   // يعود إلى مكانه تماماً حين ينهي المحاكاة.
-  const effectiveTab = investorMode ? 'investor' : activeTab;
+  //
+  // والاشتقاق صار في اتجاهين منذ صار للمستثمر أكثر من خيار: `resolveTab`
+  // تردّ تبويباً إدارياً إلى صفحة المستثمر في وضع المحاكاة، وتردّ تبويب
+  // مستثمرٍ بقي في الحالة إلى «نظرة عامة» بعد انتهائها — وإلا فشاشةٌ بيضاء
+  // لا يصيّرها أي شرطٍ أدناه.
+  const effectiveTab = resolveTab(activeTab, { investorMode });
+  const investorView = INVESTOR_TAB_IDS.includes(effectiveTab)
+    ? investorViewFor(effectiveTab)
+    : null;
 
   const [showEntrySelector, setShowEntrySelector] = useState(false);
   const [pendingEntry, setPendingEntry] = useState(null);
@@ -152,7 +162,10 @@ function AppShell({ membership }) {
     <div className="min-h-screen">
       <Sidebar
         groups={visibleGroups}
-        activeTab={activeTab}
+        // المعروض لا المخزَّن: مديرٌ يبدأ المحاكاة وهو على «دفتر الأستاذ»
+        // كانت قائمته تُبرِز تبويباً لا يُصيَّر — والآن أن للمستثمر أربعة
+        // خيارات، إبرازُ الخطأ منها يعني قائمةً تكذب عن مكان المستخدم.
+        activeTab={effectiveTab}
         onSelectTab={handleSelectTab}
         user={session?.user}
         onSignOut={isFirebaseConfigured ? signOut : null}
@@ -182,7 +195,7 @@ function AppShell({ membership }) {
               entrance replays on every switch (no-op under
               prefers-reduced-motion). */}
           <div key={effectiveTab} className="animate-page-in flex-1 flex flex-col">
-            {effectiveTab === 'investor' && <InvestorPage />}
+            {investorView && <InvestorPage view={investorView} />}
             {effectiveTab === 'overview'  && <OverviewPage />}
             {effectiveTab === 'agent_command_center' && (
               <AgentCommandCenterPage

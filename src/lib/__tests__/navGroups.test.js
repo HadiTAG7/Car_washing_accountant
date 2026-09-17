@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { INVESTOR_GROUPS, TAB_GROUPS, visibleGroupsFor } from '../navGroups';
+import {
+  INVESTOR_GROUPS, INVESTOR_TABS, TAB_GROUPS, investorViewFor, resolveTab, visibleGroupsFor,
+} from '../navGroups';
 
 const idsOf = (groups) => groups.flatMap((g) => g.tabs.map((t) => t.id));
 
 describe('من يرى أي تبويب', () => {
-  it('المستثمر يرى تبويباً واحداً لا اثنين وعشرين', () => {
+  it('المستثمر يرى خياراته الأربعة لا اثنين وعشرين', () => {
     const ids = idsOf(visibleGroupsFor({ role: 'partner', isPartnerView: true }));
-    expect(ids).toEqual(['investor']);
+    expect(ids).toEqual(['investor', 'investor_capital', 'investor_income', 'investor_trends']);
   });
 
   it('ولا يصل إلى الدفاتر ولا التشغيل بأي حال', () => {
@@ -42,10 +44,40 @@ describe('من يرى أي تبويب', () => {
     expect(ids).toContain('ledger');
   });
 
-  it('مجموعة المستثمر بلا عنوان، فلا رأس طيٍّ لعنصر واحد', () => {
-    expect(INVESTOR_GROUPS).toHaveLength(1);
+  it('«نظرة عامة» بلا عنوان مجموعة، والبقية تحت عنوانٍ واحد يُطوى', () => {
     expect(INVESTOR_GROUPS[0].title).toBeNull();
-    expect(INVESTOR_GROUPS[0].tabs).toHaveLength(1);
+    expect(idsOf([INVESTOR_GROUPS[0]])).toEqual(['investor']);
+    expect(INVESTOR_GROUPS[1].title).toBeTruthy();
+    expect(idsOf(INVESTOR_GROUPS)).toEqual(INVESTOR_TABS.map((t) => t.id));
+  });
+
+  it('لكل خيارٍ عرضٌ يخصّه — ولا يتكرّر عرضان', () => {
+    const views = INVESTOR_TABS.map((t) => t.view);
+    expect(new Set(views).size).toBe(views.length);
+    for (const tab of INVESTOR_TABS) {
+      expect(investorViewFor(tab.id)).toBe(tab.view);
+      expect(tab.label).toBeTruthy();
+    }
+    // معرّفٌ لا يعرفه الجدول يسقط على الأول لا على فراغ.
+    expect(investorViewFor('ledger')).toBe('overview');
+    expect(investorViewFor(undefined)).toBe('overview');
+  });
+
+  it('وضع المستثمر لا يصيّر تبويباً إدارياً مهما طُلب', () => {
+    // الشريط الجانبي حدٌّ، والحدّ يُطبَّق عند التصيير أيضاً: معرّفٌ إداريٌّ
+    // بقي في الحالة — أو أُدخِل — يعود إلى صفحة المستثمر.
+    for (const forbidden of ['ledger', 'bikers', 'payments', 'agent_command_center']) {
+      expect(resolveTab(forbidden, { investorMode: true })).toBe('investor');
+    }
+    expect(resolveTab('investor_income', { investorMode: true })).toBe('investor_income');
+  });
+
+  it('وانتهاء المحاكاة على تبويب مستثمر يعود إلى «نظرة عامة» لا إلى فراغ', () => {
+    // الثقب الذي فتحه التقسيم: `investor_trends` لا يصيّره أي شرطٍ إداري،
+    // فبقاؤه بعد انتهاء المحاكاة شاشةٌ بيضاء.
+    expect(resolveTab('investor_trends', { investorMode: false })).toBe('overview');
+    expect(resolveTab('ledger', { investorMode: false })).toBe('ledger');
+    expect(resolveTab('overview')).toBe('overview');
   });
 
   it('لا تبويب بلا مُعرّف ولا عنوان', () => {

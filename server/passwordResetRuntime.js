@@ -10,15 +10,38 @@ import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 
 const APP_NAME = 'password-reset-vercel';
 
+/**
+ * سوء ضبطٍ لا عطل برنامج — ولكلٍّ إصلاح مختلف ومَن يصلحه مختلف.
+ *
+ * المتغيّر الناقص يصلحه مشغّل النظام في دقيقة إن عرف اسمه، ويضيع أسبوعاً إن
+ * قرأ «خطأ داخلي» وذهب يفتّش في الكود. لذلك يحمل هذا الصنف اسم المتغيّر.
+ */
+export class PasswordResetConfigError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'PasswordResetConfigError';
+    this.code = 'configuration';
+  }
+}
+
 const usingEmulators = () => Boolean(
   process.env.FIRESTORE_EMULATOR_HOST && process.env.FIREBASE_AUTH_EMULATOR_HOST,
 );
 
 function serviceAccount() {
   const raw = String(process.env.FIREBASE_SERVICE_ACCOUNT ?? '').trim();
-  if (!raw) throw new Error('password-reset-service-account-missing');
+  if (!raw) {
+    throw new PasswordResetConfigError(
+      'FIREBASE_SERVICE_ACCOUNT غير مضبوط. أضِف محتوى ملف مفتاح الخدمة JSON كاملاً '
+      + 'في متغيّرات البيئة على المستضيف.',
+    );
+  }
   try { return JSON.parse(raw); }
-  catch { throw new Error('password-reset-service-account-invalid'); }
+  catch {
+    throw new PasswordResetConfigError(
+      'FIREBASE_SERVICE_ACCOUNT ليس JSON صالحاً — ألصق محتوى الملف كاملاً من { إلى }.',
+    );
+  }
 }
 
 export function getPasswordResetRuntime() {

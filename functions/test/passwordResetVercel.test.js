@@ -1,7 +1,10 @@
 import { Readable } from 'node:stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import handler, { applyCustomLinkHost, createPasswordResetHandler } from '../../api/password-reset.js';
+import handler, {
+  applyCustomLinkHost, createPasswordResetHandler, generateLink,
+} from '../../api/password-reset.js';
 import { PasswordResetEmailError } from '../../server/passwordResetEmail.js';
+import { PasswordResetConfigError } from '../../server/passwordResetRuntime.js';
 
 const LINK = 'https://gemini-eed4a.firebaseapp.com/__/auth/action?mode=resetPassword&oobCode=abc';
 
@@ -77,6 +80,53 @@ describe('applyCustomLinkHost', () => {
   });
 });
 
+describe('generateLink', () => {
+  const APP = 'https://app.sweater.test/';
+
+  function authThatRejectsContinueUri(code) {
+    const generatePasswordResetLink = vi.fn(async (email, settings) => {
+      if (settings) throw Object.assign(new Error('rejected'), { code });
+      return LINK;
+    });
+    return { auth: { generatePasswordResetLink }, generatePasswordResetLink };
+  }
+
+  it('asks for the continue URL when one is configured', async () => {
+    const generatePasswordResetLink = vi.fn(async () => LINK);
+    await generateLink({ generatePasswordResetLink }, 'u@e.test', APP);
+    expect(generatePasswordResetLink)
+      .toHaveBeenCalledWith('u@e.test', { url: APP, handleCodeInApp: false });
+  });
+
+  it('omits the settings object entirely when none is configured', async () => {
+    const generatePasswordResetLink = vi.fn(async () => LINK);
+    await generateLink({ generatePasswordResetLink }, 'u@e.test', '');
+    expect(generatePasswordResetLink).toHaveBeenCalledWith('u@e.test');
+  });
+
+  for (const code of [
+    'auth/unauthorized-continue-uri', 'auth/invalid-continue-uri', 'auth/missing-continue-uri',
+  ]) {
+    it(`drops the continue URL rather than the user on ${code}`, async () => {
+      // الزينة تسقط قبل أن يسقط المسار الوحيد الذي يستعيد الحساب.
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const { auth, generatePasswordResetLink } = authThatRejectsContinueUri(code);
+      await expect(generateLink(auth, 'u@e.test', APP)).resolves.toBe(LINK);
+      expect(generatePasswordResetLink).toHaveBeenCalledTimes(2);
+      expect(generatePasswordResetLink).toHaveBeenLastCalledWith('u@e.test');
+    });
+  }
+
+  it('does not retry, and does not swallow, any other failure', async () => {
+    const generatePasswordResetLink = vi.fn(async () => {
+      throw Object.assign(new Error('nope'), { code: 'auth/user-not-found' });
+    });
+    await expect(generateLink({ generatePasswordResetLink }, 'u@e.test', APP))
+      .rejects.toMatchObject({ code: 'auth/user-not-found' });
+    expect(generatePasswordResetLink).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('/api/password-reset', () => {
   it('exports a production handler and accepts POST only', async () => {
     const res = response();
@@ -113,7 +163,7 @@ describe('/api/password-reset', () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.body).toEqual({ ok: true });
-    expect(generatePasswordResetLink).toHaveBeenCalledWith('user@example.com', undefined);
+    expect(generatePasswordResetLink).toHaveBeenCalledWith('user@example.com');
     const [config, message] = send.mock.calls[0];
     expect(config.provider).toBe('resend');
     expect(message.to).toBe('user@example.com');
@@ -190,6 +240,24 @@ describe('/api/password-reset', () => {
     });
   });
 
+  it('still delivers when the app URL is not an authorized Firebase domain', async () => {
+    // هذا هو العطل الذي ظهر في الإنتاج: رفضُ رابط العودة كان يُسقط الطلب كلّه.
+    withMailerEnv();
+    process.env.PASSWORD_RESET_APP_URL = 'https://new-deploy.test/';
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const generatePasswordResetLink = vi.fn(async (email, settings) => {
+      if (settings) throw Object.assign(new Error('x'), { code: 'auth/unauthorized-continue-uri' });
+      return LINK;
+    });
+    const { endpoint, send } = deps({ generatePasswordResetLink });
+    const res = response();
+    await endpoint(request(), res);
+
+    expect(res.statusCode).toBe(200);
+    expect(send).toHaveBeenCalled();
+    expect(send.mock.calls[0][1].text).toContain(LINK);
+  });
+
   it('reports a provider failure as 502 so the UI falls back to Firebase', async () => {
     withMailerEnv();
     const { endpoint } = deps({
@@ -206,7 +274,7 @@ describe('/api/password-reset', () => {
   it('hides an unexpected failure behind an incident id', async () => {
     withMailerEnv();
     const { endpoint } = deps({
-      runtimeFactory: vi.fn(() => { throw new Error('service-account-missing'); }),
+      runtimeFactory: vi.fn(() => { throw new Error('unexpected-internal-detail'); }),
     });
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const res = response();
@@ -215,7 +283,59 @@ describe('/api/password-reset', () => {
     expect(res.statusCode).toBe(500);
     expect(res.body.error).toBe('internal');
     expect(res.body.incidentId).toMatch(/^[0-9a-f]{12}$/);
-    expect(JSON.stringify(res.body)).not.toContain('service-account-missing');
+    expect(JSON.stringify(res.body)).not.toContain('unexpected-internal-detail');
+  });
+
+  it('names the missing variable on a configuration fault instead of hiding it', async () => {
+    // «خطأ داخلي» أرسل التشخيص إلى الكود بينما العطل متغيّر بيئة ناقص —
+    // ومَن يضبط المتغيّرات لا يملك بالضرورة سجلات المستضيف ليقرأ رقم بلاغ.
+    withMailerEnv();
+    const { endpoint } = deps({
+      runtimeFactory: vi.fn(() => {
+        throw new PasswordResetConfigError('FIREBASE_SERVICE_ACCOUNT غير مضبوط.');
+      }),
+    });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const res = response();
+    await endpoint(request(), res);
+
+    expect(res.statusCode).toBe(503);
+    expect(res.body.error).toBe('configuration');
+    expect(res.body.message).toContain('FIREBASE_SERVICE_ACCOUNT');
+  });
+
+  it('reports which step failed, so the fault is placed without host logs', async () => {
+    withMailerEnv();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const atQuota = deps({ consumeQuota: vi.fn(async () => { throw new Error('boom'); }) });
+    const res1 = response();
+    await atQuota.endpoint(request(), res1);
+    expect(res1.body).toMatchObject({ stage: 'quota' });
+
+    const atLink = deps({
+      generatePasswordResetLink: vi.fn(async () => { throw new Error('boom'); }),
+    });
+    const res2 = response();
+    await atLink.endpoint(request(), res2);
+    expect(res2.body).toMatchObject({ stage: 'link' });
+
+    const atRuntime = deps({ runtimeFactory: vi.fn(() => { throw new Error('boom'); }) });
+    const res3 = response();
+    await atRuntime.endpoint(request(), res3);
+    expect(res3.body).toMatchObject({ stage: 'runtime' });
+  });
+
+  it('keeps the stage out of a provider failure, which already names itself', async () => {
+    withMailerEnv();
+    const { endpoint } = deps({
+      send: vi.fn(async () => {
+        throw new PasswordResetEmailError('رفض', { code: 'provider-rejected' });
+      }),
+    });
+    const res = response();
+    await endpoint(request(), res);
+    expect(res.body.error).toBe('provider-rejected');
   });
 
   it('refuses an unsupported provider as misconfiguration, not as a caller error', async () => {

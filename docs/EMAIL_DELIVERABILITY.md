@@ -101,7 +101,22 @@ Type: TXT   Name: _dmarc   Value: v=DMARC1; p=none; rua=mailto:dmarc@your-domain
 
 ### التحقّق
 
-انتظر انتشار DNS (من دقائق إلى ٤٨ ساعة)، ثم:
+انتظر انتشار DNS (من دقائق إلى ٤٨ ساعة)، ثم شغّل الفاحص المرفق:
+
+```bash
+npm run check:email -- your-domain.com
+npm run check:email -- your-domain.com --provider sendgrid
+```
+
+يقرأ DNS الحيّ ويقول ما هو منشور وما ينقص ونصّ السجل الناقص جاهزاً للّصق،
+ويخرج برمز `0` حين تكتمل الثلاثة. يلتقط أيضاً الخطأ الصامت الأشهر: **سجلا
+SPF** على الجذر — المواصفة تسمح بواحد فقط، والاثنان يبطلان بعضهما بنتيجة
+`permerror` بدل أن يتراكما.
+
+يقبل النطاق مكتوباً كعنوان أو ببريد كامل (`no-reply@your-domain.com`)، ولا
+يحتاج مفتاح مزوّد ولا اعتماد Firebase — قراءة DNS فقط.
+
+للفحص اليدوي إن لزم:
 
 ```bash
 dig +short TXT your-domain.com          # يجب أن يظهر v=spf1
@@ -109,9 +124,10 @@ dig +short TXT _dmarc.your-domain.com   # يجب أن يظهر v=DMARC1
 dig +short CNAME resend._domainkey.your-domain.com
 ```
 
-ثم أرسل رسالة اختبار إلى `check-auth@verifier.port25.com` أو عبر
-`mail-tester.com`: المطلوب `SPF: pass` و`DKIM: pass` و`DMARC: pass` مع
-**محاذاة** (`aligned`) — «pass» بلا محاذاة لا يكفي.
+> الفاحص يثبت أن السجلات **منشورة**، لا أن الرسالة وصلت الوارد. الخطوة
+> الأخيرة تبقى رسالة اختبار حقيقية إلى `mail-tester.com` أو
+> `check-auth@verifier.port25.com`: المطلوب `SPF: pass` و`DKIM: pass`
+> و`DMARC: pass` مع **محاذاة** (`aligned`) — «pass» بلا محاذاة لا يكفي.
 
 ---
 
@@ -170,6 +186,7 @@ dig +short CNAME resend._domainkey.your-domain.com
 | `server/passwordResetThrottle.js` | حدّ الإرسال في Firestore + الكنس |
 | `server/passwordResetRuntime.js` | تطبيق Admin مستقلّ لهذا المسار |
 | `src/lib/passwordReset.js` | عميل: المسار الخادمي ثم الاحتياطي |
+| `scripts/check-email-deliverability.mjs` | فاحص سجلات DNS (`npm run check:email`) |
 
 ---
 

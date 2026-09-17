@@ -2,10 +2,10 @@ import { useState } from 'react';
 import { LogIn, Loader2, Mail, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import { SweaterWordmark } from './SweaterLogo';
 import { BRAND } from '../data/initialData';
-import { sendPasswordResetEmail } from 'firebase/auth';
 import { useAuth } from '../hooks/useAuth';
 import { auth, isFirebaseConfigured } from '../lib/firebaseClient';
 import { translateAuthError } from '../lib/authErrors';
+import { PasswordResetRateLimited, requestPasswordReset } from '../lib/passwordReset';
 
 export default function LoginScreen() {
   const { signIn } = useAuth();
@@ -41,29 +41,23 @@ export default function LoginScreen() {
           setError('Firebase غير مُهيّأ — لا يمكن إرسال رابط إعادة التعيين في وضع العرض التجريبي.');
           return;
         }
-        // Firebase sends its own reset email + hosts the reset page. The
-        // continue URL (return-to-app link) only works when this exact
-        // origin is allowlisted in Firebase Auth → Settings → Authorized
-        // domains. A new deployment domain isn't, and Firebase then hard-
-        // fails with auth/unauthorized-continue-uri — locking the user out
-        // of the ONE flow that recovers an account. So the continue URL is
-        // best-effort: on that specific error we retry without it, which
-        // always works (the user lands on Firebase's hosted reset page).
+        // الرسالة تُرسَل من نطاقنا عبر `/api/password-reset` متى كان مزوّد
+        // البريد مضبوطاً، ومن Firebase حين لا يكون. الفرق ليس تجميلياً:
+        // مرسِل `firebaseapp.com` مجمّعٌ مشترك يودعه Gmail السبام، فيضيع
+        // المسار الوحيد الذي يستعيد به المستخدم حسابه.
         const target = String(email).trim();
-        try {
-          await sendPasswordResetEmail(auth, target, { url: `${window.location.origin}/` });
-        } catch (err) {
-          if (err?.code === 'auth/unauthorized-continue-uri') {
-            await sendPasswordResetEmail(auth, target);
-          } else {
-            throw err;
-          }
-        }
+        const { via } = await requestPasswordReset(auth, target, {
+          origin: `${window.location.origin}/`,
+        });
         setNotice(
-          '✓ تم إرسال رابط إعادة التعيين إلى بريدك الإلكتروني. تفقد بريدك (وملف الرسائل غير المرغوب فيها) واتبع الرابط لإعادة ضبط كلمة المرور.',
+          via === 'server'
+            ? '✓ تم إرسال رابط إعادة التعيين إلى بريدك الإلكتروني. الرابط صالح لمدة ساعة واحدة.'
+            : '✓ تم إرسال رابط إعادة التعيين إلى بريدك الإلكتروني. تفقد بريدك (وملف الرسائل غير المرغوب فيها) واتبع الرابط لإعادة ضبط كلمة المرور.',
         );
       } catch (err) {
-        setError(translateAuthError(err, 'تعذّر إرسال رابط إعادة التعيين.'));
+        setError(err instanceof PasswordResetRateLimited
+          ? err.message
+          : translateAuthError(err, 'تعذّر إرسال رابط إعادة التعيين.'));
       } finally {
         setBusy(false);
       }

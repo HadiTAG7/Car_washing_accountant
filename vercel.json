@@ -7,6 +7,9 @@
     },
     "api/agent-command-center-cleanup.js": {
       "maxDuration": 30
+    },
+    "api/password-reset.js": {
+      "maxDuration": 30
     }
   },
   "crons": [

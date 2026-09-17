@@ -21,7 +21,8 @@
     "deploy:functions": "firebase deploy --only functions:ledger",
     "deploy:rules": "firebase deploy --only firestore:rules",
     "agents:send": "node scripts/send-agent-command-event.mjs",
-    "bootstrap:admin": "node scripts/bootstrap-admin.mjs"
+    "bootstrap:admin": "node scripts/bootstrap-admin.mjs",
+    "check:email": "node scripts/check-email-deliverability.mjs"
   },
   "dependencies": {
     "@capacitor/core": "^8.4.2",

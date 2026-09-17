@@ -28,10 +28,26 @@ export function useMembership(userId) {
   // question to ask, so nothing is asked and nothing is claimed.
   const applicable = Boolean(isFirebaseConfigured && userId);
 
+  // ── إشارتان للإدارة، لا واحدة ──
+  // القواعد تقبل طريقين: `role == 'admin'` في `users`، **أو** وثيقة في
+  // `app_admins` (`firestore.rules:52`). و`scripts/bootstrap-admin.mjs` يكتب
+  // الاثنين معاً ويسمّي الثانية «الحزام»: مديرٌ عُبث بحقل دوره يبقى داخلاً.
+  //
+  // وكانت الواجهة تقرأ الأول وحده. فمالكٌ يملك الحزام — القواعد تمنحه كل
+  // شيء — تقفله الشاشة لأن حقل دوره يقول غير ذلك. الخادم يقول «مدير»
+  // والشاشة تقول «مستثمر»، والشاشة تفوز. وقع هذا فعلاً عند أول نشر.
+  //
+  // فحصُ الحزام لا يحتاج صلاحية جديدة: القاعدة `:290` تسمح للمدير بقراءة
+  // وثيقته، والرفض لغير المدير **هو** الجواب لا عطل — فيُقرأ «ليس مديراً»
+  // ولا يُرفع خطأً يُفسد تشخيص العضوية.
   const { data, loading, error, refetch } = useFirestoreQuery(
     async () => {
-      const snap = await getDoc(doc(db, 'users', userId));
-      return [{ role: snap.exists() ? (snap.data().role || 'operator') : null }];
+      const [userSnap, adminSnap] = await Promise.all([
+        getDoc(doc(db, 'users', userId)),
+        getDoc(doc(db, 'app_admins', userId)).catch(() => null),
+      ]);
+      if (adminSnap?.exists()) return [{ role: 'admin' }];
+      return [{ role: userSnap.exists() ? (userSnap.data().role || 'operator') : null }];
     },
     { enabled: applicable, deps: [userId], fallback: [{ role: null }] },
   );

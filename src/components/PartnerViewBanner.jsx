@@ -1,8 +1,6 @@
-import { useState } from 'react';
-import { Eye, X, Info, Copy, Check } from 'lucide-react';
+import { Eye, X } from 'lucide-react';
 import { formatNumber } from '../data/initialData';
 import { usePartnerView } from '../contexts/PartnerViewContext';
-import { useAuth } from '../hooks/useAuth';
 
 /**
  * Pinned top-of-screen banner that fires whenever a Pro-Rata partner
@@ -23,9 +21,6 @@ export default function PartnerViewBanner() {
     isPartnerView, viewedPartner, totalWorkers,
     isAdmin, actingAsPartnerId, setActingAsPartnerId,
   } = usePartnerView();
-  const { user } = useAuth();
-  const [helpOpen, setHelpOpen] = useState(false);
-  const [copied,   setCopied]   = useState(false);
 
   if (!isPartnerView || !viewedPartner) return null;
 
@@ -37,31 +32,12 @@ export default function PartnerViewBanner() {
   // Only simulating admins get the "إنهاء المحاكاة" exit button.
   // Real partners can't escape their own view from the UI.
   const canExit = isAdmin && actingAsPartnerId;
-  // A "self-view" partner is a non-admin user whose own user_id matches
-  // the viewedPartner row. They're stuck unless the partner row is
-  // unlinked at the DB level. The unlink SQL stub below makes that
-  // surgical for the project owner.
-  const isSelfPartner = !isAdmin && viewedPartner.userId === user?.id;
-
-  // How to undo the link, on the backend this app actually runs on. There is
-  // no SQL console for Firestore — the field is cleared from the console UI
-  // (or by an admin from the partners page).
-  const unlinkSteps = user?.id
-    ? `Firebase Console ← Firestore Database ← partners
-`
-      + `ابحث عن الصف الذي فيه user_id = ${user.id}
-`
-      + `واحذف قيمة الحقل user_id (اتركه فارغاً).`
-    : '';
-
-  async function copyUnlinkSql() {
-    if (!unlinkSteps) return;
-    try {
-      await navigator.clipboard.writeText(unlinkSteps);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1800);
-    } catch { /* admin can still select + copy manually */ }
-  }
+  // ── لماذا لا تعليمات لفكّ الارتباط ──
+  // كان هنا شرحٌ يدلّ الشريك على مسح `user_id` من Firestore ليعود إلى واجهة
+  // المدير. سببان لحذفه: أنه يُعلّم المستثمر كيف يقطع رابط تحديد نطاقه — وهو
+  // آخر من يُشرح له ذلك — وأنه صار **خاطئاً**: الدور صار يحكم لا الرابط، فمسحُ
+  // الحقل ينتج حساباً مسدوداً لا واجهة مدير. تعليماتٌ تعِد بما لا يقع أسوأ من
+  // غياب التعليمات.
 
   return (
     <div
@@ -78,17 +54,6 @@ export default function PartnerViewBanner() {
         {/* Chip-density controls on purpose: the banner mirrors DemoBanner's
             height so the two stack cleanly, which a full 40px pill would
             break. Same control radius / semantic colours as the system. */}
-        {isSelfPartner && (
-          <button
-            type="button"
-            onClick={() => setHelpOpen((v) => !v)}
-            className="inline-flex items-center gap-1 bg-white dark:bg-slate-900 border border-indigo-100 dark:border-indigo-500/30 hover:bg-indigo-50 dark:hover:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 px-2.5 py-1 rounded-control text-[11px] font-semibold transition-colors shrink-0"
-            title="حسابك مربوط بشريك — اضغط لمعرفة كيفية الرجوع لواجهة المدير"
-          >
-            <Info size={11} strokeWidth={2.5} />
-            {helpOpen ? 'إخفاء' : 'الرجوع لواجهة المدير؟'}
-          </button>
-        )}
         {canExit && (
           <button
             type="button"
@@ -102,34 +67,6 @@ export default function PartnerViewBanner() {
         )}
       </div>
 
-      {/* Collapsible help block — only when the locked-in self-partner
-          asks for it. Self-contained, doesn't push the rest of the
-          dashboard down unless opened. */}
-      {isSelfPartner && helpOpen && (
-        <div className="px-6 pb-3 -mt-1">
-          <div className="bg-white dark:bg-slate-900 border border-indigo-100 dark:border-indigo-500/30 rounded-smallcard p-3 text-[11px] leading-relaxed text-indigo-700 dark:text-indigo-300">
-            <p className="font-bold mb-2">
-              حسابك ({user?.email}) مربوط بصف الشريك &quot;{viewedPartner.partnerName}&quot;.
-              للرجوع إلى واجهة المدير، أزل هذا الربط من Firestore:
-            </p>
-            <div className="relative bg-slate-900 dark:bg-slate-950 text-slate-100 rounded-control p-3 font-mono text-[11px] leading-relaxed select-all" dir="ltr">
-              <pre className="whitespace-pre-wrap break-words">{unlinkSteps}</pre>
-              <button
-                type="button"
-                onClick={copyUnlinkSql}
-                className="absolute top-2 left-2 inline-flex items-center gap-1 bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1 rounded-control text-[10px] font-bold transition-colors"
-                title="نسخ"
-              >
-                {copied ? <><Check size={10} /> نُسخت</> : <><Copy size={10} /> نسخ</>}
-              </button>
-            </div>
-            <p className="text-[11px] text-indigo-600 dark:text-indigo-400 mt-2 leading-relaxed">
-              بعد التنفيذ، سجّل خروج وارجع ادخل بنفس الإيميل — رح تظهر لك
-              قائمة &quot;محاكاة عرض شريك&quot; في الـ TopBar لمعاينة كل شريك متى ما تبي.
-            </p>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

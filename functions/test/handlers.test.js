@@ -30,6 +30,7 @@ import { TaxPolicyError } from '../src/taxPolicy.js';
 import { PurchaseTaxError } from '../src/purchaseTax.js';
 import { StartupCostError } from '../src/startupCosts.js';
 import { BootstrapError } from '../src/bootstrapAdmin.js';
+import { PartnerMcpKeyError } from '../src/partnerMcpKeys.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const read = (...p) => readFileSync(join(here, '..', ...p), 'utf8');
@@ -84,6 +85,8 @@ describe('توحيد الأخطاء', () => {
     ['TaxPolicyError', new TaxPolicyError('م'), 'invalid-argument'],
     ['StartupCostError', new StartupCostError('م'), 'failed-precondition'],
     ['BootstrapError', new BootstrapError('م'), 'failed-precondition'],
+    ['PartnerMcpKeyError', new PartnerMcpKeyError('م'), 'failed-precondition'],
+    ['PartnerMcpKeyError not-found', new PartnerMcpKeyError('م', { code: 'not-found' }), 'not-found'],
   ];
 
   for (const [label, err, code] of cases) {

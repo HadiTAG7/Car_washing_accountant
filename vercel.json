@@ -10,6 +10,9 @@
     },
     "api/password-reset.js": {
       "maxDuration": 30
+    },
+    "api/partner-mcp/[secret].js": {
+      "maxDuration": 30
     }
   },
   "rewrites": [

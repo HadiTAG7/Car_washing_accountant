@@ -1158,6 +1158,26 @@ answer. `SWEATER_MCP_READONLY=1` hides every write tool from the listing
 outright. Setup, the tool surface, and the one risk no gate can close — a
 *balanced but wrong* entry — are in **[`mcp/README.md`](mcp/README.md)**.
 
+### رابط الشريك — MCP خاص بكل مستثمر
+
+The server above is the accountant's door. Partners get their own:
+`api/partner-mcp/[secret].js` gives **each partner a private, read-only MCP
+URL** they mint from «حسابي كشريك ← المساعد الذكي» and paste into Claude or
+ChatGPT as a custom connector. Six `partner_*` tools answer «كم ربحتُ هذا
+الشهر؟» and «كم غسلة تعادل حصّتي؟» — every figure computed by the app's own
+`monthlyStatement` and scaled once by `workers_count / Σ workers_count`, so
+100 washes at a 10 % share reads as 10.
+
+The boundary is server-side by necessity: the rules give role `partner`
+collection-wide reads, so the endpoint reads with the Admin SDK and filters by
+partner before anything reaches a tool; `biker_name` is never even fetched, and
+`assertScoped` walks every reply and throws on a forbidden key. The token is
+stored only as a SHA-256 hash in a collection no client can read; minting
+rotates (the previous link dies in the same transaction); re-linking a partner
+row to another account kills the old link on the next request; an admin sees
+status and revokes from «إدارة الشركاء» but never sees the token. Details,
+connector steps and the threat notes: **[`docs/PARTNER_MCP.md`](docs/PARTNER_MCP.md)**.
+
 ---
 
 ## النشر — Deployment

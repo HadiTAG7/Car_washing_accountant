@@ -9,7 +9,7 @@
 import {
   LayoutDashboard, Landmark, Repeat, Receipt, Activity, Car, Bike, Home,
   BarChart3, Target, Handshake, Plug, HandCoins, RefreshCw, Percent,
-  BookOpen, Scale, Lock, FileText, Boxes, Gauge, Wallet, TrendingUp,
+  BookOpen, Scale, Lock, FileText, Boxes, Gauge, Wallet, TrendingUp, Bot,
 } from 'lucide-react';
 
 // Tab ids are untouched: the render chain below keys off them, so regrouping
@@ -99,6 +99,9 @@ export const INVESTOR_TABS = [
   { id: 'investor_capital', view: 'capital',  label: 'رأس مالي',     icon: Wallet     },
   { id: 'investor_income',  view: 'income',   label: 'قائمة الدخل',  icon: BarChart3  },
   { id: 'investor_trends',  view: 'trends',   label: 'اتجاه ٦ أشهر', icon: TrendingUp },
+  // رابط MCP خاص بالشريك يلصقه في Claude أو ChatGPT — يُنشئه ويبدّله ويُلغيه
+  // من هنا. القراءة بحصّته وحدها، من `api/partner-mcp/[secret].js`.
+  { id: 'investor_assistant', view: 'assistant', label: 'المساعد الذكي', icon: Bot },
 ];
 
 // المقصد حين لا يكون التبويب المطلوب من تبويبات المستثمر — ولأنه الأول،

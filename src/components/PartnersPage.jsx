@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
-  Plus, Users, UserCheck, Briefcase, Trash2, Pencil, Building2, Coins, FileText,
+  Plus, Users, UserCheck, Briefcase, Trash2, Pencil, Building2, Coins, FileText, Bot, Ban,
 } from 'lucide-react';
 import { formatNumber, formatCurrency, PER_WORKER_FEE } from '../data/initialData';
 import TopBar from './TopBar';
@@ -15,8 +15,10 @@ import PartnerStatementModal from './PartnerStatementModal';
 import LoadingState from './LoadingState';
 import ErrorState from './ErrorState';
 import Toast from './Toast';
+import SweaterActionDialog from './SweaterActionDialog';
 import { usePartners } from '../hooks/usePartners';
 import { usePartnerPayments } from '../hooks/usePartnerPayments';
+import { usePartnerMcpKeys, activeKeyFor } from '../hooks/usePartnerMcpKeys';
 import { paidByPartner } from '../lib/accounting/partnerTotals';
 import { describeBackendError } from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
@@ -37,6 +39,14 @@ export default function PartnersPage() {
   // client-side read-then-sum and can drift from its own evidence.
   const { payments: partnerPayments } = usePartnerPayments();
   const paidTotals = useMemo(() => paidByPartner(partnerPayments), [partnerPayments]);
+
+  // ── روابط المساعد الذكي ──
+  // المدير يرى الحالة ويُلغي، ولا يرى الرمز — المستند لا يحمله أصلاً. تُقرأ
+  // للمدير وحده: الشريك في عرض القراءة يرى رابطه من صفحته هو.
+  const mcp = usePartnerMcpKeys({ scope: 'all', enabled: canMutate });
+  const [revokeTarget, setRevokeTarget] = useState(null);   // { partner, key }
+  const [revokeBusy, setRevokeBusy] = useState(false);
+  const [revokeError, setRevokeError] = useState(null);
 
   // Partner view filters the page to just the viewed partner's row — they
   // shouldn't see the rest of the fleet's data. Admin (no partner view)
@@ -99,6 +109,17 @@ export default function PartnersPage() {
       showToast(describeBackendError(e) || e?.message || 'تعذّر حفظ التعديلات', 'error');
       throw e;
     }
+  }
+  async function handleRevokeMcp({ reason }) {
+    if (!revokeTarget) return;
+    setRevokeBusy(true); setRevokeError(null);
+    try {
+      await mcp.revokeKey(revokeTarget.key.keyId, reason);
+      setRevokeTarget(null);
+      showToast(`أُوقف رابط المساعد الذكي لـ ${revokeTarget.partner.partnerName}`);
+    } catch (e) {
+      setRevokeError(describeBackendError(e) || e?.message || 'تعذّر إيقاف الرابط');
+    } finally { setRevokeBusy(false); }
   }
   async function handleDelete(id) {
     try {
@@ -189,8 +210,8 @@ export default function PartnersPage() {
             ) : null}
           />
           <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
-            <table className="w-full min-w-[860px] text-sm">
-              {/* === HEADER — 7 columns, exact order per spec ============== */}
+            <table className="w-full min-w-[980px] text-sm">
+              {/* === HEADER — 7 columns (+ المساعد الذكي للمدير) ============== */}
               <thead>
                 <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
                   <th className="py-3 px-4 whitespace-nowrap">اسم الشريك</th>
@@ -199,6 +220,7 @@ export default function PartnersPage() {
                   <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">الرسوم المطلوبة</th>
                   <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">المبلغ المدفوع</th>
                   <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">المبلغ المتبقي</th>
+                  {canMutate && <th className="py-3 px-4 whitespace-nowrap text-center">المساعد الذكي</th>}
                   <th className="py-3 px-4 whitespace-nowrap text-left w-24">إجراءات</th>
                 </tr>
               </thead>
@@ -207,14 +229,14 @@ export default function PartnersPage() {
               <tbody>
                 {loading && partners.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="py-10">
+                    <td colSpan={canMutate ? 8 : 7} className="py-10">
                       <LoadingState message="جارٍ تحميل بيانات الشركاء..." />
                     </td>
                   </tr>
                 )}
                 {!loading && partners.length === 0 && !error && (
                   <tr>
-                    <td colSpan={7}>
+                    <td colSpan={canMutate ? 8 : 7}>
                       <EmptyState
                         compact
                         icon={Briefcase}
@@ -236,6 +258,7 @@ export default function PartnersPage() {
                   const paid     = paidTotals.get(String(p.id)) || 0;
                   const balance  = Math.max(0, required - paid);
                   const settled  = balance === 0;
+                  const mcpKey   = canMutate ? activeKeyFor(mcp.keys, p.id) : null;
 
                   return (
                     <tr
@@ -296,7 +319,34 @@ export default function PartnersPage() {
                         )}
                       </td>
 
-                      {/* 7. إجراءات */}
+                      {/* 7. المساعد الذكي — حالةٌ وإيقاف، بلا رمز */}
+                      {canMutate && (
+                        <td className="py-3 px-4 whitespace-nowrap text-center">
+                          {mcpKey ? (
+                            <span className="inline-flex items-center gap-1.5">
+                              <span
+                                className="inline-flex items-center gap-1 text-[12px] font-bold px-2 py-1 rounded-control bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-100 dark:border-emerald-500/30"
+                                title={mcpKey.lastUsedAtIso ? `آخر استعمال ${mcpKey.lastUsedAtIso.slice(0, 10)}` : 'لم يُستعمل بعد'}
+                              >
+                                <Bot size={13} /> فعّال منذ {String(mcpKey.createdAtIso || '').slice(0, 10)}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => { setRevokeError(null); setRevokeTarget({ partner: p, key: mcpKey }); }}
+                                className="sw-tap inline-flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 p-1.5 rounded-control hover:bg-rose-50 dark:hover:bg-rose-500/15 transition-colors"
+                                aria-label={`إيقاف رابط المساعد الذكي لـ ${p.partnerName}`}
+                                title="إيقاف رابط المساعد الذكي"
+                              >
+                                <Ban size={15} />
+                              </button>
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 dark:text-slate-500 text-[12px]">—</span>
+                          )}
+                        </td>
+                      )}
+
+                      {/* 8. إجراءات */}
                       <td className="py-3 px-4 whitespace-nowrap text-left">
                         <div className="inline-flex items-center gap-1">
                           {/* Statement: available to everyone (a partner
@@ -362,6 +412,21 @@ export default function PartnersPage() {
         isOpen={Boolean(statementPartner)}
         partner={statementPartner}
         onClose={() => setStatementPartner(null)}
+      />
+
+      <SweaterActionDialog
+        open={Boolean(revokeTarget)}
+        title={`إيقاف رابط ${revokeTarget?.partner?.partnerName ?? ''}`}
+        subtitle="سينقطع مساعده فوراً. يستطيع الشريك إنشاء رابطٍ جديد من صفحته."
+        icon={Ban}
+        tone="danger"
+        fields={[{ name: 'reason', label: 'السبب', type: 'textarea', placeholder: 'اختياري', hint: 'يُسجَّل مع الإلغاء للمراجعة.' }]}
+        confirmLabel="أوقف الرابط"
+        busyLabel="جارٍ الإيقاف…"
+        busy={revokeBusy}
+        error={revokeError}
+        onConfirm={handleRevokeMcp}
+        onClose={() => setRevokeTarget(null)}
       />
 
       <Toast

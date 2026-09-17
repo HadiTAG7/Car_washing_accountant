@@ -43,6 +43,7 @@ import LoadingState from './LoadingState';
 import ErrorState, { SetupRequiredCard } from './ErrorState';
 import StatementRow from './statement/StatementRow';
 import PartnerStatementModal from './PartnerStatementModal';
+import PartnerAssistantPage from './PartnerAssistantPage';
 import { ColumnTrend, LineTrend } from './charts/TrendCharts';
 
 import { usePartnerView } from '../contexts/PartnerViewContext';
@@ -69,6 +70,7 @@ const VIEW_META = {
   capital:  { title: 'رأس مالي',     subtitle: 'سنداتك وما تبقّى من حصّتك' },
   income:   { title: 'قائمة الدخل',  subtitle: 'نتيجة الشهر مقسومة بنسبتك' },
   trends:   { title: 'اتجاه ٦ أشهر', subtitle: 'إيراداتك وتكاليفك وصافي ربحك' },
+  assistant: { title: 'المساعد الذكي', subtitle: 'رابطك الخاص لتسأل Claude أو ChatGPT عن حصّتك' },
 };
 
 const metaFor = (view) => VIEW_META[view] || VIEW_META.overview;
@@ -691,6 +693,10 @@ export default function InvestorPage({ view = 'overview' }) {
       </>
     );
   }
+
+  // صفحة الرابط لا تقرأ الدفاتر ولا السندات، فلا تُركَّب خطّافاتها: مكوّنٌ
+  // مستقل تحت الحارس نفسه، لا عرضٌ خامس داخل `InvestorPortal`.
+  if (safeView === 'assistant') return <PartnerAssistantPage partner={viewedPartner} meta={meta} />;
 
   return <InvestorPortal partner={viewedPartner} view={safeView} />;
 }

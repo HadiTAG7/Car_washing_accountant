@@ -29,21 +29,27 @@ export const PROVIDERS = {
     label: 'Resend',
     spfInclude: '_spf.resend.com',
     dkimSelectors: ['resend'],
+    returnPathLabels: ['send'],
   },
   sendgrid: {
     label: 'SendGrid',
     spfInclude: 'sendgrid.net',
     dkimSelectors: ['s1', 's2'],
+    // مسار العودة لدى SendGrid على `emNNNN.<النطاق>` برقم يخصّ الحساب،
+    // فلا يمكن تخمينه — والمحاذاة عندهم تقوم على DKIM أصلاً.
+    returnPathLabels: [],
   },
   mailgun: {
     label: 'Mailgun',
     spfInclude: 'mailgun.org',
     dkimSelectors: ['mailo', 'smtp', 'k1', 'pic'],
+    returnPathLabels: ['mg'],
   },
   ses: {
     label: 'Amazon SES',
     spfInclude: 'amazonses.com',
     dkimSelectors: [],
+    returnPathLabels: ['bounce', 'mail'],
   },
 };
 
@@ -89,13 +95,33 @@ async function cname(resolver, name) {
 
 // ─── SPF ───────────────────────────────────────────────────────────────────
 
-export function inspectSpf(records, provider) {
+/**
+ * SPF يتحقّق من **مُرسِل الغلاف** (Return-Path) لا من العنوان الظاهر في From.
+ *
+ * ولأن المزوّدين يضعون مسار العودة على نطاق فرعي يديرونه (`send.` لدى
+ * Resend مثلاً)، فالسجل الصحيح يعيش هناك لا على نطاق الإرسال. الفحص على
+ * النطاق وحده كان يقول «لا يوجد SPF» لضبطٍ سليم تماماً — أي يرسل صاحبه
+ * يضيف سجلاً لا يلزم، ويظن أنه أصلح شيئاً.
+ *
+ * المحاذاة حينها تبقى سليمة: النطاق الفرعي ونطاق الإرسال يشتركان في النطاق
+ * التنظيمي، وهذا يكفي محاذاة SPF المرنة — وهي الافتراضية في DMARC.
+ */
+export function inspectSpf(records, provider, { returnPath = [] } = {}) {
   const spf = records.filter((r) => /^v=spf1\b/i.test(r.trim()));
   if (!spf.length) {
+    const delegated = returnPath.find((hit) => hit.records.some((r) => /^v=spf1\b/i.test(r.trim())));
+    if (delegated) {
+      return {
+        ok: true, level: 'ok', found: delegated.records[0],
+        message: `SPF منشور على مسار العودة الذي يديره ${provider.label} (${delegated.name}).`,
+        fix: '',
+      };
+    }
     return {
       ok: false, level: 'error', found: null,
-      message: 'لا يوجد سجل SPF على الجذر.',
-      fix: `أضِف TXT على @ بالقيمة:  v=spf1 include:${provider.spfInclude} ~all`,
+      message: 'لا يوجد سجل SPF — لا على نطاق الإرسال ولا على مسار العودة.',
+      fix: `أضِف TXT على @ بالقيمة:  v=spf1 include:${provider.spfInclude} ~all`
+        + '  — أو الأفضل: أكمل توثيق النطاق في لوحة المزوّد ودعه ينشرها.',
     };
   }
   if (spf.length > 1) {
@@ -172,8 +198,10 @@ export function inspectDmarc(records, { inheritedFrom = '' } = {}) {
     return {
       ok: false, level: 'error', found: null,
       message: 'لا يوجد سجل DMARC.',
+      // بلا وسوم محاذاة عمداً: الافتراضي مرن، وهو ما يقبل مسار عودة على
+      // نطاق فرعي. `aspf=s` هنا كان سيُسقط محاذاة SPF ويترك DKIM وحده.
       fix: 'أضِف TXT على _dmarc بالقيمة:  '
-        + 'v=DMARC1; p=none; rua=mailto:dmarc@<نطاقك>; adkim=s; aspf=s',
+        + 'v=DMARC1; p=none; rua=mailto:dmarc@<نطاقك>',
     };
   }
   const record = dmarc[0];
@@ -211,20 +239,25 @@ export async function checkDomain(domain, providerKey, { resolver = new Resolver
   // mail.example.com بينما هو منشور على example.com ويحكمها فعلاً — أي
   // يرسل صاحبه يصلح ما ليس مكسوراً.
   const parent = organizationalDomain(domain);
-  const [rootTxt, dmarcTxt, parentDmarcTxt, ...dkim] = await Promise.all([
+  const labels = provider.returnPathLabels ?? [];
+  const [rootTxt, dmarcTxt, parentDmarcTxt, returnPath, dkim] = await Promise.all([
     txt(resolver, domain),
     txt(resolver, `_dmarc.${domain}`),
     parent === domain ? Promise.resolve([]) : txt(resolver, `_dmarc.${parent}`),
-    ...provider.dkimSelectors.map(async (selector) => {
+    Promise.all(labels.map(async (label) => {
+      const name = `${label}.${domain}`;
+      return { name, records: await txt(resolver, name) };
+    })),
+    Promise.all(provider.dkimSelectors.map(async (selector) => {
       const name = `${selector}._domainkey.${domain}`;
       const [asTxt, asCname] = await Promise.all([txt(resolver, name), cname(resolver, name)]);
       return { name, records: [...asTxt, ...asCname] };
-    }),
+    })),
   ]);
 
   const own = inspectDmarc(dmarcTxt);
   const checks = {
-    spf: inspectSpf(rootTxt, provider),
+    spf: inspectSpf(rootTxt, provider, { returnPath }),
     dkim: inspectDkim(dkim, provider),
     dmarc: own.ok ? own : inspectDmarc(parentDmarcTxt, { inheritedFrom: parent }),
   };

@@ -45,6 +45,29 @@ describe('inspectSpf', () => {
       .toMatchObject({ ok: true, level: 'warn' });
   });
 
+  it('accepts SPF published on the provider-managed return path', () => {
+    // SPF يتحقّق من مُرسِل الغلاف لا من From، والمزوّد يضعه على نطاقه الفرعي.
+    // الفحص على نطاق الإرسال وحده كان يقول «مفقود» لضبطٍ سليم تماماً.
+    const result = inspectSpf([], RESEND, {
+      returnPath: [{ name: 'send.d.test', records: ['v=spf1 ip4:52.3.252.119 ~all'] }],
+    });
+    expect(result).toMatchObject({ ok: true, level: 'ok' });
+    expect(result.message).toContain('send.d.test');
+  });
+
+  it('still fails when neither the domain nor the return path carries one', () => {
+    expect(inspectSpf([], RESEND, {
+      returnPath: [{ name: 'send.d.test', records: [] }],
+    })).toMatchObject({ ok: false, level: 'error' });
+  });
+
+  it('prefers the record on the sending domain over the return path', () => {
+    const result = inspectSpf(['v=spf1 include:_spf.resend.com ~all'], RESEND, {
+      returnPath: [{ name: 'send.d.test', records: ['v=spf1 ip4:1.2.3.4 ~all'] }],
+    });
+    expect(result.message).not.toContain('مسار العودة');
+  });
+
   it('ignores unrelated TXT records sharing the root', () => {
     const records = ['google-site-verification=abc', 'v=spf1 include:_spf.resend.com -all'];
     expect(inspectSpf(records, RESEND).ok).toBe(true);
@@ -74,6 +97,12 @@ describe('inspectDkim', () => {
 describe('inspectDmarc', () => {
   it('reports a missing record with the line to paste', () => {
     expect(inspectDmarc([]).fix).toContain('v=DMARC1; p=none');
+  });
+
+  it('recommends no alignment tags, so a sub-domain return path still aligns', () => {
+    // aspf=s كان سيُسقط محاذاة SPF حين يعيش مسار العودة على نطاق فرعي،
+    // فيترك DKIM وحده بلا احتياطي. الافتراضي المرن هو الصحيح هنا.
+    expect(inspectDmarc([]).fix).not.toContain('aspf=s');
   });
 
   it('accepts p=none as a start but keeps it a warning', () => {
@@ -161,6 +190,19 @@ describe('checkDomain', () => {
     const result = await checkDomain('mail.sweater.test', 'resend', { resolver });
     expect(result.checks.dmarc.ok).toBe(true);
     expect(result.checks.dmarc.message).toContain('موروث من sweater.test');
+    expect(result.ready).toBe(true);
+  });
+
+  it('reads a real Resend zone as ready once DMARC exists', async () => {
+    // شكل المنطقة كما ينشرها Resend فعلاً: SPF على send.، DKIM على النطاق.
+    const resolver = resolverFor({
+      'send.mail.sweater.test': ['v=spf1 ip4:52.3.252.119 ~all'],
+      'resend._domainkey.mail.sweater.test': ['p=MIGfMA0GCSq...'],
+      '_dmarc.sweater.test': ['v=DMARC1; p=none; rua=mailto:d@sweater.test'],
+    });
+    const result = await checkDomain('mail.sweater.test', 'resend', { resolver });
+    expect(result.checks.spf.ok).toBe(true);
+    expect(result.checks.spf.message).toContain('send.mail.sweater.test');
     expect(result.ready).toBe(true);
   });
 

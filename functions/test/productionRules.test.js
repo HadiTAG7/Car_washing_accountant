@@ -21,11 +21,12 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
-import { doc, setDoc, updateDoc, deleteDoc, getDoc, getDocs, collection } from 'firebase/firestore';
+import { doc, setDoc, updateDoc, deleteDoc, getDoc, getDocs, collection, query, where } from 'firebase/firestore';
 import { initializeApp, deleteApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { issueDocument, voidDocument, DOC_COL } from '../src/invoicing.js';
 import { postSource, reverseEntry, seedChartOfAccounts, COL } from '../src/ledger.js';
+import { createPartnerMcpKey, KEYS_COL as MCP_KEYS, HASHES_COL as MCP_HASHES } from '../src/partnerMcpKeys.js';
 
 const EMU = process.env.FIRESTORE_EMULATOR_HOST;
 const d = EMU ? describe : describe.skip;
@@ -518,6 +519,51 @@ d('رحلة الإنتاج تحت firestore.rules الفعلية', () => {
       await assertFails(getDoc(doc(ghost, 'housing_units', 'u1')));
 
       await assertSucceeds(deleteDoc(doc(ctx.op, 'housing_units', 'u1')));
+    }, 120_000);
+
+    // ═══ روابط المساعد الذكي للشركاء ═══════════════════════════════════
+    // The key doc carries no secret; the hash doc carries the lookup. A
+    // partner reads their own key, never another's; an admin reads all; no
+    // client writes either; and the hash collection is dark even to an admin.
+    it('روابط MCP: الشريك يرى مفتاحه هو، والمدير الكل، ولا أحد يكتب أو يقرأ البصمات', async () => {
+      await env.withSecurityRulesDisabled(async (c) => {
+        const db = c.firestore();
+        await setDoc(doc(db, 'users', 'mcp-partner1'), { email: 'p1@x.com', role: 'partner' });
+        await setDoc(doc(db, 'users', 'mcp-partner2'), { email: 'p2@x.com', role: 'partner' });
+        await setDoc(doc(db, 'partners', 'mp1'), { partner_name: 'أحمد', workers_count: 1, user_id: 'mcp-partner1' });
+        await setDoc(doc(db, 'partners', 'mp2'), { partner_name: 'سالم', workers_count: 1, user_id: 'mcp-partner2' });
+      });
+      const k1 = await createPartnerMcpKey(adb, FieldValue, { partnerId: 'mp1', ownerUid: 'mcp-partner1', actor: 'mcp-partner1' });
+      const k2 = await createPartnerMcpKey(adb, FieldValue, { partnerId: 'mp2', ownerUid: 'mcp-partner2', actor: 'mcp-partner2' });
+      const p1 = env.authenticatedContext('mcp-partner1').firestore();
+      const ghost = env.authenticatedContext('ghost-mcp').firestore();
+
+      // الشريك: مفتاحه نعم، مفتاح غيره لا، وقائمته بشرط ملكيته.
+      await assertSucceeds(getDoc(doc(p1, MCP_KEYS, k1.keyId)));
+      await assertFails(getDoc(doc(p1, MCP_KEYS, k2.keyId)));
+      await assertSucceeds(getDocs(query(collection(p1, MCP_KEYS), where('ownerUid', '==', 'mcp-partner1'))));
+      await assertFails(getDocs(collection(p1, MCP_KEYS)));
+      // ولا يكتب — الإنشاء والإلغاء للخادم.
+      await assertFails(setDoc(doc(p1, MCP_KEYS, 'pmk_forged'), { partnerId: 'mp1', ownerUid: 'mcp-partner1', status: 'active' }));
+      await assertFails(updateDoc(doc(p1, MCP_KEYS, k1.keyId), { status: 'revoked' }));
+      await assertFails(deleteDoc(doc(p1, MCP_KEYS, k1.keyId)));
+
+      // المدير: الكل قراءةً، ولا كتابة.
+      await assertSucceeds(getDoc(doc(ctx.admin, MCP_KEYS, k2.keyId)));
+      await assertSucceeds(getDocs(collection(ctx.admin, MCP_KEYS)));
+      await assertFails(updateDoc(doc(ctx.admin, MCP_KEYS, k1.keyId), { status: 'revoked' }));
+
+      // البصمات مظلمةٌ على الجميع — المدير أيضاً.
+      const hashes = await adb.collection(MCP_HASHES).get();
+      expect(hashes.size).toBe(2);
+      for (const h of hashes.docs) {
+        await assertFails(getDoc(doc(ctx.admin, MCP_HASHES, h.id)));
+        await assertFails(getDoc(doc(p1, MCP_HASHES, h.id)));
+      }
+      await assertFails(getDocs(collection(ctx.admin, MCP_HASHES)));
+
+      // وحسابٌ بلا عضوية لا يرى شيئاً.
+      await assertFails(getDoc(doc(ghost, MCP_KEYS, k1.keyId)));
     }, 120_000);
   });
 });

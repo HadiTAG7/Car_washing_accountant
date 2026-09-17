@@ -108,6 +108,12 @@ export const sweaterCreateIntegrationKey = callable('sweaterCreateIntegrationKey
 export const sweaterRevokeIntegrationKey = callable('sweaterRevokeIntegrationKey');
 export const sweaterListIntegrationKeys = callable('sweaterListIntegrationKeys');
 
+// ─── روابط المساعد الذكي للشركاء ─────────────────────────────────────────
+// المنفذ نفسه (`api/partner-mcp/[secret].js`) بابٌ مستقل يقرأ بالرمز؛ هنا
+// إنشاء الرمز وإلغاؤه فقط، من حساب الشريك أو المدير.
+export const partnerMcpCreateKey = callable('partnerMcpCreateKey');
+export const partnerMcpRevokeKey = callable('partnerMcpRevokeKey');
+
 // ─── مسير رواتب البايكر ────────────────────────────────────────────────
 export const payrollPreview = callable('payrollPreview');
 export const payrollSaveDraft = callable('payrollSaveDraft');

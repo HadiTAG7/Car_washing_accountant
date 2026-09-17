@@ -168,19 +168,27 @@ export async function listIntegrationKeys(db) {
   });
 }
 
-/** حدّ المعدل — عدّادٌ في نافذةٍ زمنية، بمعاملة لأن serverless بلا ذاكرة. */
-export async function checkRateLimit(db, FieldValue, keyId, nowMs) {
+/**
+ * حدّ المعدل — عدّادٌ في نافذةٍ زمنية، بمعاملة لأن serverless بلا ذاكرة.
+ *
+ * المجموعة والحدّ اختياريان كي يستعمله بابٌ آخر (روابط الشركاء) بعدّاده هو،
+ * لا بعدّاد مفاتيح سويتر: بابان يتشاركان مجموعةً واحدة يُسقط أحدهما الآخر
+ * حين يُفرَغ للاختبار أو يُنظَّف.
+ */
+export async function checkRateLimit(db, FieldValue, keyId, nowMs, {
+  collection: col = RATE_COL, max = RATE_MAX_PER_WINDOW,
+} = {}) {
   const window = Math.floor(nowMs / 1000 / RATE_WINDOW_SECONDS);
-  const ref = db.collection(RATE_COL).doc(`${keyId}__${window}`);
+  const ref = db.collection(col).doc(`${keyId}__${window}`);
   const count = await db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     const n = (snap.exists ? Number(snap.data().count) || 0 : 0) + 1;
     tx.set(ref, { keyId, window, count: n, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
     return n;
   });
-  if (count > RATE_MAX_PER_WINDOW) {
+  if (count > max) {
     throw new IntegrationAuthError(
-      `تجاوزت ${RATE_MAX_PER_WINDOW} طلباً في ${RATE_WINDOW_SECONDS} ثانية — أعد المحاولة بعد قليل.`,
+      `تجاوزت ${max} طلباً في ${RATE_WINDOW_SECONDS} ثانية — أعد المحاولة بعد قليل.`,
       { code: 'resource-exhausted' },
     );
   }

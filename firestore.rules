@@ -514,6 +514,22 @@ service cloud.firestore {
       ];
     }
 
+    // ── روابط المساعد الذكي للشركاء ──────────────────────────────────
+    // الشريك يرى مفتاحه هو — وليس فيه سرّ: معرّفٌ وحالةٌ وتواريخ — والمدير
+    // يرى الكل ليُلغي. والكتابة للخادم وحده عبر `partnerMcpCreateKey` /
+    // `partnerMcpRevokeKey`: الإنشاء يضع بصمةَ الرمز في مجموعةٍ لا يقرؤها أي
+    // عميل مهما كان دوره، فالبحث عنها بالمعرّف شأن الخادم فقط.
+    match /partner_mcp_keys/{keyId} {
+      allow read:  if isAdmin() || (signedIn() && resource.data.ownerUid == request.auth.uid);
+      allow write: if false;
+    }
+    match /partner_mcp_key_hashes/{hash} {
+      allow read, write: if false;
+    }
+    match /partner_mcp_rate_limits/{id} {
+      allow read, write: if false;
+    }
+
     // NOTE: in Firestore every matching rule is evaluated and access is
     // granted if ANY allows, so a collection protected above must NOT also
     // appear in this list — the wildcard would hand back what the specific

@@ -127,6 +127,49 @@ function requireSignedIn(db, auth) {
   return { uid: auth.uid, role: null };
 }
 
+/**
+ * الشريك عن نفسه.
+ *
+ * الحارس الوحيد الذي يُرجع أكثر من الهوية والدور: صفَّ الشريك الذي يملكه هذا
+ * الحساب، لأن الجسم يحتاجه ولأن قراءته مرتين — هنا وهناك — تفتح ثقباً بين
+ * القراءتين. العضوية تُفحص أولاً (`callerRole` يرمي لغير العضو)، ثم الربط:
+ * حسابٌ عضوٌ بلا صفٍّ مربوط يُرفض برسالةٍ تسمّي الإجراء، لا بـ«صلاحيات».
+ */
+async function requirePartnerSelf(db, auth) {
+  const role = await callerRole(db, auth);
+  const snap = await db.collection('partners').where('user_id', '==', auth.uid).limit(2).get();
+  if (snap.empty) {
+    throw new AuthError(
+      'حسابك غير مربوط بسجل شريك بعد — تواصل مع الإدارة لإتمام الربط.',
+      { code: 'failed-precondition' },
+    );
+  }
+  if (snap.size > 1) {
+    throw new AuthError(
+      'حسابك مربوط بأكثر من سجل شريك — تواصل مع الإدارة لتصحيح الربط.',
+      { code: 'failed-precondition' },
+    );
+  }
+  const d = snap.docs[0];
+  return { uid: auth.uid, role, partner: { id: d.id, ...d.data() } };
+}
+
+/**
+ * من يملك التصرّف في رابطٍ بعينه: صاحبه أو المدير.
+ *
+ * الملكية تُقرأ من المستند المخزَّن لا من الحمولة — المتصل يسمّي المعرّف
+ * فقط، والخادم يقرّر لمن هو.
+ */
+async function requirePartnerKeyActor(db, auth, keyId) {
+  const role = await callerRole(db, auth);
+  const snap = await db.collection(PARTNER_MCP_KEYS_COL).doc(String(keyId ?? '')).get();
+  if (!snap.exists) throw new AuthError('لا رابط بهذا المعرّف.', { code: 'not-found' });
+  if (role !== 'admin' && snap.data().ownerUid !== auth.uid) {
+    throw new AuthError('هذا الرابط ليس لك.');
+  }
+  return { uid: auth.uid, role, key: { keyId: snap.id, ...snap.data() } };
+}
+
 export const GUARDS = {
   accountant: ({ db, auth }) => requireAccountant(db, auth),
   admin: ({ db, auth }) => requireAdmin(db, auth),
@@ -140,6 +183,8 @@ export const GUARDS = {
   legacyLinks: ({ db, auth, data }) => (data?.apply === true
     ? requireAdmin(db, auth)
     : requireAccountant(db, auth)),
+  partnerSelf: ({ db, auth }) => requirePartnerSelf(db, auth),
+  partnerKeyActor: ({ db, auth, data }) => requirePartnerKeyActor(db, auth, data?.keyId),
 };
 
 // ─── أين يُسلَّم ─────────────────────────────────────────────────────────
@@ -157,6 +202,10 @@ import {
 import {
   createIntegrationKey, revokeIntegrationKey, listIntegrationKeys,
 } from './sweater/integrationKeys.js';
+import {
+  createPartnerMcpKey, revokePartnerMcpKey, PartnerMcpKeyError,
+  KEYS_COL as PARTNER_MCP_KEYS_COL,
+} from './partnerMcpKeys.js';
 
 export const HANDLERS = {
   // ── الترحيل ──
@@ -488,6 +537,24 @@ export const HANDLERS = {
     run: ({ db, FieldValue, data, uid }) => cancelPayroll(db, FieldValue, data || {}, { userId: uid }),
   },
 
+  // ── روابط المساعد الذكي للشركاء ──
+  // الشريك ينشئ رابطه هو — والحارس هو من يقرّر أيَّ شريك، فلا `partnerId` في
+  // الحمولة أصلاً. والإنشاء تدويرٌ ضمناً: الفعّال السابق يُلغى في نفس المعاملة.
+  partnerMcpCreateKey: {
+    guard: 'partnerSelf',
+    run: ({ db, FieldValue, data, uid, partner }) => createPartnerMcpKey(db, FieldValue, {
+      partnerId: partner.id, ownerUid: uid, label: data?.label ?? null, actor: uid,
+    }),
+  },
+  // صاحب الرابط أو المدير. القراءة لا تحتاج معالجاً: القواعد تسمح لصاحبه
+  // وللمدير بقراءة `partner_mcp_keys` مباشرةً، وليس فيها سرّ.
+  partnerMcpRevokeKey: {
+    guard: 'partnerKeyActor',
+    run: ({ db, FieldValue, data, uid }) => revokePartnerMcpKey(db, FieldValue, {
+      keyId: data?.keyId, actor: uid, reason: data?.reason ?? null,
+    }),
+  },
+
 };
 
 export const HANDLER_NAMES = Object.keys(HANDLERS);
@@ -531,6 +598,9 @@ export function normalizeError(e) {
   if (e instanceof PayrollError) {
     return { code: e.code || 'failed-precondition', message: e.message, details: e.details || null };
   }
+  if (e instanceof PartnerMcpKeyError) {
+    return { code: e.code || 'failed-precondition', message: e.message, details: null };
+  }
   // Anything else is a bug: log it in full, tell the caller nothing internal.
   console.error('[ledger] unexpected failure', e);
   return { code: 'internal', message: 'تعذّر إتمام العملية — حاول مرة أخرى.', details: null };
@@ -561,8 +631,10 @@ export async function dispatch(db, FieldValue, name, data, auth) {
     });
   }
   try {
-    const { uid, role } = await GUARDS[handler.guard]({ db, auth, data });
-    return await handler.run({ db, FieldValue, data, auth, uid, role });
+    // ما يُرجعه الحارس يُمرَّر كله: `uid` و`role` من كل حارس، وما زاد — صفُّ
+    // الشريك من `partnerSelf` — من حارسٍ يحتاجه جسمه، فلا يُقرأ مرتين.
+    const ctx = await GUARDS[handler.guard]({ db, auth, data });
+    return await handler.run({ db, FieldValue, data, auth, ...ctx });
   } catch (e) {
     throw new DispatchError(normalizeError(e));
   }

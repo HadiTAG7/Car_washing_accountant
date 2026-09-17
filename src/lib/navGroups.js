@@ -9,7 +9,7 @@
 import {
   LayoutDashboard, Landmark, Repeat, Receipt, Activity, Car, Bike, Home,
   BarChart3, Target, Handshake, Plug, HandCoins, RefreshCw, Percent,
-  BookOpen, Scale, Lock, FileText, Boxes, Gauge,
+  BookOpen, Scale, Lock, FileText, Boxes, Gauge, Wallet, TrendingUp,
 } from 'lucide-react';
 
 // Tab ids are untouched: the render chain below keys off them, so regrouping
@@ -83,17 +83,67 @@ export const TAB_GROUPS = [
 ];
 
 // ── ما يراه المستثمر ──────────────────────────────────────────────────────
-// تبويبٌ واحد بلا عنوان مجموعة، فلا رأس طيٍّ يُعرض لقائمة من عنصر واحد.
-// الشريط الجانبي هنا ليس اختصاراً بل حدّ: ما لا يظهر فيه لا يُفتح.
+// كان تبويباً واحداً: ورقةٌ طويلة تحمل أربعة أشياء مختلفة — حصّته، وسندات
+// رأس ماله، وقائمة دخل الشهر، واتجاه ستة أشهر — فمن أراد رقماً واحداً مرّ
+// على الثلاثة الأخرى، وعلى الجوال يعني ذلك تمريراً لا قراءة.
+//
+// الآن أربعة خيارات، مقسومةٌ بالسؤال الذي يجيب عليه كلٌّ منها لا بمصدر
+// بياناته: «أين أنا؟» و«كم دفعتُ؟» و«ما نصيبي من هذا الشهر؟» و«إلى أين
+// تتجه؟». والقسمة قسمةُ عرضٍ لا قسمةُ صلاحية: أربعتها تقرأ ما كانت تقرؤه
+// الورقة الواحدة، لا حرفاً أكثر.
+//
+// و`view` تُحمل هنا لا في `App.jsx`: التبويب ومحتواه شيءٌ واحد، وفصلهما في
+// ملفين يعني جدولين يفترقان بصمت عند أول إضافة.
+export const INVESTOR_TABS = [
+  { id: 'investor',         view: 'overview', label: 'نظرة عامة',    icon: Handshake  },
+  { id: 'investor_capital', view: 'capital',  label: 'رأس مالي',     icon: Wallet     },
+  { id: 'investor_income',  view: 'income',   label: 'قائمة الدخل',  icon: BarChart3  },
+  { id: 'investor_trends',  view: 'trends',   label: 'اتجاه ٦ أشهر', icon: TrendingUp },
+];
+
+// المقصد حين لا يكون التبويب المطلوب من تبويبات المستثمر — ولأنه الأول،
+// فهو أيضاً ما يفتح عليه أول دخول.
+export const INVESTOR_HOME_TAB = INVESTOR_TABS[0].id;
+
+export const INVESTOR_TAB_IDS = INVESTOR_TABS.map((t) => t.id);
+
+// «نظرة عامة» بلا عنوان مجموعة كما في الواجهة الإدارية — الملخّص لا ينتمي
+// لفئة — والبقية تحت عنوانٍ واحد يُطوى.
 export const INVESTOR_GROUPS = [
   {
     id: 'top',
     title: null,
-    tabs: [
-      { id: 'investor', label: 'حسابي كشريك', icon: Handshake },
-    ],
+    tabs: [INVESTOR_TABS[0]],
+  },
+  {
+    id: 'investor',
+    title: 'حسابي كشريك',
+    tabs: INVESTOR_TABS.slice(1),
   },
 ];
+
+/** أيّ عرضٍ داخل `InvestorPage` يخصّ هذا التبويب. */
+export function investorViewFor(tabId) {
+  const tab = INVESTOR_TABS.find((t) => t.id === tabId);
+  return (tab || INVESTOR_TABS[0]).view;
+}
+
+/**
+ * التبويب الذي يُصيَّر فعلاً.
+ *
+ * الشريط الجانبي حدٌّ لا اختصار، فالحدّ يُطبَّق هنا مرة أخرى بدل الاتكال على
+ * ما يُعرض: مستثمرٌ طلب `ledger` — بمعرّفٍ قديم في الحالة أو بيدٍ عابثة —
+ * يعود إلى صفحته، لا إلى الدفاتر.
+ *
+ * والعكس كان ثقباً حقيقياً فتحه التقسيم: مديرٌ يحاكي شريكاً ينتقل بين
+ * تبويبات المستثمر، فإذا أنهى المحاكاة بقي `activeTab` على معرّفٍ لا تصيّره
+ * الواجهة الإدارية — شاشةٌ بيضاء. فيعود إلى «نظرة عامة».
+ */
+export function resolveTab(activeTab, { investorMode = false } = {}) {
+  const isInvestorTab = INVESTOR_TAB_IDS.includes(activeTab);
+  if (investorMode) return isInvestorTab ? activeTab : INVESTOR_HOME_TAB;
+  return isInvestorTab ? 'overview' : activeTab;
+}
 
 /**
  * المجموعات التي يراها هذا المستخدم.

@@ -12,6 +12,12 @@
       "maxDuration": 30
     }
   },
+  "rewrites": [
+    {
+      "source": "/((?!api/).*)",
+      "destination": "/index.html"
+    }
+  ],
   "crons": [
     {
       "path": "/api/agent-command-center-cleanup",

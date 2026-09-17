@@ -1,7 +1,7 @@
 import { Readable } from 'node:stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import handler, {
-  applyCustomLinkHost, createPasswordResetHandler, generateLink, safeErrorCode,
+  applyActionUrl, applyCustomLinkHost, createPasswordResetHandler, generateLink, safeErrorCode,
 } from '../../api/password-reset.js';
 import { PasswordResetEmailError } from '../../server/passwordResetEmail.js';
 import { PasswordResetConfigError } from '../../server/passwordResetRuntime.js';
@@ -54,7 +54,42 @@ afterEach(() => {
   for (const key of Object.keys(MAILER_ENV)) delete process.env[key];
   delete process.env.PASSWORD_RESET_APP_URL;
   delete process.env.PASSWORD_RESET_LINK_HOST;
+  delete process.env.PASSWORD_RESET_ACTION_URL;
   vi.restoreAllMocks();
+});
+
+describe('applyActionUrl', () => {
+  const OURS = 'https://app.sweater.test/update-password';
+
+  it('moves the link to our page and carries every parameter over', () => {
+    // الانتقاء يكسر لاحقاً: mode و apiKey و continueUrl عقدٌ مع Firebase.
+    const result = new URL(applyActionUrl(
+      `${LINK}&apiKey=AIza&continueUrl=https%3A%2F%2Fx.test%2F&lang=ar`, OURS,
+    ));
+    expect(result.origin + result.pathname).toBe(OURS);
+    expect(result.searchParams.get('oobCode')).toBe('abc');
+    expect(result.searchParams.get('mode')).toBe('resetPassword');
+    expect(result.searchParams.get('apiKey')).toBe('AIza');
+    expect(result.searchParams.get('continueUrl')).toBe('https://x.test/');
+    expect(result.searchParams.get('lang')).toBe('ar');
+  });
+
+  it('keeps a query already on our page unless Firebase overrides it', () => {
+    const result = new URL(applyActionUrl(LINK, `${OURS}?ref=email`));
+    expect(result.searchParams.get('ref')).toBe('email');
+    expect(result.searchParams.get('oobCode')).toBe('abc');
+  });
+
+  it('is a no-op without the variable', () => {
+    expect(applyActionUrl(LINK, '')).toBe(LINK);
+    expect(applyActionUrl(LINK, '   ')).toBe(LINK);
+  });
+
+  it('keeps the working Firebase link when the target is unusable', () => {
+    // صفحةٌ قبيحة تعمل خيرٌ من رابطٍ مكسور لا يعمل.
+    expect(applyActionUrl(LINK, 'not-a-url')).toBe(LINK);
+    expect(applyActionUrl('not-a-url', OURS)).toBe('not-a-url');
+  });
 });
 
 describe('applyCustomLinkHost', () => {
@@ -208,6 +243,30 @@ describe('/api/password-reset', () => {
     expect(generatePasswordResetLink).toHaveBeenCalledWith(
       'user@example.com', { url: 'https://app.sweater.test/', handleCodeInApp: false },
     );
+  });
+
+  it('sends the user to our own page when one is configured', async () => {
+    withMailerEnv();
+    process.env.PASSWORD_RESET_ACTION_URL = 'https://app.sweater.test/update-password';
+    const { endpoint, send } = deps();
+    const res = response();
+    await endpoint(request(), res);
+
+    const text = send.mock.calls[0][1].text;
+    expect(text).toContain('https://app.sweater.test/update-password?');
+    expect(text).toContain('oobCode=abc');
+    expect(text).not.toContain('firebaseapp.com');
+  });
+
+  it('prefers our page over a custom host, which only moves Firebase\'s own', async () => {
+    withMailerEnv();
+    process.env.PASSWORD_RESET_ACTION_URL = 'https://app.sweater.test/update-password';
+    process.env.PASSWORD_RESET_LINK_HOST = 'auth.sweater.test';
+    const { endpoint, send } = deps();
+    const res = response();
+    await endpoint(request(), res);
+    expect(send.mock.calls[0][1].text).toContain('app.sweater.test/update-password');
+    expect(send.mock.calls[0][1].text).not.toContain('auth.sweater.test');
   });
 
   it('applies the custom action host to the generated link', async () => {

@@ -170,6 +170,7 @@ dig +short CNAME resend._domainkey.your-domain.com
 | `PASSWORD_RESET_EMAIL_REPLY_TO` | — | صندوق يقرأه بشر (مُستحسن بشدّة) |
 | `PASSWORD_RESET_APP_URL` | — | عنوان اللوحة للعودة إليها بعد التعيين |
 | `PASSWORD_RESET_LINK_HOST` | — | نطاق الإجراءات المخصّص بعد توثيقه (الفقرة ٢) |
+| `PASSWORD_RESET_ACTION_URL` | — | صفحة التعيين في التطبيق: `https://<اللوحة>/update-password` |
 | `PASSWORD_RESET_EMAIL_MAILGUN_DOMAIN` | — | لـ Mailgun إن اختلف عن نطاق المرسِل |
 | `PASSWORD_RESET_EMAIL_MAILGUN_REGION` | — | `eu` لحسابات المنطقة الأوروبية |
 
@@ -190,6 +191,33 @@ dig +short CNAME resend._domainkey.your-domain.com
 - **بديل نصي مع كل رسالة**: الرسالة أحادية الجزء (HTML فقط) ترفع درجة السبام.
 - **العدّادات تُكنَس يومياً** مع cron التنظيف القائم (`/api/agent-command-center-cleanup`).
 
+### صفحة التعيين — آخر خطوة، وأدقّها
+
+صفحة Firebase المستضافة تعمل، لكنها بيضاء وإنجليزية وتحمل اسم المشروع
+المولّد (`gemini-eed4a`) وزرّاً بنفسجياً. فبعد رسالةٍ عربية بهوية سويتر يهبط
+المستخدم في صفحةٍ لا تشبهها — وفيها بالذات يكتب كلمة مرور. صفحةٌ غريبة في
+هذا الموضع تُعلّم المستخدم أن يثق بما لا يعرف، وهو عين ما يستغلّه التصيّد.
+
+`UpdatePasswordScreen` في التطبيق (`/update-password`) تفعل الشيء نفسه
+بالعربية وبالهوية، عبر `verifyPasswordResetCode` و`confirmPasswordReset`
+— نفس الرمز ونفس الأمان، لا مسارٌ موازٍ.
+
+لتفعيلها اضبط:
+
+```
+PASSWORD_RESET_ACTION_URL = https://<اللوحة>/update-password
+```
+
+> **شرطٌ لازم**: التطبيق SPA، فالدخول المباشر على `/update-password` يحتاج
+> `rewrites` في `vercel.json` تُرجِع `index.html` لكل ما ليس `/api/`. بدونها
+> يردّ المسار **404** وتنكسر آخر خطوة في الاسترجاع بدل أن تتحسّن. التوجيه
+> مضاف في المستودع؛ إن نشرت على مستضيفٍ آخر فأضِف ما يكافئه.
+
+بديلٌ من اللوحة: Firebase Console ← Authentication ← Templates ← **Customize
+action URL**. يغطّي كل أنواع الرسائل لا إعادة التعيين وحدها — لكن انتبه أن
+صفحتنا تعالج `mode=resetPassword` فقط، فالأنواع الأخرى ستهبط فيها بلا معالج.
+لذلك المتغيّر أعلاه هو المُوصى به: يطال روابط إعادة التعيين وحدها.
+
 ### الملفات
 
 | الملف | الدور |
@@ -199,6 +227,7 @@ dig +short CNAME resend._domainkey.your-domain.com
 | `server/passwordResetThrottle.js` | حدّ الإرسال في Firestore + الكنس |
 | `server/passwordResetRuntime.js` | تطبيق Admin مستقلّ لهذا المسار |
 | `src/lib/passwordReset.js` | عميل: المسار الخادمي ثم الاحتياطي |
+| `src/components/UpdatePasswordScreen.jsx` | صفحة التعيين العربية على `/update-password` |
 | `scripts/check-email-deliverability.mjs` | فاحص سجلات DNS (`npm run check:email`) |
 
 ---

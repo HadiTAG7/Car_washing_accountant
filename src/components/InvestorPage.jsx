@@ -34,7 +34,8 @@
 
 import { useMemo, useState } from 'react';
 import {
-  Calendar, HandCoins, Printer, TrendingUp, Wallet, Link2Off,
+  Calendar, HandCoins, Printer, TrendingUp, Wallet, Link2Off, Droplets, Lock, Clock3,
+  PiggyBank, BookOpen, CalendarRange,
 } from 'lucide-react';
 
 import TopBar from './TopBar';
@@ -52,6 +53,11 @@ import { useLedger } from '../hooks/useLedger';
 import { useFeeRules } from '../hooks/useFeeRules';
 import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
 import { monthlyStatement } from '../lib/accounting/monthlyStatement';
+import { partnerPaidSummary } from '../lib/accounting/partnerTotals';
+import {
+  roiSummary, momChange, ytdTotal, periodStatusOf,
+} from '../lib/accounting/partnerInsights';
+import { usePartnerInsights } from '../hooks/usePartnerInsights';
 import {
   formatCurrency, formatDate, formatNumber, PER_WORKER_FEE,
 } from '../data/initialData';
@@ -102,6 +108,38 @@ function formatMonthLabel(ym) {
   const [y, m] = String(ym).split('-');
   const date = new Date(Number(y), Number(m) - 1, 1);
   return new Intl.DateTimeFormat('ar-SA', { year: 'numeric', month: 'long' }).format(date);
+}
+
+/**
+ * علامة حال الشهر: مُقفَل = نهائي، مفتوح = مبدئي.
+ *
+ * الأرقام تتغيّر حتى يُقفل الشهر، وشريكٌ يرى رقم الشهر الماضي يتبدّل يسأل
+ * «لماذا؟». العلامة تجيب قبل السؤال — ولا تُعرض حين لا سجل للفترة أصلاً.
+ */
+function PeriodBadge({ status }) {
+  if (!status) return null;
+  const closed = status === 'closed';
+  return (
+    <span
+      className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-control border ${
+        closed
+          ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-100 dark:border-emerald-500/30'
+          : 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-100 dark:border-amber-500/30'
+      }`}
+      title={closed ? 'الشهر مُقفَل في الدفاتر — الأرقام نهائية' : 'الشهر مفتوح — قد تُضاف قيود فتتغيّر الأرقام'}
+    >
+      {closed ? <Lock size={12} /> : <Clock3 size={12} />}
+      {closed ? 'نهائي' : 'مبدئي'}
+    </span>
+  );
+}
+
+/** «▲ 12% عن الشهر السابق» — أو لا شيء حين لا سابق. */
+function momText(mom) {
+  if (!mom || mom.delta === null) return null;
+  const arrow = mom.direction === 'up' ? '▲' : mom.direction === 'down' ? '▼' : '=';
+  const pct = mom.percent === null ? formatCurrency(Math.abs(mom.delta)) : `${Math.abs(mom.percent).toFixed(1)}%`;
+  return `${arrow} ${pct} عن الشهر السابق`;
 }
 
 /**
@@ -197,7 +235,7 @@ function CapitalSummary({ partner, required, paid, remaining, settled, receiptsC
  * العامل، فلا حساب جديد هنا ولا فرصة لاختلاف رقمٍ عن رقم.
  */
 function IncomeStatementCard({
-  sharePercent, hasShare, availableMonths, activeMonth, onMonthChange, statement,
+  sharePercent, hasShare, availableMonths, activeMonth, onMonthChange, statement, periodStatus = null,
 }) {
   if (!hasShare) {
     return (
@@ -218,16 +256,19 @@ function IncomeStatementCard({
         title={`قائمة الدخل — حصّتك (${sharePercent.toFixed(1)}%)`}
         subtitle="نتيجة الشهر مقسومة بنسبتك"
         action={(
-          <select
-            aria-label="فترة التقرير (الشهر)"
-            value={activeMonth}
-            onChange={(e) => onMonthChange(e.target.value)}
-            className="px-3 py-2 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm font-bold tabular-nums focus:outline-none focus:border-primary-500"
-          >
-            {availableMonths.map((ym) => (
-              <option key={ym} value={ym}>{formatMonthLabel(ym)}</option>
-            ))}
-          </select>
+          <div className="flex items-center gap-2">
+            <PeriodBadge status={periodStatus} />
+            <select
+              aria-label="فترة التقرير (الشهر)"
+              value={activeMonth}
+              onChange={(e) => onMonthChange(e.target.value)}
+              className="px-3 py-2 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm font-bold tabular-nums focus:outline-none focus:border-primary-500"
+            >
+              {availableMonths.map((ym) => (
+                <option key={ym} value={ym}>{formatMonthLabel(ym)}</option>
+              ))}
+            </select>
+          </div>
         )}
       />
 
@@ -294,7 +335,8 @@ function IncomeStatementCard({
  */
 function OverviewView({
   partner, totalWorkers, sharePercent, required, paid, remaining, settled,
-  receiptsCount, hasShare, latestMonth, latestStatement,
+  receiptsCount, hasShare, latestMonth, latestStatement, latestStatus = null,
+  mom = null, ytd = 0, washShare = null, roi = null,
 }) {
   return (
     <>
@@ -312,6 +354,7 @@ function OverviewView({
         <SectionHeader
           title="نتيجة آخر شهر"
           subtitle={`صافي ربحك من ${formatMonthLabel(latestMonth)}`}
+          action={<PeriodBadge status={latestStatus} />}
         />
         {!hasShare ? (
           <EmptyState
@@ -347,18 +390,85 @@ function OverviewView({
               tone={latestStatement.netProfit >= 0 ? 'emerald' : 'amber'}
               label="صافي ربحك"
               value={formatCurrency(latestStatement.netProfit)}
-              sub={`نسبتك ${sharePercent.toFixed(1)}%`}
+              sub={momText(mom) || `نسبتك ${sharePercent.toFixed(1)}%`}
             />
           </div>
         )}
       </Card>
+
+      {/* ── منذ بداية السنة، وغسلاتك ──────────────────────────── */}
+      {hasShare && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <StatCard
+            icon={CalendarRange}
+            tone="indigo"
+            label={`صافي ربحك منذ بداية ${latestMonth.slice(0, 4)}`}
+            value={formatCurrency(ytd)}
+            sub="مجموع حصّتك من الأشهر المُرحّلة هذه السنة"
+          />
+          <StatCard
+            icon={Droplets}
+            tone="primary"
+            label="غسلات تعادل حصّتك"
+            value={washShare ? formatNumber(washShare.shareCount) : '—'}
+            sub={washShare
+              ? `من أصل ${formatNumber(washShare.companyCount)} غسلة مكتملة في ${formatMonthLabel(washShare.month)}`
+              : 'يُحسب من سجل الغسلات عند توفّره'}
+          />
+        </div>
+      )}
+
+      {/* ── استرداد رأس المال ─────────────────────────────────── */}
+      {hasShare && roi && (
+        <Card className="p-5">
+          <SectionHeader
+            title="استرداد رأس مالك"
+            subtitle="حصّتك من الأرباح منذ أول شهرٍ مُرحَّل، مقابل ما دفعته"
+          />
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+            <StatCard
+              icon={PiggyBank}
+              tone="emerald"
+              label="حصّتك من الأرباح منذ البداية"
+              value={formatCurrency(roi.cumulativeProfit)}
+              sub={roi.firstMonth ? `منذ ${formatMonthLabel(roi.firstMonth)} — ${formatNumber(roi.monthsCounted)} شهراً` : 'لا أشهر مُرحّلة بعد'}
+            />
+            <StatCard
+              icon={TrendingUp}
+              tone={roi.recovered ? 'emerald' : 'primary'}
+              label="نسبة الاسترداد"
+              value={roi.paid > 0 ? `${roi.recoveredPercent.toFixed(1)}%` : '—'}
+              sub={roi.paid > 0 ? (roi.recovered ? 'استُردّ رأس مالك بالكامل' : `المتبقّي ${formatCurrency(roi.remaining)}`) : 'لم تُسجَّل دفعات بعد'}
+            />
+            <StatCard
+              icon={Calendar}
+              tone={roi.recovered ? 'emerald' : (roi.monthsToRecover === null ? 'slate' : 'amber')}
+              label="المتوقع للاسترداد"
+              value={roi.recovered ? '✓ تم' : (roi.monthsToRecover === null ? 'غير محدد' : `~${formatNumber(roi.monthsToRecover)} شهراً`)}
+              sub={roi.recovered
+                ? 'كل ربحٍ بعد الآن فوق رأس المال'
+                : (roi.monthsToRecover === null
+                  ? 'متوسط آخر الأشهر صفرٌ أو سالب'
+                  : `بمتوسط ${formatCurrency(roi.avgRecent)} شهرياً (آخر ${formatNumber(roi.monthsAveraged)} أشهر)`)}
+            />
+          </div>
+          <ProgressBar
+            value={Math.min(roi.cumulativeProfit, roi.paid || 1)}
+            max={roi.paid || 1}
+            color={roi.recovered ? 'emerald' : 'primary'}
+          />
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-3 leading-relaxed">
+            تقديرٌ لا وعد: يُبنى على متوسط آخر الأشهر المُرحّلة، والأشهر المفتوحة قد تتغيّر حتى تُقفل.
+          </p>
+        </Card>
+      )}
     </>
   );
 }
 
 /** «رأس مالي» — السندات وكشف الحساب والتحصيل الشهري. */
 function CapitalView({
-  partner, required, paid, remaining, settled, myReceipts, receiptsTrend, onPrint,
+  partner, required, paid, remaining, settled, myReceipts, receiptsTrend, onPrint, paidSummary = null,
 }) {
   return (
     <>
@@ -370,6 +480,42 @@ function CapitalView({
         settled={settled}
         receiptsCount={myReceipts.length}
       />
+
+      {/* ── رصيدك في الدفاتر ──────────────────────────────────────
+          السندات ما دفعته؛ والدفاتر ما رُحِّل منه. الفرق بينهما «قيد
+          الترحيل» — دفعةٌ لم تدخل الكتب بعد، لا دفعةٌ ضاعت. */}
+      {paidSummary && paidSummary.ledgerAvailable && (
+        <Card className="p-5">
+          <SectionHeader
+            title="رصيدك في الدفاتر"
+            subtitle="حساب رأس مالك في دفتر الأستاذ مقابل سنداتك"
+          />
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <StatCard
+              icon={BookOpen}
+              label="المُرحَّل في الدفاتر"
+              value={formatCurrency(paidSummary.ledgerBalance)}
+              sub="رصيد حساب رأس مالك من القيود المُرحّلة"
+            />
+            <StatCard
+              icon={HandCoins}
+              tone="emerald"
+              label="المسدَّد بالسندات"
+              value={formatCurrency(paidSummary.paid)}
+              sub={`${formatNumber(myReceipts.length)} سند قبض`}
+            />
+            <StatCard
+              icon={paidSummary.unposted > 0.005 ? Clock3 : Lock}
+              tone={paidSummary.unposted > 0.005 ? 'amber' : 'emerald'}
+              label="قيد الترحيل"
+              value={paidSummary.unposted > 0.005 ? formatCurrency(paidSummary.unposted) : '✓ مطابق'}
+              sub={paidSummary.unposted > 0.005
+                ? 'دفعاتٌ سُجّلت ولم تدخل الدفاتر بعد — تظهر قريباً'
+                : 'الدفاتر تطابق سنداتك'}
+            />
+          </div>
+        </Card>
+      )}
 
       <Card className="p-5">
         <SectionHeader
@@ -445,7 +591,7 @@ function CapitalView({
 }
 
 /** «اتجاه ٦ أشهر» — ستّ قوائم دخلٍ مصغّرة في رسمٍ واحد. */
-function TrendsView({ hasShare, profitTrend }) {
+function TrendsView({ hasShare, profitTrend, washTrend = null }) {
   if (!hasShare) {
     return (
       <Card className="p-6">
@@ -460,6 +606,7 @@ function TrendsView({ hasShare, profitTrend }) {
   }
 
   return (
+    <>
     <Card className="p-5">
       {/* لا يُعاد عنوان الشريط العلوي هنا: عنوانان متطابقان فوق بعضهما
           يأكلان أول شاشةٍ على الجوال ولا يضيفان حرفاً. */}
@@ -493,6 +640,27 @@ function TrendsView({ hasShare, profitTrend }) {
         />
       )}
     </Card>
+
+    {/* ── غسلاتك شهرياً ─────────────────────────────────────── */}
+    {washTrend && washTrend.months.length > 0 && (
+      <Card className="p-5">
+        <SectionHeader
+          title="غسلات تعادل حصّتك شهرياً"
+          subtitle={`نسبتك ${washTrend.sharePercent.toFixed(1)}% من الغسلات المكتملة — آخر ${formatNumber(washTrend.months.length)} أشهر`}
+        />
+        {washTrend.total === 0 ? (
+          <EmptyState compact icon={Droplets} title="لا غسلات مكتملة في هذه الأشهر" />
+        ) : (
+          <ColumnTrend
+            months={washTrend.months}
+            values={washTrend.values}
+            formatValue={(v) => `${formatNumber(v)} غسلة`}
+            valueName="حصّتك"
+          />
+        )}
+      </Card>
+    )}
+    </>
   );
 }
 
@@ -508,9 +676,13 @@ function InvestorPortal({ partner, view }) {
   const { scalingFactor, totalWorkers } = usePartnerView();
   const { payments, loading: paymentsLoading, error: paymentsError } = usePartnerPayments();
   const {
-    accounts, entries, lines, loading: ledgerLoading, error: ledgerError,
+    accounts, entries, lines, periods = [], loading: ledgerLoading, error: ledgerError,
   } = useLedger();
   const { rules: feeRules } = useFeeRules();
+  // عدّ الغسلات من الخادم لا من `washes`: صفُّ الغسلة يحمل اسم عامله.
+  const { washMonths, insights } = usePartnerInsights({
+    partnerId: partner.id, months: 12, enabled: view === 'overview' || view === 'trends',
+  });
 
   const [selectedMonth, setSelectedMonth] = useState(todayMonth());
   const [statementOpen, setStatementOpen] = useState(false);
@@ -598,6 +770,48 @@ function InvestorPortal({ partner, view }) {
     };
   }, [accounts, entries, lines, feeRules, scalingFactor, view]);
 
+  // ── حصّته شهراً بشهر منذ أول قيد — للاسترداد والتغيّر ومنذ بداية السنة ──
+  // تُحسب في «نظرة عامة» وحدها: قائمةٌ لكل شهرٍ مُرحَّل ليست رخيصة، والخيار
+  // الذي لا يُفتح لا يكلّف.
+  const nets = useMemo(() => {
+    if (view !== 'overview') return [];
+    return [...availableMonths].sort().map((k) => {
+      const st = monthlyStatement({ accounts, entries, lines, periodKey: k, feeRules, scalingFactor });
+      return { month: k, netProfit: st.netProfit, hasActivity: st.hasActivity };
+    });
+  }, [view, availableMonths, accounts, entries, lines, feeRules, scalingFactor]);
+
+  const roi = useMemo(() => (view === 'overview' ? roiSummary({ nets, paid }) : null), [view, nets, paid]);
+  const mom = useMemo(() => {
+    const active = nets.filter((n) => n.hasActivity);
+    if (active.length < 2) return null;
+    return momChange(active[active.length - 1].netProfit, active[active.length - 2].netProfit);
+  }, [nets]);
+  const ytd = useMemo(() => ytdTotal(nets, String(statementMonth).slice(0, 4)), [nets, statementMonth]);
+
+  // غسلات آخر شهرٍ مُرحَّل بحصّته، وأشهر الاتجاه.
+  const washShare = useMemo(
+    () => washMonths.find((m) => m.month === statementMonth) ?? null,
+    [washMonths, statementMonth],
+  );
+  const washTrend = useMemo(() => {
+    if (view !== 'trends' || !insights) return null;
+    const last6 = washMonths.slice(-6);
+    const fmt = new Intl.DateTimeFormat('ar', { month: 'short', numberingSystem: 'latn' });
+    return {
+      sharePercent: Number(insights.sharePercent) || 0,
+      months: last6.map((m) => ({ key: m.month, label: fmt.format(new Date(Number(m.month.slice(0, 4)), Number(m.month.slice(5, 7)) - 1, 1)) })),
+      values: last6.map((m) => m.shareCount),
+      total: last6.reduce((s, m) => s + m.shareCount, 0),
+    };
+  }, [view, insights, washMonths]);
+
+  // رصيده في الدفاتر مقابل سنداته — لعرض «رأس مالي».
+  const paidSummary = useMemo(
+    () => (view === 'capital' ? partnerPaidSummary(partner.id, { payments: myReceipts, entries, lines }) : null),
+    [view, partner.id, myReceipts, entries, lines],
+  );
+
   const anyError = paymentsError || ledgerError;
   const loading = paymentsLoading || ledgerLoading;
   const hasShare = (partner.workersCount || 0) > 0;
@@ -633,6 +847,11 @@ function InvestorPortal({ partner, view }) {
             hasShare={hasShare}
             latestMonth={statementMonth}
             latestStatement={statement}
+            latestStatus={periodStatusOf(periods, statementMonth)}
+            mom={mom}
+            ytd={ytd}
+            washShare={washShare}
+            roi={roi}
           />
         )}
 
@@ -646,6 +865,7 @@ function InvestorPortal({ partner, view }) {
             myReceipts={myReceipts}
             receiptsTrend={receiptsTrend}
             onPrint={() => setStatementOpen(true)}
+            paidSummary={paidSummary}
           />
         )}
 
@@ -657,11 +877,12 @@ function InvestorPortal({ partner, view }) {
             activeMonth={activeMonth}
             onMonthChange={setSelectedMonth}
             statement={statement}
+            periodStatus={periodStatusOf(periods, activeMonth)}
           />
         )}
 
         {view === 'trends' && (
-          <TrendsView hasShare={hasShare} profitTrend={profitTrend} />
+          <TrendsView hasShare={hasShare} profitTrend={profitTrend} washTrend={washTrend} />
         )}
       </main>
 

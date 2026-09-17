@@ -113,6 +113,7 @@ export const sweaterListIntegrationKeys = callable('sweaterListIntegrationKeys')
 // إنشاء الرمز وإلغاؤه فقط، من حساب الشريك أو المدير.
 export const partnerMcpCreateKey = callable('partnerMcpCreateKey');
 export const partnerMcpRevokeKey = callable('partnerMcpRevokeKey');
+export const partnerInsights = callable('partnerInsights');
 
 // ─── مسير رواتب البايكر ────────────────────────────────────────────────
 export const payrollPreview = callable('payrollPreview');

@@ -155,6 +155,23 @@ async function requirePartnerSelf(db, auth) {
 }
 
 /**
+ * عرضُ شريكٍ: الشريك عن نفسه، أو المدير عن أيّ شريكٍ يسمّيه.
+ *
+ * هذا ما يجعل محاكاة المدير أمينة في الخادم كما في الواجهة: يرى الأرقام
+ * نفسها التي يراها الشريك، بمعرّفٍ يُتحقَّق من وجوده. وغيرُ المدير لا يختار
+ * شريكاً — `partnerId` في حمولته يُتجاهَل ويُحَلّ من ربطه هو.
+ */
+async function requirePartnerView(db, auth, partnerId) {
+  const role = await callerRole(db, auth);
+  if (role === 'admin' && partnerId) {
+    const snap = await db.collection('partners').doc(String(partnerId)).get();
+    if (!snap.exists) throw new AuthError('لا شريك بهذا المعرّف.', { code: 'not-found' });
+    return { uid: auth.uid, role, partner: { id: snap.id, ...snap.data() } };
+  }
+  return requirePartnerSelf(db, auth);
+}
+
+/**
  * من يملك التصرّف في رابطٍ بعينه: صاحبه أو المدير.
  *
  * الملكية تُقرأ من المستند المخزَّن لا من الحمولة — المتصل يسمّي المعرّف
@@ -185,6 +202,7 @@ export const GUARDS = {
     : requireAccountant(db, auth)),
   partnerSelf: ({ db, auth }) => requirePartnerSelf(db, auth),
   partnerKeyActor: ({ db, auth, data }) => requirePartnerKeyActor(db, auth, data?.keyId),
+  partnerView: ({ db, auth, data }) => requirePartnerView(db, auth, data?.partnerId),
 };
 
 // ─── أين يُسلَّم ─────────────────────────────────────────────────────────
@@ -206,6 +224,7 @@ import {
   createPartnerMcpKey, revokePartnerMcpKey, PartnerMcpKeyError,
   KEYS_COL as PARTNER_MCP_KEYS_COL,
 } from './partnerMcpKeys.js';
+import { partnerWashShare } from './partnerInsights.js';
 
 export const HANDLERS = {
   // ── الترحيل ──
@@ -552,6 +571,14 @@ export const HANDLERS = {
     guard: 'partnerKeyActor',
     run: ({ db, FieldValue, data, uid }) => revokePartnerMcpKey(db, FieldValue, {
       keyId: data?.keyId, actor: uid, reason: data?.reason ?? null,
+    }),
+  },
+  // عدّ الغسلات بحصّة الشريك — من الخادم كي لا يصل صفُّ غسلةٍ (باسم عامله)
+  // إلى متصفح الشريك. الشريك عن نفسه، والمدير عن من يسمّيه.
+  partnerInsights: {
+    guard: 'partnerView',
+    run: ({ db, data, partner }) => partnerWashShare(db, {
+      partnerId: partner.id, months: data?.months ?? 12,
     }),
   },
 

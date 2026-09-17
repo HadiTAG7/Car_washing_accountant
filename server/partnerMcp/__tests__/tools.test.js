@@ -57,6 +57,7 @@ const fakeLoad = {
   feeRules: async () => [],
   months: async () => ['2026-08', '2026-07'],
   accounts: async () => ACCOUNTS,
+  periodStatuses: async () => new Map([['2026-08', 'open'], ['2026-07', 'closed']]),
   settings: async () => ({ vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15 }),
   ledger: async (fromKey, toKey) => {
     const entries = ENTRIES.filter((e) => e.periodKey >= fromKey && e.periodKey <= toKey);
@@ -77,7 +78,7 @@ describe('سجل الأدوات', () => {
   it('ستّ أدوات، كلها بالبادئة `partner_`، ولا كتابةٌ بينها', () => {
     expect(partnerToolNames).toEqual([
       'partner_whoami', 'partner_capital', 'partner_income_statement',
-      'partner_trend', 'partner_operations', 'partner_summary',
+      'partner_trend', 'partner_operations', 'partner_roi', 'partner_summary',
     ]);
     for (const t of partnerTools) {
       expect(t.name.startsWith('partner_'), t.name).toBe(true);
@@ -132,6 +133,13 @@ describe('قائمة الدخل بحصّتي', () => {
     expect(st.hasActivity).toBe(true);
   });
 
+  it('وتحمل حال الفترة: مفتوح = مبدئي، مُقفَل = نهائي', async () => {
+    expect((await call('partner_income_statement', { month: '2026-08' })).periodStatus).toBe('open');
+    const closed = await call('partner_income_statement', { month: '2026-07' });
+    expect(closed.periodStatus).toBe('closed');
+    expect(closed.periodStatusLabel).toMatch(/نهائي/);
+  });
+
   it('بلا شهر: آخر شهرٍ مُرحَّل لا شهر اليوم', async () => {
     expect((await call('partner_income_statement')).month).toBe('2026-08');
   });
@@ -184,5 +192,21 @@ describe('الاتجاه والملخّص', () => {
     expect(sum.latestMonth).toMatchObject({ month: '2026-08', netProfit: 5.1 });
     expect(sum.trend).toHaveLength(6);
     expect(calls.filter((c) => c === 'partners')).toHaveLength(1);
+  });
+});
+
+describe('استرداد رأس مالي', () => {
+  it('حصّته منذ أول قيد مقابل ما دفعه، مع تقديرٍ وتغيّرٍ ومنذ بداية السنة', async () => {
+    const r = await call('partner_roi');
+    // بلا قواعد رسومٍ مضبوطة تُطبَّق الافتراضية (١٠٪ + ٥٪ من الربح):
+    // يوليو: (200 − 30) × 0.1 = 17 · أغسطس: (100 − 40 − 9) × 0.1 = 5.1 → 22.1 من 5000
+    expect(r.cumulativeProfit).toBe(22.1);
+    expect(r.paid).toBe(5000);
+    expect(r.recovered).toBe(false);
+    expect(r.recoveredPercent).toBe(0.4);
+    expect(r.monthsToRecover).toBeGreaterThan(0);
+    expect(r.estimate).toMatch(/شهراً/);
+    expect(r.latestMonth).toMatchObject({ month: '2026-08', netProfit: 5.1, direction: 'down' });
+    expect(r.yearToDate).toEqual({ year: '2026', netProfit: 22.1 });
   });
 });

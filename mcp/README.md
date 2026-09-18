@@ -164,15 +164,28 @@ npm install --prefix mcp
 
 ## ٤ — الأدوات
 
-**قراءة (٩):** `whoami` · `report` (ميزان المراجعة · قائمة الدخل · المركز
-المالي) · `vat_report` · `general_ledger` · `journal_entries` · `records` ·
-`unposted` · `chart_of_accounts` · `startup_costs`
+**قراءة (١١):** `whoami` · **`overview`** («كيف وضعنا؟» في ردٍّ واحد) · **`search`** (كلمة أو
+مبلغ عبر كل السجلات) · `report` · `vat_report` · `general_ledger` · `journal_entries` ·
+`records` · `unposted` · `chart_of_accounts` · `startup_costs`
 
 **كتابة (٨):** `post_source` · `reverse_entry` · `close_period` ·
 `reopen_period` · `issue_document` · `void_document` · `startup_entry` ·
 `seed_chart`
 
 كلها مسبوقة بـ `sweater_`.
+
+### ما يجعل المساعد «ذكياً» هنا ليس النموذج
+
+- **تعليمات خادم** (`src/instructions.js`) تصل النموذج عند التهيئة: ما سويتر،
+  والفرق بين السجل والدفتر، ودليل الحسابات، وبأي أداةٍ يبدأ. بلا هذا كان يخمّن.
+- **الفترة بلغة الإنسان** في كل أداة قراءة: `period: "this_month" | last_month |
+  2026-08 | 2026 | 2026-Q3 | last_3_months | ytd | all` (`src/periods.js`). وكل ردٍّ
+  يحمل `اليوم` و`الفترة` — النموذج لا يعرف التاريخ من نفسه.
+- **الردود مضغوطة** (`src/shape.js`): اسمٌ ومبلغٌ وتاريخٌ وحالة، بأسماء الحسابات
+  لا أرقامها العارية، بلا `created_at` ولا `normalBalance`. ردٌّ يُقرأ خيرٌ من
+  تفريغٍ يُغرِق.
+- **ثلاثة prompts** جاهزة يختارها المستخدم بنقرة: `monthly_review` ·
+  `close_month_checklist` · `find_record`.
 
 **ما تُلاحظه في مخطَّطات الكتابة أهمّ مما فيها:**
 
@@ -203,7 +216,7 @@ npm install --prefix mcp
 ## ٦ — الاختبارات
 
 ```bash
-npm test --prefix mcp     # ١٧ اختباراً
+npm test --prefix mcp
 ```
 
 `server.test.js` يشغّل `server.js` **كعملية مستقلة** ويتصل به بعميل MCP حقيقي.

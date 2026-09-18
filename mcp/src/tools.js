@@ -25,13 +25,18 @@
 import { z } from 'zod';
 import { connect, callServer, readOnly, SweaterMcpError } from './client.js';
 import { collection, addDoc } from 'firebase/firestore';
-import { COL, OPERATIONAL, rows, row, ledgerBundle, lockId } from './fetch.js';
+import { COL, OPERATIONAL, rows, row, ledgerBundle, lockId, feeRulesMapped } from './fetch.js';
+import { resolvePeriod, previousPeriod, todayInfo, PERIOD_TOKENS } from './periods.js';
+import {
+  compactIncome, compactTrialBalance, compactBalanceSheet, compactEntry, compactRecord,
+  accountRows, balanceOf, matchesQuery,
+} from './shape.js';
 
 import {
   trialBalance, incomeStatement, balanceSheet, generalLedger,
 } from '../../src/lib/accounting/reports.js';
 import { buildVatReport, currentPeriodKey } from '../../src/lib/accounting/vatReturn.js';
-import { DEFAULT_CHART_OF_ACCOUNTS } from '../../src/lib/accounting/chartOfAccounts.js';
+import { DEFAULT_CHART_OF_ACCOUNTS, indexAccounts, ACC } from '../../src/lib/accounting/chartOfAccounts.js';
 import { taxPolicyAt } from '../../src/lib/accounting/taxPolicy.js';
 import { startupRollup } from '../../src/lib/accounting/startupMigration.js';
 import { validateTaxInvoiceFields, VAT_PROBLEM } from '../../src/lib/vatFields.js';
@@ -57,7 +62,19 @@ const ISO = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'التاريخ بصيغة Y
 const text = (t) => ({ content: [{ type: 'text', text: typeof t === 'string' ? t : JSON.stringify(t, null, 2) }] });
 
 const inRange = (d, from, to) => (!from || d >= from) && (!to || d <= to);
-const dateOf = (r) => r.date || r.expense_date || r.payment_date || r.invoice_date || r.created_at || '';
+// تاريخ السجل مهما كانت مجموعته: كانت القائمة تعرف أربعة أسماء، فمرشّح
+// التاريخ على الغسلات (`wash_date`) والمصروفات (`logged_date`) لم يعمل يوماً.
+const dateOf = (r) => String(
+  r.date || r.entryDate || r.wash_date || r.logged_date || r.spent_date || r.payment_date
+  || r.paid_date || r.issue_date || r.invoice_date || r.expense_date || r.start_date || r.created_at || '',
+).slice(0, 10);
+
+/** فترةٌ بلغة الإنسان — كل أدوات القراءة تقبلها بنفس المفردات. */
+const PERIOD = z.string().optional().describe(
+  `الفترة: this_month · last_month · 2026-08 · 2026 · 2026-Q3 · last_3_months · ytd · all. (${PERIOD_TOKENS.length} كلمة، أو مفتاح شهر/سنة/ربع)`,
+);
+const withMeta = (period, body) => ({ اليوم: todayInfo().today, الفترة: period?.label ?? null, ...body });
+const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
 // ─── القراءة ─────────────────────────────────────────────────────────────
 
@@ -71,11 +88,14 @@ export const readTools = [
     schema: {},
     async run() {
       const { uid, email, role } = await connect();
+      const t = todayInfo();
       return text({
+        اليوم: t.today, الشهر_الحالي: t.currentMonth, التاريخ: t.label,
         email, uid, role,
         mode: readOnly ? 'قراءة فقط' : 'قراءة وكتابة',
         canPostLedger: ['admin', 'accountant'].includes(role),
         canReopenPeriod: role === 'admin',
+        ابدأ_بـ: 'sweater_overview لأي سؤالٍ عام، وsweater_search للبحث عن سجلٍ بعينه.',
       });
     },
   },
@@ -83,18 +103,136 @@ export const readTools = [
     name: 'sweater_report',
     title: 'التقارير المالية',
     description:
-      'ميزان المراجعة أو قائمة الدخل أو المركز المالي، محسوبةً من الدفاتر بنفس دوال التطبيق — '
-      + 'فالأرقام هنا مطابقة لما تراه على الشاشة. `from`/`to` لقائمة الدخل وميزان المراجعة، و`asOf` للمركز المالي.',
+      'قائمة الدخل أو ميزان المراجعة أو المركز المالي، من القيود المُرحّلة بنفس دوال التطبيق — الأرقام '
+      + 'مطابقة للشاشة. الفترة بـ `period` (this_month · last_month · 2026-08 · 2026 · 2026-Q3 · ytd · all)؛ '
+      + 'قائمة الدخل بلا فترة = هذا الشهر، والميزان والمركز بلا فترة = كل الدفاتر. `asOf` للمركز المالي '
+      + 'حتى تاريخ. للسؤال العام استعمل sweater_overview أولاً.',
     schema: {
       report: z.enum(['trial_balance', 'income_statement', 'balance_sheet']),
+      period: PERIOD,
       from: ISO.optional(), to: ISO.optional(), asOf: ISO.optional(),
     },
-    async run({ report, from = null, to = null, asOf = null }) {
-      const { accounts, entries, lines } = await ledgerBundle();
-      const feeRules = await rows('fee_rules').catch(() => []);
-      if (report === 'trial_balance') return text(trialBalance(accounts, entries, lines, { from, to }));
-      if (report === 'income_statement') return text(incomeStatement(accounts, entries, lines, { from, to, feeRules }));
-      return text(balanceSheet(accounts, entries, lines, { asOf, feeRules }));
+    async run({ report, period, from = null, to = null, asOf = null }) {
+      const [{ accounts, entries, lines }, feeRules] = await Promise.all([ledgerBundle(), feeRulesMapped()]);
+      if (report === 'balance_sheet') {
+        const bs = balanceSheet(accounts, entries, lines, { asOf, feeRules });
+        return text(withMeta({ label: asOf ? `حتى ${asOf}` : 'حتى اليوم' }, { المركز_المالي: compactBalanceSheet(bs) }));
+      }
+      const p = resolvePeriod({ period, from, to }, { fallback: report === 'income_statement' ? 'this_month' : 'all' });
+      if (report === 'trial_balance') {
+        const tb = trialBalance(accounts, entries, lines, { from: p.from, to: p.to });
+        return text(withMeta(p, { ميزان_المراجعة: compactTrialBalance(tb) }));
+      }
+      const is = incomeStatement(accounts, entries, lines, { from: p.from, to: p.to, feeRules });
+      const body = compactIncome(is);
+      return text(withMeta(p, {
+        قائمة_الدخل: body,
+        تنبيه: body.hasActivity ? undefined : 'لا قيود مُرحّلة في هذه الفترة — افحص sweater_unposted أو اختر فترةً أخرى.',
+      }));
+    },
+  },
+  {
+    name: 'sweater_overview',
+    title: 'نظرة عامة — كيف وضعنا؟',
+    description:
+      'الردّ الواحد لأي سؤالٍ عام: الإيرادات والمصروفات وصافي الربح للفترة (مع مقارنةٍ بالفترة السابقة)، '
+      + 'عدد الغسلات المكتملة، النقد في الصندوق والبنك، الذمم والموردون، ضريبة المخرجات والمدخلات، '
+      + 'الشركاء ورأس مالهم، البايكرز، وما لم يُرحَّل بعد. ابدأ به دائماً. الفترة بـ `period`، '
+      + 'وافتراضياً هذا الشهر.',
+    schema: { period: PERIOD },
+    async run({ period } = {}) {
+      const p = resolvePeriod({ period });
+      const prev = previousPeriod(p);
+      const [{ accounts, entries, lines, periods }, feeRules, washes, partners, payments, bikers, locks] = await Promise.all([
+        ledgerBundle(), feeRulesMapped(), rows('washes'), rows('partners'), rows('partner_payments'),
+        rows('bikers').catch(() => []), rows(COL.LOCKS),
+      ]);
+
+      const is = incomeStatement(accounts, entries, lines, { from: p.from, to: p.to, feeRules });
+      const prevIs = prev ? incomeStatement(accounts, entries, lines, { from: prev.from, to: prev.to, feeRules }) : null;
+      const delta = (a, b) => (prevIs ? r2(a - b) : null);
+
+      const tb = trialBalance(accounts, entries, lines, { to: p.to });
+      const inP = (w) => inRange(String(w.wash_date || '').slice(0, 10), p.from, p.to);
+      const done = washes.filter((w) => w.status === 'مكتملة' && inP(w));
+      const washCount = done.reduce((s, w) => s + (Number(w.quantity) || 0), 0);
+      const washGross = r2(done.reduce((s, w) => s + (Number(w.quantity) || 0) * (Number(w.price) || 0), 0));
+
+      const lockSet = new Set(locks.map((l) => l.id));
+      const kinds = {
+        wash: 'washes', monthly_expense: 'monthly_expenses', variable_expense: 'variable_expenses',
+        annual_expense: 'annual_expense_entries', partner_payment: 'partner_payments', temporary_expense: 'temporary_expenses',
+      };
+      const unposted = {};
+      let unpostedCount = 0;
+      for (const [kind, coll] of Object.entries(kinds)) {
+        const list = kind === 'wash' ? washes : (kind === 'partner_payment' ? payments : await rows(coll));
+        const n = list.filter((r) => !lockSet.has(lockId(kind, r.id)) && inRange(dateOf(r), p.from, p.to)).length;
+        if (n) { unposted[kind] = n; unpostedCount += n; }
+      }
+
+      const today = todayInfo().today;
+      const activeBikers = bikers.filter((b) => !b.end_date || String(b.end_date) > today).length;
+      const totalWorkers = partners.reduce((s, x) => s + (Number(x.workers_count) || 0), 0);
+      const paidCapital = r2(payments.reduce((s, x) => s + (Number(x.amount) || 0), 0));
+      const periodStatus = p.months.map((k) => {
+        const doc = periods.find((x) => (x.periodKey ?? x.id) === k);
+        return { month: k, status: doc ? (doc.status === 'closed' ? 'مُقفَل (نهائي)' : 'مفتوح (مبدئي)') : 'لا قيود' };
+      });
+
+      return text(withMeta(p, {
+        النتيجة: {
+          الإيرادات: r2(is.totalRevenue), التكاليف_المباشرة: r2(is.totalCost), المصروفات_التشغيلية: r2(is.totalExpenses),
+          الرسوم: r2(is.totalFees), صافي_الربح: r2(is.netProfit),
+          مقارنةً_بـ: prev ? { الفترة: prev.label, فرق_الإيرادات: delta(is.totalRevenue, prevIs.totalRevenue), فرق_صافي_الربح: delta(is.netProfit, prevIs.netProfit) } : null,
+          أكبر_المصروفات: accountRows([...is.costOfServices, ...is.expenses]).slice(0, 5),
+          hasActivity: is.revenue.length + is.costOfServices.length + is.expenses.length > 0,
+        },
+        الغسلات: { مكتملة: washCount, صفوف: done.length, إجمالي_المبيعات_بالسجل: washGross, ملاحظة: 'من سجل الغسلات التشغيلي؛ إيرادات الدفاتر في «النتيجة».' },
+        النقد_والذمم_حتى_نهاية_الفترة: {
+          الصندوق: balanceOf(tb, ACC.CASH), البنك: balanceOf(tb, ACC.BANK),
+          العملاء: r2(balanceOf(tb, ACC.RECEIVABLE) + balanceOf(tb, ACC.SWEATER_RECEIVABLE)), الموردون: balanceOf(tb, ACC.PAYABLE, 'credit'),
+          ضريبة_مخرجات_مستحقة: balanceOf(tb, ACC.OUTPUT_VAT, 'credit'), ضريبة_مدخلات_قابلة_للاسترداد: balanceOf(tb, ACC.INPUT_VAT),
+        },
+        الشركاء: { العدد: partners.length, مجموع_العمالة: totalWorkers, رأس_المال_المسدَّد: paidCapital },
+        البايكرز: { النشطون: activeBikers, الكل: bikers.length },
+        غير_المرحَّل_في_الفترة: { العدد: unpostedCount, بالنوع: unposted, تنبيه: unpostedCount ? 'سجلاتٌ لم تدخل الدفاتر — التقرير أعلاه ناقصٌ بقدرها. sweater_unposted للتفصيل.' : null },
+        حال_الأشهر: periodStatus,
+      }));
+    },
+  },
+  {
+    name: 'sweater_search',
+    title: 'بحث في السجلات',
+    description:
+      'يبحث بكلمةٍ أو رقمٍ أو مبلغ في كل المجموعات التشغيلية معاً — الغسلات والمصروفات والسندات والشركاء '
+      + 'والبايكرز والفواتير — ويُرجع النتائج مضغوطةً مع المجموعة والمعرّف. استعمله بدل تفريغ مجموعةٍ كاملة: '
+      + '«فاتورة المورد الفلاني»، «مبلغ 1150»، «سلفة أحمد». `collection` لتضييق البحث، و`period` للفترة.',
+    schema: {
+      query: z.string().min(1),
+      collection: z.enum(OPERATIONAL).optional(),
+      period: PERIOD,
+      limit: z.number().int().min(1).max(100).optional(),
+    },
+    async run({ query, collection: only, period, limit = 30 }) {
+      const p = period ? resolvePeriod({ period }) : null;
+      const SEARCHABLE = ['washes', 'monthly_expenses', 'variable_expenses', 'annual_expense_entries',
+        'temporary_expenses', 'partner_payments', 'partners', 'bikers', 'expense_vouchers', 'fixed_assets'];
+      const targets = only ? [only] : SEARCHABLE;
+      const hits = [];
+      for (const name of targets) {
+        const list = await rows(name).catch(() => []);
+        for (const r of list) {
+          if (p && !inRange(dateOf(r), p.from, p.to)) continue;
+          if (!matchesQuery(r, query)) continue;
+          hits.push({ collection: name, ...compactRecord(name, r) });
+        }
+      }
+      hits.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+      return text(withMeta(p, {
+        query, count: hits.length, results: hits.slice(0, limit),
+        تلميح: hits.length ? 'لمعرفة إن كان السجل مُرحَّلاً: sweater_unposted، أو sweater_journal_entries بالمصدر.' : 'لا نتائج — جرّب كلمةً أقصر أو مجموعةً أخرى.',
+      }));
     },
   },
   {
@@ -125,56 +263,97 @@ export const readTools = [
   {
     name: 'sweater_general_ledger',
     title: 'دفتر أستاذ حساب',
-    description: 'حركة حساب واحد بالتفصيل مع الرصيد الجاري. `account` هو رقم الحساب، مثل 1200 أو 4100.',
-    schema: { account: z.string(), from: ISO.optional(), to: ISO.optional() },
-    async run({ account, from = null, to = null }) {
+    description:
+      'حركة حسابٍ واحد بالتفصيل مع الرصيد الجاري. `account` رقم الحساب (1010 الصندوق · 1020 البنك · 4000 الإيرادات …) '
+      + '— sweater_chart_of_accounts يعرض الأرقام. الفترة بـ `period`، وافتراضياً كل الدفاتر.',
+    schema: { account: z.string(), period: PERIOD, from: ISO.optional(), to: ISO.optional() },
+    async run({ account, period, from = null, to = null }) {
       const { accounts, entries, lines } = await ledgerBundle();
       const acc = accounts.find((a) => String(a.code) === String(account)) || null;
-      if (!acc) throw new SweaterMcpError(`لا يوجد حساب برقم ${account} في دليل الحسابات.`);
-      return text(generalLedger(account, entries, lines, { from, to, account: acc }));
+      if (!acc) {
+        // ربما سمّاه المستخدم لا رقّمه: «الصندوق»، «البنك».
+        const byName = accounts.filter((a) => String(a.nameArabic || '').includes(String(account)));
+        throw new SweaterMcpError(
+          `لا يوجد حساب برقم ${account} في دليل الحسابات.`
+          + (byName.length ? ` أتقصد: ${byName.map((a) => `${a.code} ${a.nameArabic}`).join(' · ')}؟` : ' استعمل sweater_chart_of_accounts لرؤية الأرقام.'),
+        );
+      }
+      const p = resolvePeriod({ period, from, to }, { fallback: 'all' });
+      const gl = generalLedger(account, entries, lines, { from: p.from, to: p.to, account: acc });
+      const movements = (gl.rows || gl.movements || gl.lines || []).map((m) => ({
+        date: m.entryDate ?? m.date, entry: m.entryNumber ?? m.entryId ?? null,
+        description: String(m.description || '').slice(0, 120),
+        debit: r2(m.debit) || undefined, credit: r2(m.credit) || undefined, balance: r2(m.balance ?? m.running),
+      }));
+      return text(withMeta(p, {
+        الحساب: `${acc.code} ${acc.nameArabic}`, النوع: acc.accountType,
+        الرصيد_الافتتاحي: r2(gl.opening ?? gl.openingBalance), الرصيد_الختامي: r2(gl.closing ?? gl.closingBalance ?? gl.balance),
+        عدد_الحركات: movements.length, الحركات: movements.slice(-100),
+      }));
     },
   },
   {
     name: 'sweater_journal_entries',
     title: 'القيود',
     description:
-      'قيود اليومية مع سطورها، بفلترة التاريخ والحالة ونوع المصدر. استعمله للتحقق مما تغيّر ومَن غيّره '
-      + 'قبل أي تصحيح — وللحصول على `entryId` اللازم للعكس.',
+      'قيود اليومية بسطورها (الحساب بالاسم، مدين/دائن)، بفلترة الفترة والحالة ونوع المصدر وكلمة بحث. '
+      + 'استعمله للتحقق مما تغيّر قبل أي تصحيح، وللحصول على `entryId` اللازم للعكس. الفترة بـ `period`، '
+      + 'وافتراضياً هذا الشهر؛ `query` تبحث في الوصف والمصدر.',
     schema: {
-      from: ISO.optional(), to: ISO.optional(),
+      period: PERIOD, from: ISO.optional(), to: ISO.optional(),
       status: z.enum(['posted', 'reversed']).optional(),
       sourceKind: z.string().optional(),
+      query: z.string().optional(),
       limit: z.number().int().min(1).max(200).optional(),
     },
-    async run({ from = null, to = null, status = null, sourceKind = null, limit = 50 }) {
-      const entries = await rows(COL.ENTRIES);
-      const out = entries
-        .filter((e) => inRange(e.date || '', from, to))
+    async run({ period, from = null, to = null, status = null, sourceKind = null, query = null, limit = 20 }) {
+      const p = resolvePeriod({ period, from, to });
+      const { accounts, entries } = await ledgerBundle();
+      const index = indexAccounts(accounts);
+      const q = String(query || '').toLowerCase();
+      // `entryDate` هو اسم الحقل الذي يكتبه الخادم؛ الترشيح على `date` وحده لم
+      // يطابق قيداً واحداً يوماً — فكانت الأداة تُرجع كل شيء أو لا شيء.
+      const all = entries
+        .filter((e) => inRange(dateOf(e), p.from, p.to))
         .filter((e) => !status || e.status === status)
         .filter((e) => !sourceKind || e.sourceKind === sourceKind || e.sourceType === sourceKind)
-        .sort((a, b) => String(b.date).localeCompare(String(a.date)))
-        .slice(0, limit);
-      return text({ count: out.length, entries: out });
+        .filter((e) => !q || `${e.description || ''} ${e.sourceType || ''} ${e.sourceId || ''} ${e.entryNumber || ''}`.toLowerCase().includes(q))
+        .sort((a, b) => dateOf(b).localeCompare(dateOf(a)) || (Number(b.entryNumber) || 0) - (Number(a.entryNumber) || 0));
+      return text(withMeta(p, {
+        matched: all.length, shown: Math.min(all.length, limit),
+        entries: all.slice(0, limit).map((e) => compactEntry(e, index)),
+        تلميح: all.length > limit ? `عُرض أول ${limit} من ${all.length}؛ ضيّق بالفترة أو بـ query أو ارفع limit.` : undefined,
+      }));
     },
   },
   {
     name: 'sweater_records',
     title: 'السجلات التشغيلية',
     description:
-      `قائمة من مجموعة تشغيلية: ${OPERATIONAL.join('، ')}. `
-      + 'هذه هي البيانات الخام قبل الترحيل — الغسلات والمصروفات والشركاء.',
+      `سجلات مجموعةٍ تشغيلية بفترة، مضغوطةً ومقروءة (اسم، مبلغ، تاريخ، حالة): ${OPERATIONAL.join('، ')}. `
+      + 'هذه البيانات الخام قبل الترحيل. الفترة بـ `period` (افتراضياً هذا الشهر؛ `all` لكل شيء)، '
+      + 'و`query` لكلمةٍ أو مبلغ. للبحث عبر المجموعات كلها استعمل sweater_search.',
     schema: {
       collection: z.enum(OPERATIONAL),
-      from: ISO.optional(), to: ISO.optional(),
+      period: PERIOD, from: ISO.optional(), to: ISO.optional(),
+      query: z.string().optional(),
       limit: z.number().int().min(1).max(300).optional(),
     },
-    async run({ collection: name, from = null, to = null, limit = 100 }) {
+    async run({ collection: name, period, from = null, to = null, query = null, limit = 50 }) {
+      // الشركاء والبايكرز والسكن سجلاتٌ بلا تاريخ تشغيلي — الفترة لا تعنيهم.
+      const dateless = ['partners', 'bikers', 'housing_units', 'categories', 'fixed_assets', 'sweater_price_list'].includes(name);
+      const p = dateless ? null : resolvePeriod({ period, from, to });
       const all = await rows(name);
       const out = all
-        .filter((r) => inRange(String(dateOf(r)).slice(0, 10), from, to))
-        .sort((a, b) => String(dateOf(b)).localeCompare(String(dateOf(a))))
-        .slice(0, limit);
-      return text({ collection: name, count: out.length, total: all.length, rows: out });
+        .filter((r) => !p || inRange(dateOf(r), p.from, p.to))
+        .filter((r) => !query || matchesQuery(r, query))
+        .sort((a, b) => dateOf(b).localeCompare(dateOf(a)));
+      const amountOf = (r) => Number(r.amount ?? r.total_monthly_cost ?? r.total_variable_cost ?? ((Number(r.quantity) || 0) * (Number(r.price) || 0))) || 0;
+      return text(withMeta(p, {
+        collection: name, matched: out.length, total: all.length, shown: Math.min(out.length, limit),
+        مجموع_المبالغ: r2(out.reduce((s, r) => s + amountOf(r), 0)),
+        rows: out.slice(0, limit).map((r) => compactRecord(name, r)),
+      }));
     },
   },
   {
@@ -195,23 +374,47 @@ export const readTools = [
       for (const [kind, coll] of Object.entries(kinds)) {
         for (const r of await rows(coll)) {
           if (locks.has(lockId(kind, r.id))) continue;
-          out.push({ kind, id: r.id, date: dateOf(r), amount: r.amount ?? r.total ?? null, description: r.description || r.name || '' });
+          const c = compactRecord(coll, r);
+          out.push({
+            kind, collection: coll, id: r.id, date: dateOf(r) || null,
+            amount: r2(c.total ?? c.amount ?? 0),
+            description: c.name || c.title || c.description || c.biker || c.notes || '',
+            postWith: `sweater_post_source kind="${kind}" sourceId="${r.id}"`,
+          });
         }
       }
-      return text({ count: out.length, unposted: out.slice(0, limit) });
+      out.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+      const byKind = {};
+      for (const u of out) {
+        byKind[u.kind] = byKind[u.kind] || { count: 0, total: 0 };
+        byKind[u.kind].count += 1; byKind[u.kind].total = r2(byKind[u.kind].total + u.amount);
+      }
+      return text(withMeta(null, {
+        count: out.length, total: r2(out.reduce((s, u) => s + u.amount, 0)), byKind,
+        unposted: out.slice(0, limit),
+        ملاحظة: out.length ? 'كل سجلٍ هنا غائبٌ عن التقارير حتى يُرحَّل. المصروفات الشهرية المتكررة تُرحَّل شهرياً فظهورها هنا طبيعي حتى يحين يومها.' : 'كل السجلات مُرحّلة — التقارير تعكس كل ما سُجّل.',
+      }));
     },
   },
   {
     name: 'sweater_chart_of_accounts',
     title: 'دليل الحسابات',
-    description: 'الحسابات المُهيَّأة على المشروع. إن كان فارغاً فالدفاتر لم تُفتح بعد.',
+    description:
+      'دليل الحسابات مجمّعاً بالنوع (أصول، التزامات، حقوق ملكية، إيرادات، مصروفات) بالرقم والاسم — '
+      + 'لتعرف رقم الحساب قبل sweater_general_ledger. إن كان فارغاً فالدفاتر لم تُفتح بعد.',
     schema: {},
     async run() {
       const accounts = await rows(COL.ACCOUNTS);
+      const TYPE_AR = { asset: 'أصول', liability: 'التزامات', equity: 'حقوق ملكية', revenue: 'إيرادات', expense: 'مصروفات' };
+      const grouped = {};
+      for (const a of [...accounts].sort((x, y) => String(x.code).localeCompare(String(y.code)))) {
+        const k = TYPE_AR[a.accountType] || a.accountType;
+        (grouped[k] = grouped[k] || []).push(`${a.code} ${a.nameArabic}${a.active === false ? ' (موقوف)' : ''}`);
+      }
       return text({
         seeded: accounts.length > 0,
         count: accounts.length,
-        accounts: accounts.length ? accounts : undefined,
+        accounts: accounts.length ? grouped : undefined,
         hint: accounts.length ? undefined
           : `دليل الحسابات فارغ. استعمل sweater_seed_chart لتهيئته (${DEFAULT_CHART_OF_ACCOUNTS.length} حساباً افتراضياً).`,
       });
@@ -220,7 +423,9 @@ export const readTools = [
   {
     name: 'sweater_startup_costs',
     title: 'رسوم التأسيس',
-    description: 'خطط التأسيس مع سجل الصرف المحسوب من البنود — لا من الحقل المخزَّن على الأب.',
+    description:
+      'خطط رسوم التأسيس: الموازنة والمصروف الفعلي المحسوب من بنود الصرف — لا من الحقل المخزَّن على الأب — '
+      + 'والحالة المشتقة، مع آخر بنود الصرف لكل خطة. للفرق بين المخزَّن والمحسوب دلالةٌ على خطةٍ قديمة.',
     schema: {},
     async run() {
       const [parents, entries] = await Promise.all([rows(COL.STARTUP), rows(COL.STARTUP_ENTRIES)]);
@@ -234,7 +439,8 @@ export const readTools = [
           id: p.id, name: p.name || p.itemName, budgeted: p.budgeted_amount,
           stored_actual: p.actual_amount, computed_actual: rolled.actualAmount,
           stored_status: p.status, derived_status: rolled.status,
-          entries: mine,
+          entriesCount: mine.length,
+          entries: mine.slice(0, 20).map((e) => ({ id: e.id, date: e.spent_date ?? null, amount: r2(e.amount), description: e.description || '' })),
         };
       }));
     },

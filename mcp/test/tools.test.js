@@ -173,6 +173,18 @@ describe('المخطَّطات ترفض ما لا يصح قبل أن يصل ال
     expect(s.from.safeParse('اليوم').success).toBe(false);
   });
 
+  it('وتقبل فترةً بلغة الإنسان إلى جانب التواريخ', async () => {
+    // «هذا الشهر» يُحَلّ في الخادم؛ النموذج لا يعرف تاريخ اليوم.
+    const s = await schemaOf('sweater_report');
+    expect(s.period.safeParse('this_month').success).toBe(true);
+    expect(s.period.safeParse(undefined).success).toBe(true);
+    const { tools } = await load();
+    const names = tools.readTools.map((t) => t.name);
+    expect(names).toContain('sweater_overview');
+    expect(names).toContain('sweater_search');
+    for (const t of tools.readTools) expect(t.description.length, t.name).toBeGreaterThan(80);
+  });
+
   it('ومفتاح الفترة شهر لا يوم', async () => {
     const s = await schemaOf('sweater_close_period');
     expect(s.periodKey.safeParse('2026-08').success).toBe(true);

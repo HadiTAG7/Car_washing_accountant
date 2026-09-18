@@ -27,10 +27,9 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { timingSafeEqual } from 'node:crypto';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 
-import { readTools, writeTools } from '../../mcp/src/tools.js';
+import { buildSweaterServer } from '../../mcp/src/build.js';
 
 const env = (n) => String(process.env[n] ?? '').trim();
 
@@ -45,38 +44,9 @@ function secretMatches(given, expected) {
 
 const writesAllowed = () => ['1', 'true', 'yes'].includes(env('MCP_ALLOW_WRITES').toLowerCase());
 
-function buildServer() {
-  const server = new McpServer({ name: 'sweater', version: '1.0.0' });
-  const tools = writesAllowed() ? [...readTools, ...writeTools] : readTools;
-
-  for (const tool of tools) {
-    server.registerTool(
-      tool.name,
-      { title: tool.title, description: tool.description, inputSchema: tool.schema },
-      async (args) => {
-        try {
-          return await tool.run(args ?? {});
-        } catch (e) {
-          // A refusal from the trusted server — «الفترة مقفلة», «الدور لا
-          // يسمح» — is information the assistant should read and act on, not
-          // a crash. Losing that text leaves it retrying against a rule that
-          // will never yield.
-          const problems = Array.isArray(e?.problems) && e.problems.length
-            ? `\n\nالتفاصيل:\n- ${e.problems.join('\n- ')}` : '';
-          return {
-            isError: true,
-            content: [{
-              type: 'text',
-              text: `تعذّر تنفيذ ${tool.name}: ${e?.message || e}${problems}`
-                + (e?.code ? `\n(code: ${e.code})` : ''),
-            }],
-          };
-        }
-      },
-    );
-  }
-  return server;
-}
+// التركيب — الأدوات والتعليمات والـ prompts — في `mcp/src/build.js` مشتركاً مع
+// نسخة stdio، فلا تنحرف إحداهما عن الأخرى.
+const buildServer = () => buildSweaterServer({ writes: writesAllowed() });
 
 export const config = { api: { bodyParser: false } };
 

@@ -1142,14 +1142,14 @@ A test asserts it against the source: no `setDoc`, no `runTransaction`, no
 `firebase-admin` anywhere in the package.
 
 Two transports, one tool set. `mcp/server.js` speaks stdio for a single
-machine; `api/mcp/[secret].js` speaks Streamable HTTP so the same 17 tools
+machine; `api/mcp/[secret].js` speaks Streamable HTTP so the same 19 tools
 reach **any device and any assistant** — ChatGPT included, whose connectors
 are all HTTP. Both import `mcp/src/tools.js` unchanged, and a test compares
 the two listings so they cannot drift.
 
 ```bash
 npm install --prefix mcp
-npm test --prefix mcp      # 26
+npm test --prefix mcp
 ```
 
 Give it its **own** Firebase Auth account with role `accountant`, so

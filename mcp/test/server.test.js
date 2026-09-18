@@ -57,6 +57,23 @@ describe('الخادم عبر stdio', () => {
     for (const t of tools) expect(t.description?.length, t.name).toBeGreaterThan(40);
   }, 30_000);
 
+  it('ويُرسل تعليماته وprompts الجاهزة — ما يقرؤه النموذج قبل أول سؤال', async () => {
+    const transport = new StdioClientTransport({
+      command: process.execPath, args: [SERVER], env: { PATH: process.env.PATH },
+    });
+    const client = new Client({ name: 'test', version: '1.0.0' });
+    await client.connect(transport);
+    try {
+      const instructions = client.getInstructions();
+      expect(instructions).toContain('sweater_overview');
+      expect(instructions).toContain('this_month');
+      const prompts = (await client.listPrompts()).prompts.map((p) => p.name);
+      expect(prompts).toEqual(expect.arrayContaining(['monthly_review', 'close_month_checklist', 'find_record']));
+      const got = await client.getPrompt({ name: 'monthly_review', arguments: { month: '2026-08' } });
+      expect(got.messages[0].content.text).toContain('2026-08');
+    } finally { await client.close(); }
+  }, 30_000);
+
   it('ووضع القراءة فقط يُخفي أدوات الكتابة من القائمة', async () => {
     const open = (await listTools()).map((t) => t.name);
     const locked = (await listTools({ SWEATER_MCP_READONLY: '1' })).map((t) => t.name);

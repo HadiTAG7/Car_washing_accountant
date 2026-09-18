@@ -68,5 +68,22 @@ export async function ledgerBundle() {
   return { accounts, entries, lines, periods };
 }
 
+/**
+ * قواعد الرسوم كما تقرؤها الواجهة: الفعّالة وحدها، و`effective_from` باسمها
+ * الذي تنتظره `incomeStatement` (`effectiveFrom`). بلا هذا التحويل كان
+ * ترشيح «سارية من تاريخ» يُهمَل بصمت وتُطبَّق كل القواعد على كل فترة.
+ */
+export async function feeRulesMapped() {
+  const list = await rows('fee_rules').catch(() => []);
+  return list
+    .filter((r) => r.active !== false)
+    .map((r) => ({
+      key: r.key ?? r.id, label: r.label ?? r.key ?? r.id,
+      basis: r.basis === 'profit' ? 'profit' : 'revenue',
+      rate: Number(r.rate) || 0,
+      effectiveFrom: r.effective_from ?? r.effectiveFrom ?? null,
+    }));
+}
+
 /** `wash__abc123` — the id the posting transaction writes. */
 export const lockId = (sourceType, sourceId) => `${sourceType}__${sourceId}`;

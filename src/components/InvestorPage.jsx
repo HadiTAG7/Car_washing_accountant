@@ -185,7 +185,7 @@ function ShareCard({ partner }) {
             {partner.partnerName}
           </p>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            العدد الأصلي: {formatNumber(partner.workersCount || 0)} بايكر
+            عدد عمالك: {formatNumber(partner.workersCount || 0)}
           </p>
         </div>
       </div>

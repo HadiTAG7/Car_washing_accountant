@@ -90,6 +90,7 @@ afterEach(() => {
   partnerView.recheckPartnerLink = undefined;
   partnerView.viewedPartner = { id: 'p1', partnerName: 'أحمد الغانم', workersCount: 3, userId: 'uid1' };
   partnerView.scalingFactor = 0.3;
+  partnerView.totalWorkers = 10;
   paymentsState.payments = [];
   ledgerState.entries = [];
   ledgerState.accounts = [];
@@ -384,6 +385,17 @@ describe('صفحة المستثمر — قائمة الدخل', () => {
 });
 
 describe('صفحة المستثمر — الخيارات الأربعة', () => {
+  it.each([50, 75])('يعرض عدد عمال الشريك فقط دون إجمالي المشروع %s', totalWorkers => {
+    partnerView.viewedPartner = { ...partnerView.viewedPartner, workersCount: 10 };
+    partnerView.totalWorkers = totalWorkers;
+    partnerView.scalingFactor = 10 / totalWorkers;
+    render(<InvestorPage view="overview" />);
+    const identity = screen.getByText('أحمد الغانم').parentElement;
+    expect(identity.textContent).toContain('عدد عمالك: 10');
+    expect(identity.textContent).not.toContain('من أصل');
+    expect(identity.textContent).not.toContain(String(totalWorkers));
+    expect(identity.textContent).not.toContain('%');
+  });
   it('رأس المال يبقى واضحاً بالأرقام دون بطاقة شريط فارغة من أي وصف', () => {
     paymentsState.payments = [{ id: 'r1', partnerId: 'p1', amount: 60000, paymentDate: '2026-07-01' }];
     const { container } = render(<InvestorPage view="capital" />);
@@ -400,7 +412,7 @@ describe('صفحة المستثمر — الخيارات الأربعة', () => 
   it('«نظرة عامة» تعرض الهوية ورأس المال ونتيجة آخر شهر، لا السندات ولا الاتجاه', () => {
     render(<InvestorPage view="overview" />);
     expect(screen.getByText('أحمد الغانم')).toBeTruthy();
-    expect(screen.getByText(/العدد الأصلي: 3 بايكر/)).toBeTruthy();
+    expect(screen.getByText(/عدد عمالك: 3/)).toBeTruthy();
     expect(screen.queryByText('30.0%')).toBeNull();
     expect(screen.getByText('الرسوم المطلوبة')).toBeTruthy();
     expect(screen.getByText('نتيجة آخر شهر')).toBeTruthy();

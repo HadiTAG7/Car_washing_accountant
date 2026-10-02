@@ -27,7 +27,7 @@ const MONTH = z.string().regex(/^\d{4}-\d{2}$/, 'الشهر بصيغة YYYY-MM')
 const text = (t) => ({ content: [{ type: 'text', text: typeof t === 'string' ? t : JSON.stringify(t, null, 2) }] });
 const reply = (obj) => text(assertScoped(obj));
 
-const NO_SHARE_HINT = 'لم تُسجَّل لك عمالة بعد — نسبتك ٠٪. راجع الإدارة لتسجيل عدد عمالتك، فالنسبة تُحسب عليه.';
+const NO_SHARE_HINT = 'لم تُسجَّل لك عمالة بعد. راجع الإدارة لتسجيل عدد عمالتك.';
 const NO_ACTIVITY_HINT = 'لا توجد حركة مُرحّلة في هذا الشهر — القائمة تُبنى من القيود المُرحّلة في الدفاتر. اختر شهراً من `availableMonths`.';
 
 // ─── مشترك ───────────────────────────────────────────────────────────────
@@ -63,10 +63,9 @@ async function statementFor(ctx, month, share) {
   });
 }
 
-function statementView(st, share) {
+function statementView(st) {
   return {
     month: st.periodKey,
-    sharePercent: share.sharePercent,
     hasActivity: st.hasActivity,
     grossRevenue: st.grossRevenue,
     salesReturns: st.salesReturns,
@@ -93,15 +92,24 @@ const pickMonth = (requested, months) => (requested && months.includes(requested
 export const partnerTools = [
   {
     name: 'partner_whoami',
-    title: 'من أنا وما نسبتي',
+    title: 'بياناتي وعدد عمالي',
     description:
-      'اسم الشريك الذي يخصّه هذا الرابط، وعدد عمالته من مجموع العمالة، ونسبته المئوية، والأشهر التي '
-      + 'للدفاتر فيها قول. ابدأ به: كل رقمٍ في بقية الأدوات مقسومٌ بهذه النسبة. الرابط للقراءة فقط.',
+      'اسم الشريك صاحب الرابط وعدد عماله فقط والأشهر المتاحة في الدفاتر. '
+      + 'كل رقم في الأدوات يخص الشريك وحده. الرابط للقراءة فقط.',
     schema: {},
     async run(_args, ctx) {
       const id = await identity(ctx);
       return reply({
-        ...id,
+        partnerName: id.partnerName,
+        workersCount: id.workersCount,
+        hasShare: id.hasShare,
+        availableMonths: id.availableMonths,
+        latestMonth: id.latestMonth,
+        // Only this partner's worker eligibility, never spread private inputs.
+        ...(id.originalWorkers != null ? { originalWorkers: id.originalWorkers } : {}),
+        ...(id.eligibleWorkers != null ? { eligibleWorkers: id.eligibleWorkers } : {}),
+        ...(id.suspendedWorkers != null ? { suspendedWorkers: id.suspendedWorkers } : {}),
+        ...(id.effectiveFrom != null ? { effectiveFrom: id.effectiveFrom } : {}),
         mode: 'قراءة فقط — حصّتك وحدها، بلا أسماء عاملين ولا بيانات شركاء آخرين',
         linkCreatedAtIso: ctx.principal.createdAtIso ?? null,
         hint: id.hasShare ? null : NO_SHARE_HINT,
@@ -136,19 +144,18 @@ export const partnerTools = [
     name: 'partner_income_statement',
     title: 'قائمة الدخل بحصّتي',
     description:
-      'قائمة دخل شهرٍ واحد مقسومةً بنسبتك: الإيرادات والمردودات وصافي الإيرادات، التكاليف المباشرة، '
+      'قائمة دخل شهر واحد تخصك فقط: الإيرادات والمردودات وصافي الإيرادات، التكاليف المباشرة، '
       + 'المصاريف التشغيلية، الرسوم، وصافي ربحك — مع تفصيل كل بندٍ بالحساب. `month` بصيغة YYYY-MM؛ '
       + 'بلا `month` يُعرض آخر شهرٍ مُرحَّل. الأرقام من القيود المُرحّلة في الدفاتر.',
     schema: { month: MONTH.optional() },
     async run({ month } = {}, ctx) {
       const id = await identity(ctx);
-      if (!id.hasShare) return reply({ hasShare: false, sharePercent: 0, hint: NO_SHARE_HINT, availableMonths: id.availableMonths });
+      if (!id.hasShare) return reply({ hasShare: false, hint: NO_SHARE_HINT, availableMonths: id.availableMonths });
       const chosen = pickMonth(month, id.availableMonths);
       const [st, statuses] = await Promise.all([statementFor(ctx, chosen, id), ctx.load.periodStatuses()]);
-      const current = await shareAt(ctx, chosen, id);
       const periodStatus = statuses.get(chosen) ?? null;
       return reply({
-        ...statementView(st, { ...current, sharePercent: Math.round(current.factor * 10000) / 100 }),
+        ...statementView(st),
         // «نهائي» شهرٌ مُقفَل لا يتغيّر؛ «مبدئي» مفتوحٌ قد يُضاف إليه قيد.
         periodStatus,
         periodStatusLabel: periodStatus === 'closed' ? 'نهائي — الشهر مُقفَل' : (periodStatus === 'open' ? 'مبدئي — الشهر مفتوح وقد يتغيّر' : null),
@@ -164,11 +171,11 @@ export const partnerTools = [
     title: 'اتجاه صافي ربحي',
     description:
       'صافي الإيرادات والتكاليف وصافي ربحك لكل شهر من آخر `months` شهراً (افتراضياً ٦، حتى ٢٤)، '
-      + 'مقسومةً بنسبتك. لقراءة الاتجاه لا تفاصيل شهرٍ بعينه.',
+      + 'الأرقام تخصك فقط. لقراءة الاتجاه لا تفاصيل شهر بعينه.',
     schema: { months: z.number().int().min(1).max(24).optional() },
     async run({ months = 6 } = {}, ctx) {
       const id = await identity(ctx);
-      if (!id.hasShare) return reply({ hasShare: false, sharePercent: 0, hint: NO_SHARE_HINT, months: [] });
+      if (!id.hasShare) return reply({ hasShare: false, hint: NO_SHARE_HINT, months: [] });
       const keys = lastMonths(months);
       const [{ entries, lines }, accounts, feeRules] = await Promise.all([
         ctx.load.ledger(keys[0], keys[keys.length - 1]), ctx.load.accounts(), ctx.load.feeRules(),
@@ -180,7 +187,6 @@ export const partnerTools = [
       });
       const sum = (f) => Math.round(rows.reduce((s, r) => s + r[f], 0) * 100) / 100;
       return reply({
-        sharePercent: id.sharePercent,
         months: rows,
         totals: { netRevenue: sum('netRevenue'), totalCosts: sum('totalCosts'), netProfit: sum('netProfit') },
       });
@@ -190,13 +196,13 @@ export const partnerTools = [
     name: 'partner_operations',
     title: 'التشغيل بحصّتي — الغسلات والمصاريف',
     description:
-      'تشغيل شهرٍ واحد مقسوماً بنسبتك: عدد الغسلات المكتملة في الشركة وما يعادل حصّتك منها '
-      + '(١٠٠ غسلة ونسبتك ١٠٪ = ١٠ غسلات)، ومبيعاتها الصافية بحصّتك، وتفصيل التكاليف والمصاريف '
+      'أرقام التشغيل الخاصة بك لشهر واحد: عدد الغسلات التي تعادل حصتك فقط، '
+      + 'ومبيعاتها الصافية بحصتك، وتفصيل التكاليف والمصاريف '
       + 'بالحساب من الدفاتر. `month` بصيغة YYYY-MM؛ افتراضياً آخر شهرٍ مُرحَّل. لا أسماء عاملين.',
     schema: { month: MONTH.optional() },
     async run({ month } = {}, ctx) {
       const id = await identity(ctx);
-      if (!id.hasShare) return reply({ hasShare: false, sharePercent: 0, hint: NO_SHARE_HINT, availableMonths: id.availableMonths });
+      if (!id.hasShare) return reply({ hasShare: false, hint: NO_SHARE_HINT, availableMonths: id.availableMonths });
       const chosen = pickMonth(month, id.availableMonths);
       const [washes, settings, st] = await Promise.all([
         ctx.load.washes(chosen), ctx.load.settings(), statementFor(ctx, chosen, id),
@@ -208,16 +214,13 @@ export const partnerTools = [
       const sales = operationalWashSales(washes, { periodKey: chosen, policyAt: (d) => taxPolicyAt(d, settings) });
       return reply({
         month: chosen,
-        sharePercent: Math.round(current.factor * 10000) / 100,
         washes: {
-          companyCount,
           yourShareCount,
-          text: shareLine(yourShareCount, companyCount),
-          companyRows: completed.length,
+          text: shareLine(yourShareCount),
           grossSalesShare: scaleMoney(sales.gross, current.factor),
           netSalesShare: scaleMoney(sales.net, current.factor),
           vatShare: scaleMoney(sales.vat, current.factor),
-          unknownPolicyCount: sales.unknownPolicy,
+          hasUnknownTaxPolicy: sales.unknownPolicy > 0,
         },
         ledger: {
           hasActivity: st.hasActivity,
@@ -244,7 +247,7 @@ export const partnerTools = [
     async run(_args, ctx) {
       const [id, receipts] = await Promise.all([identity(ctx), ctx.load.receipts()]);
       const paid = receipts.reduce((s, r) => s + (Number(r.amount) || 0), 0);
-      if (!id.hasShare) return reply({ hasShare: false, sharePercent: 0, paid, hint: NO_SHARE_HINT });
+      if (!id.hasShare) return reply({ hasShare: false, paid, hint: NO_SHARE_HINT });
       const months = [...id.availableMonths].sort();
       const [{ entries, lines }, accounts, feeRules] = await Promise.all([
         ctx.load.ledger(months[0], months[months.length - 1]), ctx.load.accounts(), ctx.load.feeRules(),
@@ -259,7 +262,6 @@ export const partnerTools = [
       const latest = active[active.length - 1] ?? null;
       const previous = active.length > 1 ? active[active.length - 2] : null;
       return reply({
-        sharePercent: id.sharePercent,
         ...roi,
         estimate: roi.recovered
           ? 'استُردّ رأس مالك بالكامل.'
@@ -276,7 +278,7 @@ export const partnerTools = [
     name: 'partner_summary',
     title: 'ملخّص شامل',
     description:
-      'إجابةٌ واحدة على «كيف وضعي؟»: نسبتك، ورأس مالك (المطلوب والمسدَّد والمتبقّي)، وصافي ربحك من '
+      'إجابة واحدة على «كيف وضعي؟»: رأس مالك (المطلوب والمسدّد والمتبقي)، وصافي ربحك من '
       + 'آخر شهرٍ مُرحَّل، واتجاه آخر ستة أشهر. للتفاصيل استعمل الأدوات المخصّصة.',
     schema: {},
     async run(_args, ctx) {
@@ -284,7 +286,7 @@ export const partnerTools = [
       const me = partners.find((p) => String(p.id) === String(ctx.principal.partnerId));
       const capital = capitalOf(me, receipts);
       if (!id.hasShare) {
-        return reply({ partnerName: id.partnerName, hasShare: false, sharePercent: 0, capital, hint: NO_SHARE_HINT });
+        return reply({ partnerName: id.partnerName, hasShare: false, capital, hint: NO_SHARE_HINT });
       }
       const keys = lastMonths(6);
       const [{ entries, lines }, accounts, feeRules] = await Promise.all([
@@ -299,8 +301,6 @@ export const partnerTools = [
       return reply({
         partnerName: id.partnerName,
         workersCount: id.workersCount,
-        totalWorkers: id.totalWorkers,
-        sharePercent: id.sharePercent,
         capital,
         latestMonth: {
           month: latest.periodKey,

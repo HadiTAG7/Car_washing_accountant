@@ -54,6 +54,12 @@ afterEach(() => {
 const btn = (name) => screen.queryByRole('button', { name });
 
 describe('صفحة المساعد الذكي', () => {
+  it('شرح رابط الشريك لا يعد بإظهار النسبة أو إجمالي عمال وغسلات المشروع', () => {
+    const { container } = render(<PartnerAssistantPage partner={partnerView.viewedPartner} meta={META} />);
+    expect(container.textContent).not.toMatch(/نسبتك|بنسبتك|مجموع العمالة|١٠٠ غسلة|[٪%]/);
+    expect(screen.getByText('عدد عمالك فقط')).toBeTruthy();
+    expect(screen.getByText('عدد الغسلات التي تعادل حصّتك فقط')).toBeTruthy();
+  });
   it('بلا رابط: زرّ إنشاء، وشرح ما يراه المساعد وما لا يراه', () => {
     render(<PartnerAssistantPage partner={partnerView.viewedPartner} meta={META} />);
     expect(btn('إنشاء رابط')).toBeTruthy();

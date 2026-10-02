@@ -68,7 +68,10 @@ describe('حراسة الرمز', () => {
     const me = await client.callTool({ name: 'partner_whoami', arguments: {} });
     const body = JSON.parse(me.content[0].text);
     expect(body.partnerName).toBe('أحمد');
-    expect(body.sharePercent).toBe(25);
+    expect(body.workersCount).toBe(1);
+    expect(body.sharePercent).toBeUndefined();
+    expect(body.factor).toBeUndefined();
+    expect(body.totalWorkers).toBeUndefined();
     expect(JSON.stringify(body)).not.toContain('سالم');
     await client.close();
   }, 30_000);
@@ -89,6 +92,22 @@ describe('حراسة الرمز', () => {
   it('وترميزٌ مشوّه في المسار لا يُسقط الخادم', async () => {
     expect((await status('/api/partner-mcp/%E0%A4%A')).status).toBe(404);
   });
+});
+
+describe('خصوصية النسبة عبر بروتوكول MCP', () => {
+  it('قائمة الأدوات وكل الردود لا ترسل النسبة أو إجمالي العمال والغسلات', async () => {
+    const client = await connect(GOOD);
+    try {
+      const listed = (await client.listTools()).tools;
+      for (const item of listed) {
+        expect(`${item.title} ${item.description}`).not.toMatch(/نسبتك|نسبتي|مجموع العمالة|من أصل|[٪%]/);
+        const reply = await client.callTool({ name: item.name, arguments: {} });
+        expect(reply.isError).toBeFalsy();
+        expect(reply.content[0].text).not.toMatch(/"(?:sharePercent|factor|scalingFactor|totalWorkers|companyCount|companyRows|unknownPolicyCount)"/);
+        expect(reply.content[0].text).not.toMatch(/من أصل|نسبتك/);
+      }
+    } finally { await client.close(); }
+  }, 30_000);
 });
 
 describe('الإعداد والمعدل', () => {

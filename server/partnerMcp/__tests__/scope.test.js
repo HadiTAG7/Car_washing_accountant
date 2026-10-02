@@ -24,7 +24,7 @@ describe('القسمة بالنسبة', () => {
     const share = shareOf(PARTNERS, 'p1');
     expect(share).toMatchObject({ workersCount: 1, totalWorkers: 10, factor: 0.1, sharePercent: 10, hasShare: true });
     expect(scaleCount(100, share.factor)).toBe(10);
-    expect(shareLine(10, 100)).toBe('10 من أصل 100 غسلة تعادل حصّتك');
+    expect(shareLine(10)).toBe('10 غسلة تعادل حصّتك');
   });
 
   it('والمبالغ تُقسم وتُقرَّب لهللتين', () => {
@@ -83,8 +83,12 @@ describe('المصفاة', () => {
   });
 
   it('وتُعيد ما لا يخالف كما هو', () => {
-    const payload = { sharePercent: 10, washes: { companyCount: 100, yourShareCount: 10 }, list: [1, 2] };
+    const payload = { washes: { yourShareCount: 10 }, fees: [{ rate: 0.1 }], recoveredPercent: 25, list: [1, 2] };
     expect(assertScoped(payload)).toBe(payload);
+  });
+
+  it.each(['sharePercent', 'share_percent', 'factor', 'scalingFactor', 'totalWorkers', 'total_workers', 'companyCount', 'companyRows', 'unknownPolicyCount'])('يرفض تسريب %s حتى لو كان متداخلاً في رد جديد', key => {
+    expect(() => assertScoped({ nested: [{ [key]: 0.2 }] })).toThrow(PartnerMcpScopeError);
   });
 
   it('وتغطي ما يجب أن تغطيه', () => {

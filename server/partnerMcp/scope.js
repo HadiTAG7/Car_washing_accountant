@@ -37,6 +37,11 @@ export const FORBIDDEN_KEYS = new Set([
   'contactNumber', 'contact_number', 'email', 'phone',
   'partners', 'paidAmount', 'paid_amount',
   'iqama_number', 'iqamaNumber', 'salary',
+  // Allocation inputs stay private to the server. Fee rates and ROI changes
+  // are distinct from ownership and remain available in scoped results.
+  'sharePercent', 'share_percent', 'factor', 'scalingFactor', 'scaling_factor',
+  'totalWorkers', 'total_workers', 'companyCount', 'company_count',
+  'companyRows', 'company_rows', 'unknownPolicyCount',
 ]);
 
 export function assertScoped(payload, path = '') {
@@ -84,9 +89,9 @@ export const scaleCount = (n, factor) => Math.round((Number(n) || 0) * (Number(f
 const NUM = new Intl.NumberFormat('ar-SA', { numberingSystem: 'latn', maximumFractionDigits: 1 });
 export const fmtNum = (n) => NUM.format(Number(n) || 0);
 
-/** «10 من أصل 100 غسلة تعادل حصّتك». */
-export function shareLine(shareCount, companyCount, unit = 'غسلة') {
-  return `${fmtNum(shareCount)} من أصل ${fmtNum(companyCount)} ${unit} تعادل حصّتك`;
+/** Own allocated count only; never the company denominator. */
+export function shareLine(shareCount, unit = 'غسلة') {
+  return `${fmtNum(shareCount)} ${unit} تعادل حصّتك`;
 }
 
 // ─── رأس المال ───────────────────────────────────────────────────────────

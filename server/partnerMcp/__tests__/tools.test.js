@@ -92,6 +92,11 @@ describe('المساعد يحسب التخفيض من أهلية الشهر لا
     const trend = await run('partner_trend', { months: 24 });
     expect(trend.months.find(row => row.month === '2026-08')).toMatchObject({ netRevenue: 0, totalCosts: 0 });
     expect(JSON.stringify(current)).not.toMatch(/PRIVATE|reason|updatedBy/);
+    const own = await run('partner_whoami', {});
+    expect(own).toMatchObject({ originalWorkers: 1, eligibleWorkers: 0, suspendedWorkers: 1, effectiveFrom: '2026-08' });
+    expect(own.factor).toBeUndefined();
+    expect(own.totalWorkers).toBeUndefined();
+    expect(own.sharePercent).toBeUndefined();
   });
 });
 
@@ -117,14 +122,43 @@ describe('كل أداةٍ تخرج من المصفاة', () => {
       expect(res.isError).toBeFalsy();
       for (const f of FORBIDDEN_TEXT) expect(text, `${name} يحمل «${f}»`).not.toContain(f);
       expect(() => JSON.parse(text)).not.toThrow();
+      expect(text).not.toMatch(/"(?:sharePercent|factor|scalingFactor|totalWorkers|companyCount|companyRows|unknownPolicyCount)"/);
+      expect(text).not.toMatch(/من أصل|نسبتك|نسبتي|نسبته/);
     });
   }
+
+  for (const name of partnerToolNames) {
+    it(`${name}: لا تكشف النسبة حتى عندما لا توجد عمالة`, async () => {
+      const noShare = { ...ctx, load: { ...fakeLoad,
+        partners: async () => [{ ...PARTNERS[0], workersCount: 0 }, PARTNERS[1]],
+      } };
+      const result = await tool(name).run({}, noShare);
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).not.toMatch(/"(?:sharePercent|factor|scalingFactor|totalWorkers|companyCount|companyRows)"|[٪%]|نسبتك/);
+    });
+  }
+
+  it('وصف الأدوات لا يدعو المساعد لإظهار نسبة الملكية أو إجماليات المشروع', () => {
+    for (const item of partnerTools) {
+      expect(`${item.title} ${item.description}`).not.toMatch(/نسبتك|نسبتي|نسبته|مجموع العمالة|من أصل|[٪%]/);
+    }
+  });
+
+  it('الهوية لا تمرر حقولاً إضافية من حساب الأهلية الداخلي', async () => {
+    const privateContext = { ...ctx, load: { ...fakeLoad, participation: async () => ({
+      factor: 0.1, eligibleWorkers: 1, suspendedWorkers: 0, originalWorkers: 1,
+      updatedBy: 'PRIVATE_ADMIN', reason: 'PRIVATE_REASON', companyCount: 100,
+    }) } };
+    const result = await tool('partner_whoami').run({}, privateContext);
+    expect(result.content[0].text).not.toMatch(/PRIVATE|reason|updatedBy|companyCount|factor/);
+    expect(JSON.parse(result.content[0].text).eligibleWorkers).toBe(1);
+  });
 });
 
 describe('من أنا', () => {
-  it('اسمي ونسبتي ومجموع العمالة — لا قائمة الشركاء', async () => {
+  it('اسمي وعدد عمالي فقط — لا نسبة ولا مجموع عمال المشروع', async () => {
     const me = await call('partner_whoami');
-    expect(me).toMatchObject({ partnerName: 'أحمد الغانم', workersCount: 1, totalWorkers: 10, sharePercent: 10, hasShare: true, latestMonth: '2026-08' });
+    expect(me).toMatchObject({ partnerName: 'أحمد الغانم', workersCount: 1, hasShare: true, latestMonth: '2026-08' });
     expect(me.partners).toBeUndefined();
     expect(me.mode).toMatch(/قراءة فقط/);
   });
@@ -176,7 +210,8 @@ describe('قائمة الدخل بحصّتي', () => {
     const noShare = { ...ctx, load: { ...fakeLoad, partners: async () => [{ id: 'p1', partnerName: 'أحمد', workersCount: 0 }, PARTNERS[1]] } };
     const st = JSON.parse((await tool('partner_income_statement').run({}, noShare)).content[0].text);
     expect(st.hasShare).toBe(false);
-    expect(st.hint).toMatch(/٠٪/);
+    expect(st.hint).toMatch(/لم تُسجَّل لك عمالة/);
+    expect(st.hint).not.toMatch(/[٪%]/);
     expect(st.netRevenue).toBeUndefined();
   });
 });
@@ -184,12 +219,13 @@ describe('قائمة الدخل بحصّتي', () => {
 describe('التشغيل بحصّتي', () => {
   it('١٠٠ غسلة ونسبتي ١٠٪ = ١٠ غسلات — والملغاة لا تُعدّ', async () => {
     const ops = await call('partner_operations', { month: '2026-08' });
-    expect(ops.washes.companyCount).toBe(100);
+    expect(ops.washes.companyCount).toBeUndefined();
     expect(ops.washes.yourShareCount).toBe(10);
-    expect(ops.washes.text).toBe('10 من أصل 100 غسلة تعادل حصّتك');
+    expect(ops.washes.text).toBe('10 غسلة تعادل حصّتك');
     // ١٠٠ × ١١٫٥ شامل = ١١٥٠ إجمالي، ١٠٠٠ صافٍ — بحصّته: ١١٥ و١٠٠.
     expect(ops.washes.grossSalesShare).toBe(115);
     expect(ops.washes.netSalesShare).toBe(100);
+    expect(ops.washes.hasUnknownTaxPolicy).toBe(false);
     expect(ops.ledger.expensesByAccount).toEqual([{ code: '5200', name: 'الإيجار', amount: 4 }]);
   });
 });
@@ -199,7 +235,7 @@ describe('الاتجاه والملخّص', () => {
     const tr = await call('partner_trend', { months: 3 });
     expect(tr.months).toHaveLength(3);
     expect(tr.months.every((m) => /^\d{4}-\d{2}$/.test(m.month))).toBe(true);
-    expect(tr.sharePercent).toBe(10);
+    expect(tr.sharePercent).toBeUndefined();
   });
 
   it('الملخّص يجمع الهوية ورأس المال وآخر شهر — ويقرأ الشركاء مرةً واحدة عبر الذاكرة', async () => {
@@ -208,7 +244,8 @@ describe('الاتجاه والملخّص', () => {
     calls.length = 0;
     const memoLoad = { ...fakeLoad, partners: () => once('partners', fakeLoad.partners) };
     const sum = JSON.parse((await tool('partner_summary').run({}, { ...ctx, load: memoLoad })).content[0].text);
-    expect(sum).toMatchObject({ partnerName: 'أحمد الغانم', sharePercent: 10 });
+    expect(sum).toMatchObject({ partnerName: 'أحمد الغانم', workersCount: 1 });
+    expect(sum.sharePercent).toBeUndefined();
     expect(sum.capital.paid).toBe(5000);
     expect(sum.latestMonth).toMatchObject({ month: '2026-08', netProfit: 5.1 });
     expect(sum.trend).toHaveLength(6);

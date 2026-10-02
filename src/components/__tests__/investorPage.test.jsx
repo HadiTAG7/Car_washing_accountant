@@ -18,7 +18,7 @@ vi.mock('../../hooks/useLedger', () => ({ useLedger: () => ledgerState }));
 vi.mock('../../hooks/useFeeRules', () => ({ useFeeRules: () => ({ rules: [] }) }));
 vi.mock('../../hooks/usePartnerInsights', () => ({ usePartnerInsights: () => insightsState }));
 
-const COMPANY_NET = 50000;
+let COMPANY_NET = 50000;
 // قائمة جاهزة بأرقام الشركة — المكوّن يقسمها بـ scalingFactor.
 vi.mock('../../lib/accounting/monthlyStatement', () => ({
   monthlyStatement: ({ scalingFactor = 1 }) => ({
@@ -32,6 +32,19 @@ vi.mock('../../lib/accounting/monthlyStatement', () => ({
     operatingExpenses: 60000 * scalingFactor,
     netProfitBeforeFees: 50000 * scalingFactor,
     totalCosts:   150000 * scalingFactor,
+    expenseBreakdown: {
+      total: 150000 * scalingFactor,
+      fixedTotal: 90000 * scalingFactor,
+      groups: [
+        { key: 'variable', label: 'المصروفات المتغيرة والعمولات', amount: 60000 * scalingFactor,
+          items: [{ id: 'v1', entryDate: '2026-08-03', accountName: 'مواد تشغيل', description: 'مستلزمات الغسيل', amount: 60000 * scalingFactor }] },
+        { key: 'monthly', label: 'المصروفات الثابتة الشهرية والرواتب', amount: 80000 * scalingFactor,
+          items: [{ id: 'm1', entryDate: '2026-08-04', accountName: 'رواتب', description: 'رواتب البايكرز', amount: 80000 * scalingFactor }] },
+        { key: 'annual', label: 'المصروفات السنوية', amount: 10000 * scalingFactor,
+          items: [{ id: 'a1', entryDate: '2026-08-05', accountName: 'مصروفات سنوية', description: 'إيجار السكن', amount: 10000 * scalingFactor }] },
+        { key: 'other', label: 'بنود أخرى', amount: 0, items: [] },
+      ],
+    },
     fees: [],
     netProfit:    COMPANY_NET * scalingFactor,
   }),
@@ -53,17 +66,38 @@ function amountIn(row) {
 
 afterEach(() => {
   cleanup();
+  COMPANY_NET = 50000;
   partnerView.investorLinkMissing = false;
   partnerView.viewedPartner = { id: 'p1', partnerName: 'أحمد الغانم', workersCount: 3, userId: 'uid1' };
   partnerView.scalingFactor = 0.3;
   paymentsState.payments = [];
   ledgerState.entries = [];
+  ledgerState.accounts = [];
+  ledgerState.lines = [];
   ledgerState.periods = [];
   insightsState.insights = null;
   insightsState.washMonths = [];
 });
 
 describe('صفحة المستثمر — قائمة الدخل', () => {
+  it('تُبقي تحميل الخسارة مقفلاً في مرحلة المليون وتعرض التقدم من القيود فقط', () => {
+    ledgerState.accounts = [{ code: '5010', accountType: 'expense' }];
+    ledgerState.entries = [{ id: 'e1', entryDate: '2026-08-04', periodKey: '2026-08', status: 'posted', sourceKind: 'monthly' }];
+    ledgerState.lines = [{ id: 'l1', entryId: 'e1', accountId: '5010', debit: 100000, credit: 0 }];
+    COMPANY_NET = -20000;
+    render(<InvestorPage view="income" />);
+    expect(screen.getByText(/مرحلة التأسيس — لا تحميل خسارة على الشريك/)).toBeTruthy();
+    expect(screen.getByText(/100,000.*1,000,000/)).toBeTruthy();
+  });
+  it('النتيجة السالبة لا تُعرض كخسارة شخصية جديدة فوق رسوم الشريك المدفوعة', () => {
+    COMPANY_NET = -20000;
+    paymentsState.payments = [{ id: 'r1', partnerId: 'p1', amount: 30000, paymentDate: '2026-07-01' }];
+    render(<InvestorPage view="income" />);
+    expect(screen.getByText('= حصتك التحليلية من نتيجة الشركة')).toBeTruthy();
+    expect(screen.getByText(/لا تُنشئ هذه النتيجة مطالبة مالية جديدة عليك/)).toBeTruthy();
+    expect(screen.getByText(/المسجّل في سندات رأس مالك:.*30,000/)).toBeTruthy();
+    expect(screen.queryByText('= صافي ربحك من هذا الشهر')).toBeNull();
+  });
   it('تعرض قائمة الدخل ببنودها', () => {
     render(<InvestorPage view="income" />);
     for (const label of ['إيرادات المبيعات', '= صافي الإيرادات',
@@ -73,25 +107,38 @@ describe('صفحة المستثمر — قائمة الدخل', () => {
     }
   });
 
-  it('السطر الأخير يقول «ربحك» لا «للشركاء» — الرقم حصّةُ قارئه', () => {
+  it('تعرض حصة الشريك من الفئات والبنود التفصيلية دون كشف شريك آخر', () => {
     render(<InvestorPage view="income" />);
-    expect(screen.getByText('= صافي ربحك من هذا الشهر')).toBeTruthy();
+    expect(screen.getByText('تفصيل حصتك من المصروفات')).toBeTruthy();
+    expect(screen.getByText('المصروفات المتغيرة والعمولات')).toBeTruthy();
+    expect(screen.getByText('المصروفات الثابتة الشهرية والرواتب')).toBeTruthy();
+    expect(screen.getByText('المصروفات السنوية')).toBeTruthy();
+    expect(screen.getByText(/إجمالي المصروفات الثابتة الشهرية والسنوية/)).toBeTruthy();
+    expect(screen.getByText('رواتب البايكرز')).toBeTruthy();
+    expect(screen.getByText('إيجار السكن')).toBeTruthy();
+    expect(screen.getByText('إجمالي حصتك من المصروفات')).toBeTruthy();
+    expect(screen.queryByText('هادي الغانم')).toBeNull();
+  });
+
+  it('السطر الأخير نتيجة تحليلية للقارئ لا توزيع أرباح أو مطالبة شخصية', () => {
+    render(<InvestorPage view="income" />);
+    expect(screen.getByText('= حصتك التحليلية من نتيجة الشركة')).toBeTruthy();
     expect(screen.queryByText('= صافي الربح النهائي للشركاء')).toBeNull();
   });
 
   it('القسمة مطبَّقة فعلاً لا معروضة فقط', () => {
-    // الرقم يُقرأ من صفّ «صافي ربحك» وحده: مبلغٌ مطابق في موضع آخر من الصفحة
+    // الرقم يُقرأ من صفّ النتيجة وحده: مبلغٌ مطابق في موضع آخر من الصفحة
     // لا يثبت شيئاً عن هذا السطر.
     partnerView.scalingFactor = 0.4;
     render(<InvestorPage view="income" />);
-    const row = screen.getByText('= صافي ربحك من هذا الشهر').closest('tr');
+    const row = screen.getByText('= حصتك التحليلية من نتيجة الشركة').closest('tr');
     expect(amountIn(row)).toBe(COMPANY_NET * 0.4);
   });
 
   it('والنصف يعطي نصف الرقم — لا رقماً ثابتاً', () => {
     partnerView.scalingFactor = 0.5;
     render(<InvestorPage view="income" />);
-    const row = screen.getByText('= صافي ربحك من هذا الشهر').closest('tr');
+    const row = screen.getByText('= حصتك التحليلية من نتيجة الشركة').closest('tr');
     expect(amountIn(row)).toBe(COMPANY_NET * 0.5);
   });
 
@@ -123,7 +170,7 @@ describe('صفحة المستثمر — الخيارات الأربعة', () => 
     expect(screen.getByText('الرسوم المطلوبة')).toBeTruthy();
     expect(screen.getByText('نتيجة آخر شهر')).toBeTruthy();
     expect(screen.queryByText('سندات قبضك')).toBeNull();
-    expect(screen.queryByText('صافي ربحك شهرياً')).toBeNull();
+    expect(screen.queryByText('حصتك من نتيجة الشركة شهرياً')).toBeNull();
     // ولا جدول قيود: القائمة التفصيلية خيارٌ آخر.
     expect(screen.queryByText('إيرادات المبيعات')).toBeNull();
   });
@@ -150,7 +197,7 @@ describe('صفحة المستثمر — الخيارات الأربعة', () => 
 
   it('«اتجاه ٦ أشهر» تعرض الرسم وحده', () => {
     render(<InvestorPage view="trends" />);
-    expect(screen.getByText('صافي ربحك شهرياً')).toBeTruthy();
+    expect(screen.getByText('حصتك من نتيجة الشركة شهرياً')).toBeTruthy();
     expect(screen.queryByText('سندات قبضك')).toBeNull();
     expect(screen.queryByText('إيرادات المبيعات')).toBeNull();
   });
@@ -188,15 +235,26 @@ describe('صفحة المستثمر — المؤشرات الجديدة', () => 
     ];
   };
 
+  it('النظرة العامة لا تصف النتيجة السالبة بأنها ربح الشريك أو دين إضافي', () => {
+    COMPANY_NET = -20000;
+    twoMonths();
+    paymentsState.payments = [{ id: 'r1', partnerId: 'p1', amount: 30000, paymentDate: '2026-07-01' }];
+    render(<InvestorPage view="overview" />);
+    const demandCard = screen.getByText('مبلغ إضافي مطلوب منك').closest('.sw-stat-card');
+    expect(demandCard.querySelector('.sw-stat-value').textContent).toContain('0.00');
+    expect(screen.getByText(/الرسوم المدفوعة مسبقاً لا تُطلب منك مرة أخرى/)).toBeTruthy();
+    expect(screen.queryByText('صافي ربحك')).toBeNull();
+  });
+
   it('نظرة عامة: استرداد رأس المال من حصّته مقابل سنداته', () => {
     twoMonths();
     paymentsState.payments = [{ id: 'r1', partnerId: 'p1', amount: 20000, paymentDate: '2026-07-01', paymentMethod: 'cash' }];
     render(<InvestorPage view="overview" />);
-    expect(screen.getByText('استرداد رأس مالك')).toBeTruthy();
+    expect(screen.getByText('مقارنة نتائج الشركة برأس مالك')).toBeTruthy();
     // شهران × 50000 × 0.3 = 30000 من 20000 → استُردّ.
     expect(screen.getByText('150.0%')).toBeTruthy();
-    expect(screen.getByText('✓ تم')).toBeTruthy();
-    expect(screen.getByText(/صافي ربحك منذ بداية 2026/)).toBeTruthy();
+    expect(screen.getByText('✓ تعادل')).toBeTruthy();
+    expect(screen.getByText(/حصتك التحليلية من نتيجة 2026/)).toBeTruthy();
   });
 
   it('والتغيّر عن الشهر السابق يظهر تحت صافي الربح', () => {

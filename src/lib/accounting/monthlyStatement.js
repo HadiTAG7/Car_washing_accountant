@@ -26,7 +26,7 @@
 import { round2 } from './journal.js';
 import { splitVat, VAT_RATE } from './vat.js';
 import { ACC } from './chartOfAccounts.js';
-import { incomeStatement, movementBySource } from './reports.js';
+import { incomeStatement, movementBySource, postedLines, sourceKindOf } from './reports.js';
 
 /**
  * The fees that apply when `fee_rules` has not been configured.
@@ -70,6 +70,74 @@ function scaleRows(rows, factor) {
   return rows.map((r) => ({ ...r, amount: round2((Number(r.amount) || 0) * factor) }));
 }
 
+const EXPENSE_GROUPS = [
+  { key: 'variable', label: 'المصروفات المتغيرة والعمولات' },
+  { key: 'monthly', label: 'المصروفات الثابتة الشهرية والرواتب' },
+  { key: 'annual', label: 'المصروفات السنوية' },
+  { key: 'other', label: 'بنود أخرى' },
+];
+
+function expenseGroup(code, sourceKind) {
+  if (code === ACC.SALARY_EXPENSE) return 'monthly';
+  if (sourceKind === 'annual') return 'annual';
+  if (sourceKind === 'variable' || code === ACC.BIKER_COMMISSION || code === ACC.VARIABLE_COSTS) return 'variable';
+  if (sourceKind === 'monthly' || sourceKind === 'voucher' || code === ACC.RENT_MONTHLY) return 'monthly';
+  return 'other';
+}
+
+/** Detail is drawn from the same posted lines and account sets as the statement. */
+function expenseBreakdown({ accounts, entries, lines, from, to, is, factor, directCosts, operatingExpenses }) {
+  const accountNames = new Map(accounts.map((a) => [String(a.code), a.nameArabic || a.name || String(a.code)]));
+  const directCodes = new Set(is.costOfServices.map((r) => String(r.code)));
+  const operatingCodes = new Set(is.expenses.map((r) => String(r.code)));
+  const entryKinds = new Map(entries.map((e) => [e.id, sourceKindOf(e)]));
+  const items = postedLines(entries, lines, { from, to })
+    .filter((line) => directCodes.has(String(line.accountId)) || operatingCodes.has(String(line.accountId)))
+    .map((line) => {
+      const accountCode = String(line.accountId);
+      const rawAmount = round2((Number(line.debit) || 0) - (Number(line.credit) || 0));
+      return {
+        id: `${line.entryId}:${line.id}`,
+        entryDate: line.entryDate,
+        entryNumber: line.entryNumber,
+        accountCode,
+        accountName: accountNames.get(accountCode) || accountCode,
+        description: line.description || line.entryDescription || accountNames.get(accountCode) || accountCode,
+        groupKey: expenseGroup(accountCode, entryKinds.get(line.entryId)),
+        section: directCodes.has(accountCode) ? 'direct' : 'operating',
+        rawAmount,
+        amount: round2(rawAmount * factor),
+      };
+    })
+    .filter((item) => item.rawAmount !== 0);
+
+  // Rounding each transaction independently can lose cents. Reconcile within
+  // each official subtotal, so category totals and the displayed P&L agree.
+  for (const [section, target] of [['direct', directCosts], ['operating', operatingExpenses]]) {
+    const sectionItems = items.filter((item) => item.section === section);
+    const difference = Math.round(target * 100) - sectionItems.reduce((sum, item) => sum + Math.round(item.amount * 100), 0);
+    if (difference && sectionItems.length) {
+      const largest = sectionItems.reduce((best, item) => Math.abs(item.rawAmount) > Math.abs(best.rawAmount) ? item : best);
+      largest.amount = round2(largest.amount + difference / 100);
+    }
+  }
+
+  const groups = EXPENSE_GROUPS.map(({ key, label }) => {
+    const groupItems = items.filter((item) => item.groupKey === key);
+    return {
+      key, label,
+      amount: round2(groupItems.reduce((sum, item) => sum + item.amount, 0)),
+      items: groupItems.sort((a, b) => String(a.entryDate).localeCompare(String(b.entryDate)) || String(a.id).localeCompare(String(b.id))),
+    };
+  });
+  return {
+    groups,
+    fixedTotal: round2(groups.filter((group) => group.key === 'monthly' || group.key === 'annual')
+      .reduce((sum, group) => sum + group.amount, 0)),
+    total: round2(groups.reduce((sum, group) => sum + group.amount, 0)),
+  };
+}
+
 /**
  * قائمة دخل شهر واحد، مبنية على القيود المُرحّلة.
  *
@@ -80,7 +148,7 @@ function scaleRows(rows, factor) {
  */
 export function monthlyStatement({
   accounts = [], entries = [], lines = [], periodKey,
-  feeRules = null, scalingFactor = 1,
+  feeRules = null, scalingFactor = 1, includeExpenseBreakdown = false,
 } = {}) {
   const { from, to } = monthRange(periodKey);
   const factor = Number(scalingFactor) || 0;
@@ -129,10 +197,16 @@ export function monthlyStatement({
     netProfitBeforeFees: round2(netProfitBeforeFees * factor),
   };
 
+  const detailedExpenses = includeExpenseBreakdown ? expenseBreakdown({
+    accounts, entries, lines, from, to, is, factor,
+    directCosts: scaled.directCosts, operatingExpenses: scaled.operatingExpenses,
+  }) : null;
+
   return {
     periodKey, from, to,
     ...scaled,
     totalCosts: round2(scaled.directCosts + scaled.operatingExpenses),
+    expenseBreakdown: detailedExpenses,
     fees, totalFees,
     netProfit: round2(scaled.netProfitBeforeFees - totalFees),
     // The account-level rows behind each subtotal, for the breakdown table.

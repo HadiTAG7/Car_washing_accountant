@@ -20,8 +20,11 @@ const ACCOUNTS = [
   { code: '4010', nameArabic: 'مردودات وخصومات المبيعات', accountType: 'revenue', normalBalance: 'debit', contra: true },
   { code: '4100', nameArabic: 'أرباح استبعاد أصول', accountType: 'revenue', normalBalance: 'credit' },
   { code: '5000', nameArabic: 'عمولات البايكرز', accountType: 'expense', normalBalance: 'debit', directCost: true },
+  { code: '5010', nameArabic: 'الرواتب', accountType: 'expense', normalBalance: 'debit', directCost: true },
   { code: '5100', nameArabic: 'مصروفات متغيرة', accountType: 'expense', normalBalance: 'debit', directCost: true },
   { code: '5200', nameArabic: 'الإيجار', accountType: 'expense', normalBalance: 'debit' },
+  { code: '5300', nameArabic: 'مصروفات سنوية', accountType: 'expense', normalBalance: 'debit' },
+  { code: '5400', nameArabic: 'مصروفات أخرى', accountType: 'expense', normalBalance: 'debit' },
 ];
 
 let seq = 0;
@@ -36,6 +39,7 @@ function entryOf(entryDate, rows, over = {}) {
     },
     lines: rows.map((r, i) => ({
       id: `${id}-${i}`, entryId: id, accountId: r[0], debit: r[1] || 0, credit: r[2] || 0,
+      description: r[3] || '',
     })),
   };
 }
@@ -171,6 +175,66 @@ describe('قائمة الدخل الشهرية من القيود', () => {
     expect(half.netRevenue).toBe(full.netRevenue / 2);
     expect(half.totalFees).toBe(full.totalFees / 2);
     expect(half.netProfit).toBe(full.netProfit / 2);
+  });
+
+  it('تفصيل حصة الشريك يجمع المتغيرة والثابتة الشهرية والسنوية وكل بند دون تغيير الإجمالي', () => {
+    const expense = (code, amount, description, sourceKind = 'manual') =>
+      entryOf('2026-08-10', [[code, amount, 0, description], ['1010', 0, amount]], { sourceKind });
+    const draft = expense('5100', 99, 'مسودة لا تُحتسب', 'variable');
+    draft.entry.status = 'draft';
+    const s = monthlyStatement({
+      ...bundle(
+        expense('5000', 10, 'عمولة البايكرز', 'payroll'),
+        expense('5010', 100, 'رواتب البايكرز', 'payroll'),
+        expense('5100', 40, 'مستلزمات الغسيل', 'variable'),
+        expense('5200', 200, 'إيجار المكتب', 'monthly'),
+        expense('5300', 300, 'إيجار السكن', 'annual'),
+        expense('5400', 20, 'مصروف آخر'),
+        draft,
+      ),
+      periodKey: '2026-08', scalingFactor: 0.25, includeExpenseBreakdown: true,
+    });
+    const groups = Object.fromEntries(s.expenseBreakdown.groups.map((g) => [g.key, g]));
+    expect(s.directCosts).toBe(37.5);
+    expect(s.operatingExpenses).toBe(130);
+    expect(s.expenseBreakdown.total).toBe(s.totalCosts);
+    expect(groups.variable.amount).toBe(12.5);
+    expect(groups.monthly.amount).toBe(75);
+    expect(groups.annual.amount).toBe(75);
+    expect(groups.other.amount).toBe(5);
+    expect(s.expenseBreakdown.fixedTotal).toBe(150);
+    expect(groups.monthly.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ description: 'رواتب البايكرز', amount: 25 }),
+      expect.objectContaining({ description: 'إيجار المكتب', amount: 50 }),
+    ]));
+    expect(groups.annual.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ description: 'إيجار السكن', amount: 75 }),
+    ]));
+    expect(s.expenseBreakdown.groups.flatMap((g) => g.items).some((i) => i.description === 'مسودة لا تُحتسب')).toBe(false);
+  });
+
+  it('تقريب تفاصيل حصة الشريك يبقى مطابقاً لإجمالي المصروفات المعروض', () => {
+    const entries = [1, 2, 3].map((n) => entryOf('2026-08-10', [
+      ['5100', 0.01, `بند ${n}`], ['1010', 0, 0.01],
+    ], { sourceKind: 'variable' }));
+    const s = monthlyStatement({ ...bundle(...entries), periodKey: '2026-08', scalingFactor: 1 / 3, includeExpenseBreakdown: true });
+    expect(s.totalCosts).toBe(0.01);
+    expect(s.expenseBreakdown.total).toBe(0.01);
+    expect(s.expenseBreakdown.groups.flatMap((g) => g.items).reduce((sum, i) => sum + i.amount, 0)).toBeCloseTo(0.01);
+  });
+
+  it('عكس المصروف يُلغيه من مجموع التفاصيل كما يلغيه من قائمة الدخل', () => {
+    const rent = entryOf('2026-08-10', [
+      ['5300', 100, 0, 'إيجار السكن'], ['1010', 0, 100],
+    ], { sourceKind: 'annual' });
+    rent.entry.status = 'reversed';
+    const mirror = entryOf('2026-08-11', [
+      ['5300', 0, 100, 'عكس إيجار السكن'], ['1010', 100, 0],
+    ], { sourceType: 'adjustment', reversalOf: rent.entry.id, reversedSourceKind: 'annual' });
+    const s = monthlyStatement({ ...bundle(rent, mirror), periodKey: '2026-08', includeExpenseBreakdown: true });
+    expect(s.operatingExpenses).toBe(0);
+    expect(s.expenseBreakdown.groups.find((g) => g.key === 'annual').amount).toBe(0);
+    expect(s.expenseBreakdown.total).toBe(0);
   });
 
   it('شهر بلا قيود يعطي أصفاراً معلنة لا أرقاماً مخترعة', () => {

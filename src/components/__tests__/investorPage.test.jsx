@@ -66,6 +66,7 @@ vi.mock('../../lib/accounting/monthlyStatement', () => ({
 
 const InvestorPage = (await import('../InvestorPage')).default;
 const { IncomeStatementCard } = await import('../InvestorPage');
+const { PartnerReportStatus, PartnerComparisonCard } = await import('../InvestorPage');
 const { monthlyStatement } = await import('../../lib/accounting/monthlyStatement');
 
 /**
@@ -98,6 +99,34 @@ afterEach(() => {
   ledgerState.periods = [];
   insightsState.insights = null;
   insightsState.washMonths = [];
+});
+
+describe('حالة التقرير ومقارنة فترات الشريك', () => {
+  it('تعرض تقرير التوزيع مبدئياً وتاريخ قراءته لا تاريخ الجهاز ولا اعتماداً غير موجود', () => {
+    render(<PartnerReportStatus report={{ asOf: '2026-10-02T18:00:00Z', from: '2026-05-01', through: '2026-09-30' }} />);
+    expect(screen.getByText('حالة التقرير: مبدئي')).toBeTruthy();
+    expect(screen.getByText(/ليس كشف توزيع أرباح معتمداً/)).toBeTruthy();
+    expect(screen.getByText(/آخر تحديث من المصدر:/).textContent).toContain('2026');
+    expect(screen.queryByText('حالة التقرير: معتمد')).toBeNull();
+  });
+  it('لا تختلق تاريخاً عندما لا يتوفر تاريخ قراءة المصدر', () => {
+    render(<PartnerReportStatus report={{}} />);
+    expect(screen.getByText(/آخر تحديث من المصدر: غير متاح/)).toBeTruthy();
+  });
+  it('المقارنة مطوية افتراضياً وتتيح اختيار شهرين دون كشف النسبة', () => {
+    const st = periodKey => ({ ...monthlyStatement({ scalingFactor: 0.2 }), periodKey, annualReserve: 50, netAfterReserve: 9950 });
+    render(<PartnerComparisonCard report={{ statements: [st('2026-08'), st('2026-07')] }} activeMonth="2026-08" />);
+    const summary = screen.getByText('مقارنة تقاريرك');
+    expect(summary.closest('details').open).toBe(false);
+    fireEvent.click(summary);
+    expect(summary.closest('details').open).toBe(true);
+    expect(screen.getByLabelText('الفترة الأولى').value).toBe('2026-08');
+    expect(screen.getByLabelText('الفترة الثانية').value).toBe('2026-07');
+    expect(screen.getByRole('table', { name: 'مقارنة أرقام حصتك' })).toBeTruthy();
+    expect(screen.queryByText(/20\.0%/)).toBeNull();
+    fireEvent.change(screen.getByLabelText('نوع المقارنة'), { target: { value: 'year' } });
+    expect(screen.getByText('تحتاج فترتين مختلفتين للمقارنة')).toBeTruthy();
+  });
 });
 
 describe('صفحة المستثمر — قائمة الدخل', () => {

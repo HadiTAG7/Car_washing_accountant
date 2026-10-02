@@ -60,6 +60,7 @@ import { partnerPaidSummary } from '../lib/accounting/partnerTotals';
 import {
   roiSummary, momChange, ytdTotal,
 } from '../lib/accounting/partnerInsights';
+import { comparePartnerReports, COMPARISON_FIELDS, validReportMonth } from '../lib/accounting/partnerReportComparison';
 import { usePartnerInsights } from '../hooks/usePartnerInsights';
 import {
   formatCurrency, formatDate, formatNumber, PER_WORKER_FEE,
@@ -136,6 +137,91 @@ function PeriodBadge({ status }) {
       {closed ? 'نهائي' : 'مبدئي'}
     </span>
   );
+}
+
+/** This report has no independent approval record. Closing books is not one. */
+export function PartnerReportStatus({ report }) {
+  const { language } = useLanguage();
+  const timestamp = report?.asOf ? Date.parse(report.asOf) : NaN;
+  const updated = Number.isFinite(timestamp) ? new Intl.DateTimeFormat(getLocale(language), {
+    dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Riyadh', numberingSystem: 'latn',
+  }).format(new Date(timestamp)) : 'غير متاح';
+  return <section aria-label="حالة التقرير" className="rounded-control border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 p-4 text-sm text-amber-900 dark:text-amber-200 space-y-1">
+    <p className="font-bold flex items-center gap-2"><Clock3 size={16} /> حالة التقرير: مبدئي</p>
+    <p className="text-xs leading-relaxed">أرقام تشغيلية قابلة للتحديث؛ ليس كشف توزيع أرباح معتمداً ولا مطالبة مالية عليك.</p>
+    <p className="text-xs">آخر تحديث من المصدر: {updated}</p>
+    {report?.from && report?.through && <p className="text-xs">نطاق البيانات: {formatDate(report.from)} إلى {formatDate(report.through)}</p>}
+  </section>;
+}
+
+const COMPARISON_LABELS = {
+  netRevenue: 'حصتك من صافي الإيرادات', variable: 'المصاريف المتغيرة والعمولات',
+  monthly: 'المصاريف الشهرية والرواتب', other: 'المصاريف الأخرى', totalCosts: 'إجمالي مصاريف التشغيل',
+  totalFees: 'رسوم الإدارة والإشراف', annualReserve: 'احتياطي التجديد السنوي', netAfterReserve: 'نتيجتك التشغيلية بعد الاحتياطي',
+};
+
+export function PartnerComparisonCard({ report, activeMonth }) {
+  const [mode, setMode] = useState('month');
+  const [choices, setChoices] = useState({});
+  const months = [...new Set((report?.statements || []).map(row => row.periodKey).filter(validReportMonth))].sort().reverse();
+  const periods = mode === 'year' ? [...new Set(months.map(key => key.slice(0, 4)))] : months;
+  const preferred = mode === 'year' ? activeMonth?.slice(0, 4) : activeMonth;
+  const first = periods.includes(choices[mode]?.first) ? choices[mode].first : periods.includes(preferred) ? preferred : periods[0];
+  const second = periods.includes(choices[mode]?.second) && choices[mode].second !== first
+    ? choices[mode].second : periods.find(key => key < first) || periods.find(key => key !== first);
+  const newestYear = [first, second].filter(Boolean).sort().at(-1);
+  const throughMonth = mode === 'year' ? Number(months.find(key => key.startsWith(`${newestYear}-`))?.slice(5)) || 12 : 12;
+  const comparison = comparePartnerReports({ statements: report?.statements || [], mode, first, second, throughMonth });
+  const label = key => mode === 'year' ? key : key ? formatMonthLabel(key) : 'غير متاح';
+  const choose = (field, value) => setChoices(previous => ({ ...previous, [mode]: { first, second, ...previous[mode], [field]: value } }));
+  const amount = value => value == null ? 'غير متاح' : formatCurrency(value);
+  const firstLabelId = useId(); const secondLabelId = useId(); const modeLabelId = useId();
+  return <Card className="p-5">
+    <details>
+      <summary className="cursor-pointer font-bold text-slate-900 dark:text-slate-100 min-h-10">مقارنة تقاريرك</summary>
+      <div className="mt-4 space-y-4">
+        <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400">قارن أرقام حصتك بين شهرين أو سنتين، دون تغيير الحسابات أو رصيد التأسيس.</p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+          <div><label htmlFor={modeLabelId} className="block mb-1">نوع المقارنة</label>
+            <select id={modeLabelId} value={mode} onChange={event => setMode(event.target.value)} className="w-full min-h-10 p-2 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+              <option value="month">مقارنة شهرية</option><option value="year">مقارنة سنوية</option>
+            </select></div>
+          <div><label htmlFor={firstLabelId} className="block mb-1">الفترة الأولى</label>
+            <select id={firstLabelId} value={first || ''} onChange={event => choose('first', event.target.value)} disabled={!periods.length} className="w-full min-h-10 p-2 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+              {periods.map(key => <option key={key} value={key}>{label(key)}</option>)}
+            </select></div>
+          <div><label htmlFor={secondLabelId} className="block mb-1">الفترة الثانية</label>
+            <select id={secondLabelId} value={second || ''} onChange={event => choose('second', event.target.value)} disabled={!second} className="w-full min-h-10 p-2 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+              {periods.filter(key => key !== first).map(key => <option key={key} value={key}>{label(key)}</option>)}
+            </select></div>
+        </div>
+        {!second ? <p className="text-sm text-slate-500">تحتاج فترتين مختلفتين للمقارنة</p> : <>
+          {mode === 'year' && <p className="text-xs text-slate-500">المقارنة من يناير حتى {formatMonthLabel(`${newestYear}-${String(throughMonth).padStart(2, '0')}`).replace(/\s+[\d٠-٩]+$/, '')} في كل سنة؛ لا نحول الأشهر المتاحة إلى تقدير لسنة كاملة.</p>}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-slate-500 dark:text-slate-400">
+            {[comparison.first, comparison.second].map(period => <p key={period.period}>
+              {label(period.period)} — أشهر متاحة: {formatNumber(period.available.length)} / {formatNumber(period.expected.length)}
+              {!period.complete && <span className="block text-amber-700 dark:text-amber-300">أشهر غير متاحة: {period.missing.join('، ')}</span>}
+            </p>)}
+          </div>
+          {!comparison.comparable && <p role="status" className="text-xs text-amber-700 dark:text-amber-300">نطاق الأشهر مختلف أو غير متاح؛ لا نعرض فرقاً مضللاً.</p>}
+          <div className="overflow-x-auto">
+            <table aria-label="مقارنة أرقام حصتك" className="block sm:table w-full text-xs sm:text-sm">
+              <thead className="hidden sm:table-header-group"><tr className="text-slate-500 border-b border-slate-200 dark:border-slate-700"><th className="py-3 px-2 text-right">البند</th><th className="py-3 px-2">{label(first)}</th><th className="py-3 px-2">{label(second)}</th><th className="py-3 px-2">الفرق: الأولى − الثانية</th></tr></thead>
+              <tbody className="block sm:table-row-group">{COMPARISON_FIELDS.map(field => <tr key={field} className={`grid grid-cols-3 sm:table-row border-b border-slate-100 dark:border-slate-800 ${field === 'netAfterReserve' ? 'font-bold' : ''}`}>
+                <th scope="row" className="col-span-3 py-3 px-2 text-right font-normal">{COMPARISON_LABELS[field]}</th>
+                {[comparison.first.values[field], comparison.second.values[field], comparison.differences[field]].map((value, index) => <td key={index} className="pb-3 sm:py-3 px-1 sm:px-2 text-center tabular-nums min-w-0">
+                  <span className="block sm:hidden mb-1 text-[10px] text-slate-500">{index === 0 ? label(first) : index === 1 ? label(second) : 'الفرق'}</span>
+                  <span className="inline-block max-w-full break-words sm:whitespace-nowrap">{amount(value)}</span>
+                </td>)}
+              </tr>)}</tbody>
+            </table>
+          </div>
+          <p className="text-xs text-slate-500 dark:text-slate-400">المصاريف المتغيرة والشهرية والأخرى تفاصيل ضمن إجمالي التشغيل، وليست خصماً إضافياً.</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400">المجموع للأشهر المتاحة فقط. غير متاح لا يعني صفراً. النتيجة قبل تغطية التأسيس؛ ليست مبلغاً موزعاً أو مطلوباً منك.</p>
+        </>}
+      </div>
+    </details>
+  </Card>;
 }
 
 /** «▲ 12% عن الشهر السابق» — أو لا شيء حين لا سابق. */
@@ -933,6 +1019,7 @@ function InvestorPortal({ partner, view }) {
         {anyError && <ErrorState title="تعذّر تحميل بياناتك" error={anyError} />}
 
         {['overview', 'income', 'trends'].includes(view) && <PartnerEligibilityNotice eligibility={allocationReport?.statements.find(s => s.periodKey === statementMonth)?.eligibility} periodKey={statementMonth} />}
+        {['overview', 'income', 'trends'].includes(view) && allocationReport && <PartnerReportStatus report={allocationReport} />}
 
         {view === 'overview' && (
           <OverviewView
@@ -969,6 +1056,7 @@ function InvestorPortal({ partner, view }) {
         )}
 
         {view === 'income' && (
+          <>
           <IncomeStatementCard
             hasShare={hasShare}
             paid={paid}
@@ -979,6 +1067,8 @@ function InvestorPortal({ partner, view }) {
             statement={statement}
             periodStatus="allocation"
           />
+          <PartnerComparisonCard key={partner.id} report={allocationReport} activeMonth={activeMonth} />
+          </>
         )}
 
         {view === 'trends' && (

@@ -511,13 +511,29 @@ describe('صفحة المستثمر — المؤشرات الجديدة', () => 
     expect(screen.getByText(/عن الشهر السابق/)).toBeTruthy();
   });
 
-  it('وغسلاتٌ تعادل حصّته من الخادم لا من `washes`', () => {
+  it.each([
+    { companyCount: 100, shareCount: 30 },
+    { companyCount: 150, shareCount: 30 },
+    { companyCount: 100, shareCount: 0 },
+  ])('يعرض غسلات الشريك $shareCount دون إجمالي الشركة $companyCount', ({ companyCount, shareCount }) => {
     twoMonths();
-    insightsState.washMonths = [{ month: '2026-08', companyCount: 100, shareCount: 30 }];
+    insightsState.washMonths = [{ month: '2026-08', companyCount, shareCount }];
     insightsState.insights = { sharePercent: 30, months: insightsState.washMonths };
     render(<InvestorPage view="overview" />);
-    expect(screen.getByText('غسلات تعادل حصّتك')).toBeTruthy();
-    expect(screen.getByText(/من أصل 100 غسلة مكتملة/)).toBeTruthy();
+    const card = screen.getByText('غسلات تعادل حصّتك').closest('.sw-stat-card');
+    expect(card.querySelector('.sw-stat-value').textContent.trim()).toBe(String(shareCount));
+    expect(card.textContent).toContain('أغسطس ٢٠٢٦');
+    expect(card.textContent).not.toContain('من أصل');
+    expect(card.textContent).not.toContain(String(companyCount));
+  });
+
+  it('يبقي غسلات الشريك غير المتاحة مختلفة عن صفر متحقق منه', () => {
+    twoMonths();
+    render(<InvestorPage view="overview" />);
+    const card = screen.getByText('غسلات تعادل حصّتك').closest('.sw-stat-card');
+    expect(card.querySelector('.sw-stat-value').textContent.trim()).toBe('—');
+    expect(card.textContent).toContain('يُحسب من سجل الغسلات عند توفّره');
+    expect(card.textContent).not.toContain('من أصل');
   });
 
   it('تقرير الالتزامات والاحتياطي يبقى مبدئياً حتى لو أقفل الدفتر', () => {

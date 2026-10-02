@@ -520,7 +520,7 @@ function OverviewView({
             label="غسلات تعادل حصّتك"
             value={washShare ? formatNumber(washShare.shareCount) : '—'}
             sub={washShare
-              ? `من أصل ${formatNumber(washShare.companyCount)} غسلة مكتملة في ${formatMonthLabel(washShare.month)}`
+              ? formatMonthLabel(washShare.month)
               : 'يُحسب من سجل الغسلات عند توفّره'}
           />
         </div>

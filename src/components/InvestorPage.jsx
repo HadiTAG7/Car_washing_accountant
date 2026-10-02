@@ -196,8 +196,8 @@ function ShareCard({ partner, totalWorkers, sharePercent }) {
   );
 }
 
-/** رأس المال في ثلاثة أرقام وشريط. يُعاد في «نظرة عامة» و«رأس مالي». */
-function CapitalSummary({ partner, required, paid, remaining, settled, receiptsCount }) {
+/** رأس المال في ثلاثة أرقام واضحة. يُعاد في «نظرة عامة» و«رأس مالي». */
+export function CapitalSummary({ partner, required, paid, remaining, settled, receiptsCount }) {
   return (
     <>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -222,9 +222,6 @@ function CapitalSummary({ partner, required, paid, remaining, settled, receiptsC
           sub={settled ? 'اكتمل رأس مالك' : 'المتبقّي لاستكمال حصّتك'}
         />
       </div>
-      <Card className="p-5">
-        <ProgressBar value={paid} max={required || 1} color={settled ? 'emerald' : 'primary'} />
-      </Card>
     </>
   );
 }

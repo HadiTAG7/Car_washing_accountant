@@ -342,6 +342,17 @@ describe('صفحة المستثمر — قائمة الدخل', () => {
 });
 
 describe('صفحة المستثمر — الخيارات الأربعة', () => {
+  it('رأس المال يبقى واضحاً بالأرقام دون بطاقة شريط فارغة من أي وصف', () => {
+    paymentsState.payments = [{ id: 'r1', partnerId: 'p1', amount: 60000, paymentDate: '2026-07-01' }];
+    const { container } = render(<InvestorPage view="capital" />);
+    expect(screen.getByText('✓ مسدّد بالكامل')).toBeTruthy();
+    expect(screen.getByText('الرسوم المطلوبة')).toBeTruthy();
+    expect(screen.getByText('المسدَّد')).toBeTruthy();
+    const cards = [...container.querySelectorAll('div[style]')]
+      .filter(element => element.style.borderRadius === 'var(--sw-radius-card)');
+    expect(cards.length).toBeGreaterThan(0);
+    for (const card of cards) expect(card.textContent.trim()).not.toBe('');
+  });
   // الادعاء الحامل للتقسيم: كل خيارٍ يحمل شيئه وحده. بدونه يعود الأربعة
   // ورقةً واحدة بأربعة عناوين — وهي الحالة التي خرجنا منها.
   it('«نظرة عامة» تعرض الهوية ورأس المال ونتيجة آخر شهر، لا السندات ولا الاتجاه', () => {

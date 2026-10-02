@@ -12,6 +12,15 @@ const { default: Page, CapitalJourneyContent } = await import('../PartnerCapital
 afterEach(() => { cleanup(); query.mockReset(); });
 
 describe('رحلة رأس مال الشريك', () => {
+  it.each([0.2, 0.35])('لا تعرض نسبة الشريك حتى لو كانت موجودة في التقرير (%s)', factor => {
+    const report = { ...journeyReport, factor };
+    const before = JSON.stringify(report);
+    const { container } = render(<CapitalJourneyContent report={report} />);
+    expect(screen.getByText(/الأرقام أدناه تخص حصتك فقط\./)).toBeTruthy();
+    expect(container.textContent).not.toMatch(/[%٪]/);
+    expect(screen.getByText('المتبقي حسب التقرير').parentElement.textContent).toContain('8,800.00');
+    expect(JSON.stringify(report)).toBe(before);
+  });
   it('توضح تاريخ التمويل منفصلاً عن نطاق المصاريف والسند المتأخر يبقى بتاريخ دفعه', () => {
     render(<CapitalJourneyContent report={{ ...journeyReport, through: '2026-06-30',
       capitalJourney: { ...journeyReport.capitalJourney, fundingAsOf: '2026-10-03',

@@ -39,6 +39,72 @@ function database(overrides = {}) {
 }
 
 describe('تقرير مصروفات الشريك الخادمي', () => {
+  it('رحلة رأس المال لا تؤكد رصيداً إذا كان يوم سند القبض أو الصرف غير موجود بالتقويم', async () => {
+    const r = await partnerAllocationReport(database({
+      partner_payments: [{ id: 'invalid-receipt', partner_id: 'p1', payment_date: '2026-09-99', amount: 20000 }],
+      startup_costs: [{ id: 'bike', item_name: 'الدباب', actual_amount: 1000 }],
+      startup_cost_entries: [{ id: 'bad-date', startup_cost_id: 'bike', amount: 1000, spent_date: '2026-09-99' }],
+    }), { partnerId: 'p1', periodKey: '2026-09', today: new Date('2026-10-02'), includeCapitalJourney: true });
+    expect(r.capitalJourney.complete).toBe(false);
+    expect(r.capitalJourney.receipts).toEqual([]);
+    expect(r.capitalJourney.initialItems.find(i => i.description === 'الدباب').date).toBeNull();
+    expect(r.capitalJourney.warnings).toHaveLength(2);
+  });
+  it('رحلة رأس المال تفصل التأسيس والدفعة السنوية الأولى عن التشغيل والاحتياطي دون تغيير القائمة', async () => {
+    const db = database({
+      startup_costs: [{ id: 'bike', item_name: 'قيمة الدباب', actual_amount: 1000 }],
+      startup_cost_entries: [{ id: 'bike-payment', startup_cost_id: 'bike', description: 'اسم عامل سري', notes: 'لا تعرض', invoice_url: 'https://secret.example', amount: 1000, spent_date: '2026-09-02' }],
+    });
+    const options = { partnerId: 'p1', periodKey: '2026-09', today: new Date('2026-10-02') };
+    const before = await partnerAllocationReport(db, options);
+    const r = await partnerAllocationReport(db, { ...options, includeCapitalJourney: true });
+    expect(r.statements).toEqual(before.statements);
+    expect(r.capitalJourney).toMatchObject({ version: 1, received: 20000, funded: 20000,
+      initialTotal: 18100, operatingTotal: 80, reserveTotal: 0, remaining: 1820, complete: true });
+    expect(r.capitalJourney.initialItems).toEqual(expect.arrayContaining([
+      expect.objectContaining({ description: 'قيمة الدباب', amount: 100, date: '2026-09-02' }),
+      expect.objectContaining({ description: 'سكن', amount: 18000, kind: 'annual' }),
+    ]));
+    const json = JSON.stringify(r.capitalJourney);
+    for (const forbidden of ['اسم عامل سري', 'لا تعرض', 'secret.example', '777777', 'دفعة الشريك الآخر']) expect(json).not.toContain(forbidden);
+    expect(r.capitalJourney.receipts).toHaveLength(1);
+  });
+  it('رحلة رأس المال تحترم حارس الهوية وتوضح صرف التأسيس الذي لا توجد له مستندات', async () => {
+    const db = database({ startup_costs: [{ id: 'legacy', item_name: 'الفرنشايز', actual_amount: 2000 }] });
+    const r = await dispatch(db, null, 'partnerInsights', {
+      includeStatements: true, includeCapitalJourney: true, partnerId: 'p2', factor: 1, periodKey: '2026-09',
+    }, { uid: 'u1' });
+    expect(r.partnerId).toBe('p1');
+    expect(r.capitalJourney.complete).toBe(false);
+    expect(r.capitalJourney.warnings).toContainEqual(expect.objectContaining({ description: 'الفرنشايز', amount: 200 }));
+    await expect(dispatch(db, null, 'partnerInsights', { includeStatements: true, includeCapitalJourney: true }, null))
+      .rejects.toMatchObject({ code: 'unauthenticated' });
+  });
+  it('رحلة رأس المال تعرض العكس مرة واحدة وتطابق الرصيد حتى مع التقريب', async () => {
+    const db = database({
+      startup_costs: [{ id: 'setup', item_name: 'الفرنشايز', actual_amount: 100.03 }],
+      startup_cost_entries: [{ id: 's', startup_cost_id: 'setup', amount: 100.03, spent_date: '2026-08-01' }],
+      journal_entries: [
+        { id: 's-post', entryDate: '2026-08-01', status: 'reversed', sourceKind: 'startup', sourceId: 's', lines: [{ accountId: '5200', debit: 100.03 }] },
+        { id: 's-reverse', entryDate: '2026-09-01', status: 'posted', reversalOf: 's-post', reversedSourceKind: 'startup', lines: [{ accountId: '5200', credit: 100.03 }] },
+      ],
+    });
+    const r = await partnerAllocationReport(db, { partnerId: 'p1', periodKey: '2026-09', today: new Date('2026-10-02'), includeCapitalJourney: true });
+    expect(r.capitalJourney.initialTotal).toBe(18000);
+    expect(r.capitalJourney.initialItems.filter(i => i.description === 'الفرنشايز')).toHaveLength(2);
+    expect(r.capitalJourney.initialItems.some(i => i.reversal && i.amount === -10)).toBe(true);
+    expect(Math.round(r.capitalJourney.initialItems.reduce((sum, i) => sum + i.amount, 0) * 100)).toBe(1800000);
+    expect(r.capitalJourney.remaining).toBe(r.statements.at(-1).founding.remaining);
+  });
+  it('رحلة رأس المال لا تسمي الالتزام الشهري صرفاً مؤكداً ولا الاحتياطي دفعة ثانية', async () => {
+    const r = await partnerAllocationReport(database({ journal_entries: [
+      { id: 'sales', entryDate: '2026-09-01', status: 'posted', lines: [{ accountId: '4000', credit: 25000 }] },
+    ] }), { partnerId: 'p1', periodKey: '2026-09', today: new Date('2026-10-02'), includeCapitalJourney: true });
+    const j = r.capitalJourney;
+    expect(j).toMatchObject({ operatingTotal: 80, reserveTotal: 1500, initialTotal: 18000, remaining: 420 });
+    expect(j.months[0].groups.find(g => g.key === 'monthly').items[0].basis).toBe('scheduled');
+    expect(j.initialItems).toHaveLength(1);
+  });
   it.each(['2026-9-4', '2026-8-23', '2026-8-22'])('يقرأ التاريخ القديم %s دون إسقاط المصروف أو تغيير بياناته', async logged_date => {
     const row = { id: 'legacy', expense_name: 'مواد', logged_date, total_variable_cost: 500 };
     const db = database({ variable_expenses: [row] });

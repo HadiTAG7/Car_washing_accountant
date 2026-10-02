@@ -579,7 +579,8 @@ export const HANDLERS = {
   partnerInsights: {
     guard: 'partnerView',
     run: ({ db, data, partner }) => data?.includeStatements === true
-      ? partnerAllocationReport(db, { partnerId: partner.id, periodKey: data?.periodKey })
+      ? partnerAllocationReport(db, { partnerId: partner.id, periodKey: data?.periodKey,
+        includeCapitalJourney: data?.includeCapitalJourney === true })
       : partnerWashShare(db, {
       partnerId: partner.id, months: data?.months ?? 12,
     }),

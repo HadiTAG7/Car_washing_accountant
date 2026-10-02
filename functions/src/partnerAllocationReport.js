@@ -11,6 +11,7 @@ import { postedLines, sourceKindOf } from '../../src/lib/accounting/reports.js';
 import { ACC } from '../../src/lib/accounting/chartOfAccounts.js';
 import { normalizeExpenseDate } from '../../src/lib/expenseDates.js';
 import { isRealCalendarDate } from '../../src/lib/vatFields.js';
+import { partnerCapitalJourney } from './partnerCapitalJourney.js';
 
 const readRows = async (db, name) => {
   const snap = await db.collection(name).get();
@@ -31,7 +32,7 @@ const nextMonth = key => {
   return d.toISOString().slice(0, 7);
 };
 
-export async function partnerAllocationReport(db, { partnerId, periodKey, today = new Date() } = {}) {
+export async function partnerAllocationReport(db, { partnerId, periodKey, today = new Date(), includeCapitalJourney = false } = {}) {
   const through = periodKey || today.toISOString().slice(0, 7);
   if (!validMonth(through) || through > today.toISOString().slice(0, 7)) {
     throw new LedgerError('اختر شهراً صحيحاً حتى الشهر الحالي.', { code: 'invalid-argument' });
@@ -39,6 +40,7 @@ export async function partnerAllocationReport(db, { partnerId, periodKey, today 
   const names = ['partners', 'chart_of_accounts', 'journal_entries', 'journal_lines',
     'monthly_expenses', 'variable_expenses', 'annual_expenses', 'expense_vouchers',
     'annual_expense_entries', 'startup_cost_entries', 'partner_payments', 'fee_rules', 'variable_expense_categories'];
+  if (includeCapitalJourney) names.push('startup_costs');
   const [rows, settingsSnap, washSnap] = await Promise.all([
     Promise.all(names.map(name => readRows(db, name))),
     db.collection('app_settings').doc('accounting').get(),
@@ -108,6 +110,12 @@ export async function partnerAllocationReport(db, { partnerId, periodKey, today 
   for (const [kind, sources] of [['startup', data.startup_cost_entries], ['annual', data.annual_expense_entries]]) {
     for (const row of sources) {
       const date = row.paid_date || row.spent_date;
+      // Labels come from the plan, never a worker's name, receipt notes,
+      // supplier details or the free-text journal description.
+      const parent = (kind === 'startup' ? data.startup_costs : data.annual_expenses)?.find(p =>
+        p.id === (kind === 'startup' ? row.startup_cost_id : row.annual_expense_id));
+      const detail = { kind, description: (kind === 'startup' ? parent?.item_name : parent?.expense_name)
+        || (kind === 'startup' ? 'صرف تأسيس' : 'دفعة سنوية أولى') };
       if (!validMonth(monthOf(date))) throw new LedgerError('يوجد صرف تأسيس أو سنوي بلا تاريخ صحيح؛ تعذّر تأكيد رصيد التأسيس.');
       if (kind === 'annual') {
         const beginning = firstAnnualMonths.get(row.annual_expense_id);
@@ -123,14 +131,18 @@ export async function partnerAllocationReport(db, { partnerId, periodKey, today 
         for (const e of related) {
           const amount = allPosted.filter(l => l.entryId === e.id && fundingCostCodes.has(String(l.accountId)))
             .reduce((s, l) => s + (Number(l.debit) || 0) - (Number(l.credit) || 0), 0) * factor;
-          if (amount) initialSpend.push({ month: e.reversalOf ? monthOf(entryIndex.get(e.id).entryDate) : monthOf(date), amount });
+          if (amount) initialSpend.push({ ...detail, id: `${kind}:${row.id}:${e.id}`,
+            date: e.reversalOf ? entryIndex.get(e.id).entryDate : date,
+            reversal: Boolean(e.reversalOf), basis: 'posted',
+            month: e.reversalOf ? monthOf(entryIndex.get(e.id).entryDate) : monthOf(date), amount });
         }
         continue;
       }
       // True cash cost (including non-recoverable/recoverable invoice VAT),
       // unlike the operating cost net of deductible tax in the statement.
       const built = ADAPTERS[kind].build(row, { policyAt: d => taxPolicyAt(settings, d) });
-      initialSpend.push({ month: monthOf(date), amount: built.lines.reduce((s, l) => s + (Number(l.debit) || 0), 0) * factor });
+      initialSpend.push({ ...detail, id: `${kind}:${row.id}`, date, reversal: false, basis: 'recorded',
+        month: monthOf(date), amount: built.lines.reduce((s, l) => s + (Number(l.debit) || 0), 0) * factor });
     }
   }
   let spentBefore = 0;
@@ -154,6 +166,11 @@ export async function partnerAllocationReport(db, { partnerId, periodKey, today 
     return { ...safe, founding };
   });
   return { partnerId: selected.id, factor, workersCount, totalWorkers,
+    ...(includeCapitalJourney ? { capitalJourney: partnerCapitalJourney({
+      statements: results, initialSpend, factor, through, plans: data.startup_costs,
+      startupEntries: data.startup_cost_entries,
+      receipts: data.partner_payments.filter(p => p.partner_id === selected.id),
+    }) } : {}),
     asOf: today.toISOString(), from: `${first}-01`, through: monthRange(through).to,
     basis: 'partner-allocation', statements: results };
 }

@@ -129,11 +129,12 @@ describe('صفحة المستثمر — قائمة الدخل', () => {
       }} />);
     const button = screen.getByRole('button', { name: 'شرح احتياطي التجديد السنوي' });
     fireEvent.click(button);
+    fireEvent.click(screen.getByRole('button', { name: 'تفاصيل احتياطي التجديد السنوي — حصة هذا الشهر' }));
     expect(amountIn(screen.getByText('إيجار السكن').closest('tr'))).toBe(reserved);
     if (reason === 'no-profit') expect(screen.getByText('لم يُحتسب هذا الشهر: لا يوجد ربح متاح.')).toBeTruthy();
     else expect(screen.getByText('حُجز بقدر الربح المتاح فقط، أقل من الحصة الشهرية المخططة.')).toBeTruthy();
   });
-  it('تظهر البنود مباشرة تحت إجمالي مجموعتها في نفس جدول النتيجة، بلا فتح قسم آخر', () => {
+  it('تظهر المجاميع وحدها أولاً، وكل مجموعة تفتح وتغلق تفاصيلها دون تغيير المجموع', () => {
     render(<InvestorPage view="income" />);
     const table = screen.getByText('= حصتك التحليلية من نتيجة الشركة').closest('table');
     for (const [label, description, expected] of [
@@ -142,12 +143,22 @@ describe('صفحة المستثمر — قائمة الدخل', () => {
       ['احتياطي التجديد السنوي — حصة هذا الشهر', 'إيجار السكن', 3000],
     ]) {
       const totalRow = screen.getByText(label).closest('tr');
+      const button = screen.getByRole('button', { name: `تفاصيل ${label}` });
+      expect(button.getAttribute('aria-expanded')).toBe('false');
+      expect(screen.queryByText(description)).toBeNull();
+      const before = amountIn(totalRow);
+      fireEvent.click(button);
+      expect(button.getAttribute('aria-expanded')).toBe('true');
       const itemRow = screen.getByText(description).closest('tr');
-      expect(itemRow?.closest('table')).toBe(table);
-      expect(totalRow.nextElementSibling).toBe(itemRow);
+      expect(table.contains(itemRow)).toBe(true);
+      expect(document.getElementById(button.getAttribute('aria-controls')).contains(itemRow)).toBe(true);
       expect(amountIn(itemRow)).toBe(expected);
       expect(screen.getByText(description).closest('details')).toBeNull();
       expect(screen.getAllByText(description)).toHaveLength(1);
+      expect(amountIn(totalRow)).toBe(before);
+      fireEvent.click(button);
+      expect(screen.queryByText(description)).toBeNull();
+      expect(amountIn(totalRow)).toBe(before);
     }
   });
 
@@ -172,6 +183,8 @@ describe('صفحة المستثمر — قائمة الدخل', () => {
       },
     };
     const { rerender } = render(<IncomeStatementCard {...props} />);
+    fireEvent.click(screen.getByRole('button', { name: 'تفاصيل احتياطي التجديد السنوي — حصة هذا الشهر' }));
+    fireEvent.click(screen.getByRole('button', { name: 'تفاصيل المصاريف الأخرى' }));
     const annualRow = screen.getByText('تجديد التأمين').closest('tr');
     expect(annualRow?.textContent).toMatch(/حصتك السنوية.*1,200.*÷ 12/);
     expect(amountIn(annualRow)).toBe(100);
@@ -198,6 +211,7 @@ describe('صفحة المستثمر — قائمة الدخل', () => {
         ] },
       }} />);
     expect(screen.getByText('المصاريف الأخرى')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'تفاصيل المصاريف الأخرى' }));
     expect(screen.getByText('مصروف صيانة').closest('tr')).toBeTruthy();
     expect(screen.getByText('استرداد صيانة').closest('tr').textContent).toMatch(/-100/);
   });
@@ -255,6 +269,8 @@ describe('صفحة المستثمر — قائمة الدخل', () => {
     expect(screen.getByText('المصاريف الشهرية والرواتب')).toBeTruthy();
     expect(screen.getByText('احتياطي التجديد السنوي — حصة هذا الشهر')).toBeTruthy();
     expect(screen.getByText(/إجمالي المصروفات الثابتة الشهرية والسنوية/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'تفاصيل المصاريف الشهرية والرواتب' }));
+    fireEvent.click(screen.getByRole('button', { name: 'تفاصيل احتياطي التجديد السنوي — حصة هذا الشهر' }));
     expect(screen.getByText('رواتب البايكرز')).toBeTruthy();
     expect(screen.getByText('إيجار السكن')).toBeTruthy();
     expect(screen.getByText(/إجمالي مصروفاتك واحتياطي التجديد:/)).toBeTruthy();
@@ -369,7 +385,7 @@ describe('صفحة المستثمر — الخيارات الأربعة', () => 
     // الحارس فوق الأربعة: خيارٌ واحد يُفلت الحساب المسدود يكفي لتسريب
     // أرقام الشركة كاملةً إلى حسابٍ لم تُتحقَّق هويته.
     partnerView.investorLinkMissing = true;
-    for (const view of ['overview', 'capital', 'income', 'trends']) {
+    for (const view of ['overview', 'capital', 'journey', 'income', 'trends']) {
       render(<InvestorPage view={view} />);
       expect(screen.getByText(/لم يُربط حسابك بسجل شريك بعد/)).toBeTruthy();
       expect(screen.queryByText('إيرادات المبيعات')).toBeNull();

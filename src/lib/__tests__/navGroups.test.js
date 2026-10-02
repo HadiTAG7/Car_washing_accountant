@@ -6,10 +6,10 @@ import {
 const idsOf = (groups) => groups.flatMap((g) => g.tabs.map((t) => t.id));
 
 describe('من يرى أي تبويب', () => {
-  it('المستثمر يرى خياراته الخمسة لا اثنين وعشرين', () => {
+  it('المستثمر يرى خياراته الستة لا اثنين وعشرين', () => {
     const ids = idsOf(visibleGroupsFor({ role: 'partner', isPartnerView: true }));
     expect(ids).toEqual([
-      'investor', 'investor_capital', 'investor_income', 'investor_trends', 'investor_assistant',
+      'investor', 'investor_capital', 'investor_journey', 'investor_income', 'investor_trends', 'investor_assistant',
     ]);
     expect(investorViewFor('investor_assistant')).toBe('assistant');
   });

@@ -97,6 +97,7 @@ export const TAB_GROUPS = [
 export const INVESTOR_TABS = [
   { id: 'investor',         view: 'overview', label: 'نظرة عامة',    icon: Handshake  },
   { id: 'investor_capital', view: 'capital',  label: 'رأس مالي',     icon: Wallet     },
+  { id: 'investor_journey', view: 'journey',  label: 'رحلة رأس مالي', icon: Receipt    },
   { id: 'investor_income',  view: 'income',   label: 'قائمة الدخل',  icon: BarChart3  },
   { id: 'investor_trends',  view: 'trends',   label: 'اتجاه ٦ أشهر', icon: TrendingUp },
   // رابط MCP خاص بالشريك يلصقه في Claude أو ChatGPT — يُنشئه ويبدّله ويُلغيه

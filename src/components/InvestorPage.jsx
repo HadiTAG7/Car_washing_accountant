@@ -35,7 +35,7 @@
 import { useId, useMemo, useState } from 'react';
 import {
   Calendar, HandCoins, Printer, TrendingUp, Wallet, Link2Off, Droplets, Lock, Clock3,
-  PiggyBank, BookOpen, CalendarRange, CircleHelp,
+  PiggyBank, BookOpen, CalendarRange, CircleHelp, ChevronDown,
 } from 'lucide-react';
 
 import TopBar from './TopBar';
@@ -45,6 +45,7 @@ import ErrorState, { SetupRequiredCard } from './ErrorState';
 import StatementRow from './statement/StatementRow';
 import PartnerStatementModal from './PartnerStatementModal';
 import PartnerAssistantPage from './PartnerAssistantPage';
+import PartnerCapitalJourneyPage from './PartnerCapitalJourneyPage';
 import { ColumnTrend, LineTrend } from './charts/TrendCharts';
 
 import { usePartnerView } from '../contexts/PartnerViewContext';
@@ -73,6 +74,7 @@ const METHOD_LABEL = {
 const VIEW_META = {
   overview: { title: 'حسابي كشريك',  subtitle: 'حصّتك ورأس مالك ونتيجة آخر شهر' },
   capital:  { title: 'رأس مالي',     subtitle: 'سنداتك وما تبقّى من حصّتك' },
+  journey:  { title: 'رحلة رأس مالي', subtitle: 'تفاصيل صرف التأسيس ثم مصاريف التشغيل والرصيد المتبقي' },
   income:   { title: 'قائمة الدخل',  subtitle: 'نتيجة الشهر مقسومة بنسبتك' },
   trends:   { title: 'اتجاه ٦ أشهر', subtitle: 'حصتك التحليلية من إيرادات الشركة وتكاليفها ونتيجتها' },
   assistant: { title: 'المساعد الذكي', subtitle: 'رابطك الخاص لتسأل Claude أو ChatGPT عن حصّتك' },
@@ -245,15 +247,24 @@ function FoundingStageNotice({ status }) {
 
 /** التفاصيل جزء من إجمالي المجموعة أعلاه، وليست خصماً إضافياً. */
 function ExpenseStatementGroup({ label, amount, group, explanation = null, explanationId, explanationOpen = false, onExplain }) {
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const detailsId = useId();
   return (
     <>
-      <StatementRow label={onExplain ? (
-        <button type="button" onClick={onExplain} aria-label="شرح احتياطي التجديد السنوي"
-          aria-expanded={explanationOpen} aria-controls={explanationOpen ? explanationId : undefined}
-          className="inline-flex items-center gap-2 text-right cursor-pointer hover:underline focus-visible:outline-2 focus-visible:outline-primary-500 rounded-control">
-          <span>{label}</span><CircleHelp size={16} className="shrink-0" aria-hidden="true" />
+      <StatementRow label={<div className="flex items-center gap-2">
+        <button type="button" onClick={() => setDetailsOpen(open => !open)} aria-label={`تفاصيل ${label}`}
+          aria-expanded={detailsOpen} aria-controls={detailsOpen ? detailsId : undefined}
+          className="inline-flex items-center gap-2 text-right cursor-pointer hover:underline focus-visible:outline-2 focus-visible:outline-primary-500 rounded-control py-1">
+          <ChevronDown size={16} className={`shrink-0 transition-transform ${detailsOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
+          <span>{label}</span>
         </button>
-      ) : label} amount={amount} />
+        {onExplain && <button type="button" onClick={onExplain} aria-label="شرح احتياطي التجديد السنوي"
+          aria-expanded={explanationOpen} aria-controls={explanationOpen ? explanationId : undefined}
+          className="inline-flex items-center justify-center shrink-0 w-8 h-8 cursor-pointer focus-visible:outline-2 focus-visible:outline-primary-500 rounded-control"
+          title="ما معنى احتياطي التجديد؟">
+          <CircleHelp size={16} aria-hidden="true" />
+        </button>}
+      </div>} amount={amount} />
       {explanationOpen && (
         <tr><td colSpan={2} className="py-3">
           <div id={explanationId} className="rounded-control p-3 bg-indigo-50 dark:bg-indigo-500/10 text-sm text-indigo-900 dark:text-indigo-100 leading-relaxed space-y-2">
@@ -261,6 +272,10 @@ function ExpenseStatementGroup({ label, amount, group, explanation = null, expla
           </div>
         </td></tr>
       )}
+      {detailsOpen && <tr id={detailsId}><td colSpan={2}>
+        <div role="region" aria-label={`تفاصيل ${label}`}>
+          <table className="w-full text-sm" aria-label={`بنود ${label}`}>
+            <colgroup><col /><col className="w-32 sm:w-44" /></colgroup><tbody>
       {(group?.items || []).map((item) => (
         <tr key={item.id} className="border-b border-slate-100 dark:border-slate-800/60 bg-slate-50/50 dark:bg-slate-800/20">
           <td className="py-2 text-slate-700 dark:text-slate-300">
@@ -283,9 +298,12 @@ function ExpenseStatementGroup({ label, amount, group, explanation = null, expla
           </td>
         </tr>
       ))}
-      {group?.items?.length === 0 && (
+      {!group?.items?.length && (
         <tr><td colSpan={2} className="py-2 text-xs text-slate-500 dark:text-slate-400">لا توجد بنود في هذه المجموعة لهذا الشهر.</td></tr>
       )}
+            </tbody></table>
+        </div>
+      </td></tr>}
     </>
   );
 }
@@ -356,15 +374,15 @@ export function IncomeStatementCard({
             <colgroup><col /><col className="w-32 sm:w-44" /></colgroup>
             <tbody>
               <StatementRow label="حصتك من صافي الإيرادات" amount={statement.netRevenue} kind="plus" />
-              <ExpenseStatementGroup label="المصاريف المتغيرة والعمولات" amount={groups.variable?.amount || 0} group={groups.variable} />
-              <ExpenseStatementGroup label="المصاريف الشهرية والرواتب" amount={groups.monthly?.amount || 0} group={groups.monthly} />
+              <ExpenseStatementGroup key={`variable:${activeMonth}`} label="المصاريف المتغيرة والعمولات" amount={groups.variable?.amount || 0} group={groups.variable} />
+              <ExpenseStatementGroup key={`monthly:${activeMonth}`} label="المصاريف الشهرية والرواتب" amount={groups.monthly?.amount || 0} group={groups.monthly} />
               {hasOtherExpenses && (
-                <ExpenseStatementGroup label="المصاريف الأخرى" amount={groups.other?.amount || 0} group={groups.other} />
+                <ExpenseStatementGroup key={`other:${activeMonth}`} label="المصاريف الأخرى" amount={groups.other?.amount || 0} group={groups.other} />
               )}
               {(statement.fees || []).map((f) => (
                 <StatementRow key={f.key} label={`يُخصم منه: ${f.label}`} amount={f.amount} />
               ))}
-              <ExpenseStatementGroup label="احتياطي التجديد السنوي — حصة هذا الشهر" amount={statement.annualReserve || 0} group={groups.annual}
+              <ExpenseStatementGroup key={`annual:${activeMonth}`} label="احتياطي التجديد السنوي — حصة هذا الشهر" amount={statement.annualReserve || 0} group={groups.annual}
                 onExplain={() => setReserveHelpOpen(open => !open)} explanationOpen={reserveHelpOpen} explanationId={reserveHelpId}
                 explanation={<>
                   <p>نخصص جزءاً من ربح الشهر لتجديد المصاريف السنوية، مثل السكن والتأمين، في السنة القادمة. حصتك السنوية ÷ 12 هي الحصة الشهرية المخططة، وليست دفعة سنوية ثانية.</p>
@@ -1032,6 +1050,7 @@ export default function InvestorPage({ view = 'overview' }) {
   // صفحة الرابط لا تقرأ الدفاتر ولا السندات، فلا تُركَّب خطّافاتها: مكوّنٌ
   // مستقل تحت الحارس نفسه، لا عرضٌ خامس داخل `InvestorPortal`.
   if (safeView === 'assistant') return <PartnerAssistantPage partner={viewedPartner} meta={meta} />;
+  if (safeView === 'journey') return <PartnerCapitalJourneyPage partner={viewedPartner} meta={meta} />;
 
   return <InvestorPortal partner={viewedPartner} view={safeView} />;
 }

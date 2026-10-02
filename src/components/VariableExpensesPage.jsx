@@ -1,3 +1,5 @@
+import { translate } from '../i18n/locale';
+import { getLocale } from '../i18n/locale';
 import ScrollableTable from './ScrollableTable';
 import TableSearch from './TableSearch';
 import { matchesTableSearch } from '../lib/tableSearch';
@@ -130,7 +132,7 @@ function formatLoggedDate(value) {
   try {
     const d = new Date(value);
     if (Number.isNaN(d.getTime())) return value;
-    return new Intl.DateTimeFormat('ar-SA', {
+    return new Intl.DateTimeFormat(getLocale(), {
       year: 'numeric', month: 'long', day: 'numeric', numberingSystem: 'latn',
     }).format(d);
   } catch {
@@ -262,7 +264,7 @@ export default function VariableExpensesPage() {
   async function handleDelete(item) {
     if (item.isVirtual) return; // safety: virtual rows have no DB id
     const confirmed = typeof window !== 'undefined'
-      ? window.confirm(`هل تريد حذف "${item.expenseName}"؟ لا يمكن التراجع.`)
+      ? window.confirm(translate(`هل تريد حذف "${item.expenseName}"؟ لا يمكن التراجع.`))
       : true;
     if (!confirmed) return;
     try { await deleteItem(item.id); showToast('تم حذف المصروف'); }

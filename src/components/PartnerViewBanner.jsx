@@ -41,7 +41,7 @@ export default function PartnerViewBanner() {
       <div className="px-6 py-2 flex items-center gap-3">
         <Eye size={14} className="shrink-0" />
         <span className="min-w-0 flex-1 leading-relaxed">
-          <strong>وضع عرض الشريك:</strong> {viewedPartner.partnerName}
+          <strong>وضع عرض الشريك:</strong> <span translate="no">{viewedPartner.partnerName}</span>
         </span>
         {/* Chip-density controls on purpose: the banner mirrors DemoBanner's
             height so the two stack cleanly, which a full 40px pill would

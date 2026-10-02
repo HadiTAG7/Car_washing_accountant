@@ -1,3 +1,5 @@
+import { getLocale } from '../i18n/locale';
+import { useLanguage } from '../i18n/useLanguage';
 import { useMemo, useState } from 'react';
 import {
   Landmark, Wallet, Coins, Users, TrendingUp, PiggyBank, Receipt,
@@ -20,8 +22,8 @@ import { usePartnerView } from '../contexts/PartnerViewContext';
 
 // Last N months ending at the current one, as { key:'YYYY-MM', label } —
 // Arabic month names, Latin digits (matches the rest of the dashboard).
-function lastMonths(n) {
-  const fmt = new Intl.DateTimeFormat('ar', { month: 'short', numberingSystem: 'latn' });
+function lastMonths(n, language) {
+  const fmt = new Intl.DateTimeFormat(getLocale(language), { month: 'short', numberingSystem: 'latn' });
   const out = [];
   const d = new Date();
   d.setDate(1);
@@ -45,6 +47,7 @@ function lastMonths(n) {
  * capital section narrows to that partner's own contribution.
  */
 export default function OverviewPage() {
+  const { language } = useLanguage();
   const { partners, loading: pLoading } = usePartners();
   const { items: startupItems, loading: sLoading } = useStartupCosts();
   const { payments } = usePartnerPayments();
@@ -59,7 +62,7 @@ export default function OverviewPage() {
   // Partner view narrows to the viewer's own receipts, mirroring the
   // capital section's scoping.
   const receiptsTrend = useMemo(() => {
-    const months = lastMonths(6);
+    const months = lastMonths(6, language);
     const scoped = isPartnerView && viewedPartner
       ? payments.filter((p) => p.partnerId === viewedPartner.id)
       : payments;
@@ -70,7 +73,7 @@ export default function OverviewPage() {
     });
     const values = months.map((m) => byMonth.get(m.key));
     return { months, values, total: values.reduce((s, v) => s + v, 0) };
-  }, [payments, isPartnerView, viewedPartner]);
+  }, [payments, isPartnerView, viewedPartner, language]);
 
   // ── One-click full backup (admin only) ──────────────────────
   const [backupBusy, setBackupBusy] = useState(false);
@@ -295,7 +298,7 @@ export default function OverviewPage() {
                       <div className="flex items-center justify-between gap-3 mb-1 text-sm">
                         <span className="inline-flex items-center gap-2 font-semibold text-slate-800 dark:text-slate-200 min-w-0">
                           <Users size={13} className="text-slate-500 dark:text-slate-400 shrink-0" />
-                          <span className="truncate">{p.partnerName}</span>
+                          <span translate="no" className="truncate">{p.partnerName}</span>
                           <span className="text-[10px] font-normal text-slate-500 dark:text-slate-400 tabular-nums shrink-0">
                             {formatNumber(p.workersCount)} عامل
                           </span>

@@ -1,3 +1,4 @@
+import { translate } from '../i18n/locale';
 import ModalSurface from './ModalSurface';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -241,7 +242,7 @@ export default function ExpenseLedgerModal({
 
   async function handleDelete(entry) {
     const confirmed = typeof window !== 'undefined'
-      ? window.confirm(`هل أنت متأكد من حذف "${entry.description}" من السجل؟`)
+      ? window.confirm(translate(`هل أنت متأكد من حذف "${entry.description}" من السجل؟`))
       : true;
     if (!confirmed) return;
     setDeletingId(entry.id);

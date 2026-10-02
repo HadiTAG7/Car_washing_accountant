@@ -274,7 +274,7 @@ export default function PartnersPage() {
                           <span className="bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300 w-8 h-8 rounded-control flex items-center justify-center shrink-0">
                             <Briefcase size={14} />
                           </span>
-                          <span className="truncate">{p.partnerName}</span>
+                          <span translate="no" className="truncate">{p.partnerName}</span>
                         </div>
                       </td>
 

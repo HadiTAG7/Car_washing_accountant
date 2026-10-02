@@ -9,6 +9,8 @@
 // ════════════════════════════════════════════════════════════════════════════
 
 // ─── Brand ──────────────────────────────────────────────────────────────────
+import { getLocale } from '../i18n/locale';
+
 export const BRAND = {
   nameAr: 'سويتر',
   nameEn: 'Sweater',
@@ -58,23 +60,22 @@ export const VARIABLE_EXPENSE_CATEGORIES = [
 // Western (Latin) digits everywhere — `numberingSystem: 'latn'` keeps the
 // Arabic-locale formatting conventions (currency symbol, thousands
 // separator) while forcing 0-9 instead of ٠-٩.
-const SAR_FMT = new Intl.NumberFormat('ar-SA', {
+const sarOptions = {
   style: 'currency',
   currency: 'SAR',
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
   numberingSystem: 'latn',
-});
+};
 // Tax figures are declared to the halala on a ZATCA return, so VAT amounts
 // use two decimals consistently with all other financial amounts.
-const SAR_FMT_PRECISE = new Intl.NumberFormat('ar-SA', {
-  style: 'currency',
-  currency: 'SAR',
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-  numberingSystem: 'latn',
-});
-const NUM_FMT = new Intl.NumberFormat('ar-SA', { numberingSystem: 'latn' });
+const formatters = new Map();
+function numberFormatter(kind) {
+  const key = `${getLocale()}:${kind}`;
+  if (!formatters.has(key)) formatters.set(key, new Intl.NumberFormat(getLocale(),
+    kind === 'currency' ? sarOptions : { numberingSystem: 'latn' }));
+  return formatters.get(key);
+}
 
 // Per-worker corporate capital fee. Each partner owes this × workersCount;
 // what they've paid is tracked in `partners.paid_amount` (see schema.sql).
@@ -85,14 +86,14 @@ export function formatCurrency(amount) {
   // Sans' ss01 ligature swaps "ر.س" for the official Saudi Riyal symbol,
   // which left that period dangling after the glyph ("123 ⃀."). Strip it
   // so every amount renders a clean symbol.
-  return SAR_FMT.format(amount || 0).replace('ر.س.', 'ر.س');
+  return numberFormatter('currency').format(amount || 0).replace('ر.س.', 'ر.س');
 }
 /** Currency with halalas — for VAT figures, which are filed to the fils. */
 export function formatCurrencyPrecise(amount) {
-  return SAR_FMT_PRECISE.format(amount || 0).replace('ر.س.', 'ر.س');
+  return numberFormatter('currency').format(amount || 0).replace('ر.س.', 'ر.س');
 }
 export function formatNumber(n) {
-  return NUM_FMT.format(n || 0);
+  return numberFormatter('number').format(n || 0);
 }
 
 // ─── VAT (ضريبة القيمة المضافة) ──────────────────────────────────────────────
@@ -122,16 +123,17 @@ export function todayISO() {
 
 // Pretty-prints a YYYY-MM-DD into an Arabic-locale date with Latin digits.
 // Used by every receipt / ledger table so all dates look uniform.
-const DATE_FMT = new Intl.DateTimeFormat('ar-SA', {
-  year: 'numeric', month: 'short', day: 'numeric',
-  numberingSystem: 'latn',
-});
+const dateFormatters = new Map();
 export function formatDate(iso) {
   if (!iso) return '—';
   try {
     const d = new Date(`${String(iso).slice(0, 10)}T00:00:00`);
     if (Number.isNaN(d.getTime())) return iso;
-    return DATE_FMT.format(d);
+    const locale = getLocale();
+    if (!dateFormatters.has(locale)) dateFormatters.set(locale, new Intl.DateTimeFormat(locale, {
+      year: 'numeric', month: 'short', day: 'numeric', numberingSystem: 'latn',
+    }));
+    return dateFormatters.get(locale).format(d);
   } catch {
     return iso;
   }

@@ -9,7 +9,7 @@ export default defineConfig([
   // `work/` contains independent Git worktrees and their built bundles. They
   // have their own source/lint lifecycle and must not be linted as part of the
   // active checkout (the same reason generated `dist/` is excluded).
-  globalIgnores(['dist', '.vercel', 'functions/node_modules', 'mcp/node_modules', 'work']),
+  globalIgnores(['dist', '.vercel', '.vite-cache', 'language-preview.local', 'functions/node_modules', 'mcp/node_modules', 'work']),
   {
     files: ['**/*.{js,jsx}'],
     extends: [

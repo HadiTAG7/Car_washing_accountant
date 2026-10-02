@@ -6,6 +6,7 @@ import { useAuth } from '../hooks/useAuth';
 import { auth, isFirebaseConfigured } from '../lib/firebaseClient';
 import { translateAuthError } from '../lib/authErrors';
 import { PasswordResetRateLimited, requestPasswordReset } from '../lib/passwordReset';
+import LanguageSwitcher from './LanguageSwitcher';
 
 export default function LoginScreen() {
   const { signIn } = useAuth();
@@ -83,6 +84,7 @@ export default function LoginScreen() {
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
+        <div className="flex justify-end mb-3"><LanguageSwitcher /></div>
         {/* Brand */}
         <div className="text-center mb-8">
           <SweaterWordmark className="h-12 w-auto mx-auto mb-4" />

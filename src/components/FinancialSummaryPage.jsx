@@ -1,3 +1,5 @@
+import { getLocale } from '../i18n/locale';
+import { useLanguage } from '../i18n/useLanguage';
 import { useMemo, useState } from 'react';
 import {
   Wallet, TrendingDown, TrendingUp, Calendar, ListFilter, Download, Scale,
@@ -35,6 +37,7 @@ import {
 import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
 
 export default function FinancialSummaryPage() {
+  const { language } = useLanguage();
   const { items: washes,    loading: washesLoading,   error: washesError,   refetch: refetchWashes }   = useWashes();
   const { items: variables, loading: varLoading,      error: varError,      refetch: refetchVariables } = useVariableExpenses();
   const { categories: varCategories } = useVariableExpenseCategories();
@@ -155,7 +158,7 @@ export default function FinancialSummaryPage() {
   const trend = useMemo(() => {
     const [yy, mm] = selectedMonth.split('-').map(Number);
     if (!yy || !mm) return null;
-    const fmt = new Intl.DateTimeFormat('ar', { month: 'short', numberingSystem: 'latn' });
+    const fmt = new Intl.DateTimeFormat(getLocale(language), { month: 'short', numberingSystem: 'latn' });
     const months = [];
     for (let i = 5; i >= 0; i--) {
       const d = new Date(yy, mm - 1 - i, 1);
@@ -174,7 +177,7 @@ export default function FinancialSummaryPage() {
       net:     rows.map((r) => r.netProfit),
       any:     rows.some((r) => r.netRevenue !== 0 || r.totalCosts !== 0),
     };
-  }, [selectedMonth, accounts, entries, lines, feeRules, scalingFactor]);
+  }, [selectedMonth, accounts, entries, lines, feeRules, scalingFactor, language]);
 
   const anyError    = ledgerError || washesError || varError || monthlyError || annualError;
   const anyLoading  = ledgerLoading || washesLoading || varLoading || monthlyLoading || annualLoading;

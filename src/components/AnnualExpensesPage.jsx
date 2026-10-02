@@ -1,3 +1,4 @@
+import { translate } from '../i18n/locale';
 import ScrollableTable from './ScrollableTable';
 import { useCallback, useMemo, useState } from 'react';
 import {
@@ -171,7 +172,7 @@ export default function AnnualExpensesPage() {
   }
   async function handleDelete(item) {
     const confirmed = typeof window !== 'undefined'
-      ? window.confirm(`هل تريد حذف "${item.expenseName}"؟ لا يمكن التراجع.`)
+      ? window.confirm(translate(`هل تريد حذف "${item.expenseName}"؟ لا يمكن التراجع.`))
       : true;
     if (!confirmed) return;
     try { await deleteItem(item.id); }

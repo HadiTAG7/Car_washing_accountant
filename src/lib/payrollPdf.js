@@ -1,7 +1,9 @@
+import { getDirection, getLanguage } from '../i18n/locale';
+
 export function payrollPdfFilename(periodKey) {
   const safePeriod = /^\d{4}-(0[1-9]|1[0-2])$/.test(String(periodKey || ''))
-    ? periodKey : 'غير-محدد';
-  return `مسير-رواتب-${safePeriod}.pdf`;
+    ? periodKey : getLanguage() === 'en' ? 'unspecified' : 'غير-محدد';
+  return getLanguage() === 'en' ? `payroll-${safePeriod}.pdf` : `مسير-رواتب-${safePeriod}.pdf`;
 }
 
 async function waitForImages(root) {
@@ -22,11 +24,16 @@ export async function downloadPayrollPdf(source, { periodKey } = {}) {
 
   const shell = document.createElement('div');
   shell.className = 'payroll-pdf-export-shell';
-  shell.setAttribute('dir', 'rtl');
+  shell.setAttribute('dir', getDirection());
 
   const printable = source.cloneNode(true);
   printable.removeAttribute('hidden');
   printable.setAttribute('aria-hidden', 'true');
+  // html2pdf's A4 container is narrower than the 1120px screen sheet. Allow
+  // the cloned sheet to fit that container so the trailing columns/header
+  // are not cropped in either language. Never resize the live preview.
+  printable.style.width = '100%';
+  printable.style.maxWidth = '100%';
   shell.appendChild(printable);
   document.body.appendChild(shell);
 

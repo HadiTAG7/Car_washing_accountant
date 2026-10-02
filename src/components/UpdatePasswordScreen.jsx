@@ -16,6 +16,8 @@ import { translateAuthError } from '../lib/authErrors';
  * Reached without a valid code (typed URL, expired link) → we show a
  * clear "request a new link" note instead of a broken form.
  */
+import LanguageSwitcher from './LanguageSwitcher';
+
 export default function UpdatePasswordScreen() {
   const [password,        setPassword]        = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -63,6 +65,7 @@ export default function UpdatePasswordScreen() {
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
+        <div className="flex justify-end mb-3"><LanguageSwitcher /></div>
         {/* Brand */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-3 mb-4">

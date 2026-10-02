@@ -1,6 +1,17 @@
 @import "tailwindcss";
 @import "./styles/fonts.css";
 @import "./styles/tokens.css";
+@import "./i18n/direction.generated.css";
+
+html[dir="ltr"] body { font-family: var(--sw-font-en); }
+html[dir="ltr"] .acc-team-focus,
+html[dir="ltr"] .acc-agent--orbit { text-align: left; }
+html[dir="ltr"] .acc-permissions { padding-right: 0; padding-left: 16px; }
+html[dir="ltr"] .payroll-print-company,
+html[dir="ltr"] .payroll-print-totals > div,
+html[dir="ltr"] .payroll-print-sheet th,
+html[dir="ltr"] .payroll-print-sheet td { text-align: left; }
+html[dir="ltr"] .payroll-print-title { text-align: right; }
 
 /* Class-based dark mode (Tailwind v4 idiom — equivalent to v3's
    `darkMode: 'class'`). Any element nested under `.dark` (or `.dark`
@@ -153,7 +164,7 @@ html, body {
 }
 
 body {
-  direction: rtl;
+  direction: inherit;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   transition:

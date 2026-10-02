@@ -1,3 +1,4 @@
+import { getLocale } from '../i18n/locale';
 export const COMMAND_CENTER_ROLES = Object.freeze(['admin', 'accountant']);
 
 export const AGENT_STATUS = Object.freeze({
@@ -417,7 +418,7 @@ export function formatAgentDate(value) {
   if (!value) return 'غير متوفر';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return 'غير متوفر';
-  return new Intl.DateTimeFormat('ar-SA', {
+  return new Intl.DateTimeFormat(getLocale(), {
     dateStyle: 'medium', timeStyle: 'short', hour12: true,
   }).format(date);
 }

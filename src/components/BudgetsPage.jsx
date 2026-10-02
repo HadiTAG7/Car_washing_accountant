@@ -1,3 +1,4 @@
+import { translate } from '../i18n/locale';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Plus, Trash2, Pencil, Target, Wallet, TrendingDown, AlertTriangle,
@@ -737,7 +738,7 @@ export default function BudgetsPage() {
   }
   async function handleDelete(item) {
     const confirmed = typeof window !== 'undefined'
-      ? window.confirm(`هل تريد حذف ميزانية "${item.categoryLabel}"؟ لا يمكن التراجع.`)
+      ? window.confirm(translate(`هل تريد حذف ميزانية "${item.categoryLabel}"؟ لا يمكن التراجع.`))
       : true;
     if (!confirmed) return;
     try { await deleteItem(item.id); showToast('تم حذف الميزانية'); }
@@ -749,7 +750,7 @@ export default function BudgetsPage() {
 
   function handleHideVirtual(item) {
     const confirmed = typeof window !== 'undefined'
-      ? window.confirm('هل أنت متأكد من إخفاء هذا البند من لوحة الميزانيات؟')
+      ? window.confirm(translate('هل أنت متأكد من إخفاء هذا البند من لوحة الميزانيات؟'))
       : true;
     if (!confirmed) return;
     const key = hideKeyFor(item);
@@ -763,7 +764,7 @@ export default function BudgetsPage() {
   function handleResetHidden() {
     if (hiddenKeys.size === 0) return;
     const confirmed = typeof window !== 'undefined'
-      ? window.confirm(`إعادة إظهار ${hiddenKeys.size} بند مخفي على اللوحة؟`)
+      ? window.confirm(translate(`إعادة إظهار ${hiddenKeys.size} بند مخفي على اللوحة؟`))
       : true;
     if (!confirmed) return;
     writeHidden(new Set());

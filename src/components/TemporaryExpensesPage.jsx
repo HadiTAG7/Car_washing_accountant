@@ -1,3 +1,4 @@
+import { translate } from '../i18n/locale';
 import ScrollableTable from './ScrollableTable';
 import { useCallback, useMemo, useState } from 'react';
 import {
@@ -97,7 +98,7 @@ export default function TemporaryExpensesPage() {
 
   async function handleDelete(expense) {
     const confirmed = typeof window !== 'undefined'
-      ? window.confirm(`هل أنت متأكد من حذف "${expense.title}" نهائياً؟`)
+      ? window.confirm(translate(`هل أنت متأكد من حذف "${expense.title}" نهائياً؟`))
       : true;
     if (!confirmed) return;
     try {

@@ -1,3 +1,4 @@
+import { translate } from '../i18n/locale';
 import { useCallback, useMemo, useState } from 'react';
 import {
   Plus, Trash2, Building2, Coins, Wallet, Landmark, CreditCard, History,
@@ -140,7 +141,7 @@ export default function PartnerPaymentsPage() {
 
   async function handleDelete(payment) {
     const confirmed = typeof window !== 'undefined'
-      ? window.confirm('هل أنت متأكد من حذف هذا السجل المالي؟')
+      ? window.confirm(translate('هل أنت متأكد من حذف هذا السجل المالي؟'))
       : true;
     if (!confirmed) return;
     try {

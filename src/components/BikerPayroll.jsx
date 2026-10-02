@@ -16,6 +16,7 @@ import {
   adjustmentsFromPayrollLines, payrollAdjustmentPayload, payrollAdvanceMax,
 } from '../lib/payrollUi';
 import { downloadPayrollPdf } from '../lib/payrollPdf';
+import { useLanguage } from '../i18n/useLanguage';
 import './BikerPayroll.css';
 
 const POLICY = 'أيام الشهر الفعلية';
@@ -166,7 +167,7 @@ function AdjustmentInputs({ line, adjustment, disabled, onChange, compact = fals
   const reasonClass = `${inputClass} mt-1 min-w-36 text-right`;
   const moneyInput = (key, label, max) => (
     <div className={compact ? '' : 'min-w-36'}>
-      <label className="sr-only">{label} {line.name}</label>
+      <label className="sr-only">{label} <span translate="no">{line.name}</span></label>
       <input type="number" min="0" max={max} step="0.01" disabled={disabled} value={adjustment[key] ?? 0}
         onChange={(e) => onChange(key, e.target.value)} className={inputClass} aria-label={`${label} ${line.name}`} />
     </div>
@@ -221,12 +222,12 @@ function PayrollPrintSheet({ preview, periodKey, periodStart, periodEnd, totals,
         <div><span>تاريخ التوزيع</span><strong>{preview.distributionDate ? formatDate(preview.distributionDate) : '—'}</strong></div>
       </div>
       <div className="payroll-print-totals">
-        <div><span>إجمالي الأساسي</span><strong>{formatCurrency(totals.basic)}</strong></div>
-        <div><span>العمولات</span><strong>{formatCurrency(totals.commissions)}</strong></div>
-        <div><span>البونص</span><strong>{formatCurrency(totals.bonuses)}</strong></div>
-        <div className="payroll-print-stat--deduction"><span>الخصومات</span><strong>{formatCurrency(totals.deductions)}</strong></div>
-        <div className="payroll-print-stat--advance"><span>السلف المخصومة</span><strong>{formatCurrency(totals.advances)}</strong></div>
-        <div className="payroll-print-stat--net"><span>صافي الرواتب</span><strong>{formatCurrency(totals.net)}</strong></div>
+        <div><span>إجمالي الأساسي</span><strong dir="ltr">{formatCurrency(totals.basic)}</strong></div>
+        <div><span>العمولات</span><strong dir="ltr">{formatCurrency(totals.commissions)}</strong></div>
+        <div><span>البونص</span><strong dir="ltr">{formatCurrency(totals.bonuses)}</strong></div>
+        <div className="payroll-print-stat--deduction"><span>الخصومات</span><strong dir="ltr">{formatCurrency(totals.deductions)}</strong></div>
+        <div className="payroll-print-stat--advance"><span>السلف المخصومة</span><strong dir="ltr">{formatCurrency(totals.advances)}</strong></div>
+        <div className="payroll-print-stat--net"><span>صافي الرواتب</span><strong dir="ltr">{formatCurrency(totals.net)}</strong></div>
       </div>
       <div className="payroll-print-table-title">
         <strong>تفاصيل الاستحقاق</strong>
@@ -237,7 +238,7 @@ function PayrollPrintSheet({ preview, periodKey, periodStart, periodEnd, totals,
           {['العامل', 'الراتب', 'المباشرة', 'الأيام', 'الأساسي', 'العمولة', 'البونص', 'الخصم', 'السلفة', 'الصافي'].map((heading) => <th key={heading}>{heading}</th>)}
         </tr></thead>
         <tbody>{preview.lines.map((line) => <tr key={line.bikerId}>
-          <td>{line.name}</td>
+          <td translate="no">{line.name}</td>
           <td>{formatCurrency(line.monthlySalary)}</td>
           <td>{line.startDate ? formatDate(line.startDate) : '—'}</td>
           <td>{formatNumber(line.daysEntitled)} / {formatNumber(line.monthDays)}</td>
@@ -258,6 +259,7 @@ function PayrollPrintSheet({ preview, periodKey, periodStart, periodEnd, totals,
 }
 
 export default function BikerPayroll({ role, previewMode = false }) {
+  useLanguage();
   const [periodKey, setPeriodKey] = useState(previewMode ? '2026-08' : monthKeyNow());
   const bounds = useMemo(() => boundsOf(periodKey), [periodKey]);
   const [periodStart, setPeriodStart] = useState(bounds.start);
@@ -471,7 +473,7 @@ export default function BikerPayroll({ role, previewMode = false }) {
                   const adj = adjustments[line.bikerId] || adjustmentsFromPayrollLines([line])[line.bikerId];
                   const advanceMax = payrollAdvanceMax(line, adj);
                   return <tr key={line.bikerId} className="border-b border-slate-100 dark:border-slate-800 align-top">
-                    <td className="py-3 px-3 font-bold min-w-36">{line.name}</td>
+                    <td translate="no" className="py-3 px-3 font-bold min-w-36">{line.name}</td>
                     <td className="py-3 px-3 min-w-44"><strong className="tabular-nums">{formatCurrency(line.monthlySalary)}</strong><span className="block text-[10px] text-slate-500 mt-1">{line.startDate ? `باشر ${formatDate(line.startDate)}` : 'بلا تاريخ مباشرة'}{line.endDate ? ` · انتهى ${formatDate(line.endDate)}` : ''}</span></td>
                     <td className="py-3 px-3 tabular-nums">{formatNumber(line.daysEntitled)} / {formatNumber(line.monthDays)}<span className="block text-[10px] text-slate-500 mt-1">{formatDate(line.eligibleStart)} — {formatDate(line.eligibleEnd)}</span></td>
                     <td className="py-3 px-3 font-bold tabular-nums">{formatCurrency(line.basicDue)}</td>
@@ -490,7 +492,7 @@ export default function BikerPayroll({ role, previewMode = false }) {
             <div className="lg:hidden space-y-3">{preview.lines.map((line) => {
               const adj = adjustments[line.bikerId] || adjustmentsFromPayrollLines([line])[line.bikerId];
               return <article key={line.bikerId} className="border border-slate-100 dark:border-slate-800 rounded-smallcard p-4 space-y-3">
-                <div className="flex justify-between gap-3"><div><h3 className="font-bold text-slate-900 dark:text-slate-100">{line.name}</h3><p className="text-[11px] text-slate-500">{formatCurrency(line.monthlySalary)} · {line.daysEntitled}/{line.monthDays} يوماً</p></div><StatusChip status={line.status || status} /></div>
+                <div className="flex justify-between gap-3"><div><h3 translate="no" className="font-bold text-slate-900 dark:text-slate-100">{line.name}</h3><p className="text-[11px] text-slate-500">{formatCurrency(line.monthlySalary)} · {line.daysEntitled}/{line.monthDays} يوماً</p></div><StatusChip status={line.status || status} /></div>
                 <div className="grid grid-cols-3 gap-2 text-center text-[11px]"><div className="bg-slate-50 dark:bg-slate-800 rounded-control p-2"><span className="block text-slate-500">الأساسي</span><strong>{formatCurrency(line.basicDue)}</strong></div><div className="bg-slate-50 dark:bg-slate-800 rounded-control p-2"><span className="block text-slate-500">العمولة</span><strong>{formatCurrency(line.commission)}</strong></div><div className="bg-primary-50 dark:bg-primary-500/10 rounded-control p-2"><span className="block text-slate-500">الصافي</span><strong>{formatCurrency(line.netDue)}</strong></div></div>
                 <p className="text-[10px] text-slate-500">الفترة المستحقة: {formatDate(line.eligibleStart)} — {formatDate(line.eligibleEnd)}{line.endDate ? ` · نهاية الخدمة ${formatDate(line.endDate)}` : ''}</p>
                 <div className="grid grid-cols-1 gap-3"><AdjustmentInputs line={line} adjustment={adj} disabled={locked} onChange={(k, v) => updateAdjustment(line, k, v)} compact /></div>

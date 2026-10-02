@@ -162,7 +162,7 @@ export default function AddWashModal({
             >
               <option value="">— بلا اسم —</option>
               {bikers.map((b) => (
-                <option key={b.id} value={b.id}>{b.name}</option>
+                <option key={b.id} value={b.id} translate="no">{b.name}</option>
               ))}
               <option value={OTHER_BIKER}>اسم آخر (غير مسجّل)…</option>
             </select>

@@ -1,3 +1,4 @@
+import { translate } from '../i18n/locale';
 import { useCallback, useMemo, useState } from 'react';
 import {
   Boxes, Plus, Download, Loader2, TrendingDown, Package, Layers,
@@ -95,9 +96,9 @@ export default function FixedAssetsPage() {
 
   async function handlePostBacklog() {
     const ok = typeof window === 'undefined' || window.confirm(
-      `ترحيل إهلاك ${pendingPeriods.length} شهر بإجمالي ${formatCurrencyPrecise(backlogTotal)}؟\n\n`
+      translate(`ترحيل إهلاك ${pendingPeriods.length} شهر بإجمالي ${formatCurrencyPrecise(backlogTotal)}؟\n\n`
       + 'يُرحَّل كل شهر بقيد مستقل مؤرَّخ في آخر يوم منه. '
-      + 'العملية قابلة للتكرار: أي شهر مُرحّل يُتجاوَز تلقائياً.',
+      + 'العملية قابلة للتكرار: أي شهر مُرحّل يُتجاوَز تلقائياً.'),
     );
     if (!ok) return;
     setBusy('backlog');
@@ -127,10 +128,10 @@ export default function FixedAssetsPage() {
     const proceedsRaw = window.prompt('المتحصلات من البيع (0 إذا كان إخراجاً بلا مقابل):', '0');
     if (proceedsRaw == null) return;
     const ok = window.confirm(
-      `استبعاد «${asset.name}»؟\n\n`
+      translate(`استبعاد «${asset.name}»؟\n\n`
       + `القيمة الدفترية الحالية: ${formatCurrencyPrecise(asset.netBookValue)}\n`
       + `المتحصلات: ${formatCurrencyPrecise(Number(proceedsRaw) || 0)}\n\n`
-      + 'سيُرحَّل قيد يُقفل الأصل ومجمّع إهلاكه ويسجّل الربح أو الخسارة.',
+      + 'سيُرحَّل قيد يُقفل الأصل ومجمّع إهلاكه ويسجّل الربح أو الخسارة.'),
     );
     if (!ok) return;
     setBusy(asset.id);

@@ -1,3 +1,4 @@
+import { translate } from '../i18n/locale';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, Trash2 } from 'lucide-react';
 
@@ -91,7 +92,7 @@ export default function CategorySelect({
     e.stopPropagation();
     if (!onDelete || deletingId) return;
     const ok = typeof window !== 'undefined'
-      ? window.confirm('هل أنت متأكد من حذف هذا التصنيف نهائياً من القوائم؟')
+      ? window.confirm(translate('هل أنت متأكد من حذف هذا التصنيف نهائياً من القوائم؟'))
       : true;
     if (!ok) return;
     setDeletingId(cat.id);

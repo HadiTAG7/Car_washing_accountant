@@ -1,3 +1,5 @@
+import { getLocale } from '../i18n/locale';
+import { useLanguage } from '../i18n/useLanguage';
 // ═══════════════════════════════════════════════════════════════════════════
 // حسابي كشريك — أربعة خيارات لا ورقةً واحدة
 // ═══════════════════════════════════════════════════════════════════════════
@@ -91,8 +93,8 @@ const todayMonth = () => new Date().toISOString().slice(0, 7);
 
 // آخر n شهراً كـ { key, label } — نفس مُولِّد `OverviewPage` حرفياً كي
 // يقرأ محورا الرسمين في الصفحتين الشيء نفسه.
-function lastMonths(n) {
-  const fmt = new Intl.DateTimeFormat('ar', { month: 'short', numberingSystem: 'latn' });
+function lastMonths(n, language) {
+  const fmt = new Intl.DateTimeFormat(getLocale(language), { month: 'short', numberingSystem: 'latn' });
   const out = [];
   const d = new Date();
   d.setDate(1);
@@ -109,7 +111,7 @@ function lastMonths(n) {
 function formatMonthLabel(ym) {
   const [y, m] = String(ym).split('-');
   const date = new Date(Number(y), Number(m) - 1, 1);
-  return new Intl.DateTimeFormat('ar-SA', { year: 'numeric', month: 'long' }).format(date);
+  return new Intl.DateTimeFormat(getLocale(), { year: 'numeric', month: 'long' }).format(date);
 }
 
 /**
@@ -179,7 +181,7 @@ function ShareCard({ partner }) {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">الشريك</p>
-          <p className="text-xl font-extrabold text-slate-900 dark:text-slate-100">
+          <p translate="no" className="text-xl font-extrabold text-slate-900 dark:text-slate-100">
             {partner.partnerName}
           </p>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
@@ -761,6 +763,7 @@ function TrendsView({ hasShare, profitTrend, washTrend = null }) {
  * يُفتح لا يُكلِّف شيئاً، وهذا نصف فائدة التقسيم.
  */
 function InvestorPortal({ partner, view }) {
+  const { language } = useLanguage();
   const { payments, loading: paymentsLoading, error: paymentsError } = usePartnerPayments();
   const {
     entries, lines, loading: ledgerLoading, error: ledgerError,
@@ -834,7 +837,7 @@ function InvestorPortal({ partner, view }) {
   // ── تحصيل رأس المال، آخر ٦ أشهر ──
   const receiptsTrend = useMemo(() => {
     if (view !== 'capital') return { months: [], values: [], total: 0 };
-    const months = lastMonths(6);
+    const months = lastMonths(6, language);
     const byMonth = new Map(months.map((m) => [m.key, 0]));
     for (const p of myReceipts) {
       const key = String(p.paymentDate || '').slice(0, 7);
@@ -842,14 +845,14 @@ function InvestorPortal({ partner, view }) {
     }
     const values = months.map((m) => byMonth.get(m.key));
     return { months, values, total: values.reduce((s, v) => s + v, 0) };
-  }, [myReceipts, view]);
+  }, [myReceipts, view, language]);
 
   // ── اتجاه النتيجة، آخر ٦ أشهر، بحصّته ──
   const profitTrend = useMemo(() => {
     if (view !== 'trends') {
       return { months: [], revenue: [], costs: [], net: [], total: 0 };
     }
-    const months = lastMonths(6);
+    const months = lastMonths(6, language);
     const rows = months.map(m => allocationReport?.statements.find(s => s.periodKey === m.key)
       || { netRevenue: 0, totalAllocation: 0, netAfterReserve: 0 });
     return {
@@ -859,7 +862,7 @@ function InvestorPortal({ partner, view }) {
       net:     rows.map((r) => r.netAfterReserve),
       total:   rows.reduce((s, r) => s + Math.abs(r.netRevenue) + Math.abs(r.totalAllocation), 0),
     };
-  }, [allocationReport, view]);
+  }, [allocationReport, view, language]);
 
   // ── حصّته شهراً بشهر منذ أول قيد — للاسترداد والتغيّر ومنذ بداية السنة ──
   // تُحسب في «نظرة عامة» وحدها: قائمةٌ لكل شهرٍ مُرحَّل ليست رخيصة، والخيار
@@ -888,13 +891,13 @@ function InvestorPortal({ partner, view }) {
   const washTrend = useMemo(() => {
     if (view !== 'trends' || !insights) return null;
     const last6 = washMonths.slice(-6);
-    const fmt = new Intl.DateTimeFormat('ar', { month: 'short', numberingSystem: 'latn' });
+    const fmt = new Intl.DateTimeFormat(getLocale(language), { month: 'short', numberingSystem: 'latn' });
     return {
       months: last6.map((m) => ({ key: m.month, label: fmt.format(new Date(Number(m.month.slice(0, 4)), Number(m.month.slice(5, 7)) - 1, 1)) })),
       values: last6.map((m) => m.shareCount),
       total: last6.reduce((s, m) => s + m.shareCount, 0),
     };
-  }, [view, insights, washMonths]);
+  }, [view, insights, washMonths, language]);
 
   // رصيده في الدفاتر مقابل سنداته — لعرض «رأس مالي».
   const paidSummary = useMemo(

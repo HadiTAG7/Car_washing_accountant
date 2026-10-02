@@ -1,3 +1,4 @@
+import { translate } from '../i18n/locale';
 import ScrollableTable from './ScrollableTable';
 import TableSearch from './TableSearch';
 import { matchesTableSearch } from '../lib/tableSearch';
@@ -183,7 +184,7 @@ export default function BikersPage({ role, payrollPreview = false }) {
       return;
     }
     const ok = window.confirm(
-      `حذف «${row.name}» من السجل؟\n\nغسلاته وعمولاته السابقة تبقى محفوظة باسمه في سجل الغسلات — يُحذف ملفه فقط.`,
+      translate(`حذف «${row.name}» من السجل؟\n\nغسلاته وعمولاته السابقة تبقى محفوظة باسمه في سجل الغسلات — يُحذف ملفه فقط.`),
     );
     if (!ok) return;
     await guarded('تم حذف البايكر', () => deleteBiker(row.id));
@@ -346,7 +347,7 @@ export default function BikersPage({ role, payrollPreview = false }) {
                           <Bike size={14} />
                         </span>
                         <span className="min-w-0">
-                          <span className="block break-words">{r.name}</span>
+                          <span translate="no" className="block break-words">{r.name}</span>
                           {r.startDate && (
                             <span className="block text-[11px] font-normal text-slate-500 dark:text-slate-400">
                               منذ {formatDate(r.startDate)}

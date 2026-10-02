@@ -1,3 +1,4 @@
+import { getLocale } from '../i18n/locale';
 import { HandCoins, Landmark, Wallet, Receipt } from 'lucide-react';
 import TopBar from './TopBar';
 import { Card, SectionHeader, StatCard, EmptyState } from './UI';
@@ -14,7 +15,7 @@ const BASIS_LABEL = {
   operational: 'حسب سجل التشغيل',
   reserve: 'محجوز للتجديد — ليس صرفاً',
 };
-const monthLabel = key => new Intl.DateTimeFormat('ar-SA', { month: 'long', year: 'numeric' })
+const monthLabel = key => new Intl.DateTimeFormat(getLocale(), { month: 'long', year: 'numeric' })
   .format(new Date(Number(key.slice(0, 4)), Number(key.slice(5, 7)) - 1, 1));
 
 function AmountLine({ label, amount, total = false }) {

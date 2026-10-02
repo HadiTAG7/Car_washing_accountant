@@ -3,6 +3,8 @@ import { useDarkMode } from '../hooks/useDarkMode';
 import { useAuth } from '../hooks/useAuth';
 import { useMobileMenu } from '../contexts/MobileMenuContext';
 import AdminPartnerSelector from './AdminPartnerSelector';
+import LanguageSwitcher from './LanguageSwitcher';
+import { getLocale } from '../i18n/locale';
 
 /**
  * Top bar with page title, search, dark-mode toggle, notifications, and date.
@@ -14,7 +16,7 @@ import AdminPartnerSelector from './AdminPartnerSelector';
  */
 export default function TopBar({ title, subtitle, actions, hidePartnerSelector = false }) {
   const today = new Date();
-  const formatted = new Intl.DateTimeFormat('ar-SA', {
+  const formatted = new Intl.DateTimeFormat(getLocale(), {
     weekday: 'long',
     year: 'numeric',
     month: 'long',
@@ -45,6 +47,7 @@ export default function TopBar({ title, subtitle, actions, hidePartnerSelector =
           {!hidePartnerSelector ? <AdminPartnerSelector /> : null}
 
           {actions}
+          <LanguageSwitcher />
 
           {/* Dark mode toggle */}
           <button

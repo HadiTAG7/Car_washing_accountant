@@ -96,7 +96,7 @@ export default function PartnerStatementModal({ isOpen, onClose, partner }) {
           <div className="grid grid-cols-2 gap-4 mt-5 text-sm">
             <div>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">الشريك</p>
-              <p className="font-bold">{partner.partnerName}</p>
+              <p translate="no" className="font-bold">{partner.partnerName}</p>
             </div>
             <div>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">عدد العمالة</p>

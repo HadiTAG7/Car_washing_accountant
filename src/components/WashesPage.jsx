@@ -1,3 +1,5 @@
+import { translate } from '../i18n/locale';
+import { getLocale } from '../i18n/locale';
 import { useCallback, useMemo, useState } from 'react';
 import {
   Plus, Trash2, Pencil, Wallet, CheckCircle2, CalendarClock, Car,
@@ -66,7 +68,7 @@ function formatWashDate(value) {
   try {
     const d = new Date(value);
     if (Number.isNaN(d.getTime())) return value;
-    return new Intl.DateTimeFormat('ar-SA', {
+    return new Intl.DateTimeFormat(getLocale(), {
       year: 'numeric', month: 'long', day: 'numeric', numberingSystem: 'latn',
     }).format(d);
   } catch {
@@ -161,7 +163,7 @@ export default function WashesPage() {
   }
   async function handleDelete(item) {
     const confirmed = typeof window !== 'undefined'
-      ? window.confirm(`هل تريد حذف هذه الدفعة (${formatNumber(item.quantity)} غسلة)؟ لا يمكن التراجع.`)
+      ? window.confirm(translate(`هل تريد حذف هذه الدفعة (${formatNumber(item.quantity)} غسلة)؟ لا يمكن التراجع.`))
       : true;
     if (!confirmed) return;
     try { await deleteItem(item.id); showToast('تم حذف الغسلة'); }

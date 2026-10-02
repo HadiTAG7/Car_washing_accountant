@@ -1,3 +1,4 @@
+import { translate } from '../i18n/locale';
 import ModalSurface from './ModalSurface';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -200,7 +201,7 @@ export default function AddStartupFeeModal({
       return;
     }
     const confirmed = typeof window !== 'undefined'
-      ? window.confirm('هل أنت متأكد من حذف هذا التصنيف نهائياً؟')
+      ? window.confirm(translate('هل أنت متأكد من حذف هذا التصنيف نهائياً؟'))
       : true;
     if (!confirmed) return;
     if (!onDeleteCategory) {

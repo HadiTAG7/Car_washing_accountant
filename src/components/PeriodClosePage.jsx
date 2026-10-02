@@ -1,3 +1,4 @@
+import { translate } from '../i18n/locale';
 import { useCallback, useMemo, useState } from 'react';
 import {
   Lock, Unlock, ShieldCheck, AlertTriangle, CheckCircle2, Loader2, Database, Upload,
@@ -122,8 +123,8 @@ export default function PeriodClosePage() {
   async function handlePostAll() {
     const pending = scan?.ready?.length || 0;
     const ok = typeof window === 'undefined' || window.confirm(
-      `ترحيل ${pending} عملية إلى دفتر الأستاذ؟\n\n`
-      + 'العملية آمنة وقابلة للتكرار: أي عملية مُرحّلة مسبقاً تُتجاوز تلقائياً.',
+      translate(`ترحيل ${pending} عملية إلى دفتر الأستاذ؟\n\n`
+      + 'العملية آمنة وقابلة للتكرار: أي عملية مُرحّلة مسبقاً تُتجاوز تلقائياً.'),
     );
     if (!ok) return;
     setBusy('post');
@@ -231,9 +232,9 @@ export default function PeriodClosePage() {
   async function handleApplyLegacy() {
     const count = legacyPlan?.linkable?.length || 0;
     const ok = typeof window === 'undefined' || window.confirm(
-      `ربط ${count} فاتورة بقيودها؟\n\n`
+      translate(`ربط ${count} فاتورة بقيودها؟\n\n`
       + 'يُكتب الرابط فقط — رقم المستند وتاريخه ومبالغه ورمز QR لا تُمسّ. '
-      + 'الحالات الغامضة لا تُربط.',
+      + 'الحالات الغامضة لا تُربط.'),
     );
     if (!ok) return;
     setBusy('legacy-apply');
@@ -282,9 +283,9 @@ export default function PeriodClosePage() {
   async function handleGenerateVouchers() {
     const count = genPreview?.toCreate?.length || 0;
     const ok = typeof window === 'undefined' || window.confirm(
-      `إنشاء ${count} سند من ${range.from} إلى ${range.through}؟\n\n`
+      translate(`إنشاء ${count} سند من ${range.from} إلى ${range.through}؟\n\n`
       + 'كل سند يحمل تاريخ استحقاق حقيقي، فيصبح قابلاً للترحيل وللمطالبة بضريبته. '
-      + 'العملية قابلة للتكرار: رقم السند مشتق من المصروف والفترة، فلا يتكرر.',
+      + 'العملية قابلة للتكرار: رقم السند مشتق من المصروف والفترة، فلا يتكرر.'),
     );
     if (!ok) return;
     setBusy('generate');

@@ -1,3 +1,4 @@
+import { getLocale } from '../i18n/locale';
 // ═══════════════════════════════════════════════════════════════════════════
 // المساعد الذكي — رابط MCP خاص بالشريك، يُنشئه ويلصقه في Claude أو ChatGPT
 // ═══════════════════════════════════════════════════════════════════════════
@@ -33,13 +34,12 @@ import { usePartnerMcpKeys, activeKeyFor } from '../hooks/usePartnerMcpKeys';
 import { describeBackendError, ledgerApiUrl, isFirebaseConfigured } from '../lib/firebaseClient';
 import { partnerMcpUrl } from '../lib/partnerMcpUrl';
 
-const WHEN = new Intl.DateTimeFormat('ar-SA', {
-  dateStyle: 'medium', timeStyle: 'short', numberingSystem: 'latn',
-});
 const when = (iso) => {
   if (!iso) return '—';
   const t = Date.parse(iso);
-  return Number.isFinite(t) ? WHEN.format(new Date(t)) : '—';
+  return Number.isFinite(t) ? new Intl.DateTimeFormat(getLocale(), {
+    dateStyle: 'medium', timeStyle: 'short', numberingSystem: 'latn',
+  }).format(new Date(t)) : '—';
 };
 
 const CAN_SEE = [

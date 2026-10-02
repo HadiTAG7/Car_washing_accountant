@@ -49,6 +49,7 @@ import { isFirebaseConfigured, requireAuth, missingEnvNames } from './lib/fireba
 import { MobileMenuProvider, useMobileMenu } from './contexts/MobileMenuContext';
 import { PartnerViewProvider, usePartnerView } from './contexts/PartnerViewContext';
 import PartnerViewBanner from './components/PartnerViewBanner';
+import { useLanguage } from './i18n/useLanguage';
 
 // ── القائمة مجموعاتٌ لا سطراً واحداً ──
 // Nineteen flat entries stopped being a list and became a scroll — worst on
@@ -247,6 +248,8 @@ function AppShell({ membership }) {
 }
 
 export default function App() {
+  // Rerender locale-dependent charts and formatters without remounting page state.
+  useLanguage();
   // PartnerViewProvider sits INSIDE MobileMenuProvider because it depends
   // on useAuth + usePartners; those hooks are safe to call at any point
   // in the tree, but keeping the auth-aware contexts close to the shell

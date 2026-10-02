@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { getLanguage } from '../../i18n/locale';
 
 // ─── Dependency-free SVG trend charts ───────────────────────────────────────
 // Two forms, per the data's job:
@@ -28,8 +29,8 @@ function niceCeil(v) {
 function compactNumber(n) {
   const abs = Math.abs(n);
   const trim = (s) => s.replace(/\.0$/, '');
-  if (abs >= 1_000_000) return `${trim((n / 1_000_000).toFixed(abs >= 10_000_000 ? 0 : 1))}م`;
-  if (abs >= 1_000) return `${trim((n / 1_000).toFixed(abs >= 10_000 ? 0 : 1))}ألف`;
+  if (abs >= 1_000_000) return `${trim((n / 1_000_000).toFixed(abs >= 10_000_000 ? 0 : 1))}${getLanguage() === 'en' ? 'M' : 'م'}`;
+  if (abs >= 1_000) return `${trim((n / 1_000).toFixed(abs >= 10_000 ? 0 : 1))}${getLanguage() === 'en' ? 'K' : 'ألف'}`;
   return String(Math.round(n));
 }
 

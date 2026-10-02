@@ -167,7 +167,7 @@ export const AGENT_TEAMS = Object.freeze([
     memberAgentIds: [
       'expense-capture', 'expense-review', 'accounting-reconciliation', 'tax-compliance',
     ],
-    layout: { angle: -90, memberArc: [-154, -124, -94, -64] },
+    layout: { angle: -90, memberArc: [-154, -124, -64, -34] },
   },
   {
     id: 'operations',
@@ -236,6 +236,8 @@ export function assembleAgentOrganization(agents = []) {
 }
 
 const VALID_STATUSES = new Set(Object.keys(AGENT_STATUS));
+export const TASK_STATE_LABELS = Object.freeze({ queued: 'في الانتظار', running: 'قيد العمل', blocked: 'متعثر', 'waiting-approval': 'بانتظار موافقة', completed: 'مكتمل' });
+export const CONNECTION_LABELS = Object.freeze({ connected: 'متصل', stale: 'متأخر التحديث', unverified: 'وقت التحديث غير موثق', disconnected: 'لم يتصل بعد' });
 const TRUSTED_CONVERSATION_HOSTS = new Set(['chatgpt.com', 'chat.openai.com']);
 
 export function toIsoTimestamp(value) {
@@ -269,6 +271,9 @@ function normalizeRow(row) {
     lastCheckedAt: toIsoTimestamp(row.lastCheckedAt),
     dueAt: toIsoTimestamp(row.dueAt),
     updatedAt: toIsoTimestamp(row.updatedAt),
+    lastEventAt: toIsoTimestamp(row.lastEventAt),
+    runningReportedAt: toIsoTimestamp(row.runningReportedAt),
+    statusReportedAt: toIsoTimestamp(row.statusReportedAt),
   };
 }
 
@@ -276,20 +281,44 @@ function newestFirst(rows, key) {
   return [...rows].sort((a, b) => String(b[key] || '').localeCompare(String(a[key] || '')));
 }
 
-export function assembleCommandCenterSnapshot(raw = {}) {
+export function assembleCommandCenterSnapshot(raw = {}, { now = Date.now() } = {}) {
   const liveAgents = new Map((raw.agents || []).map((row) => [row.id || row.agentId, normalizeRow(row)]));
   const reports = newestFirst((raw.reports || []).map(normalizeRow), 'reportedAt');
   const alerts = newestFirst((raw.alerts || []).map(normalizeRow).filter((row) => row.active !== false), 'createdAt');
   const approvals = newestFirst((raw.approvals || []).map(normalizeRow).filter((row) => row.status === 'pending'), 'createdAt');
-  const sources = (raw.sources || []).map(normalizeRow);
+  const sources = (raw.sources || []).map(normalizeRow).map((source) => ({
+    ...source,
+    reportedStatus: source.status,
+    status: source.lastCheckedAt && now - new Date(source.lastCheckedAt).getTime() >= -300000 && now - new Date(source.lastCheckedAt).getTime() <= 86400000 ? source.status : 'unknown',
+  }));
   const sourcesById = new Map(sources.map((row) => [row.id, row]));
   const activity = newestFirst((raw.activity || []).map(normalizeRow), 'occurredAt');
+  const tasks = newestFirst((raw.tasks || []).map(normalizeRow), 'occurredAt').map((task) => ({
+    ...task,
+    ownerName: AGENT_CATALOG.find((agent) => agent.id === task.agentId)?.name || 'غير معروف',
+    timeline: activity.filter((item) => item.caseId === task.id),
+    reports: reports.filter((item) => item.caseId === task.id),
+    alerts: alerts.filter((item) => item.caseId === task.id),
+    approvals: approvals.filter((item) => item.caseId === task.id),
+  }));
 
   const agents = AGENT_CATALOG.map((catalog) => {
     const live = liveAgents.get(catalog.id) || {};
     const agentReports = reports.filter((row) => row.agentId === catalog.id);
     const agentAlerts = alerts.filter((row) => row.agentId === catalog.id);
     const agentApprovals = approvals.filter((row) => row.agentId === catalog.id);
+    const lastSeen = live.lastEventAt || live.updatedAt;
+    const age = lastSeen ? now - new Date(lastSeen).getTime() : null;
+    const freshnessSeconds = live.freshnessSeconds || (live.isRunning ? 900 : 86400);
+    const overdue = live.nextRunAt && now > new Date(live.nextRunAt).getTime() + 900000
+      && (!lastSeen || new Date(lastSeen) < new Date(live.nextRunAt));
+    const connection = !liveAgents.has(catalog.id) ? 'disconnected'
+      : age === null || age < -300000 ? 'unverified'
+        : age > freshnessSeconds * 1000 || overdue ? 'stale' : 'connected';
+    const ownTasks = tasks.filter((task) => task.agentId === catalog.id);
+    const currentTask = ownTasks.find((task) => task.id === live.currentCaseId) || ownTasks[0] || null;
+    const statusAge = now - new Date(live.statusReportedAt || lastSeen).getTime();
+    const runningAge = now - new Date(live.runningReportedAt || lastSeen).getTime();
     const sourceIds = new Set([...(live.sourceIds || []), ...catalog.expectedSources.map((item) => item.id)]);
     const dataSources = [...sourceIds].map((id) => {
       const received = sourcesById.get(id);
@@ -298,20 +327,29 @@ export function assembleCommandCenterSnapshot(raw = {}) {
         ? { ...received, name: received.name || expected?.name || id }
         : { id, name: expected?.name || id, status: 'unknown', lastCheckedAt: null, details: null };
     });
-    const latestReport = agentReports[0] || (live.lastReportSummary ? {
+    const cachedReport = live.lastReportSummary ? {
       id: live.lastReportId || null,
       title: live.lastReportTitle || 'آخر تقرير',
       summary: live.lastReportSummary,
       reportedAt: live.lastReportAt,
-    } : null);
+      review: live.lastReportReview,
+      senderId: live.lastReportSenderId,
+    } : null;
+    const latestReport = cachedReport && (!agentReports[0] || cachedReport.reportedAt > agentReports[0].reportedAt) ? cachedReport : agentReports[0] || cachedReport;
 
     return {
       ...catalog,
       teamId: TEAM_BY_AGENT_ID.get(catalog.id)?.id || null,
       teamName: TEAM_BY_AGENT_ID.get(catalog.id)?.name || null,
       isTeamLeader: TEAM_BY_AGENT_ID.get(catalog.id)?.leaderAgentId === catalog.id,
-      status: VALID_STATUSES.has(live.status) ? live.status : 'unknown',
-      isRunning: live.isRunning === true,
+      status: connection === 'connected' && statusAge <= freshnessSeconds * 1000 && VALID_STATUSES.has(live.status) ? live.status : 'unknown',
+      reportedStatus: live.status || 'unknown',
+      isRunning: connection === 'connected' && live.isRunning === true && runningAge <= 900000 && (!currentTask || currentTask.state === 'running'),
+      connection,
+      lastSeen,
+      currentTask,
+      tasks: ownTasks,
+      managerReview: latestReport?.review ? { ...latestReport.review, reportedAt: latestReport.reportedAt, senderId: latestReport.senderId } : null,
       lastRunAt: live.lastRunAt || null,
       nextRunAt: live.nextRunAt || null,
       lastEventAt: live.lastEventAt ? toIsoTimestamp(live.lastEventAt) : null,
@@ -352,8 +390,11 @@ export function assembleCommandCenterSnapshot(raw = {}) {
   const summary = agentsWithTeamEscalations.reduce((acc, agent) => {
     acc[agent.status] += 1;
     if (agent.isRunning) acc.running += 1;
+    if (agent.connection === 'connected') acc.connected += 1;
+    if (agent.connection === 'stale') acc.stale += 1;
+    if (agent.currentTask?.state === 'waiting-approval') acc.waitingApproval += 1;
     return acc;
-  }, { healthy: 0, warning: 0, critical: 0, unknown: 0, running: 0 });
+  }, { healthy: 0, warning: 0, critical: 0, unknown: 0, running: 0, connected: 0, stale: 0, waitingApproval: 0 });
 
   return {
     agents: agentsWithTeamEscalations,
@@ -362,8 +403,10 @@ export function assembleCommandCenterSnapshot(raw = {}) {
     approvals,
     sources,
     activity,
+    tasks,
+    observedAt: new Date(now).toISOString(),
     summary,
-    hasLiveData: [raw.agents, raw.reports, raw.alerts, raw.approvals, raw.sources, raw.activity]
+    hasLiveData: [raw.agents, raw.reports, raw.alerts, raw.approvals, raw.sources, raw.activity, raw.tasks]
       .some((rows) => Array.isArray(rows) && rows.length > 0),
   };
 }

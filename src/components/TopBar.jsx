@@ -12,7 +12,7 @@ import AdminPartnerSelector from './AdminPartnerSelector';
  *   subtitle     small grey line below title
  *   actions      optional ReactNode (e.g. button) rendered next to search
  */
-export default function TopBar({ title, subtitle, actions }) {
+export default function TopBar({ title, subtitle, actions, hidePartnerSelector = false }) {
   const today = new Date();
   const formatted = new Intl.DateTimeFormat('ar-SA', {
     weekday: 'long',
@@ -42,7 +42,7 @@ export default function TopBar({ title, subtitle, actions }) {
         <div className="flex items-center gap-2 sm:gap-3">
           {/* Admin-only: simulate-as-partner dropdown. Renders null for
               partners (and when there are no active partners). */}
-          <AdminPartnerSelector />
+          {!hidePartnerSelector ? <AdminPartnerSelector /> : null}
 
           {actions}
 

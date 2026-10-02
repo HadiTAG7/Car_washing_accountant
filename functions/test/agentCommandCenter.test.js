@@ -137,6 +137,41 @@ emulatorDescribe('Agent command-center idempotent storage', () => {
   afterAll(async () => { if (app) await deleteApp(app); });
   beforeEach(wipe);
 
+  it('does not let late source measurements replace newer source health', async () => {
+    const event = { version: 1, eventType: 'source', occurredAt: '2026-09-30T09:00:00Z', source: { id: 'sweater-operations', name: 'عمليات سويتر', status: 'critical', lastCheckedAt: '2026-09-30T09:00:00Z' } };
+    await ingestAgentCommandEvent(db, FieldValue, event, { idempotencyKey: 'source-new' });
+    await ingestAgentCommandEvent(db, FieldValue, { ...event, source: { ...event.source, status: 'healthy', lastCheckedAt: '2026-09-29T09:00:00Z' } }, { idempotencyKey: 'source-old' });
+    expect((await db.collection(AGENT_COMMAND_COLLECTIONS.SOURCES).doc('sweater-operations').get()).data().status).toBe('critical');
+  });
+
+  it('does not let old deliveries revert current health or reuse a key for different content', async () => {
+    const event = { version: 1, eventType: 'status', agentId: 'cfo', occurredAt: '2026-09-30T09:00:00Z', status: 'critical', isRunning: false };
+    await ingestAgentCommandEvent(db, FieldValue, event, { idempotencyKey: 'new-status' });
+    await ingestAgentCommandEvent(db, FieldValue, { ...event, occurredAt: '2026-09-29T09:00:00Z', status: 'healthy', isRunning: true }, { idempotencyKey: 'old-status' });
+    expect((await db.collection(AGENT_COMMAND_COLLECTIONS.AGENTS).doc('cfo').get()).data()).toMatchObject({ status: 'critical', isRunning: false });
+    await expect(ingestAgentCommandEvent(db, FieldValue, { ...event, status: 'healthy' }, { idempotencyKey: 'new-status' })).rejects.toThrow(/محتوى مختلف/);
+  });
+
+  it('tracks a signed case, its evidence and event history with immutable owner', async () => {
+    const event = { version: 1, eventType: 'task', agentId: 'sweater-sync', occurredAt: '2026-09-30T09:00:00Z', caseId: 'sync-check', task: { title: 'فحص الاتصال', state: 'running', nextStep: 'مطابقة المصدر' } };
+    await ingestAgentCommandEvent(db, FieldValue, event, { idempotencyKey: 'task-1', senderId: 'sync' });
+    await expect(ingestAgentCommandEvent(db, FieldValue, { ...event, agentId: 'cfo' }, { idempotencyKey: 'task-hijack' })).rejects.toThrow(/لا يملك/);
+    await ingestAgentCommandEvent(db, FieldValue, { ...event, eventType: 'approval', task: undefined, approval: { title: 'قرار الاتصال', summary: 'لا تنفيذ' } }, { idempotencyKey: 'task-approval' });
+    await ingestAgentCommandEvent(db, FieldValue, { ...event, occurredAt: '2026-09-30T09:10:00Z', task: { title: 'فحص الاتصال', state: 'completed', result: 'تم الفحص', evidence: ['https://example.com/evidence'] } }, { idempotencyKey: 'task-2', senderId: 'sync' });
+    expect((await db.collection(AGENT_COMMAND_COLLECTIONS.TASKS).doc('sync-check').get()).data()).toMatchObject({ agentId: 'sweater-sync', state: 'completed', result: 'تم الفحص' });
+    expect((await db.collection(AGENT_COMMAND_COLLECTIONS.ACTIVITY).where('caseId', '==', 'sync-check').get()).size).toBe(3);
+    expect((await db.collection(AGENT_COMMAND_COLLECTIONS.APPROVALS).get()).docs[0].data().status).toBe('pending');
+    expect((await db.collection('journal_entries').get()).size).toBe(0);
+  });
+
+  it('accepts manager review references only from that manager’s own team', async () => {
+    const common = { version: 1, occurredAt: '2026-09-30T09:00:00Z', eventType: 'report' };
+    const report = await ingestAgentCommandEvent(db, FieldValue, { ...common, agentId: 'sweater-sync', report: { title: 'فحص', summary: 'نتيجة' } }, { idempotencyKey: 'team-report' });
+    const review = { ...common, agentId: 'operations-manager', report: { title: 'ملخص المدير', summary: 'راجع النتيجة', review: { results: 'استلم', exceptions: 'لا شيء', recommendation: 'متابعة', reportIds: [report.eventId] } } };
+    await expect(ingestAgentCommandEvent(db, FieldValue, review, { idempotencyKey: 'manager-review' })).resolves.toMatchObject({ duplicate: false });
+    await expect(ingestAgentCommandEvent(db, FieldValue, { ...review, agentId: 'cfo' }, { idempotencyKey: 'foreign-review' })).rejects.toThrow(/ليس من فريق/);
+  });
+
   it('stores one event and one audit line when the same idempotency key is retried', async () => {
     const payload = JSON.parse(RAW_BODY.toString('utf8'));
     const first = await ingestAgentCommandEvent(db, FieldValue, payload, { idempotencyKey: IDEMPOTENCY_KEY });

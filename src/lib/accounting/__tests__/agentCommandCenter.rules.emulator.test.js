@@ -30,6 +30,7 @@ emulatorDescribe('Agent command-center Firestore rules', () => {
       await setDoc(doc(db, 'agent_command_agents', 'cfo'), { status: 'healthy' });
       await setDoc(doc(db, 'agent_command_agents', 'operations-manager'), { status: 'healthy' });
       await setDoc(doc(db, 'agent_command_reports', 'r1'), { agentId: 'cfo', title: 'تقرير' });
+      await setDoc(doc(db, 'agent_command_tasks', 'case1'), { agentId: 'sweater-sync', state: 'running' });
       await setDoc(doc(db, 'agent_command_ingestion', 'private-hash'), { eventId: 'event1' });
     });
     ctx = {
@@ -45,6 +46,8 @@ emulatorDescribe('Agent command-center Firestore rules', () => {
     await assertSucceeds(getDocs(collection(ctx.admin, 'agent_command_agents')));
     await assertSucceeds(getDocs(collection(ctx.accountant, 'agent_command_reports')));
     await assertSucceeds(getDoc(doc(ctx.accountant, 'agent_command_agents', 'operations-manager')));
+    await assertSucceeds(getDoc(doc(ctx.accountant, 'agent_command_tasks', 'case1')));
+    await assertFails(getDoc(doc(ctx.operator, 'agent_command_tasks', 'case1')));
     await assertFails(getDocs(collection(ctx.operator, 'agent_command_agents')));
     await assertFails(getDocs(collection(ctx.partner, 'agent_command_reports')));
     await assertFails(getDocs(collection(ctx.anonymous, 'agent_command_agents')));
@@ -56,6 +59,7 @@ emulatorDescribe('Agent command-center Firestore rules', () => {
       await assertFails(setDoc(doc(db, 'agent_command_agents', 'operations-manager'), { status: 'critical' }));
       await assertFails(setDoc(doc(db, 'agent_command_agents', 'free-form-agent'), { status: 'healthy' }));
       await assertFails(setDoc(doc(db, 'agent_command_approvals', 'forged'), { status: 'approved' }));
+      await assertFails(setDoc(doc(db, 'agent_command_tasks', 'case1'), { state: 'completed' }));
       await assertFails(setDoc(doc(db, 'agent_command_activity', 'forged'), { message: 'مزور' }));
     }
   });

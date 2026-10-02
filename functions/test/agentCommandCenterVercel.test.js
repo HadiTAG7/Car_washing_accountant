@@ -44,10 +44,25 @@ function signedRequest(body, idempotencyKey) {
 
 afterEach(() => {
   delete process.env.AGENT_COMMAND_CENTER_WEBHOOK_SECRET;
+  delete process.env.AGENT_COMMAND_CENTER_SENDERS;
   vi.restoreAllMocks();
 });
 
 describe('Vercel agent command-center endpoint', () => {
+  it('rejects a scoped sender reporting another agent before opening the database', async () => {
+    process.env.AGENT_COMMAND_CENTER_SENDERS = JSON.stringify({ one: { secret: `${SECRET}-long-enough-0123456789`, agentIds: ['cfo'], sourceIds: [] } });
+    const timestamp = String(Math.floor(Date.now() / 1000));
+    const idempotencyKey = 'scoped-test';
+    const signature = signAgentCommandRequest(`${SECRET}-long-enough-0123456789`, { senderId: 'one', timestamp, idempotencyKey, rawBody: BODY });
+    const req = request({ signature, timestamp, idempotencyKey });
+    req.headers['x-sweater-sender'] = 'one';
+    const databaseFactory = vi.fn();
+    const res = response();
+    await createAgentCommandCenterHandler({ databaseFactory })(req, res);
+    expect(res.statusCode).toBe(403);
+    expect(databaseFactory).not.toHaveBeenCalled();
+    expect(JSON.stringify(res.body)).not.toContain(SECRET);
+  });
   it('exports a production handler and rejects non-POST requests', async () => {
     const res = response();
     await handler(request({ method: 'GET' }), res);

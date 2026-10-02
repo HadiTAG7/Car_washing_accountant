@@ -33,14 +33,16 @@ async function main() {
   const rawBody = await readFile(resolve(payloadPath));
   JSON.parse(rawBody.toString('utf8'));
   const timestamp = String(Math.floor(Date.now() / 1_000));
+  const senderId = process.env.AGENT_COMMAND_CENTER_SENDER_ID;
   const idempotencyKey = process.env.AGENT_COMMAND_CENTER_IDEMPOTENCY_KEY
     || `event:${createHash('sha256').update(rawBody).digest('hex')}`;
-  const signature = signAgentCommandRequest(secret, { timestamp, idempotencyKey, rawBody });
+  const signature = signAgentCommandRequest(secret, { timestamp, idempotencyKey, rawBody, senderId });
 
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      ...(senderId ? { 'X-Sweater-Sender': senderId } : {}),
       'X-Sweater-Timestamp': timestamp,
       'X-Sweater-Idempotency-Key': idempotencyKey,
       'X-Sweater-Signature': `sha256=${signature}`,

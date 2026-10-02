@@ -18,6 +18,14 @@ afterEach(() => {
 });
 
 describe('Agent command-center view', () => {
+  it('returns from a focused department to the readable manager overview', () => {
+    render(<AgentCommandCenterView snapshot={EMPTY_COMMAND_CENTER_SNAPSHOT} />);
+    fireEvent.click(screen.getByRole('button', { name: /إبراز فريق المالية/ }));
+    expect(document.querySelectorAll('.acc-agent--orbit')).toHaveLength(4);
+    fireEvent.click(screen.getByRole('button', { name: 'عرض الأقسام الرئيسية' }));
+    expect(document.querySelectorAll('.acc-agent--orbit')).toHaveLength(0);
+    expect(screen.getByTestId('agent-map-viewport').getAttribute('data-zoom')).toBe('0.82');
+  });
   it('exposes every received entry rather than truncating the counts in the tabs', () => {
     const snapshot = {
       ...EMPTY_COMMAND_CENTER_SNAPSHOT,
@@ -36,14 +44,14 @@ describe('Agent command-center view', () => {
   it('renders one compact zero-state summary and all fifteen registered agents', () => {
     const { container } = render(<AgentCommandCenterView snapshot={EMPTY_COMMAND_CENTER_SNAPSHOT} />);
     const summary = screen.getByRole('region', { name: 'الملخص التنفيذي للوكلاء' });
-    expect(within(summary).getByText('الوكلاء')).toBeTruthy();
+    expect(within(summary).getByText('مسجّلون')).toBeTruthy();
     expect(within(summary).getByText(/لا يشمل CEO أو الفرق/)).toBeTruthy();
     expect(summary.querySelectorAll('.acc-summary-item')).toHaveLength(4);
     expect([...summary.querySelectorAll('.acc-summary-item strong')].map((item) => item.textContent)).toEqual(['15', '0', '0', '0']);
     expect(screen.getByText(/لم تُستلم حالات تشغيل بعد/)).toBeTruthy();
     expect(screen.getByText('لا توجد طلبات موافقة')).toBeTruthy();
-    expect(container.querySelectorAll('.acc-agent--orbit')).toHaveLength(10);
-    expect(container.querySelectorAll('.acc-team-leader')).toHaveLength(5);
+    expect(container.querySelectorAll('.acc-agent--orbit')).toHaveLength(0);
+    expect(container.querySelectorAll('.acc-agent--leader')).toHaveLength(5);
     expect(container.querySelectorAll('.acc-team-node')).toHaveLength(5);
     expect(container.querySelectorAll('.acc-ceo-node')).toHaveLength(1);
     expect(EMPTY_COMMAND_CENTER_SNAPSHOT.summary).toMatchObject({
@@ -76,16 +84,16 @@ describe('Agent command-center view', () => {
   it('aggregates live status into the compact summary without filling missing agents', () => {
     const snapshot = assembleCommandCenterSnapshot({
       agents: [
-        { id: 'expense-capture', status: 'healthy', isRunning: true },
-        { id: 'expense-review', status: 'warning' },
-        { id: 'accounting-reconciliation', status: 'critical' },
+        { id: 'expense-capture', status: 'healthy', isRunning: true, lastEventAt: new Date().toISOString() },
+        { id: 'expense-review', status: 'warning', lastEventAt: new Date().toISOString() },
+        { id: 'accounting-reconciliation', status: 'critical', lastEventAt: new Date().toISOString() },
       ],
     });
     render(<AgentCommandCenterView snapshot={snapshot} />);
-    expect(snapshot.summary).toEqual({ healthy: 1, warning: 1, critical: 1, unknown: 12, running: 1 });
+    expect(snapshot.summary).toMatchObject({ healthy: 1, warning: 1, critical: 1, unknown: 12, running: 1, connected: 3, stale: 0 });
     const summary = screen.getByRole('region', { name: 'الملخص التنفيذي للوكلاء' });
-    expect(within(summary).getByText('1', { selector: '.acc-summary-item:nth-child(2) strong' })).toBeTruthy();
-    expect(within(summary).getByText('2', { selector: '.acc-summary-item:nth-child(3) strong' })).toBeTruthy();
+    expect(within(summary).getByText('3', { selector: '.acc-summary-item:nth-child(2) strong' })).toBeTruthy();
+    expect(within(summary).getByText('0', { selector: '.acc-summary-item:nth-child(3) strong' })).toBeTruthy();
   });
 
   it('switches drawer tabs and keeps an untrusted conversation link hidden', () => {
@@ -105,11 +113,12 @@ describe('Agent command-center view', () => {
       }],
     });
     render(<AgentCommandCenterView snapshot={snapshot} />);
+    fireEvent.click(screen.getByRole('button', { name: 'إبراز فريق المالية' }));
     fireEvent.click(screen.getAllByRole('button', { name: /مراجعة المصروفات/ })[0]);
     const drawer = screen.getByRole('dialog', { name: 'مراجعة المصروفات' });
     const tabs = within(drawer).getByRole('tablist', { name: 'تفاصيل الوكيل' });
     expect(within(tabs).getByRole('tab', { name: 'الملخص' }).getAttribute('aria-selected')).toBe('true');
-    expect(within(drawer).queryByText('وجد استثناء واحد يحتاج مراجعة.')).toBeNull();
+    expect(within(drawer).getByText('وجد استثناء واحد يحتاج مراجعة.')).toBeTruthy();
     expect(within(drawer).queryByRole('link', { name: /فتح المحادثة/ })).toBeNull();
     expect(within(drawer).getByText(/غير متوفر أو غير موثوق/)).toBeTruthy();
 
@@ -124,6 +133,7 @@ describe('Agent command-center view', () => {
 
   it('supports keyboard tabs, traps drawer focus and restores it when closed', () => {
     render(<AgentCommandCenterView snapshot={EMPTY_COMMAND_CENTER_SNAPSHOT} />);
+    fireEvent.click(screen.getByRole('button', { name: 'إبراز فريق المالية' }));
     const agent = screen.getAllByRole('button', { name: /تسجيل المصروفات والفواتير/ })[0];
     agent.focus();
     fireEvent.keyDown(agent, { key: 'Enter', code: 'Enter' });
@@ -145,7 +155,9 @@ describe('Agent command-center view', () => {
     expect(screen.queryByTestId('mobile-team-sections')).toBeNull();
     expect(screen.getByRole('img', { name: /CEO، مركز القيادة/ })).toBeTruthy();
     expect(container.querySelectorAll('.acc-map')).toHaveLength(1);
-    expect(container.querySelectorAll('.acc-agent--orbit')).toHaveLength(10);
+    expect(container.querySelectorAll('.acc-agent--orbit')).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: 'إبراز فريق المالية' }));
+    expect(container.querySelectorAll('.acc-agent--orbit')).toHaveLength(4);
     expect(screen.getByText(/تسجيل ← مراجعة ← مطابقة ← CFO ← CEO/)).toBeTruthy();
   });
 
@@ -172,7 +184,7 @@ describe('Agent command-center view', () => {
     expect(snapshot.approvals).toHaveLength(1);
 
     render(<AgentCommandCenterView snapshot={snapshot} />);
-    fireEvent.click(screen.getByRole('button', { name: /فتح تفاصيل مدير العمليات COO/ }));
+    fireEvent.click(screen.getByRole('button', { name: /مدير العمليات COO —/ }));
     const drawer = screen.getByRole('dialog', { name: 'مدير العمليات COO' });
     expect(within(drawer).getByText('يحتاج موافقة بشرية.')).toBeTruthy();
     fireEvent.click(within(drawer).getByRole('tab', { name: 'التقارير' }));
@@ -243,7 +255,7 @@ describe('Agent command-center view', () => {
     });
     const { container } = render(<AgentCommandCenterView snapshot={snapshot} />);
     const tabs = screen.getByRole('tablist', { name: 'متابعة التنفيذ' });
-    expect(within(tabs).getAllByRole('tab')).toHaveLength(4);
+    expect(within(tabs).getAllByRole('tab')).toHaveLength(5);
     expect(screen.getByText('يتطلب قرار CEO.')).toBeTruthy();
     expect(screen.queryByText('اكتملت المراجعة.')).toBeNull();
     expect(container.querySelectorAll('.acc-executive-panel[role="tabpanel"]')).toHaveLength(1);
@@ -275,7 +287,8 @@ describe('Agent command-center view', () => {
 
   it('opens and closes details using the explicit drawer control', () => {
     render(<AgentCommandCenterView snapshot={EMPTY_COMMAND_CENTER_SNAPSHOT} />);
-    fireEvent.click(screen.getAllByRole('button', { name: /الجودة والشكاوى وتجربة العميل/ })[0]);
+    fireEvent.click(screen.getByRole('button', { name: 'إبراز فريق الجودة وتجربة العميل' }));
+    fireEvent.click(screen.getByRole('button', { name: /^الجودة والشكاوى وتجربة العميل —/ }));
     const drawer = screen.getByRole('dialog', { name: 'الجودة والشكاوى وتجربة العميل' });
     fireEvent.click(within(drawer).getByRole('button', { name: 'إغلاق لوحة التفاصيل' }));
     expect(screen.queryByRole('dialog')).toBeNull();
@@ -289,5 +302,64 @@ describe('Agent command-center view', () => {
     })));
     const { container } = render(<AgentCommandCenterView snapshot={EMPTY_COMMAND_CENTER_SNAPSHOT} />);
     expect(container.querySelector('.acc-page')?.dataset.motion).toBe('reduced');
+  });
+
+  it('does not treat old healthy or running state as a live connection', () => {
+    const now = Date.UTC(2026, 9, 2, 12);
+    const snapshot = assembleCommandCenterSnapshot({ agents: [
+      { id: 'cfo', status: 'healthy', isRunning: true, lastEventAt: new Date(now - 3600000).toISOString() },
+      { id: 'expense-capture', status: 'healthy' },
+      { id: 'expense-review', status: 'healthy', lastEventAt: new Date(now).toISOString(), nextRunAt: new Date(now - 3600000).toISOString() },
+    ] }, { now });
+    expect(snapshot.agents.find((agent) => agent.id === 'cfo')).toMatchObject({ status: 'unknown', isRunning: false, connection: 'stale', reportedStatus: 'healthy' });
+    expect(snapshot.agents.find((agent) => agent.id === 'expense-capture').connection).toBe('unverified');
+    expect(snapshot.summary).toMatchObject({ connected: 1, stale: 1, running: 0 });
+  });
+
+  it('does not let a fresh report renew old health or running assertions', () => {
+    const now = Date.UTC(2026, 9, 2, 12);
+    const snapshot = assembleCommandCenterSnapshot({ agents: [{ id: 'cfo', status: 'healthy', isRunning: true, lastEventAt: new Date(now).toISOString(), runningReportedAt: new Date(now - 3600000).toISOString(), statusReportedAt: new Date(now - 2 * 86400000).toISOString() }] }, { now });
+    expect(snapshot.agents.find((agent) => agent.id === 'cfo')).toMatchObject({ connection: 'connected', status: 'unknown', isRunning: false });
+  });
+
+  it('does not show failed or partial reads as confirmed zero counters', () => {
+    render(<AgentCommandCenterView snapshot={EMPTY_COMMAND_CENTER_SNAPSHOT} error={new Error('failed')} />);
+    const summary = screen.getByRole('region', { name: 'الملخص التنفيذي للوكلاء' });
+    expect([...summary.querySelectorAll('strong')].map((node) => node.textContent)).toEqual(['15', '—', '—', '—']);
+    expect(screen.getByText(/القراءة غير مكتملة؛ لا تعتمد الأعداد الحالية/)).toBeTruthy();
+  });
+
+  it('does not reset drawer focus or tabs when live agent data changes', () => {
+    const { rerender } = render(<AgentCommandCenterView snapshot={EMPTY_COMMAND_CENTER_SNAPSHOT} />);
+    fireEvent.click(screen.getByRole('button', { name: /^المدير المالي CFO —/ }));
+    const reportsTab = within(screen.getByRole('dialog')).getByRole('tab', { name: 'التقارير' });
+    fireEvent.click(reportsTab);
+    reportsTab.focus();
+    rerender(<AgentCommandCenterView snapshot={assembleCommandCenterSnapshot({ agents: [{ id: 'cfo', status: 'healthy', lastEventAt: new Date().toISOString() }] })} />);
+    expect(document.activeElement).toBe(reportsTab);
+    expect(reportsTab.getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('keeps all pending decisions visible even beyond six and shows honest manager review', () => {
+    const snapshot = assembleCommandCenterSnapshot({ approvals: Array.from({ length: 45 }, (_, index) => ({ id: `a${index}`, agentId: 'sweater-sync', title: `طلب ${index}`, summary: 'مراجعة بشرية', status: 'pending' })) });
+    render(<AgentCommandCenterView snapshot={snapshot} />);
+    expect(screen.getByText('طلب 44')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /مدير العمليات COO —/ }));
+    expect(screen.getByText(/تجميع تقارير الفريق لا يثبت أنه راجعها/)).toBeTruthy();
+  });
+
+  it('links task ownership, result, blocker, evidence and timeline without executing approval', async () => {
+    const snapshot = assembleCommandCenterSnapshot({ tasks: [{ id: 'sync-1', agentId: 'sweater-sync', title: 'فحص المزامنة', state: 'waiting-approval', result: 'تأخر فرع واحد', blocker: 'موافقة المدير', nextStep: 'مراجعة الاتصال', evidence: ['https://example.com/evidence'] }], approvals: [{ id: 'a1', caseId: 'sync-1', agentId: 'sweater-sync', status: 'pending', title: 'قرار الاتصال', summary: 'للإنسان' }], activity: [{ id: 'history1', caseId: 'sync-1', message: 'وصلت نتيجة الفحص' }] });
+    const loadHistory = vi.fn().mockResolvedValue([{ id: 'older', message: 'بدء القضية', occurredAt: '2026-08-28T08:00:00Z' }]);
+    render(<AgentCommandCenterView snapshot={snapshot} onLoadCaseHistory={loadHistory} />);
+    fireEvent.click(screen.getByRole('tab', { name: /القضايا والمهام/ }));
+    expect(screen.getByText(/المسؤول: مزامنة عمليات سويتر/)).toBeTruthy();
+    expect(screen.getByText('تأخر فرع واحد')).toBeTruthy();
+    expect(screen.getByText('موافقة المدير')).toBeTruthy();
+    expect(screen.getByRole('link', { name: /دليل 1/ }).href).toBe('https://example.com/evidence');
+    fireEvent.click(screen.getByRole('button', { name: 'تحميل سجل القضية الكامل' }));
+    expect(await screen.findByText('بدء القضية')).toBeTruthy();
+    expect(loadHistory).toHaveBeenCalledWith('sync-1');
+    expect(snapshot.approvals).toHaveLength(1);
   });
 });

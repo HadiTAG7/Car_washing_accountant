@@ -566,6 +566,22 @@ function OverviewView({
   );
 }
 
+/** يظهر اختلاف الترحيل فقط؛ التطابق لا يحتاج ملخصاً مكرراً. */
+export function CapitalLedgerNotice({ summary }) {
+  if (!summary?.ledgerAvailable || !(Math.abs(summary.unposted) > 0.005)) return null;
+  const pending = summary.unposted > 0;
+  return <Card className="p-5">
+    <SectionHeader title="رصيدك في الدفاتر" subtitle="يوجد فرق بين سنداتك والدفاتر — لا يغيّر مبلغ السداد المعروض أعلاه" />
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <StatCard icon={BookOpen} label="المُرحَّل في الدفاتر" value={formatCurrency(summary.ledgerBalance)}
+        sub="رصيد حساب رأس مالك من القيود المُرحّلة" />
+      <StatCard icon={Clock3} tone="amber" label={pending ? 'قيد الترحيل' : 'فرق يحتاج مراجعة'}
+        value={formatCurrency(Math.abs(summary.unposted))}
+        sub={pending ? 'دفعات مسجلة بالسندات ولم تُرحّل إلى الدفاتر بعد' : 'رصيد الدفاتر أعلى من سنداتك — يلزم مراجعة الإدارة'} />
+    </div>
+  </Card>;
+}
+
 /** «رأس مالي» — السندات وكشف الحساب والتحصيل الشهري. */
 function CapitalView({
   partner, required, paid, remaining, settled, myReceipts, receiptsTrend, onPrint, paidSummary = null,
@@ -581,41 +597,7 @@ function CapitalView({
         receiptsCount={myReceipts.length}
       />
 
-      {/* ── رصيدك في الدفاتر ──────────────────────────────────────
-          السندات ما دفعته؛ والدفاتر ما رُحِّل منه. الفرق بينهما «قيد
-          الترحيل» — دفعةٌ لم تدخل الكتب بعد، لا دفعةٌ ضاعت. */}
-      {paidSummary && paidSummary.ledgerAvailable && (
-        <Card className="p-5">
-          <SectionHeader
-            title="رصيدك في الدفاتر"
-            subtitle="حساب رأس مالك في دفتر الأستاذ مقابل سنداتك"
-          />
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <StatCard
-              icon={BookOpen}
-              label="المُرحَّل في الدفاتر"
-              value={formatCurrency(paidSummary.ledgerBalance)}
-              sub="رصيد حساب رأس مالك من القيود المُرحّلة"
-            />
-            <StatCard
-              icon={HandCoins}
-              tone="emerald"
-              label="المسدَّد بالسندات"
-              value={formatCurrency(paidSummary.paid)}
-              sub={`${formatNumber(myReceipts.length)} سند قبض`}
-            />
-            <StatCard
-              icon={paidSummary.unposted > 0.005 ? Clock3 : Lock}
-              tone={paidSummary.unposted > 0.005 ? 'amber' : 'emerald'}
-              label="قيد الترحيل"
-              value={paidSummary.unposted > 0.005 ? formatCurrency(paidSummary.unposted) : '✓ مطابق'}
-              sub={paidSummary.unposted > 0.005
-                ? 'دفعاتٌ سُجّلت ولم تدخل الدفاتر بعد — تظهر قريباً'
-                : 'الدفاتر تطابق سنداتك'}
-            />
-          </div>
-        </Card>
-      )}
+      <CapitalLedgerNotice summary={paidSummary} />
 
       <Card className="p-5">
         <SectionHeader

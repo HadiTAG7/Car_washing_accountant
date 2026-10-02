@@ -485,9 +485,34 @@ describe('صفحة المستثمر — المؤشرات الجديدة', () => 
     render(<InvestorPage view="capital" />);
     expect(screen.getByText('رصيدك في الدفاتر')).toBeTruthy();
     expect(screen.getByText('قيد الترحيل')).toBeTruthy();
+    expect(screen.queryByText('المسدَّد بالسندات')).toBeNull();
     // 20000 بالسندات − 15000 في الدفاتر = 5000 قيد الترحيل (لا 15,000 ولا 20,000).
     // النصّ يبدأ بعلامة اتجاهٍ (U+200F) قبل الرقم، فتُجرَّد قبل المطابقة.
     expect(screen.getByText((t) => t.replace(/[\u200e\u200f]/g, '').trim().startsWith('5,000'))).toBeTruthy();
+  });
+
+  it('عند تطابق السندات والدفاتر يظهر ملخص رأس المال مرة واحدة بلا بطاقات مكررة', () => {
+    paymentsState.payments = [{ id: 'r1', partnerId: 'p1', amount: 60000, paymentDate: '2026-07-01' }];
+    ledgerState.entries = [{ id: 'e1', status: 'posted' }];
+    ledgerState.lines = [{ entryId: 'e1', accountId: '3000-p1', debit: 0, credit: 60000 }];
+    render(<InvestorPage view="capital" />);
+    expect(screen.getAllByText('المسدَّد')).toHaveLength(1);
+    expect(screen.queryByText('رصيدك في الدفاتر')).toBeNull();
+    expect(screen.queryByText('المسدَّد بالسندات')).toBeNull();
+    expect(screen.queryByText('قيد الترحيل')).toBeNull();
+    expect(screen.getByText('سندات قبضك')).toBeTruthy();
+    expect(screen.getByText('✓ مسدّد بالكامل')).toBeTruthy();
+  });
+
+  it('لا يخفي الفرق عندما يزيد رصيد الدفاتر عن السندات ولا يدعي المطابقة', () => {
+    paymentsState.payments = [{ id: 'r1', partnerId: 'p1', amount: 20000, paymentDate: '2026-07-01' }];
+    ledgerState.entries = [{ id: 'e1', status: 'posted' }];
+    ledgerState.lines = [{ entryId: 'e1', accountId: '3000-p1', debit: 0, credit: 25000 }];
+    render(<InvestorPage view="capital" />);
+    expect(screen.getByText('فرق يحتاج مراجعة')).toBeTruthy();
+    expect(screen.queryByText('✓ مطابق')).toBeNull();
+    expect(screen.getByText(/رصيد الدفاتر أعلى من سنداتك/)).toBeTruthy();
+    expect(screen.queryByText('المسدَّد بالسندات')).toBeNull();
   });
 
   it('وبلا حسابٍ في الدفاتر لا تُعرض بطاقةٌ تدّعي المطابقة', () => {

@@ -36,6 +36,7 @@ export function CapitalJourneyContent({ report }) {
       <p className="text-xs text-slate-500 dark:text-slate-400">
         نطاق السجلات: {formatDate(report.from)} إلى {formatDate(report.through)} · آخر قراءة: {formatDate(report.asOf?.slice(0, 10))}
       </p>
+      {journey.fundingAsOf && <p className="text-xs text-slate-500 dark:text-slate-400">دفعات التأسيس حتى {formatDate(journey.fundingAsOf)} موزعة على مصاريفك من الأقدم للأحدث، وتشمل الدفعات المتأخرة دون تغيير تواريخ سنداتها.</p>}
     </Card>
 
     {!journey.complete && <div role="alert" className="rounded-control border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 p-4 text-sm text-amber-900 dark:text-amber-200 space-y-2">

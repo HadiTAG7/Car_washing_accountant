@@ -4,7 +4,7 @@ import { isRealCalendarDate } from '../../src/lib/vatFields.js';
 
 // Presentation of the existing allocation, not a new funding policy or a bank
 // reconciliation. Inputs are already scoped by the partnerView server guard.
-export function partnerCapitalJourney({ statements, initialSpend, receipts, plans, startupEntries, factor, through }) {
+export function partnerCapitalJourney({ statements, initialSpend, receipts, plans, startupEntries, factor, through, fundingAsOf }) {
   const latest = statements.at(-1).founding;
   const sum = (rows, key) => round2(rows.reduce((total, row) => total + Number(row[key] || 0), 0));
   const operatingTotal = sum(statements, 'totalCosts');
@@ -41,15 +41,17 @@ export function partnerCapitalJourney({ statements, initialSpend, receipts, plan
   for (const item of initialItems.filter(item => !item.date)) {
     warnings.push({ description: item.description, reason: 'تاريخ مستند صرف التأسيس غير صحيح' });
   }
-  const safeReceipts = receipts.filter(row => isRealCalendarDate(row.payment_date)
-    && String(row.payment_date).slice(0, 7) <= through)
+  const inFundingScope = row => fundingAsOf
+    ? String(row.payment_date || '').slice(0, 10) <= fundingAsOf
+    : String(row.payment_date || '').slice(0, 7) <= through;
+  const safeReceipts = receipts.filter(row => isRealCalendarDate(row.payment_date) && inFundingScope(row))
     .map(row => ({ id: row.id, date: row.payment_date, amount: round2(Number(row.amount) || 0) }))
     .sort((a, b) => a.date.localeCompare(b.date));
-  if (safeReceipts.length !== receipts.filter(row => String(row.payment_date || '').slice(0, 7) <= through).length) {
+  if (safeReceipts.length !== receipts.filter(inFundingScope).length) {
     warnings.push({ description: 'سند قبض بلا تاريخ صحيح', reason: 'يلزم التحقق من تاريخ سند رأس المال' });
   }
   return {
-    version: 1, complete: warnings.length === 0, warnings, receipts: safeReceipts,
+    version: 1, complete: warnings.length === 0, warnings, receipts: safeReceipts, fundingAsOf,
     received: sum(safeReceipts, 'amount'), funded: latest.funded, budget: latest.budget,
     initialTotal, operatingTotal, reserveTotal, remaining: latest.remaining,
     beyondBalance: round2(Math.max(0, latest.recordedCost - latest.funded)),

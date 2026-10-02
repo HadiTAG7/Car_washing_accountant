@@ -241,6 +241,7 @@ function FoundingStageNotice({ status }) {
         <div>بعد نفاد رصيد التأسيس<p className="font-bold tabular-nums">{formatCurrency(status.uncovered)}</p></div>
       </div>
       <p className="mt-2 text-xs">رصيد تحليلي من مبالغك المسددة، بعد الصرف الأول واحتياطي التجديد. لا ينشئ مطالبة مالية أو تحويل أموال.</p>
+      {status.fundingAsOf && <p className="mt-2 text-xs">دفعات التأسيس المسدّدة حتى {formatDate(status.fundingAsOf)} تغطي حصتك من المصاريف من الأقدم للأحدث، حتى لو كان السداد متأخراً. هذه تغطية من رصيد التأسيس، وليست تغييراً لتاريخ الدفع.</p>}
     </div>
   );
 }

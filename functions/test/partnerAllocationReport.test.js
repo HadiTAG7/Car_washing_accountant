@@ -39,6 +39,65 @@ function database(overrides = {}) {
 }
 
 describe('تقرير مصروفات الشريك الخادمي', () => {
+  const retroDatabase = (payments = [{ id: 'late', partner_id: 'p1', amount: 200000, payment_date: '2026-07-16' }]) => database({
+    partners: [{ id: 'p1', workers_count: 10, user_id: 'u1' }, { id: 'p2', workers_count: 40, user_id: 'u2' }],
+    monthly_expenses: [], annual_expenses: [], annual_expense_entries: [],
+    variable_expenses: [
+      { id: 'may', logged_date: '2026-05-01', total_variable_cost: 200 },
+      { id: 'june', logged_date: '2026-06-01', total_variable_cost: 234 },
+    ], partner_payments: payments,
+  });
+  it('دفعة يوليو تغطي مايو ويونيو حتى عند اختيار تقرير ينتهي في يونيو دون تغيير تاريخ السند', async () => {
+    const receipt = { id: 'late', partner_id: 'p1', amount: 200000, payment_date: '2026-07-16' };
+    const r = await partnerAllocationReport(retroDatabase([receipt]), { partnerId: 'p1', periodKey: '2026-06',
+      today: new Date('2026-10-03'), includeCapitalJourney: true });
+    const [may, june] = r.statements;
+    expect(may).toMatchObject({ totalCosts: 40, founding: { funded: 200000, covered: 40, uncovered: 0, cashPaidThroughMonth: 0 } });
+    expect(june).toMatchObject({ totalCosts: 46.8, founding: { covered: 46.8, uncovered: 0, remaining: 199913.2, cashPaidThroughMonth: 0 } });
+    expect(may.netAfterReserve + may.founding.covered).toBe(0);
+    expect(june.netAfterReserve + june.founding.covered).toBe(0);
+    expect(r.capitalJourney).toMatchObject({ received: 200000, funded: 200000, operatingTotal: 86.8, remaining: 199913.2, complete: true });
+    expect(r.capitalJourney.receipts[0].date).toBe('2026-07-16');
+    expect(receipt.payment_date).toBe('2026-07-16');
+    expect(r.fundingAsOf).toBe('2026-10-03');
+  });
+  it('الدفعة الجزئية تغطي الأقدم أولاً ولا تتجاوز المسدد أو تضاعف المصروف في يوليو', async () => {
+    const r = await partnerAllocationReport(retroDatabase([{ id: 'late', partner_id: 'p1', amount: 50, payment_date: '2026-07-16' }]),
+      { partnerId: 'p1', periodKey: '2026-07', today: new Date('2026-10-03') });
+    expect(r.statements[0].founding).toMatchObject({ covered: 40, remaining: 10, uncovered: 0 });
+    expect(r.statements[1].founding).toMatchObject({ covered: 10, remaining: 0, uncovered: 36.8 });
+    expect(r.statements[2].founding).toMatchObject({ covered: 0, remaining: 0, recordedCost: 86.8, cashPaidThroughMonth: 50 });
+    expect(r.statements.reduce((s, month) => s + month.founding.covered, 0)).toBe(50);
+  });
+  it('عند استكمال السداد يعاد توزيع التغطية دون خصم مصروفات الماضي مرتين', async () => {
+    const r = await partnerAllocationReport(retroDatabase([
+      { id: 'first', partner_id: 'p1', amount: 50, payment_date: '2026-07-16' },
+      { id: 'second', partner_id: 'p1', amount: 36.8, payment_date: '2026-08-01' },
+    ]), { partnerId: 'p1', periodKey: '2026-08', today: new Date('2026-10-03') });
+    expect(r.statements[1].founding.covered).toBe(46.8);
+    expect(r.statements.at(-1).founding).toMatchObject({ remaining: 0, recordedCost: 86.8 });
+    expect(r.statements.reduce((s, month) => s + month.founding.covered, 0)).toBe(86.8);
+  });
+  it('لا يستعير دفعات الشركاء الآخرين أو السندات المستقبلية للتغطية', async () => {
+    const r = await partnerAllocationReport(retroDatabase([
+      { id: 'future', partner_id: 'p1', amount: 200000, payment_date: '2026-10-20' },
+      { id: 'other', partner_id: 'p2', amount: 777777, payment_date: '2026-04-01' },
+    ]), { partnerId: 'p1', periodKey: '2026-06', today: new Date('2026-10-03'), includeCapitalJourney: true });
+    expect(r.statements[0].founding.covered).toBe(0);
+    expect(r.capitalJourney.receipts).toEqual([]);
+    expect(r.capitalJourney.received).toBe(0);
+  });
+  it('تاريخ التمويل يتبع يوم السعودية عند منتصف الليل لا يوم UTC السابق', async () => {
+    const r = await partnerAllocationReport(retroDatabase([{ id: 'today', partner_id: 'p1', amount: 200000, payment_date: '2026-10-03' }]),
+      { partnerId: 'p1', periodKey: '2026-06', today: new Date('2026-10-02T21:05:00Z') });
+    expect(r.fundingAsOf).toBe('2026-10-03');
+    expect(r.statements[0].founding.covered).toBe(40);
+  });
+  it('توزيع الدفعات المتأخرة يبقى محصوراً بميزانية التأسيس ولا يرفعها', async () => {
+    const r = await partnerAllocationReport(retroDatabase([{ id: 'extra', partner_id: 'p1', amount: 300000, payment_date: '2026-07-16' }]),
+      { partnerId: 'p1', periodKey: '2026-06', today: new Date('2026-10-03'), includeCapitalJourney: true });
+    expect(r.capitalJourney).toMatchObject({ funded: 200000, received: 300000, remaining: 199913.2 });
+  });
   it('رحلة رأس المال لا تؤكد رصيداً إذا كان يوم سند القبض أو الصرف غير موجود بالتقويم', async () => {
     const r = await partnerAllocationReport(database({
       partner_payments: [{ id: 'invalid-receipt', partner_id: 'p1', payment_date: '2026-09-99', amount: 20000 }],

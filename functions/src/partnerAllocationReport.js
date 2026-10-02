@@ -26,6 +26,9 @@ const readRows = async (db, name) => {
 };
 const monthOf = date => String(date || '').slice(0, 7);
 const validMonth = key => /^\d{4}-(0[1-9]|1[0-2])$/.test(key);
+const FUNDING_DAY = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Riyadh', year: 'numeric', month: '2-digit', day: '2-digit',
+});
 const nextMonth = key => {
   const [y, m] = key.split('-').map(Number);
   const d = new Date(Date.UTC(y, m, 1));
@@ -145,6 +148,15 @@ export async function partnerAllocationReport(db, { partnerId, periodKey, today 
         month: monthOf(date), amount: built.lines.reduce((s, l) => s + (Number(l.debit) || 0), 0) * factor });
     }
   }
+  // Founding participation is not a historical cash statement. A contribution
+  // actually paid by the report date also funds the partner's earlier costs.
+  // Allocate one capped pool oldest-first; never backdate a receipt or use
+  // another partner's contribution. The cash timeline remains separate.
+  const fundingDateParts = Object.fromEntries(FUNDING_DAY.formatToParts(today).map(part => [part.type, part.value]));
+  const fundingAsOf = `${fundingDateParts.year}-${fundingDateParts.month}-${fundingDateParts.day}`;
+  const fundingPayments = data.partner_payments.filter(p => p.partner_id === selected.id
+    && validMonth(monthOf(p.payment_date)) && String(p.payment_date).slice(0, 10) <= fundingAsOf);
+  const paid = fundingPayments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
   let spentBefore = 0;
   const results = months.map(period => {
     const statement = partnerOperatingStatement({
@@ -155,22 +167,22 @@ export async function partnerAllocationReport(db, { partnerId, periodKey, today 
       dynamicCommissions: dynamicCategories.map(c => ({ id: c.id, periodKey: period, amount: (washQuantities.get(period) || 0) * DEFAULT_DYNAMIC_UNIT_COST })),
       dynamicVariableIds: data.variable_expenses.filter(v => dynamicIds.has(v.category_id)).map(v => v.id),
     });
-    const paid = data.partner_payments.filter(p => p.partner_id === selected.id
-      && monthOf(p.payment_date) <= period && validMonth(monthOf(p.payment_date)))
+    const cashPaidThroughMonth = fundingPayments.filter(p => monthOf(p.payment_date) <= period)
       .reduce((s, p) => s + (Number(p.amount) || 0), 0);
     const initialSpentThisMonth = initialSpend.filter(s => s.month === period).reduce((s, r) => s + r.amount, 0);
     const founding = partnerFoundingAllocation({ workersCount, paid, spentBefore, initialSpentThisMonth, statement });
     spentBefore += initialSpentThisMonth + statement.totalAllocation;
     // Explicit allowlist: ledger descriptions/identities never leave server.
     const { ledgerStatement: _ledger, revenueRows: _revenue, costRows: _cost, expenseRows: _expense, ...safe } = statement;
-    return { ...safe, founding };
+    return { ...safe, founding: { ...founding, fundingAsOf, fundingBasis: 'paid-through-report-date', cashPaidThroughMonth } };
   });
   return { partnerId: selected.id, factor, workersCount, totalWorkers,
     ...(includeCapitalJourney ? { capitalJourney: partnerCapitalJourney({
-      statements: results, initialSpend, factor, through, plans: data.startup_costs,
+      statements: results, initialSpend, factor, through, fundingAsOf, plans: data.startup_costs,
       startupEntries: data.startup_cost_entries,
       receipts: data.partner_payments.filter(p => p.partner_id === selected.id),
     }) } : {}),
-    asOf: today.toISOString(), from: `${first}-01`, through: monthRange(through).to,
+    asOf: today.toISOString(), fundingAsOf, fundingBasis: 'paid-through-report-date',
+    from: `${first}-01`, through: monthRange(through).to,
     basis: 'partner-allocation', statements: results };
 }

@@ -12,6 +12,13 @@ const { default: Page, CapitalJourneyContent } = await import('../PartnerCapital
 afterEach(() => { cleanup(); query.mockReset(); });
 
 describe('رحلة رأس مال الشريك', () => {
+  it('توضح تاريخ التمويل منفصلاً عن نطاق المصاريف والسند المتأخر يبقى بتاريخ دفعه', () => {
+    render(<CapitalJourneyContent report={{ ...journeyReport, through: '2026-06-30',
+      capitalJourney: { ...journeyReport.capitalJourney, fundingAsOf: '2026-10-03',
+        receipts: [{ id: 'late', date: '2026-07-16', amount: 20000 }] } }} />);
+    expect(screen.getByText(/تشمل الدفعات المتأخرة دون تغيير تواريخ سنداتها/)).toBeTruthy();
+    expect(screen.getByText(/16 يوليو 2026/)).toBeTruthy();
+  });
   it('تعرض الفرنشايز والدباب وسنداته وتفصل المصاريف عن المحجوز', () => {
     render(<CapitalJourneyContent report={journeyReport} />);
     const table = screen.getByRole('table', { name: 'تفاصيل صرف التأسيس' });

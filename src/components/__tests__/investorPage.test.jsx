@@ -317,6 +317,15 @@ describe('صفحة المستثمر — قائمة الدخل', () => {
     }
   });
 
+  it.each([0.2, 0.35])('عنوان قائمة الدخل لا يكشف نسبة الشريك (%s) ولا يغير مبالغه', factor => {
+    partnerView.scalingFactor = factor;
+    render(<InvestorPage view="income" />);
+    const heading = screen.getByRole('heading', { name: 'قائمة الدخل — حصّتك' });
+    expect(heading.parentElement.textContent).not.toMatch(/[%٪]/);
+    expect(heading.parentElement.textContent).toContain('إيراداتك ومصاريفك ونتيجة الشهر');
+    expect(amountIn(screen.getByText('حصتك من صافي الإيرادات').closest('tr'))).toBe(200000 * factor);
+  });
+
   it('تعرض حصة الشريك من الفئات والبنود التفصيلية دون كشف شريك آخر', () => {
     render(<InvestorPage view="income" />);
     expect(screen.getByText(/تفصيل حصتك من المصروفات —/)).toBeTruthy();

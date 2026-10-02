@@ -226,11 +226,21 @@ export function CapitalSummary({ partner, required, paid, remaining, settled, re
   );
 }
 
-function FoundingStageNotice({ status }) {
+export function FoundingStageNotice({ status }) {
   if (!status?.available) return null;
+  const exhausted = status.funded > 0 && status.remaining <= 0;
   return (
-    <div className="rounded-control border border-indigo-100 dark:border-indigo-500/30 bg-indigo-50 dark:bg-indigo-500/10 p-4 text-sm leading-relaxed text-indigo-900 dark:text-indigo-100">
-      <p className="font-bold">رصيد مصاريف التأسيس</p>
+    <details key={exhausted ? 'exhausted' : 'available'} open={!exhausted}
+      className="group rounded-control border border-indigo-100 dark:border-indigo-500/30 bg-indigo-50 dark:bg-indigo-500/10 p-4 text-sm leading-relaxed text-indigo-900 dark:text-indigo-100">
+      <summary className="flex flex-wrap items-center justify-between gap-2 cursor-pointer list-none [&::-webkit-details-marker]:hidden rounded-control focus-visible:outline-2 focus-visible:outline-primary-500">
+        <span className="font-bold">رصيد مصاريف التأسيس</span>
+        <span className="inline-flex items-center gap-2 text-xs">
+          <span className="group-open:hidden">عرض التفاصيل</span>
+          <span className="hidden group-open:inline">إخفاء التفاصيل</span>
+          <ChevronDown size={16} className="shrink-0 transition-transform group-open:rotate-180" aria-hidden="true" />
+        </span>
+      </summary>
+      <div className="mt-3">
       <p className="mt-1">ميزانيتك: {formatCurrency(status.budget)} — 20,000 ريال لكل بايكر.</p>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
         <div>المغطى من التأسيس هذا الشهر<p className="font-bold tabular-nums">{formatCurrency(status.covered)}</p></div>
@@ -239,7 +249,8 @@ function FoundingStageNotice({ status }) {
       </div>
       <p className="mt-2 text-xs">رصيد تحليلي من مبالغك المسددة، بعد الصرف الأول واحتياطي التجديد. لا ينشئ مطالبة مالية أو تحويل أموال.</p>
       {status.fundingAsOf && <p className="mt-2 text-xs">دفعات التأسيس المسدّدة حتى {formatDate(status.fundingAsOf)} تغطي حصتك من المصاريف من الأقدم للأحدث، حتى لو كان السداد متأخراً. هذه تغطية من رصيد التأسيس، وليست تغييراً لتاريخ الدفع.</p>}
-    </div>
+      </div>
+    </details>
   );
 }
 

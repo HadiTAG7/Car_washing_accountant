@@ -100,6 +100,48 @@ afterEach(() => {
 });
 
 describe('صفحة المستثمر — قائمة الدخل', () => {
+  const foundingCard = status => <IncomeStatementCard sharePercent={20} hasShare paid={200000}
+    availableMonths={['2026-05']} activeMonth="2026-05" onMonthChange={() => {}}
+    statement={{ ...monthlyStatement({ scalingFactor: 0 }), netAfterReserve: 0 }}
+    foundingStatus={{ available: true, budget: 200000, funded: 200000, covered: 0, remaining: 38182.14, uncovered: 0, ...status }} />;
+
+  it('رصيد التأسيس المتاح مفتوح افتراضياً ويمكن إخفاؤه وإظهاره دون تغيير النتيجة', () => {
+    render(foundingCard({}));
+    const title = screen.getByText('رصيد مصاريف التأسيس');
+    const details = title.closest('details');
+    expect(details).not.toBeNull();
+    expect(details.open).toBe(true);
+    fireEvent.click(title.closest('summary'));
+    expect(details.open).toBe(false);
+    fireEvent.click(title.closest('summary'));
+    expect(details.open).toBe(true);
+    expect(screen.getByText('رصيد التأسيس التحليلي المتبقي').textContent).toContain('38,182.14');
+    expect(amountIn(screen.getByText('= نتيجتك بعد تغطية التأسيس').closest('tr'))).toBe(0);
+  });
+
+  it('رصيد التأسيس المنتهي مطوي افتراضياً وتبقى إمكانية إظهار تفاصيله', () => {
+    render(foundingCard({ remaining: 0 }));
+    const title = screen.getByText('رصيد مصاريف التأسيس');
+    const details = title.closest('details');
+    expect(details).not.toBeNull();
+    expect(details.open).toBe(false);
+    fireEvent.click(title.closest('summary'));
+    expect(details.open).toBe(true);
+  });
+
+  it('يطوي التفاصيل عند نفاد الرصيد أثناء تحديث التقرير ويعيد فتحها عند توفر رصيد', () => {
+    const { rerender } = render(foundingCard({}));
+    rerender(foundingCard({ remaining: 0 }));
+    expect(screen.getByText('رصيد مصاريف التأسيس').closest('details')?.open).toBe(false);
+    rerender(foundingCard({ remaining: 100 }));
+    expect(screen.getByText('رصيد مصاريف التأسيس').closest('details')?.open).toBe(true);
+  });
+
+  it('عدم وجود دفعات لا يعني أن رسوم التأسيس قد نفدت', () => {
+    render(foundingCard({ funded: 0, remaining: 0 }));
+    expect(screen.getByText('رصيد مصاريف التأسيس').closest('details')?.open).toBe(true);
+  });
+
   it('توضح تغطية السداد المتأخر وتبقي شهر المصروف وتعرض نتيجة صفر بعد التغطية', () => {
     render(<IncomeStatementCard sharePercent={20} hasShare paid={200000} availableMonths={['2026-05']}
       activeMonth="2026-05" onMonthChange={() => {}} statement={{ ...monthlyStatement({ scalingFactor: 0 }),

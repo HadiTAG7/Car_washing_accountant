@@ -154,6 +154,18 @@ export function callPartnerAllocationReport(payload = {}) {
   return callLedgerApi('partnerInsights', { ...payload, includeStatements: true }, '/api/ledger');
 }
 
+// These settings remain private server-side. Pin this feature to the Vercel
+// API so it never relies on a separately deployed Firebase callable version.
+export function callPartnerEligibilityGet(payload = {}) {
+  return callLedgerApi('partnerEligibilityGet', payload, '/api/ledger');
+}
+export function callPartnerEligibilitySet(payload = {}) {
+  return callLedgerApi('partnerEligibilitySet', payload, '/api/ledger');
+}
+export function callPartnerWashInsights(payload = {}) {
+  return callLedgerApi('partnerInsights', { ...payload, includeStatements: false }, '/api/ledger');
+}
+
 export function maskedProjectRef() {
   return firebaseConfig.projectId || '';
 }

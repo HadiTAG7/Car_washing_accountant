@@ -36,20 +36,30 @@ async function identity(ctx) {
   const [partners, months] = await Promise.all([ctx.load.partners(), ctx.load.months()]);
   const share = shareOf(partners, ctx.principal.partnerId);
   const me = partners.find((p) => String(p.id) === String(ctx.principal.partnerId));
+  const participation = await shareAt(ctx, months[0], share);
   return {
     partnerName: me?.partnerName ?? ctx.principal.partner?.partnerName ?? '',
     ...share,
+    ...participation,
+    sharePercent: Math.round(participation.factor * 10000) / 100,
     availableMonths: months,
     latestMonth: months[0],
   };
 }
 
+// Capital uses original ownership; operating allocations use eligible counts
+// for EACH month, through the same private server calculation as the portal.
+const shareAt = async (ctx, month, baseline) => ctx.load.participation
+  ? { ...baseline, ...await ctx.load.participation(month) } : baseline;
+const sharesFor = async (ctx, keys, baseline) => new Map(await Promise.all(keys.map(async key => [key, await shareAt(ctx, key, baseline)])));
+
 async function statementFor(ctx, month, share) {
+  const current = await shareAt(ctx, month, share);
   const [{ entries, lines }, accounts, feeRules] = await Promise.all([
     ctx.load.ledger(month, month), ctx.load.accounts(), ctx.load.feeRules(),
   ]);
   return monthlyStatement({
-    accounts, entries, lines, periodKey: month, feeRules, scalingFactor: share.factor,
+    accounts, entries, lines, periodKey: month, feeRules, scalingFactor: current.factor,
   });
 }
 
@@ -135,15 +145,16 @@ export const partnerTools = [
       if (!id.hasShare) return reply({ hasShare: false, sharePercent: 0, hint: NO_SHARE_HINT, availableMonths: id.availableMonths });
       const chosen = pickMonth(month, id.availableMonths);
       const [st, statuses] = await Promise.all([statementFor(ctx, chosen, id), ctx.load.periodStatuses()]);
+      const current = await shareAt(ctx, chosen, id);
       const periodStatus = statuses.get(chosen) ?? null;
       return reply({
-        ...statementView(st, id),
+        ...statementView(st, { ...current, sharePercent: Math.round(current.factor * 10000) / 100 }),
         // «نهائي» شهرٌ مُقفَل لا يتغيّر؛ «مبدئي» مفتوحٌ قد يُضاف إليه قيد.
         periodStatus,
         periodStatusLabel: periodStatus === 'closed' ? 'نهائي — الشهر مُقفَل' : (periodStatus === 'open' ? 'مبدئي — الشهر مفتوح وقد يتغيّر' : null),
         availableMonths: id.availableMonths,
         note: st.hasActivity
-          ? `الأرقام حصّتك (${id.sharePercent}%) من نتائج الشركة، محسوبة على عدد العمالة، ومبنيّة على القيود المُرحّلة.`
+          ? 'الأرقام حصّتك من نتائج الشركة، محسوبة على عدد البايكرز المؤهلين لهذا الشهر، ومبنيّة على القيود المُرحّلة.'
           : NO_ACTIVITY_HINT,
       });
     },
@@ -162,8 +173,9 @@ export const partnerTools = [
       const [{ entries, lines }, accounts, feeRules] = await Promise.all([
         ctx.load.ledger(keys[0], keys[keys.length - 1]), ctx.load.accounts(), ctx.load.feeRules(),
       ]);
+      const shares = await sharesFor(ctx, keys, id);
       const rows = keys.map((k) => {
-        const st = monthlyStatement({ accounts, entries, lines, periodKey: k, feeRules, scalingFactor: id.factor });
+        const st = monthlyStatement({ accounts, entries, lines, periodKey: k, feeRules, scalingFactor: shares.get(k).factor });
         return { month: k, hasActivity: st.hasActivity, netRevenue: st.netRevenue, totalCosts: st.totalCosts, netProfit: st.netProfit };
       });
       const sum = (f) => Math.round(rows.reduce((s, r) => s + r[f], 0) * 100) / 100;
@@ -189,21 +201,22 @@ export const partnerTools = [
       const [washes, settings, st] = await Promise.all([
         ctx.load.washes(chosen), ctx.load.settings(), statementFor(ctx, chosen, id),
       ]);
+      const current = await shareAt(ctx, chosen, id);
       const completed = washes.filter((w) => w.status === 'مكتملة' && w.washDate.slice(0, 7) === chosen);
       const companyCount = completed.reduce((s, w) => s + w.quantity, 0);
-      const yourShareCount = scaleCount(companyCount, id.factor);
+      const yourShareCount = scaleCount(companyCount, current.factor);
       const sales = operationalWashSales(washes, { periodKey: chosen, policyAt: (d) => taxPolicyAt(d, settings) });
       return reply({
         month: chosen,
-        sharePercent: id.sharePercent,
+        sharePercent: Math.round(current.factor * 10000) / 100,
         washes: {
           companyCount,
           yourShareCount,
           text: shareLine(yourShareCount, companyCount),
           companyRows: completed.length,
-          grossSalesShare: scaleMoney(sales.gross, id.factor),
-          netSalesShare: scaleMoney(sales.net, id.factor),
-          vatShare: scaleMoney(sales.vat, id.factor),
+          grossSalesShare: scaleMoney(sales.gross, current.factor),
+          netSalesShare: scaleMoney(sales.net, current.factor),
+          vatShare: scaleMoney(sales.vat, current.factor),
           unknownPolicyCount: sales.unknownPolicy,
         },
         ledger: {
@@ -236,8 +249,9 @@ export const partnerTools = [
       const [{ entries, lines }, accounts, feeRules] = await Promise.all([
         ctx.load.ledger(months[0], months[months.length - 1]), ctx.load.accounts(), ctx.load.feeRules(),
       ]);
+      const shares = await sharesFor(ctx, months, id);
       const nets = months.map((k) => {
-        const st = monthlyStatement({ accounts, entries, lines, periodKey: k, feeRules, scalingFactor: id.factor });
+        const st = monthlyStatement({ accounts, entries, lines, periodKey: k, feeRules, scalingFactor: shares.get(k).factor });
         return { month: k, netProfit: st.netProfit, hasActivity: st.hasActivity };
       });
       const roi = roiSummary({ nets, paid });
@@ -276,8 +290,9 @@ export const partnerTools = [
       const [{ entries, lines }, accounts, feeRules] = await Promise.all([
         ctx.load.ledger(keys[0], keys[keys.length - 1]), ctx.load.accounts(), ctx.load.feeRules(),
       ]);
+      const shares = await sharesFor(ctx, keys, id);
       const trend = keys.map((k) => {
-        const st = monthlyStatement({ accounts, entries, lines, periodKey: k, feeRules, scalingFactor: id.factor });
+        const st = monthlyStatement({ accounts, entries, lines, periodKey: k, feeRules, scalingFactor: shares.get(k).factor });
         return { month: k, hasActivity: st.hasActivity, netRevenue: st.netRevenue, totalCosts: st.totalCosts, netProfit: st.netProfit };
       });
       const latest = await statementFor(ctx, id.latestMonth, id);

@@ -9,16 +9,19 @@
 // نفس الحساب تستعمله أداة المساعد الذكي، فالرقم في الصفحة هو رقم المساعد.
 // ═══════════════════════════════════════════════════════════════════════════
 
+import { operatingParticipation, readEligibilityStates, currentEligibilityMonth } from './partnerWorkerEligibility.js';
+
 export const MAX_MONTHS = 24;
 
 /** `YYYY-MM` لآخر n شهراً حتى اليوم (شاملاً)، تصاعدياً. */
 export function lastMonthKeys(n, today = new Date()) {
   const count = Math.min(MAX_MONTHS, Math.max(1, Math.floor(Number(n) || 1)));
   const out = [];
-  const d = new Date(today.getFullYear(), today.getMonth(), 1);
+  const [year, month] = currentEligibilityMonth(today).split('-').map(Number);
+  const d = new Date(Date.UTC(year, month - 1, 1));
   for (let i = count - 1; i >= 0; i -= 1) {
-    const m = new Date(d.getFullYear(), d.getMonth() - i, 1);
-    out.push(`${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, '0')}`);
+    const m = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - i, 1));
+    out.push(`${m.getUTCFullYear()}-${String(m.getUTCMonth() + 1).padStart(2, '0')}`);
   }
   return out;
 }
@@ -55,9 +58,10 @@ export async function countCompletedWashesByMonth(db, keys) {
  */
 export async function partnerWashShare(db, { partnerId, months = 12, today = new Date() } = {}) {
   const keys = lastMonthKeys(months, today);
-  const [partnersSnap, counts] = await Promise.all([
+  const [partnersSnap, counts, states] = await Promise.all([
     db.collection('partners').select('workers_count').get(),
     countCompletedWashesByMonth(db, keys),
+    readEligibilityStates(db),
   ]);
   let totalWorkers = 0; let workersCount = 0;
   for (const d of partnersSnap.docs) {
@@ -65,17 +69,20 @@ export async function partnerWashShare(db, { partnerId, months = 12, today = new
     totalWorkers += w;
     if (d.id === String(partnerId)) workersCount = w;
   }
-  const factor = totalWorkers > 0 ? workersCount / totalWorkers : 0;
+  const partners = partnersSnap.docs.map(d => ({ id: d.id, workers_count: d.get('workers_count') }));
+  const own = operatingParticipation(partners, states, String(partnerId), keys.at(-1));
+  const factor = own.factor;
   return {
     partnerId: String(partnerId),
     workersCount,
     totalWorkers,
     factor,
     sharePercent: round1(factor * 100),
+    eligibility: own,
     months: keys.map((month) => ({
       month,
       companyCount: counts.get(month) || 0,
-      shareCount: round1((counts.get(month) || 0) * factor),
+      shareCount: round1((counts.get(month) || 0) * operatingParticipation(partners, states, String(partnerId), month).factor),
     })),
   };
 }

@@ -74,6 +74,27 @@ const tool = (name) => partnerTools.find((t) => t.name === name);
 const call = async (name, args = {}) => JSON.parse((await tool(name).run(args, ctx)).content[0].text);
 const FORBIDDEN_TEXT = ['سالم', 'uid-1', 'user_id', 'bikerName', 'biker_name', 'ownerUid'];
 
+describe('المساعد يحسب التخفيض من أهلية الشهر لا من الملكية الأصلية', () => {
+  const privateContext = {
+    ...ctx,
+    load: { ...fakeLoad, participation: async month => ({ originalWorkers: 1, eligibleWorkers: month === '2026-08' ? 0 : 1, suspendedWorkers: month === '2026-08' ? 1 : 0, effectiveFrom: month === '2026-08' ? month : null, factor: month === '2026-08' ? 0 : 0.1 }) },
+  };
+  it('شهر التعطيل صفر إيرادات ومصاريف مع بقاء حصة الشهر السابق ورأس المال', async () => {
+    const run = async (name, args) => JSON.parse((await tool(name).run(args, privateContext)).content[0].text);
+    const current = await run('partner_income_statement', { month: '2026-08' });
+    expect(current).toMatchObject({ netRevenue: 0, totalCosts: 0 });
+    expect(await run('partner_income_statement', { month: '2026-07' })).toMatchObject({ netRevenue: 20 });
+    const capital = await run('partner_capital', {});
+    expect(capital.required).toBe(20000);
+    const operations = await run('partner_operations', { month: '2026-08' });
+    expect(operations.washes.yourShareCount).toBe(0);
+    expect(operations.washes.netSalesShare).toBe(0);
+    const trend = await run('partner_trend', { months: 24 });
+    expect(trend.months.find(row => row.month === '2026-08')).toMatchObject({ netRevenue: 0, totalCosts: 0 });
+    expect(JSON.stringify(current)).not.toMatch(/PRIVATE|reason|updatedBy/);
+  });
+});
+
 describe('سجل الأدوات', () => {
   it('ستّ أدوات، كلها بالبادئة `partner_`، ولا كتابةٌ بينها', () => {
     expect(partnerToolNames).toEqual([

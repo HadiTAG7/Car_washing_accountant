@@ -1,9 +1,20 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({ auth: { currentUser: null } }));
 vi.mock('firebase/auth', async importOriginal => ({ ...(await importOriginal()), getAuth: () => state.auth }));
-const { callPartnerAllocationReport } = await import('../firebaseClient.js');
+const { callPartnerAllocationReport, callPartnerEligibilityGet, callPartnerEligibilitySet, callPartnerWashInsights } = await import('../firebaseClient.js');
 afterEach(() => { state.auth.currentUser = null; vi.unstubAllGlobals(); });
 describe('تقرير المصروفات عبر باب Vercel الموثوق', () => {
+  it.each([
+    [callPartnerEligibilityGet, 'partnerEligibilityGet'], [callPartnerEligibilitySet, 'partnerEligibilitySet'], [callPartnerWashInsights, 'partnerInsights'],
+  ])('إدارة الأهلية والمؤشرات تستعمل API الموثوق بنفس ID token دون Firebase deployment', async (call, name) => {
+    state.auth.currentUser = { getIdToken: async () => 'isolated-test-token' };
+    const fetcher = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ result: { partnerId: 'p1' } }) });
+    vi.stubGlobal('fetch', fetcher);
+    await call({ partnerId: 'p1' });
+    expect(fetcher.mock.calls[0][0]).toBe('/api/ledger');
+    expect(fetcher.mock.calls[0][1].headers.Authorization).toBe('Bearer isolated-test-token');
+    expect(JSON.parse(fetcher.mock.calls[0][1].body).name).toBe(name);
+  });
   it('يتطلب هوية ولا يحاول قراءة غير مسجلة', async () => {
     const fetcher = vi.fn();
     vi.stubGlobal('fetch', fetcher);

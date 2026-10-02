@@ -12,6 +12,7 @@ import { ACC } from '../../src/lib/accounting/chartOfAccounts.js';
 import { normalizeExpenseDate } from '../../src/lib/expenseDates.js';
 import { isRealCalendarDate } from '../../src/lib/vatFields.js';
 import { partnerCapitalJourney } from './partnerCapitalJourney.js';
+import { operatingParticipation, readEligibilityStates, currentEligibilityMonth } from './partnerWorkerEligibility.js';
 
 const readRows = async (db, name) => {
   const snap = await db.collection(name).get();
@@ -36,18 +37,20 @@ const nextMonth = key => {
 };
 
 export async function partnerAllocationReport(db, { partnerId, periodKey, today = new Date(), includeCapitalJourney = false } = {}) {
-  const through = periodKey || today.toISOString().slice(0, 7);
-  if (!validMonth(through) || through > today.toISOString().slice(0, 7)) {
+  const currentMonth = currentEligibilityMonth(today);
+  const through = periodKey || currentMonth;
+  if (!validMonth(through) || through > currentMonth) {
     throw new LedgerError('اختر شهراً صحيحاً حتى الشهر الحالي.', { code: 'invalid-argument' });
   }
   const names = ['partners', 'chart_of_accounts', 'journal_entries', 'journal_lines',
     'monthly_expenses', 'variable_expenses', 'annual_expenses', 'expense_vouchers',
     'annual_expense_entries', 'startup_cost_entries', 'partner_payments', 'fee_rules', 'variable_expense_categories'];
   if (includeCapitalJourney) names.push('startup_costs');
-  const [rows, settingsSnap, washSnap] = await Promise.all([
+  const [rows, settingsSnap, washSnap, eligibilityStates] = await Promise.all([
     Promise.all(names.map(name => readRows(db, name))),
     db.collection('app_settings').doc('accounting').get(),
     db.collection('washes').select('quantity', 'status', 'wash_date').get(),
+    readEligibilityStates(db),
   ]);
   const data = Object.fromEntries(names.map((name, i) => [name, rows[i]]));
   const partners = data.partners;
@@ -159,8 +162,9 @@ export async function partnerAllocationReport(db, { partnerId, periodKey, today 
   const paid = fundingPayments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
   let spentBefore = 0;
   const results = months.map(period => {
+    const eligibility = operatingParticipation(partners, eligibilityStates, selected.id, period);
     const statement = partnerOperatingStatement({
-      accounts: data.chart_of_accounts, entries, lines, periodKey: period, scalingFactor: factor,
+      accounts: data.chart_of_accounts, entries, lines, periodKey: period, scalingFactor: eligibility.factor,
       feeRules, settings, monthlyExpenses: data.monthly_expenses,
       variableExpenses: data.variable_expenses.filter(v => !dynamicIds.has(v.category_id)), annualExpenses: data.annual_expenses,
       vouchers: data.expense_vouchers,
@@ -174,7 +178,7 @@ export async function partnerAllocationReport(db, { partnerId, periodKey, today 
     spentBefore += initialSpentThisMonth + statement.totalAllocation;
     // Explicit allowlist: ledger descriptions/identities never leave server.
     const { ledgerStatement: _ledger, revenueRows: _revenue, costRows: _cost, expenseRows: _expense, ...safe } = statement;
-    return { ...safe, founding: { ...founding, fundingAsOf, fundingBasis: 'paid-through-report-date', cashPaidThroughMonth } };
+    return { ...safe, eligibility, founding: { ...founding, fundingAsOf, fundingBasis: 'paid-through-report-date', cashPaidThroughMonth } };
   });
   return { partnerId: selected.id, factor, workersCount, totalWorkers,
     ...(includeCapitalJourney ? { capitalJourney: partnerCapitalJourney({

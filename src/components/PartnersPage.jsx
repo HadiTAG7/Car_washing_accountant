@@ -12,6 +12,7 @@ import {
 import AddPartnerModal from './AddPartnerModal';
 import EditPartnerModal from './EditPartnerModal';
 import PartnerStatementModal from './PartnerStatementModal';
+import PartnerEligibilityModal from './PartnerEligibilityModal';
 import LoadingState from './LoadingState';
 import ErrorState from './ErrorState';
 import Toast from './Toast';
@@ -33,7 +34,9 @@ export default function PartnersPage() {
     deletePartner,
     refetch,
   } = usePartners();
-  const { isPartnerView, viewedPartner, canMutate } = usePartnerView();
+  const { isPartnerView, viewedPartner, canMutate, role } = usePartnerView();
+  const canManageEligibility = canMutate && role === 'admin';
+  const [eligibilityPartner, setEligibilityPartner] = useState(null);
   // Paid-to-date is DERIVED from the receipts, not read off the cached
   // `partners.paid_amount` aggregate — that field is maintained by a
   // client-side read-then-sum and can drift from its own evidence.
@@ -382,6 +385,7 @@ export default function PartnersPage() {
                               </button>
                             </>
                           )}
+                          {canManageEligibility && <button type="button" onClick={() => setEligibilityPartner(p)} className="sw-tap p-1.5 rounded-control text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-500/10" aria-label={`أهلية بايكرز ${p.partnerName}`} title="أهلية البايكرز للتشغيل"><Users size={16} /></button>}
                         </div>
                       </td>
                     </tr>
@@ -413,6 +417,8 @@ export default function PartnersPage() {
         partner={statementPartner}
         onClose={() => setStatementPartner(null)}
       />
+
+      {canManageEligibility && eligibilityPartner && <PartnerEligibilityModal key={eligibilityPartner.id} partner={eligibilityPartner} onClose={() => setEligibilityPartner(null)} onSaved={() => { setEligibilityPartner(null); showToast('تم حفظ أهلية البايكرز للتشغيل'); }} />}
 
       <SweaterActionDialog
         open={Boolean(revokeTarget)}

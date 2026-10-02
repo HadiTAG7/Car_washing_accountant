@@ -1,5 +1,4 @@
 import { Eye, X } from 'lucide-react';
-import { formatNumber } from '../data/initialData';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 
 /**
@@ -18,16 +17,11 @@ import { usePartnerView } from '../contexts/PartnerViewContext';
  */
 export default function PartnerViewBanner() {
   const {
-    isPartnerView, viewedPartner, totalWorkers,
+    isPartnerView, viewedPartner,
     isAdmin, actingAsPartnerId, setActingAsPartnerId,
   } = usePartnerView();
 
   if (!isPartnerView || !viewedPartner) return null;
-
-  const share = totalWorkers > 0
-    ? (viewedPartner.workersCount || 0) / totalWorkers * 100
-    : 0;
-  const pct = formatNumber(Number(share.toFixed(1)));
 
   // Only simulating admins get the "إنهاء المحاكاة" exit button.
   // Real partners can't escape their own view from the UI.
@@ -48,8 +42,6 @@ export default function PartnerViewBanner() {
         <Eye size={14} className="shrink-0" />
         <span className="min-w-0 flex-1 leading-relaxed">
           <strong>وضع عرض الشريك:</strong> {viewedPartner.partnerName}
-          {' '}<span className="text-indigo-300 dark:text-indigo-500/70">|</span>{' '}
-          النسبة الحالية: <span className="tabular-nums font-bold">{pct}%</span>
         </span>
         {/* Chip-density controls on purpose: the banner mirrors DemoBanner's
             height so the two stack cleanly, which a full 40px pill would

@@ -31,7 +31,7 @@ export function CapitalJourneyContent({ report }) {
     <Card className="p-5 space-y-3">
       <SectionHeader title="فلوسك وين راحت؟" subtitle="من رأس المال المسدّد إلى التأسيس ثم مصاريف التشغيل" />
       <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
-        الأرقام أدناه تخص حصتك فقط ({(report.factor * 100).toFixed(1)}%). التأسيس حسب مستندات الصرف، والتشغيل حسب تقرير المصروفات الحالي.
+        الأرقام أدناه تخص حصتك فقط. التأسيس حسب مستندات الصرف والعدد الأصلي، والتشغيل حسب عدد البايكرز المؤهلين لكل شهر.
       </p>
       <p className="text-xs text-slate-500 dark:text-slate-400">
         نطاق السجلات: {formatDate(report.from)} إلى {formatDate(report.through)} · آخر قراءة: {formatDate(report.asOf?.slice(0, 10))}

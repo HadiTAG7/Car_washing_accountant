@@ -1,5 +1,4 @@
-import { isFirebaseConfigured } from '../lib/firebaseClient';
-import { callServer } from '../lib/ledgerTransport';
+import { isFirebaseConfigured, callPartnerWashInsights } from '../lib/firebaseClient';
 import { useFirestoreQuery } from './useFirestoreQuery';
 
 /**
@@ -13,12 +12,13 @@ import { useFirestoreQuery } from './useFirestoreQuery';
 export function usePartnerInsights({ partnerId, months = 12, enabled = true } = {}) {
   const on = enabled && isFirebaseConfigured && Boolean(partnerId);
   const { data, loading, error, refetch } = useFirestoreQuery(
-    () => callServer('partnerInsights', { partnerId, months }),
+    () => callPartnerWashInsights({ partnerId, months }),
     { enabled: on, fallback: null, preserveResult: true, deps: [partnerId, months] },
   );
+  const ownData = data?.partnerId === partnerId ? data : null;
   return {
-    insights: data ?? null,
-    washMonths: data?.months ?? [],
+    insights: ownData,
+    washMonths: ownData?.months ?? [],
     loading,
     error,
     refetch,

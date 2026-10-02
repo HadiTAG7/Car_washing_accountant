@@ -226,8 +226,17 @@ import {
 } from './partnerMcpKeys.js';
 import { partnerWashShare } from './partnerInsights.js';
 import { partnerAllocationReport } from './partnerAllocationReport.js';
+import { getPartnerEligibility, setPartnerEligibility } from './partnerWorkerEligibility.js';
 
 export const HANDLERS = {
+  partnerEligibilityGet: {
+    guard: 'admin',
+    run: ({ db, data }) => getPartnerEligibility(db, data),
+  },
+  partnerEligibilitySet: {
+    guard: 'admin',
+    run: ({ db, FieldValue, data, uid }) => setPartnerEligibility(db, FieldValue, data, { userId: uid }),
+  },
   // ── الترحيل ──
   // `{ kind, sourceId }` is the whole contract — no entry, no lines, no
   // amount. Nothing about the posting can be forged because nothing about it

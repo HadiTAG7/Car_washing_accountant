@@ -366,7 +366,7 @@ describe('صفحة المستثمر — قائمة الدخل', () => {
   it('عمالة صفر: إشعارٌ لا قائمة أصفار', () => {
     partnerView.viewedPartner = { id: 'p1', partnerName: 'سالم', workersCount: 0, userId: 'uid1' };
     render(<InvestorPage view="income" />);
-    expect(screen.getByText(/نسبتك ٠٪/)).toBeTruthy();
+    expect(screen.getByText('لم تُسجَّل لك عمالة بعد')).toBeTruthy();
     expect(screen.queryByText('إيرادات المبيعات')).toBeNull();
   });
   it('عطل مصدر المصروفات لا يعيد عرض حسبة الرواتب الناقصة ولا صفراً مضللاً', () => {
@@ -400,7 +400,8 @@ describe('صفحة المستثمر — الخيارات الأربعة', () => 
   it('«نظرة عامة» تعرض الهوية ورأس المال ونتيجة آخر شهر، لا السندات ولا الاتجاه', () => {
     render(<InvestorPage view="overview" />);
     expect(screen.getByText('أحمد الغانم')).toBeTruthy();
-    expect(screen.getByText('30.0%')).toBeTruthy();
+    expect(screen.getByText(/العدد الأصلي: 3 بايكر/)).toBeTruthy();
+    expect(screen.queryByText('30.0%')).toBeNull();
     expect(screen.getByText('الرسوم المطلوبة')).toBeTruthy();
     expect(screen.getByText('نتيجة آخر شهر')).toBeTruthy();
     expect(screen.queryByText('سندات قبضك')).toBeNull();

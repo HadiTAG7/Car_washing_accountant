@@ -18,6 +18,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { monthRange } from '../../src/lib/accounting/monthlyStatement.js';
+import { operatingParticipation, readEligibilityStates, currentEligibilityMonth } from '../../functions/src/partnerWorkerEligibility.js';
 
 const rowsOf = (snap) => snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
@@ -27,7 +28,7 @@ export function embeddedLinesOf(entry) {
   return list.map((l, i) => ({ ...l, entryId: entry.id, id: `${entry.id}:${i}` }));
 }
 
-export const todayMonth = () => new Date().toISOString().slice(0, 7);
+export const todayMonth = () => currentEligibilityMonth();
 
 /**
  * الشركاء — الحقول الأربعة التي يحتاجها الحساب، لا الصفّ كاملاً.
@@ -157,6 +158,12 @@ export function makeLoader(db, { partnerId }) {
   };
   return {
     partners: () => once('partners', () => loadPartners(db)),
+    participation: periodKey => once(`participation:${periodKey}`, async () => {
+      const [partners, states] = await Promise.all([
+        once('partners', () => loadPartners(db)), once('eligibility', () => readEligibilityStates(db)),
+      ]);
+      return operatingParticipation(partners.map(p => ({ id: p.id, workers_count: p.workersCount })), states, String(partnerId), periodKey);
+    }),
     receipts: () => once('receipts', () => loadOwnReceipts(db, partnerId)),
     feeRules: () => once('feeRules', () => loadFeeRules(db)),
     months:   () => once('months', () => loadAvailableMonths(db)),

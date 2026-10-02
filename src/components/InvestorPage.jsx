@@ -39,6 +39,7 @@ import {
 } from 'lucide-react';
 
 import TopBar from './TopBar';
+import PartnerEligibilityNotice from './PartnerEligibilityNotice';
 import { Card, SectionHeader, StatCard, EmptyState, ProgressBar, SecondaryButton } from './UI';
 import LoadingState from './LoadingState';
 import ErrorState, { SetupRequiredCard } from './ErrorState';
@@ -75,7 +76,7 @@ const VIEW_META = {
   overview: { title: 'حسابي كشريك',  subtitle: 'حصّتك ورأس مالك ونتيجة آخر شهر' },
   capital:  { title: 'رأس مالي',     subtitle: 'سنداتك وما تبقّى من حصّتك' },
   journey:  { title: 'رحلة رأس مالي', subtitle: 'تفاصيل صرف التأسيس ثم مصاريف التشغيل والرصيد المتبقي' },
-  income:   { title: 'قائمة الدخل',  subtitle: 'نتيجة الشهر مقسومة بنسبتك' },
+  income:   { title: 'قائمة الدخل',  subtitle: 'إيراداتك ومصاريفك ونتيجة الشهر' },
   trends:   { title: 'اتجاه ٦ أشهر', subtitle: 'حصتك التحليلية من إيرادات الشركة وتكاليفها ونتيجتها' },
   assistant: { title: 'المساعد الذكي', subtitle: 'رابطك الخاص لتسأل Claude أو ChatGPT عن حصّتك' },
 };
@@ -171,8 +172,8 @@ function LinkMissingCard() {
 // العروض الأربعة
 // ═══════════════════════════════════════════════════════════════════════════
 
-/** ترويسة الهوية: من أنت وكم نسبتك. تُعاد في «نظرة عامة» وحدها. */
-function ShareCard({ partner, totalWorkers, sharePercent }) {
+/** Own identity and original capital headcount, without allocation ratios. */
+function ShareCard({ partner }) {
   return (
     <Card className="p-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -182,13 +183,7 @@ function ShareCard({ partner, totalWorkers, sharePercent }) {
             {partner.partnerName}
           </p>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            {formatNumber(partner.workersCount || 0)} عامل من أصل {formatNumber(totalWorkers)}
-          </p>
-        </div>
-        <div className="text-left">
-          <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">نسبتك</p>
-          <p className="text-3xl font-black text-primary-700 dark:text-primary-300 tabular-nums">
-            {sharePercent.toFixed(1)}%
+            العدد الأصلي: {formatNumber(partner.workersCount || 0)} بايكر
           </p>
         </div>
       </div>
@@ -324,7 +319,7 @@ function ExpenseStatementGroup({ label, amount, group, explanation = null, expla
  * العامل، فلا حساب جديد هنا ولا فرصة لاختلاف رقمٍ عن رقم.
  */
 export function IncomeStatementCard({
-  sharePercent, hasShare, paid, foundingStatus, availableMonths, activeMonth, onMonthChange, statement, periodStatus = null,
+  hasShare, paid, foundingStatus, availableMonths, activeMonth, onMonthChange, statement, periodStatus = null,
 }) {
   const groups = Object.fromEntries((statement.expenseBreakdown?.groups || []).map(group => [group.key, group]));
   const hasOtherExpenses = Boolean(groups.other?.amount || groups.other?.items?.length);
@@ -337,8 +332,8 @@ export function IncomeStatementCard({
         <SectionHeader title="قائمة الدخل" subtitle="حصّتك من نتيجة الشهر" />
         <EmptyState
           icon={TrendingUp}
-          title="لم تُسجَّل لك عمالة بعد — نسبتك ٠٪"
-          hint="راجع الإدارة لتسجيل عدد عمالتك، فالنسبة تُحسب عليه."
+          title="لم تُسجَّل لك عمالة بعد"
+          hint="راجع الإدارة لتسجيل عدد عمالتك."
         />
       </Card>
     );
@@ -347,8 +342,8 @@ export function IncomeStatementCard({
   return (
     <Card className="p-5">
       <SectionHeader
-        title={`قائمة الدخل — حصّتك (${sharePercent.toFixed(1)}%)`}
-        subtitle="نتيجة الشهر مقسومة بنسبتك"
+        title="قائمة الدخل — حصّتك"
+        subtitle="إيراداتك ومصاريفك ونتيجة الشهر"
         action={(
           <div className="flex items-center gap-2">
             <PeriodBadge status={periodStatus} />
@@ -419,7 +414,7 @@ export function IncomeStatementCard({
             </div>
           )}
           <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-3 leading-relaxed">
-            الأرقام أعلاه حصّتك التحليلية ({sharePercent.toFixed(1)}%) من نتائج الشركة الشهرية،
+            الأرقام أعلاه حصّتك التحليلية من نتائج الشركة الشهرية،
             محسوبة على عدد العمالة، وتشمل المصروفات المسجلة والالتزامات الدورية واحتياطي التجديد.
             هذا تقرير حصتك التشغيلي؛ لا يغيّر قائمة الشركة المحاسبية.
           </p>
@@ -442,13 +437,13 @@ export function IncomeStatementCard({
  * لم يُرحَّل بعد يُظهر صفراً يبدو خسارةً، وهو أسوأ من ألا يُعرض.
  */
 function OverviewView({
-  partner, totalWorkers, sharePercent, required, paid, remaining, settled,
+  partner, required, paid, remaining, settled,
   receiptsCount, hasShare, latestMonth, latestStatement, latestStatus = null,
   mom = null, ytd = 0, washShare = null, roi = null, foundingStatus = null,
 }) {
   return (
     <>
-      <ShareCard partner={partner} totalWorkers={totalWorkers} sharePercent={sharePercent} />
+      <ShareCard partner={partner} />
       <CapitalSummary
         partner={partner}
         required={required}
@@ -469,8 +464,8 @@ function OverviewView({
           <EmptyState
             compact
             icon={TrendingUp}
-            title="لم تُسجَّل لك عمالة بعد — نسبتك ٠٪"
-            hint="راجع الإدارة لتسجيل عدد عمالتك، فالنسبة تُحسب عليه."
+            title="لم تُسجَّل لك عمالة بعد"
+            hint="راجع الإدارة لتسجيل عدد عمالتك."
           />
         ) : !latestStatement.hasActivity ? (
           <EmptyState
@@ -501,7 +496,7 @@ function OverviewView({
               value={formatCurrency(Math.max(0, latestStatement.netAfterReserve || 0))}
               sub={latestStatement.netAfterReserve < 0
                 ? 'الرسوم المدفوعة مسبقاً لا تُطلب منك مرة أخرى؛ هذه النتيجة ليست مطالبة'
-                : (momText(mom) || `نسبتك ${sharePercent.toFixed(1)}%`)}
+                : (momText(mom) || 'حسب حصتك في التشغيل')}
             />
           </div>
         )}
@@ -691,7 +686,7 @@ function TrendsView({ hasShare, profitTrend, washTrend = null }) {
         <SectionHeader title="حصتك من نتيجة الشركة شهرياً" subtitle="آخر ٦ أشهر" />
         <EmptyState
           icon={TrendingUp}
-          title="لم تُسجَّل لك عمالة بعد — نسبتك ٠٪"
+          title="لم تُسجَّل لك عمالة بعد"
           hint="راجع الإدارة لتسجيل عدد عمالتك، فالنسبة تُحسب عليه."
         />
       </Card>
@@ -739,7 +734,7 @@ function TrendsView({ hasShare, profitTrend, washTrend = null }) {
       <Card className="p-5">
         <SectionHeader
           title="غسلات تعادل حصّتك شهرياً"
-          subtitle={`نسبتك ${washTrend.sharePercent.toFixed(1)}% من الغسلات المكتملة — آخر ${formatNumber(washTrend.months.length)} أشهر`}
+          subtitle={`حصتك من الغسلات المكتملة — آخر ${formatNumber(washTrend.months.length)} أشهر`}
         />
         {washTrend.total === 0 ? (
           <EmptyState compact icon={Droplets} title="لا غسلات مكتملة في هذه الأشهر" />
@@ -766,7 +761,6 @@ function TrendsView({ hasShare, profitTrend, washTrend = null }) {
  * يُفتح لا يُكلِّف شيئاً، وهذا نصف فائدة التقسيم.
  */
 function InvestorPortal({ partner, view }) {
-  const { totalWorkers } = usePartnerView();
   const { payments, loading: paymentsLoading, error: paymentsError } = usePartnerPayments();
   const {
     entries, lines, loading: ledgerLoading, error: ledgerError,
@@ -798,9 +792,6 @@ function InvestorPortal({ partner, view }) {
   );
   const remaining = Math.max(0, required - paid);
   const settled = required > 0 && remaining === 0;
-  const sharePercent = totalWorkers > 0
-    ? ((partner.workersCount || 0) / totalWorkers) * 100
-    : 0;
 
   // ── الأشهر التي للدفاتر فيها قول ──
   // من القيود وحدها، لا من السجلّات التشغيلية: شهرٌ يظهر في القائمة بسبب
@@ -899,7 +890,6 @@ function InvestorPortal({ partner, view }) {
     const last6 = washMonths.slice(-6);
     const fmt = new Intl.DateTimeFormat('ar', { month: 'short', numberingSystem: 'latn' });
     return {
-      sharePercent: Number(insights.sharePercent) || 0,
       months: last6.map((m) => ({ key: m.month, label: fmt.format(new Date(Number(m.month.slice(0, 4)), Number(m.month.slice(5, 7)) - 1, 1)) })),
       values: last6.map((m) => m.shareCount),
       total: last6.reduce((s, m) => s + m.shareCount, 0),
@@ -939,11 +929,11 @@ function InvestorPortal({ partner, view }) {
         {!isFirebaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
         {anyError && <ErrorState title="تعذّر تحميل بياناتك" error={anyError} />}
 
+        {['overview', 'income', 'trends'].includes(view) && <PartnerEligibilityNotice eligibility={allocationReport?.statements.find(s => s.periodKey === statementMonth)?.eligibility} periodKey={statementMonth} />}
+
         {view === 'overview' && (
           <OverviewView
             partner={partner}
-            totalWorkers={totalWorkers}
-            sharePercent={sharePercent}
             required={required}
             paid={paid}
             remaining={remaining}
@@ -977,7 +967,6 @@ function InvestorPortal({ partner, view }) {
 
         {view === 'income' && (
           <IncomeStatementCard
-            sharePercent={sharePercent}
             hasShare={hasShare}
             paid={paid}
             foundingStatus={foundingStatus}

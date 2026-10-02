@@ -11,6 +11,9 @@ const EMU = process.env.FIRESTORE_EMULATOR_HOST;
 const d = EMU ? describe : describe.skip;
 
 describe('مفاتيح الأشهر — بلا محاكي', () => {
+  it('بداية شهر السعودية تطابق شهر أهلية التشغيل ولو كان UTC في الشهر السابق', () => {
+    expect(lastMonthKeys(2, new Date('2026-09-30T21:05:00Z'))).toEqual(['2026-09', '2026-10']);
+  });
   it('آخر n شهراً تصاعدياً حتى شهر اليوم', () => {
     expect(lastMonthKeys(3, new Date(2026, 7, 15))).toEqual(['2026-06', '2026-07', '2026-08']);
     expect(lastMonthKeys(1, new Date(2026, 0, 1))).toEqual(['2026-01']);

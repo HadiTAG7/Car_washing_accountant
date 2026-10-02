@@ -114,6 +114,8 @@ export const sweaterListIntegrationKeys = callable('sweaterListIntegrationKeys')
 export const partnerMcpCreateKey = callable('partnerMcpCreateKey');
 export const partnerMcpRevokeKey = callable('partnerMcpRevokeKey');
 export const partnerInsights = callable('partnerInsights');
+export const partnerEligibilityGet = callable('partnerEligibilityGet');
+export const partnerEligibilitySet = callable('partnerEligibilitySet');
 
 // ─── مسير رواتب البايكر ────────────────────────────────────────────────
 export const payrollPreview = callable('payrollPreview');

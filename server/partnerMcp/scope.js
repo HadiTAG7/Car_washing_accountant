@@ -14,6 +14,7 @@
 
 import { round2 } from '../../src/lib/accounting/journal.js';
 import { PER_WORKER_FEE } from '../../src/data/initialData.js';
+import { currentEligibilityMonth } from '../../functions/src/partnerWorkerEligibility.js';
 
 export class PartnerMcpScopeError extends Error {
   constructor(key, path) {
@@ -121,10 +122,11 @@ export function capitalOf(partner, receipts) {
 /** `YYYY-MM` لآخر n شهراً حتى `today` (شاملاً). */
 export function lastMonths(n, today = new Date()) {
   const out = [];
-  const d = new Date(today.getFullYear(), today.getMonth(), 1);
+  const [year, month] = currentEligibilityMonth(today).split('-').map(Number);
+  const d = new Date(Date.UTC(year, month - 1, 1));
   for (let i = n - 1; i >= 0; i -= 1) {
-    const m = new Date(d.getFullYear(), d.getMonth() - i, 1);
-    out.push(`${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, '0')}`);
+    const m = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - i, 1));
+    out.push(`${m.getUTCFullYear()}-${String(m.getUTCMonth() + 1).padStart(2, '0')}`);
   }
   return out;
 }

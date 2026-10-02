@@ -38,6 +38,49 @@ function database(overrides = {}) {
   return db;
 }
 
+describe('توزيع التشغيل حسب المؤهلين مع ثبات رأس المال وخصوصية الشركاء', () => {
+  const setup = () => database({
+    users: [{ id: 'u1', role: 'partner' }, { id: 'u2', role: 'partner' }, { id: 'admin', role: 'admin' }],
+    partners: ['p1', 'p2', 'p3'].map((id, i) => ({ id, workers_count: 10, user_id: `u${i + 1}` })),
+    partner_worker_eligibility: [{ id: 'p1', changes: { '2026-10': { eligibleWorkers: 5, reason: 'private travel reason', updatedBy: 'secret admin' }, '2026-12': { eligibleWorkers: 10 } } }],
+    monthly_expenses: [{ id: 'salary', expense_name: 'رواتب', recurrence: 'monthly', total_monthly_cost: 3000 }],
+    variable_expenses: [{ id: 'fuel', logged_date: '2026-10-02', total_variable_cost: 2500 }],
+    annual_expenses: [{ id: 'rent', expense_name: 'سكن', annual_cost: 12000 }],
+    annual_expense_entries: [{ id: 'rent-first', annual_expense_id: 'rent', amount: 12000, spent_date: '2026-10-01' }],
+    partner_payments: [{ id: 'paid', partner_id: 'p1', amount: 200000, payment_date: '2026-09-01' }],
+    journal_entries: [{ id: 'sales', entryDate: '2026-10-01', status: 'posted', lines: [{ accountId: '4000', credit: 25000 }] }],
+  });
+  it('هادي ٥/٢٥ والباقون ١٠/٢٥ لكل الإيراد والمصاريف والسنوي دون ضياع أو ازدواج التوزيع', async () => {
+    const reports = await Promise.all(['p1', 'p2', 'p3'].map(partnerId => partnerAllocationReport(setup(), { partnerId, periodKey: '2026-10', today: new Date('2026-12-03'), includeCapitalJourney: true })));
+    const st = reports.map(r => r.statements.find(s => s.periodKey === '2026-10'));
+    expect(st.map(s => s.netRevenue)).toEqual([5000, 10000, 10000]);
+    expect(st.map(s => s.totalCosts)).toEqual([1100, 2200, 2200]);
+    expect(st.map(s => s.annualReserve)).toEqual([200, 400, 400]);
+    expect(st[0].eligibility).toMatchObject({ originalWorkers: 10, eligibleWorkers: 5, suspendedWorkers: 5, factor: 0.2 });
+    expect(st[1].eligibility).toMatchObject({ originalWorkers: 10, eligibleWorkers: 10, suspendedWorkers: 0, factor: 0.4 });
+    expect(reports[0].statements.at(-1).founding.budget).toBe(200000);
+    expect(reports[0].capitalJourney.initialTotal).toBe(4000); // original ownership 10/30, not 5/25
+    expect(reports[0].statements.find(s => s.periodKey === '2026-09').totalCosts).toBe(1000);
+    expect(reports[0].workersCount).toBe(10);
+  });
+  it('تقرير شريك آخر لا يحمل هوية أو سبب أو تاريخ تعطيل غيره حتى مع تزوير المعرّف', async () => {
+    const r = await dispatch(setup(), null, 'partnerInsights', { partnerId: 'p1', includeStatements: true, periodKey: '2026-10' }, { uid: 'u2' });
+    expect(r.partnerId).toBe('p2');
+    expect(r.statements.at(-1).eligibility).toMatchObject({ eligibleWorkers: 10, suspendedWorkers: 0, effectiveFrom: null });
+    expect(JSON.stringify(r)).not.toMatch(/private travel|secret admin|updatedBy|totalEligibleWorkers|"p1"/);
+  });
+  it('الاستعادة ترجع حسبة الشهر الجديد فقط ولا تغير الأشهر السابقة', async () => {
+    const r = await partnerAllocationReport(setup(), { partnerId: 'p1', today: new Date('2026-12-03') });
+    expect(r.statements.find(s => s.periodKey === '2026-10').eligibility.factor).toBe(0.2);
+    expect(r.statements.find(s => s.periodKey === '2026-11').eligibility.factor).toBe(0.2);
+    expect(r.statements.find(s => s.periodKey === '2026-12').eligibility.factor).toBeCloseTo(1 / 3);
+  });
+  it('الأهلية والتقرير يدخلان شهر السعودية نفسه عند بداية الشهر', async () => {
+    const r = await partnerAllocationReport(setup(), { partnerId: 'p1', today: new Date('2026-09-30T21:05:00Z') });
+    expect(r.statements.at(-1)).toMatchObject({ periodKey: '2026-10', eligibility: { eligibleWorkers: 5, factor: 0.2 } });
+  });
+});
+
 describe('تقرير مصروفات الشريك الخادمي', () => {
   const retroDatabase = (payments = [{ id: 'late', partner_id: 'p1', amount: 200000, payment_date: '2026-07-16' }]) => database({
     partners: [{ id: 'p1', workers_count: 10, user_id: 'u1' }, { id: 'p2', workers_count: 40, user_id: 'u2' }],

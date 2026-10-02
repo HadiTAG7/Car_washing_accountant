@@ -326,7 +326,7 @@ export default function FinancialSummaryPage() {
               <StatCard
                 icon={isProfit ? TrendingUp : TrendingDown}
                 tone={isProfit ? 'emerald' : 'rose'}
-                label="صافي الربح النهائي للشركاء"
+                label="صافي نتيجة الشركة بعد الرسوم"
                 value={`${isProfit ? '' : '−'}${formatCurrency(Math.abs(finalNetProfit))}`}
                 sub={statement.fees.length
                   ? `بعد خصم ${statement.fees.map((f) => f.label).join(' و')}`
@@ -441,7 +441,7 @@ export default function FinancialSummaryPage() {
                         ['المصاريف التشغيلية', Number((-fixedExpensesTotal).toFixed(2))],
                         ['صافي الربح قبل الرسوم', Number(netProfitBeforeFees.toFixed(2))],
                         ...statement.fees.map((f) => [f.label, Number((-f.amount).toFixed(2))]),
-                        ['صافي الربح النهائي', Number(finalNetProfit.toFixed(2))],
+                        ['صافي نتيجة الشركة بعد الرسوم', Number(finalNetProfit.toFixed(2))],
                       ],
                     )}
                   >
@@ -520,7 +520,7 @@ export default function FinancialSummaryPage() {
                       />
                     ))}
                     <StatementRow
-                      label="= صافي الربح النهائي للشركاء"
+                      label="= صافي نتيجة الشركة بعد الرسوم"
                       amount={finalNetProfit}
                       kind="final"
                     />

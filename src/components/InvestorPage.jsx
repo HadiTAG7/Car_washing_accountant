@@ -75,7 +75,7 @@ const VIEW_META = {
   overview: { title: 'حسابي كشريك',  subtitle: 'حصّتك ورأس مالك ونتيجة آخر شهر' },
   capital:  { title: 'رأس مالي',     subtitle: 'سنداتك وما تبقّى من حصّتك' },
   income:   { title: 'قائمة الدخل',  subtitle: 'نتيجة الشهر مقسومة بنسبتك' },
-  trends:   { title: 'اتجاه ٦ أشهر', subtitle: 'إيراداتك وتكاليفك وصافي ربحك' },
+  trends:   { title: 'اتجاه ٦ أشهر', subtitle: 'حصتك التحليلية من إيرادات الشركة وتكاليفها ونتيجتها' },
   assistant: { title: 'المساعد الذكي', subtitle: 'رابطك الخاص لتسأل Claude أو ChatGPT عن حصّتك' },
 };
 
@@ -235,7 +235,7 @@ function CapitalSummary({ partner, required, paid, remaining, settled, receiptsC
  * العامل، فلا حساب جديد هنا ولا فرصة لاختلاف رقمٍ عن رقم.
  */
 function IncomeStatementCard({
-  sharePercent, hasShare, availableMonths, activeMonth, onMonthChange, statement, periodStatus = null,
+  sharePercent, hasShare, paid, availableMonths, activeMonth, onMonthChange, statement, periodStatus = null,
 }) {
   if (!hasShare) {
     return (
@@ -311,15 +311,57 @@ function IncomeStatementCard({
               {(statement.fees || []).map((f) => (
                 <StatementRow key={f.key} label={`يُخصم منه: ${f.label}`} amount={f.amount} />
               ))}
-              {/* «للشركاء» في الصفحة الإدارية تعني المجموع؛ هنا الرقم
-                  حصّةُ قارئه وحده، فيقول ذلك. */}
-              <StatementRow label="= صافي ربحك من هذا الشهر" amount={statement.netProfit} kind="final" />
+              <StatementRow label="= حصتك التحليلية من نتيجة الشركة" amount={statement.netProfit} kind="final" />
             </tbody>
           </table>
           <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-3 leading-relaxed">
-            الأرقام أعلاه حصّتك ({sharePercent.toFixed(1)}%) من نتائج الشركة الشهرية،
+            الأرقام أعلاه حصّتك التحليلية ({sharePercent.toFixed(1)}%) من نتائج الشركة الشهرية،
             محسوبة على عدد العمالة، ومبنيّة على القيود المُرحّلة في الدفاتر.
           </p>
+          <p className="text-xs text-amber-800 dark:text-amber-200 mt-3 p-3 rounded-control bg-amber-50 dark:bg-amber-500/10 leading-relaxed">
+            لا تُنشئ هذه النتيجة مطالبة مالية جديدة عليك ولا تعني توزيعاً نقدياً.
+            المسجّل في سندات رأس مالك: {formatCurrency(paid)}، وتفاصيله في «رأس مالي».
+            وظهور المصروف في حسابات الشركة لا يعني مطالبتك بدفعه مرة ثانية.
+          </p>
+          {statement.expenseBreakdown && (
+            <section aria-label="تفصيل حصتك من المصروفات" className="mt-6 border-t border-slate-200 dark:border-slate-700 pt-5">
+              <h3 className="font-bold text-slate-900 dark:text-slate-100">تفصيل حصتك من المصروفات</h3>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                تصنيف توضيحي لبنود الدفتر المُرحّلة في الشهر المختار؛ المبلغ السنوي يظهر في شهر قيده، ولا يُوزّع على أشهر السنة.
+                تكاليف التأسيس المسجّلة كأصول لا تدخل مصروفات قائمة الدخل.
+              </p>
+              <p className="mt-3 text-sm font-semibold text-slate-800 dark:text-slate-100">
+                إجمالي المصروفات الثابتة الشهرية والسنوية: {formatCurrency(statement.expenseBreakdown.fixedTotal)}
+              </p>
+              <div className="mt-3 space-y-2">
+                {statement.expenseBreakdown.groups.map((group) => (
+                  <details key={group.key} className="rounded-control border border-slate-200 dark:border-slate-700">
+                    <summary className="cursor-pointer flex items-center justify-between gap-3 px-3 py-3 font-semibold text-slate-800 dark:text-slate-100">
+                      <span><span aria-hidden="true" className="ml-2">▾</span>{group.label}</span>
+                      <span className="tabular-nums whitespace-nowrap">{formatCurrency(group.amount)}</span>
+                    </summary>
+                    <div className="border-t border-slate-200 dark:border-slate-700 px-3">
+                      {group.items.length === 0 ? (
+                        <p className="py-3 text-xs text-slate-500 dark:text-slate-400">لا توجد بنود مُرحّلة في هذه المجموعة.</p>
+                      ) : group.items.map((item) => (
+                        <div key={item.id} className="flex flex-wrap items-start justify-between gap-2 border-b last:border-b-0 border-slate-100 dark:border-slate-700 py-3">
+                          <div className="min-w-0">
+                            <p className="font-medium text-slate-800 dark:text-slate-100">{item.description}</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">{item.accountName} · {formatDate(item.entryDate)}</p>
+                          </div>
+                          <span className="font-semibold tabular-nums whitespace-nowrap text-slate-800 dark:text-slate-100">{formatCurrency(item.amount)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                ))}
+              </div>
+              <div className="flex items-center justify-between gap-3 mt-3 px-3 py-2 rounded-control bg-slate-50 dark:bg-slate-800 font-bold">
+                <span>إجمالي حصتك من المصروفات</span>
+                <span className="tabular-nums whitespace-nowrap">{formatCurrency(statement.expenseBreakdown.total)}</span>
+              </div>
+            </section>
+          )}
         </div>
       )}
     </Card>
@@ -353,7 +395,7 @@ function OverviewView({
       <Card className="p-5">
         <SectionHeader
           title="نتيجة آخر شهر"
-          subtitle={`صافي ربحك من ${formatMonthLabel(latestMonth)}`}
+          subtitle={`حصتك التحليلية من نتيجة ${formatMonthLabel(latestMonth)}`}
           action={<PeriodBadge status={latestStatus} />}
         />
         {!hasShare ? (
@@ -387,10 +429,12 @@ function OverviewView({
             />
             <StatCard
               icon={HandCoins}
-              tone={latestStatement.netProfit >= 0 ? 'emerald' : 'amber'}
-              label="صافي ربحك"
-              value={formatCurrency(latestStatement.netProfit)}
-              sub={momText(mom) || `نسبتك ${sharePercent.toFixed(1)}%`}
+              tone={latestStatement.netProfit >= 0 ? 'emerald' : 'slate'}
+              label={latestStatement.netProfit < 0 ? 'مبلغ إضافي مطلوب منك' : 'حصتك التحليلية من نتيجة الشركة'}
+              value={formatCurrency(Math.max(0, latestStatement.netProfit))}
+              sub={latestStatement.netProfit < 0
+                ? 'الرسوم المدفوعة مسبقاً لا تُطلب منك مرة أخرى؛ هذه النتيجة ليست مطالبة'
+                : (momText(mom) || `نسبتك ${sharePercent.toFixed(1)}%`)}
             />
           </div>
         )}
@@ -402,7 +446,7 @@ function OverviewView({
           <StatCard
             icon={CalendarRange}
             tone="indigo"
-            label={`صافي ربحك منذ بداية ${latestMonth.slice(0, 4)}`}
+            label={`حصتك التحليلية من نتيجة ${latestMonth.slice(0, 4)}`}
             value={formatCurrency(ytd)}
             sub="مجموع حصّتك من الأشهر المُرحّلة هذه السنة"
           />
@@ -422,31 +466,31 @@ function OverviewView({
       {hasShare && roi && (
         <Card className="p-5">
           <SectionHeader
-            title="استرداد رأس مالك"
-            subtitle="حصّتك من الأرباح منذ أول شهرٍ مُرحَّل، مقابل ما دفعته"
+            title="مقارنة نتائج الشركة برأس مالك"
+            subtitle="مؤشر تحليلي للنتائج المُرحّلة مقابل ما دفعته، وليس استرداداً أو توزيعاً نقدياً"
           />
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
             <StatCard
               icon={PiggyBank}
               tone="emerald"
-              label="حصّتك من الأرباح منذ البداية"
+              label="حصتك التحليلية من النتائج منذ البداية"
               value={formatCurrency(roi.cumulativeProfit)}
               sub={roi.firstMonth ? `منذ ${formatMonthLabel(roi.firstMonth)} — ${formatNumber(roi.monthsCounted)} شهراً` : 'لا أشهر مُرحّلة بعد'}
             />
             <StatCard
               icon={TrendingUp}
               tone={roi.recovered ? 'emerald' : 'primary'}
-              label="نسبة الاسترداد"
-              value={roi.paid > 0 ? `${roi.recoveredPercent.toFixed(1)}%` : '—'}
-              sub={roi.paid > 0 ? (roi.recovered ? 'استُردّ رأس مالك بالكامل' : `المتبقّي ${formatCurrency(roi.remaining)}`) : 'لم تُسجَّل دفعات بعد'}
+              label="نسبة التعادل التحليلي"
+              value={roi.paid > 0 ? `${Math.max(0, roi.recoveredPercent).toFixed(1)}%` : '—'}
+              sub={roi.paid > 0 ? (roi.recovered ? 'النتائج التراكمية تعادل ما دفعته؛ ليست دفعة مستلمة' : `الفارق التحليلي ${formatCurrency(roi.remaining)}`) : 'لم تُسجَّل دفعات بعد'}
             />
             <StatCard
               icon={Calendar}
               tone={roi.recovered ? 'emerald' : (roi.monthsToRecover === null ? 'slate' : 'amber')}
-              label="المتوقع للاسترداد"
-              value={roi.recovered ? '✓ تم' : (roi.monthsToRecover === null ? 'غير محدد' : `~${formatNumber(roi.monthsToRecover)} شهراً`)}
+              label="المتوقع للتعادل"
+              value={roi.recovered ? '✓ تعادل' : (roi.monthsToRecover === null ? 'غير محدد' : `~${formatNumber(roi.monthsToRecover)} شهراً`)}
               sub={roi.recovered
-                ? 'كل ربحٍ بعد الآن فوق رأس المال'
+                ? 'تعادلٌ محاسبي لا يثبت توزيعاً أو استرداداً نقدياً'
                 : (roi.monthsToRecover === null
                   ? 'متوسط آخر الأشهر صفرٌ أو سالب'
                   : `بمتوسط ${formatCurrency(roi.avgRecent)} شهرياً (آخر ${formatNumber(roi.monthsAveraged)} أشهر)`)}
@@ -595,7 +639,7 @@ function TrendsView({ hasShare, profitTrend, washTrend = null }) {
   if (!hasShare) {
     return (
       <Card className="p-6">
-        <SectionHeader title="صافي ربحك شهرياً" subtitle="آخر ٦ أشهر" />
+        <SectionHeader title="حصتك من نتيجة الشركة شهرياً" subtitle="آخر ٦ أشهر" />
         <EmptyState
           icon={TrendingUp}
           title="لم تُسجَّل لك عمالة بعد — نسبتك ٠٪"
@@ -610,7 +654,7 @@ function TrendsView({ hasShare, profitTrend, washTrend = null }) {
     <Card className="p-5">
       {/* لا يُعاد عنوان الشريط العلوي هنا: عنوانان متطابقان فوق بعضهما
           يأكلان أول شاشةٍ على الجوال ولا يضيفان حرفاً. */}
-      <SectionHeader title="صافي ربحك شهرياً" subtitle="الإيرادات والتكاليف وصافي الربح، بحصّتك" />
+      <SectionHeader title="حصتك من نتيجة الشركة شهرياً" subtitle="الإيرادات والتكاليف وصافي النتيجة، بحصّتك التحليلية" />
       {profitTrend.total === 0 ? (
         <EmptyState
           compact
@@ -633,7 +677,7 @@ function TrendsView({ hasShare, profitTrend, washTrend = null }) {
               stroke: 'stroke-[#e63946]', dot: 'fill-[#e63946]', swatch: 'bg-[#e63946]',
             },
             {
-              id: 'net', label: 'صافي ربحك', values: profitTrend.net,
+              id: 'net', label: 'صافي النتيجة', values: profitTrend.net,
               stroke: 'stroke-[#059669]', dot: 'fill-[#059669]', swatch: 'bg-[#059669]',
             },
           ]}
@@ -734,6 +778,7 @@ function InvestorPortal({ partner, view }) {
     () => (view === 'overview' || view === 'income'
       ? monthlyStatement({
         accounts, entries, lines, periodKey: statementMonth, feeRules, scalingFactor,
+        includeExpenseBreakdown: view === 'income',
       })
       : EMPTY_STATEMENT),
     [accounts, entries, lines, statementMonth, feeRules, scalingFactor, view],
@@ -873,6 +918,7 @@ function InvestorPortal({ partner, view }) {
           <IncomeStatementCard
             sharePercent={sharePercent}
             hasShare={hasShare}
+            paid={paid}
             availableMonths={availableMonths}
             activeMonth={activeMonth}
             onMonthChange={setSelectedMonth}

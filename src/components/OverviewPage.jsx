@@ -3,7 +3,7 @@ import {
   Landmark, Wallet, Coins, Users, TrendingUp, PiggyBank, Receipt,
   DatabaseBackup, Loader2,
 } from 'lucide-react';
-import { formatCurrency, formatNumber, PER_WORKER_FEE } from '../data/initialData';
+import { formatCurrencyPrecise, formatNumber, PER_WORKER_FEE } from '../data/initialData';
 import TopBar from './TopBar';
 import { Card, StatCard, ProgressBar, SectionHeader, EmptyState } from './UI';
 import LoadingState from './LoadingState';
@@ -174,18 +174,18 @@ export default function OverviewPage() {
                 title="جمع رأس المال"
                 subtitle={isPartnerView
                   ? 'حصتك من رأس مال الامتياز'
-                  : `${formatNumber(capital.partnerCount)} شريك · ${formatNumber(capital.workers)} عامل · الرسم ${formatCurrency(PER_WORKER_FEE)}/عامل`}
+                  : `${formatNumber(capital.partnerCount)} شريك · ${formatNumber(capital.workers)} عامل · الرسم ${formatCurrencyPrecise(PER_WORKER_FEE)}/عامل`}
               />
-              <div className="flex items-end justify-between gap-4 mb-3">
-                <div>
-                  <p className="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-slate-100 tabular-nums">
-                    {formatCurrency(capital.paid)}
+              <div className="flex flex-wrap items-end justify-between gap-4 mb-3">
+                <div className="min-w-0 flex-1 basis-52">
+                  <p className="break-words text-2xl sm:text-4xl font-extrabold text-slate-900 dark:text-slate-100 tabular-nums">
+                    {formatCurrencyPrecise(capital.paid)}
                   </p>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                    من إجمالي <span className="font-bold tabular-nums">{formatCurrency(capital.target)}</span> مستهدف
+                    من إجمالي <span className="font-bold tabular-nums">{formatCurrencyPrecise(capital.target)}</span> مستهدف
                   </p>
                 </div>
-                <div className="text-left shrink-0">
+                <div className="text-left shrink-0 whitespace-nowrap">
                   <p className="text-2xl font-extrabold text-emerald-600 dark:text-emerald-400 tabular-nums">
                     {formatNumber(Number(capital.pct.toFixed(1)))}%
                   </p>
@@ -193,8 +193,8 @@ export default function OverviewPage() {
                 </div>
               </div>
               <ProgressBar value={capital.paid} max={capital.target || 1} color="emerald" className="h-3" />
-              <div className="flex items-center justify-between mt-2 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
-                <span>المتبقّي: <span className="font-bold text-amber-700 dark:text-amber-400">{formatCurrency(capital.remaining)}</span></span>
+              <div className="flex flex-wrap gap-2 items-center justify-between mt-2 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
+                <span>المتبقّي: <span className="font-bold text-amber-700 dark:text-amber-400">{formatCurrencyPrecise(capital.remaining)}</span></span>
                 {!isPartnerView && (
                   <span>{formatNumber(capital.settledCount)} من {formatNumber(capital.partnerCount)} سدّدوا بالكامل</span>
                 )}
@@ -207,21 +207,21 @@ export default function OverviewPage() {
                 icon={Coins}
                 tone="emerald"
                 label="رأس المال المُحصّل"
-                value={formatCurrency(capital.paid)}
-                sub={`المتبقّي ${formatCurrency(capital.remaining)}`}
+                value={formatCurrencyPrecise(capital.paid)}
+                sub={`المتبقّي ${formatCurrencyPrecise(capital.remaining)}`}
               />
               <StatCard
                 icon={Landmark}
                 tone="primary"
                 label="إجمالي صرف التأسيس"
-                value={formatCurrency(spend.actual)}
-                sub={`من ${formatCurrency(spend.planned)} مخطط · ${formatNumber(Number(spend.pct.toFixed(0)))}%`}
+                value={formatCurrencyPrecise(spend.actual)}
+                sub={`من ${formatCurrencyPrecise(spend.planned)} مخطط · ${formatNumber(Number(spend.pct.toFixed(0)))}%`}
               />
               <StatCard
                 icon={PiggyBank}
                 tone="indigo"
                 label="النقد المتبقّي بعد الصرف"
-                value={formatCurrency(capitalOnHand)}
+                value={formatCurrencyPrecise(capitalOnHand)}
                 sub="المُحصّل ناقص صرف التأسيس"
               />
               <StatCard
@@ -250,7 +250,7 @@ export default function OverviewPage() {
                 <ColumnTrend
                   months={receiptsTrend.months}
                   values={receiptsTrend.values}
-                  formatValue={formatCurrency}
+                  formatValue={formatCurrencyPrecise}
                   valueName="التحصيل"
                 />
               )}
@@ -261,7 +261,7 @@ export default function OverviewPage() {
               <SectionHeader title="تقدّم صرف التأسيس" subtitle="الفعلي مقابل المخطط" />
               <div className="flex items-center justify-between mb-2 text-sm">
                 <span className="tabular-nums text-slate-700 dark:text-slate-300">
-                  {formatCurrency(spend.actual)} <span className="text-slate-500 dark:text-slate-400">/</span> {formatCurrency(spend.planned)}
+                  {formatCurrencyPrecise(spend.actual)} <span className="text-slate-500 dark:text-slate-400">/</span> {formatCurrencyPrecise(spend.planned)}
                 </span>
                 <span className="tabular-nums font-bold text-slate-500 dark:text-slate-400">
                   {formatNumber(Number(spend.pct.toFixed(0)))}%
@@ -301,7 +301,7 @@ export default function OverviewPage() {
                           </span>
                         </span>
                         <span className="tabular-nums text-slate-600 dark:text-slate-400 shrink-0">
-                          {formatCurrency(p.paid)} <span className="text-slate-300 dark:text-slate-600">/</span> {formatCurrency(p.required)}
+                          {formatCurrencyPrecise(p.paid)} <span className="text-slate-300 dark:text-slate-600">/</span> {formatCurrencyPrecise(p.required)}
                         </span>
                       </div>
                       <ProgressBar

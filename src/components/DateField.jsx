@@ -66,6 +66,7 @@ export default function DateField({
   const [viewM, setViewM] = useState(parsed?.mo ?? today.mo);
   const wrapRef  = useRef(null);
   const popupRef = useRef(null);
+  const triggerRef = useRef(null);
   // The panel is ALWAYS `position: fixed`, never absolute. An absolutely
   // positioned popover is laid out inside the host modal, so it gets clipped
   // by that modal's scroll container and can even widen it into a horizontal
@@ -97,13 +98,17 @@ export default function DateField({
       const inPanel = popupRef.current?.contains(e.target);
       if (!inWrap && !inPanel) setOpen(false);
     }
-    function onKey(e) { if (e.key === 'Escape') setOpen(false); }
+    function onKey(e) { if (e.key === 'Escape' && !e.defaultPrevented) { e.preventDefault(); setOpen(false); triggerRef.current?.focus(); } }
     document.addEventListener('mousedown', onDocDown);
     document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('mousedown', onDocDown);
       document.removeEventListener('keydown', onKey);
     };
+  }, [open]);
+
+  useEffect(() => {
+    if (open) popupRef.current?.querySelector('[aria-current="date"], button')?.focus();
   }, [open]);
 
   // Panel box, in sync with the classes below (w-[19rem], ~405px tall).
@@ -166,6 +171,7 @@ export default function DateField({
   function pick(day) {
     emit(isoOf(viewY, viewM, day));
     setOpen(false);
+    triggerRef.current?.focus();
   }
   function shiftMonth(delta) {
     const m = viewM + delta;
@@ -194,11 +200,12 @@ export default function DateField({
       <button
         type="button"
         id={id}
+        ref={triggerRef}
         disabled={disabled}
         onClick={toggleOpen}
         aria-haspopup="dialog"
         aria-expanded={open}
-        aria-label={ariaLabel || 'اختيار التاريخ'}
+        aria-label={ariaLabel || (id ? undefined : 'اختيار التاريخ')}
         className={className || 'w-full px-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm text-right flex items-center justify-between gap-2 hover:border-slate-300 dark:hover:border-slate-600 focus:outline-none focus:border-primary-500 transition-colors disabled:opacity-60 disabled:cursor-not-allowed'}
       >
         <span className={value ? 'tabular-nums' : 'text-slate-400 dark:text-slate-500'}>
@@ -226,7 +233,7 @@ export default function DateField({
       {open && (
         <div
           className={`fixed inset-0 z-[60] ${asSheet ? 'bg-slate-950/60' : ''}`}
-          onClick={() => setOpen(false)}
+          onClick={() => { setOpen(false); triggerRef.current?.focus(); }}
           aria-hidden="true"
         />
       )}
@@ -237,6 +244,20 @@ export default function DateField({
           role="dialog"
           aria-modal={asSheet ? 'true' : undefined}
           aria-label="التقويم"
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              event.preventDefault(); event.stopPropagation();
+              setOpen(false); triggerRef.current?.focus();
+            } else if (event.key === 'Tab' && asSheet) {
+              const buttons = [...popupRef.current.querySelectorAll('button:not(:disabled)')];
+              const first = buttons[0], last = buttons.at(-1);
+              if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault(); last?.focus();
+              } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault(); first?.focus();
+              }
+            }
+          }}
           className={`fixed z-[61] w-[19rem] max-w-[calc(100vw-2rem)] bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-700 rounded-card p-3 ${
             asSheet ? 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2' : ''
           }`}
@@ -306,14 +327,14 @@ export default function DateField({
           <div className="flex items-center justify-between gap-2 mt-3 pt-3 border-t border-slate-100 dark:border-slate-800">
             <button
               type="button"
-              onClick={() => { emit(''); setOpen(false); }}
+              onClick={() => { emit(''); setOpen(false); triggerRef.current?.focus(); }}
               className="text-[12px] font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 px-2 py-1.5 rounded-control transition-colors"
             >
               مسح
             </button>
             <button
               type="button"
-              onClick={() => { emit(todayIso()); setOpen(false); }}
+              onClick={() => { emit(todayIso()); setOpen(false); triggerRef.current?.focus(); }}
               className="text-[12px] font-bold text-primary-700 dark:text-primary-300 hover:underline px-2 py-1.5 rounded-control transition-colors"
             >
               اليوم

@@ -202,12 +202,12 @@ describe('Agent command-center view', () => {
         scrollBy: { configurable: true, value: scrollBy },
       });
 
-      expect(viewport.getAttribute('data-zoom')).toBe('0.82');
+      expect(viewport.getAttribute('data-zoom')).toBe('1.00');
       fireEvent.click(screen.getByRole('button', { name: 'تكبير الخريطة' }));
-      expect(viewport.getAttribute('data-zoom')).toBe('0.94');
-      expect(screen.getByLabelText('مستوى التكبير 94 بالمئة').textContent).toBe('94%');
+      expect(viewport.getAttribute('data-zoom')).toBe('1.12');
+      expect(screen.getByLabelText('مستوى التكبير 112 بالمئة').textContent).toBe('112%');
       fireEvent.click(screen.getByRole('button', { name: 'تصغير الخريطة' }));
-      expect(viewport.getAttribute('data-zoom')).toBe('0.82');
+      expect(viewport.getAttribute('data-zoom')).toBe('1.00');
 
       fireEvent.click(screen.getByRole('button', { name: 'إعادة تمركز CEO' }));
       expect(scrollTo).toHaveBeenCalledWith({ left: 217, top: 44, behavior: 'smooth' });

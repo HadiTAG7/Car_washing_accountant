@@ -1,4 +1,6 @@
 import ScrollableTable from './ScrollableTable';
+import TableSearch from './TableSearch';
+import { matchesTableSearch } from '../lib/tableSearch';
 import { useCallback, useMemo, useState } from 'react';
 import {
   Bike, Plus, Pencil, Trash2, Banknote, HandCoins, Users, Wallet,
@@ -17,7 +19,7 @@ import { useWashes } from '../hooks/useWashes';
 import { useTemporaryExpenses } from '../hooks/useTemporaryExpenses';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 import { describeBackendError } from '../lib/firebaseClient';
-import { formatCurrency, formatNumber, formatDate } from '../data/initialData';
+import { formatCurrencyPrecise, formatNumber, formatDate } from '../data/initialData';
 import { todayMonth, formatMonthLabel } from '../lib/variableExpenseTotals';
 import {
   BIKER_SORT_COLUMNS, sortBikers, nextSort, loadSort, saveSort,
@@ -128,8 +130,12 @@ export default function BikersPage({ role, payrollPreview = false }) {
   // ── الترتيب باختيار المالك ──
   // يُقرأ المحفوظ عند أول رسمة فقط (مُهيّئ كسول) — قراءته في كل رسمة تلمس
   // `localStorage` بلا داعٍ، وتُسقط الصفحة في وضعٍ يمنعه لو لم تُحرَس.
+  const [search, setSearch] = useState('');
   const [sort, setSort] = useState(loadSort);
   const sortedRows = useMemo(() => sortBikers(rows, sort), [rows, sort]);
+  const filteredRows = sortedRows.filter((row) => matchesTableSearch(search, [
+    row.name, row.contactNumber, row.residence, row.sponsor, row.nationality,
+  ]));
   const applySort = useCallback((columnId) => {
     setSort((prev) => {
       const next = nextSort(prev, columnId);
@@ -173,7 +179,7 @@ export default function BikersPage({ role, payrollPreview = false }) {
 
   async function handleDelete(row) {
     if (row.advancesTotal > 0) {
-      showToast(`على ${row.name} سلف قائمة (${formatCurrency(row.advancesTotal)}) — استردّها أو اخصمها من راتبه قبل الحذف.`, 'error');
+      showToast(`على ${row.name} سلف قائمة (${formatCurrencyPrecise(row.advancesTotal)}) — استردّها أو اخصمها من راتبه قبل الحذف.`, 'error');
       return;
     }
     const ok = window.confirm(
@@ -243,14 +249,14 @@ export default function BikersPage({ role, payrollPreview = false }) {
             icon={Banknote}
             tone="emerald"
             label="إجمالي الرواتب الشهرية"
-            value={formatCurrency(kpis.salaries)}
+            value={formatCurrencyPrecise(kpis.salaries)}
             sub="مجموع الرواتب المتفق عليها"
           />
           <StatCard
             icon={Wallet}
             tone="amber"
             label="السلف القائمة"
-            value={formatCurrency(kpis.advancesTotal)}
+            value={formatCurrencyPrecise(kpis.advancesTotal)}
             sub="ما لم يُخصم أو يُسترد بعد"
           />
           <StatCard
@@ -289,7 +295,8 @@ export default function BikersPage({ role, payrollPreview = false }) {
             ) : null}
           />
 
-          <ScrollableTable className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
+          <TableSearch id="biker-search" label="البحث في سجل العمال" value={search} onChange={setSearch} shown={filteredRows.length} total={rows.length} hint="الملخصات تشمل جميع العمال" />
+          <ScrollableTable stickyIdentity className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
             <table className="w-full min-w-[1320px] text-sm">
               <thead>
                 <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
@@ -330,7 +337,8 @@ export default function BikersPage({ role, payrollPreview = false }) {
                     </td>
                   </tr>
                 )}
-                {sortedRows.map((r) => (
+                {bikers.length > 0 && filteredRows.length === 0 && <tr><td colSpan={11} className="py-8 text-center text-slate-500 dark:text-slate-400">لا توجد نتائج مطابقة للبحث</td></tr>}
+                {filteredRows.map((r) => (
                   <tr key={r.id} className="border-b border-slate-50 dark:border-slate-800/60 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
                     <td className="py-3 px-4 whitespace-normal break-words min-w-[160px] font-medium text-slate-800 dark:text-slate-200">
                       <div className="flex items-center gap-2">
@@ -338,7 +346,7 @@ export default function BikersPage({ role, payrollPreview = false }) {
                           <Bike size={14} />
                         </span>
                         <span className="min-w-0">
-                          <span className="block truncate">{r.name}</span>
+                          <span className="block break-words">{r.name}</span>
                           {r.startDate && (
                             <span className="block text-[11px] font-normal text-slate-500 dark:text-slate-400">
                               منذ {formatDate(r.startDate)}
@@ -360,12 +368,12 @@ export default function BikersPage({ role, payrollPreview = false }) {
                       {r.nationality || '—'}
                     </td>
                     <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums font-semibold">
-                      {r.salary > 0 ? formatCurrency(r.salary) : '—'}
+                      {r.salary > 0 ? formatCurrencyPrecise(r.salary) : '—'}
                     </td>
                     <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums">
                       {r.advancesTotal > 0 ? (
                         <span className="font-semibold text-amber-700 dark:text-amber-400">
-                          {formatCurrency(r.advancesTotal)}
+                          {formatCurrencyPrecise(r.advancesTotal)}
                           <span className="text-[11px] font-normal mr-1">({formatNumber(r.advances.length)})</span>
                         </span>
                       ) : (
@@ -376,7 +384,7 @@ export default function BikersPage({ role, payrollPreview = false }) {
                       {formatNumber(r.stats.washCount)}
                     </td>
                     <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums">
-                      {r.stats.commission > 0 ? formatCurrency(r.stats.commission) : '—'}
+                      {r.stats.commission > 0 ? formatCurrencyPrecise(r.stats.commission) : '—'}
                     </td>
                     <td className="py-3 px-4 whitespace-nowrap">
                       <IqamaBadge expiry={r.iqamaExpiry} />

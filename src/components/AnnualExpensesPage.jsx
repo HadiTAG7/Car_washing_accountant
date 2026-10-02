@@ -257,7 +257,7 @@ export default function AnnualExpensesPage() {
           ) : items.length === 0 ? (
             <EmptyState onAdd={openAddModal} canMutate={canMutate} />
           ) : (
-            <ScrollableTable className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
+            <ScrollableTable stickyIdentity className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
               <table className="w-full min-w-[760px] text-sm">
                 <thead>
                   <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">

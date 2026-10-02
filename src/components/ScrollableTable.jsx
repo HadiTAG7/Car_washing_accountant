@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-export default function ScrollableTable({ children, className = '' }) {
+export default function ScrollableTable({ children, className = '', stickyIdentity = false }) {
   const ref = useRef(null);
   const [overflow, setOverflow] = useState(false);
   useEffect(() => {
@@ -18,6 +18,6 @@ export default function ScrollableTable({ children, className = '' }) {
       <button type="button" className="sw-button sw-button--sm sw-button--secondary" aria-label="تمرير الجدول يمينًا" onClick={() => ref.current.scrollBy({ left: 240, behavior: 'smooth' })}>→</button>
       <button type="button" className="sw-button sw-button--sm sw-button--secondary" aria-label="تمرير الجدول يسارًا" onClick={() => ref.current.scrollBy({ left: -240, behavior: 'smooth' })}>←</button>
     </div>}
-    <div ref={ref} className={className} role="region" aria-label="جدول قابل للتمرير" tabIndex={overflow ? 0 : undefined}>{children}</div>
+    <div ref={ref} className={`${className} ${stickyIdentity ? 'sw-table-sticky-identity' : ''}`} role="region" aria-label="جدول قابل للتمرير" tabIndex={overflow ? 0 : undefined}>{children}</div>
   </div>;
 }

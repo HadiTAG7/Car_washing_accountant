@@ -72,16 +72,16 @@ export function StatCard({ icon: Icon, tone = 'primary', iconColor, iconBg, labe
       className={`sw-stat-card min-w-0 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 p-4 sm:p-5 transition-all duration-200 ${className}`}
       style={{ borderRadius: 'var(--sw-radius-small-card)', boxShadow: 'var(--sw-shadow-card)' }}
     >
-      <div className="flex items-start justify-between">
+      <div className="sw-stat-top flex items-start justify-between">
         <div
-          className={`${chipBg} ${chipColor} w-10 h-10 sm:w-11 sm:h-11 flex items-center justify-center`}
+          className={`sw-stat-icon ${chipBg} ${chipColor} w-10 h-10 sm:w-11 sm:h-11 flex items-center justify-center`}
           style={{ borderRadius: 'var(--sw-radius-control)' }}
         >
           {Icon && <Icon size={20} strokeWidth={2.2} />}
         </div>
         {trend !== undefined && (
           <span
-            className={`text-xs font-bold px-2 py-1 rounded-lg tabular-nums ${
+            className={`sw-stat-trend text-xs font-bold px-2 py-1 rounded-lg tabular-nums ${
               trendPositive
                 ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
                 : 'bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-300'
@@ -91,9 +91,9 @@ export function StatCard({ icon: Icon, tone = 'primary', iconColor, iconBg, labe
           </span>
         )}
       </div>
-      <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mt-3 sm:mt-4 mb-1">{label}</p>
+      <p className="sw-stat-label text-xs font-medium text-slate-500 dark:text-slate-400 mt-3 sm:mt-4 mb-1">{label}</p>
       <p className="sw-stat-value text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-slate-100 tabular-nums">{value}</p>
-      {sub && <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5 leading-relaxed">{sub}</p>}
+      {sub && <p className="sw-stat-sub text-[11px] text-slate-500 dark:text-slate-400 mt-1.5 leading-relaxed">{sub}</p>}
     </div>
   );
 }

@@ -465,15 +465,15 @@ export default function SalesDocumentsPage() {
               <SecondaryButton icon={Plus} onClick={() => setForm((f) => ({ ...f, lines: [...f.lines, emptyLine()] }))}>
                 إضافة سطر
               </SecondaryButton>
-              <div className="flex items-center gap-5 text-sm">
-                <span className="text-slate-500 dark:text-slate-400">
-                  الصافي <span className="tabular-nums font-semibold text-slate-900 dark:text-slate-100">{formatCurrencyPrecise(preview.net)}</span>
+              <div className="flex w-full min-w-0 flex-col gap-3 text-sm sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
+                <span className="flex flex-wrap justify-between gap-2 text-slate-500 dark:text-slate-400">
+                  الصافي <span className="whitespace-nowrap tabular-nums font-semibold text-slate-900 dark:text-slate-100">{formatCurrencyPrecise(preview.net)}</span>
                 </span>
-                <span className="text-slate-500 dark:text-slate-400">
-                  الضريبة <span className="tabular-nums font-semibold text-slate-900 dark:text-slate-100">{formatCurrencyPrecise(preview.vat)}</span>
+                <span className="flex flex-wrap justify-between gap-2 text-slate-500 dark:text-slate-400">
+                  الضريبة <span className="whitespace-nowrap tabular-nums font-semibold text-slate-900 dark:text-slate-100">{formatCurrencyPrecise(preview.vat)}</span>
                 </span>
-                <span className="text-slate-900 dark:text-slate-100 font-bold tabular-nums">{formatCurrencyPrecise(preview.gross)}</span>
-                <PrimaryButton icon={busy === 'issue' ? Loader2 : FileText} onClick={handleIssue} disabled={Boolean(busy)}>
+                <span className="flex flex-wrap justify-between gap-2 font-bold text-slate-900 dark:text-slate-100">الإجمالي <span className="whitespace-nowrap tabular-nums">{formatCurrencyPrecise(preview.gross)}</span></span>
+                <PrimaryButton className="w-full sm:w-auto" icon={busy === 'issue' ? Loader2 : FileText} onClick={handleIssue} disabled={Boolean(busy)}>
                   {busy === 'issue' ? 'جارٍ الإصدار...' : 'إصدار'}
                 </PrimaryButton>
               </div>

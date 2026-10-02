@@ -3,7 +3,7 @@ import {
   Plus, Trash2, Pencil, Target, Wallet, TrendingDown, AlertTriangle,
   Check, X, Receipt, Repeat, Sparkles, EyeOff, RotateCcw,
 } from 'lucide-react';
-import { formatCurrency } from '../data/initialData';
+import { formatCurrencyPrecise } from '../data/initialData';
 import TopBar from './TopBar';
 import {
   Card, StatCard, PrimaryButton, SecondaryButton, EmptyState,
@@ -142,18 +142,19 @@ function computeBudgetSpend({
 }
 
 function progressColor(pct) {
-  if (pct >= 100) return 'bg-rose-500 animate-pulse';
+  if (pct > 100) return 'bg-rose-500 animate-pulse';
   if (pct >= 70)  return 'bg-amber-500';
   return 'bg-emerald-500';
 }
 
 // ─── Budget card (inline editable amount) ────────────────────────────────
-function BudgetCard({ budget, allocated, spent, onSaveAmount, onDelete, onEditFull, onHide, canMutate = true }) {
+export function BudgetCard({ budget, allocated, spent, onSaveAmount, onDelete, onEditFull, onHide, canMutate = true }) {
   const isVirtual = Boolean(budget.isVirtual);
   const remaining = allocated - spent;
   const pct = allocated > 0 ? Math.min((spent / allocated) * 100, 200) : 0;
   const overspent = remaining < 0;
-  const isDanger = allocated > 0 && pct >= 100;
+  const isDanger = overspent;
+  const isComplete = allocated > 0 && remaining === 0;
   const fill = progressColor(pct);
   const widthPct = Math.min(100, (spent / Math.max(allocated, 1)) * 100);
 
@@ -324,14 +325,14 @@ function BudgetCard({ budget, allocated, spent, onSaveAmount, onDelete, onEditFu
               className="block text-right w-full text-base font-extrabold text-slate-900 dark:text-slate-100 tabular-nums mt-0.5 hover:text-primary-700 dark:hover:text-primary-300 transition-colors"
               title="اضغط للتعديل"
             >
-              {formatCurrency(allocated)}
+              {formatCurrencyPrecise(allocated)}
             </button>
           )}
         </div>
         <div className="rounded-smallcard bg-slate-50 dark:bg-slate-800 px-3 py-2.5">
           <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">المصروف الفعلي</p>
           <p className="text-base font-extrabold text-slate-900 dark:text-slate-100 tabular-nums mt-0.5">
-            {formatCurrency(spent)}
+            {formatCurrencyPrecise(spent)}
           </p>
         </div>
         <div className={`rounded-smallcard px-3 py-2.5 ${overspent
@@ -345,7 +346,7 @@ function BudgetCard({ budget, allocated, spent, onSaveAmount, onDelete, onEditFu
           <p className={`text-base font-extrabold tabular-nums mt-0.5 ${overspent
             ? 'text-rose-700 dark:text-rose-300'
             : 'text-emerald-700 dark:text-emerald-300'}`}>
-            {overspent ? '−' : ''}{formatCurrency(Math.abs(remaining))}
+            {overspent ? '−' : ''}{formatCurrencyPrecise(Math.abs(remaining))}
           </p>
         </div>
       </div>
@@ -364,6 +365,7 @@ function BudgetCard({ budget, allocated, spent, onSaveAmount, onDelete, onEditFu
               تجاوز الميزانية
             </span>
           )}
+          {isComplete && <span className="text-emerald-700 dark:text-emerald-300">اكتملت الميزانية</span>}
         </div>
         <div className="w-full h-3 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden" dir="ltr">
           <div
@@ -421,11 +423,11 @@ function BudgetSection({
             {count > 0 && (
               <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-2 tabular-nums">
                 <span className="font-semibold text-slate-700 dark:text-slate-300">
-                  {formatCurrency(spentTotal)}
+                  {formatCurrencyPrecise(spentTotal)}
                 </span>
                 {' '}مصروف من{' '}
                 <span className="font-semibold text-slate-700 dark:text-slate-300">
-                  {formatCurrency(allocatedTotal)}
+                  {formatCurrencyPrecise(allocatedTotal)}
                 </span>
                 {' '}مرصود
               </p>
@@ -840,21 +842,21 @@ export default function BudgetsPage() {
             icon={Target}
             tone="primary"
             label="إجمالي الميزانيات المرصودة"
-            value={formatCurrency(totals.allocated)}
+            value={formatCurrencyPrecise(totals.allocated)}
             sub={`${cards.length} ${cards.length === 1 ? 'بند' : 'بنود'} تحت المراقبة`}
           />
           <StatCard
             icon={TrendingDown}
             tone="slate"
             label="إجمالي الصرف الفعلي"
-            value={formatCurrency(totals.spent)}
+            value={formatCurrencyPrecise(totals.spent)}
             sub="موزع على كل البنود"
           />
           <StatCard
             icon={Wallet}
             tone={totals.remaining >= 0 ? 'emerald' : 'rose'}
             label={totals.remaining >= 0 ? 'المتبقي الإجمالي' : 'العجز الإجمالي'}
-            value={`${totals.remaining >= 0 ? '' : '−'}${formatCurrency(Math.abs(totals.remaining))}`}
+            value={`${totals.remaining >= 0 ? '' : '−'}${formatCurrencyPrecise(Math.abs(totals.remaining))}`}
             sub="صافي الفرق بين الميزانية والصرف"
           />
         </div>

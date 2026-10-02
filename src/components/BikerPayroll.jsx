@@ -11,7 +11,7 @@ import DateField from './DateField';
 import { usePayrollItems, usePayrollRuns } from '../hooks/usePayroll';
 import { describeBackendError } from '../lib/firebaseClient';
 import { downloadCsv } from '../lib/exportCsv';
-import { formatCurrency, formatDate, formatNumber } from '../data/initialData';
+import { formatCurrency, formatCurrencyPrecise, formatDate, formatNumber } from '../data/initialData';
 import {
   adjustmentsFromPayrollLines, payrollAdjustmentPayload, payrollAdvanceMax,
 } from '../lib/payrollUi';
@@ -134,14 +134,14 @@ function PayrollActionDialog({ action, run, busy, onClose, onSubmit }) {
             </label>
             <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
               تاريخ الصرف
-              <DateField value={date} onChange={(e) => setDate(e.target.value)} />
+              <DateField ariaLabel="تاريخ صرف الرواتب" value={date} onChange={(e) => setDate(e.target.value)} />
             </label>
           </div>
         )}
         {action === 'reverse' && (
           <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mt-5">
             تاريخ القيد العكسي
-            <DateField value={date} onChange={(e) => setDate(e.target.value)} />
+            <DateField ariaLabel="تاريخ عكس الصرف" value={date} onChange={(e) => setDate(e.target.value)} />
           </label>
         )}
         {action !== 'approve' && (
@@ -397,7 +397,10 @@ export default function BikerPayroll({ role, previewMode = false }) {
     }
   }
 
-  const totals = preview?.totals || { basic: 0, commissions: 0, bonuses: 0, deductions: 0, advances: 0, net: 0 };
+  const totals = preview?.totals || {};
+  const summaryValue = (key) => !preview
+    ? <span className="text-sm">لم تُحتسب بعد</span>
+    : totals?.[key] == null ? '—' : formatCurrencyPrecise(totals[key]);
   const status = preview?.status || 'draft';
   const loading = api.loading || itemsQuery.loading;
 
@@ -411,10 +414,10 @@ export default function BikerPayroll({ role, previewMode = false }) {
               <input type="month" value={periodKey} onChange={(e) => setPeriodKey(e.target.value)} className={`mt-1 ${INPUT}`} />
             </label>
             <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">بداية فترة الراتب
-              <DateField value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} />
+              <DateField ariaLabel="بداية فترة الرواتب" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} />
             </label>
             <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">نهاية فترة الراتب
-              <DateField value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} />
+              <DateField ariaLabel="نهاية فترة الرواتب" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} />
             </label>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -429,7 +432,7 @@ export default function BikerPayroll({ role, previewMode = false }) {
         </div>
       </Card>
 
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 payroll-print-header">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 min-w-0 payroll-summary-header">
         <div>
           <p className="text-xs text-primary-600 dark:text-primary-400 font-bold">مسير رواتب البايكر</p>
           <h2 className="text-xl font-extrabold text-slate-900 dark:text-slate-100">{periodKey} · {formatDate(periodStart)} — {formatDate(periodEnd)}</h2>
@@ -438,12 +441,12 @@ export default function BikerPayroll({ role, previewMode = false }) {
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
-        <StatCard icon={Banknote} tone="primary" label="إجمالي الأساسي" value={formatCurrency(totals.basic)} />
-        <StatCard icon={BadgeDollarSign} tone="indigo" label="العمولات" value={formatCurrency(totals.commissions)} />
-        <StatCard icon={CheckCircle2} tone="emerald" label="البونص" value={formatCurrency(totals.bonuses)} />
-        <StatCard icon={ShieldAlert} tone="rose" label="الخصومات" value={formatCurrency(totals.deductions)} />
-        <StatCard icon={WalletCards} tone="amber" label="السلف المخصومة" value={formatCurrency(totals.advances)} />
-        <StatCard icon={Landmark} tone="accent" label="صافي الرواتب" value={formatCurrency(totals.net)} />
+        <StatCard icon={Banknote} tone="primary" label="إجمالي الأساسي" value={summaryValue('basic')} />
+        <StatCard icon={BadgeDollarSign} tone="indigo" label="العمولات" value={summaryValue('commissions')} />
+        <StatCard icon={CheckCircle2} tone="emerald" label="البونص" value={summaryValue('bonuses')} />
+        <StatCard icon={ShieldAlert} tone="rose" label="الخصومات" value={summaryValue('deductions')} />
+        <StatCard icon={WalletCards} tone="amber" label="السلف المخصومة" value={summaryValue('advances')} />
+        <StatCard icon={Landmark} tone="accent" label="صافي الرواتب" value={summaryValue('net')} />
       </div>
 
       <Card className="p-4 sm:p-6">

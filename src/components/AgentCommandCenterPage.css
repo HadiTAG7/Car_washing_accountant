@@ -80,20 +80,81 @@
   white-space: nowrap;
 }
 .acc-map-wrap { position: relative; width: 100%; max-width: 1040px; margin: var(--sw-space-4) auto 0; }
-.acc-map-controls { display: none; }
-.acc-map-viewport { width: 100%; }
-.acc-map-stage { width: 100%; }
-.acc-map {
+.acc-map-controls {
   position: relative;
+  width: fit-content;
+  max-width: 100%;
+  flex-wrap: wrap;
+  margin-block: 8px;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-height: 48px;
+  border: 1px solid var(--sw-border-subtle);
+  border-radius: var(--sw-radius-pill);
+  padding: 2px;
+  background: color-mix(in srgb, var(--sw-surface) 94%, transparent);
+  box-shadow: var(--sw-shadow-card);
+  backdrop-filter: blur(8px);
+}
+.acc-map-controls button,
+.acc-map-controls output {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: var(--sw-radius-round);
+  background: transparent;
+  color: var(--sw-text-secondary);
+}
+.acc-map-controls button { cursor: pointer; }
+.acc-map-controls button:hover,
+.acc-map-controls button:focus-visible { background: var(--sw-brand-soft); color: var(--sw-action); outline: none; }
+.acc-map-controls button:disabled { opacity: 0.38; cursor: not-allowed; }
+.acc-map-controls output { width: 38px; color: var(--sw-action); font: 800 9px/1 var(--sw-font-en); }
+.acc-map-viewport {
   width: 100%;
-  aspect-ratio: 1.48;
-  min-height: 610px;
-  overflow: hidden;
+  height: max(680px, calc(var(--acc-map-base-height) + 2px));
+  overflow: auto;
   border: 1px solid var(--sw-border-subtle);
   border-radius: var(--sw-radius-card);
+  background: var(--sw-canvas-subtle);
+  direction: ltr;
+  overscroll-behavior: contain;
+  scroll-behavior: smooth;
+  scrollbar-width: none;
+  touch-action: pan-x pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+.acc-map-viewport::-webkit-scrollbar { display: none; }
+.acc-map-viewport:focus-visible { outline: 2px solid var(--sw-action); outline-offset: 2px; }
+.acc-map-stage {
+  position: relative;
+  width: max(100%, var(--acc-map-stage-width));
+  min-height: 100%;
+  height: var(--acc-map-stage-height);
+}
+.acc-map {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--acc-map-base-width);
+  height: var(--acc-map-base-height);
+  min-height: var(--acc-map-base-height);
+  aspect-ratio: auto;
+  transform: translate(-50%, -50%) scale(var(--acc-map-scale));
+  transform-origin: center;
+  border: 0;
+  border-radius: 0;
+  direction: rtl;
+  overflow: hidden;
   background-color: var(--sw-canvas-subtle);
   background-image: radial-gradient(var(--sw-border-subtle) 0.7px, transparent 0.7px);
   background-size: 14px 14px;
+
 }
 .acc-map::after {
   position: absolute;
@@ -461,69 +522,6 @@
 @media (max-width: 720px) {
   .acc-network-card { padding: var(--sw-space-4); }
   .acc-map-wrap { max-width: none; }
-  .acc-map-controls {
-    position: absolute;
-    inset: 8px 8px auto auto;
-    z-index: 30;
-    display: flex;
-    align-items: center;
-    gap: 3px;
-    min-height: 48px;
-    border: 1px solid var(--sw-border-subtle);
-    border-radius: var(--sw-radius-pill);
-    padding: 2px;
-    background: color-mix(in srgb, var(--sw-surface) 94%, transparent);
-    box-shadow: var(--sw-shadow-card);
-    backdrop-filter: blur(8px);
-  }
-  .acc-map-controls button,
-  .acc-map-controls output {
-    display: grid;
-    flex: none;
-    place-items: center;
-    width: 44px;
-    height: 44px;
-    border: 0;
-    border-radius: var(--sw-radius-round);
-    background: transparent;
-    color: var(--sw-text-secondary);
-  }
-  .acc-map-controls button { cursor: pointer; }
-  .acc-map-controls button:hover,
-  .acc-map-controls button:focus-visible { background: var(--sw-brand-soft); color: var(--sw-action); outline: none; }
-  .acc-map-controls button:disabled { opacity: 0.38; cursor: not-allowed; }
-  .acc-map-controls output { width: 38px; color: var(--sw-action); font: 800 9px/1 var(--sw-font-en); }
-  .acc-map-viewport {
-    height: clamp(420px, 52vh, 460px);
-    overflow: auto;
-    border: 1px solid var(--sw-border-subtle);
-    border-radius: var(--sw-radius-card);
-    background: var(--sw-canvas-subtle);
-    direction: ltr;
-    overscroll-behavior: contain;
-    scroll-behavior: smooth;
-    scrollbar-width: none;
-    touch-action: pan-x pan-y;
-    -webkit-overflow-scrolling: touch;
-  }
-  .acc-map-viewport::-webkit-scrollbar { display: none; }
-  .acc-map-viewport:focus-visible { outline: 2px solid var(--sw-action); outline-offset: 2px; }
-  .acc-map-stage {
-    position: relative;
-    width: var(--acc-map-stage-width);
-    height: var(--acc-map-stage-height);
-  }
-  .acc-map {
-    width: 920px;
-    height: 620px;
-    min-height: 620px;
-    aspect-ratio: auto;
-    transform: scale(var(--acc-map-scale));
-    transform-origin: top left;
-    border: 0;
-    border-radius: 0;
-    direction: rtl;
-  }
   .acc-agent--orbit { width: 104px; min-height: 64px; grid-template-columns: 31px 1fr; padding: 7px; }
   .acc-agent--orbit .acc-agent-icon { width: 29px; height: 29px; }
   .acc-agent--orbit .acc-agent-icon svg { width: 18px; height: 18px; }
@@ -598,3 +596,22 @@
 
 .acc-map-help { font-size: 12px; color: var(--sw-text-secondary); margin-block: 8px; }
 @media(max-width: 720px) { .acc-map-controls { position: relative; inset: auto; width: fit-content; max-width: 100%; flex-wrap: wrap; margin-block: 8px; border-radius: 16px; } }
+
+.acc-map-controls button:focus-visible { outline: 2px solid var(--sw-action); outline-offset: 2px; }
+.acc-map-controls output { font-size: 12px; }
+.acc-event-list > li > div, .acc-detail-list > li, .acc-report-card { min-width: 0; }
+.acc-event-list p.acc-message, .acc-executive-alerts p.acc-message,
+.acc-detail-section p.acc-message, .acc-detail-list p.acc-message, .acc-report-card p.acc-message,
+.acc-message-preview { font-size: 13px; line-height: 1.8; overflow-wrap: anywhere; white-space: pre-wrap; }
+.acc-message-details { margin-block: 6px; min-width: 0; }
+.acc-message-details > summary { min-height: 44px; cursor: pointer; border-radius: 8px; }
+.acc-message-details > summary:focus-visible { outline: 2px solid var(--sw-action); outline-offset: 3px; }
+.acc-message-toggle { display: block; color: var(--sw-action); font-size: 12px; font-weight: 700; margin-block: 4px; }
+.acc-message-collapse, .acc-message-details[open] .acc-message-expand, .acc-message-details[open] .acc-message-preview { display: none; }
+.acc-message-details[open] .acc-message-collapse { display: inline; }
+.acc-event-list time, .acc-executive-alerts time, .acc-report-card time { font-size: 11px; }
+.acc-readonly-note { font-size: 11px; }
+.acc-map-wrap:fullscreen { display: flex; flex-direction: column; overflow: hidden; width: 100vw; max-width: none; height: 100vh; margin: 0; padding: 12px; background: var(--sw-canvas-subtle); }
+.acc-map-wrap:fullscreen .acc-map-controls { inset: auto; }
+.acc-map-wrap:fullscreen .acc-map-viewport { flex: 1; min-height: 0; height: auto; }
+@media (max-width: 720px) { .acc-map-viewport { height: clamp(420px, 52vh, 460px); } }

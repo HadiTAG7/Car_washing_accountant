@@ -215,13 +215,24 @@ function TeamNode({ team, activeTeamId, onSelectTeam, onOpenAgent }) {
   );
 }
 
+export function AgentMessage({ text }) {
+  if (!text) return null;
+  if (text.length <= 180) return <p className="acc-message">{text}</p>;
+  const preview = text.slice(0, 180).replace(/\s+\S*$/, '');
+  return <details className="acc-message-details">
+    <summary><span className="acc-message-preview">{preview}…</span><span className="acc-message-toggle"><span className="acc-message-expand">عرض التفاصيل كاملة</span><span className="acc-message-collapse">إخفاء التفاصيل</span></span></summary>
+    <p className="acc-message">{text}</p>
+  </details>;
+}
+
 function OrganizationMap({ organization, activeTeamId, onSelectTeam, onOpenAgent, approvals, alerts }) {
   const teams = useMemo(() => organizationLayout(organization), [organization]);
   const mapShellRef = useRef(null);
   const viewportRef = useRef(null);
   const zoomAnchorRef = useRef(null);
-  const [zoom, setZoom] = useState(MAP_ZOOM_DEFAULT);
+  const [zoom, setZoom] = useState(() => window.innerWidth <= 720 ? MAP_ZOOM_DEFAULT : 1);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [mapSize, setMapSize] = useState({ width: MOBILE_MAP_WIDTH, height: MOBILE_MAP_HEIGHT });
   const teamById = new Map(teams.map((team) => [team.id, team]));
   const agentPoints = new Map();
   for (const team of teams) {
@@ -242,6 +253,8 @@ function OrganizationMap({ organization, activeTeamId, onSelectTeam, onOpenAgent
     });
   }, []);
 
+  useEffect(() => { centerMap('auto'); }, [mapSize, centerMap]);
+
   const adjustZoom = useCallback((change) => {
     const viewport = viewportRef.current;
     if (viewport) {
@@ -259,7 +272,14 @@ function OrganizationMap({ organization, activeTeamId, onSelectTeam, onOpenAgent
 
   useEffect(() => {
     const timer = window.setTimeout(() => centerMap('auto'), 0);
-    const observer = new ResizeObserver(() => centerMap('auto'));
+    const resizeMap = () => {
+      const width = window.innerWidth <= 720 ? MOBILE_MAP_WIDTH : Math.max(1, viewportRef.current?.clientWidth - 2 || MOBILE_MAP_WIDTH);
+      const height = window.innerWidth <= 720 ? MOBILE_MAP_HEIGHT : Math.max(610, Math.round(width / 1.48));
+      setMapSize((current) => current.width === width && current.height === height ? current : { width, height });
+      centerMap('auto');
+    };
+    resizeMap();
+    const observer = new ResizeObserver(resizeMap);
     if (viewportRef.current) observer.observe(viewportRef.current);
     return () => { window.clearTimeout(timer); observer.disconnect(); };
   }, [centerMap]);
@@ -320,8 +340,10 @@ function OrganizationMap({ organization, activeTeamId, onSelectTeam, onOpenAgent
     && typeof document.documentElement?.requestFullscreen === 'function';
   const stageStyle = {
     '--acc-map-scale': zoom,
-    '--acc-map-stage-width': `${Math.round(MOBILE_MAP_WIDTH * zoom)}px`,
-    '--acc-map-stage-height': `${Math.round(MOBILE_MAP_HEIGHT * zoom)}px`,
+    '--acc-map-base-width': `${mapSize.width}px`,
+    '--acc-map-base-height': `${mapSize.height}px`,
+    '--acc-map-stage-width': `${Math.round(mapSize.width * zoom)}px`,
+    '--acc-map-stage-height': `${Math.round(mapSize.height * zoom)}px`,
   };
 
   return (
@@ -332,12 +354,13 @@ function OrganizationMap({ organization, activeTeamId, onSelectTeam, onOpenAgent
         <output className="tabular-nums" aria-live="polite" aria-label={`مستوى التكبير ${Math.round(zoom * 100)} بالمئة`}>{Math.round(zoom * 100)}%</output>
         <button type="button" onClick={() => adjustZoom(-MAP_ZOOM_STEP)} disabled={zoom <= MAP_ZOOM_MIN} aria-label="تصغير الخريطة"><Minus size={16} /></button>
         <button type="button" onClick={() => centerMap()} aria-label="إعادة تمركز CEO"><Focus size={16} /></button>
-        <button type="button" onClick={() => { const viewport = viewportRef.current; if (!viewport) return; setZoom(Math.max(MAP_ZOOM_MIN, Math.min(viewport.clientWidth / MOBILE_MAP_WIDTH, viewport.clientHeight / MOBILE_MAP_HEIGHT))); window.setTimeout(() => centerMap('auto'), 0); }} aria-label="عرض الدائرة كاملة"><RotateCw size={16} /></button>
+        <button type="button" onClick={() => { const viewport = viewportRef.current; if (!viewport) return; setZoom(Math.max(MAP_ZOOM_MIN, Math.min(MAP_ZOOM_MAX, (viewport.clientWidth - 2) / mapSize.width, (viewport.clientHeight - 2) / mapSize.height))); window.setTimeout(() => centerMap('auto'), 0); }} aria-label="عرض الدائرة كاملة"><RotateCw size={16} /></button>
         <button type="button" onClick={toggleFullscreen} disabled={!fullscreenSupported} aria-label={isFullscreen ? 'إنهاء ملء الشاشة' : 'عرض الخريطة بملء الشاشة'} aria-pressed={isFullscreen}><span aria-hidden="true">{isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}</span></button>
       </div>
       <div
         ref={viewportRef}
         className="acc-map-viewport"
+        style={stageStyle}
         data-testid="agent-map-viewport"
         data-zoom={zoom.toFixed(2)}
         role="region"
@@ -459,7 +482,7 @@ function ApprovalsContent({ approvals }) {
   return (
     <ul className="acc-event-list">
       {approvals.map((approval) => (
-        <li key={approval.id}><span className="acc-event-marker" data-kind="warning" aria-hidden="true" /><div><strong>{approval.title}</strong><p>{approval.summary}</p><time dateTime={approval.createdAt || undefined}>{formatAgentDate(approval.createdAt)}</time><span className="acc-readonly-note">قرار CEO مطلوب — لا يُنفّذ هنا</span></div></li>
+        <li key={approval.id}><span className="acc-event-marker" data-kind="warning" aria-hidden="true" /><div><strong>{approval.title}</strong><AgentMessage text={approval.summary} /><time dateTime={approval.createdAt || undefined}>{formatAgentDate(approval.createdAt)}</time><span className="acc-readonly-note">قرار CEO مطلوب — لا يُنفّذ هنا</span></div></li>
       ))}
     </ul>
   );
@@ -467,7 +490,7 @@ function ApprovalsContent({ approvals }) {
 
 function ActivityContent({ activity }) {
   if (!activity.length) return <CompactEmpty icon={FileClock} title="لا يوجد نشاط بعد" hint="سيظهر النشاط الحقيقي القادم من نقطة الإدخال الموقعة." />;
-  return <ol className="acc-event-list">{activity.map((item) => <li key={item.id}><span className="acc-event-marker" data-kind={item.kind || 'info'} aria-hidden="true" /><div><p>{item.message}</p><time dateTime={item.occurredAt || undefined}>{formatAgentDate(item.occurredAt)}</time></div></li>)}</ol>;
+  return <ol className="acc-event-list">{activity.map((item) => <li key={item.id}><span className="acc-event-marker" data-kind={item.kind || 'info'} aria-hidden="true" /><div><AgentMessage text={item.message} /><time dateTime={item.occurredAt || undefined}>{formatAgentDate(item.occurredAt)}</time></div></li>)}</ol>;
 }
 
 function SourcesContent({ sources }) {
@@ -477,7 +500,7 @@ function SourcesContent({ sources }) {
 
 function AlertsContent({ alerts }) {
   if (!alerts.length) return <CompactEmpty icon={BellRing} title="لا توجد تنبيهات تنفيذية" hint="لن يظهر تنبيه قبل استلامه عبر المسار الموقّع." />;
-  return <ul className="acc-executive-alerts">{alerts.map((alert) => <li key={alert.id} data-severity={alert.severity}><strong>{alert.title}</strong><p>{alert.message}</p><time dateTime={alert.createdAt || undefined}>{formatAgentDate(alert.createdAt)}</time></li>)}</ul>;
+  return <ul className="acc-executive-alerts">{alerts.map((alert) => <li key={alert.id} data-severity={alert.severity}><strong>{alert.title}</strong><AgentMessage text={alert.message} /><time dateTime={alert.createdAt || undefined}>{formatAgentDate(alert.createdAt)}</time></li>)}</ul>;
 }
 
 function ExecutiveConsole({ snapshot }) {
@@ -517,7 +540,7 @@ function AgentDetailsDrawer({ agent, onClose, returnFocusRef }) {
         return;
       }
       if (event.key !== 'Tab') return;
-      const focusable = [...(drawerRef.current?.querySelectorAll('a[href], button:not([disabled])') || [])];
+      const focusable = [...(drawerRef.current?.querySelectorAll('a[href], button:not([disabled]):not([tabindex="-1"]), summary, [tabindex="0"]') || [])];
       if (!focusable.length) return;
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
@@ -569,18 +592,18 @@ function AgentDetailsDrawer({ agent, onClose, returnFocusRef }) {
               <dl className="acc-detail-times"><div><dt>آخر تشغيل</dt><dd>{formatAgentDate(agent.lastRunAt)}</dd></div><div><dt>التشغيل القادم</dt><dd>{formatAgentDate(agent.nextRunAt)}</dd></div></dl>
               <section className="acc-detail-section"><h3>الدور</h3><p>{agent.role}</p></section>
               <section className="acc-detail-section"><h3>الصلاحيات والحدود</h3><ul className="acc-permissions">{agent.permissions.map((permission) => <li key={permission}>{permission}</li>)}</ul></section>
-              <section className="acc-detail-section"><h3>{agent.isTeamLeader ? 'طلبات موافقة الفريق المرفوعة إلى المدير وCEO' : 'طلبات الموافقة المرفوعة إلى المدير وCEO'}</h3>{visibleApprovals.length ? <ul className="acc-detail-list">{visibleApprovals.map((approval) => <li key={`${approval.sourceAgentId || agent.id}-${approval.id}`}>{approval.sourceAgentName ? <small className="acc-escalation-source">من {approval.sourceAgentName}</small> : null}<strong>{approval.title}</strong><p>{approval.summary}</p></li>)}</ul> : <p className="acc-inline-empty">لا توجد طلبات موافقة معلّقة لهذا الوكيل أو فريقه.</p>}</section>
+              <section className="acc-detail-section"><h3>{agent.isTeamLeader ? 'طلبات موافقة الفريق المرفوعة إلى المدير وCEO' : 'طلبات الموافقة المرفوعة إلى المدير وCEO'}</h3>{visibleApprovals.length ? <ul className="acc-detail-list">{visibleApprovals.map((approval) => <li key={`${approval.sourceAgentId || agent.id}-${approval.id}`}>{approval.sourceAgentName ? <small className="acc-escalation-source">من {approval.sourceAgentName}</small> : null}<strong>{approval.title}</strong><AgentMessage text={approval.summary} /></li>)}</ul> : <p className="acc-inline-empty">لا توجد طلبات موافقة معلّقة لهذا الوكيل أو فريقه.</p>}</section>
               {agent.conversationUrl ? <a className="acc-conversation-link" href={agent.conversationUrl} target="_blank" rel="noreferrer noopener">فتح المحادثة الموثوقة <ExternalLink size={16} /></a> : <p className="acc-conversation-unavailable">رابط المحادثة غير متوفر أو غير موثوق.</p>}
             </>
           ) : null}
           {activeTab === 'reports' ? (
             <>
-              <section className="acc-detail-section acc-detail-section--first"><h3>آخر تقرير</h3>{agent.latestReport ? <article className="acc-report-card"><strong>{agent.latestReport.title}</strong><p>{agent.latestReport.summary}</p><time dateTime={agent.latestReport.reportedAt || undefined}>{formatAgentDate(agent.latestReport.reportedAt)}</time></article> : <CompactEmpty icon={FileText} title="لم يُستلم تقرير" hint="لا يوجد ملخص حقيقي لهذا الوكيل حتى الآن." />}</section>
+              <section className="acc-detail-section acc-detail-section--first"><h3>آخر تقرير</h3>{agent.latestReport ? <article className="acc-report-card"><strong>{agent.latestReport.title}</strong><AgentMessage text={agent.latestReport.summary} /><time dateTime={agent.latestReport.reportedAt || undefined}>{formatAgentDate(agent.latestReport.reportedAt)}</time></article> : <CompactEmpty icon={FileText} title="لم يُستلم تقرير" hint="لا يوجد ملخص حقيقي لهذا الوكيل حتى الآن." />}</section>
               <section className="acc-detail-section"><h3>سجل التقارير</h3>{agent.reports.length ? <ol className="acc-report-history">{agent.reports.map((report) => <li key={report.id}><FileText size={16} /><div><strong>{report.title}</strong><time dateTime={report.reportedAt || undefined}>{formatAgentDate(report.reportedAt)}</time></div></li>)}</ol> : <p className="acc-inline-empty">لا يوجد سجل تقارير بعد.</p>}</section>
               {agent.isTeamLeader ? <section className="acc-detail-section"><h3>تقارير الفريق المرفوعة إلى المدير</h3>{agent.teamReports.length ? <ol className="acc-report-history">{agent.teamReports.map((report) => <li key={`${report.sourceAgentId}-${report.id}`}><FileText size={16} /><div><small className="acc-escalation-source">من {report.sourceAgentName}</small><strong>{report.title}</strong><time dateTime={report.reportedAt || undefined}>{formatAgentDate(report.reportedAt)}</time></div></li>)}</ol> : <p className="acc-inline-empty">لا توجد تقارير مرفوعة من أعضاء الفريق بعد.</p>}</section> : null}
             </>
           ) : null}
-          {activeTab === 'alerts' ? <section className="acc-detail-section acc-detail-section--first"><h3>{agent.isTeamLeader ? 'تنبيهات المدير والتنبيهات الحرجة المرفوعة من الفريق' : 'التنبيهات النشطة'}</h3>{visibleAlerts.length ? <ul className="acc-detail-list">{visibleAlerts.map((alert) => <li key={`${alert.sourceAgentId || agent.id}-${alert.id}`} data-severity={alert.severity}>{alert.sourceAgentName ? <small className="acc-escalation-source">من {alert.sourceAgentName}</small> : null}<strong>{alert.title}</strong><p>{alert.message}</p></li>)}</ul> : <CompactEmpty icon={BellRing} title="لا توجد تنبيهات نشطة" />}</section> : null}
+          {activeTab === 'alerts' ? <section className="acc-detail-section acc-detail-section--first"><h3>{agent.isTeamLeader ? 'تنبيهات المدير والتنبيهات الحرجة المرفوعة من الفريق' : 'التنبيهات النشطة'}</h3>{visibleAlerts.length ? <ul className="acc-detail-list">{visibleAlerts.map((alert) => <li key={`${alert.sourceAgentId || agent.id}-${alert.id}`} data-severity={alert.severity}>{alert.sourceAgentName ? <small className="acc-escalation-source">من {alert.sourceAgentName}</small> : null}<strong>{alert.title}</strong><AgentMessage text={alert.message} /></li>)}</ul> : <CompactEmpty icon={BellRing} title="لا توجد تنبيهات نشطة" />}</section> : null}
           {activeTab === 'sources' ? <section className="acc-detail-section acc-detail-section--first"><h3>مصادر البيانات</h3>{agent.dataSources.length ? <ul className="acc-source-list acc-source-list--detail">{agent.dataSources.map((source) => <li key={source.id}><div><strong>{source.name}</strong><time dateTime={source.lastCheckedAt || undefined}>{formatAgentDate(source.lastCheckedAt)}</time></div><StatusPill status={source.status} compact /></li>)}</ul> : <CompactEmpty icon={Database} title="لا توجد مصادر مسجلة" />}</section> : null}
           {activeTab === 'history' ? <section className="acc-detail-section acc-detail-section--first"><h3>سجل الوكيل</h3>{historyItems.length ? <ol className="acc-agent-history">{historyItems.map((item) => <li key={item.id}><span>{item.kind}</span><div><strong>{item.title}</strong><time dateTime={item.occurredAt || undefined}>{formatAgentDate(item.occurredAt)}</time></div></li>)}</ol> : <CompactEmpty icon={FileClock} title="لا يوجد سجل بعد" hint="يظهر هنا التشغيل والتقارير والتنبيهات المستلمة." />}</section> : null}
         </div>

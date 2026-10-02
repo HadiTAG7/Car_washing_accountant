@@ -126,3 +126,19 @@ describe('ترتيب جدول البايكر', () => {
     expect(header('الاسم').closest('th').getAttribute('aria-sort')).toBe('ascending');
   });
 });
+
+
+it('يبحث في الهوية ويستعيد الصفوف دون تغيير ملخص العمال', () => {
+  const { container } = render(<BikersPage role="admin" />);
+  const summaries = () => [...container.querySelectorAll('.sw-stat-card')].map((card) => card.textContent);
+  const before = summaries();
+  const input = screen.getByRole('searchbox', { name: 'البحث في سجل العمال' });
+  fireEvent.change(input, { target: { value: 'الفجر' } });
+  expect(namesInTable()).toEqual(['أحمد']);
+  expect(summaries()).toEqual(before);
+  fireEvent.change(input, { target: { value: 'لا يطابق أي عامل' } });
+  expect(screen.getByText('لا توجد نتائج مطابقة للبحث')).toBeTruthy();
+  expect(summaries()).toEqual(before);
+  fireEvent.change(input, { target: { value: '' } });
+  expect(namesInTable()).toHaveLength(3);
+});

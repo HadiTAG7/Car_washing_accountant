@@ -1,11 +1,13 @@
 import ScrollableTable from './ScrollableTable';
+import TableSearch from './TableSearch';
+import { matchesTableSearch } from '../lib/tableSearch';
 import { useCallback, useMemo, useState } from 'react';
 import {
   Plus, Trash2, Pencil, Wallet, Layers, Scale, CalendarClock, Activity, Calendar, Car,
   Percent, Link as LinkIcon,
 } from 'lucide-react';
 import {
-  formatCurrency, formatNumber, VARIABLE_EXPENSE_CATEGORIES,
+  formatCurrencyPrecise, formatNumber, VARIABLE_EXPENSE_CATEGORIES,
 } from '../data/initialData';
 
 // Only http(s) values become clickable — same guard the ledger and the VAT
@@ -196,6 +198,11 @@ export default function VariableExpensesPage() {
     [items, categories, selectedMonth, washes],
   );
 
+  const [search, setSearch] = useState('');
+  const filteredItems = displayedItems.filter((item) => matchesTableSearch(search, [
+    item.expenseName, item.bikerName, getCategoryLabel(item.categoryId), item.loggedDate,
+  ]));
+
   const totals = useMemo(() => {
     let cost = 0, units = 0;
     displayedItems.forEach((row) => {
@@ -296,7 +303,7 @@ export default function VariableExpensesPage() {
             icon={Wallet}
             tone="primary"
             label="إجمالي المصاريف المتغيرة"
-            value={formatCurrency(totals.cost)}
+            value={formatCurrencyPrecise(totals.cost)}
             sub={`${displayedItems.length} ${displayedItems.length === 1 ? 'بند' : 'بنود'} لشهر ${monthLabel}`}
           />
           <StatCard
@@ -314,10 +321,10 @@ export default function VariableExpensesPage() {
             icon={Scale}
             tone="amber"
             label="متوسط تكلفة الوحدة"
-            value={formatCurrency(totals.weightedUnitCost)}
+            value={formatCurrencyPrecise(totals.weightedUnitCost)}
             sub={
               totals.units > 0
-                ? `${formatCurrency(totals.cost)} ÷ ${formatNumber(totals.units)} وحدة`
+                ? `${formatCurrencyPrecise(totals.cost)} ÷ ${formatNumber(totals.units)} وحدة`
                 : 'يحسب تلقائياً بعد تسجيل أول وحدة'
             }
           />
@@ -337,12 +344,13 @@ export default function VariableExpensesPage() {
             ) : null}
           />
 
+          <TableSearch id="variable-search" label="البحث في مصاريف الشهر" value={search} onChange={setSearch} shown={filteredItems.length} total={displayedItems.length} hint="الملخصات تشمل جميع بنود الشهر" />
           {loading && !displayedItems.length ? (
             <LoadingState rows={4} />
           ) : displayedItems.length === 0 ? (
             <EmptyState onAdd={openAddModal} monthLabel={monthLabel} canMutate={canMutate} />
           ) : (
-            <ScrollableTable className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
+            <ScrollableTable stickyIdentity className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
               <table className="w-full min-w-[640px] text-sm">
                 <thead>
                   <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
@@ -356,7 +364,8 @@ export default function VariableExpensesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {displayedItems.map((i) => (
+                  {filteredItems.length === 0 && <tr><td colSpan={7} className="py-8 text-center text-slate-500 dark:text-slate-400">لا توجد نتائج مطابقة للبحث</td></tr>}
+                  {filteredItems.map((i) => (
                     <tr
                       key={i.id}
                       className={`border-b border-slate-50 dark:border-slate-800/60 last:border-0 transition-colors ${i.isVirtual ? 'bg-primary-50/60 dark:bg-primary-500/10 hover:bg-primary-50 dark:hover:bg-primary-500/15' : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'}`}
@@ -415,10 +424,10 @@ export default function VariableExpensesPage() {
                         {/* Scaled like the row total so qty × unit = total
                             stays visibly true in partner view (same
                             pattern as Startup/Monthly). */}
-                        {formatCurrency(i.unitCost * scalingFactor)}
+                        {formatCurrencyPrecise(i.unitCost * scalingFactor)}
                       </td>
                       <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums font-bold text-slate-900 dark:text-slate-100 align-top">
-                        {formatCurrency((i.totalVariableCost || 0) * scalingFactor)}
+                        {formatCurrencyPrecise((i.totalVariableCost || 0) * scalingFactor)}
                       </td>
                       <td className="py-3 px-4 whitespace-nowrap text-slate-600 dark:text-slate-400 align-top">
                         <span className="inline-flex items-center gap-1.5 tabular-nums">

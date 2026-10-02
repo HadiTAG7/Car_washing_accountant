@@ -16,7 +16,7 @@ import { useAllAnnualEntries } from '../hooks/useAnnualExpenseEntries';
 import { useHousingUnits } from '../hooks/useHousingUnits';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 import { describeBackendError } from '../lib/firebaseClient';
-import { formatCurrency, formatNumber } from '../data/initialData';
+import { formatCurrencyPrecise, formatNumber } from '../data/initialData';
 import { buildHousingRows, unhousedBikers, rentByUnit, rentOnlyUnits } from '../lib/housingStats';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -214,16 +214,16 @@ export default function HousingPage() {
             icon={Wallet}
             tone="emerald"
             label="تكلفة التجهيز"
-            value={formatCurrency(kpis.cost)}
+            value={formatCurrencyPrecise(kpis.cost)}
             sub="كل مصاريف بنود السكن حتى اليوم"
           />
           <StatCard
             icon={Scale}
             tone={kpis.per !== null && kpis.benchmark && kpis.per > kpis.benchmark ? 'amber' : 'emerald'}
             label="تجهيز · للساكن"
-            value={kpis.per === null ? '—' : formatCurrency(kpis.per)}
+            value={kpis.per === null ? '—' : formatCurrencyPrecise(kpis.per)}
             sub={kpis.benchmark
-              ? `التقدير: ${formatCurrency(kpis.benchmark)} للساكن`
+              ? `التقدير: ${formatCurrencyPrecise(kpis.benchmark)} للساكن`
               : 'اربط الساكنين ليُحسب'}
           />
           {/* الإيجار بطاقتان مستقلتان، لا يُضاف إلى التجهيز: ذاك رأسمالٌ صُرف
@@ -233,7 +233,7 @@ export default function HousingPage() {
           <StatCard
             icon={KeyRound}
             label="الإيجار السنوي"
-            value={kpis.rent > 0 ? formatCurrency(kpis.rent) : '—'}
+            value={kpis.rent > 0 ? formatCurrencyPrecise(kpis.rent) : '—'}
             sub={kpis.rent > 0
               ? 'من المصاريف السنوية — دفعات بند الإيجار الموسومة بسكناتها'
               : 'من المصاريف السنوية — قسِّم بند الإيجار على السكنات'}
@@ -243,9 +243,9 @@ export default function HousingPage() {
             tone="indigo"
             label="الإيجار · للساكن"
             value={kpis.rentPer !== null && kpis.rentPer > 0
-              ? formatCurrency(kpis.rentPer) : '—'}
+              ? formatCurrencyPrecise(kpis.rentPer) : '—'}
             sub={kpis.rentPer !== null && kpis.rentPer > 0
-              ? `سنوياً · ${formatCurrency(kpis.rentPer / 12)} ر.س شهرياً`
+              ? `سنوياً · ${formatCurrencyPrecise(kpis.rentPer / 12)} ر.س شهرياً`
               : (kpis.rent > 0 ? 'اربط الساكنين ليُحسب' : 'يظهر بعد وسم دفعات الإيجار')}
           />
         </div>
@@ -265,7 +265,7 @@ export default function HousingPage() {
             <SectionHeader
               title={row.itemName}
               subtitle={row.benchmark
-                ? `التقدير: ${formatCurrency(row.benchmark)} للساكن الواحد`
+                ? `التقدير: ${formatCurrencyPrecise(row.benchmark)} للساكن الواحد`
                 : undefined}
             />
 
@@ -337,12 +337,12 @@ export default function HousingPage() {
                     <div className="grid grid-cols-2 gap-3 text-sm border-t border-slate-100 dark:border-slate-800 pt-3">
                       <div>
                         <p className="text-[11px] text-slate-500 dark:text-slate-400">تكلفة التجهيز ({formatNumber(u.entryCount)} فاتورة)</p>
-                        <p className="font-bold text-slate-900 dark:text-slate-100 tabular-nums">{formatCurrency(u.cost)}</p>
+                        <p className="font-bold text-slate-900 dark:text-slate-100 tabular-nums">{formatCurrencyPrecise(u.cost)}</p>
                       </div>
                       <div>
                         <p className="text-[11px] text-slate-500 dark:text-slate-400">للساكن الواحد</p>
                         <p className={`font-bold tabular-nums ${deltaTone(u.vsBenchmarkPct)}`}>
-                          {u.perResident === null ? '—' : formatCurrency(u.perResident)}
+                          {u.perResident === null ? '—' : formatCurrencyPrecise(u.perResident)}
                           {u.vsBenchmarkPct !== null && (
                             <span className="mr-1 text-[11px] font-semibold">
                               ({u.vsBenchmarkPct > 0 ? '+' : ''}{u.vsBenchmarkPct.toFixed(0)}%)
@@ -363,7 +363,7 @@ export default function HousingPage() {
                           {u.rentEntryCount > 0 && <> ({formatNumber(u.rentEntryCount)} دفعة)</>}
                         </p>
                         <p className="font-bold text-slate-900 dark:text-slate-100 tabular-nums">
-                          {u.rent > 0 ? formatCurrency(u.rent) : '—'}
+                          {u.rent > 0 ? formatCurrencyPrecise(u.rent) : '—'}
                         </p>
                       </div>
                       <div>
@@ -372,9 +372,9 @@ export default function HousingPage() {
                           {u.rentPerResident === null || u.rent === 0
                             ? '—'
                             : <>
-                                {formatCurrency(u.rentPerResident)}
+                                {formatCurrencyPrecise(u.rentPerResident)}
                                 <span className="mr-1 text-[11px] font-normal text-slate-500 dark:text-slate-400">
-                                  ({formatCurrency(u.rentPerResident / 12)} شهرياً)
+                                  ({formatCurrencyPrecise(u.rentPerResident / 12)} شهرياً)
                                 </span>
                               </>}
                         </p>
@@ -394,7 +394,7 @@ export default function HousingPage() {
             {row.unassignedCost > 0 && (
               <p className="mt-4 text-[12px] text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/30 rounded-control px-3 py-2.5 leading-relaxed">
                 {formatNumber(row.unassignedCount)} مصروفاً بمجموع{' '}
-                <strong className="tabular-nums">{formatCurrency(row.unassignedCost)}</strong>{' '}
+                <strong className="tabular-nums">{formatCurrencyPrecise(row.unassignedCost)}</strong>{' '}
                 بلا تقسيم — وزّعها من سجل مصاريف البند في تاب رسوم التأسيس.
               </p>
             )}
@@ -410,7 +410,7 @@ export default function HousingPage() {
               {rentIndex.unassigned > 0 && (
                 <p className="text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/30 rounded-control px-3 py-2.5">
                   {formatNumber(rentIndex.unassignedCount)} دفعة إيجار بمجموع{' '}
-                  <strong className="tabular-nums">{formatCurrency(rentIndex.unassigned)}</strong>{' '}
+                  <strong className="tabular-nums">{formatCurrencyPrecise(rentIndex.unassigned)}</strong>{' '}
                   بلا سكن — افتح بند الإيجار في تاب «المصاريف السنوية» وأسنِد كل دفعة لسكنها.
                 </p>
               )}
@@ -419,7 +419,7 @@ export default function HousingPage() {
                   إيجارٌ مُسنَد إلى سكناتٍ لا بطاقة لها هنا:{' '}
                   {strayRent.map((u) => (
                     <strong key={u.key} className="whitespace-nowrap">
-                      {u.name} ({formatCurrency(u.total)})
+                      {u.name} ({formatCurrencyPrecise(u.total)})
                     </strong>
                   )).reduce((acc, el) => (acc === null ? [el] : [...acc, '، ', el]), null)}
                   {' '}— الاسم غير مذكور في تقسيمات بند التجهيز، فوحِّد التسمية بين البندين.

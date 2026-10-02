@@ -39,6 +39,33 @@ function database(overrides = {}) {
 }
 
 describe('تقرير مصروفات الشريك الخادمي', () => {
+  it.each(['2026-9-4', '2026-8-23', '2026-8-22'])('يقرأ التاريخ القديم %s دون إسقاط المصروف أو تغيير بياناته', async logged_date => {
+    const row = { id: 'legacy', expense_name: 'مواد', logged_date, total_variable_cost: 500 };
+    const db = database({ variable_expenses: [row] });
+    const r = await partnerAllocationReport(db, { partnerId: 'p1', periodKey: '2026-09', today: new Date('2026-10-02') });
+    const month = logged_date.includes('-9-') ? '2026-09' : '2026-08';
+    const variable = r.statements.find(s => s.periodKey === month).expenseBreakdown.groups.find(g => g.key === 'variable');
+    expect(variable.amount).toBe(50);
+    expect(variable.items[0].entryDate).toMatch(/^2026-0[89]-\d{2}$/);
+    expect(row.logged_date).toBe(logged_date);
+  });
+  it('يوحّد صيغة تاريخ الفاتورة دون نقل الاعتراف إلى شهر الصرف', async () => {
+    const r = await partnerAllocationReport(database({ variable_expenses: [{
+      id: 'legacy', invoice_date: '2026-8-31', logged_date: '2026-9-4', total_variable_cost: 500,
+    }] }), { partnerId: 'p1', periodKey: '2026-09', today: new Date('2026-10-02') });
+    expect(r.statements.find(s => s.periodKey === '2026-08').totalCosts).toBe(80);
+    expect(r.statements.find(s => s.periodKey === '2026-09').totalCosts).toBe(30);
+  });
+  it.each(['', '2026-99-1', '2026-2-31', '—'])('لا يخمّن تاريخاً للمصدر غير الصحيح (%s)', async logged_date => {
+    await expect(partnerAllocationReport(database({ variable_expenses: [{
+      id: 'bad', logged_date, total_variable_cost: 500,
+    }] }), { partnerId: 'p1', periodKey: '2026-09' })).rejects.toThrow();
+  });
+  it('لا يستبدل تاريخ فاتورة غير صحيح بتاريخ صرف صحيح', async () => {
+    await expect(partnerAllocationReport(database({ variable_expenses: [{
+      id: 'bad', invoice_date: '2026-2-31', logged_date: '2026-09-04', total_variable_cost: 500,
+    }] }), { partnerId: 'p1', periodKey: '2026-09' })).rejects.toThrow();
+  });
   it('تقرير كامل بتاريخ محدد، سنوي محجوز ودفعة التأسيس غير مكررة', async () => {
     const r = await partnerAllocationReport(database(), { partnerId: 'p1', periodKey: '2026-09', today: new Date('2026-10-02') });
     expect(r.statements[0]).toMatchObject({ totalCosts: 80, annualReserve: 1500, totalAllocation: 1580,

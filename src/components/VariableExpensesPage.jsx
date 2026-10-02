@@ -32,6 +32,7 @@ import { useAccountingSettings } from '../hooks/useAccountingSettings';
 import { taxPolicyAt } from '../lib/accounting/taxPolicy';
 import { isFirebaseConfigured, missingEnvNames, describeBackendError } from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
+import { normalizeExpenseDate, variableExpenseDateProblems } from '../lib/expenseDates';
 import {
   todayMonth,
   formatMonthLabel,
@@ -222,6 +223,13 @@ export default function VariableExpensesPage() {
   }, [displayedItems, scalingFactor]);
 
   const monthLabel = formatMonthLabel(selectedMonth);
+  // Do not let a month/search filter hide the record blocking the lifetime
+  // founding report. Only the existing management view sees raw identifiers.
+  const dateReview = items.map(item => ({ item, problems: variableExpenseDateProblems(item),
+    normalizedDate: normalizeExpenseDate(item.loggedDate),
+    normalizedInvoiceDate: normalizeExpenseDate(item.invoiceDate),
+  })).filter(({ item, problems, normalizedDate, normalizedInvoiceDate }) => problems.length
+    || normalizedDate !== item.loggedDate || normalizedInvoiceDate !== item.invoiceDate);
 
   async function handleAddItem(item) {
     try { await addItem(item); showToast('تم إضافة المصروف المتغير بنجاح'); }
@@ -285,6 +293,25 @@ export default function VariableExpensesPage() {
             error={error}
             onRetry={refetch}
           />
+        )}
+
+        {canMutate && !loading && !error && dateReview.length > 0 && (
+          <details className="rounded-smallcard border border-amber-200 dark:border-amber-500/30 p-4">
+            <summary className="cursor-pointer text-sm font-semibold">مراجعة تواريخ المصروفات — كل الأشهر ({dateReview.length})</summary>
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">التواريخ القديمة الصحيحة تُقرأ بصيغة موحدة دون تعديل السجلات. التاريخ المفقود أو غير الموجود في التقويم يحتاج مراجعة المستند، ولا يُستبدل بتاريخ اليوم.</p>
+            <ul className="mt-3 space-y-3">
+              {dateReview.map(({ item, problems, normalizedDate, normalizedInvoiceDate }) => (
+                <li key={item.id} className="text-sm break-words border-t border-amber-100 dark:border-amber-500/20 pt-3">
+                  <p className="font-semibold">{item.expenseName} — {formatCurrencyPrecise(item.totalVariableCost)}</p>
+                  <p className="text-xs">معرّف السجل: <bdi>{item.id}</bdi></p>
+                  <p className="text-xs">تاريخ الصرف: <bdi>{item.loggedDate || 'غير متاح'}</bdi>{normalizedDate !== item.loggedDate && <> ← <bdi>{normalizedDate}</bdi></>}</p>
+                  {item.invoiceDate && <p className="text-xs">تاريخ الفاتورة: <bdi>{item.invoiceDate}</bdi>{normalizedInvoiceDate !== item.invoiceDate && <> ← <bdi>{normalizedInvoiceDate}</bdi></>}</p>}
+                  {problems.map(problem => <p key={problem.field} className="text-xs text-rose-600 dark:text-rose-400">{problem.message}</p>)}
+                  {item.invoiceUrl && isSafeHttpUrl(item.invoiceUrl) && <a className="text-xs underline" href={item.invoiceUrl} target="_blank" rel="noopener noreferrer">المستند</a>}
+                </li>
+              ))}
+            </ul>
+          </details>
         )}
 
         <PeriodSelectorCard

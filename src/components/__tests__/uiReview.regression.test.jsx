@@ -8,6 +8,7 @@ import BikerPayroll from '../BikerPayroll';
 import VariableExpensesPage from '../VariableExpensesPage';
 
 const fixture = vi.hoisted(() => ({
+  canMutate: false,
   runs: [], lines: [],
   preview: vi.fn(async () => ({ lines: [], totals: { basic: 0, commissions: 0, bonuses: 0, deductions: 0, advances: 0, net: 0 } })),
   refetch: vi.fn(async () => {}),
@@ -27,8 +28,26 @@ vi.mock('../../hooks/useVariableExpenseCategories', () => ({ useVariableExpenseC
 }) }));
 vi.mock('../../hooks/useWashes', () => ({ useWashes: () => ({ items: fixture.lines }) }));
 vi.mock('../../hooks/useAccountingSettings', () => ({ useAccountingSettings: () => ({ settings: {} }) }));
-vi.mock('../../contexts/PartnerViewContext', () => ({ usePartnerView: () => ({ scalingFactor: 1, canMutate: false }) }));
+vi.mock('../../contexts/PartnerViewContext', () => ({ usePartnerView: () => ({ scalingFactor: 1, canMutate: fixture.canMutate }) }));
 afterEach(cleanup);
+
+it('يكشف سجل التاريخ للإدارة خارج مرشح الشهر ولا يسرّب معرّفه في عرض الشريك', () => {
+  const item = { id: 'legacy-aug', expenseName: 'مصروف قديم', loggedDate: '2026-8-22', totalVariableCost: 50 };
+  fixture.items.push(item);
+  try {
+    fixture.canMutate = true;
+    const { unmount } = render(<VariableExpensesPage />);
+    expect(screen.getByText('legacy-aug')).toBeTruthy();
+    expect(screen.getByText('2026-08-22')).toBeTruthy();
+    unmount();
+    fixture.canMutate = false;
+    render(<VariableExpensesPage />);
+    expect(screen.queryByText('legacy-aug')).toBeNull();
+  } finally {
+    fixture.items.pop();
+    fixture.canMutate = false;
+  }
+});
 
 it('يفرق بين الرواتب غير المحتسبة والصفر الفعلي ويعيد الحالة عند تغيير الفترة', async () => {
   render(<BikerPayroll role="accountant" />);

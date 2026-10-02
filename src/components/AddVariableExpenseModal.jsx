@@ -9,6 +9,7 @@ import DateField from './DateField';
 import TaxInvoiceFields from './TaxInvoiceFields';
 import PurchaseAmountBreakdown from './PurchaseAmountBreakdown';
 import { blockingVatProblems } from '../lib/vatFields';
+import { normalizeExpenseDate, variableExpenseDateProblems } from '../lib/expenseDates';
 import {
   EMPTY_TAX_INVOICE_FIELDS, readTaxInvoiceFields, submitTaxInvoiceFields,
 } from '../lib/taxInvoiceForm';
@@ -48,10 +49,11 @@ export default function AddVariableExpenseModal({
         categoryId:  initialValues.categoryId  || '',
         quantity:    String(Math.max(1, parseInt(initialValues.quantity, 10) || 1)),
         unitCost:    initialValues.unitCost ? String(initialValues.unitCost) : '',
-        loggedDate:  initialValues.loggedDate || '',
+        loggedDate:  normalizeExpenseDate(initialValues.loggedDate) || '',
         isTaxInvoice: Boolean(initialValues.isTaxInvoice),
         invoiceUrl:   initialValues.invoiceUrl || '',
         ...readTaxInvoiceFields(initialValues),
+        invoiceDate: normalizeExpenseDate(initialValues.invoiceDate) || '',
       });
     } else {
       setForm({ ...EMPTY_TEMPLATE, loggedDate: todayISO() });
@@ -92,12 +94,14 @@ export default function AddVariableExpenseModal({
   // though the field had been left empty and the typo left no trace to find.
   const vatProblems = form.isTaxInvoice
     ? blockingVatProblems(form, { amount: totalVariableCost }) : [];
+  const dateProblems = variableExpenseDateProblems(form);
 
   const isValid =
     form.expenseName.trim().length > 0 &&
     Boolean(form.categoryId) &&
     (isRule ? safeWashCount > 0 : manualQuantity > 0) &&
     unitCost > 0 &&
+    dateProblems.length === 0 &&
     vatProblems.length === 0;
 
   async function handleSubmit(e) {
@@ -334,7 +338,11 @@ export default function AddVariableExpenseModal({
               name="loggedDate"
               value={form.loggedDate}
               onChange={handleChange}
+              required
             />
+            {dateProblems.filter(p => p.field === 'loggedDate').map(p => (
+              <p key={p.field} role="alert" className="mt-1 text-xs text-rose-600 dark:text-rose-400">{p.message}</p>
+            ))}
           </div>
 
           {/* Live total — effective quantity × unit cost (live for rule rows) */}
@@ -391,6 +399,14 @@ export default function AddVariableExpenseModal({
                 spendDate={form.loggedDate}
                 problems={vatProblems}
               />
+            )}
+
+            {!form.isTaxInvoice && dateProblems.some(p => p.field === 'invoiceDate') && (
+              <div>
+                <label className="block text-sm font-semibold mb-1.5">تاريخ الفاتورة المحفوظ</label>
+                <DateField name="invoiceDate" value={form.invoiceDate} onChange={handleChange} ariaLabel="تاريخ الفاتورة" />
+                <p role="alert" className="mt-1 text-xs text-rose-600 dark:text-rose-400">{dateProblems.find(p => p.field === 'invoiceDate').message}</p>
+              </div>
             )}
 
             <div>

@@ -12,6 +12,7 @@ import {
   where, orderBy, limit, writeBatch,
 } from 'firebase/firestore';
 import { db } from './firebaseClient';
+import { checkedVariableExpenseDates, normalizeExpenseDate } from './expenseDates';
 
 export { where, orderBy, limit };
 
@@ -67,6 +68,7 @@ export async function getRow(path, id) {
  * order correctly — Supabase set this via a column default.
  */
 export async function insertRow(path, data) {
+  if (path === 'variable_expenses') data = checkedVariableExpenseDates(data);
   const { id, ...body } = data;
   if (body.created_at === undefined) body.created_at = new Date().toISOString();
   if (id != null && id !== '') {
@@ -79,7 +81,18 @@ export async function insertRow(path, data) {
 
 /** Patch a document by id. */
 export async function updateRow(path, id, patch) {
+  if (path === 'variable_expenses') patch = await checkedVariablePatch(id, patch);
   await fbUpdateDoc(doc(db, path, id), patch);
+}
+
+async function checkedVariablePatch(id, patch, current = undefined) {
+  const row = current === undefined ? await getRow('variable_expenses', id) : current;
+  if (!row) throw new Error('لا يوجد سجل المصروف المطلوب؛ أعد تحميل القائمة.');
+  checkedVariableExpenseDates({ ...row, ...patch });
+  return { ...patch,
+    ...(patch.logged_date !== undefined ? { logged_date: normalizeExpenseDate(patch.logged_date) } : {}),
+    ...(patch.invoice_date !== undefined ? { invoice_date: normalizeExpenseDate(patch.invoice_date) } : {}),
+  };
 }
 
 /** Delete a document by id. */
@@ -94,8 +107,23 @@ export async function deleteRow(path, id) {
  * the invariant the Supabase trigger used to enforce server-side.
  */
 export async function runBatch(ops) {
-  const batch = writeBatch(db);
+  const checked = [];
+  const projected = new Map();
   for (const op of ops) {
+    if (op.path !== 'variable_expenses' || !['set', 'update'].includes(op.type)) {
+      checked.push(op);
+      if (op.path === 'variable_expenses' && op.type === 'delete') projected.set(op.id, null);
+      continue;
+    }
+    const current = op.type === 'set' ? null
+      : (projected.has(op.id) ? projected.get(op.id) : await getRow(op.path, op.id));
+    const data = op.type === 'set' ? checkedVariableExpenseDates(op.data)
+      : await checkedVariablePatch(op.id, op.data, current);
+    projected.set(op.id, op.type === 'set' ? data : { ...current, ...data });
+    checked.push({ ...op, data });
+  }
+  const batch = writeBatch(db);
+  for (const op of checked) {
     const ref = doc(db, op.path, op.id);
     if (op.type === 'set')         batch.set(ref, op.data);
     else if (op.type === 'update') batch.update(ref, op.data);

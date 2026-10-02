@@ -215,6 +215,32 @@ describe.each(SOURCES)('$name', ({ prefix, mount, fill }) => {
 // record must not let it be saved forward as though it were fine.
 const EDITABLE = SOURCES.filter((s) => s.initial);
 
+describe('تاريخ المصروف المتغير إلزامي حتى دون فاتورة ضريبية', () => {
+  const variable = SOURCES.find(s => s.prefix === 'variable');
+  it.each(['', '2026-02-31', '2026-99-12'])('يرفض تاريخ الصرف (%s) دون استدعاء الحفظ', loggedDate => {
+    const onUpdate = vi.fn();
+    variable.mount({ onUpdate }, variable.initial({ loggedDate, isTaxInvoice: false, invoiceDate: '' }));
+    const button = submitForm();
+    expect(onUpdate).not.toHaveBeenCalled();
+    expect(button.disabled).toBe(true);
+    expect(screen.getAllByRole('alert').length).toBeGreaterThan(0);
+  });
+  it('لا يخفي تاريخ فاتورة غير صحيح عند إلغاء العلم الضريبي', () => {
+    const onUpdate = vi.fn();
+    variable.mount({ onUpdate }, variable.initial({ invoiceDate: '2026-02-31', isTaxInvoice: false }));
+    submitForm();
+    expect(onUpdate).not.toHaveBeenCalled();
+    expect(screen.getAllByRole('alert').length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: 'تاريخ الفاتورة' })).toBeTruthy();
+  });
+  it('يحفظ التاريخ القديم الصحيح بصيغة موحدة دون تغيير يومه', () => {
+    const onUpdate = vi.fn();
+    variable.mount({ onUpdate }, variable.initial({ loggedDate: '2026-9-4', invoiceDate: '', isTaxInvoice: false }));
+    submitForm();
+    expect(onUpdate).toHaveBeenCalledWith('v1', expect.objectContaining({ loggedDate: '2026-09-04' }));
+  });
+});
+
 describe.each(EDITABLE)('$name — تعديل سجل قائم', ({ prefix, mount, initial }) => {
   it('تاريخ فاتورة غير موجود في التقويم (2026-02-30) يمنع الحفظ', () => {
     const onUpdate = vi.fn();

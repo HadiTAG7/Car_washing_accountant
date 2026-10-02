@@ -9,10 +9,19 @@ import { LedgerError } from './ledger.js';
 import { DEFAULT_DYNAMIC_UNIT_COST } from '../../src/lib/variableExpenseTotals.js';
 import { postedLines, sourceKindOf } from '../../src/lib/accounting/reports.js';
 import { ACC } from '../../src/lib/accounting/chartOfAccounts.js';
+import { normalizeExpenseDate } from '../../src/lib/expenseDates.js';
+import { isRealCalendarDate } from '../../src/lib/vatFields.js';
 
 const readRows = async (db, name) => {
   const snap = await db.collection(name).get();
-  return snap.docs.map(d => ({ ...d.data(), id: d.id }));
+  return snap.docs.map(d => {
+    const row = { ...d.data(), id: d.id };
+    // Read-only formatting compatibility, not a migration or date fallback.
+    return name === 'variable_expenses' ? { ...row,
+      logged_date: normalizeExpenseDate(row.logged_date),
+      invoice_date: normalizeExpenseDate(row.invoice_date),
+    } : row;
+  });
 };
 const monthOf = date => String(date || '').slice(0, 7);
 const validMonth = key => /^\d{4}-(0[1-9]|1[0-2])$/.test(key);
@@ -57,7 +66,7 @@ export async function partnerAllocationReport(db, { partnerId, periodKey, today 
   }));
   // Missing dates cannot silently disappear from a financial allocation.
   for (const r of data.variable_expenses) {
-    if (!validMonth(monthOf(r.invoice_date || r.logged_date))) throw new LedgerError('يوجد مصروف متغير بلا تاريخ صحيح؛ يحتاج مراجعة قبل تأكيد التقرير.');
+    if (!isRealCalendarDate(r.invoice_date || r.logged_date)) throw new LedgerError('يوجد مصروف متغير بلا تاريخ صحيح؛ يحتاج مراجعة قبل تأكيد التقرير.');
   }
   for (const r of data.monthly_expenses.filter(r => r.recurrence === 'one_time')) {
     if (!validMonth(monthOf(r.invoice_date || r.logged_date))) throw new LedgerError('يوجد مصروف شهري لمرة واحدة بلا تاريخ صحيح؛ يحتاج مراجعة.');

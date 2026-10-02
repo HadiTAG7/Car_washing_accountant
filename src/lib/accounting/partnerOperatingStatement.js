@@ -41,7 +41,8 @@ export function normalizePartnerEntrySources(entries, sources) {
 }
 
 // Allocate cumulative cents rather than rounding 12 independent fractions.
-// The twelve months sum EXACTLY to the partner's annual amount.
+// The twelve scheduled shares sum to the annual amount. Actual reservations
+// can be lower: they are funded only from that month's available profit.
 export function annualMonthlyShare(annualAmount, periodKey, factor = 1) {
   const month = Number(String(periodKey).slice(5, 7));
   const cents = Math.round(Number(annualAmount) * factor * 100);
@@ -164,26 +165,43 @@ export function partnerOperatingStatement({
     if (rows.length && delta) rows.reduce((a, b) => Math.abs(a.rawAmount) > Math.abs(b.rawAmount) ? a : b).amount += delta;
   }
   const sum = rows => round2(rows.reduce((s, i) => s + i.amount, 0));
-  const groups = GROUPS.map(([key, label]) => ({ key, label, items: items.filter(i => i.groupKey === key), amount: sum(items.filter(i => i.groupKey === key)) }));
   const directCosts = sum(items.filter(i => i.section === 'direct'));
   const operatingExpenses = sum(items.filter(i => i.section === 'operating'));
   const totalCosts = round2(directCosts + operatingExpenses);
-  const annualReserve = sum(items.filter(i => i.section === 'reserve'));
-  const totalAllocation = round2(totalCosts + annualReserve);
   const netProfitBeforeFees = round2(ledgerStatement.netRevenue - totalCosts);
-  const allocationBeforeFees = round2(netProfitBeforeFees - annualReserve);
-  // The management view reserves renewal before calculating its fee estimate.
-  // Actual fee rules/postings are never changed by this report.
+  // Available profit is after operating costs and fee estimates, before the
+  // renewal reservation. Rates, official fee postings and books stay intact.
   const rules = (feeRules?.length ? feeRules : DEFAULT_FEE_RULES).filter(r => !r.effectiveFrom || r.effectiveFrom <= range.to);
-  const fees = rules.map(r => ({ ...r, amount: round2(Math.max(0, r.basis === 'profit' ? allocationBeforeFees : ledgerStatement.netRevenue) * (Number(r.rate) || 0)) }));
+  const fees = rules.map(r => ({ ...r, amount: round2(Math.max(0, r.basis === 'profit' ? netProfitBeforeFees : ledgerStatement.netRevenue) * (Number(r.rate) || 0)) }));
   const totalFees = sum(fees);
+  const netProfit = round2(netProfitBeforeFees - totalFees);
+  const reserveItems = items.filter(i => i.section === 'reserve');
+  const scheduledAmount = sum(reserveItems);
+  const availableProfit = Math.max(0, netProfit);
+  const annualReserve = round2(Math.min(Math.max(0, scheduledAmount), availableProfit));
+  // Cumulative allocation keeps capped detail cents equal to the header.
+  // Skipped months are not a debt and are not caught up in later months.
+  let cumulativeScheduled = 0;
+  let cumulativeReserved = 0;
+  for (const item of reserveItems) {
+    item.scheduledAmount = item.amount;
+    cumulativeScheduled = round2(cumulativeScheduled + item.scheduledAmount);
+    const target = scheduledAmount > 0 ? round2(annualReserve * cumulativeScheduled / scheduledAmount) : 0;
+    item.amount = round2(target - cumulativeReserved);
+    cumulativeReserved = target;
+  }
+  const totalAllocation = round2(totalCosts + annualReserve);
+  const groups = GROUPS.map(([key, label]) => ({ key, label, items: items.filter(i => i.groupKey === key), amount: sum(items.filter(i => i.groupKey === key)) }));
+  const renewalReserve = { scheduledAmount, availableProfit,
+    reason: scheduledAmount <= 0 ? 'no-schedule' : availableProfit <= 0 ? 'no-profit'
+      : annualReserve < scheduledAmount ? 'limited' : 'full' };
   return { ...ledgerStatement, ledgerStatement, basis: 'partner-allocation',
-    directCosts, operatingExpenses, totalCosts, annualReserve, totalAllocation,
+    directCosts, operatingExpenses, totalCosts, annualReserve, totalAllocation, renewalReserve,
     grossProfit: round2(ledgerStatement.netRevenue - directCosts), netProfitBeforeFees,
-    fees, totalFees, netProfit: round2(netProfitBeforeFees - totalFees),
-    netAfterReserve: round2(allocationBeforeFees - totalFees),
+    fees, totalFees, netProfit,
+    netAfterReserve: round2(netProfit - annualReserve),
     expenseBreakdown: { groups, total: totalAllocation, fixedTotal: sum(items.filter(i => ['monthly', 'annual'].includes(i.groupKey))) },
-    hasActivity: ledgerStatement.hasActivity || items.some(i => i.amount !== 0) };
+    hasActivity: ledgerStatement.hasActivity || items.some(i => i.amount !== 0) || scheduledAmount > 0 };
 }
 
 export function partnerFoundingAllocation({ workersCount = 0, paid = 0, spentBefore = 0,

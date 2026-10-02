@@ -100,6 +100,39 @@ afterEach(() => {
 });
 
 describe('صفحة المستثمر — قائمة الدخل', () => {
+  it('زر الاحتياطي يشرح المعنى والسياسة ويغلق الشرح عند الضغط ثانية', () => {
+    render(<InvestorPage view="income" />);
+    const button = screen.getByRole('button', { name: 'شرح احتياطي التجديد السنوي' });
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByText(/نخصص جزءاً من ربح الشهر لتجديد/)).toBeNull();
+    fireEvent.click(button);
+    expect(button.getAttribute('aria-expanded')).toBe('true');
+    const explanation = document.getElementById(button.getAttribute('aria-controls'));
+    expect(explanation.textContent).toContain('نخصص جزءاً من ربح الشهر لتجديد');
+    expect(explanation.textContent).toContain('شهر الخسارة أو التعادل لا نحجز فيه أي مبلغ');
+    expect(explanation.textContent).toContain('بعد المصروفات والرسوم');
+    fireEvent.click(button);
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByText(/نخصص جزءاً من ربح الشهر لتجديد/)).toBeNull();
+  });
+  it.each(['no-profit', 'limited'])('يبين سبب احتياطي الشهر (%s) ولا يعرض المخطط كخصم', reason => {
+    const reserved = reason === 'limited' ? 50 : 0;
+    render(<IncomeStatementCard sharePercent={20} hasShare paid={0}
+      availableMonths={['2026-09']} activeMonth="2026-09" onMonthChange={vi.fn()}
+      statement={{ hasActivity: true, netRevenue: 100, netProfit: reserved, netAfterReserve: 0,
+        annualReserve: reserved, fees: [], renewalReserve: { scheduledAmount: 100, availableProfit: reserved, reason },
+        expenseBreakdown: { total: reserved, fixedTotal: reserved, groups: [
+          { key: 'annual', amount: reserved, items: [
+            { id: 'a', description: 'إيجار السكن', annualAmount: 1200, scheduledAmount: 100, amount: reserved },
+          ] },
+        ] },
+      }} />);
+    const button = screen.getByRole('button', { name: 'شرح احتياطي التجديد السنوي' });
+    fireEvent.click(button);
+    expect(amountIn(screen.getByText('إيجار السكن').closest('tr'))).toBe(reserved);
+    if (reason === 'no-profit') expect(screen.getByText('لم يُحتسب هذا الشهر: لا يوجد ربح متاح.')).toBeTruthy();
+    else expect(screen.getByText('حُجز بقدر الربح المتاح فقط، أقل من الحصة الشهرية المخططة.')).toBeTruthy();
+  });
   it('تظهر البنود مباشرة تحت إجمالي مجموعتها في نفس جدول النتيجة، بلا فتح قسم آخر', () => {
     render(<InvestorPage view="income" />);
     const table = screen.getByText('= حصتك التحليلية من نتيجة الشركة').closest('table');

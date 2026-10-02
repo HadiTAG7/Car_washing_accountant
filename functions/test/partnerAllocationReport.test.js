@@ -66,10 +66,10 @@ describe('تقرير مصروفات الشريك الخادمي', () => {
       id: 'bad', invoice_date: '2026-2-31', logged_date: '2026-09-04', total_variable_cost: 500,
     }] }), { partnerId: 'p1', periodKey: '2026-09' })).rejects.toThrow();
   });
-  it('تقرير كامل بتاريخ محدد، سنوي محجوز ودفعة التأسيس غير مكررة', async () => {
+  it('تقرير كامل بتاريخ محدد، لا احتياطي في الخسارة ودفعة التأسيس غير مكررة', async () => {
     const r = await partnerAllocationReport(database(), { partnerId: 'p1', periodKey: '2026-09', today: new Date('2026-10-02') });
-    expect(r.statements[0]).toMatchObject({ totalCosts: 80, annualReserve: 1500, totalAllocation: 1580,
-      founding: { budget: 20000, initialSpent: 18000, covered: 1580, remaining: 420 } });
+    expect(r.statements[0]).toMatchObject({ totalCosts: 80, annualReserve: 0, totalAllocation: 80,
+      founding: { budget: 20000, initialSpent: 18000, covered: 80, remaining: 1920 } });
     const json = JSON.stringify(r);
     for (const forbidden of ['777777', 'دفعة الشريك الآخر', 'سري', 'private.example', 'taxSnapshot']) expect(json).not.toContain(forbidden);
     expect(r).toMatchObject({ from: '2026-09-01', through: '2026-09-30', factor: 0.1 });
@@ -85,12 +85,12 @@ describe('تقرير مصروفات الشريك الخادمي', () => {
       startup_cost_entries: [{ id: 'setup', amount: 1000, spent_date: '2026-09-01' }],
       journal_entries: [{ id: 'setup-post', entryDate: '2026-09-01', status: 'posted', sourceKind: 'startup', sourceId: 'setup', lines: [{ accountId: '5200', debit: 1000 }] }],
     }), { partnerId: 'p1', periodKey: '2026-09', today: new Date('2026-10-02') });
-    expect(r.statements[0]).toMatchObject({ totalCosts: 80, annualReserve: 1500, totalAllocation: 1580,
-      founding: { initialSpent: 18100, covered: 1580, remaining: 320 } });
+    expect(r.statements[0]).toMatchObject({ totalCosts: 80, annualReserve: 0, totalAllocation: 80,
+      founding: { initialSpent: 18100, covered: 80, remaining: 1820 } });
   });
   it('المدير يحاكي الشريك بنفس الحسبة دون تعديل حالته', async () => {
     const r = await dispatch(database(), null, 'partnerInsights', { partnerId: 'p1', includeStatements: true, periodKey: '2026-09' }, { uid: 'admin' });
-    expect(r.statements[0].totalAllocation).toBe(1580);
+    expect(r.statements[0].totalAllocation).toBe(80);
   });
   it('تجديد العام الثاني يستخدم الاحتياطي ولا يخصم دفعة تأسيس أولى ثانية', async () => {
     const r = await partnerAllocationReport(database({ annual_expense_entries: [
@@ -113,6 +113,28 @@ describe('تقرير مصروفات الشريك الخادمي', () => {
     ];
     const r = await partnerAllocationReport(database({ journal_entries }), { partnerId: 'p1', periodKey: '2026-09', today: new Date('2026-10-02') });
     expect(r.statements[0].founding.initialSpent).toBe(0);
-    expect(r.statements[0].founding.remaining).toBe(18420);
+    expect(r.statements[0].founding.remaining).toBe(19920);
+  });
+  it('حد الربح يأتي من الخادم ولا يمكن للمتصل تجاوزه ببيانات طلبه', async () => {
+    const db = database({ journal_entries: [
+      { id: 'sales', entryDate: '2026-09-01', status: 'posted', lines: [{ accountId: '4000', credit: 10000 }] },
+    ] });
+    const r = await dispatch(db, null, 'partnerInsights', {
+      partnerId: 'p2', factor: 1, annualReserve: 9000, includeStatements: true, periodKey: '2026-09',
+    }, { uid: 'u1' });
+    expect(r.partnerId).toBe('p1');
+    expect(r.statements[0]).toMatchObject({ annualReserve: 782, netAfterReserve: 0, totalFees: 138,
+      renewalReserve: { reason: 'limited', availableProfit: 782 } });
+  });
+  it('شهر خسارة ثم ربح لا يرحّل احتياطياً متأخراً ولا يقلل رصيد التأسيس به', async () => {
+    const r = await partnerAllocationReport(database({ journal_entries: [
+      { id: 'sales', entryDate: '2026-10-01', status: 'posted', lines: [{ accountId: '4000', credit: 25000 }] },
+    ] }), { partnerId: 'p1', periodKey: '2026-10', today: new Date('2026-10-02') });
+    const [loss, profit] = r.statements;
+    expect(loss.annualReserve).toBe(0);
+    expect(loss.founding.remaining).toBe(1920);
+    expect(profit.annualReserve).toBe(1500);
+    expect(profit.totalAllocation).toBe(1530);
+    expect(profit.founding.remaining).toBe(390);
   });
 });

@@ -32,10 +32,10 @@
 // مفسَّر» عند مستثمرٍ ليس شفافية بل إنذارُ عطلٍ لا يملك إصلاحه.
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import {
   Calendar, HandCoins, Printer, TrendingUp, Wallet, Link2Off, Droplets, Lock, Clock3,
-  PiggyBank, BookOpen, CalendarRange,
+  PiggyBank, BookOpen, CalendarRange, CircleHelp,
 } from 'lucide-react';
 
 import TopBar from './TopBar';
@@ -244,10 +244,23 @@ function FoundingStageNotice({ status }) {
 }
 
 /** التفاصيل جزء من إجمالي المجموعة أعلاه، وليست خصماً إضافياً. */
-function ExpenseStatementGroup({ label, amount, group }) {
+function ExpenseStatementGroup({ label, amount, group, explanation = null, explanationId, explanationOpen = false, onExplain }) {
   return (
     <>
-      <StatementRow label={label} amount={amount} />
+      <StatementRow label={onExplain ? (
+        <button type="button" onClick={onExplain} aria-label="شرح احتياطي التجديد السنوي"
+          aria-expanded={explanationOpen} aria-controls={explanationOpen ? explanationId : undefined}
+          className="inline-flex items-center gap-2 text-right cursor-pointer hover:underline focus-visible:outline-2 focus-visible:outline-primary-500 rounded-control">
+          <span>{label}</span><CircleHelp size={16} className="shrink-0" aria-hidden="true" />
+        </button>
+      ) : label} amount={amount} />
+      {explanationOpen && (
+        <tr><td colSpan={2} className="py-3">
+          <div id={explanationId} className="rounded-control p-3 bg-indigo-50 dark:bg-indigo-500/10 text-sm text-indigo-900 dark:text-indigo-100 leading-relaxed space-y-2">
+            {explanation}
+          </div>
+        </td></tr>
+      )}
       {(group?.items || []).map((item) => (
         <tr key={item.id} className="border-b border-slate-100 dark:border-slate-800/60 bg-slate-50/50 dark:bg-slate-800/20">
           <td className="py-2 text-slate-700 dark:text-slate-300">
@@ -258,6 +271,11 @@ function ExpenseStatementGroup({ label, amount, group }) {
                   ? `حصتك السنوية ${formatCurrency(item.annualAmount)} ÷ 12 — احتياطي التجديد`
                   : `${item.accountName} · ${formatDate(item.entryDate)}`}
               </p>
+              {group.key === 'annual' && item.scheduledAmount != null && item.amount < item.scheduledAmount && (
+                <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                  المخطط لهذا الشهر: {formatCurrency(item.scheduledAmount)} — المحتسب حسب الربح: {formatCurrency(item.amount)}
+                </p>
+              )}
             </div>
           </td>
           <td className="py-2 text-left tabular-nums whitespace-nowrap text-slate-600 dark:text-slate-400">
@@ -283,6 +301,9 @@ export function IncomeStatementCard({
 }) {
   const groups = Object.fromEntries((statement.expenseBreakdown?.groups || []).map(group => [group.key, group]));
   const hasOtherExpenses = Boolean(groups.other?.amount || groups.other?.items?.length);
+  const [reserveHelpOpen, setReserveHelpOpen] = useState(false);
+  const reserveHelpId = useId();
+  const reservePolicy = statement.renewalReserve;
   if (!hasShare) {
     return (
       <Card className="p-6">
@@ -340,10 +361,22 @@ export function IncomeStatementCard({
               {hasOtherExpenses && (
                 <ExpenseStatementGroup label="المصاريف الأخرى" amount={groups.other?.amount || 0} group={groups.other} />
               )}
-              <ExpenseStatementGroup label="احتياطي التجديد السنوي — حصة هذا الشهر" amount={statement.annualReserve || 0} group={groups.annual} />
               {(statement.fees || []).map((f) => (
                 <StatementRow key={f.key} label={`يُخصم منه: ${f.label}`} amount={f.amount} />
               ))}
+              <ExpenseStatementGroup label="احتياطي التجديد السنوي — حصة هذا الشهر" amount={statement.annualReserve || 0} group={groups.annual}
+                onExplain={() => setReserveHelpOpen(open => !open)} explanationOpen={reserveHelpOpen} explanationId={reserveHelpId}
+                explanation={<>
+                  <p>نخصص جزءاً من ربح الشهر لتجديد المصاريف السنوية، مثل السكن والتأمين، في السنة القادمة. حصتك السنوية ÷ 12 هي الحصة الشهرية المخططة، وليست دفعة سنوية ثانية.</p>
+                  <p>نحجز من الربح المتاح بعد المصروفات والرسوم فقط. شهر الخسارة أو التعادل لا نحجز فيه أي مبلغ؛ وإذا الربح أقل من المخطط، نحجز بقدره فقط. لا نحمل الأشهر التالية مبالغ الأشهر التي لم نحجز فيها.</p>
+                  {reservePolicy && <>
+                    <p>المخطط لهذا الشهر: {formatCurrency(reservePolicy.scheduledAmount)} · الربح المتاح: {formatCurrency(reservePolicy.availableProfit)} · المحتسب: {formatCurrency(statement.annualReserve || 0)}</p>
+                    {reservePolicy.reason === 'no-profit' && <p className="font-semibold">لم يُحتسب هذا الشهر: لا يوجد ربح متاح.</p>}
+                    {reservePolicy.reason === 'limited' && <p className="font-semibold">حُجز بقدر الربح المتاح فقط، أقل من الحصة الشهرية المخططة.</p>}
+                    {reservePolicy.reason === 'no-schedule' && <p>لا توجد حصة سنوية مخططة لهذا الشهر.</p>}
+                  </>}
+                  <p className="text-xs">هذا احتساب في التقرير، وليس تحويل أموال فعلياً أو تغييراً في قيود الشركة.</p>
+                </>} />
               <StatementRow label="= حصتك التحليلية من نتيجة الشركة" amount={statement.netAfterReserve ?? statement.netProfit} kind="final" />
               {foundingStatus?.available && <>
                 <StatementRow label="تغطية من رصيد رسوم التأسيس" amount={foundingStatus.covered} kind="plus" />
@@ -355,7 +388,7 @@ export function IncomeStatementCard({
             <div aria-label="ملخص المصروفات" className="mt-3 space-y-1 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
               <p>إجمالي المصروفات الثابتة الشهرية والسنوية: {formatCurrency(statement.expenseBreakdown.fixedTotal)}</p>
               <p>إجمالي مصروفاتك واحتياطي التجديد: {formatCurrency(statement.expenseBreakdown.total)}</p>
-              <p>الشهري والمتغيّر يخصّان شهرهما. كل بند سنوي ÷ 12 لتجديد السنة القادمة؛ الدفعة الأولى لا تُخصم مرة ثانية.</p>
+              <p>الشهري والمتغيّر يخصّان شهرهما. كل بند سنوي ÷ 12 لتجديد السنة القادمة، ويُحتسب من الربح المتاح فقط؛ الدفعة الأولى لا تُخصم مرة ثانية.</p>
             </div>
           )}
           <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-3 leading-relaxed">

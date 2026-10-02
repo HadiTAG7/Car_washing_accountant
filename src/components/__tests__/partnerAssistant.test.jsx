@@ -54,6 +54,24 @@ afterEach(() => {
 const btn = (name) => screen.queryByRole('button', { name });
 
 describe('صفحة المساعد الذكي', () => {
+  it.each([
+    ['Claude (claude.ai)', 'ChatGPT (chatgpt.com)'],
+    ['ChatGPT (chatgpt.com)', 'Claude (claude.ai)'],
+  ])('طريقة ربط %s مطوية افتراضياً ويمكن فتحها وإغلاقها دون فتح %s', (name, otherName) => {
+    render(<PartnerAssistantPage partner={partnerView.viewedPartner} meta={META} />);
+    const summary = screen.getByText(name);
+    const details = summary.closest('details');
+    const other = screen.getByText(otherName).closest('details');
+    expect(details.open).toBe(false);
+    expect(other.open).toBe(false);
+    fireEvent.click(summary);
+    expect(details.open).toBe(true);
+    expect(details.querySelectorAll('ol > li')).toHaveLength(5);
+    expect(other.open).toBe(false);
+    fireEvent.click(summary);
+    expect(details.open).toBe(false);
+    expect(other.open).toBe(false);
+  });
   it('شرح رابط الشريك لا يعد بإظهار النسبة أو إجمالي عمال وغسلات المشروع', () => {
     const { container } = render(<PartnerAssistantPage partner={partnerView.viewedPartner} meta={META} />);
     expect(container.textContent).not.toMatch(/نسبتك|بنسبتك|مجموع العمالة|١٠٠ غسلة|[٪%]/);

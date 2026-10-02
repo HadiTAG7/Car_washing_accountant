@@ -243,7 +243,7 @@ export default function PartnerAssistantPage({ partner, meta }) {
         <Card className="p-5 sm:p-6">
           <SectionHeader title="كيف أربطه بمساعدي؟" subtitle="الخطوات نفسها تقريباً في الاثنين: أضِف موصِّلاً مخصّصاً والصق الرابط" />
           <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
-            <details className="rounded-control border border-slate-200 dark:border-slate-700 p-4 group" open>
+            <details className="rounded-control border border-slate-200 dark:border-slate-700 p-4 group">
               <summary className="cursor-pointer font-bold text-slate-900 dark:text-slate-100 text-sm">Claude (claude.ai)</summary>
               <ol className="mt-3 space-y-2 text-[13px] text-slate-700 dark:text-slate-300 leading-relaxed list-decimal pr-5">
                 <li><strong>Customize</strong> ← <strong>Connectors</strong> (الموصِّلات) — في حسابات الشركات: Organization settings ← Connectors.</li>

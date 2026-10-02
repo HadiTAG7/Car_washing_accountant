@@ -11,6 +11,20 @@ const partnerView = {
 const paymentsState = { payments: [], loading: false, error: null };
 const ledgerState = { accounts: [], entries: [], lines: [], periods: [], loading: false, error: null };
 const insightsState = { insights: null, washMonths: [], loading: false, error: null };
+let statementError = null;
+vi.mock('../../hooks/usePartnerStatement', () => ({ usePartnerStatement: () => {
+  const keys = [...new Set(ledgerState.entries.map(e => e.periodKey))];
+  if (!keys.length) keys.push(new Date().toISOString().slice(0, 7));
+  const factor = partnerView.scalingFactor;
+  return { loading: false, error: statementError, report: {
+    statements: keys.map(periodKey => ({
+      ...monthlyStatement({ scalingFactor: factor }), periodKey,
+      annualReserve: 10000 * factor, totalAllocation: 150000 * factor,
+      netAfterReserve: COMPANY_NET * factor,
+      founding: { available: true, budget: 60000, funded: 30000, covered: 30000, remaining: 0, uncovered: 15000 },
+    })),
+  } };
+} }));
 
 vi.mock('../../contexts/PartnerViewContext', () => ({ usePartnerView: () => partnerView }));
 vi.mock('../../hooks/usePartnerPayments', () => ({ usePartnerPayments: () => paymentsState }));
@@ -51,6 +65,7 @@ vi.mock('../../lib/accounting/monthlyStatement', () => ({
 }));
 
 const InvestorPage = (await import('../InvestorPage')).default;
+const { monthlyStatement } = await import('../../lib/accounting/monthlyStatement');
 
 /**
  * المبلغ المعروض في صفٍّ من القائمة.
@@ -67,6 +82,7 @@ function amountIn(row) {
 afterEach(() => {
   cleanup();
   COMPANY_NET = 50000;
+  statementError = null;
   partnerView.investorLinkMissing = false;
   partnerView.viewedPartner = { id: 'p1', partnerName: 'أحمد الغانم', workersCount: 3, userId: 'uid1' };
   partnerView.scalingFactor = 0.3;
@@ -80,14 +96,15 @@ afterEach(() => {
 });
 
 describe('صفحة المستثمر — قائمة الدخل', () => {
-  it('تُبقي تحميل الخسارة مقفلاً في مرحلة المليون وتعرض التقدم من القيود فقط', () => {
+  it('يعرض ميزانية التأسيس للشريك 20 ألف لكل بايكر، بدلاً من حد شركة عام', () => {
     ledgerState.accounts = [{ code: '5010', accountType: 'expense' }];
     ledgerState.entries = [{ id: 'e1', entryDate: '2026-08-04', periodKey: '2026-08', status: 'posted', sourceKind: 'monthly' }];
     ledgerState.lines = [{ id: 'l1', entryId: 'e1', accountId: '5010', debit: 100000, credit: 0 }];
     COMPANY_NET = -20000;
     render(<InvestorPage view="income" />);
-    expect(screen.getByText(/مرحلة التأسيس — لا تحميل خسارة على الشريك/)).toBeTruthy();
-    expect(screen.getByText(/100,000.*1,000,000/)).toBeTruthy();
+    expect(screen.getByText('رصيد مصاريف التأسيس')).toBeTruthy();
+    expect(screen.getByText(/ميزانيتك:.*60,000.*20,000/)).toBeTruthy();
+    expect(screen.getByText('= نتيجتك بعد تغطية التأسيس')).toBeTruthy();
   });
   it('النتيجة السالبة لا تُعرض كخسارة شخصية جديدة فوق رسوم الشريك المدفوعة', () => {
     COMPANY_NET = -20000;
@@ -100,9 +117,8 @@ describe('صفحة المستثمر — قائمة الدخل', () => {
   });
   it('تعرض قائمة الدخل ببنودها', () => {
     render(<InvestorPage view="income" />);
-    for (const label of ['إيرادات المبيعات', '= صافي الإيرادات',
-      'يُخصم منه: التكاليف المباشرة والعمولات', '= مجمل الربح التشغيلي',
-      'يُخصم منه: المصاريف التشغيلية', '= صافي الربح قبل الرسوم']) {
+    for (const label of ['حصتك من صافي الإيرادات', 'المصاريف المتغيرة والعمولات',
+      'المصاريف الشهرية والرواتب', 'احتياطي التجديد السنوي — حصة هذا الشهر']) {
       expect(screen.getByText(label)).toBeTruthy();
     }
   });
@@ -116,7 +132,7 @@ describe('صفحة المستثمر — قائمة الدخل', () => {
     expect(screen.getByText(/إجمالي المصروفات الثابتة الشهرية والسنوية/)).toBeTruthy();
     expect(screen.getByText('رواتب البايكرز')).toBeTruthy();
     expect(screen.getByText('إيجار السكن')).toBeTruthy();
-    expect(screen.getByText('إجمالي حصتك من المصروفات')).toBeTruthy();
+    expect(screen.getByText('إجمالي مصروفاتك واحتياطي التجديد')).toBeTruthy();
     expect(screen.queryByText('هادي الغانم')).toBeNull();
   });
 
@@ -157,6 +173,18 @@ describe('صفحة المستثمر — قائمة الدخل', () => {
     render(<InvestorPage view="income" />);
     expect(screen.getByText(/نسبتك ٠٪/)).toBeTruthy();
     expect(screen.queryByText('إيرادات المبيعات')).toBeNull();
+  });
+  it('عطل مصدر المصروفات لا يعيد عرض حسبة الرواتب الناقصة ولا صفراً مضللاً', () => {
+    statementError = new Error('تعذر قراءة المصروفات');
+    render(<InvestorPage view="income" />);
+    expect(screen.getByText('تعذّر تأكيد المصروفات ورصيد التأسيس')).toBeTruthy();
+    expect(screen.queryByText('إيرادات المبيعات')).toBeNull();
+  });
+  it('يسمي السنوي احتياطياً ولا يقول إنه مصروف كامل في شهر القيد', () => {
+    render(<InvestorPage view="income" />);
+    expect(screen.getByText('احتياطي التجديد السنوي — حصة هذا الشهر')).toBeTruthy();
+    expect(screen.getByText(/كل بند سنوي ÷ 12 لتجديد السنة القادمة/)).toBeTruthy();
+    expect(screen.queryByText(/المبلغ السنوي يظهر في شهر قيده/)).toBeNull();
   });
 });
 
@@ -273,11 +301,12 @@ describe('صفحة المستثمر — المؤشرات الجديدة', () => 
     expect(screen.getByText(/من أصل 100 غسلة مكتملة/)).toBeTruthy();
   });
 
-  it('قائمة الدخل: «نهائي» للشهر المُقفَل و«مبدئي» للمفتوح', () => {
+  it('تقرير الالتزامات والاحتياطي يبقى مبدئياً حتى لو أقفل الدفتر', () => {
     ledgerState.entries = [{ id: 'e1', entryDate: '2026-08-10', periodKey: '2026-08', status: 'posted', lines: [] }];
     ledgerState.periods = [{ id: '2026-08', status: 'closed' }];
     render(<InvestorPage view="income" />);
-    expect(screen.getByText('نهائي')).toBeTruthy();
+    expect(screen.getByText('مبدئي')).toBeTruthy();
+    expect(screen.queryByText('نهائي')).toBeNull();
     cleanup();
     ledgerState.periods = [{ id: '2026-08', status: 'open' }];
     render(<InvestorPage view="income" />);

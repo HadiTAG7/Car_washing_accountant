@@ -225,6 +225,7 @@ import {
   KEYS_COL as PARTNER_MCP_KEYS_COL,
 } from './partnerMcpKeys.js';
 import { partnerWashShare } from './partnerInsights.js';
+import { partnerAllocationReport } from './partnerAllocationReport.js';
 
 export const HANDLERS = {
   // ── الترحيل ──
@@ -577,7 +578,9 @@ export const HANDLERS = {
   // إلى متصفح الشريك. الشريك عن نفسه، والمدير عن من يسمّيه.
   partnerInsights: {
     guard: 'partnerView',
-    run: ({ db, data, partner }) => partnerWashShare(db, {
+    run: ({ db, data, partner }) => data?.includeStatements === true
+      ? partnerAllocationReport(db, { partnerId: partner.id, periodKey: data?.periodKey })
+      : partnerWashShare(db, {
       partnerId: partner.id, months: data?.months ?? 12,
     }),
   },

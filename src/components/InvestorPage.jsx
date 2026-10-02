@@ -50,13 +50,11 @@ import { ColumnTrend, LineTrend } from './charts/TrendCharts';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 import { usePartnerPayments } from '../hooks/usePartnerPayments';
 import { useLedger } from '../hooks/useLedger';
-import { useFeeRules } from '../hooks/useFeeRules';
 import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
-import { monthlyStatement } from '../lib/accounting/monthlyStatement';
-import { foundingBudgetStatus } from '../lib/accounting/foundingBudget';
+import { usePartnerStatement } from '../hooks/usePartnerStatement';
 import { partnerPaidSummary } from '../lib/accounting/partnerTotals';
 import {
-  roiSummary, momChange, ytdTotal, periodStatusOf,
+  roiSummary, momChange, ytdTotal,
 } from '../lib/accounting/partnerInsights';
 import { usePartnerInsights } from '../hooks/usePartnerInsights';
 import {
@@ -127,7 +125,7 @@ function PeriodBadge({ status }) {
           ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-100 dark:border-emerald-500/30'
           : 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-100 dark:border-amber-500/30'
       }`}
-      title={closed ? 'الشهر مُقفَل في الدفاتر — الأرقام نهائية' : 'الشهر مفتوح — قد تُضاف قيود فتتغيّر الأرقام'}
+      title={status === 'allocation' ? 'تقرير تشغيلي حسب البنود المسجلة؛ ليس كشف توزيع معتمداً' : closed ? 'الشهر مُقفَل في الدفاتر — الأرقام نهائية' : 'الشهر مفتوح — قد تُضاف قيود فتتغيّر الأرقام'}
     >
       {closed ? <Lock size={12} /> : <Clock3 size={12} />}
       {closed ? 'نهائي' : 'مبدئي'}
@@ -233,18 +231,14 @@ function FoundingStageNotice({ status }) {
   if (!status?.available) return null;
   return (
     <div className="rounded-control border border-indigo-100 dark:border-indigo-500/30 bg-indigo-50 dark:bg-indigo-500/10 p-4 text-sm leading-relaxed text-indigo-900 dark:text-indigo-100">
-      <p className="font-bold">
-        {status.gateClosed
-          ? 'مرحلة التأسيس — لا تحميل خسارة على الشريك'
-          : 'اكتمل حد التأسيس في شهر سابق'}
-      </p>
-      <p className="mt-1">
-        تكاليف مُرحّلة محتسبة للحد: {formatCurrency(status.recordedCost)} من أصل {formatCurrency(status.budget)}.
-        {status.gateClosed
-          ? ' لا تُنشئ النتيجة السالبة لهذا الشهر مطالبة إضافية على الشريك.'
-          : ' النتائج اللاحقة لا تتحول تلقائياً إلى مطالبة أو توزيع؛ يلزم قرار مستقل.'}
-      </p>
-      <p className="mt-1 text-xs">لا يشمل المؤشر التكاليف غير المُرحّلة؛ قائمة دخل الشركة لا تتغير بهذا الحد.</p>
+      <p className="font-bold">رصيد مصاريف التأسيس</p>
+      <p className="mt-1">ميزانيتك: {formatCurrency(status.budget)} — 20,000 ريال لكل بايكر.</p>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+        <div>المغطى من التأسيس هذا الشهر<p className="font-bold tabular-nums">{formatCurrency(status.covered)}</p></div>
+        <div>رصيد التأسيس التحليلي المتبقي<p className="font-bold tabular-nums">{formatCurrency(status.remaining)}</p></div>
+        <div>بعد نفاد رصيد التأسيس<p className="font-bold tabular-nums">{formatCurrency(status.uncovered)}</p></div>
+      </div>
+      <p className="mt-2 text-xs">رصيد تحليلي من مبالغك المسددة، بعد الصرف الأول واحتياطي التجديد. لا ينشئ مطالبة مالية أو تحويل أموال.</p>
     </div>
   );
 }
@@ -255,7 +249,7 @@ function FoundingStageNotice({ status }) {
  * القسمة بالنسبة تقع داخل `monthlyStatement` مرة واحدة — كل سطر خطّيٌّ في
  * العامل، فلا حساب جديد هنا ولا فرصة لاختلاف رقمٍ عن رقم.
  */
-function IncomeStatementCard({
+export function IncomeStatementCard({
   sharePercent, hasShare, paid, foundingStatus, availableMonths, activeMonth, onMonthChange, statement, periodStatus = null,
 }) {
   if (!hasShare) {
@@ -299,47 +293,32 @@ function IncomeStatementCard({
         <EmptyState
           icon={Calendar}
           title="لا توجد حركة مُرحّلة في هذا الشهر"
-          hint="اختر شهراً آخر — القائمة تُبنى من القيود المُرحّلة في الدفاتر."
+          hint="اختر شهراً آخر — لا توجد مصروفات أو إيرادات متاحة لهذه الفترة."
         />
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full table-fixed text-sm [&_td]:px-2 [&_td:first-child]:whitespace-normal [&_td:first-child]:break-words [&_td:last-child]:text-xs sm:[&_td:last-child]:text-sm">
+            <colgroup><col /><col className="w-32 sm:w-44" /></colgroup>
             <tbody>
-              <StatementRow label="إيرادات المبيعات" amount={statement.grossRevenue} kind="plus" />
-              {statement.salesReturns !== 0 && (
-                <StatementRow
-                  label="يُخصم منه: مردودات وخصومات المبيعات (إشعارات دائنة)"
-                  amount={statement.salesReturns}
-                />
-              )}
-              {statement.otherRevenue !== 0 && (
-                <StatementRow label="إيرادات أخرى" amount={statement.otherRevenue} kind="plus" />
-              )}
-              <StatementRow label="= صافي الإيرادات" amount={statement.netRevenue} kind="subtotal" />
-              <StatementRow
-                label="يُخصم منه: التكاليف المباشرة والعمولات"
-                amount={statement.directCosts}
-              />
-              <StatementRow label="= مجمل الربح التشغيلي" amount={statement.grossProfit} kind="subtotal" />
-              <StatementRow
-                label="يُخصم منه: المصاريف التشغيلية"
-                amount={statement.operatingExpenses}
-                kind="expenseSubtotal"
-              />
-              <StatementRow
-                label="= صافي الربح قبل الرسوم"
-                amount={statement.netProfitBeforeFees}
-                kind="subtotal"
-              />
+              <StatementRow label="حصتك من صافي الإيرادات" amount={statement.netRevenue} kind="plus" />
+              <StatementRow label="المصاريف المتغيرة والعمولات" amount={statement.expenseBreakdown?.groups.find(g => g.key === 'variable')?.amount || 0} />
+              <StatementRow label="المصاريف الشهرية والرواتب" amount={statement.expenseBreakdown?.groups.find(g => g.key === 'monthly')?.amount || 0} />
+              {(statement.expenseBreakdown?.groups.find(g => g.key === 'other')?.amount || 0) !== 0 && <StatementRow label="المصاريف الأخرى" amount={statement.expenseBreakdown.groups.find(g => g.key === 'other').amount} />}
+              <StatementRow label="احتياطي التجديد السنوي — حصة هذا الشهر" amount={statement.annualReserve || 0} />
               {(statement.fees || []).map((f) => (
                 <StatementRow key={f.key} label={`يُخصم منه: ${f.label}`} amount={f.amount} />
               ))}
-              <StatementRow label="= حصتك التحليلية من نتيجة الشركة" amount={statement.netProfit} kind="final" />
+              <StatementRow label="= حصتك التحليلية من نتيجة الشركة" amount={statement.netAfterReserve ?? statement.netProfit} kind="final" />
+              {foundingStatus?.available && <>
+                <StatementRow label="تغطية من رصيد رسوم التأسيس" amount={foundingStatus.covered} kind="plus" />
+                <StatementRow label="= نتيجتك بعد تغطية التأسيس" amount={(statement.netAfterReserve ?? statement.netProfit ?? 0) + foundingStatus.covered} kind="final" />
+              </>}
             </tbody>
           </table>
           <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-3 leading-relaxed">
             الأرقام أعلاه حصّتك التحليلية ({sharePercent.toFixed(1)}%) من نتائج الشركة الشهرية،
-            محسوبة على عدد العمالة، ومبنيّة على القيود المُرحّلة في الدفاتر.
+            محسوبة على عدد العمالة، وتشمل المصروفات المسجلة والالتزامات الدورية واحتياطي التجديد.
+            هذا تقرير حصتك التشغيلي؛ لا يغيّر قائمة الشركة المحاسبية.
           </p>
           <p className="text-xs text-amber-800 dark:text-amber-200 mt-3 p-3 rounded-control bg-amber-50 dark:bg-amber-500/10 leading-relaxed">
             لا تُنشئ هذه النتيجة مطالبة مالية جديدة عليك ولا تعني توزيعاً نقدياً.
@@ -350,8 +329,7 @@ function IncomeStatementCard({
             <section aria-label="تفصيل حصتك من المصروفات" className="mt-6 border-t border-slate-200 dark:border-slate-700 pt-5">
               <h3 className="font-bold text-slate-900 dark:text-slate-100">تفصيل حصتك من المصروفات</h3>
               <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                تصنيف توضيحي لبنود الدفتر المُرحّلة في الشهر المختار؛ المبلغ السنوي يظهر في شهر قيده، ولا يُوزّع على أشهر السنة.
-                تكاليف التأسيس المسجّلة كأصول لا تدخل مصروفات قائمة الدخل.
+                الشهري والمتغيّر يخصّان شهرهما. كل بند سنوي ÷ 12 لتجديد السنة القادمة؛ الدفعة الأولى لا تُخصم مرة ثانية.
               </p>
               <p className="mt-3 text-sm font-semibold text-slate-800 dark:text-slate-100">
                 إجمالي المصروفات الثابتة الشهرية والسنوية: {formatCurrency(statement.expenseBreakdown.fixedTotal)}
@@ -365,12 +343,16 @@ function IncomeStatementCard({
                     </summary>
                     <div className="border-t border-slate-200 dark:border-slate-700 px-3">
                       {group.items.length === 0 ? (
-                        <p className="py-3 text-xs text-slate-500 dark:text-slate-400">لا توجد بنود مُرحّلة في هذه المجموعة.</p>
+                        <p className="py-3 text-xs text-slate-500 dark:text-slate-400">لا توجد بنود في هذه المجموعة لهذا الشهر.</p>
                       ) : group.items.map((item) => (
                         <div key={item.id} className="flex flex-wrap items-start justify-between gap-2 border-b last:border-b-0 border-slate-100 dark:border-slate-700 py-3">
                           <div className="min-w-0">
                             <p className="font-medium text-slate-800 dark:text-slate-100">{item.description}</p>
-                            <p className="text-xs text-slate-500 dark:text-slate-400">{item.accountName} · {formatDate(item.entryDate)}</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                              {item.groupKey === 'annual'
+                                ? `حصتك السنوية ${formatCurrency(item.annualAmount)} ÷ 12`
+                                : `${item.accountName} · ${formatDate(item.entryDate)}`}
+                            </p>
                           </div>
                           <span className="font-semibold tabular-nums whitespace-nowrap text-slate-800 dark:text-slate-100">{formatCurrency(item.amount)}</span>
                         </div>
@@ -380,7 +362,7 @@ function IncomeStatementCard({
                 ))}
               </div>
               <div className="flex items-center justify-between gap-3 mt-3 px-3 py-2 rounded-control bg-slate-50 dark:bg-slate-800 font-bold">
-                <span>إجمالي حصتك من المصروفات</span>
+                <span>إجمالي مصروفاتك واحتياطي التجديد</span>
                 <span className="tabular-nums whitespace-nowrap">{formatCurrency(statement.expenseBreakdown.total)}</span>
               </div>
             </section>
@@ -453,10 +435,10 @@ function OverviewView({
             />
             <StatCard
               icon={HandCoins}
-              tone={latestStatement.netProfit >= 0 ? 'emerald' : 'slate'}
-              label={latestStatement.netProfit < 0 ? 'مبلغ إضافي مطلوب منك' : 'حصتك التحليلية من نتيجة الشركة'}
-              value={formatCurrency(Math.max(0, latestStatement.netProfit))}
-              sub={latestStatement.netProfit < 0
+              tone={latestStatement.netAfterReserve >= 0 ? 'emerald' : 'slate'}
+              label={latestStatement.netAfterReserve < 0 ? 'مبلغ إضافي مطلوب منك' : 'حصتك التحليلية من نتيجة الشركة'}
+              value={formatCurrency(Math.max(0, latestStatement.netAfterReserve || 0))}
+              sub={latestStatement.netAfterReserve < 0
                 ? 'الرسوم المدفوعة مسبقاً لا تُطلب منك مرة أخرى؛ هذه النتيجة ليست مطالبة'
                 : (momText(mom) || `نسبتك ${sharePercent.toFixed(1)}%`)}
             />
@@ -472,7 +454,7 @@ function OverviewView({
             tone="indigo"
             label={`حصتك التحليلية من نتيجة ${latestMonth.slice(0, 4)}`}
             value={formatCurrency(ytd)}
-            sub="مجموع حصّتك من الأشهر المُرحّلة هذه السنة"
+            sub="مجموع نتائج حصتك بعد المصروفات واحتياطي التجديد هذه السنة"
           />
           <StatCard
             icon={Droplets}
@@ -491,7 +473,7 @@ function OverviewView({
         <Card className="p-5">
           <SectionHeader
             title="مقارنة نتائج الشركة برأس مالك"
-            subtitle="مؤشر تحليلي للنتائج المُرحّلة مقابل ما دفعته، وليس استرداداً أو توزيعاً نقدياً"
+            subtitle="مؤشر تحليلي لنتائج التشغيل مقابل ما دفعته، وليس استرداداً أو توزيعاً نقدياً"
           />
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
             <StatCard
@@ -526,7 +508,7 @@ function OverviewView({
             color={roi.recovered ? 'emerald' : 'primary'}
           />
           <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-3 leading-relaxed">
-            تقديرٌ لا وعد: يُبنى على متوسط آخر الأشهر المُرحّلة، والأشهر المفتوحة قد تتغيّر حتى تُقفل.
+            تقديرٌ لا وعد: يُبنى على نتائج التشغيل والالتزامات المسجلة، وليس قرار توزيع أرباح.
           </p>
         </Card>
       )}
@@ -741,12 +723,14 @@ function TrendsView({ hasShare, profitTrend, washTrend = null }) {
  * يُفتح لا يُكلِّف شيئاً، وهذا نصف فائدة التقسيم.
  */
 function InvestorPortal({ partner, view }) {
-  const { scalingFactor, totalWorkers } = usePartnerView();
+  const { totalWorkers } = usePartnerView();
   const { payments, loading: paymentsLoading, error: paymentsError } = usePartnerPayments();
   const {
-    accounts, entries, lines, periods = [], loading: ledgerLoading, error: ledgerError,
+    entries, lines, loading: ledgerLoading, error: ledgerError,
   } = useLedger();
-  const { rules: feeRules } = useFeeRules();
+  const { report: allocationReport, loading: allocationLoading, error: allocationError } = usePartnerStatement({
+    partnerId: partner.id, enabled: ['overview', 'income', 'trends'].includes(view),
+  });
   // عدّ الغسلات من الخادم لا من `washes`: صفُّ الغسلة يحمل اسم عامله.
   const { washMonths, insights } = usePartnerInsights({
     partnerId: partner.id, months: 12, enabled: view === 'overview' || view === 'trends',
@@ -779,6 +763,7 @@ function InvestorPortal({ partner, view }) {
   // من القيود وحدها، لا من السجلّات التشغيلية: شهرٌ يظهر في القائمة بسبب
   // نشاطٍ لم يُرحَّل بعد يَعِد المستثمر بأرقامٍ لا يستطيع أحد تفسيرها له.
   const availableMonths = useMemo(() => {
+    if (allocationReport) return allocationReport.statements.map(s => s.periodKey).sort().reverse();
     const set = new Set();
     for (const e of entries) {
       const key = String(e.periodKey || String(e.entryDate || '').slice(0, 7));
@@ -786,7 +771,7 @@ function InvestorPortal({ partner, view }) {
     }
     const months = [...set].sort().reverse();
     return months.length ? months : [todayMonth()];
-  }, [entries]);
+  }, [entries, allocationReport]);
 
   const activeMonth = availableMonths.includes(selectedMonth)
     ? selectedMonth
@@ -800,19 +785,16 @@ function InvestorPortal({ partner, view }) {
   const statementMonth = view === 'overview' ? availableMonths[0] : activeMonth;
   const statement = useMemo(
     () => (view === 'overview' || view === 'income'
-      ? monthlyStatement({
-        accounts, entries, lines, periodKey: statementMonth, feeRules, scalingFactor,
-        includeExpenseBreakdown: view === 'income',
-      })
+      ? allocationReport?.statements.find(s => s.periodKey === statementMonth) || EMPTY_STATEMENT
       : EMPTY_STATEMENT),
-    [accounts, entries, lines, statementMonth, feeRules, scalingFactor, view],
+    [allocationReport, statementMonth, view],
   );
 
   const foundingStatus = useMemo(
     () => (view === 'overview' || view === 'income'
-      ? foundingBudgetStatus({ accounts, entries, lines, periodKey: statementMonth })
+      ? allocationReport?.statements.find(s => s.periodKey === statementMonth)?.founding || null
       : null),
-    [accounts, entries, lines, statementMonth, view],
+    [allocationReport, statementMonth, view],
   );
 
   // ── تحصيل رأس المال، آخر ٦ أشهر ──
@@ -834,17 +816,16 @@ function InvestorPortal({ partner, view }) {
       return { months: [], revenue: [], costs: [], net: [], total: 0 };
     }
     const months = lastMonths(6);
-    const rows = months.map((m) => monthlyStatement({
-      accounts, entries, lines, periodKey: m.key, feeRules, scalingFactor,
-    }));
+    const rows = months.map(m => allocationReport?.statements.find(s => s.periodKey === m.key)
+      || { netRevenue: 0, totalAllocation: 0, netAfterReserve: 0 });
     return {
       months,
       revenue: rows.map((r) => r.netRevenue),
-      costs:   rows.map((r) => r.totalCosts),
-      net:     rows.map((r) => r.netProfit),
-      total:   rows.reduce((s, r) => s + Math.abs(r.netRevenue) + Math.abs(r.totalCosts), 0),
+      costs:   rows.map((r) => r.totalAllocation),
+      net:     rows.map((r) => r.netAfterReserve),
+      total:   rows.reduce((s, r) => s + Math.abs(r.netRevenue) + Math.abs(r.totalAllocation), 0),
     };
-  }, [accounts, entries, lines, feeRules, scalingFactor, view]);
+  }, [allocationReport, view]);
 
   // ── حصّته شهراً بشهر منذ أول قيد — للاسترداد والتغيّر ومنذ بداية السنة ──
   // تُحسب في «نظرة عامة» وحدها: قائمةٌ لكل شهرٍ مُرحَّل ليست رخيصة، والخيار
@@ -852,10 +833,10 @@ function InvestorPortal({ partner, view }) {
   const nets = useMemo(() => {
     if (view !== 'overview') return [];
     return [...availableMonths].sort().map((k) => {
-      const st = monthlyStatement({ accounts, entries, lines, periodKey: k, feeRules, scalingFactor });
-      return { month: k, netProfit: st.netProfit, hasActivity: st.hasActivity };
+      const st = allocationReport?.statements.find(s => s.periodKey === k) || EMPTY_STATEMENT;
+      return { month: k, netProfit: st.netAfterReserve || 0, hasActivity: st.hasActivity };
     });
-  }, [view, availableMonths, accounts, entries, lines, feeRules, scalingFactor]);
+  }, [view, availableMonths, allocationReport]);
 
   const roi = useMemo(() => (view === 'overview' ? roiSummary({ nets, paid }) : null), [view, nets, paid]);
   const mom = useMemo(() => {
@@ -888,8 +869,8 @@ function InvestorPortal({ partner, view }) {
     [view, partner.id, myReceipts, entries, lines],
   );
 
-  const anyError = paymentsError || ledgerError;
-  const loading = paymentsLoading || ledgerLoading;
+  const anyError = paymentsError || ledgerError || allocationError;
+  const loading = paymentsLoading || ledgerLoading || allocationLoading;
   const hasShare = (partner.workersCount || 0) > 0;
   const meta = metaFor(view);
 
@@ -900,6 +881,11 @@ function InvestorPortal({ partner, view }) {
         <LoadingState message="جارٍ تحميل بياناتك..." />
       </>
     );
+  }
+
+  // Never silently fall back to the old, incomplete salary-only view.
+  if (allocationError && ['overview', 'income', 'trends'].includes(view)) {
+    return <><TopBar title={meta.title} subtitle={meta.subtitle} /><main className="p-4 sm:p-6"><ErrorState title="تعذّر تأكيد المصروفات ورصيد التأسيس" error={allocationError} /></main></>;
   }
 
   return (
@@ -923,7 +909,7 @@ function InvestorPortal({ partner, view }) {
             hasShare={hasShare}
             latestMonth={statementMonth}
             latestStatement={statement}
-            latestStatus={periodStatusOf(periods, statementMonth)}
+            latestStatus="allocation"
             mom={mom}
             ytd={ytd}
             washShare={washShare}
@@ -956,7 +942,7 @@ function InvestorPortal({ partner, view }) {
             activeMonth={activeMonth}
             onMonthChange={setSelectedMonth}
             statement={statement}
-            periodStatus={periodStatusOf(periods, activeMonth)}
+            periodStatus="allocation"
           />
         )}
 

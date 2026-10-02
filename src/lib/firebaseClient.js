@@ -112,7 +112,7 @@ export const ledgerApiUrl = String(import.meta.env.VITE_LEDGER_API_URL || '').tr
  * render differently depending on where the server happens to be hosted, which
  * is the kind of difference nobody would think to test for.
  */
-async function callLedgerApi(name, payload = {}) {
+async function callLedgerApi(name, payload = {}, endpoint = ledgerApiUrl) {
   if (!auth?.currentUser) {
     const err = new Error('تسجيل الدخول مطلوب.');
     err.code = 'unauthenticated';
@@ -126,7 +126,7 @@ async function callLedgerApi(name, payload = {}) {
 
   let res;
   try {
-    res = await fetch(ledgerApiUrl, {
+    res = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ name, data: payload }),
@@ -146,6 +146,12 @@ async function callLedgerApi(name, payload = {}) {
     throw err;
   }
   return body?.result;
+}
+
+// This read-only report ships with the Vercel release. Do not depend on a
+// separately deployed Firebase callable, or alter any posting transport.
+export function callPartnerAllocationReport(payload = {}) {
+  return callLedgerApi('partnerInsights', { ...payload, includeStatements: true }, '/api/ledger');
 }
 
 export function maskedProjectRef() {

@@ -43,6 +43,7 @@ const FixedAssetsPage      = lazy(() => import('./components/FixedAssetsPage'));
 const PeriodClosePage      = lazy(() => import('./components/PeriodClosePage'));
 
 import { useAuth } from './hooks/useAuth';
+import { usePageNavigation } from './hooks/usePageNavigation';
 import { useMembership } from './hooks/useMembership';
 import { isFirebaseConfigured, requireAuth, missingEnvNames } from './lib/firebaseClient';
 import { MobileMenuProvider, useMobileMenu } from './contexts/MobileMenuContext';
@@ -68,7 +69,7 @@ function AppShell({ membership }) {
     && typeof window !== 'undefined'
     && new URLSearchParams(window.location.search).has('previewPayroll');
   const localPreview = previewCommandCenter || previewPayroll;
-  const [activeTab, setActiveTab] = useState(
+  const [activeTab, setActiveTab] = usePageNavigation(
     previewCommandCenter ? 'agent_command_center' : (previewPayroll ? 'bikers' : 'overview'),
   );
   const { session, loading: authLoading, signOut } = useAuth();
@@ -92,7 +93,10 @@ function AppShell({ membership }) {
   // تردّ تبويباً إدارياً إلى صفحة المستثمر في وضع المحاكاة، وتردّ تبويب
   // مستثمرٍ بقي في الحالة إلى «نظرة عامة» بعد انتهائها — وإلا فشاشةٌ بيضاء
   // لا يصيّرها أي شرطٍ أدناه.
-  const effectiveTab = resolveTab(activeTab, { investorMode });
+  const effectiveTab = resolveTab(activeTab, {
+    investorMode,
+    allowedTabIds: visibleGroups.flatMap((group) => group.tabs.map((tab) => tab.id)),
+  });
   const investorView = INVESTOR_TAB_IDS.includes(effectiveTab)
     ? investorViewFor(effectiveTab)
     : null;

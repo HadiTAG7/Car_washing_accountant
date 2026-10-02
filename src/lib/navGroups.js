@@ -142,10 +142,16 @@ export function investorViewFor(tabId) {
  * تبويبات المستثمر، فإذا أنهى المحاكاة بقي `activeTab` على معرّفٍ لا تصيّره
  * الواجهة الإدارية — شاشةٌ بيضاء. فيعود إلى «نظرة عامة».
  */
-export function resolveTab(activeTab, { investorMode = false } = {}) {
+export function resolveTab(activeTab, { investorMode = false, allowedTabIds } = {}) {
   const isInvestorTab = INVESTOR_TAB_IDS.includes(activeTab);
-  if (investorMode) return isInvestorTab ? activeTab : INVESTOR_HOME_TAB;
-  return isInvestorTab ? 'overview' : activeTab;
+  const fallback = investorMode ? INVESTOR_HOME_TAB : 'overview';
+  const tab = investorMode
+    ? (isInvestorTab ? activeTab : fallback)
+    : (isInvestorTab ? fallback : activeTab);
+  // A URL is user input, not an authorization decision. Unknown ids and tabs
+  // hidden from this role must not mount a page (including its data hooks).
+  if (allowedTabIds && !allowedTabIds.includes(tab)) return fallback;
+  return tab;
 }
 
 /**

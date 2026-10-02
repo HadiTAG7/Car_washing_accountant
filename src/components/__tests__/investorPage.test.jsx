@@ -55,7 +55,7 @@ vi.mock('../../lib/accounting/monthlyStatement', () => ({
         { key: 'monthly', label: 'المصروفات الثابتة الشهرية والرواتب', amount: 80000 * scalingFactor,
           items: [{ id: 'm1', entryDate: '2026-08-04', accountName: 'رواتب', description: 'رواتب البايكرز', amount: 80000 * scalingFactor }] },
         { key: 'annual', label: 'المصروفات السنوية', amount: 10000 * scalingFactor,
-          items: [{ id: 'a1', entryDate: '2026-08-05', accountName: 'مصروفات سنوية', description: 'إيجار السكن', amount: 10000 * scalingFactor }] },
+          items: [{ id: 'a1', groupKey: 'annual', entryDate: '2026-08-05', accountName: 'مصروفات سنوية', description: 'إيجار السكن', annualAmount: 120000 * scalingFactor, amount: 10000 * scalingFactor }] },
         { key: 'other', label: 'بنود أخرى', amount: 0, items: [] },
       ],
     },
@@ -65,6 +65,7 @@ vi.mock('../../lib/accounting/monthlyStatement', () => ({
 }));
 
 const InvestorPage = (await import('../InvestorPage')).default;
+const { IncomeStatementCard } = await import('../InvestorPage');
 const { monthlyStatement } = await import('../../lib/accounting/monthlyStatement');
 
 /**
@@ -99,6 +100,75 @@ afterEach(() => {
 });
 
 describe('صفحة المستثمر — قائمة الدخل', () => {
+  it('تظهر البنود مباشرة تحت إجمالي مجموعتها في نفس جدول النتيجة، بلا فتح قسم آخر', () => {
+    render(<InvestorPage view="income" />);
+    const table = screen.getByText('= حصتك التحليلية من نتيجة الشركة').closest('table');
+    for (const [label, description, expected] of [
+      ['المصاريف المتغيرة والعمولات', 'مستلزمات الغسيل', 18000],
+      ['المصاريف الشهرية والرواتب', 'رواتب البايكرز', 24000],
+      ['احتياطي التجديد السنوي — حصة هذا الشهر', 'إيجار السكن', 3000],
+    ]) {
+      const totalRow = screen.getByText(label).closest('tr');
+      const itemRow = screen.getByText(description).closest('tr');
+      expect(itemRow?.closest('table')).toBe(table);
+      expect(totalRow.nextElementSibling).toBe(itemRow);
+      expect(amountIn(itemRow)).toBe(expected);
+      expect(screen.getByText(description).closest('details')).toBeNull();
+      expect(screen.getAllByText(description)).toHaveLength(1);
+    }
+  });
+
+  it('يحافظ على قسمة السنوي والأرصدة ويبدل التفاصيل مع الشهر دون إعادة احتساب الحصة', () => {
+    const onMonthChange = vi.fn();
+    const props = {
+      sharePercent: 20, hasShare: true, paid: 40000, foundingStatus: null,
+      availableMonths: ['2026-08', '2026-09'], activeMonth: '2026-08', onMonthChange,
+      statement: {
+        hasActivity: true, netRevenue: 900, netProfit: 600, netAfterReserve: 500,
+        annualReserve: 100, fees: [],
+        expenseBreakdown: { total: 400, fixedTotal: 100, groups: [
+          { key: 'variable', amount: 0, items: [] },
+          { key: 'monthly', amount: 0, items: [] },
+          { key: 'other', amount: 300, items: [
+            { id: 'o1', description: 'صيانة استثنائية', accountName: 'صيانة', entryDate: '2026-08-10', amount: 300 },
+          ] },
+          { key: 'annual', amount: 100, items: [
+            { id: 'a1', groupKey: 'annual', description: 'تجديد التأمين', annualAmount: 1200, amount: 100 },
+          ] },
+        ] },
+      },
+    };
+    const { rerender } = render(<IncomeStatementCard {...props} />);
+    const annualRow = screen.getByText('تجديد التأمين').closest('tr');
+    expect(annualRow?.textContent).toMatch(/حصتك السنوية.*1,200.*÷ 12/);
+    expect(amountIn(annualRow)).toBe(100);
+    expect(amountIn(screen.getByText('صيانة استثنائية').closest('tr'))).toBe(300);
+    expect(amountIn(screen.getByText('= حصتك التحليلية من نتيجة الشركة').closest('tr'))).toBe(500);
+    fireEvent.change(screen.getByRole('combobox', { name: 'فترة التقرير (الشهر)' }), { target: { value: '2026-09' } });
+    expect(onMonthChange).toHaveBeenCalledWith('2026-09');
+    rerender(<IncomeStatementCard {...props} activeMonth="2026-09" statement={{
+      ...props.statement, annualReserve: 0, expenseBreakdown: { total: 0, fixedTotal: 0, groups: [] },
+    }} />);
+    expect(screen.queryByText('تجديد التأمين')).toBeNull();
+    expect(screen.queryByText('صيانة استثنائية')).toBeNull();
+  });
+
+  it('لا يخفي البنود المتقابلة عندما يكون صافي مجموعتها صفراً', () => {
+    render(<IncomeStatementCard sharePercent={20} hasShare paid={0} availableMonths={['2026-09']}
+      activeMonth="2026-09" onMonthChange={vi.fn()} statement={{
+        hasActivity: true, netRevenue: 0, netProfit: 0, annualReserve: 0, fees: [],
+        expenseBreakdown: { total: 0, fixedTotal: 0, groups: [
+          { key: 'other', amount: 0, items: [
+            { id: 'cost', description: 'مصروف صيانة', accountName: 'صيانة', entryDate: '2026-09-01', amount: 100 },
+            { id: 'refund', description: 'استرداد صيانة', accountName: 'صيانة', entryDate: '2026-09-02', amount: -100 },
+          ] },
+        ] },
+      }} />);
+    expect(screen.getByText('المصاريف الأخرى')).toBeTruthy();
+    expect(screen.getByText('مصروف صيانة').closest('tr')).toBeTruthy();
+    expect(screen.getByText('استرداد صيانة').closest('tr').textContent).toMatch(/-100/);
+  });
+
   it('يعرض انتظار التحقق لا رسالة فقد الربط', () => {
     partnerView.viewedPartner = null;
     partnerView.partnerLinkLoading = true;
@@ -147,14 +217,14 @@ describe('صفحة المستثمر — قائمة الدخل', () => {
 
   it('تعرض حصة الشريك من الفئات والبنود التفصيلية دون كشف شريك آخر', () => {
     render(<InvestorPage view="income" />);
-    expect(screen.getByText('تفصيل حصتك من المصروفات')).toBeTruthy();
-    expect(screen.getByText('المصروفات المتغيرة والعمولات')).toBeTruthy();
-    expect(screen.getByText('المصروفات الثابتة الشهرية والرواتب')).toBeTruthy();
-    expect(screen.getByText('المصروفات السنوية')).toBeTruthy();
+    expect(screen.getByText(/تفصيل حصتك من المصروفات —/)).toBeTruthy();
+    expect(screen.getByText('المصاريف المتغيرة والعمولات')).toBeTruthy();
+    expect(screen.getByText('المصاريف الشهرية والرواتب')).toBeTruthy();
+    expect(screen.getByText('احتياطي التجديد السنوي — حصة هذا الشهر')).toBeTruthy();
     expect(screen.getByText(/إجمالي المصروفات الثابتة الشهرية والسنوية/)).toBeTruthy();
     expect(screen.getByText('رواتب البايكرز')).toBeTruthy();
     expect(screen.getByText('إيجار السكن')).toBeTruthy();
-    expect(screen.getByText('إجمالي مصروفاتك واحتياطي التجديد')).toBeTruthy();
+    expect(screen.getByText(/إجمالي مصروفاتك واحتياطي التجديد:/)).toBeTruthy();
     expect(screen.queryByText('هادي الغانم')).toBeNull();
   });
 

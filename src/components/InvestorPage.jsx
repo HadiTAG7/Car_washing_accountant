@@ -243,6 +243,35 @@ function FoundingStageNotice({ status }) {
   );
 }
 
+/** التفاصيل جزء من إجمالي المجموعة أعلاه، وليست خصماً إضافياً. */
+function ExpenseStatementGroup({ label, amount, group }) {
+  return (
+    <>
+      <StatementRow label={label} amount={amount} />
+      {(group?.items || []).map((item) => (
+        <tr key={item.id} className="border-b border-slate-100 dark:border-slate-800/60 bg-slate-50/50 dark:bg-slate-800/20">
+          <td className="py-2 text-slate-700 dark:text-slate-300">
+            <div className="pr-3 border-r-2 border-slate-200 dark:border-slate-700">
+              <p className="font-medium">{item.description}</p>
+              <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                {group.key === 'annual'
+                  ? `حصتك السنوية ${formatCurrency(item.annualAmount)} ÷ 12 — احتياطي التجديد`
+                  : `${item.accountName} · ${formatDate(item.entryDate)}`}
+              </p>
+            </div>
+          </td>
+          <td className="py-2 text-left tabular-nums whitespace-nowrap text-slate-600 dark:text-slate-400">
+            {formatCurrency(item.amount)}
+          </td>
+        </tr>
+      ))}
+      {group?.items?.length === 0 && (
+        <tr><td colSpan={2} className="py-2 text-xs text-slate-500 dark:text-slate-400">لا توجد بنود في هذه المجموعة لهذا الشهر.</td></tr>
+      )}
+    </>
+  );
+}
+
 /**
  * قائمة الدخل بحصّته.
  *
@@ -252,6 +281,8 @@ function FoundingStageNotice({ status }) {
 export function IncomeStatementCard({
   sharePercent, hasShare, paid, foundingStatus, availableMonths, activeMonth, onMonthChange, statement, periodStatus = null,
 }) {
+  const groups = Object.fromEntries((statement.expenseBreakdown?.groups || []).map(group => [group.key, group]));
+  const hasOtherExpenses = Boolean(groups.other?.amount || groups.other?.items?.length);
   if (!hasShare) {
     return (
       <Card className="p-6">
@@ -298,13 +329,18 @@ export function IncomeStatementCard({
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full table-fixed text-sm [&_td]:px-2 [&_td:first-child]:whitespace-normal [&_td:first-child]:break-words [&_td:last-child]:text-xs sm:[&_td:last-child]:text-sm">
+            <caption className="text-right text-xs text-slate-500 dark:text-slate-400 pb-3 leading-relaxed">
+              تفصيل حصتك من المصروفات — البنود أدناه ضمن إجمالي مجموعتها، وليست خصماً إضافياً.
+            </caption>
             <colgroup><col /><col className="w-32 sm:w-44" /></colgroup>
             <tbody>
               <StatementRow label="حصتك من صافي الإيرادات" amount={statement.netRevenue} kind="plus" />
-              <StatementRow label="المصاريف المتغيرة والعمولات" amount={statement.expenseBreakdown?.groups.find(g => g.key === 'variable')?.amount || 0} />
-              <StatementRow label="المصاريف الشهرية والرواتب" amount={statement.expenseBreakdown?.groups.find(g => g.key === 'monthly')?.amount || 0} />
-              {(statement.expenseBreakdown?.groups.find(g => g.key === 'other')?.amount || 0) !== 0 && <StatementRow label="المصاريف الأخرى" amount={statement.expenseBreakdown.groups.find(g => g.key === 'other').amount} />}
-              <StatementRow label="احتياطي التجديد السنوي — حصة هذا الشهر" amount={statement.annualReserve || 0} />
+              <ExpenseStatementGroup label="المصاريف المتغيرة والعمولات" amount={groups.variable?.amount || 0} group={groups.variable} />
+              <ExpenseStatementGroup label="المصاريف الشهرية والرواتب" amount={groups.monthly?.amount || 0} group={groups.monthly} />
+              {hasOtherExpenses && (
+                <ExpenseStatementGroup label="المصاريف الأخرى" amount={groups.other?.amount || 0} group={groups.other} />
+              )}
+              <ExpenseStatementGroup label="احتياطي التجديد السنوي — حصة هذا الشهر" amount={statement.annualReserve || 0} group={groups.annual} />
               {(statement.fees || []).map((f) => (
                 <StatementRow key={f.key} label={`يُخصم منه: ${f.label}`} amount={f.amount} />
               ))}
@@ -315,6 +351,13 @@ export function IncomeStatementCard({
               </>}
             </tbody>
           </table>
+          {statement.expenseBreakdown && (
+            <div aria-label="ملخص المصروفات" className="mt-3 space-y-1 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+              <p>إجمالي المصروفات الثابتة الشهرية والسنوية: {formatCurrency(statement.expenseBreakdown.fixedTotal)}</p>
+              <p>إجمالي مصروفاتك واحتياطي التجديد: {formatCurrency(statement.expenseBreakdown.total)}</p>
+              <p>الشهري والمتغيّر يخصّان شهرهما. كل بند سنوي ÷ 12 لتجديد السنة القادمة؛ الدفعة الأولى لا تُخصم مرة ثانية.</p>
+            </div>
+          )}
           <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-3 leading-relaxed">
             الأرقام أعلاه حصّتك التحليلية ({sharePercent.toFixed(1)}%) من نتائج الشركة الشهرية،
             محسوبة على عدد العمالة، وتشمل المصروفات المسجلة والالتزامات الدورية واحتياطي التجديد.
@@ -325,48 +368,6 @@ export function IncomeStatementCard({
             المسجّل في سندات رأس مالك: {formatCurrency(paid)}، وتفاصيله في «رأس مالي».
             وظهور المصروف في حسابات الشركة لا يعني مطالبتك بدفعه مرة ثانية.
           </p>
-          {statement.expenseBreakdown && (
-            <section aria-label="تفصيل حصتك من المصروفات" className="mt-6 border-t border-slate-200 dark:border-slate-700 pt-5">
-              <h3 className="font-bold text-slate-900 dark:text-slate-100">تفصيل حصتك من المصروفات</h3>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                الشهري والمتغيّر يخصّان شهرهما. كل بند سنوي ÷ 12 لتجديد السنة القادمة؛ الدفعة الأولى لا تُخصم مرة ثانية.
-              </p>
-              <p className="mt-3 text-sm font-semibold text-slate-800 dark:text-slate-100">
-                إجمالي المصروفات الثابتة الشهرية والسنوية: {formatCurrency(statement.expenseBreakdown.fixedTotal)}
-              </p>
-              <div className="mt-3 space-y-2">
-                {statement.expenseBreakdown.groups.map((group) => (
-                  <details key={group.key} className="rounded-control border border-slate-200 dark:border-slate-700">
-                    <summary className="cursor-pointer flex items-center justify-between gap-3 px-3 py-3 font-semibold text-slate-800 dark:text-slate-100">
-                      <span><span aria-hidden="true" className="ml-2">▾</span>{group.label}</span>
-                      <span className="tabular-nums whitespace-nowrap">{formatCurrency(group.amount)}</span>
-                    </summary>
-                    <div className="border-t border-slate-200 dark:border-slate-700 px-3">
-                      {group.items.length === 0 ? (
-                        <p className="py-3 text-xs text-slate-500 dark:text-slate-400">لا توجد بنود في هذه المجموعة لهذا الشهر.</p>
-                      ) : group.items.map((item) => (
-                        <div key={item.id} className="flex flex-wrap items-start justify-between gap-2 border-b last:border-b-0 border-slate-100 dark:border-slate-700 py-3">
-                          <div className="min-w-0">
-                            <p className="font-medium text-slate-800 dark:text-slate-100">{item.description}</p>
-                            <p className="text-xs text-slate-500 dark:text-slate-400">
-                              {item.groupKey === 'annual'
-                                ? `حصتك السنوية ${formatCurrency(item.annualAmount)} ÷ 12`
-                                : `${item.accountName} · ${formatDate(item.entryDate)}`}
-                            </p>
-                          </div>
-                          <span className="font-semibold tabular-nums whitespace-nowrap text-slate-800 dark:text-slate-100">{formatCurrency(item.amount)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </details>
-                ))}
-              </div>
-              <div className="flex items-center justify-between gap-3 mt-3 px-3 py-2 rounded-control bg-slate-50 dark:bg-slate-800 font-bold">
-                <span>إجمالي مصروفاتك واحتياطي التجديد</span>
-                <span className="tabular-nums whitespace-nowrap">{formatCurrency(statement.expenseBreakdown.total)}</span>
-              </div>
-            </section>
-          )}
         </div>
       )}
     </Card>

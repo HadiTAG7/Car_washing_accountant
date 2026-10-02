@@ -3,12 +3,16 @@ import { isFirebaseConfigured } from '../lib/firebaseClient';
 import { fetchRows, insertRow, updateRow, deleteRow, sortBy } from '../lib/firestoreCrud';
 import { mapPartner, toPartnerInsert, toPartnerUpdate } from '../lib/mappers';
 import { useFirestoreQuery } from './useFirestoreQuery';
+import { useAuth } from './useAuth';
 
 export function usePartners() {
+  const { user, loading: authLoading } = useAuth();
+  const userId = user?.id ?? null;
   const { data, loading, error, refetch } = useFirestoreQuery(
     async () => sortBy(await fetchRows('partners'), [{ key: 'partner_name' }]),
     {
-      enabled: isFirebaseConfigured,
+      enabled: isFirebaseConfigured && !authLoading && Boolean(userId),
+      queryKey: userId,
       map:     mapPartner,
       fallback: [],
     },
@@ -33,5 +37,8 @@ export function usePartners() {
   }, [refetch]);
 
   const partners = isFirebaseConfigured ? (data ?? []) : (data || []);
-  return { partners, loading, error, addPartner, updatePartner, deletePartner, refetch };
+  return {
+    partners, loading: Boolean(isFirebaseConfigured && authLoading) || loading,
+    error, addPartner, updatePartner, deletePartner, refetch,
+  };
 }

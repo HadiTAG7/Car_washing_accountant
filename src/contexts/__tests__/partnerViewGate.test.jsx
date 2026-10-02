@@ -31,6 +31,8 @@ function Probe() {
 function mount({ user = null, partners = [], role = null } = {}) {
   authState.user = user;
   partnersState.partners = partners;
+  partnersState.loading = false;
+  partnersState.error = null;
   return render(
     <PartnerViewProvider role={role}><Probe /></PartnerViewProvider>,
   );
@@ -44,6 +46,27 @@ afterEach(() => {
 });
 
 describe('بوابة عرض الشريك', () => {
+  it('انتظار قراءة الربط ليس عدم ربط ولا يفتح وضع المدير', () => {
+    const { rerender } = mount({ user: { id: 'uidAhmed' }, role: 'partner' });
+    partnersState.loading = true;
+    rerender(<PartnerViewProvider role="partner"><Probe /></PartnerViewProvider>);
+    expect(read('linkMissing')).toBe('false');
+    expect(read('isAdmin')).toBe('false');
+    expect(read('isPartnerView')).toBe('true');
+    expect(read('canMutate')).toBe('false');
+    expect(read('scale')).toBe('0');
+  });
+
+  it('فشل قراءة الربط ليس عدم ربط ولا يفتح وضع المدير', () => {
+    const { rerender } = mount({ user: { id: 'uidAhmed' }, role: 'partner' });
+    partnersState.error = new Error('unavailable');
+    rerender(<PartnerViewProvider role="partner"><Probe /></PartnerViewProvider>);
+    expect(read('linkMissing')).toBe('false');
+    expect(read('isPartnerView')).toBe('true');
+    expect(read('canMutate')).toBe('false');
+    expect(read('scale')).toBe('0');
+  });
+
   it('المدير: يكتب ويرى أرقام الشركة كاملة', () => {
     mount({ user: { id: 'uidBoss' }, partners: [P1, P2], role: 'admin' });
     expect(read('isAdmin')).toBe('true');

@@ -24,8 +24,9 @@ import { usePartners } from '../hooks/usePartners';
  *   isAdmin            true when the account is not an investor AND is
  *                      not linked to any partner row.
  *   isInvestorAccount  the role says `partner`.
- *   investorLinkMissing an investor whose `partners` row is unlinked —
- *                      the fail-closed state.
+ *   investorLinkMissing a successful read confirmed no linked row.
+ *   partnerLinkLoading  still resolving the signed-in account's link.
+ *   partnerLinkError    a failed read, not evidence that the link is absent.
  *   myPartner          the partner row owned by the current user, or
  *                      null when admin.
  *   viewedPartner      myPartner when partner-logged-in; the admin's
@@ -49,6 +50,9 @@ const DEFAULT_VALUE = {
   isAdmin:            true,
   isInvestorAccount:  false,
   investorLinkMissing: false,
+  partnerLinkLoading: false,
+  partnerLinkError: null,
+  recheckPartnerLink: () => {},
   role:               null,
   myPartner:          null,
   viewedPartner:      null,
@@ -65,7 +69,7 @@ const STORAGE_KEY = 'sweater:actingAsPartnerId';
 
 export function PartnerViewProvider({ children, role = null }) {
   const { user } = useAuth();
-  const { partners } = usePartners();
+  const { partners, loading: partnersLoading, error: partnersError, refetch } = usePartners();
 
   // Admin's "simulate as X" pick survives reload via localStorage.
   // SSR-safe access guard mirrors useDarkMode's pattern.
@@ -93,7 +97,9 @@ export function PartnerViewProvider({ children, role = null }) {
 
   const isInvestorAccount = role === 'partner';
   // الحالة التي كانت تُسلّم الواجهة كاملةً: دورٌ مستثمر بلا صفٍّ مربوط.
-  const investorLinkMissing = isInvestorAccount && !myPartner;
+  const partnerLinkLoading = isInvestorAccount && Boolean(partnersLoading);
+  const partnerLinkError = isInvestorAccount ? (partnersError || null) : null;
+  const investorLinkMissing = isInvestorAccount && !partnerLinkLoading && !partnerLinkError && !myPartner;
   const isAdmin = !isInvestorAccount && !myPartner;
 
   // Admin override wins for admins; partners always see themselves.
@@ -116,21 +122,24 @@ export function PartnerViewProvider({ children, role = null }) {
 
   // بلا ربط لا نعرف الحصّة، والواحد الصحيح يعني «أرقام الشركة كاملة» — وهو
   // آخر ما يُعرض على حسابٍ لم نتحقّق من هويته بعد. الصفر يفشل مغلقاً.
-  const scalingFactor = investorLinkMissing
+  const scalingFactor = isInvestorAccount && !myPartner
     ? 0
     : (viewedPartner && totalWorkers > 0
       ? (viewedPartner.workersCount || 0) / totalWorkers
       : 1);
 
-  // المستثمر المسدود في عرض الشريك أيضاً: كل قمع مشروط بـ `isPartnerView`
+  // المستثمر المنتظر أو المسدود في عرض الشريك أيضاً: كل قمع مشروط بـ `isPartnerView`
   // يجب أن ينطبق عليه، لا أن يُفلته النقصُ إلى المسار الإداري.
-  const isPartnerView = viewedPartner !== null || investorLinkMissing;
+  const isPartnerView = viewedPartner !== null || isInvestorAccount;
   const canMutate     = isAdmin && actingAsPartnerId === null;
 
   const value = useMemo(() => ({
     isAdmin,
     isInvestorAccount,
     investorLinkMissing,
+    partnerLinkLoading,
+    partnerLinkError,
+    recheckPartnerLink: refetch,
     role,
     myPartner,
     viewedPartner,
@@ -141,7 +150,7 @@ export function PartnerViewProvider({ children, role = null }) {
     canMutate,
     totalWorkers,
   }), [
-    isAdmin, isInvestorAccount, investorLinkMissing, role,
+    isAdmin, isInvestorAccount, investorLinkMissing, partnerLinkLoading, partnerLinkError, refetch, role,
     myPartner, viewedPartner, actingAsPartnerId, setActingAsPartnerId,
     scalingFactor, isPartnerView, canMutate, totalWorkers,
   ]);

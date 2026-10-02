@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const partnerView = {
@@ -84,6 +84,9 @@ afterEach(() => {
   COMPANY_NET = 50000;
   statementError = null;
   partnerView.investorLinkMissing = false;
+  partnerView.partnerLinkLoading = false;
+  partnerView.partnerLinkError = null;
+  partnerView.recheckPartnerLink = undefined;
   partnerView.viewedPartner = { id: 'p1', partnerName: 'أحمد الغانم', workersCount: 3, userId: 'uid1' };
   partnerView.scalingFactor = 0.3;
   paymentsState.payments = [];
@@ -96,6 +99,25 @@ afterEach(() => {
 });
 
 describe('صفحة المستثمر — قائمة الدخل', () => {
+  it('يعرض انتظار التحقق لا رسالة فقد الربط', () => {
+    partnerView.viewedPartner = null;
+    partnerView.partnerLinkLoading = true;
+    render(<InvestorPage />);
+    expect(screen.getByText('جارٍ التحقق من ربط حسابك...')).toBeTruthy();
+    expect(screen.queryByText(/لم يُربط حسابك بسجل شريك بعد/)).toBeNull();
+  });
+
+  it('يفصل خطأ القراءة عن فقد الربط ويتيح إعادة القراءة فقط', () => {
+    partnerView.viewedPartner = null;
+    partnerView.partnerLinkError = new Error('connection failed');
+    partnerView.recheckPartnerLink = vi.fn();
+    render(<InvestorPage />);
+    expect(screen.getByText('تعذّر التحقق من ربط حسابك')).toBeTruthy();
+    expect(screen.queryByText(/لم يُربط حسابك بسجل شريك بعد/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'إعادة المحاولة' }));
+    expect(partnerView.recheckPartnerLink).toHaveBeenCalledOnce();
+  });
+
   it('يعرض ميزانية التأسيس للشريك 20 ألف لكل بايكر، بدلاً من حد شركة عام', () => {
     ledgerState.accounts = [{ code: '5010', accountType: 'expense' }];
     ledgerState.entries = [{ id: 'e1', entryDate: '2026-08-04', periodKey: '2026-08', status: 'posted', sourceKind: 'monthly' }];

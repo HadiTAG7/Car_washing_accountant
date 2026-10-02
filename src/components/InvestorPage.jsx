@@ -965,9 +965,24 @@ function InvestorPortal({ partner, view }) {
  * يعرفها الجدول تسقط على «نظرة عامة» لا على شاشةٍ فارغة.
  */
 export default function InvestorPage({ view = 'overview' }) {
-  const { viewedPartner, investorLinkMissing } = usePartnerView();
+  const {
+    viewedPartner, investorLinkMissing, partnerLinkLoading, partnerLinkError, recheckPartnerLink,
+  } = usePartnerView();
   const safeView = VIEW_META[view] ? view : 'overview';
   const meta = metaFor(safeView);
+
+  if (partnerLinkLoading || partnerLinkError) {
+    return (
+      <>
+        <TopBar title={meta.title} subtitle={meta.subtitle} />
+        <main className="p-4 sm:p-6 lg:p-8">
+          {partnerLinkLoading
+            ? <LoadingState message="جارٍ التحقق من ربط حسابك..." />
+            : <ErrorState title="تعذّر التحقق من ربط حسابك" error={partnerLinkError} onRetry={recheckPartnerLink} />}
+        </main>
+      </>
+    );
+  }
 
   if (investorLinkMissing || !viewedPartner) {
     return (

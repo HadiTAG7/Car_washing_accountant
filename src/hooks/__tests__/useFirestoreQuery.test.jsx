@@ -30,4 +30,15 @@ describe('useFirestoreQuery result shape', () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.data).toEqual([]);
   });
+
+  it('only accepts the latest refetch when earlier work finishes afterwards', async () => {
+    let resolveOld;
+    const old = new Promise(resolve => { resolveOld = resolve; });
+    const fetcher = vi.fn().mockReturnValueOnce(old).mockResolvedValueOnce(['latest']);
+    const { result } = renderHook(() => useFirestoreQuery(fetcher));
+    await act(async () => { await result.current.refetch(); });
+    expect(result.current.data).toEqual(['latest']);
+    await act(async () => { resolveOld(['stale']); });
+    expect(result.current.data).toEqual(['latest']);
+  });
 });

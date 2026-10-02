@@ -1,65 +1,67 @@
-import { useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  collection, getDocs, limit, orderBy, query,
+  collection, getDocs, limit, onSnapshot, orderBy, query, where,
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../lib/firebaseClient';
-import { useFirestoreQuery } from './useFirestoreQuery';
 import {
   assembleCommandCenterSnapshot,
   COMMAND_CENTER_ROLES,
-  EMPTY_COMMAND_CENTER_SNAPSHOT,
 } from '../lib/agentCommandCenter';
 
-const COLLECTIONS = Object.freeze({
-  agents: 'agent_command_agents',
-  reports: 'agent_command_reports',
-  alerts: 'agent_command_alerts',
-  approvals: 'agent_command_approvals',
-  sources: 'agent_command_sources',
-  activity: 'agent_command_activity',
-});
-
-function rowsOf(snapshot) {
-  return snapshot.docs.map((row) => ({ id: row.id, ...row.data() }));
+export async function loadAgentCaseHistory(caseId) {
+  if (!/^[a-zA-Z0-9_-]{1,100}$/.test(caseId)) throw new Error('Invalid case ID');
+  const rows = await getDocs(query(collection(db, 'agent_command_activity'), where('caseId', '==', caseId)));
+  return rows.docs.map((row) => ({ ...row.data(), id: row.id }));
 }
 
-async function readCommandCenter() {
-  const [agents, reports, alerts, approvals, sources, activity] = await Promise.all([
-    getDocs(collection(db, COLLECTIONS.agents)),
-    getDocs(query(collection(db, COLLECTIONS.reports), orderBy('reportedAt', 'desc'), limit(40))),
-    getDocs(query(collection(db, COLLECTIONS.alerts), orderBy('createdAt', 'desc'), limit(40))),
-    getDocs(query(collection(db, COLLECTIONS.approvals), orderBy('createdAt', 'desc'), limit(40))),
-    getDocs(collection(db, COLLECTIONS.sources)),
-    getDocs(query(collection(db, COLLECTIONS.activity), orderBy('occurredAt', 'desc'), limit(50))),
-  ]);
-  return [{
-    agents: rowsOf(agents),
-    reports: rowsOf(reports),
-    alerts: rowsOf(alerts),
-    approvals: rowsOf(approvals),
-    sources: rowsOf(sources),
-    activity: rowsOf(activity),
-  }];
+export function commandCenterSubscriptions(database) {
+  const ref = (name) => collection(database, `agent_command_${name}`);
+  return {
+    agents: ref('agents'),
+    reports: query(ref('reports'), orderBy('reportedAt', 'desc'), limit(80)),
+    // Pending decisions cannot disappear behind a global history limit.
+    approvals: query(ref('approvals'), where('status', '==', 'pending')),
+    alerts: query(ref('alerts'), where('active', '==', true)),
+    tasks: ref('tasks'),
+    sources: ref('sources'),
+    activity: query(ref('activity'), orderBy('occurredAt', 'desc'), limit(100)),
+  };
 }
 
 export function useAgentCommandCenter(role) {
   const allowed = COMMAND_CENTER_ROLES.includes(role);
-  const queryState = useFirestoreQuery(readCommandCenter, {
-    enabled: Boolean(isFirebaseConfigured && allowed),
-    deps: [role],
-    fallback: [],
-  });
-  const raw = queryState.data?.[0];
-  const snapshot = useMemo(
-    () => (raw ? assembleCommandCenterSnapshot(raw) : EMPTY_COMMAND_CENTER_SNAPSHOT),
-    [raw],
-  );
-
-  return {
-    ...snapshot,
-    allowed,
-    loading: queryState.loading,
-    error: queryState.error,
-    refresh: queryState.refetch,
-  };
+  const enabled = Boolean(isFirebaseConfigured && allowed);
+  const [state, setState] = useState({ raw: {}, loading: enabled, error: null });
+  const [revision, setRevision] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
+  const refresh = useCallback(() => {
+    setState((current) => ({ ...current, loading: true, error: null }));
+    setRevision((current) => current + 1);
+  }, []);
+  useEffect(() => {
+    if (!enabled) return undefined;
+    let alive = true;
+    const raw = {};
+    const queries = commandCenterSubscriptions(db);
+    const received = new Set();
+    let failed = null;
+    const unsubscribers = Object.entries(queries).map(([name, request]) => onSnapshot(request, (result) => {
+      if (!alive) return;
+      raw[name] = result.docs.map((row) => ({ ...row.data(), id: row.id }));
+      received.add(name);
+      setState({ raw: { ...raw }, loading: received.size < Object.keys(queries).length && !failed, error: failed });
+    }, (error) => {
+      if (!alive) return;
+      failed = error;
+      setState({ raw: { ...raw }, loading: false, error });
+    }));
+    const timer = window.setInterval(() => setNow(Date.now()), 30000);
+    return () => {
+      alive = false;
+      unsubscribers.forEach((unsubscribe) => unsubscribe());
+      window.clearInterval(timer);
+    };
+  }, [enabled, revision]);
+  const snapshot = useMemo(() => assembleCommandCenterSnapshot(enabled ? state.raw : {}, { now }), [enabled, state.raw, now]);
+  return { ...snapshot, allowed, loading: enabled && state.loading, error: enabled ? state.error : null, refresh };
 }

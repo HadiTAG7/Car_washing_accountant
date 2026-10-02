@@ -3,9 +3,11 @@ import {
   AGENT_COMMAND_MAX_BODY_BYTES,
   AgentCommandCenterError,
   ingestAgentCommandEvent,
+  normalizeAgentCommandEvent,
   verifyAgentCommandSignature,
 } from '../functions/src/agentCommandCenter.js';
 import { getAgentCommandCenterDatabase } from '../server/agentCommandCenterDatabase.js';
+import { authorizeAgentCommandSender, resolveAgentCommandSender } from '../server/agentCommandCenterSenders.js';
 
 export const config = {
   api: { bodyParser: false },
@@ -49,8 +51,10 @@ export function createAgentCommandCenterHandler({
 
     try {
       const rawBody = await readRawBody(request);
+      const sender = resolveAgentCommandSender(header(request, 'X-Sweater-Sender'));
       const verified = verifyAgentCommandSignature({
-        secret: process.env.AGENT_COMMAND_CENTER_WEBHOOK_SECRET,
+        secret: sender.secret,
+        senderId: sender.senderId,
         signature: header(request, 'X-Sweater-Signature'),
         timestamp: header(request, 'X-Sweater-Timestamp'),
         idempotencyKey: header(request, 'X-Sweater-Idempotency-Key'),
@@ -59,6 +63,7 @@ export function createAgentCommandCenterHandler({
       let payload;
       try { payload = JSON.parse(rawBody.toString('utf8')); }
       catch { throw new AgentCommandCenterError('جسم الطلب ليس JSON صالحًا.'); }
+      authorizeAgentCommandSender(sender, normalizeAgentCommandEvent(payload));
 
       const { db, FieldValue } = databaseFactory();
       const result = await ingest(db, FieldValue, payload, verified);

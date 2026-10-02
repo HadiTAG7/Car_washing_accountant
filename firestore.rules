@@ -222,6 +222,10 @@ service cloud.firestore {
       allow read:  if isAccountant();
       allow write: if false;
     }
+    match /agent_command_tasks/{caseId} {
+      allow read: if isAccountant();
+      allow write: if false;
+    }
     match /agent_command_reports/{reportId} {
       allow read:  if isAccountant();
       allow write: if false;

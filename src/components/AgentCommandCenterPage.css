@@ -87,7 +87,7 @@
   position: relative;
   width: 100%;
   aspect-ratio: 1.48;
-  min-height: 610px;
+  min-height: 700px;
   overflow: hidden;
   border: 1px solid var(--sw-border-subtle);
   border-radius: var(--sw-radius-card);
@@ -458,7 +458,7 @@
   .acc-executive-alerts { grid-template-columns: 1fr; }
 }
 
-@media (max-width: 720px) {
+@media (max-width: 1100px) {
   .acc-network-card { padding: var(--sw-space-4); }
   .acc-map-wrap { max-width: none; }
   .acc-map-controls {
@@ -595,6 +595,67 @@
 .acc-page[data-motion="reduced"] .acc-finance-flow,
 .acc-page[data-motion="reduced"] .acc-agent-ring,
 .acc-page[data-motion="reduced"] .acc-live-chip span { animation: none; }
+
+/* Progressive disclosure: managers are agents, teams remain neutral controls. */
+.acc-team-node {
+  width: 158px;
+  min-height: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  gap: 8px;
+  transform: translate(-50%, -32%);
+}
+.acc-team-node[data-active="true"] { transform: translate(-50%, -32%); box-shadow: none; }
+.acc-team-focus { min-height: 62px; border: 1px solid var(--sw-border-subtle); border-radius: var(--sw-radius-pill); background: var(--sw-surface); padding: 8px 10px; }
+.acc-team-focus[aria-pressed="true"] { border-color: var(--sw-action); background: var(--sw-brand-soft); }
+.acc-team-focus strong { font-size: 12px; }
+.acc-team-focus small { font-size: 10px; }
+.acc-agent--leader { position: relative; width: 128px; min-height: 128px; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 14px 9px; border-color: var(--agent-status); box-shadow: var(--sw-shadow-card); }
+.acc-agent--leader:hover { box-shadow: var(--sw-shadow-card-hover); }
+.acc-agent--leader .acc-agent-name { font-size: 12px; text-align: center; }
+.acc-agent--leader .acc-agent-icon { width: 28px; height: 28px; }
+.acc-agent--orbit { width: 136px; min-height: 88px; grid-template-columns: 30px 1fr; }
+.acc-agent--orbit .acc-agent-name { font-size: 12px; }
+.acc-node-state { color: var(--sw-text-secondary); font-size: 10px; line-height: 1.4; }
+.acc-node-work { grid-column: 1 / -1; display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--sw-text-muted); font-size: 10px; line-height: 1.5; }
+.acc-ceo-brief { display: flex; align-items: center; gap: 10px; width: min(1180px, 100%); margin: 12px auto; padding: 8px 12px; color: var(--sw-action); }
+.acc-ceo-brief p { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; flex: 1; font-size: 12px; }
+.acc-ceo-brief p span { color: var(--sw-text-secondary); }
+.acc-ceo-brief small { color: var(--sw-text-muted); font-size: 10px; }
+.acc-connection-note { font-size: 12px; line-height: 1.8; color: var(--sw-text-secondary); }
+.acc-work-summary { display: grid; gap: 12px; margin: 14px 0; }
+.acc-work-summary dt { color: var(--sw-text-muted); font-size: 11px; }
+.acc-work-summary dd { margin: 4px 0 0; line-height: 1.9; font-size: 13px; overflow-wrap: anywhere; }
+.acc-evidence-links { display: flex; flex-wrap: wrap; gap: 12px; list-style: none; padding: 0; }
+.acc-evidence-links a { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; color: var(--sw-action); text-decoration: underline; font-size: 12px; }
+.acc-task-list { padding: 0; margin: 0; list-style: none; }
+.acc-task-card { padding: 16px; border-bottom: 1px solid var(--sw-border-subtle); }
+.acc-task-heading { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; font-size: 13px; }
+.acc-task-heading span { color: var(--sw-action); }
+.acc-task-card summary { min-height: 44px; cursor: pointer; font-size: 12px; color: var(--sw-action); }
+.acc-history-load { min-height: 44px; padding: 8px 12px; margin: 8px 0; border: 1px solid var(--sw-border-subtle); border-radius: var(--sw-radius-control); background: var(--sw-surface); color: var(--sw-action); font: inherit; cursor: pointer; }
+.acc-summary-item p { font-size: 12px; }
+.acc-summary-item small { font-size: 10px; color: var(--sw-text-secondary); }
+.acc-team-node[data-dimmed="true"], .acc-agent[data-dimmed="true"] { opacity: 1; filter: none; }
+.acc-team-node[data-dimmed="true"] .acc-agent, .acc-team-node[data-dimmed="true"] .acc-team-focus { background: var(--sw-canvas-subtle); box-shadow: none; }
+.acc-team-node[data-dimmed="true"] .acc-agent-ring, .acc-team-node[data-dimmed="true"] .acc-team-icon { opacity: 0.4; }
+@media (max-width: 1100px) {
+  .acc-map { height: 700px; min-height: 700px; }
+  .acc-map-controls { position: relative; inset: auto; width: max-content; max-width: 100%; margin: 0 auto 8px; }
+  .acc-map-controls output { color: var(--sw-text-secondary); }
+  .acc-ceo-brief { flex-wrap: wrap; }
+  .acc-ceo-brief small { margin-inline-start: 28px; }
+  .acc-map-viewport { touch-action: pan-x pan-y pinch-zoom; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .acc-map-viewport { scroll-behavior: auto; }
+  .acc-agent, .acc-team-node, .acc-map-lines g { transition: none; }
+}
 
 .acc-map-help { font-size: 12px; color: var(--sw-text-secondary); margin-block: 8px; }
 @media(max-width: 720px) { .acc-map-controls { position: relative; inset: auto; width: fit-content; max-width: 100%; flex-wrap: wrap; margin-block: 8px; border-radius: 16px; } }

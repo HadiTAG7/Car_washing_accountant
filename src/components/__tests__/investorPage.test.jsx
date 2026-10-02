@@ -72,12 +72,23 @@ afterEach(() => {
   partnerView.scalingFactor = 0.3;
   paymentsState.payments = [];
   ledgerState.entries = [];
+  ledgerState.accounts = [];
+  ledgerState.lines = [];
   ledgerState.periods = [];
   insightsState.insights = null;
   insightsState.washMonths = [];
 });
 
 describe('صفحة المستثمر — قائمة الدخل', () => {
+  it('تُبقي تحميل الخسارة مقفلاً في مرحلة المليون وتعرض التقدم من القيود فقط', () => {
+    ledgerState.accounts = [{ code: '5010', accountType: 'expense' }];
+    ledgerState.entries = [{ id: 'e1', entryDate: '2026-08-04', periodKey: '2026-08', status: 'posted', sourceKind: 'monthly' }];
+    ledgerState.lines = [{ id: 'l1', entryId: 'e1', accountId: '5010', debit: 100000, credit: 0 }];
+    COMPANY_NET = -20000;
+    render(<InvestorPage view="income" />);
+    expect(screen.getByText(/مرحلة التأسيس — لا تحميل خسارة على الشريك/)).toBeTruthy();
+    expect(screen.getByText(/100,000.*1,000,000/)).toBeTruthy();
+  });
   it('النتيجة السالبة لا تُعرض كخسارة شخصية جديدة فوق رسوم الشريك المدفوعة', () => {
     COMPANY_NET = -20000;
     paymentsState.payments = [{ id: 'r1', partnerId: 'p1', amount: 30000, paymentDate: '2026-07-01' }];

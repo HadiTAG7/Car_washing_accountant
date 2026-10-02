@@ -53,6 +53,7 @@ import { useLedger } from '../hooks/useLedger';
 import { useFeeRules } from '../hooks/useFeeRules';
 import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
 import { monthlyStatement } from '../lib/accounting/monthlyStatement';
+import { foundingBudgetStatus } from '../lib/accounting/foundingBudget';
 import { partnerPaidSummary } from '../lib/accounting/partnerTotals';
 import {
   roiSummary, momChange, ytdTotal, periodStatusOf,
@@ -228,6 +229,26 @@ function CapitalSummary({ partner, required, paid, remaining, settled, receiptsC
   );
 }
 
+function FoundingStageNotice({ status }) {
+  if (!status?.available) return null;
+  return (
+    <div className="rounded-control border border-indigo-100 dark:border-indigo-500/30 bg-indigo-50 dark:bg-indigo-500/10 p-4 text-sm leading-relaxed text-indigo-900 dark:text-indigo-100">
+      <p className="font-bold">
+        {status.gateClosed
+          ? 'مرحلة التأسيس — لا تحميل خسارة على الشريك'
+          : 'اكتمل حد التأسيس في شهر سابق'}
+      </p>
+      <p className="mt-1">
+        تكاليف مُرحّلة محتسبة للحد: {formatCurrency(status.recordedCost)} من أصل {formatCurrency(status.budget)}.
+        {status.gateClosed
+          ? ' لا تُنشئ النتيجة السالبة لهذا الشهر مطالبة إضافية على الشريك.'
+          : ' النتائج اللاحقة لا تتحول تلقائياً إلى مطالبة أو توزيع؛ يلزم قرار مستقل.'}
+      </p>
+      <p className="mt-1 text-xs">لا يشمل المؤشر التكاليف غير المُرحّلة؛ قائمة دخل الشركة لا تتغير بهذا الحد.</p>
+    </div>
+  );
+}
+
 /**
  * قائمة الدخل بحصّته.
  *
@@ -235,7 +256,7 @@ function CapitalSummary({ partner, required, paid, remaining, settled, receiptsC
  * العامل، فلا حساب جديد هنا ولا فرصة لاختلاف رقمٍ عن رقم.
  */
 function IncomeStatementCard({
-  sharePercent, hasShare, paid, availableMonths, activeMonth, onMonthChange, statement, periodStatus = null,
+  sharePercent, hasShare, paid, foundingStatus, availableMonths, activeMonth, onMonthChange, statement, periodStatus = null,
 }) {
   if (!hasShare) {
     return (
@@ -271,6 +292,8 @@ function IncomeStatementCard({
           </div>
         )}
       />
+
+      <FoundingStageNotice status={foundingStatus} />
 
       {!statement.hasActivity ? (
         <EmptyState
@@ -378,7 +401,7 @@ function IncomeStatementCard({
 function OverviewView({
   partner, totalWorkers, sharePercent, required, paid, remaining, settled,
   receiptsCount, hasShare, latestMonth, latestStatement, latestStatus = null,
-  mom = null, ytd = 0, washShare = null, roi = null,
+  mom = null, ytd = 0, washShare = null, roi = null, foundingStatus = null,
 }) {
   return (
     <>
@@ -391,6 +414,7 @@ function OverviewView({
         settled={settled}
         receiptsCount={receiptsCount}
       />
+      <FoundingStageNotice status={foundingStatus} />
 
       <Card className="p-5">
         <SectionHeader
@@ -784,6 +808,13 @@ function InvestorPortal({ partner, view }) {
     [accounts, entries, lines, statementMonth, feeRules, scalingFactor, view],
   );
 
+  const foundingStatus = useMemo(
+    () => (view === 'overview' || view === 'income'
+      ? foundingBudgetStatus({ accounts, entries, lines, periodKey: statementMonth })
+      : null),
+    [accounts, entries, lines, statementMonth, view],
+  );
+
   // ── تحصيل رأس المال، آخر ٦ أشهر ──
   const receiptsTrend = useMemo(() => {
     if (view !== 'capital') return { months: [], values: [], total: 0 };
@@ -897,6 +928,7 @@ function InvestorPortal({ partner, view }) {
             ytd={ytd}
             washShare={washShare}
             roi={roi}
+            foundingStatus={foundingStatus}
           />
         )}
 
@@ -919,6 +951,7 @@ function InvestorPortal({ partner, view }) {
             sharePercent={sharePercent}
             hasShare={hasShare}
             paid={paid}
+            foundingStatus={foundingStatus}
             availableMonths={availableMonths}
             activeMonth={activeMonth}
             onMonthChange={setSelectedMonth}

@@ -456,13 +456,14 @@ describe('صفحة المستثمر — الخيارات الأربعة', () => 
   });
   // الادعاء الحامل للتقسيم: كل خيارٍ يحمل شيئه وحده. بدونه يعود الأربعة
   // ورقةً واحدة بأربعة عناوين — وهي الحالة التي خرجنا منها.
-  it('«نظرة عامة» تعرض الهوية ورأس المال ونتيجة آخر شهر، لا السندات ولا الاتجاه', () => {
+  it('«نظرة عامة» تعرض الهوية ورأس المال وملخص الشهر، لا السندات ولا الاتجاه', () => {
     render(<InvestorPage view="overview" />);
     expect(screen.getByText('أحمد الغانم')).toBeTruthy();
     expect(screen.getByText(/عدد عمالك: 3/)).toBeTruthy();
     expect(screen.queryByText('30.0%')).toBeNull();
     expect(screen.getByText('الرسوم المطلوبة')).toBeTruthy();
-    expect(screen.getByText('نتيجة آخر شهر')).toBeTruthy();
+    expect(screen.getByLabelText('ملخص الشهر')).toBeTruthy();
+    expect(screen.queryByText('نتيجة آخر شهر')).toBeNull();
     expect(screen.queryByText('سندات قبضك')).toBeNull();
     expect(screen.queryByText('حصتك من نتيجة الشركة شهرياً')).toBeNull();
     // ولا جدول قيود: القائمة التفصيلية خيارٌ آخر.
@@ -503,7 +504,7 @@ describe('صفحة المستثمر — الخيارات الأربعة', () => 
 
   it('وبلا `view` يفتح على «نظرة عامة»', () => {
     render(<InvestorPage />);
-    expect(screen.getByText('نتيجة آخر شهر')).toBeTruthy();
+    expect(screen.getByLabelText('ملخص الشهر')).toBeTruthy();
   });
 
   it('حسابٌ بلا ربط: بطاقة واحدة في كل خيار، ولا بيانات', () => {
@@ -540,12 +541,12 @@ describe('صفحة المستثمر — المؤشرات الجديدة', () => 
     for (const [label, amount] of [['مجموع الإيرادات', '60,000.00'], ['مجموع المصروفات', '46,200.00'], ['صافي الربح', '13,800.00']]) {
       expect(within(summary).getByText(label).closest('.sw-stat-card').querySelector('.sw-stat-value').textContent).toContain(amount);
     }
-    expect(screen.getByText('نتيجة آخر شهر')).toBeTruthy();
+    expect(screen.queryByText('نتيجة آخر شهر')).toBeNull();
     expect(screen.getByText('المدفوع من التأسيس هذا الشهر')).toBeTruthy();
     expect(statementOverrides['2026-08'].netAfterReserve).toBe(13800);
   });
 
-  it('يتغير الملخص بالشهر المختار ويبقي الخسارة سالبة دون تغيير بطاقة آخر شهر', () => {
+  it('يتغير الملخص بالشهر المختار ويبقي الخسارة سالبة دون تغيير النتيجة السنوية', () => {
     twoMonths();
     statementOverrides['2026-07'] = { netRevenue: 3000, totalCosts: 9000, totalFees: 0,
       annualReserve: 0, totalAllocation: 9000, netAfterReserve: -6000 };
@@ -557,7 +558,7 @@ describe('صفحة المستثمر — المؤشرات الجديدة', () => 
     expect(within(summary).getByText('مجموع الإيرادات').closest('.sw-stat-card').textContent).toContain('3,000.00');
     expect(within(summary).getByText('مجموع المصروفات').closest('.sw-stat-card').textContent).toContain('9,000.00');
     expect(within(summary).getByText('صافي الربح').closest('.sw-stat-card').querySelector('.sw-stat-value').textContent).toMatch(/-6,000\.00/);
-    expect(screen.getByText('حصتك التحليلية من نتيجة الشركة').closest('.sw-stat-card').textContent).toContain('15,000.00');
+    expect(screen.getByText('حصتك التحليلية من نتيجة 2026').closest('.sw-stat-card').textContent).toContain('9,000.00');
     rerender(<InvestorPage view="income" />);
     expect(screen.getByLabelText('فترة التقرير (الشهر)').value).toBe('2026-07');
     rerender(<InvestorPage view="overview" />);
@@ -576,14 +577,15 @@ describe('صفحة المستثمر — المؤشرات الجديدة', () => 
     expect(screen.queryByLabelText('ملخص الشهر')).toBeNull();
   });
 
-  it('النظرة العامة لا تصف النتيجة السالبة بأنها ربح الشريك أو دين إضافي', () => {
+  it('النظرة العامة تعرض الخسارة ولا تحولها إلى مطالبة أو صفر', () => {
     COMPANY_NET = -20000;
     twoMonths();
     paymentsState.payments = [{ id: 'r1', partnerId: 'p1', amount: 30000, paymentDate: '2026-07-01' }];
     render(<InvestorPage view="overview" />);
-    const demandCard = screen.getByText('مبلغ إضافي مطلوب منك').closest('.sw-stat-card');
-    expect(demandCard.querySelector('.sw-stat-value').textContent).toContain('0.00');
-    expect(screen.getByText(/الرسوم اللي دفعتها من قبل ما نطلبها منك مرة ثانية/)).toBeTruthy();
+    const profitCard = within(screen.getByLabelText('ملخص الشهر')).getByText('صافي الربح').closest('.sw-stat-card');
+    expect(profitCard.querySelector('.sw-stat-value').textContent).toMatch(/-6,000\.00/);
+    expect(screen.queryByText('مبلغ إضافي مطلوب منك')).toBeNull();
+    expect(profitCard.textContent).toContain('مو توزيع مستحق');
     expect(screen.queryByText('صافي ربحك')).toBeNull();
   });
 
@@ -598,11 +600,19 @@ describe('صفحة المستثمر — المؤشرات الجديدة', () => 
     expect(screen.getByText(/حصتك التحليلية من نتيجة 2026/)).toBeTruthy();
   });
 
-  it('والتغيّر عن الشهر السابق يظهر تحت صافي الربح', () => {
+  it('يبقي ملخصاً واحداً بثلاث بطاقات ويحفظ المعلومات المختلفة', () => {
     twoMonths();
     render(<InvestorPage view="overview" />);
-    // الشهران متساويان في القائمة المزيّفة → «= 0.0% عن الشهر السابق».
-    expect(screen.getByText(/عن الشهر السابق/)).toBeTruthy();
+    expect(screen.getAllByLabelText('ملخص الشهر')).toHaveLength(1);
+    expect(screen.getByLabelText('ملخص الشهر').querySelectorAll('.sw-stat-card')).toHaveLength(3);
+    expect(screen.queryByText('نتيجة آخر شهر')).toBeNull();
+    expect(screen.queryByText('صافي الإيرادات (حصّتك)')).toBeNull();
+    expect(screen.queryByText('التكاليف (حصّتك)')).toBeNull();
+    expect(screen.getByText('الرسوم المطلوبة')).toBeTruthy();
+    expect(screen.getByText('المدفوع من التأسيس هذا الشهر')).toBeTruthy();
+    expect(screen.getByText('حصتك التحليلية من نتيجة 2026')).toBeTruthy();
+    expect(screen.getByText('غسلات تعادل حصّتك')).toBeTruthy();
+    expect(screen.getByText('مقارنة نتائج الشركة برأس مالك')).toBeTruthy();
   });
 
   it.each([

@@ -58,7 +58,7 @@ import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
 import { usePartnerStatement } from '../hooks/usePartnerStatement';
 import { partnerPaidSummary } from '../lib/accounting/partnerTotals';
 import {
-  roiSummary, momChange, ytdTotal,
+  roiSummary, ytdTotal,
 } from '../lib/accounting/partnerInsights';
 import { comparePartnerReports, COMPARISON_FIELDS, validReportMonth } from '../lib/accounting/partnerReportComparison';
 import { usePartnerInsights } from '../hooks/usePartnerInsights';
@@ -185,13 +185,7 @@ export function PartnerComparisonCard({ report, activeMonth }) {
   </Card>;
 }
 
-/** «▲ 12% عن الشهر السابق» — أو لا شيء حين لا سابق. */
-function momText(mom) {
-  if (!mom || mom.delta === null) return null;
-  const arrow = mom.direction === 'up' ? '▲' : mom.direction === 'down' ? '▼' : '=';
-  const pct = mom.percent === null ? formatCurrency(Math.abs(mom.delta)) : `${Math.abs(mom.percent).toFixed(1)}%`;
-  return `${arrow} ${pct} عن الشهر السابق`;
-}
+
 
 /**
  * الحساب غير المربوط.
@@ -479,9 +473,9 @@ export function IncomeStatementCard({
  */
 function OverviewView({
   partner, required, paid, remaining, settled,
-  receiptsCount, hasShare, latestMonth, latestStatement,
+  receiptsCount, hasShare, latestMonth,
   availableMonths, activeMonth, onMonthChange, monthlySummary,
-  mom = null, ytd = 0, washShare = null, roi = null, foundingStatus = null,
+  ytd = 0, washShare = null, roi = null, foundingStatus = null,
 }) {
   return (
     <>
@@ -522,53 +516,6 @@ function OverviewView({
         )}
       </Card>
       <FoundingStageNotice status={foundingStatus} />
-
-      <Card className="p-5">
-        <SectionHeader
-          title="نتيجة آخر شهر"
-          subtitle={`حصتك التحليلية من نتيجة ${formatMonthLabel(latestMonth)}`}
-        />
-        {!hasShare ? (
-          <EmptyState
-            compact
-            icon={TrendingUp}
-            title="للحين ما تسجّل لك عدد عمال"
-            hint="تواصل مع الإدارة عشان يسجّلون عدد عمالك."
-          />
-        ) : !latestStatement.hasActivity ? (
-          <EmptyState
-            compact
-            icon={Calendar}
-            title="للحين ما فيه حركة مُرحّلة"
-            hint="بتشوف نتيجتك هنا إذا ترحّلت قيود الشهر."
-          />
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <StatCard
-              icon={TrendingUp}
-              label="صافي الإيرادات (حصّتك)"
-              value={formatCurrency(latestStatement.netRevenue)}
-              sub={formatMonthLabel(latestMonth)}
-            />
-            <StatCard
-              icon={Wallet}
-              tone="amber"
-              label="التكاليف (حصّتك)"
-              value={formatCurrency(latestStatement.totalCosts)}
-              sub="مباشرة وتشغيلية"
-            />
-            <StatCard
-              icon={HandCoins}
-              tone={latestStatement.netAfterReserve >= 0 ? 'emerald' : 'slate'}
-              label={latestStatement.netAfterReserve < 0 ? 'مبلغ إضافي مطلوب منك' : 'حصتك التحليلية من نتيجة الشركة'}
-              value={formatCurrency(Math.max(0, latestStatement.netAfterReserve || 0))}
-              sub={latestStatement.netAfterReserve < 0
-                ? 'الرسوم اللي دفعتها من قبل ما نطلبها منك مرة ثانية؛ هذي النتيجة مو مطالبة'
-                : (momText(mom) || 'حسب حصتك في التشغيل')}
-            />
-          </div>
-        )}
-      </Card>
 
       {/* ── منذ بداية السنة، وغسلاتك ──────────────────────────── */}
       {hasShare && (
@@ -942,11 +889,7 @@ function InvestorPortal({ partner, view }) {
   }, [view, availableMonths, allocationReport]);
 
   const roi = useMemo(() => (view === 'overview' ? roiSummary({ nets, paid }) : null), [view, nets, paid]);
-  const mom = useMemo(() => {
-    const active = nets.filter((n) => n.hasActivity);
-    if (active.length < 2) return null;
-    return momChange(active[active.length - 1].netProfit, active[active.length - 2].netProfit);
-  }, [nets]);
+
   const ytd = useMemo(() => ytdTotal(nets, String(statementMonth).slice(0, 4)), [nets, statementMonth]);
 
   // غسلات آخر شهرٍ مُرحَّل بحصّته، وأشهر الاتجاه.
@@ -1010,12 +953,10 @@ function InvestorPortal({ partner, view }) {
             receiptsCount={myReceipts.length}
             hasShare={hasShare}
             latestMonth={statementMonth}
-            latestStatement={statement}
             availableMonths={availableMonths}
             activeMonth={activeMonth}
             onMonthChange={setSelectedMonth}
             monthlySummary={allocationReport?.statements.find(s => s.periodKey === activeMonth) || EMPTY_STATEMENT}
-            mom={mom}
             ytd={ytd}
             washShare={washShare}
             roi={roi}

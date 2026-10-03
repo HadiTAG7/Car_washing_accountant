@@ -39,6 +39,36 @@ function database(overrides = {}) {
 }
 
 describe('توزيع التشغيل حسب المؤهلين مع ثبات رأس المال وخصوصية الشركاء', () => {
+  it('تصنيف التأسيس المؤكد يجمع خططاً مختلفة والعكس يرث فئته دون دمج السنوي أو البنود بلا تصنيف', async () => {
+    const db = database({
+      categories: [{ id: 'franchise', label: 'رسوم الفرنشايز' }],
+      startup_costs: [
+        { id: 'a', item_name: 'امتياز أول', category: 'franchise', actual_amount: 12000 },
+        { id: 'b', item_name: 'امتياز آخر', category: 'franchise', actual_amount: 38000 },
+        { id: 'c', item_name: 'امتياز أول', category: 'missing', actual_amount: 1 },
+      ],
+      startup_cost_entries: [
+        { id: 'pa', startup_cost_id: 'a', amount: 12000, spent_date: '2026-09-01' },
+        { id: 'pb', startup_cost_id: 'b', amount: 38000, spent_date: '2026-09-01' },
+        { id: 'pc', startup_cost_id: 'c', amount: 1, spent_date: '2026-09-01' },
+      ],
+      annual_expenses: [{ id: 'rent', expense_name: 'رسوم الفرنشايز', category: 'franchise', annual_cost: 180000 }],
+      journal_entries: [
+        { id: 'original', entryDate: '2026-09-01', status: 'reversed', sourceKind: 'startup', sourceId: 'pa', lines: [{ accountId: '5200', debit: 12000 }] },
+        { id: 'refund', entryDate: '2026-09-02', status: 'posted', reversalOf: 'original', reversedSourceKind: 'startup', lines: [{ accountId: '5200', credit: 12000 }] },
+      ],
+    });
+    const options = { partnerId: 'p1', periodKey: '2026-09', today: new Date('2026-10-02') };
+    const before = await partnerAllocationReport(db, options);
+    const report = await partnerAllocationReport(db, { ...options, includeCapitalJourney: true });
+    expect(report.statements).toEqual(before.statements);
+    const rows = report.capitalJourney.initialItems;
+    expect(rows.filter(i => i.description === 'امتياز أول' && i.amount !== 0.1).map(i => i.groupKey)).toEqual(['startup:category:franchise', 'startup:category:franchise']);
+    expect(rows.find(i => i.description === 'امتياز آخر')).toMatchObject({ groupKey: 'startup:category:franchise', groupLabel: 'رسوم الفرنشايز' });
+    expect(rows.find(i => i.reversal)).toMatchObject({ groupKey: 'startup:category:franchise', amount: -1200 });
+    expect(rows.find(i => i.amount === 0.1).groupKey).toBe('startup:c');
+    expect(rows.find(i => i.kind === 'annual').groupKey).toBe('annual:rent');
+  });
   const setup = () => database({
     users: [{ id: 'u1', role: 'partner' }, { id: 'u2', role: 'partner' }, { id: 'admin', role: 'admin' }],
     partners: ['p1', 'p2', 'p3'].map((id, i) => ({ id, workers_count: 10, user_id: `u${i + 1}` })),

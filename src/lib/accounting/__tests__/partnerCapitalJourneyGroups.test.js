@@ -6,6 +6,15 @@ const item = (groupKey, amount, extra = {}) => ({
 });
 
 describe('تجميع عرض التأسيس حسب المصدر المؤكد', () => {
+  it('يجمع خطط تأسيس مختلفة داخل التصنيف الموثق نفسه باسم التصنيف', () => {
+    const groups = groupInitialJourneyItems([
+      item('startup:category:franchise', 12000, { description: 'دفعة امتياز أولى', groupLabel: 'رسوم الفرنشايز' }),
+      item('startup:category:franchise', 38000, { description: 'بند امتياز آخر', groupLabel: 'رسوم الفرنشايز' }),
+      item('startup:category:bike', 38800, { description: 'دباب أول', groupLabel: 'الدبابات' }),
+      item('startup:category:bike', -38800, { description: 'عكس لدباب أول', groupLabel: 'الدبابات', reversal: true }),
+    ]);
+    expect(groups.map(g => [g.description, g.amount])).toEqual([['رسوم الفرنشايز', 50000], ['الدبابات', 0]]);
+  });
   it('يجمع الفرنشايز والدباب وقوى ويطرح العكس من فئته بالهللة', () => {
     const rows = [
       item('startup:franchise', 12000, { description: 'رسوم الفرنشايز' }),

@@ -23,7 +23,7 @@ export function partnerCapitalJourney({ statements, initialSpend, receipts, plan
       allocated = target;
       const date = normalizeExpenseDate(row.date);
       return { id: row.id, description: row.description, date: isRealCalendarDate(date) ? date : null,
-        kind: row.kind, groupKey: row.groupKey || null,
+        kind: row.kind, groupKey: row.groupKey || null, groupLabel: row.groupLabel || null,
         reversal: row.reversal, basis: row.basis, amount };
     });
   const initialTotal = allocated;

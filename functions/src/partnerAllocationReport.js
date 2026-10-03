@@ -45,7 +45,7 @@ export async function partnerAllocationReport(db, { partnerId, periodKey, today 
   const names = ['partners', 'chart_of_accounts', 'journal_entries', 'journal_lines',
     'monthly_expenses', 'variable_expenses', 'annual_expenses', 'expense_vouchers',
     'annual_expense_entries', 'startup_cost_entries', 'partner_payments', 'fee_rules', 'variable_expense_categories'];
-  if (includeCapitalJourney) names.push('startup_costs');
+  if (includeCapitalJourney) names.push('startup_costs', 'categories');
   const [rows, settingsSnap, washSnap, eligibilityStates] = await Promise.all([
     Promise.all(names.map(name => readRows(db, name))),
     db.collection('app_settings').doc('accounting').get(),
@@ -120,9 +120,14 @@ export async function partnerAllocationReport(db, { partnerId, periodKey, today 
       // supplier details or the free-text journal description.
       const parent = (kind === 'startup' ? data.startup_costs : data.annual_expenses)?.find(p =>
         p.id === (kind === 'startup' ? row.startup_cost_id : row.annual_expense_id));
-      // The plan identity is the display grouping boundary. Reversals below
-      // inherit it from their linked source, never from journal wording.
-      const detail = { kind, groupKey: parent ? `${kind}:${parent.id}` : null,
+      // Startup categories are the same documented grouping used by the
+      // administration page. Annual categories can span unlike liabilities,
+      // so those retain their plan boundary. Linked reversals inherit both.
+      const category = kind === 'startup' && parent
+        ? data.categories?.find(c => c.id === parent.category && String(c.label || '').trim()) : null;
+      const detail = { kind,
+        groupKey: parent ? (category ? `${kind}:category:${category.id}` : `${kind}:${parent.id}`) : null,
+        groupLabel: category?.label || null,
         description: (kind === 'startup' ? parent?.item_name : parent?.expense_name)
         || (kind === 'startup' ? 'صرف تأسيس' : 'دفعة سنوية أولى') };
       if (!validMonth(monthOf(date))) throw new LedgerError('يوجد صرف تأسيس أو سنوي بلا تاريخ صحيح؛ تعذّر تأكيد رصيد التأسيس.');

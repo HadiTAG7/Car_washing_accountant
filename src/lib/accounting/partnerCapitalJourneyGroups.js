@@ -1,4 +1,4 @@
-// Server-scoped, already rounded partner amounts. Plan identity and kind,
+// Server-scoped, already rounded partner amounts. Source category/plan and kind,
 // not similar names or a decorated reversal label, define each group.
 export function groupInitialJourneyItems(items) {
   const groups = new Map();
@@ -9,7 +9,7 @@ export function groupInitialJourneyItems(items) {
       && item.groupKey.length > item.kind.length + 1;
     const key = confirmed ? item.groupKey : `unclassified:${index}`;
     if (!groups.has(key)) groups.set(key, {
-      id: key, description: item.description, kind: item.kind,
+      id: key, description: (confirmed && item.groupLabel) || item.description, kind: item.kind,
       classified: confirmed, reversal: false, cents: 0,
     });
     const group = groups.get(key);

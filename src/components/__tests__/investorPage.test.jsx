@@ -66,7 +66,7 @@ vi.mock('../../lib/accounting/monthlyStatement', () => ({
 }));
 
 const InvestorPage = (await import('../InvestorPage')).default;
-const { IncomeStatementCard } = await import('../InvestorPage');
+const { IncomeStatementCard, FoundingStageNotice } = await import('../InvestorPage');
 const { PartnerComparisonCard } = await import('../InvestorPage');
 const { monthlyStatement } = await import('../../lib/accounting/monthlyStatement');
 
@@ -125,6 +125,20 @@ describe('صفحة المستثمر — قائمة الدخل', () => {
     statement={{ ...monthlyStatement({ scalingFactor: 0 }), netAfterReserve: 0 }}
     foundingStatus={{ available: true, budget: 200000, funded: 200000, covered: 0, remaining: 38182.14, uncovered: 0, ...status }} />;
 
+  it.each([0, 15000])('تزيل بند ما بعد التأسيس بقيمة %s وفقرة الرصيد التحليلي دون تغيير بيانات المصدر', uncovered => {
+    const status = { available: true, budget: 60000, funded: 60000, covered: 30000,
+      remaining: 38182.14, uncovered, fundingAsOf: '2026-10-03' };
+    const before = JSON.stringify(status);
+    render(<FoundingStageNotice status={status} />);
+    const remaining = screen.getByText('المتبقي من مبلغ التأسيس');
+    expect(remaining.textContent).toContain('38,182.14');
+    expect(remaining.parentElement.children).toHaveLength(2);
+    expect(screen.queryByText('بعد ما يخلص رصيد التأسيس')).toBeNull();
+    expect(screen.queryByText(/هذا رصيد تحليلي من المبالغ اللي سددتها/)).toBeNull();
+    expect(screen.getByText(/حتى لو سددت متأخر/)).toBeTruthy();
+    expect(JSON.stringify(status)).toBe(before);
+  });
+
   it('رصيد التأسيس المتاح مفتوح افتراضياً ويمكن إخفاؤه وإظهاره دون تغيير النتيجة', () => {
     render(foundingCard({}));
     const title = screen.getByText('رصيد مصاريف التأسيس');
@@ -135,7 +149,7 @@ describe('صفحة المستثمر — قائمة الدخل', () => {
     expect(details.open).toBe(false);
     fireEvent.click(title.closest('summary'));
     expect(details.open).toBe(true);
-    expect(screen.getByText('رصيد التأسيس التحليلي المتبقي').textContent).toContain('38,182.14');
+    expect(screen.getByText('المتبقي من مبلغ التأسيس').textContent).toContain('38,182.14');
     expect(amountIn(screen.getByText('= نتيجتك بعد تغطية التأسيس').closest('tr'))).toBe(0);
   });
 

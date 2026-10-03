@@ -285,12 +285,10 @@ export function FoundingStageNotice({ status }) {
       </summary>
       <div className="mt-3">
       <p className="mt-1">ميزانيتك: {formatCurrency(status.budget)} — 20,000 ريال لكل بايكر.</p>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
         <div>المغطى من التأسيس هذا الشهر<p className="font-bold tabular-nums">{formatCurrency(status.covered)}</p></div>
-        <div>رصيد التأسيس التحليلي المتبقي<p className="font-bold tabular-nums">{formatCurrency(status.remaining)}</p></div>
-        <div>بعد ما يخلص رصيد التأسيس<p className="font-bold tabular-nums">{formatCurrency(status.uncovered)}</p></div>
+        <div>المتبقي من مبلغ التأسيس<p className="font-bold tabular-nums">{formatCurrency(status.remaining)}</p></div>
       </div>
-      <p className="mt-2 text-xs">هذا رصيد تحليلي من المبالغ اللي سددتها، بعد الصرف الأول واحتياطي التجديد. مو مطالبة مالية، وما يعني تحويل فلوس.</p>
       {status.fundingAsOf && <p className="mt-2 text-xs">دفعات التأسيس المسدّدة حتى {formatDate(status.fundingAsOf)} تغطي حصتك من المصاريف من الأقدم للأحدث، حتى لو سددت متأخر. هذي تغطية من رصيد التأسيس، وما تغيّر تاريخ الدفع.</p>}
       </div>
     </details>

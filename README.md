@@ -1,5 +1,8 @@
 # سويتر (Sweater) — نظام محاسبة مغسلة السيارات
 
+Production: [Sweater — Hadi Alghanim](https://sweater-hadi-alghanim.vercel.app/).
+Vercel project: `sweater-hadi-alghanim`. Use this address for the dashboard and new partner MCP connections.
+
 React + Vite + Tailwind + **Firebase/Firestore** dashboard (RTL, Arabic-first)
 for running a Sweater franchise: day-to-day operations *and* a real
 double-entry accounting system on top of them.

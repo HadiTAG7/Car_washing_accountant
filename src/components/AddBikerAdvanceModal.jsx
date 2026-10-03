@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react';
 import { X, HandCoins } from 'lucide-react';
 import { formatCurrency, todayISO } from '../data/initialData';
 import DateField from './DateField';
+import { useLanguage } from '../i18n/useLanguage';
+import { displayBikerName } from '../lib/bikerNames';
 
 // A biker advance IS a temporary expense — account 1300, the same issue and
 // recovery entries the المصروفات المؤقتة page has always posted. This modal
@@ -15,6 +17,7 @@ const METHODS = [
 ];
 
 export default function AddBikerAdvanceModal({ isOpen, onClose, biker, onAdd }) {
+  const { language } = useLanguage();
   const [form, setForm] = useState({ amount: '', spentDate: '', paymentMethod: 'cash', notes: '' });
   const [submitting, setSubmitting] = useState(false);
 
@@ -66,7 +69,7 @@ export default function AddBikerAdvanceModal({ isOpen, onClose, biker, onAdd }) 
             <span className="bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 w-9 h-9 rounded-control flex items-center justify-center">
               <HandCoins size={18} />
             </span>
-            سلفة جديدة — {biker?.name || ''}
+            سلفة جديدة — <span translate="no" dir="auto">{biker ? displayBikerName(biker, language) : ''}</span>
           </h3>
           <button
             type="button"
@@ -151,7 +154,7 @@ export default function AddBikerAdvanceModal({ isOpen, onClose, biker, onAdd }) 
           {amount > 0 && (
             <div className="bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/30 rounded-smallcard p-4 text-sm">
               <div className="flex items-baseline justify-between gap-3">
-                <span className="text-amber-800 dark:text-amber-300">سيصير مستحقاً على {biker?.name}:</span>
+                <span className="text-amber-800 dark:text-amber-300">سيصير مستحقاً على <span translate="no" dir="auto">{displayBikerName(biker, language)}</span>:</span>
                 <span className="font-bold text-amber-900 dark:text-amber-200 tabular-nums">{formatCurrency(amount)}</span>
               </div>
             </div>

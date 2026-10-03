@@ -1,4 +1,6 @@
 import { translate } from '../i18n/locale';
+import { useLanguage } from '../i18n/useLanguage';
+import { displayBikerName } from '../lib/bikerNames';
 import ScrollableTable from './ScrollableTable';
 import TableSearch from './TableSearch';
 import { matchesTableSearch } from '../lib/tableSearch';
@@ -100,6 +102,7 @@ function SortableTh({ id, sort, onSort, className = '' }) {
 }
 
 export default function BikersPage({ role, payrollPreview = false }) {
+  const { language } = useLanguage();
   const { bikers, loading, error, addBiker, updateBiker, deleteBiker, refetch } = useBikers();
   const { items: washes } = useWashes();
   const { expenses: temps, addTemporaryExpense } = useTemporaryExpenses();
@@ -125,8 +128,8 @@ export default function BikersPage({ role, payrollPreview = false }) {
   const rows = useMemo(() => bikers.map((b) => {
     const stats = washStatsFor(b.name, washes || [], month);
     const { advances, total: advancesTotal } = pendingAdvancesFor(b.id, temps || []);
-    return { ...b, stats, advances, advancesTotal };
-  }), [bikers, washes, temps, month]);
+    return { ...b, displayName: displayBikerName(b, language), stats, advances, advancesTotal };
+  }), [bikers, washes, temps, month, language]);
 
   // ── الترتيب باختيار المالك ──
   // يُقرأ المحفوظ عند أول رسمة فقط (مُهيّئ كسول) — قراءته في كل رسمة تلمس
@@ -135,7 +138,7 @@ export default function BikersPage({ role, payrollPreview = false }) {
   const [sort, setSort] = useState(loadSort);
   const sortedRows = useMemo(() => sortBikers(rows, sort), [rows, sort]);
   const filteredRows = sortedRows.filter((row) => matchesTableSearch(search, [
-    row.name, row.contactNumber, row.residence, row.sponsor, row.nationality,
+    row.name, row.nameArabic, row.nameEnglish, row.contactNumber, row.residence, row.sponsor, row.nationality,
   ]));
   const applySort = useCallback((columnId) => {
     setSort((prev) => {
@@ -180,11 +183,11 @@ export default function BikersPage({ role, payrollPreview = false }) {
 
   async function handleDelete(row) {
     if (row.advancesTotal > 0) {
-      showToast(`على ${row.name} سلف قائمة (${formatCurrencyPrecise(row.advancesTotal)}) — استردّها أو اخصمها من راتبه قبل الحذف.`, 'error');
+      showToast(`على ${row.displayName} سلف قائمة (${formatCurrencyPrecise(row.advancesTotal)}) — استردّها أو اخصمها من راتبه قبل الحذف.`, 'error');
       return;
     }
     const ok = window.confirm(
-      translate(`حذف «${row.name}» من السجل؟\n\nغسلاته وعمولاته السابقة تبقى محفوظة باسمه في سجل الغسلات — يُحذف ملفه فقط.`),
+      translate(`حذف «${row.displayName}» من السجل؟\n\nغسلاته وعمولاته السابقة تبقى محفوظة باسمه في سجل الغسلات — يُحذف ملفه فقط.`),
     );
     if (!ok) return;
     await guarded('تم حذف البايكر', () => deleteBiker(row.id));
@@ -234,7 +237,7 @@ export default function BikersPage({ role, payrollPreview = false }) {
         </div>
 
         {activeSection === 'payroll' ? (
-          <BikerPayroll role={role} previewMode={payrollPreview} />
+          <BikerPayroll role={role} previewMode={payrollPreview} bikers={bikers} />
         ) : (
           <>
 
@@ -347,7 +350,7 @@ export default function BikersPage({ role, payrollPreview = false }) {
                           <Bike size={14} />
                         </span>
                         <span className="min-w-0">
-                          <span translate="no" className="block break-words">{r.name}</span>
+                          <span translate="no" dir="auto" className="block break-words">{r.displayName}</span>
                           {r.startDate && (
                             <span className="block text-[11px] font-normal text-slate-500 dark:text-slate-400">
                               منذ {formatDate(r.startDate)}
@@ -398,7 +401,7 @@ export default function BikersPage({ role, payrollPreview = false }) {
                               type="button"
                               onClick={() => setAdvanceBiker(r)}
                               className="sw-tap inline-flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 transition-colors duration-150 p-1.5 rounded-control hover:bg-amber-50 dark:hover:bg-amber-500/15 cursor-pointer"
-                              aria-label={`سلفة لـ ${r.name}`}
+                              aria-label={`سلفة لـ ${r.displayName}`}
                               title="تسجيل سلفة"
                             >
                               <HandCoins size={15} />
@@ -407,7 +410,7 @@ export default function BikersPage({ role, payrollPreview = false }) {
                               type="button"
                               onClick={() => setEditingBiker(r)}
                               className="sw-tap inline-flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors duration-150 p-1.5 rounded-control hover:bg-indigo-50 dark:hover:bg-indigo-500/15 cursor-pointer"
-                              aria-label={`تعديل ${r.name}`}
+                              aria-label={`تعديل ${r.displayName}`}
                               title="تعديل البيانات"
                             >
                               <Pencil size={15} />
@@ -416,7 +419,7 @@ export default function BikersPage({ role, payrollPreview = false }) {
                               type="button"
                               onClick={() => handleDelete(r)}
                               className="sw-tap inline-flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors duration-150 p-1.5 rounded-control hover:bg-rose-50 dark:hover:bg-rose-500/15 cursor-pointer"
-                              aria-label={`حذف ${r.name}`}
+                              aria-label={`حذف ${r.displayName}`}
                               title="حذف الملف — الغسلات القديمة تبقى"
                             >
                               <Trash2 size={15} />

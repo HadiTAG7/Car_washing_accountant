@@ -1,5 +1,7 @@
 import { getLocale } from '../i18n/locale';
 import { useLanguage } from '../i18n/useLanguage';
+import { useBikers } from '../hooks/useBikers';
+import { displayRecordedBikerName } from '../lib/bikerNames';
 import { useMemo, useState } from 'react';
 import {
   Wallet, TrendingDown, TrendingUp, Calendar, ListFilter, Download, Scale,
@@ -38,6 +40,7 @@ import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
 
 export default function FinancialSummaryPage() {
   const { language } = useLanguage();
+  const { bikers } = useBikers();
   const { items: washes,    loading: washesLoading,   error: washesError,   refetch: refetchWashes }   = useWashes();
   const { items: variables, loading: varLoading,      error: varError,      refetch: refetchVariables } = useVariableExpenses();
   const { categories: varCategories } = useVariableExpenseCategories();
@@ -208,7 +211,7 @@ export default function FinancialSummaryPage() {
       .map((w) => ({
         id:       w.id,
         date:     w.washDate,
-        biker:    w.bikerName,
+        biker:    displayRecordedBikerName(w, bikers, language),
         quantity: w.quantity || 0,
         price:    w.price || 0,
         total:    (w.quantity || 0) * (w.price || 0),
@@ -248,7 +251,7 @@ export default function FinancialSummaryPage() {
     return { revenue, variable, monthly, annual };
   }, [
     washes, selectedMonth, periodVariableItems, varCategoryMap,
-    monthlies, monthlyCategoryMap, annuals,
+    monthlies, monthlyCategoryMap, annuals, bikers, language,
   ]);
 
   return (

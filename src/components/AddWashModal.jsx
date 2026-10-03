@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react';
 import { X, Plus, Pencil, Car } from 'lucide-react';
 import { formatCurrency, formatNumber } from '../data/initialData';
 import { useBikers } from '../hooks/useBikers';
+import { useLanguage } from '../i18n/useLanguage';
+import { displayBikerName } from '../lib/bikerNames';
 import DateField from './DateField';
 
 function todayISO() {
@@ -34,7 +36,7 @@ const PAYMENT_METHOD_OPTIONS = [
 ];
 
 export default function AddWashModal({
-  isOpen, onClose, onAdd, onUpdate, initialValues = null,
+  isOpen, onClose, onAdd, onUpdate, initialValues = null, bikers: suppliedBikers = null,
 }) {
   const editing = Boolean(initialValues?.id);
   const [form, setForm] = useState(EMPTY_TEMPLATE);
@@ -45,7 +47,9 @@ export default function AddWashModal({
   // منتقياً: الاسم يأتي من السجل لا من الكتابة. وبقي المخرج «اسم آخر» لأن
   // فريقاً مؤقتاً بلا ملف يظل غسلةً تستحق التسجيل، والسجلات القديمة أسماء
   // حرة يجب أن تبقى قابلة للتحرير كما هي.
-  const { bikers } = useBikers();
+  const registry = useBikers({ enabled: isOpen && !suppliedBikers });
+  const bikers = suppliedBikers || registry.bikers;
+  const { language } = useLanguage();
 
   useEffect(() => {
     if (!isOpen) return;
@@ -162,7 +166,7 @@ export default function AddWashModal({
             >
               <option value="">— بلا اسم —</option>
               {bikers.map((b) => (
-                <option key={b.id} value={b.id} translate="no">{b.name}</option>
+                <option key={b.id} value={b.id} translate="no">{displayBikerName(b, language)}</option>
               ))}
               <option value={OTHER_BIKER}>اسم آخر (غير مسجّل)…</option>
             </select>

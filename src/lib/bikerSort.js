@@ -28,7 +28,7 @@
  * `bikerSortColumns.test.js` بمسح الصفحة نصّاً.
  */
 export const BIKER_SORT_COLUMNS = Object.freeze({
-  name:        { label: 'الاسم',        type: 'text',   key: (r) => r.name },
+  name:        { label: 'الاسم',        type: 'text',   key: (r) => r.displayName ?? r.name },
   contact:     { label: 'الجوال',       type: 'text',   key: (r) => r.contactNumber },
   residence:   { label: 'السكن',        type: 'text',   key: (r) => r.residence },
   sponsor:     { label: 'الكفيل',       type: 'text',   key: (r) => r.sponsor },

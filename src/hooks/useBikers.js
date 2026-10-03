@@ -4,11 +4,11 @@ import { fetchRows, insertRow, updateRow, deleteRow, sortBy } from '../lib/fires
 import { mapBiker, toBikerInsert, toBikerUpdate } from '../lib/mappers';
 import { useFirestoreQuery } from './useFirestoreQuery';
 
-export function useBikers() {
+export function useBikers({ enabled = true } = {}) {
   const { data, loading, error, refetch } = useFirestoreQuery(
     async () => sortBy(await fetchRows('bikers'), [{ key: 'name' }]),
     {
-      enabled: isFirebaseConfigured,
+      enabled: enabled && isFirebaseConfigured,
       map:     mapBiker,
       fallback: [],
     },

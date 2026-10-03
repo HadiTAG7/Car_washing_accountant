@@ -1,4 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
+import { useLanguage } from '../i18n/useLanguage';
+import { displayBikerName } from '../lib/bikerNames';
 import {
   Home, Users, Wallet, Scale, Pencil, UserPlus, X as XIcon, Inbox, KeyRound,
 } from 'lucide-react';
@@ -46,6 +48,7 @@ function deltaTone(pct) {
 }
 
 export default function HousingPage() {
+  const { language } = useLanguage();
   const { bikers, loading: bikersLoading, error: bikersError, updateBiker } = useBikers();
   const { items, loading: itemsLoading, error: itemsError, refetch: refetchItems } = useStartupCosts();
   const { entries, loading: entriesLoading, error: entriesError, refetch: refetchEntries } = useAllStartupEntries();
@@ -134,7 +137,7 @@ export default function HousingPage() {
   );
 
   const unhouseBiker = (biker) => guarded(
-    `أُخرج ${biker.name} من سكنه — صار «بلا سكن مرتبط»`,
+    `أُخرج ${displayBikerName(biker, language)} من سكنه — صار «بلا سكن مرتبط»`,
     () => updateBiker(biker.id, { residence: '' }),
   );
 
@@ -163,7 +166,7 @@ export default function HousingPage() {
         <option value="">+ أسكِن بايكراً…</option>
         {candidates.map((b) => (
           <option key={b.id} value={b.id}>
-            {b.name}{b.residence ? ` — ${b.residence}` : ''}
+            {displayBikerName(b, language)}{b.residence ? ` — ${b.residence}` : ''}
           </option>
         ))}
       </select>
@@ -314,13 +317,13 @@ export default function HousingPage() {
                           key={b.id}
                           className="inline-flex items-center gap-1 text-[12px] px-2 py-1 rounded-control bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"
                         >
-                          {b.name}
+                          {displayBikerName(b, language)}
                           {canMutate && (
                             <button
                               type="button"
                               onClick={() => unhouseBiker(b)}
-                              title={`إخراج ${b.name} من ${u.name}`}
-                              aria-label={`إخراج ${b.name} من ${u.name}`}
+                              title={`إخراج ${displayBikerName(b, language)} من ${u.name}`}
+                              aria-label={`إخراج ${displayBikerName(b, language)} من ${u.name}`}
                               className="sw-tap text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors"
                             >
                               <XIcon size={12} />
@@ -440,7 +443,7 @@ export default function HousingPage() {
               {unhoused.map(({ biker, residenceText }) => (
                 <li key={biker.id} className="flex items-center justify-between gap-3 py-2.5">
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{biker.name}</p>
+                    <p translate="no" dir="auto" className="text-sm font-semibold text-slate-900 dark:text-slate-100">{displayBikerName(biker, language)}</p>
                     <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
                       {residenceText ? `مكتوب حالياً: ${residenceText}` : 'لم يُذكر سكن'}
                     </p>
@@ -449,7 +452,7 @@ export default function HousingPage() {
                     <select
                       value=""
                       onChange={(e) => e.target.value && houseBiker(biker.id, e.target.value)}
-                      aria-label={`أسكِن ${biker.name}`}
+                      aria-label={`أسكِن ${displayBikerName(biker, language)}`}
                       className="shrink-0 text-[11px] px-2 py-1.5 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 focus:outline-none focus:border-primary-500 transition-colors max-w-[10rem]"
                     >
                       <option value="">أسكِنه في…</option>

@@ -1,4 +1,5 @@
 import { clampRevenueOrigin } from './sweater/revenueOriginClient.js';
+import { bikerNameFields } from './bikerNames';
 // ═══════════════════════════════════════════════════════════════════════════
 // Row ↔ model mappers
 // Keep DB column naming (snake_case) at the edge; internal app uses camelCase.
@@ -788,6 +789,7 @@ export function mapBiker(row) {
   return {
     id:            row.id,
     name:          row.name || '',
+    ...bikerNameFields({ name: row.name, nameArabic: row.name_ar, nameEnglish: row.name_en }),
     contactNumber: row.contact_number || '',
     residence:     row.residence || '',
     sponsor:       row.sponsor || '',
@@ -800,10 +802,13 @@ export function mapBiker(row) {
   };
 }
 export function toBikerInsert({
-  name, contactNumber, residence, sponsor, nationality, salary, startDate, endDate, iqamaNumber, iqamaExpiry,
+  name, nameArabic, nameEnglish, contactNumber, residence, sponsor, nationality, salary, startDate, endDate, iqamaNumber, iqamaExpiry,
 }) {
+  const names = bikerNameFields({ name, nameArabic, nameEnglish });
   return {
-    name:           String(name || '').trim(),
+    name:           String(name || '').trim() || names.nameArabic || names.nameEnglish,
+    name_ar:        names.nameArabic || null,
+    name_en:        names.nameEnglish || null,
     contact_number: String(contactNumber || '').trim() || null,
     residence:      String(residence || '').trim() || null,
     sponsor:        String(sponsor || '').trim() || null,
@@ -817,6 +822,8 @@ export function toBikerInsert({
 }
 export function toBikerUpdate(updates = {}) {
   const payload = {};
+  if (updates.nameArabic !== undefined) payload.name_ar = String(updates.nameArabic || '').trim() || null;
+  if (updates.nameEnglish !== undefined) payload.name_en = String(updates.nameEnglish || '').trim() || null;
   if (updates.name          !== undefined) payload.name           = String(updates.name || '').trim();
   if (updates.contactNumber !== undefined) payload.contact_number = String(updates.contactNumber || '').trim() || null;
   if (updates.residence     !== undefined) payload.residence      = String(updates.residence || '').trim() || null;

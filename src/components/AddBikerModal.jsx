@@ -4,11 +4,14 @@ import { X, Plus, Pencil, Bike, Phone, MapPin, Banknote, IdCard, ShieldUser, Fla
 import { formatCurrency } from '../data/initialData';
 import { normalizeUnitName } from '../lib/accounting/startupMigration';
 import DateField from './DateField';
+import { bikerNameFields } from '../lib/bikerNames';
 
 // One modal for add AND edit, keyed on `initialValues?.id` — the same
 // combined pattern AddWashModal already uses, so the two stay one code path.
 const EMPTY = {
   name:          '',
+  nameArabic:    '',
+  nameEnglish:   '',
   contactNumber: '',
   residence:     '',
   sponsor:       '',
@@ -62,6 +65,7 @@ export default function AddBikerModal({ isOpen, onClose, onAdd, onUpdate, initia
     if (initialValues?.id) {
       setForm({
         name:          initialValues.name || '',
+        ...bikerNameFields(initialValues),
         contactNumber: initialValues.contactNumber || '',
         residence:     initialValues.residence || '',
         sponsor:       initialValues.sponsor || '',
@@ -86,7 +90,7 @@ export default function AddBikerModal({ isOpen, onClose, onAdd, onUpdate, initia
   // wash log, so it is the one non-negotiable field.
   const salary  = form.salary === '' ? 0 : Math.max(0, parseFloat(form.salary) || 0);
   const datesValid = !form.startDate || !form.endDate || form.endDate >= form.startDate;
-  const isValid = form.name.trim().length > 0 && !(parseFloat(form.salary) < 0) && datesValid;
+  const isValid = Boolean(form.nameArabic.trim() || form.nameEnglish.trim()) && !(parseFloat(form.salary) < 0) && datesValid;
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -94,7 +98,9 @@ export default function AddBikerModal({ isOpen, onClose, onAdd, onUpdate, initia
     setSubmitting(true);
     try {
       const payload = {
-        name:          form.name.trim(),
+        name:          editing ? initialValues.name : form.nameArabic.trim() || form.nameEnglish.trim(),
+        nameArabic:    form.nameArabic.trim(),
+        nameEnglish:   form.nameEnglish.trim(),
         contactNumber: form.contactNumber.trim(),
         residence:     form.residence.trim(),
         sponsor:       form.sponsor.trim(),
@@ -148,25 +154,34 @@ export default function AddBikerModal({ isOpen, onClose, onAdd, onUpdate, initia
         <form onSubmit={handleSubmit} className="p-5 sm:p-6 space-y-5">
           <div>
             <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5" htmlFor="bikerFormName">
-              اسم البايكر
+              اسم البايكر بالعربي
             </label>
             <div className="relative">
               <Bike size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 pointer-events-none" />
               <input
                 id="bikerFormName"
                 type="text"
-                name="name"
-                value={form.name}
+                name="nameArabic"
+                value={form.nameArabic}
                 onChange={handleChange}
                 placeholder="مثال: أحمد محمد"
                 autoFocus
-                required
+                dir="rtl"
                 className="w-full pr-9 pl-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:border-primary-500 transition-colors"
               />
             </div>
             <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-              بنفس الاسم الذي يُكتب على الغسلات — فهو ما يربط غسلاته وعمولاته بملفه.
+              يظهر حسب لغة المستخدم. يكفي إدخال أحد الاسمين، والغسلات والعمولات السابقة تبقى مرتبطة بملفه.
             </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5" htmlFor="bikerFormNameEnglish">
+              اسم البايكر بالإنجليزي
+            </label>
+            <input id="bikerFormNameEnglish" type="text" name="nameEnglish" value={form.nameEnglish}
+              onChange={handleChange} dir="ltr" placeholder="Ahmed Mohammed"
+              className="w-full px-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:border-primary-500 transition-colors" />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

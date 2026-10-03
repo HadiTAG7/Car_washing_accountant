@@ -16,6 +16,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import AddWashModal from '../AddWashModal';
+import { LanguageContext } from '../../i18n/LanguageContext';
 
 // السجل يأتي من `useBikers` — يُستبدل بقائمةٍ ثابتة كي يختبر الملف المودال
 // وحده لا طبقة البيانات.
@@ -45,6 +46,20 @@ const open = (props = {}) => render(
 );
 
 describe('AddWashModal — منتقي البايكر', () => {
+  it('uses the chosen language in the picker without changing the recorded join key', () => {
+    const onAdd = vi.fn();
+    const bikers = [{ id: 'b1', name: 'أحمد', nameArabic: 'أحمد محمد', nameEnglish: 'Ahmed Mohammed' }];
+    const view = language => <LanguageContext.Provider value={{ language }}><AddWashModal isOpen
+      bikers={bikers} onAdd={onAdd} onClose={() => {}} /></LanguageContext.Provider>;
+    const { rerender } = render(view('ar'));
+    expect(screen.getByRole('option', { name: 'أحمد محمد' })).toBeTruthy();
+    set('#bikerPick', 'b1');
+    rerender(view('en'));
+    expect(screen.getByRole('option', { name: 'Ahmed Mohammed' })).toBeTruthy();
+    expect($('#bikerPick').value).toBe('b1');
+    fireEvent.submit(document.querySelector('form'));
+    expect(onAdd).toHaveBeenCalledWith(expect.objectContaining({ bikerId: 'b1', bikerName: 'أحمد' }));
+  });
   it('المنتقي يحمل البايكرية المسجّلين، ومعهم مخرج «اسم آخر»', () => {
     open({ onAdd: vi.fn() });
     const select = screen.getByLabelText(/البايكر المسؤول/);

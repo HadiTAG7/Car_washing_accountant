@@ -1,4 +1,12 @@
 {
+  "تعديل بيانات البايكر": "Edit biker details",
+  "إضافة بايكر جديد": "Add a new biker",
+  "إضافة بايكر": "Add biker",
+  "اضغط «إضافة بايكر» لتسجيل أول عامل: اسمه وجواله وسكنه وراتبه.": "Click “Add biker” to register the first worker: name, phone number, residence and salary.",
+  "عمولات": "Commissions",
+  "اسم البايكر بالعربي": "Biker name in Arabic",
+  "اسم البايكر بالإنجليزي": "Biker name in English",
+  "يظهر حسب لغة المستخدم. يكفي إدخال أحد الاسمين، والغسلات والعمولات السابقة تبقى مرتبطة بملفه.": "The name follows the user's language. Enter at least one name; previous washes and commissions remain linked to this biker.",
   "سويتر": "Sweater",
   "سويتر | Sweater": "Sweater",
   "شركة هادي الغانم | Hadi Alghanim Company": "Hadi Alghanim Company",

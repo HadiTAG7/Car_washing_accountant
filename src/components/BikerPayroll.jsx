@@ -17,6 +17,8 @@ import {
 } from '../lib/payrollUi';
 import { downloadPayrollPdf } from '../lib/payrollPdf';
 import { useLanguage } from '../i18n/useLanguage';
+import { useBikers } from '../hooks/useBikers';
+import { localizedPayrollPreview } from '../lib/bikerNames';
 import './BikerPayroll.css';
 
 const POLICY = 'أيام الشهر الفعلية';
@@ -258,13 +260,16 @@ function PayrollPrintSheet({ preview, periodKey, periodStart, periodEnd, totals,
   );
 }
 
-export default function BikerPayroll({ role, previewMode = false }) {
-  useLanguage();
+export default function BikerPayroll({ role, previewMode = false, bikers: suppliedBikers = null }) {
+  const { language } = useLanguage();
+  const registry = useBikers({ enabled: !previewMode && !suppliedBikers });
+  const bikers = suppliedBikers || registry.bikers;
   const [periodKey, setPeriodKey] = useState(previewMode ? '2026-08' : monthKeyNow());
   const bounds = useMemo(() => boundsOf(periodKey), [periodKey]);
   const [periodStart, setPeriodStart] = useState(bounds.start);
   const [periodEnd, setPeriodEnd] = useState(bounds.end);
   const [preview, setPreview] = useState(previewMode ? DEMO_PREVIEW : null);
+  const displayPreview = useMemo(() => localizedPayrollPreview(preview, bikers, language), [preview, bikers, language]);
   const [adjustments, setAdjustments] = useState(() => adjustmentsFromPayrollLines(previewMode ? DEMO_LINES : []));
   const [busy, setBusy] = useState(null);
   const [action, setAction] = useState(null);
@@ -355,7 +360,7 @@ export default function BikerPayroll({ role, previewMode = false }) {
       'الاسم', 'الراتب الشهري', 'تاريخ المباشرة', 'نهاية الخدمة', 'الأيام المستحقة',
       'الأساسي المستحق', 'العمولة', 'البونص', 'سبب البونص', 'الخصم', 'سبب الخصم',
       'السلف القائمة', 'السلفة المخصومة', 'صافي المستحق', 'الحالة',
-    ], preview.lines.map((line) => [
+    ], displayPreview.lines.map((line) => [
       line.name, line.monthlySalary, line.startDate || '', line.endDate || '', line.daysEntitled,
       line.basicDue, line.commission, line.bonus, line.bonusReason || '', line.deduction,
       line.deductionReason || '', line.advanceOutstanding, line.advanceDeduction, line.netDue,
@@ -469,7 +474,7 @@ export default function BikerPayroll({ role, previewMode = false }) {
                 <thead><tr className="text-right text-[10px] font-bold text-slate-500 uppercase border-b border-slate-100 dark:border-slate-800">
                   {['العامل','الراتب / المباشرة','الأيام','الأساسي','العمولة','البونص + السبب','الخصم + السبب','السلف القائمة','خصم السلفة','الصافي','الحالة'].map((h) => <th key={h} className="py-3 px-3">{h}</th>)}
                 </tr></thead>
-                <tbody>{preview.lines.map((line) => {
+                <tbody>{displayPreview.lines.map((line) => {
                   const adj = adjustments[line.bikerId] || adjustmentsFromPayrollLines([line])[line.bikerId];
                   const advanceMax = payrollAdvanceMax(line, adj);
                   return <tr key={line.bikerId} className="border-b border-slate-100 dark:border-slate-800 align-top">
@@ -489,7 +494,7 @@ export default function BikerPayroll({ role, previewMode = false }) {
               </table>
             </div>
 
-            <div className="lg:hidden space-y-3">{preview.lines.map((line) => {
+            <div className="lg:hidden space-y-3">{displayPreview.lines.map((line) => {
               const adj = adjustments[line.bikerId] || adjustmentsFromPayrollLines([line])[line.bikerId];
               return <article key={line.bikerId} className="border border-slate-100 dark:border-slate-800 rounded-smallcard p-4 space-y-3">
                 <div className="flex justify-between gap-3"><div><h3 translate="no" className="font-bold text-slate-900 dark:text-slate-100">{line.name}</h3><p className="text-[11px] text-slate-500">{formatCurrency(line.monthlySalary)} · {line.daysEntitled}/{line.monthDays} يوماً</p></div><StatusChip status={line.status || status} /></div>
@@ -516,6 +521,7 @@ export default function BikerPayroll({ role, previewMode = false }) {
       )}
 
       <PayrollActionDialog key={action || 'none'} action={action} run={preview} busy={busy !== null} onClose={() => setAction(null)} onSubmit={submitAction} />
+      {/* Audited printouts retain the name captured in the payroll snapshot. */}
       <PayrollPrintSheet preview={preview} periodKey={periodKey} periodStart={periodStart} periodEnd={periodEnd} totals={totals} status={status} printRef={printRef} />
       <Toast open={toast.open} message={toast.message} tone={toast.tone} duration={toast.tone === 'error' ? 8000 : 3000} onClose={() => setToast((t) => ({ ...t, open: false }))} />
     </section>

@@ -15,6 +15,9 @@ import LoadingState from './LoadingState';
 import ErrorState, { SetupRequiredCard } from './ErrorState';
 import Toast from './Toast';
 import { useWashes } from '../hooks/useWashes';
+import { useBikers } from '../hooks/useBikers';
+import { useLanguage } from '../i18n/useLanguage';
+import { displayRecordedBikerName } from '../lib/bikerNames';
 import { useAccountingSettings } from '../hooks/useAccountingSettings';
 import { autoPostOnApproval, describeAutoPost, autoPostTone } from '../lib/accounting/autoPost';
 import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
@@ -83,6 +86,8 @@ function todayISO() {
 }
 
 export default function WashesPage() {
+  const { bikers } = useBikers();
+  const { language } = useLanguage();
   const {
     items, loading, error,
     addItem, updateItem, updateStatus, deleteItem, refetch,
@@ -261,14 +266,14 @@ export default function WashesPage() {
                 <tbody>
                   {items.map((w) => {
                     const total = (w.quantity || 0) * (w.price || 0);
-                    const label = w.bikerName || '—';
+                    const label = displayRecordedBikerName(w, bikers, language);
                     return (
                       <tr
                         key={w.id}
                         className="border-b border-slate-50 dark:border-slate-800/60 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors"
                       >
                         <td className="py-3 px-4 whitespace-normal break-words min-w-[180px] font-medium text-slate-800 dark:text-slate-200 align-top">
-                          {label}
+                          <span translate="no" dir="auto">{label}</span>
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap text-center tabular-nums text-slate-700 dark:text-slate-300 align-top">
                           {formatNumber(w.quantity)}
@@ -330,6 +335,7 @@ export default function WashesPage() {
       </main>
 
       <AddWashModal
+        bikers={bikers}
         isOpen={isModalOpen}
         onClose={closeModal}
         onAdd={handleAddItem}

@@ -1,4 +1,7 @@
 import { useAccountingSettings } from '../hooks/useAccountingSettings';
+import { useBikers } from '../hooks/useBikers';
+import { useLanguage } from '../i18n/useLanguage';
+import { displayRecordedBikerName } from '../lib/bikerNames';
 import { useCallback, useMemo, useState } from 'react';
 import {
   FileText, Plus, Trash2, Download, Loader2, Save, ShieldAlert,
@@ -54,6 +57,8 @@ const TYPE_TONE = {
  *     voiding records the reason without reusing the number.
  */
 export default function SalesDocumentsPage() {
+  const { bikers } = useBikers();
+  const { language } = useLanguage();
   const { documents, seller, totals, gaps, integrityProblems, loading, error, refetch } = useSalesDocuments();
   const { user } = useAuth();
   const { canMutate } = usePartnerView();
@@ -529,7 +534,7 @@ export default function SalesDocumentsPage() {
                     return (
                       <tr key={w.id} className="border-b border-slate-50 dark:border-slate-800/60 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
                         <td className="py-3 px-4 whitespace-nowrap tabular-nums text-slate-700 dark:text-slate-300">{w.washDate}</td>
-                        <td className="py-3 px-4 text-slate-700 dark:text-slate-300">{w.bikerName || '—'}</td>
+                        <td translate="no" dir="auto" className="py-3 px-4 text-slate-700 dark:text-slate-300">{displayRecordedBikerName(w, bikers, language)}</td>
                         <td className="py-3 px-4 text-center tabular-nums text-slate-700 dark:text-slate-300">{w.quantity}</td>
                         <td className="py-3 px-4 text-left tabular-nums text-slate-700 dark:text-slate-300">{formatCurrencyPrecise(w.price)}</td>
                         <td className="py-3 px-4 text-left tabular-nums font-bold text-slate-900 dark:text-slate-100">

@@ -1,4 +1,7 @@
 import { translate } from '../i18n/locale';
+import { useBikers } from '../hooks/useBikers';
+import { useLanguage } from '../i18n/useLanguage';
+import { displayRecordedBikerName } from '../lib/bikerNames';
 import { getLocale } from '../i18n/locale';
 import ScrollableTable from './ScrollableTable';
 import TableSearch from './TableSearch';
@@ -141,6 +144,8 @@ function formatLoggedDate(value) {
 }
 
 export default function VariableExpensesPage() {
+  const { bikers } = useBikers();
+  const { language } = useLanguage();
   const {
     items, loading, error,
     addItem, updateItem, deleteItem, refetch,
@@ -400,11 +405,11 @@ export default function VariableExpensesPage() {
                       className={`border-b border-slate-50 dark:border-slate-800/60 last:border-0 transition-colors ${i.isVirtual ? 'bg-primary-50/60 dark:bg-primary-500/10 hover:bg-primary-50 dark:hover:bg-primary-500/15' : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'}`}
                     >
                       <td className="py-3 px-4 whitespace-normal break-words min-w-[180px] font-medium text-slate-800 dark:text-slate-200 align-top">
-                        <div>{i.expenseName}</div>
+                        <div>{i.isVirtual && i.bikerName ? <>عمولات <span translate="no" dir="auto">{displayRecordedBikerName(i, bikers, language)}</span></> : i.expenseName}</div>
                         {i.isVirtual && (
                           <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
                             {i.bikerName
-                              ? `محسوب تلقائياً من غسلات ${i.bikerName} لشهر ${monthLabel}`
+                              ? `محسوب تلقائياً من غسلات ${displayRecordedBikerName(i, bikers, language)} لشهر ${monthLabel}`
                               : `محسوب تلقائياً من إجمالي غسلات شهر ${monthLabel}`}
                           </p>
                         )}

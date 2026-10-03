@@ -36,7 +36,7 @@ import { useLanguage } from '../i18n/useLanguage';
 
 import { useId, useMemo, useState } from 'react';
 import {
-  Calendar, HandCoins, Printer, TrendingUp, Wallet, Link2Off, Droplets, Clock3,
+  Calendar, HandCoins, TrendingUp, Wallet, Link2Off, Droplets, Clock3,
   BookOpen, CalendarRange, CircleHelp, ChevronDown,
 } from 'lucide-react';
 
@@ -46,7 +46,6 @@ import { Card, SectionHeader, StatCard, EmptyState, SecondaryButton } from './UI
 import LoadingState from './LoadingState';
 import ErrorState, { SetupRequiredCard } from './ErrorState';
 import StatementRow from './statement/StatementRow';
-import PartnerStatementModal from './PartnerStatementModal';
 import PartnerAssistantPage from './PartnerAssistantPage';
 import PartnerCapitalJourneyPage from './PartnerCapitalJourneyPage';
 import { ColumnTrend, LineTrend } from './charts/TrendCharts';
@@ -64,11 +63,7 @@ import {
   formatCurrency, formatDate, formatNumber, PER_WORKER_FEE,
 } from '../data/initialData';
 
-const METHOD_LABEL = {
-  bank_transfer: 'تحويل بنكي',
-  cash:          'نقدي',
-  mada_pos:      'مدى / شبكة',
-};
+
 
 // عنوان الشريط العلوي لكل خيار. الاسم يقول ما في الصفحة لا ما في القسم كله،
 // وإلا فقد التبويب فائدته: أربعة عناوين متطابقة تُرجع المستخدم إلى التمرير
@@ -558,9 +553,9 @@ export function CapitalLedgerNotice({ summary }) {
   </Card>;
 }
 
-/** «رأس مالي» — السندات وكشف الحساب والتحصيل الشهري. */
+/** «رأس مالي» — ملخص السداد ورصيد الدفاتر. */
 function CapitalView({
-  partner, required, paid, remaining, settled, myReceipts, receiptsTrend, onPrint, paidSummary = null,
+  partner, required, paid, remaining, settled, receiptsCount, paidSummary = null,
 }) {
   return (
     <>
@@ -570,80 +565,11 @@ function CapitalView({
         paid={paid}
         remaining={remaining}
         settled={settled}
-        receiptsCount={myReceipts.length}
+        receiptsCount={receiptsCount}
       />
 
       <CapitalLedgerNotice summary={paidSummary} />
 
-      <Card className="p-5">
-        <SectionHeader
-          title="سندات قبضك"
-          subtitle="الدفعات المسجّلة باسمك"
-          action={(
-            <SecondaryButton icon={Printer} onClick={onPrint}>
-              كشف حساب (طباعة / PDF)
-            </SecondaryButton>
-          )}
-        />
-        {myReceipts.length === 0 ? (
-          <EmptyState
-            icon={HandCoins}
-            title="للحين ما فيه دفعات مسجّلة"
-            hint="كل دفعة رأس مال تتسجّل باسمك، بتشوفها هنا."
-          />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-slate-500 dark:text-slate-400 text-xs border-b border-slate-100 dark:border-slate-800">
-                  <th className="py-2.5 px-3 text-right font-semibold">التاريخ</th>
-                  <th className="py-2.5 px-3 text-right font-semibold">المبلغ</th>
-                  <th className="py-2.5 px-3 text-right font-semibold">الطريقة</th>
-                  <th className="py-2.5 px-3 text-right font-semibold">البيان</th>
-                </tr>
-              </thead>
-              <tbody>
-                {myReceipts.map((p) => (
-                  <tr key={p.id} className="border-b border-slate-50 dark:border-slate-800/60">
-                    <td className="py-3 px-3 whitespace-nowrap text-slate-700 dark:text-slate-300 tabular-nums">
-                      {formatDate(p.paymentDate)}
-                    </td>
-                    <td className="py-3 px-3 whitespace-nowrap font-bold text-slate-900 dark:text-slate-100 tabular-nums">
-                      {formatCurrency(p.amount)}
-                    </td>
-                    <td className="py-3 px-3 whitespace-nowrap text-slate-600 dark:text-slate-400">
-                      {METHOD_LABEL[p.method] || '—'}
-                    </td>
-                    <td className="py-3 px-3 text-slate-600 dark:text-slate-400">{p.notes || '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="border-t-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
-                  <td className="py-3 px-3 font-bold text-slate-900 dark:text-slate-100">إجمالي المسدّد</td>
-                  <td className="py-3 px-3 font-extrabold text-slate-900 dark:text-slate-100 tabular-nums" colSpan={3}>
-                    {formatCurrency(paid)}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        )}
-      </Card>
-
-      <Card className="p-5">
-        <SectionHeader title="تحصيل رأس المال شهرياً" subtitle="سنداتك خلال آخر ٦ أشهر" />
-        {receiptsTrend.total === 0 ? (
-          <EmptyState compact icon={Calendar} title="ما فيه سندات قبض في آخر ٦ أشهر" />
-        ) : (
-          <ColumnTrend
-            months={receiptsTrend.months}
-            values={receiptsTrend.values}
-            formatValue={formatCurrency}
-            valueName="التحصيل"
-          />
-        )}
-      </Card>
     </>
   );
 }
@@ -745,7 +671,6 @@ function InvestorPortal({ partner, view }) {
   });
 
   const [selectedMonth, setSelectedMonth] = useState(todayMonth());
-  const [statementOpen, setStatementOpen] = useState(false);
 
   // ── سندات قبضه وحده ──
   const myReceipts = useMemo(
@@ -801,19 +726,6 @@ function InvestorPortal({ partner, view }) {
       : null),
     [allocationReport, statementMonth, view],
   );
-
-  // ── تحصيل رأس المال، آخر ٦ أشهر ──
-  const receiptsTrend = useMemo(() => {
-    if (view !== 'capital') return { months: [], values: [], total: 0 };
-    const months = lastMonths(6, language);
-    const byMonth = new Map(months.map((m) => [m.key, 0]));
-    for (const p of myReceipts) {
-      const key = String(p.paymentDate || '').slice(0, 7);
-      if (byMonth.has(key)) byMonth.set(key, byMonth.get(key) + (Number(p.amount) || 0));
-    }
-    const values = months.map((m) => byMonth.get(m.key));
-    return { months, values, total: values.reduce((s, v) => s + v, 0) };
-  }, [myReceipts, view, language]);
 
   // ── اتجاه النتيجة، آخر ٦ أشهر، بحصّته ──
   const profitTrend = useMemo(() => {
@@ -913,9 +825,7 @@ function InvestorPortal({ partner, view }) {
             paid={paid}
             remaining={remaining}
             settled={settled}
-            myReceipts={myReceipts}
-            receiptsTrend={receiptsTrend}
-            onPrint={() => setStatementOpen(true)}
+            receiptsCount={myReceipts.length}
             paidSummary={paidSummary}
           />
         )}
@@ -940,11 +850,6 @@ function InvestorPortal({ partner, view }) {
         )}
       </main>
 
-      <PartnerStatementModal
-        isOpen={statementOpen}
-        onClose={() => setStatementOpen(false)}
-        partner={partner}
-      />
     </>
   );
 }

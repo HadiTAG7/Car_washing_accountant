@@ -449,9 +449,8 @@ describe('صفحة المستثمر — الخيارات الأربعة', () => 
     expect(screen.getByText('✓ مسدّد بالكامل')).toBeTruthy();
     expect(screen.getByText('الرسوم المطلوبة')).toBeTruthy();
     expect(screen.getByText('المسدَّد')).toBeTruthy();
-    const cards = [...container.querySelectorAll('div[style]')]
-      .filter(element => element.style.borderRadius === 'var(--sw-radius-card)');
-    expect(cards.length).toBeGreaterThan(0);
+    const cards = [...container.querySelectorAll('.sw-stat-card')];
+    expect(cards).toHaveLength(3);
     for (const card of cards) expect(card.textContent.trim()).not.toBe('');
   });
   // الادعاء الحامل للتقسيم: كل خيارٍ يحمل شيئه وحده. بدونه يعود الأربعة
@@ -470,24 +469,38 @@ describe('صفحة المستثمر — الخيارات الأربعة', () => 
     expect(screen.queryByText('إيرادات المبيعات')).toBeNull();
   });
 
-  it('«رأس مالي» تعرض السندات والتحصيل، لا قائمة الدخل', () => {
+  it('«رأس مالي» تخفي تفاصيل السندات والتحصيل وتحتفظ بمجموع الشريك وحده دون تغيير الدفعات', () => {
     paymentsState.payments = [
       { id: 'r1', partnerId: 'p1', amount: 20000, paymentDate: '2026-07-01', method: 'cash', notes: 'دفعة أولى' },
       { id: 'r2', partnerId: 'p2', amount: 99999, paymentDate: '2026-07-02', method: 'cash', notes: 'ليست له' },
     ];
+    const original = structuredClone(paymentsState.payments);
+    for (const receipt of paymentsState.payments) Object.freeze(receipt);
+    Object.freeze(paymentsState.payments);
     render(<InvestorPage view="capital" />);
-    expect(screen.getByText('سندات قبضك')).toBeTruthy();
-    expect(screen.getByText('دفعة أولى')).toBeTruthy();
-    expect(screen.getByText('تحصيل رأس المال شهرياً')).toBeTruthy();
+    expect(screen.queryByText('سندات قبضك')).toBeNull();
+    expect(screen.queryByText('دفعة أولى')).toBeNull();
+    expect(screen.queryByText('تحصيل رأس المال شهرياً')).toBeNull();
+    expect(screen.queryByText('كشف حساب (طباعة / PDF)')).toBeNull();
+    expect(screen.queryByRole('table')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByText('المسدَّد').closest('.sw-stat-card').textContent).toContain('20,000.00');
+    expect(screen.getByText('المتبقّي').closest('.sw-stat-card').textContent).toContain('40,000.00');
+    expect(paymentsState.payments).toEqual(original);
     // سند شريك آخر لا يظهر ولا يدخل في المجموع.
     expect(screen.queryByText('ليست له')).toBeNull();
     expect(screen.queryByText(/99,999/)).toBeNull();
     expect(screen.queryByText('إيرادات المبيعات')).toBeNull();
   });
 
-  it('وبلا دفعات: حالة فارغة لا صفٌّ بصفر', () => {
+  it('وبلا دفعات يبقى ملخص رأس المال دون أقسام أو جداول فارغة', () => {
     render(<InvestorPage view="capital" />);
-    expect(screen.getByText('للحين ما فيه دفعات مسجّلة')).toBeTruthy();
+    expect(screen.queryByText('للحين ما فيه دفعات مسجّلة')).toBeNull();
+    expect(screen.queryByText('ما فيه سندات قبض في آخر ٦ أشهر')).toBeNull();
+    expect(screen.queryByText('سندات قبضك')).toBeNull();
+    expect(screen.queryByText('تحصيل رأس المال شهرياً')).toBeNull();
+    expect(screen.getByText('المسدَّد').closest('.sw-stat-card').textContent).toContain('0.00');
+    expect(screen.getByText('المتبقّي').closest('.sw-stat-card').textContent).toContain('60,000.00');
   });
 
   it('«اتجاه ٦ أشهر» تعرض الرسم وحده', () => {
@@ -740,7 +753,7 @@ describe('صفحة المستثمر — المؤشرات الجديدة', () => 
     expect(screen.queryByText('رصيدك في الدفاتر')).toBeNull();
     expect(screen.queryByText('المسدَّد بالسندات')).toBeNull();
     expect(screen.queryByText('قيد الترحيل')).toBeNull();
-    expect(screen.getByText('سندات قبضك')).toBeTruthy();
+    expect(screen.queryByText('سندات قبضك')).toBeNull();
     expect(screen.getByText('✓ مسدّد بالكامل')).toBeTruthy();
   });
 

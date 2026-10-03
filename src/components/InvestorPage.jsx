@@ -115,20 +115,6 @@ function formatMonthLabel(ym) {
   return new Intl.DateTimeFormat(getLocale(), { year: 'numeric', month: 'long' }).format(date);
 }
 
-/** This report has no independent approval record. Closing books is not one. */
-export function PartnerReportStatus({ report }) {
-  const { language } = useLanguage();
-  const timestamp = report?.asOf ? Date.parse(report.asOf) : NaN;
-  const updated = Number.isFinite(timestamp) ? new Intl.DateTimeFormat(getLocale(language), {
-    dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Riyadh', numberingSystem: 'latn',
-  }).format(new Date(timestamp)) : 'غير متاح';
-  return <section className="rounded-control border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 p-4 text-sm text-amber-900 dark:text-amber-200 space-y-1">
-    <p className="text-xs leading-relaxed">أرقام تشغيلية قابلة للتحديث؛ ليس كشف توزيع أرباح معتمداً ولا مطالبة مالية عليك.</p>
-    <p className="text-xs">آخر تحديث من المصدر: {updated}</p>
-    {report?.from && report?.through && <p className="text-xs">نطاق البيانات: {formatDate(report.from)} إلى {formatDate(report.through)}</p>}
-  </section>;
-}
-
 const COMPARISON_LABELS = {
   netRevenue: 'حصتك من صافي الإيرادات', variable: 'المصاريف المتغيرة والعمولات',
   monthly: 'المصاريف الشهرية والرواتب', other: 'المصاريف الأخرى', totalCosts: 'إجمالي مصاريف التشغيل',
@@ -992,7 +978,6 @@ function InvestorPortal({ partner, view }) {
         {anyError && <ErrorState title="تعذّر تحميل بياناتك" error={anyError} />}
 
         {['overview', 'income', 'trends'].includes(view) && <PartnerEligibilityNotice eligibility={allocationReport?.statements.find(s => s.periodKey === statementMonth)?.eligibility} periodKey={statementMonth} />}
-        {['overview', 'income', 'trends'].includes(view) && allocationReport && <PartnerReportStatus report={allocationReport} />}
 
         {view === 'overview' && (
           <OverviewView

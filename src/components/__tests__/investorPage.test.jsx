@@ -17,6 +17,7 @@ vi.mock('../../hooks/usePartnerStatement', () => ({ usePartnerStatement: () => {
   if (!keys.length) keys.push(new Date().toISOString().slice(0, 7));
   const factor = partnerView.scalingFactor;
   return { loading: false, error: statementError, report: {
+    asOf: '2026-10-03T18:00:00Z', from: '2026-05-01', through: '2026-09-30',
     statements: keys.map(periodKey => ({
       ...monthlyStatement({ scalingFactor: factor }), periodKey,
       annualReserve: 10000 * factor, totalAllocation: 150000 * factor,
@@ -66,7 +67,7 @@ vi.mock('../../lib/accounting/monthlyStatement', () => ({
 
 const InvestorPage = (await import('../InvestorPage')).default;
 const { IncomeStatementCard } = await import('../InvestorPage');
-const { PartnerReportStatus, PartnerComparisonCard } = await import('../InvestorPage');
+const { PartnerComparisonCard } = await import('../InvestorPage');
 const { monthlyStatement } = await import('../../lib/accounting/monthlyStatement');
 
 /**
@@ -101,20 +102,7 @@ afterEach(() => {
   insightsState.washMonths = [];
 });
 
-describe('معلومات المصدر ومقارنة فترات الشريك', () => {
-  it('تعرض معلومات المصدر دون عنوان حالة التقرير أو شارة مبدئي/نهائي', () => {
-    render(<PartnerReportStatus report={{ asOf: '2026-10-02T18:00:00Z', from: '2026-05-01', through: '2026-09-30' }} />);
-    expect(screen.queryByText(/حالة التقرير|مبدئي|نهائي/)).toBeNull();
-    expect(screen.queryByLabelText('حالة التقرير')).toBeNull();
-    expect(screen.getByText(/ليس كشف توزيع أرباح معتمداً/)).toBeTruthy();
-    expect(screen.getByText(/آخر تحديث من المصدر:/).textContent).toContain('2026');
-    expect(screen.getByText(/نطاق البيانات:/)).toBeTruthy();
-    expect(screen.queryByText('حالة التقرير: معتمد')).toBeNull();
-  });
-  it('لا تختلق تاريخاً عندما لا يتوفر تاريخ قراءة المصدر', () => {
-    render(<PartnerReportStatus report={{}} />);
-    expect(screen.getByText(/آخر تحديث من المصدر: غير متاح/)).toBeTruthy();
-  });
+describe('مقارنة فترات الشريك', () => {
   it('المقارنة مطوية افتراضياً وتتيح اختيار شهرين دون كشف النسبة', () => {
     const st = periodKey => ({ ...monthlyStatement({ scalingFactor: 0.2 }), periodKey, annualReserve: 50, netAfterReserve: 9950 });
     render(<PartnerComparisonCard report={{ statements: [st('2026-08'), st('2026-07')] }} activeMonth="2026-08" />);
@@ -576,15 +564,15 @@ describe('صفحة المستثمر — المؤشرات الجديدة', () => 
     expect(card.textContent).not.toContain('من أصل');
   });
 
-  it.each(['open', 'closed'])('تخفي علامات حالة التقرير في عروض الشريك مع فترة %s وتبقي حالة الدفتر', status => {
+  it.each(['open', 'closed'])('تخفي بطاقة حالة التقرير كاملة في عروض الشريك مع فترة %s وتبقي حالة الدفتر', status => {
     ledgerState.entries = [{ id: 'e1', entryDate: '2026-08-10', periodKey: '2026-08', status: 'posted', lines: [] }];
     ledgerState.periods = [{ id: '2026-08', status }];
     for (const view of ['overview', 'income', 'trends']) {
       render(<InvestorPage view={view} />);
       expect(screen.queryByText(/حالة التقرير|مبدئي|نهائي/)).toBeNull();
       expect(screen.queryByLabelText('حالة التقرير')).toBeNull();
-      expect(screen.getByText(/آخر تحديث من المصدر:/)).toBeTruthy();
-      expect(screen.getByText(/ليس كشف توزيع أرباح معتمداً/)).toBeTruthy();
+      expect(screen.queryByText(/أرقام تشغيلية قابلة للتحديث|ليس كشف توزيع أرباح معتمداً/)).toBeNull();
+      expect(screen.queryByText(/آخر تحديث من المصدر:|نطاق البيانات:/)).toBeNull();
       if (view === 'income') {
         expect(screen.getByLabelText('فترة التقرير (الشهر)').value).toBe('2026-08');
       }

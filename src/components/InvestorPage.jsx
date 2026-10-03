@@ -37,12 +37,12 @@ import { useLanguage } from '../i18n/useLanguage';
 import { useId, useMemo, useState } from 'react';
 import {
   Calendar, HandCoins, Printer, TrendingUp, Wallet, Link2Off, Droplets, Clock3,
-  PiggyBank, BookOpen, CalendarRange, CircleHelp, ChevronDown,
+  BookOpen, CalendarRange, CircleHelp, ChevronDown,
 } from 'lucide-react';
 
 import TopBar from './TopBar';
 import PartnerEligibilityNotice from './PartnerEligibilityNotice';
-import { Card, SectionHeader, StatCard, EmptyState, ProgressBar, SecondaryButton } from './UI';
+import { Card, SectionHeader, StatCard, EmptyState, SecondaryButton } from './UI';
 import LoadingState from './LoadingState';
 import ErrorState, { SetupRequiredCard } from './ErrorState';
 import StatementRow from './statement/StatementRow';
@@ -57,9 +57,7 @@ import { useLedger } from '../hooks/useLedger';
 import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
 import { usePartnerStatement } from '../hooks/usePartnerStatement';
 import { partnerPaidSummary } from '../lib/accounting/partnerTotals';
-import {
-  roiSummary, ytdAfterFoundingTotal,
-} from '../lib/accounting/partnerInsights';
+import { ytdAfterFoundingTotal } from '../lib/accounting/partnerInsights';
 import { comparePartnerReports, COMPARISON_FIELDS, validReportMonth } from '../lib/accounting/partnerReportComparison';
 import { usePartnerInsights } from '../hooks/usePartnerInsights';
 import {
@@ -475,7 +473,7 @@ function OverviewView({
   partner, required, paid, remaining, settled,
   receiptsCount, hasShare, latestMonth,
   availableMonths, activeMonth, onMonthChange, monthlySummary,
-  ytd = null, washShare = null, roi = null, foundingStatus = null,
+  ytd = null, washShare = null, foundingStatus = null,
 }) {
   return (
     <>
@@ -540,50 +538,6 @@ function OverviewView({
         </div>
       )}
 
-      {/* ── استرداد رأس المال ─────────────────────────────────── */}
-      {hasShare && roi && (
-        <Card className="p-5">
-          <SectionHeader
-            title="مقارنة نتائج الشركة برأس مالك"
-            subtitle="هذا مؤشر تحليلي لنتائج التشغيل مقابل اللي دفعته، مو استرداد ولا توزيع نقدي"
-          />
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
-            <StatCard
-              icon={PiggyBank}
-              tone="emerald"
-              label="حصتك التحليلية من النتائج منذ البداية"
-              value={formatCurrency(roi.cumulativeProfit)}
-              sub={roi.firstMonth ? `منذ ${formatMonthLabel(roi.firstMonth)} — ${formatNumber(roi.monthsCounted)} شهراً` : 'للحين ما فيه أشهر مُرحّلة'}
-            />
-            <StatCard
-              icon={TrendingUp}
-              tone={roi.recovered ? 'emerald' : 'primary'}
-              label="نسبة التعادل التحليلي"
-              value={roi.paid > 0 ? `${Math.max(0, roi.recoveredPercent).toFixed(1)}%` : '—'}
-              sub={roi.paid > 0 ? (roi.recovered ? 'النتائج التراكمية تعادل اللي دفعته؛ مو دفعة استلمتها' : `الفارق التحليلي ${formatCurrency(roi.remaining)}`) : 'للحين ما تسجّلت دفعات'}
-            />
-            <StatCard
-              icon={Calendar}
-              tone={roi.recovered ? 'emerald' : (roi.monthsToRecover === null ? 'slate' : 'amber')}
-              label="المتوقع للتعادل"
-              value={roi.recovered ? '✓ تعادل' : (roi.monthsToRecover === null ? 'غير محدد' : `~${formatNumber(roi.monthsToRecover)} شهراً`)}
-              sub={roi.recovered
-                ? 'هذا تعادل محاسبي، وما يثبت توزيع أو استرداد نقدي'
-                : (roi.monthsToRecover === null
-                  ? 'متوسط الأشهر الأخيرة صفر أو سالب'
-                  : `بمتوسط ${formatCurrency(roi.avgRecent)} شهرياً (آخر ${formatNumber(roi.monthsAveraged)} أشهر)`)}
-            />
-          </div>
-          <ProgressBar
-            value={Math.min(roi.cumulativeProfit, roi.paid || 1)}
-            max={roi.paid || 1}
-            color={roi.recovered ? 'emerald' : 'primary'}
-          />
-          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-3 leading-relaxed">
-            هذا تقدير، مو وعد. يعتمد على نتائج التشغيل والالتزامات المسجلة، ومو قرار توزيع أرباح.
-          </p>
-        </Card>
-      )}
     </>
   );
 }
@@ -878,19 +832,6 @@ function InvestorPortal({ partner, view }) {
     };
   }, [allocationReport, view, language]);
 
-  // ── حصّته شهراً بشهر منذ أول قيد — للاسترداد والتغيّر ومنذ بداية السنة ──
-  // تُحسب في «نظرة عامة» وحدها: قائمةٌ لكل شهرٍ مُرحَّل ليست رخيصة، والخيار
-  // الذي لا يُفتح لا يكلّف.
-  const nets = useMemo(() => {
-    if (view !== 'overview') return [];
-    return [...availableMonths].sort().map((k) => {
-      const st = allocationReport?.statements.find(s => s.periodKey === k) || EMPTY_STATEMENT;
-      return { month: k, netProfit: st.netAfterReserve || 0, hasActivity: st.hasActivity };
-    });
-  }, [view, availableMonths, allocationReport]);
-
-  const roi = useMemo(() => (view === 'overview' ? roiSummary({ nets, paid }) : null), [view, nets, paid]);
-
   const ytd = useMemo(() => ytdAfterFoundingTotal(allocationReport?.statements,
     String(statementMonth).slice(0, 4)), [allocationReport, statementMonth]);
 
@@ -961,7 +902,6 @@ function InvestorPortal({ partner, view }) {
             monthlySummary={allocationReport?.statements.find(s => s.periodKey === activeMonth) || EMPTY_STATEMENT}
             ytd={ytd}
             washShare={washShare}
-            roi={roi}
             foundingStatus={foundingStatus}
           />
         )}

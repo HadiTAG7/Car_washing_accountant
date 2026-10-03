@@ -577,7 +577,7 @@ describe('صفحة المستثمر — المؤشرات الجديدة', () => 
     expect(screen.queryByLabelText('ملخص الشهر')).toBeNull();
   });
 
-  it('السنوي بعد التغطية يطابق صفوف قائمة الدخل ويبقي الأصل والمؤشرات التراكمية قبل التغطية', () => {
+  it('السنوي بعد التغطية يطابق صفوف قائمة الدخل ويبقي الأصل قبل التغطية في التفاصيل', () => {
     twoMonths();
     statementOverrides['2026-07'] = { netAfterReserve: -4000,
       founding: { available: true, covered: 4000, funded: 200000, remaining: 1000 } };
@@ -586,7 +586,7 @@ describe('صفحة المستثمر — المؤشرات الجديدة', () => 
     const { rerender } = render(<InvestorPage view="overview" />);
     const annual = screen.getByText('نتيجتك بعد تغطية التأسيس في 2026').closest('.sw-stat-card');
     expect(annual.querySelector('.sw-stat-value').textContent).toMatch(/-1,000\.00/);
-    expect(screen.getByText('حصتك التحليلية من النتائج منذ البداية').closest('.sw-stat-card').textContent).toMatch(/-6,000\.00/);
+    expect(screen.queryByText('حصتك التحليلية من النتائج منذ البداية')).toBeNull();
     rerender(<InvestorPage view="income" />);
     const period = screen.getByLabelText('فترة التقرير (الشهر)');
     fireEvent.change(period, { target: { value: '2026-07' } });
@@ -639,15 +639,25 @@ describe('صفحة المستثمر — المؤشرات الجديدة', () => 
     expect(screen.queryByText('صافي ربحك')).toBeNull();
   });
 
-  it('نظرة عامة: استرداد رأس المال من حصّته مقابل سنداته', () => {
+  it.each([50000, -20000])('تحذف قسم المقارنة كاملًا مع نتيجة شركة %s وتبقي البطاقة السنوية ورأس المال', companyNet => {
+    COMPANY_NET = companyNet;
     twoMonths();
     paymentsState.payments = [{ id: 'r1', partnerId: 'p1', amount: 20000, paymentDate: '2026-07-01', paymentMethod: 'cash' }];
-    render(<InvestorPage view="overview" />);
-    expect(screen.getByText('مقارنة نتائج الشركة برأس مالك')).toBeTruthy();
-    // شهران × 50000 × 0.3 = 30000 من 20000 → استُردّ.
-    expect(screen.getByText('150.0%')).toBeTruthy();
-    expect(screen.getByText('✓ تعادل')).toBeTruthy();
+    const { container } = render(<InvestorPage view="overview" />);
+    for (const removed of ['مقارنة نتائج الشركة برأس مالك', 'حصتك التحليلية من النتائج منذ البداية',
+      'نتيجتك بعد تغطية التأسيس منذ البداية', 'نسبة التعادل التحليلي', 'المتوقع للتعادل', '✓ تعادل']) {
+      expect(screen.queryByText(removed)).toBeNull();
+    }
+    expect(screen.queryByText(/الفارق التحليلي/)).toBeNull();
+    expect(screen.queryByText(/هذا تقدير، مو وعد/)).toBeNull();
+    expect(container.querySelector('[style*="width: 100%"]')).toBeNull();
+    expect(screen.getByText('الرسوم المطلوبة')).toBeTruthy();
+    expect(screen.getByText('المسدَّد').closest('.sw-stat-card').textContent).toContain('20,000.00');
+    expect(screen.getByLabelText('ملخص الشهر').querySelectorAll('.sw-stat-card')).toHaveLength(3);
     expect(screen.getByText(/نتيجتك بعد تغطية التأسيس في 2026/)).toBeTruthy();
+    for (const card of container.querySelectorAll('div[style]')) {
+      if (card.style.borderRadius === 'var(--sw-radius-card)') expect(card.textContent.trim()).not.toBe('');
+    }
   });
 
   it('يبقي ملخصاً واحداً بثلاث بطاقات ويحفظ المعلومات المختلفة', () => {
@@ -662,7 +672,7 @@ describe('صفحة المستثمر — المؤشرات الجديدة', () => 
     expect(screen.getByText('المدفوع من التأسيس هذا الشهر')).toBeTruthy();
     expect(screen.getByText('نتيجتك بعد تغطية التأسيس في 2026')).toBeTruthy();
     expect(screen.getByText('غسلات تعادل حصّتك')).toBeTruthy();
-    expect(screen.getByText('مقارنة نتائج الشركة برأس مالك')).toBeTruthy();
+    expect(screen.queryByText('مقارنة نتائج الشركة برأس مالك')).toBeNull();
   });
 
   it.each([

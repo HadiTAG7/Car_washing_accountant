@@ -19,8 +19,8 @@ describe('رابط MCP الشريك — أصله بالترتيب', () => {
   });
 
   it('ثم أصل الصفحة — وهو ما يكفي في المتصفح', () => {
-    expect(partnerMcpBaseUrl({ env: {}, ledgerApiUrl: '', location: { origin: 'https://monster-wash-erp.vercel.app' } }))
-      .toBe('https://monster-wash-erp.vercel.app');
+    expect(partnerMcpBaseUrl({ env: {}, ledgerApiUrl: '', location: { origin: 'https://sweater-hadi-alghanim.vercel.app' } }))
+      .toBe('https://sweater-hadi-alghanim.vercel.app');
   });
 
   it('ومنفذٌ نسبي لا يُكسر شيئاً — يُتجاوز إلى الصفحة', () => {

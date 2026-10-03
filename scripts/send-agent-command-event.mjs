@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { signAgentCommandRequest } from '../functions/src/agentCommandCenter.js';
 
-const DEFAULT_ENDPOINT = 'https://monster-wash-erp.vercel.app/api/agent-command-center-ingest';
+const DEFAULT_ENDPOINT = 'https://sweater-hadi-alghanim.vercel.app/api/agent-command-center-ingest';
 
 function fail(message) {
   process.stderr.write(`${message}\n`);

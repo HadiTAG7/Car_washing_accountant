@@ -78,12 +78,12 @@ describe('صفحة المساعد الذكي', () => {
     expect(screen.getByText('عدد عمالك فقط')).toBeTruthy();
     expect(screen.getByText('عدد الغسلات التي تعادل حصّتك فقط')).toBeTruthy();
   });
-  it('بلا رابط: زرّ إنشاء، وشرح ما يراه المساعد وما لا يراه', () => {
+  it('بلا رابط: زرّ إنشاء، وشرح ويش يشوف مساعدك وما لا يراه', () => {
     render(<PartnerAssistantPage partner={partnerView.viewedPartner} meta={META} />);
     expect(btn('إنشاء رابط')).toBeTruthy();
-    expect(screen.getByText('لا رابط فعّال')).toBeTruthy();
-    expect(screen.getByText(/ما يراه المساعد/)).toBeTruthy();
-    expect(screen.getByText(/ما لا يراه أبداً/)).toBeTruthy();
+    expect(screen.getByText('ما فيه رابط فعّال')).toBeTruthy();
+    expect(screen.getByText(/ويش يشوف مساعدك/)).toBeTruthy();
+    expect(screen.getByText(/ويش ما يقدر يشوف/)).toBeTruthy();
     expect(btn('تبديل الرابط')).toBeNull();
   });
 
@@ -96,7 +96,7 @@ describe('صفحة المساعد الذكي', () => {
     // الأصل من منفذ الخادم لا من الصفحة (jsdom أصله localhost).
     expect(code.textContent).toBe(`https://erp.example.com/api/partner-mcp/${TOKEN}`);
     expect(screen.getByRole('img', { name: 'رابط المساعد الذكي' })).toBeTruthy();
-    fireEvent.click(btn('أخفِه'));
+    fireEvent.click(btn('إخفاء الرابط'));
     expect(screen.queryByText(new RegExp(TOKEN))).toBeNull();
   });
 
@@ -104,7 +104,7 @@ describe('صفحة المساعد الذكي', () => {
     keysState.keys = [{ keyId: 'pmk_k1', partnerId: 'p1', ownerUid: 'u1', status: 'active', createdAtIso: '2026-08-01T00:00:00.000Z', lastUsedAtIso: null }];
     render(<PartnerAssistantPage partner={partnerView.viewedPartner} meta={META} />);
     expect(screen.getByText('فعّال')).toBeTruthy();
-    expect(screen.getByText('لم يُستعمل بعد')).toBeTruthy();
+    expect(screen.getByText('للحين ما انستخدم')).toBeTruthy();
     expect(btn('تبديل الرابط')).toBeTruthy();
     expect(btn('إيقاف الرابط')).toBeTruthy();
     expect(btn('إنشاء رابط')).toBeNull();
@@ -130,12 +130,12 @@ describe('صفحة المساعد الذكي', () => {
     expect(btn('إنشاء رابط')).toBeNull();
     expect(btn('تبديل الرابط')).toBeNull();
     expect(btn('إيقاف الرابط')).toBeNull();
-    expect(screen.getByText(/المدير يرى الحالة/)).toBeTruthy();
+    expect(screen.getByText(/المدير يشوف الحالة/)).toBeTruthy();
   });
 
   it('ومفتاح شريكٍ آخر لا يُحسب لهذا الشريك', () => {
     keysState.keys = [{ keyId: 'pmk_other', partnerId: 'p2', ownerUid: 'u2', status: 'active', createdAtIso: '2026-08-01T00:00:00.000Z' }];
     render(<PartnerAssistantPage partner={partnerView.viewedPartner} meta={META} />);
-    expect(screen.getByText('لا رابط فعّال')).toBeTruthy();
+    expect(screen.getByText('ما فيه رابط فعّال')).toBeTruthy();
   });
 });

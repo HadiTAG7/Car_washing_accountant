@@ -77,11 +77,11 @@ const METHOD_LABEL = {
 // ليعرف أين هو.
 const VIEW_META = {
   overview: { title: 'حسابي كشريك',  subtitle: 'حصّتك ورأس مالك ونتيجة آخر شهر' },
-  capital:  { title: 'رأس مالي',     subtitle: 'سنداتك وما تبقّى من حصّتك' },
+  capital:  { title: 'رأس مالي',     subtitle: 'سنداتك والباقي من حصّتك' },
   journey:  { title: 'رحلة رأس مالي', subtitle: 'تفاصيل صرف التأسيس ثم مصاريف التشغيل والرصيد المتبقي' },
   income:   { title: 'قائمة الدخل',  subtitle: 'إيراداتك ومصاريفك ونتيجة الشهر' },
   trends:   { title: 'اتجاه ٦ أشهر', subtitle: 'حصتك التحليلية من إيرادات الشركة وتكاليفها ونتيجتها' },
-  assistant: { title: 'المساعد الذكي', subtitle: 'رابطك الخاص لتسأل Claude أو ChatGPT عن حصّتك' },
+  assistant: { title: 'المساعد الذكي', subtitle: 'رابطك الخاص عشان تسأل Claude أو ChatGPT عن حصّتك' },
 };
 
 const metaFor = (view) => VIEW_META[view] || VIEW_META.overview;
@@ -141,7 +141,7 @@ export function PartnerComparisonCard({ report, activeMonth }) {
     <details>
       <summary className="cursor-pointer font-bold text-slate-900 dark:text-slate-100 min-h-10">مقارنة تقاريرك</summary>
       <div className="mt-4 space-y-4">
-        <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400">قارن أرقام حصتك بين شهرين أو سنتين، دون تغيير الحسابات أو رصيد التأسيس.</p>
+        <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400">تقدر تقارن أرقام حصتك بين شهرين أو سنتين، من غير ما تتغيّر الحسابات أو رصيد التأسيس.</p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
           <div><label htmlFor={modeLabelId} className="block mb-1">نوع المقارنة</label>
             <select id={modeLabelId} value={mode} onChange={event => setMode(event.target.value)} className="w-full min-h-10 p-2 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
@@ -156,15 +156,15 @@ export function PartnerComparisonCard({ report, activeMonth }) {
               {periods.filter(key => key !== first).map(key => <option key={key} value={key}>{label(key)}</option>)}
             </select></div>
         </div>
-        {!second ? <p className="text-sm text-slate-500">تحتاج فترتين مختلفتين للمقارنة</p> : <>
-          {mode === 'year' && <p className="text-xs text-slate-500">المقارنة من يناير حتى {formatMonthLabel(`${newestYear}-${String(throughMonth).padStart(2, '0')}`).replace(/\s+[\d٠-٩]+$/, '')} في كل سنة؛ لا نحول الأشهر المتاحة إلى تقدير لسنة كاملة.</p>}
+        {!second ? <p className="text-sm text-slate-500">عشان تقارن، اختار فترتين مختلفتين</p> : <>
+          {mode === 'year' && <p className="text-xs text-slate-500">المقارنة من يناير حتى {formatMonthLabel(`${newestYear}-${String(throughMonth).padStart(2, '0')}`).replace(/\s+[\d٠-٩]+$/, '')} في كل سنة؛ ما نحسب الأشهر المتاحة كأنها سنة كاملة.</p>}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-slate-500 dark:text-slate-400">
             {[comparison.first, comparison.second].map(period => <p key={period.period}>
               {label(period.period)} — أشهر متاحة: {formatNumber(period.available.length)} / {formatNumber(period.expected.length)}
               {!period.complete && <span className="block text-amber-700 dark:text-amber-300">أشهر غير متاحة: {period.missing.join('، ')}</span>}
             </p>)}
           </div>
-          {!comparison.comparable && <p role="status" className="text-xs text-amber-700 dark:text-amber-300">نطاق الأشهر مختلف أو غير متاح؛ لا نعرض فرقاً مضللاً.</p>}
+          {!comparison.comparable && <p role="status" className="text-xs text-amber-700 dark:text-amber-300">الأشهر مختلفة أو مو متاحة؛ عشان كذا ما نعرض فرق ممكن يعطيك صورة غلط.</p>}
           <div className="overflow-x-auto">
             <table aria-label="مقارنة أرقام حصتك" className="block sm:table w-full text-xs sm:text-sm">
               <thead className="hidden sm:table-header-group"><tr className="text-slate-500 border-b border-slate-200 dark:border-slate-700"><th className="py-3 px-2 text-right">البند</th><th className="py-3 px-2">{label(first)}</th><th className="py-3 px-2">{label(second)}</th><th className="py-3 px-2">الفرق: الأولى − الثانية</th></tr></thead>
@@ -177,8 +177,8 @@ export function PartnerComparisonCard({ report, activeMonth }) {
               </tr>)}</tbody>
             </table>
           </div>
-          <p className="text-xs text-slate-500 dark:text-slate-400">المصاريف المتغيرة والشهرية والأخرى تفاصيل ضمن إجمالي التشغيل، وليست خصماً إضافياً.</p>
-          <p className="text-xs text-slate-500 dark:text-slate-400">المجموع للأشهر المتاحة فقط. غير متاح لا يعني صفراً. النتيجة قبل تغطية التأسيس؛ ليست مبلغاً موزعاً أو مطلوباً منك.</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400">المصاريف المتغيرة والشهرية والأخرى داخلة في إجمالي التشغيل، مو خصم زيادة.</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400">المجموع بس للأشهر المتاحة. «غير متاح» مو معناته صفر. النتيجة قبل تغطية التأسيس؛ مو مبلغ توزّع لك أو مطلوب منك.</p>
         </>}
       </div>
     </details>
@@ -207,11 +207,10 @@ function LinkMissingCard() {
         <Link2Off size={26} strokeWidth={2.2} />
       </div>
       <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-2">
-        لم يُربط حسابك بسجل شريك بعد
+        حسابك للحين ما انربط بسجل شريك
       </h2>
       <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed max-w-md mx-auto">
-        حسابك مُفعَّل، لكن الإدارة لم تربطه بعد بسجلّك في قائمة الشركاء — ولذلك
-        لا يمكن عرض حصّتك ولا رأس مالك. تواصل مع الإدارة لإتمام الربط.
+        حسابك مفعّل، بس الإدارة للحين ما ربطته بسجلّك في قائمة الشركاء. عشان كذا ما نقدر نعرض حصّتك ولا رأس مالك. تواصل مع الإدارة عشان يكملون الربط.
       </p>
     </Card>
   );
@@ -263,7 +262,7 @@ export function CapitalSummary({ partner, required, paid, remaining, settled, re
           tone={settled ? 'emerald' : 'amber'}
           label="المتبقّي"
           value={settled ? '✓ مسدّد بالكامل' : formatCurrency(remaining)}
-          sub={settled ? 'اكتمل رأس مالك' : 'المتبقّي لاستكمال حصّتك'}
+          sub={settled ? 'اكتمل رأس مالك' : 'الباقي عشان تكمّل حصّتك'}
         />
       </div>
     </>
@@ -289,10 +288,10 @@ export function FoundingStageNotice({ status }) {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
         <div>المغطى من التأسيس هذا الشهر<p className="font-bold tabular-nums">{formatCurrency(status.covered)}</p></div>
         <div>رصيد التأسيس التحليلي المتبقي<p className="font-bold tabular-nums">{formatCurrency(status.remaining)}</p></div>
-        <div>بعد نفاد رصيد التأسيس<p className="font-bold tabular-nums">{formatCurrency(status.uncovered)}</p></div>
+        <div>بعد ما يخلص رصيد التأسيس<p className="font-bold tabular-nums">{formatCurrency(status.uncovered)}</p></div>
       </div>
-      <p className="mt-2 text-xs">رصيد تحليلي من مبالغك المسددة، بعد الصرف الأول واحتياطي التجديد. لا ينشئ مطالبة مالية أو تحويل أموال.</p>
-      {status.fundingAsOf && <p className="mt-2 text-xs">دفعات التأسيس المسدّدة حتى {formatDate(status.fundingAsOf)} تغطي حصتك من المصاريف من الأقدم للأحدث، حتى لو كان السداد متأخراً. هذه تغطية من رصيد التأسيس، وليست تغييراً لتاريخ الدفع.</p>}
+      <p className="mt-2 text-xs">هذا رصيد تحليلي من المبالغ اللي سددتها، بعد الصرف الأول واحتياطي التجديد. مو مطالبة مالية، وما يعني تحويل فلوس.</p>
+      {status.fundingAsOf && <p className="mt-2 text-xs">دفعات التأسيس المسدّدة حتى {formatDate(status.fundingAsOf)} تغطي حصتك من المصاريف من الأقدم للأحدث، حتى لو سددت متأخر. هذي تغطية من رصيد التأسيس، وما تغيّر تاريخ الدفع.</p>}
       </div>
     </details>
   );
@@ -314,7 +313,7 @@ function ExpenseStatementGroup({ label, amount, group, explanation = null, expla
         {onExplain && <button type="button" onClick={onExplain} aria-label="شرح احتياطي التجديد السنوي"
           aria-expanded={explanationOpen} aria-controls={explanationOpen ? explanationId : undefined}
           className="inline-flex items-center justify-center shrink-0 w-8 h-8 cursor-pointer focus-visible:outline-2 focus-visible:outline-primary-500 rounded-control"
-          title="ما معنى احتياطي التجديد؟">
+          title="ويش يعني احتياطي التجديد؟">
           <CircleHelp size={16} aria-hidden="true" />
         </button>}
       </div>} amount={amount} />
@@ -352,7 +351,7 @@ function ExpenseStatementGroup({ label, amount, group, explanation = null, expla
         </tr>
       ))}
       {!group?.items?.length && (
-        <tr><td colSpan={2} className="py-2 text-xs text-slate-500 dark:text-slate-400">لا توجد بنود في هذه المجموعة لهذا الشهر.</td></tr>
+        <tr><td colSpan={2} className="py-2 text-xs text-slate-500 dark:text-slate-400">ما فيه بنود في هالمجموعة لهالشهر.</td></tr>
       )}
             </tbody></table>
         </div>
@@ -381,8 +380,8 @@ export function IncomeStatementCard({
         <SectionHeader title="قائمة الدخل" subtitle="حصّتك من نتيجة الشهر" />
         <EmptyState
           icon={TrendingUp}
-          title="لم تُسجَّل لك عمالة بعد"
-          hint="راجع الإدارة لتسجيل عدد عمالتك."
+          title="للحين ما تسجّل لك عدد عمال"
+          hint="تواصل مع الإدارة عشان يسجّلون عدد عمالك."
         />
       </Card>
     );
@@ -414,14 +413,14 @@ export function IncomeStatementCard({
       {!statement.hasActivity ? (
         <EmptyState
           icon={Calendar}
-          title="لا توجد حركة مُرحّلة في هذا الشهر"
-          hint="اختر شهراً آخر — لا توجد مصروفات أو إيرادات متاحة لهذه الفترة."
+          title="ما فيه حركة مُرحّلة لهالشهر"
+          hint="اختار شهر ثاني؛ ما فيه مصروفات أو إيرادات متاحة لهالفترة."
         />
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full table-fixed text-sm [&_td]:px-2 [&_td:first-child]:whitespace-normal [&_td:first-child]:break-words [&_td:last-child]:text-xs sm:[&_td:last-child]:text-sm">
             <caption className="text-right text-xs text-slate-500 dark:text-slate-400 pb-3 leading-relaxed">
-              تفصيل حصتك من المصروفات — البنود أدناه ضمن إجمالي مجموعتها، وليست خصماً إضافياً.
+              هذي تفاصيل حصتك من المصروفات. البنود اللي تحت داخلة في إجمالي مجموعتها، مو خصم زيادة.
             </caption>
             <colgroup><col /><col className="w-32 sm:w-44" /></colgroup>
             <tbody>
@@ -437,15 +436,15 @@ export function IncomeStatementCard({
               <ExpenseStatementGroup key={`annual:${activeMonth}`} label="احتياطي التجديد السنوي — حصة هذا الشهر" amount={statement.annualReserve || 0} group={groups.annual}
                 onExplain={() => setReserveHelpOpen(open => !open)} explanationOpen={reserveHelpOpen} explanationId={reserveHelpId}
                 explanation={<>
-                  <p>نخصص جزءاً من ربح الشهر لتجديد المصاريف السنوية، مثل السكن والتأمين، في السنة القادمة. حصتك السنوية ÷ 12 هي الحصة الشهرية المخططة، وليست دفعة سنوية ثانية.</p>
-                  <p>نحجز من الربح المتاح بعد المصروفات والرسوم فقط. شهر الخسارة أو التعادل لا نحجز فيه أي مبلغ؛ وإذا الربح أقل من المخطط، نحجز بقدره فقط. لا نحمل الأشهر التالية مبالغ الأشهر التي لم نحجز فيها.</p>
+                  <p>نخصص جزء من ربح الشهر لتجديد المصاريف السنوية، مثل السكن والتأمين، للسنة الجاية. حصتك السنوية ÷ 12 هي الحصة الشهرية المخططة، مو دفعة سنوية ثانية.</p>
+                  <p>نحجز بس من الربح المتاح بعد المصروفات والرسوم. إذا الشهر فيه خسارة أو تعادل، ما نحجز أي مبلغ. وإذا الربح أقل من المخطط، نحجز قدّه بس. والأشهر اللي ما حجزنا فيها، ما نحمّل مبالغها على الأشهر اللي بعدها.</p>
                   {reservePolicy && <>
                     <p>المخطط لهذا الشهر: {formatCurrency(reservePolicy.scheduledAmount)} · الربح المتاح: {formatCurrency(reservePolicy.availableProfit)} · المحتسب: {formatCurrency(statement.annualReserve || 0)}</p>
-                    {reservePolicy.reason === 'no-profit' && <p className="font-semibold">لم يُحتسب هذا الشهر: لا يوجد ربح متاح.</p>}
-                    {reservePolicy.reason === 'limited' && <p className="font-semibold">حُجز بقدر الربح المتاح فقط، أقل من الحصة الشهرية المخططة.</p>}
-                    {reservePolicy.reason === 'no-schedule' && <p>لا توجد حصة سنوية مخططة لهذا الشهر.</p>}
+                    {reservePolicy.reason === 'no-profit' && <p className="font-semibold">ما احتسبنا احتياطي لهالشهر، لأن ما فيه ربح متاح.</p>}
+                    {reservePolicy.reason === 'limited' && <p className="font-semibold">حجزنا قدّ الربح المتاح بس، وهو أقل من الحصة الشهرية المخططة.</p>}
+                    {reservePolicy.reason === 'no-schedule' && <p>ما فيه حصة سنوية مخططة لهالشهر.</p>}
                   </>}
-                  <p className="text-xs">هذا احتساب في التقرير، وليس تحويل أموال فعلياً أو تغييراً في قيود الشركة.</p>
+                  <p className="text-xs">هذي حسبة في التقرير، مو تحويل فلوس فعلي ولا تغيير في قيود الشركة.</p>
                 </>} />
               <StatementRow label="= حصتك التحليلية من نتيجة الشركة" amount={statement.netAfterReserve ?? statement.netProfit} kind="final" />
               {foundingStatus?.available && <>
@@ -458,18 +457,14 @@ export function IncomeStatementCard({
             <div aria-label="ملخص المصروفات" className="mt-3 space-y-1 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
               <p>إجمالي المصروفات الثابتة الشهرية والسنوية: {formatCurrency(statement.expenseBreakdown.fixedTotal)}</p>
               <p>إجمالي مصروفاتك واحتياطي التجديد: {formatCurrency(statement.expenseBreakdown.total)}</p>
-              <p>الشهري والمتغيّر يخصّان شهرهما. كل بند سنوي ÷ 12 لتجديد السنة القادمة، ويُحتسب من الربح المتاح فقط؛ الدفعة الأولى لا تُخصم مرة ثانية.</p>
+              <p>المصاريف الشهرية والمتغيّرة تخص نفس شهرها. كل بند سنوي ÷ 12 لتجديد السنة الجاية، ونحسبه بس من الربح المتاح؛ الدفعة الأولى ما تنخصم مرة ثانية.</p>
             </div>
           )}
           <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-3 leading-relaxed">
-            الأرقام أعلاه حصّتك التحليلية من نتائج الشركة الشهرية،
-            محسوبة على عدد العمالة، وتشمل المصروفات المسجلة والالتزامات الدورية واحتياطي التجديد.
-            هذا تقرير حصتك التشغيلي؛ لا يغيّر قائمة الشركة المحاسبية.
+            الأرقام اللي فوق هي حصّتك التحليلية من نتائج الشركة الشهرية، محسوبة على عدد العمال. وتشمل المصروفات المسجلة والالتزامات الدورية واحتياطي التجديد. هذا تقرير حصتك التشغيلي، وما يغيّر قائمة الشركة المحاسبية.
           </p>
           <p className="text-xs text-amber-800 dark:text-amber-200 mt-3 p-3 rounded-control bg-amber-50 dark:bg-amber-500/10 leading-relaxed">
-            لا تُنشئ هذه النتيجة مطالبة مالية جديدة عليك ولا تعني توزيعاً نقدياً.
-            المسجّل في سندات رأس مالك: {formatCurrency(paid)}، وتفاصيله في «رأس مالي».
-            وظهور المصروف في حسابات الشركة لا يعني مطالبتك بدفعه مرة ثانية.
+            هذي النتيجة مو مطالبة مالية جديدة عليك، ولا تعني توزيع نقدي. المسجّل في سندات رأس مالك: {formatCurrency(paid)}، وتفاصيله في «رأس مالي». إذا المصروف ظاهر في حسابات الشركة، مو معناته مطلوب منك تدفعه مرة ثانية.
           </p>
         </div>
       )}
@@ -511,15 +506,15 @@ function OverviewView({
           <EmptyState
             compact
             icon={TrendingUp}
-            title="لم تُسجَّل لك عمالة بعد"
-            hint="راجع الإدارة لتسجيل عدد عمالتك."
+            title="للحين ما تسجّل لك عدد عمال"
+            hint="تواصل مع الإدارة عشان يسجّلون عدد عمالك."
           />
         ) : !latestStatement.hasActivity ? (
           <EmptyState
             compact
             icon={Calendar}
-            title="لا توجد حركة مُرحّلة بعد"
-            hint="ستظهر نتيجتك هنا حالما تُرحَّل قيود الشهر."
+            title="للحين ما فيه حركة مُرحّلة"
+            hint="بتشوف نتيجتك هنا إذا ترحّلت قيود الشهر."
           />
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -542,7 +537,7 @@ function OverviewView({
               label={latestStatement.netAfterReserve < 0 ? 'مبلغ إضافي مطلوب منك' : 'حصتك التحليلية من نتيجة الشركة'}
               value={formatCurrency(Math.max(0, latestStatement.netAfterReserve || 0))}
               sub={latestStatement.netAfterReserve < 0
-                ? 'الرسوم المدفوعة مسبقاً لا تُطلب منك مرة أخرى؛ هذه النتيجة ليست مطالبة'
+                ? 'الرسوم اللي دفعتها من قبل ما نطلبها منك مرة ثانية؛ هذي النتيجة مو مطالبة'
                 : (momText(mom) || 'حسب حصتك في التشغيل')}
             />
           </div>
@@ -566,7 +561,7 @@ function OverviewView({
             value={washShare ? formatNumber(washShare.shareCount) : '—'}
             sub={washShare
               ? formatMonthLabel(washShare.month)
-              : 'يُحسب من سجل الغسلات عند توفّره'}
+              : 'نحسبه من سجل الغسلات إذا صار متاح'}
           />
         </div>
       )}
@@ -576,7 +571,7 @@ function OverviewView({
         <Card className="p-5">
           <SectionHeader
             title="مقارنة نتائج الشركة برأس مالك"
-            subtitle="مؤشر تحليلي لنتائج التشغيل مقابل ما دفعته، وليس استرداداً أو توزيعاً نقدياً"
+            subtitle="هذا مؤشر تحليلي لنتائج التشغيل مقابل اللي دفعته، مو استرداد ولا توزيع نقدي"
           />
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
             <StatCard
@@ -584,14 +579,14 @@ function OverviewView({
               tone="emerald"
               label="حصتك التحليلية من النتائج منذ البداية"
               value={formatCurrency(roi.cumulativeProfit)}
-              sub={roi.firstMonth ? `منذ ${formatMonthLabel(roi.firstMonth)} — ${formatNumber(roi.monthsCounted)} شهراً` : 'لا أشهر مُرحّلة بعد'}
+              sub={roi.firstMonth ? `منذ ${formatMonthLabel(roi.firstMonth)} — ${formatNumber(roi.monthsCounted)} شهراً` : 'للحين ما فيه أشهر مُرحّلة'}
             />
             <StatCard
               icon={TrendingUp}
               tone={roi.recovered ? 'emerald' : 'primary'}
               label="نسبة التعادل التحليلي"
               value={roi.paid > 0 ? `${Math.max(0, roi.recoveredPercent).toFixed(1)}%` : '—'}
-              sub={roi.paid > 0 ? (roi.recovered ? 'النتائج التراكمية تعادل ما دفعته؛ ليست دفعة مستلمة' : `الفارق التحليلي ${formatCurrency(roi.remaining)}`) : 'لم تُسجَّل دفعات بعد'}
+              sub={roi.paid > 0 ? (roi.recovered ? 'النتائج التراكمية تعادل اللي دفعته؛ مو دفعة استلمتها' : `الفارق التحليلي ${formatCurrency(roi.remaining)}`) : 'للحين ما تسجّلت دفعات'}
             />
             <StatCard
               icon={Calendar}
@@ -599,9 +594,9 @@ function OverviewView({
               label="المتوقع للتعادل"
               value={roi.recovered ? '✓ تعادل' : (roi.monthsToRecover === null ? 'غير محدد' : `~${formatNumber(roi.monthsToRecover)} شهراً`)}
               sub={roi.recovered
-                ? 'تعادلٌ محاسبي لا يثبت توزيعاً أو استرداداً نقدياً'
+                ? 'هذا تعادل محاسبي، وما يثبت توزيع أو استرداد نقدي'
                 : (roi.monthsToRecover === null
-                  ? 'متوسط آخر الأشهر صفرٌ أو سالب'
+                  ? 'متوسط الأشهر الأخيرة صفر أو سالب'
                   : `بمتوسط ${formatCurrency(roi.avgRecent)} شهرياً (آخر ${formatNumber(roi.monthsAveraged)} أشهر)`)}
             />
           </div>
@@ -611,7 +606,7 @@ function OverviewView({
             color={roi.recovered ? 'emerald' : 'primary'}
           />
           <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-3 leading-relaxed">
-            تقديرٌ لا وعد: يُبنى على نتائج التشغيل والالتزامات المسجلة، وليس قرار توزيع أرباح.
+            هذا تقدير، مو وعد. يعتمد على نتائج التشغيل والالتزامات المسجلة، ومو قرار توزيع أرباح.
           </p>
         </Card>
       )}
@@ -624,13 +619,13 @@ export function CapitalLedgerNotice({ summary }) {
   if (!summary?.ledgerAvailable || !(Math.abs(summary.unposted) > 0.005)) return null;
   const pending = summary.unposted > 0;
   return <Card className="p-5">
-    <SectionHeader title="رصيدك في الدفاتر" subtitle="يوجد فرق بين سنداتك والدفاتر — لا يغيّر مبلغ السداد المعروض أعلاه" />
+    <SectionHeader title="رصيدك في الدفاتر" subtitle="فيه فرق بين سنداتك والدفاتر، بس ما يغيّر مبلغ السداد اللي فوق" />
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <StatCard icon={BookOpen} label="المُرحَّل في الدفاتر" value={formatCurrency(summary.ledgerBalance)}
         sub="رصيد حساب رأس مالك من القيود المُرحّلة" />
       <StatCard icon={Clock3} tone="amber" label={pending ? 'قيد الترحيل' : 'فرق يحتاج مراجعة'}
         value={formatCurrency(Math.abs(summary.unposted))}
-        sub={pending ? 'دفعات مسجلة بالسندات ولم تُرحّل إلى الدفاتر بعد' : 'رصيد الدفاتر أعلى من سنداتك — يلزم مراجعة الإدارة'} />
+        sub={pending ? 'دفعات مسجلة بالسندات، بس للحين ما ترحّلت للدفاتر' : 'رصيد الدفاتر أعلى من سنداتك؛ تواصل مع الإدارة عشان يراجعونه'} />
     </div>
   </Card>;
 }
@@ -665,8 +660,8 @@ function CapitalView({
         {myReceipts.length === 0 ? (
           <EmptyState
             icon={HandCoins}
-            title="لا توجد دفعات مسجّلة بعد"
-            hint="ستظهر هنا كل دفعة رأس مال تُسجَّل باسمك."
+            title="للحين ما فيه دفعات مسجّلة"
+            hint="كل دفعة رأس مال تتسجّل باسمك، بتشوفها هنا."
           />
         ) : (
           <div className="overflow-x-auto">
@@ -711,7 +706,7 @@ function CapitalView({
       <Card className="p-5">
         <SectionHeader title="تحصيل رأس المال شهرياً" subtitle="سنداتك خلال آخر ٦ أشهر" />
         {receiptsTrend.total === 0 ? (
-          <EmptyState compact icon={Calendar} title="لا توجد سندات قبض في آخر ٦ أشهر" />
+          <EmptyState compact icon={Calendar} title="ما فيه سندات قبض في آخر ٦ أشهر" />
         ) : (
           <ColumnTrend
             months={receiptsTrend.months}
@@ -733,8 +728,8 @@ function TrendsView({ hasShare, profitTrend, washTrend = null }) {
         <SectionHeader title="حصتك من نتيجة الشركة شهرياً" subtitle="آخر ٦ أشهر" />
         <EmptyState
           icon={TrendingUp}
-          title="لم تُسجَّل لك عمالة بعد"
-          hint="راجع الإدارة لتسجيل عدد عمالتك، فالنسبة تُحسب عليه."
+          title="للحين ما تسجّل لك عدد عمال"
+          hint="تواصل مع الإدارة عشان يسجّلون عدد عمالك، لأن النسبة تنحسب عليه."
         />
       </Card>
     );
@@ -750,7 +745,7 @@ function TrendsView({ hasShare, profitTrend, washTrend = null }) {
         <EmptyState
           compact
           icon={TrendingUp}
-          title="لا توجد حركة مُرحّلة في آخر ٦ أشهر"
+          title="ما فيه حركة مُرحّلة في آخر ٦ أشهر"
         />
       ) : (
         <LineTrend
@@ -784,7 +779,7 @@ function TrendsView({ hasShare, profitTrend, washTrend = null }) {
           subtitle={`حصتك من الغسلات المكتملة — آخر ${formatNumber(washTrend.months.length)} أشهر`}
         />
         {washTrend.total === 0 ? (
-          <EmptyState compact icon={Droplets} title="لا غسلات مكتملة في هذه الأشهر" />
+          <EmptyState compact icon={Droplets} title="ما فيه غسلات مكتملة في هالأشهر" />
         ) : (
           <ColumnTrend
             months={washTrend.months}
@@ -959,14 +954,14 @@ function InvestorPortal({ partner, view }) {
     return (
       <>
         <TopBar title={meta.title} subtitle={meta.subtitle} />
-        <LoadingState message="جارٍ تحميل بياناتك..." />
+        <LoadingState message="نحمّل بياناتك..." />
       </>
     );
   }
 
   // Never silently fall back to the old, incomplete salary-only view.
   if (allocationError && ['overview', 'income', 'trends'].includes(view)) {
-    return <><TopBar title={meta.title} subtitle={meta.subtitle} /><main className="p-4 sm:p-6"><ErrorState title="تعذّر تأكيد المصروفات ورصيد التأسيس" error={allocationError} /></main></>;
+    return <><TopBar title={meta.title} subtitle={meta.subtitle} /><main className="p-4 sm:p-6"><ErrorState title="ما قدرنا نتأكد من المصروفات ورصيد التأسيس" error={allocationError} /></main></>;
   }
 
   return (
@@ -975,7 +970,7 @@ function InvestorPortal({ partner, view }) {
 
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
         {!isFirebaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
-        {anyError && <ErrorState title="تعذّر تحميل بياناتك" error={anyError} />}
+        {anyError && <ErrorState title="ما قدرنا نحمّل بياناتك" error={anyError} />}
 
         {['overview', 'income', 'trends'].includes(view) && <PartnerEligibilityNotice eligibility={allocationReport?.statements.find(s => s.periodKey === statementMonth)?.eligibility} periodKey={statementMonth} />}
 
@@ -1058,8 +1053,8 @@ export default function InvestorPage({ view = 'overview' }) {
         <TopBar title={meta.title} subtitle={meta.subtitle} />
         <main className="p-4 sm:p-6 lg:p-8">
           {partnerLinkLoading
-            ? <LoadingState message="جارٍ التحقق من ربط حسابك..." />
-            : <ErrorState title="تعذّر التحقق من ربط حسابك" error={partnerLinkError} onRetry={recheckPartnerLink} />}
+            ? <LoadingState message="نتأكد من ربط حسابك..." />
+            : <ErrorState title="ما قدرنا نتأكد من ربط حسابك" error={partnerLinkError} onRetry={recheckPartnerLink} />}
         </main>
       </>
     );

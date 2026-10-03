@@ -115,7 +115,7 @@ describe('مقارنة فترات الشريك', () => {
     expect(screen.getByRole('table', { name: 'مقارنة أرقام حصتك' })).toBeTruthy();
     expect(screen.queryByText(/20\.0%/)).toBeNull();
     fireEvent.change(screen.getByLabelText('نوع المقارنة'), { target: { value: 'year' } });
-    expect(screen.getByText('تحتاج فترتين مختلفتين للمقارنة')).toBeTruthy();
+    expect(screen.getByText('عشان تقارن، اختار فترتين مختلفتين')).toBeTruthy();
   });
 });
 
@@ -168,8 +168,8 @@ describe('صفحة المستثمر — قائمة الدخل', () => {
         netAfterReserve: -40, totalCosts: 40, totalAllocation: 40 }}
       foundingStatus={{ available: true, budget: 200000, funded: 200000, covered: 40,
         remaining: 199960, uncovered: 0, fundingAsOf: '2026-10-03', cashPaidThroughMonth: 0 }} />);
-    expect(screen.getByText(/حتى لو كان السداد متأخراً/)).toBeTruthy();
-    expect(screen.getByText(/ليست تغييراً لتاريخ الدفع/)).toBeTruthy();
+    expect(screen.getByText(/حتى لو سددت متأخر/)).toBeTruthy();
+    expect(screen.getByText(/ما تغيّر تاريخ الدفع/)).toBeTruthy();
     expect(amountIn(screen.getByText('تغطية من رصيد رسوم التأسيس').closest('tr'))).toBe(40);
     expect(amountIn(screen.getByText('= نتيجتك بعد تغطية التأسيس').closest('tr'))).toBe(0);
     expect(screen.getByRole('combobox', { name: 'فترة التقرير (الشهر)' }).value).toBe('2026-05');
@@ -178,16 +178,16 @@ describe('صفحة المستثمر — قائمة الدخل', () => {
     render(<InvestorPage view="income" />);
     const button = screen.getByRole('button', { name: 'شرح احتياطي التجديد السنوي' });
     expect(button.getAttribute('aria-expanded')).toBe('false');
-    expect(screen.queryByText(/نخصص جزءاً من ربح الشهر لتجديد/)).toBeNull();
+    expect(screen.queryByText(/نخصص جزء من ربح الشهر لتجديد/)).toBeNull();
     fireEvent.click(button);
     expect(button.getAttribute('aria-expanded')).toBe('true');
     const explanation = document.getElementById(button.getAttribute('aria-controls'));
-    expect(explanation.textContent).toContain('نخصص جزءاً من ربح الشهر لتجديد');
-    expect(explanation.textContent).toContain('شهر الخسارة أو التعادل لا نحجز فيه أي مبلغ');
+    expect(explanation.textContent).toContain('نخصص جزء من ربح الشهر لتجديد');
+    expect(explanation.textContent).toContain('إذا الشهر فيه خسارة أو تعادل، ما نحجز أي مبلغ');
     expect(explanation.textContent).toContain('بعد المصروفات والرسوم');
     fireEvent.click(button);
     expect(button.getAttribute('aria-expanded')).toBe('false');
-    expect(screen.queryByText(/نخصص جزءاً من ربح الشهر لتجديد/)).toBeNull();
+    expect(screen.queryByText(/نخصص جزء من ربح الشهر لتجديد/)).toBeNull();
   });
   it.each(['no-profit', 'limited'])('يبين سبب احتياطي الشهر (%s) ولا يعرض المخطط كخصم', reason => {
     const reserved = reason === 'limited' ? 50 : 0;
@@ -205,8 +205,8 @@ describe('صفحة المستثمر — قائمة الدخل', () => {
     fireEvent.click(button);
     fireEvent.click(screen.getByRole('button', { name: 'تفاصيل احتياطي التجديد السنوي — حصة هذا الشهر' }));
     expect(amountIn(screen.getByText('إيجار السكن').closest('tr'))).toBe(reserved);
-    if (reason === 'no-profit') expect(screen.getByText('لم يُحتسب هذا الشهر: لا يوجد ربح متاح.')).toBeTruthy();
-    else expect(screen.getByText('حُجز بقدر الربح المتاح فقط، أقل من الحصة الشهرية المخططة.')).toBeTruthy();
+    if (reason === 'no-profit') expect(screen.getByText('ما احتسبنا احتياطي لهالشهر، لأن ما فيه ربح متاح.')).toBeTruthy();
+    else expect(screen.getByText('حجزنا قدّ الربح المتاح بس، وهو أقل من الحصة الشهرية المخططة.')).toBeTruthy();
   });
   it('تظهر المجاميع وحدها أولاً، وكل مجموعة تفتح وتغلق تفاصيلها دون تغيير المجموع', () => {
     render(<InvestorPage view="income" />);
@@ -294,8 +294,8 @@ describe('صفحة المستثمر — قائمة الدخل', () => {
     partnerView.viewedPartner = null;
     partnerView.partnerLinkLoading = true;
     render(<InvestorPage />);
-    expect(screen.getByText('جارٍ التحقق من ربط حسابك...')).toBeTruthy();
-    expect(screen.queryByText(/لم يُربط حسابك بسجل شريك بعد/)).toBeNull();
+    expect(screen.getByText('نتأكد من ربط حسابك...')).toBeTruthy();
+    expect(screen.queryByText(/حسابك للحين ما انربط بسجل شريك/)).toBeNull();
   });
 
   it('يفصل خطأ القراءة عن فقد الربط ويتيح إعادة القراءة فقط', () => {
@@ -303,8 +303,8 @@ describe('صفحة المستثمر — قائمة الدخل', () => {
     partnerView.partnerLinkError = new Error('connection failed');
     partnerView.recheckPartnerLink = vi.fn();
     render(<InvestorPage />);
-    expect(screen.getByText('تعذّر التحقق من ربط حسابك')).toBeTruthy();
-    expect(screen.queryByText(/لم يُربط حسابك بسجل شريك بعد/)).toBeNull();
+    expect(screen.getByText('ما قدرنا نتأكد من ربط حسابك')).toBeTruthy();
+    expect(screen.queryByText(/حسابك للحين ما انربط بسجل شريك/)).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'إعادة المحاولة' }));
     expect(partnerView.recheckPartnerLink).toHaveBeenCalledOnce();
   });
@@ -324,7 +324,7 @@ describe('صفحة المستثمر — قائمة الدخل', () => {
     paymentsState.payments = [{ id: 'r1', partnerId: 'p1', amount: 30000, paymentDate: '2026-07-01' }];
     render(<InvestorPage view="income" />);
     expect(screen.getByText('= حصتك التحليلية من نتيجة الشركة')).toBeTruthy();
-    expect(screen.getByText(/لا تُنشئ هذه النتيجة مطالبة مالية جديدة عليك/)).toBeTruthy();
+    expect(screen.getByText(/هذي النتيجة مو مطالبة مالية جديدة عليك/)).toBeTruthy();
     expect(screen.getByText(/المسجّل في سندات رأس مالك:.*30,000/)).toBeTruthy();
     expect(screen.queryByText('= صافي ربحك من هذا الشهر')).toBeNull();
   });
@@ -347,7 +347,7 @@ describe('صفحة المستثمر — قائمة الدخل', () => {
 
   it('تعرض حصة الشريك من الفئات والبنود التفصيلية دون كشف شريك آخر', () => {
     render(<InvestorPage view="income" />);
-    expect(screen.getByText(/تفصيل حصتك من المصروفات —/)).toBeTruthy();
+    expect(screen.getByText(/هذي تفاصيل حصتك من المصروفات/)).toBeTruthy();
     expect(screen.getByText('المصاريف المتغيرة والعمولات')).toBeTruthy();
     expect(screen.getByText('المصاريف الشهرية والرواتب')).toBeTruthy();
     expect(screen.getByText('احتياطي التجديد السنوي — حصة هذا الشهر')).toBeTruthy();
@@ -395,19 +395,19 @@ describe('صفحة المستثمر — قائمة الدخل', () => {
   it('عمالة صفر: إشعارٌ لا قائمة أصفار', () => {
     partnerView.viewedPartner = { id: 'p1', partnerName: 'سالم', workersCount: 0, userId: 'uid1' };
     render(<InvestorPage view="income" />);
-    expect(screen.getByText('لم تُسجَّل لك عمالة بعد')).toBeTruthy();
+    expect(screen.getByText('للحين ما تسجّل لك عدد عمال')).toBeTruthy();
     expect(screen.queryByText('إيرادات المبيعات')).toBeNull();
   });
   it('عطل مصدر المصروفات لا يعيد عرض حسبة الرواتب الناقصة ولا صفراً مضللاً', () => {
     statementError = new Error('تعذر قراءة المصروفات');
     render(<InvestorPage view="income" />);
-    expect(screen.getByText('تعذّر تأكيد المصروفات ورصيد التأسيس')).toBeTruthy();
+    expect(screen.getByText('ما قدرنا نتأكد من المصروفات ورصيد التأسيس')).toBeTruthy();
     expect(screen.queryByText('إيرادات المبيعات')).toBeNull();
   });
   it('يسمي السنوي احتياطياً ولا يقول إنه مصروف كامل في شهر القيد', () => {
     render(<InvestorPage view="income" />);
     expect(screen.getByText('احتياطي التجديد السنوي — حصة هذا الشهر')).toBeTruthy();
-    expect(screen.getByText(/كل بند سنوي ÷ 12 لتجديد السنة القادمة/)).toBeTruthy();
+    expect(screen.getByText(/كل بند سنوي ÷ 12 لتجديد السنة الجاية/)).toBeTruthy();
     expect(screen.queryByText(/المبلغ السنوي يظهر في شهر قيده/)).toBeNull();
   });
 });
@@ -467,7 +467,7 @@ describe('صفحة المستثمر — الخيارات الأربعة', () => 
 
   it('وبلا دفعات: حالة فارغة لا صفٌّ بصفر', () => {
     render(<InvestorPage view="capital" />);
-    expect(screen.getByText('لا توجد دفعات مسجّلة بعد')).toBeTruthy();
+    expect(screen.getByText('للحين ما فيه دفعات مسجّلة')).toBeTruthy();
   });
 
   it('«اتجاه ٦ أشهر» تعرض الرسم وحده', () => {
@@ -493,7 +493,7 @@ describe('صفحة المستثمر — الخيارات الأربعة', () => 
     partnerView.investorLinkMissing = true;
     for (const view of ['overview', 'capital', 'journey', 'income', 'trends']) {
       render(<InvestorPage view={view} />);
-      expect(screen.getByText(/لم يُربط حسابك بسجل شريك بعد/)).toBeTruthy();
+      expect(screen.getByText(/حسابك للحين ما انربط بسجل شريك/)).toBeTruthy();
       expect(screen.queryByText('إيرادات المبيعات')).toBeNull();
       expect(screen.queryByText('سندات قبضك')).toBeNull();
       cleanup();
@@ -517,7 +517,7 @@ describe('صفحة المستثمر — المؤشرات الجديدة', () => 
     render(<InvestorPage view="overview" />);
     const demandCard = screen.getByText('مبلغ إضافي مطلوب منك').closest('.sw-stat-card');
     expect(demandCard.querySelector('.sw-stat-value').textContent).toContain('0.00');
-    expect(screen.getByText(/الرسوم المدفوعة مسبقاً لا تُطلب منك مرة أخرى/)).toBeTruthy();
+    expect(screen.getByText(/الرسوم اللي دفعتها من قبل ما نطلبها منك مرة ثانية/)).toBeTruthy();
     expect(screen.queryByText('صافي ربحك')).toBeNull();
   });
 
@@ -560,7 +560,7 @@ describe('صفحة المستثمر — المؤشرات الجديدة', () => 
     render(<InvestorPage view="overview" />);
     const card = screen.getByText('غسلات تعادل حصّتك').closest('.sw-stat-card');
     expect(card.querySelector('.sw-stat-value').textContent.trim()).toBe('—');
-    expect(card.textContent).toContain('يُحسب من سجل الغسلات عند توفّره');
+    expect(card.textContent).toContain('نحسبه من سجل الغسلات إذا صار متاح');
     expect(card.textContent).not.toContain('من أصل');
   });
 

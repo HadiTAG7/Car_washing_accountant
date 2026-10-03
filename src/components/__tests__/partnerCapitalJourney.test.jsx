@@ -16,7 +16,7 @@ describe('رحلة رأس مال الشريك', () => {
     const report = { ...journeyReport, factor };
     const before = JSON.stringify(report);
     const { container } = render(<CapitalJourneyContent report={report} />);
-    expect(screen.getByText(/الأرقام أدناه تخص حصتك فقط\./)).toBeTruthy();
+    expect(screen.getByText(/الأرقام اللي تحت تخص حصتك بس\./)).toBeTruthy();
     expect(container.textContent).not.toMatch(/[%٪]/);
     expect(screen.getByText('المتبقي حسب التقرير').parentElement.textContent).toContain('8,800.00');
     expect(JSON.stringify(report)).toBe(before);
@@ -25,7 +25,7 @@ describe('رحلة رأس مال الشريك', () => {
     render(<CapitalJourneyContent report={{ ...journeyReport, through: '2026-06-30',
       capitalJourney: { ...journeyReport.capitalJourney, fundingAsOf: '2026-10-03',
         receipts: [{ id: 'late', date: '2026-07-16', amount: 20000 }] } }} />);
-    expect(screen.getByText(/تشمل الدفعات المتأخرة دون تغيير تواريخ سنداتها/)).toBeTruthy();
+    expect(screen.getByText(/تشمل الدفعات المتأخرة من غير ما تتغيّر تواريخ سنداتها/)).toBeTruthy();
     expect(screen.getByText(/16 يوليو 2026/)).toBeTruthy();
   });
   it('تعرض الفرنشايز والدباب وسنداته وتفصل المصاريف عن المحجوز', () => {
@@ -36,7 +36,7 @@ describe('رحلة رأس مال الشريك', () => {
     expect(within(table).getByText(/10,000.00/)).toBeTruthy();
     expect(screen.getByText('احتياطي التجديد المحجوز — لم يُصرف')).toBeTruthy();
     expect(screen.getByText('المتبقي حسب التقرير').parentElement.textContent).toContain('8,800.00');
-    expect(screen.getByText('رأس المال الذي دفعته').parentElement.textContent).toContain('20,000.00');
+    expect(screen.getByText('رأس المال اللي دفعته').parentElement.textContent).toContain('20,000.00');
     expect(screen.getByText(/رصيد تحليلي/)).toBeTruthy();
   });
   it('المجموعات مغلقة افتراضياً والضغط يفتح التفاصيل ويغلقها دون تغيير الإجمالي', () => {
@@ -67,7 +67,7 @@ describe('رحلة رأس مال الشريك', () => {
     query.mockReturnValue({ report: null, loading: false, error: new Error('source unavailable'), refetch });
     render(<Page partner={{ id: 'p1' }} meta={{ title: 'رحلة رأس مالي' }} />);
     expect(query).toHaveBeenCalledWith({ partnerId: 'p1', includeCapitalJourney: true });
-    expect(screen.getByText('تعذّر تحميل رحلة رأس مالك')).toBeTruthy();
+    expect(screen.getByText('ما قدرنا نحمّل رحلة رأس مالك')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /إعادة المحاولة/ }));
     expect(refetch).toHaveBeenCalledTimes(1);
     expect(screen.queryByText('المتبقي حسب التقرير')).toBeNull();
@@ -75,7 +75,7 @@ describe('رحلة رأس مال الشريك', () => {
   it('لا يعرض أصفاراً أو رصيداً أثناء تحميل التقرير', () => {
     query.mockReturnValue({ report: null, loading: true, error: null });
     render(<Page partner={{ id: 'p1' }} meta={{ title: 'رحلة رأس مالي' }} />);
-    expect(screen.getByText('جارٍ تحميل رحلة رأس مالك...')).toBeTruthy();
-    expect(screen.queryByText('رأس المال الذي دفعته')).toBeNull();
+    expect(screen.getByText('نحمّل رحلة رأس مالك...')).toBeTruthy();
+    expect(screen.queryByText('رأس المال اللي دفعته')).toBeNull();
   });
 });

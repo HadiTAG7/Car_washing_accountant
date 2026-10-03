@@ -135,7 +135,7 @@ export default function PartnerStatementModal({ isOpen, onClose, partner }) {
             </p>
             {rows.length === 0 ? (
               <p className="text-xs text-slate-500 dark:text-slate-400 italic py-3">
-                لا توجد دفعات مسجّلة بسندات مؤرخة. المبلغ المُسدَّد أعلاه مُدخل إجمالاً.
+                ما فيه دفعات مسجّلة بسندات لها تاريخ. المبلغ المسدّد اللي فوق مدخل كإجمالي.
               </p>
             ) : (
               <table className="w-full text-sm">
@@ -165,7 +165,7 @@ export default function PartnerStatementModal({ isOpen, onClose, partner }) {
           </div>
 
           <p className="mt-8 text-[10px] text-slate-500 dark:text-slate-400 text-center print:mt-12">
-            كشف آلي صادر من نظام {BRAND.nameAr} — {today}
+            كشف طالع تلقائياً من نظام {BRAND.nameAr} — {today}
           </p>
         </div>
       </div>

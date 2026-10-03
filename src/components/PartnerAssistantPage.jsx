@@ -45,19 +45,19 @@ const when = (iso) => {
 const CAN_SEE = [
   'عدد عمالك فقط',
   'رأس مالك: المطلوب والمسدَّد والمتبقّي، وسندات قبضك',
-  'قائمة الدخل بحصّتك لأي شهرٍ مُرحَّل، وتفصيل المصاريف بالحساب',
+  'قائمة الدخل بحصّتك لأي شهر مُرحَّل، وتفاصيل المصاريف حسب الحساب',
   'عدد الغسلات التي تعادل حصّتك فقط',
   'اتجاه حصتك التحليلية من نتيجة الشركة خلال الأشهر الماضية',
 ];
 const CANNOT_SEE = [
   'أسماء العاملين أو رواتبهم أو بياناتهم',
-  'بيانات أي شريكٍ آخر أو سنداته',
+  'بيانات أي شريك ثاني أو سنداته',
   'الدفاتر الخام أو أرقام الشركة غير المقسومة',
-  'أي تعديل — الرابط للقراءة فقط، ولا أداة كتابة فيه أصلاً',
+  'أي تعديل؛ الرابط للقراءة بس، وما فيه أداة تقدر تغيّر البيانات',
 ];
 
 const REVOKE_FIELDS = [
-  { name: 'reason', label: 'السبب', type: 'textarea', placeholder: 'اختياري — مثلاً: بدّلت جهازي', hint: 'يُسجَّل مع الإلغاء للمراجعة.' },
+  { name: 'reason', label: 'السبب', type: 'textarea', placeholder: 'اختياري — مثلاً: بدّلت جهازي', hint: 'يتسجّل مع الإلغاء عشان المراجعة.' },
 ];
 
 export default function PartnerAssistantPage({ partner, meta }) {
@@ -87,9 +87,9 @@ export default function PartnerAssistantPage({ partner, meta }) {
       const r = await createKey(null);
       setFresh(r);
       setDialog(null);
-      showToast(active ? 'بُدِّل الرابط — القديم لم يعد يعمل' : 'أُنشئ رابطك — انسخه الآن');
+      showToast(active ? 'تبدّل الرابط؛ القديم ما عاد يشتغل' : 'رابطك جاهز؛ انسخه الحين');
     } catch (e) {
-      const msg = describeBackendError(e) || e?.message || 'تعذّر إنشاء الرابط';
+      const msg = describeBackendError(e) || e?.message || 'ما قدرنا ننشئ الرابط';
       if (dialog) setDialogError(msg); else showToast(msg, 'error');
     } finally { setBusy(false); }
   }
@@ -101,15 +101,15 @@ export default function PartnerAssistantPage({ partner, meta }) {
       await revokeKey(active.keyId, reason);
       setFresh(null);
       setDialog(null);
-      showToast('أُوقف الرابط — لن يعمل بعد الآن');
+      showToast('توقف الرابط؛ ما عاد بيشتغل');
     } catch (e) {
-      setDialogError(describeBackendError(e) || e?.message || 'تعذّر إيقاف الرابط');
+      setDialogError(describeBackendError(e) || e?.message || 'ما قدرنا نوقف الرابط');
     } finally { setBusy(false); }
   }
 
   const copy = async () => {
-    try { await navigator.clipboard?.writeText(url); showToast('نُسخ الرابط'); }
-    catch { showToast('تعذّر النسخ — حدّد الرابط وانسخه يدوياً', 'error'); }
+    try { await navigator.clipboard?.writeText(url); showToast('تم نسخ الرابط'); }
+    catch { showToast('ما قدرنا ننسخ الرابط؛ حدّده وانسخه بنفسك', 'error'); }
   };
 
   return (
@@ -117,7 +117,7 @@ export default function PartnerAssistantPage({ partner, meta }) {
       <TopBar title={meta.title} subtitle={meta.subtitle} />
 
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
-        {error && <ErrorState title="تعذّر تحميل حال الرابط" error={error} />}
+        {error && <ErrorState title="ما قدرنا نحمّل حالة الرابط" error={error} />}
 
         {/* ── ما هذا؟ ─────────────────────────────────────────────── */}
         <Card className="p-6">
@@ -128,21 +128,19 @@ export default function PartnerAssistantPage({ partner, meta }) {
             <div className="min-w-0 flex-1">
               <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">اسأل مساعدك عن حصّتك</h2>
               <p className="mt-1 text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
-                رابطٌ خاص بك تلصقه في Claude أو ChatGPT كـ«موصِّل مخصّص» (MCP)، فيصير مساعدك يقرأ
-                أرقامك — رأس مالك وقائمة دخلك — ويجيبك بلغتك: «كم ربحتُ هذا الشهر؟»، «كم بقي
-                عليّ من رأس المال؟»، «كم غسلة تعادل حصّتي في أغسطس؟».
+                هذا رابط خاص فيك، تلصقه في Claude أو ChatGPT كـ«موصِّل مخصّص» (MCP). بعدها يقدر مساعدك يقرأ أرقامك، مثل رأس مالك وقائمة دخلك، ويجاوبك بلغتك: «كم ربحت هالشهر؟»، «كم باقي عليّ من رأس المال؟»، «كم غسلة تعادل حصّتي في أغسطس؟».
               </p>
             </div>
           </div>
           <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="rounded-control border border-emerald-100 dark:border-emerald-500/30 bg-emerald-50/60 dark:bg-emerald-500/10 p-4">
-              <p className="text-xs font-bold text-emerald-800 dark:text-emerald-300 mb-2 flex items-center gap-1.5"><ShieldCheck size={14} /> ما يراه المساعد</p>
+              <p className="text-xs font-bold text-emerald-800 dark:text-emerald-300 mb-2 flex items-center gap-1.5"><ShieldCheck size={14} /> ويش يشوف مساعدك</p>
               <ul className="space-y-1.5 text-[13px] text-slate-700 dark:text-slate-300 leading-relaxed">
                 {CAN_SEE.map((t) => <li key={t} className="flex gap-2"><CheckCircle2 size={14} className="mt-0.5 shrink-0 text-emerald-600 dark:text-emerald-400" />{t}</li>)}
               </ul>
             </div>
             <div className="rounded-control border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-4">
-              <p className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-2 flex items-center gap-1.5"><EyeOff size={14} /> ما لا يراه أبداً</p>
+              <p className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-2 flex items-center gap-1.5"><EyeOff size={14} /> ويش ما يقدر يشوف</p>
               <ul className="space-y-1.5 text-[13px] text-slate-700 dark:text-slate-300 leading-relaxed">
                 {CANNOT_SEE.map((t) => <li key={t} className="flex gap-2"><Ban size={14} className="mt-0.5 shrink-0 text-slate-400" />{t}</li>)}
               </ul>
@@ -154,8 +152,8 @@ export default function PartnerAssistantPage({ partner, meta }) {
         {fresh && url && (
           <Card className="p-5 sm:p-6 border-emerald-200 dark:border-emerald-500/40">
             <SectionHeader
-              title="رابطك الجديد — انسخه الآن"
-              subtitle="لن يُعرض مرة أخرى: الخادم يحفظ بصمته لا الرمز نفسه. إن فقدته فبدّله من هنا."
+              title="رابطك الجديد — انسخه الحين"
+              subtitle="الرابط ما ينعرض مرة ثانية؛ الخادم يحفظ بصمته، مو الرمز نفسه. إذا ضاع منك، بدّله من هنا."
             />
             <div className="mt-3 flex flex-col md:flex-row md:items-start gap-4">
               <div className="flex-1 min-w-0 space-y-3">
@@ -167,12 +165,11 @@ export default function PartnerAssistantPage({ partner, meta }) {
                     <Copy size={15} /> انسخ
                   </button>
                   <button type="button" onClick={() => setFresh(null)} className="sw-button sw-button--sm sw-button--secondary">
-                    أخفِه
+                    إخفاء الرابط
                   </button>
                 </div>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                  الرابط هو المفتاح: من يعرفه يقرأ حصّتك. لا ترسله في مكانٍ عام، وإن شككت بدّله.
-                  المعرّف: <code className="font-mono">{fresh.keyId}</code>
+                  الرابط هو المفتاح: أي أحد عنده الرابط يقدر يقرأ حصّتك. لا ترسله في مكان عام، وإذا شكّيت إنه وصل لأحد، بدّله. المعرّف: <code className="font-mono">{fresh.keyId}</code>
                 </p>
               </div>
               <div className="shrink-0 flex flex-col items-center gap-1">
@@ -186,15 +183,15 @@ export default function PartnerAssistantPage({ partner, meta }) {
         {/* ── الحالة والإجراءات ─────────────────────────────────── */}
         <Card className="p-5 sm:p-6">
           <SectionHeader
-            title="حال الرابط"
+            title="حالة الرابط"
             subtitle={isSelf
-              ? 'رابطٌ فعّال واحد في كل وقت — التبديل يُميت القديم فوراً'
-              : 'الرابط يُنشئه الشريك من حسابه؛ المدير يرى الحالة ويوقفه من «إدارة الشركاء»'}
+              ? 'تقدر تستخدم رابط فعّال واحد في كل وقت؛ إذا بدّلته، القديم يتوقف فوراً'
+              : 'الشريك ينشئ الرابط من حسابه؛ المدير يشوف الحالة ويقدر يوقفه من «إدارة الشركاء»'}
             action={isSelf ? (
               <div className="flex items-center gap-2 flex-wrap">
                 {!active && (
                   <PrimaryButton icon={KeyRound} onClick={mint} disabled={busy || !isFirebaseConfigured}>
-                    {busy ? 'جارٍ الإنشاء…' : 'إنشاء رابط'}
+                    {busy ? 'ننشئ الرابط…' : 'إنشاء رابط'}
                   </PrimaryButton>
                 )}
                 {active && (
@@ -216,13 +213,13 @@ export default function PartnerAssistantPage({ partner, meta }) {
             ) : null}
           />
           {loading && keys.length === 0 ? (
-            <LoadingState message="جارٍ قراءة حال الرابط..." />
+            <LoadingState message="نتأكد من حالة الرابط..." />
           ) : !active ? (
             <EmptyState
               compact
               icon={Link2}
-              title="لا رابط فعّال"
-              hint={isSelf ? 'اضغط «إنشاء رابط» ثم الصقه في مساعدك.' : 'لم يُنشئ الشريك رابطاً بعد.'}
+              title="ما فيه رابط فعّال"
+              hint={isSelf ? 'اضغط «إنشاء رابط»، وبعدها الصقه في مساعدك.' : 'الشريك للحين ما أنشأ رابط.'}
             />
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-2">
@@ -232,8 +229,8 @@ export default function PartnerAssistantPage({ partner, meta }) {
                 icon={Clock}
                 tone={active.lastUsedAtIso ? 'primary' : 'slate'}
                 label="آخر استعمال"
-                value={active.lastUsedAtIso ? when(active.lastUsedAtIso) : 'لم يُستعمل بعد'}
-                sub="يُحدَّث كل بضع دقائق عند الاستعمال"
+                value={active.lastUsedAtIso ? when(active.lastUsedAtIso) : 'للحين ما انستخدم'}
+                sub="يتحدّث كل كم دقيقة وقت الاستخدام"
               />
             </div>
           )}
@@ -241,32 +238,31 @@ export default function PartnerAssistantPage({ partner, meta }) {
 
         {/* ── كيف أربطه؟ ───────────────────────────────────────── */}
         <Card className="p-5 sm:p-6">
-          <SectionHeader title="كيف أربطه بمساعدي؟" subtitle="الخطوات نفسها تقريباً في الاثنين: أضِف موصِّلاً مخصّصاً والصق الرابط" />
+          <SectionHeader title="شلون أربطه بمساعدي؟" subtitle="الخطوات تقريباً نفسها في الاثنين: أضف موصِّل مخصّص والصق الرابط" />
           <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
             <details className="rounded-control border border-slate-200 dark:border-slate-700 p-4 group">
               <summary className="cursor-pointer font-bold text-slate-900 dark:text-slate-100 text-sm">Claude (claude.ai)</summary>
               <ol className="mt-3 space-y-2 text-[13px] text-slate-700 dark:text-slate-300 leading-relaxed list-decimal pr-5">
                 <li><strong>Customize</strong> ← <strong>Connectors</strong> (الموصِّلات) — في حسابات الشركات: Organization settings ← Connectors.</li>
                 <li>اضغط <strong>+</strong> ثم <strong>Add custom connector</strong> (في حسابات الشركات: Add ← Custom ← Web).</li>
-                <li>الاسم: «حصّتي في سويتر» مثلاً، والرابط: الصق رابطك كما هو.</li>
-                <li><strong>Advanced settings</strong> (بيانات OAuth) اختيارية — لا تحتاجها؛ اضغط <strong>Add</strong>.</li>
-                <li>في المحادثة فعّل الموصِّل من أيقونة الأدوات، واسأل: «كم صافي ربحي هذا الشهر؟».</li>
+                <li>الاسم مثلاً «حصّتي في سويتر»، والرابط: الصق رابطك مثل ما هو.</li>
+                <li><strong>Advanced settings</strong> (بيانات OAuth) اختيارية، ما تحتاجها؛ اضغط <strong>Add</strong>.</li>
+                <li>في المحادثة، فعّل الموصِّل من أيقونة الأدوات واسأل: «كم صافي ربحي هالشهر؟».</li>
               </ol>
             </details>
             <details className="rounded-control border border-slate-200 dark:border-slate-700 p-4 group">
               <summary className="cursor-pointer font-bold text-slate-900 dark:text-slate-100 text-sm">ChatGPT (chatgpt.com)</summary>
               <ol className="mt-3 space-y-2 text-[13px] text-slate-700 dark:text-slate-300 leading-relaxed list-decimal pr-5">
                 <li>الإعدادات ← <strong>Apps &amp; Connectors</strong> (قد يظهر باسم Connectors أو Plugins) ← <strong>Advanced</strong> وفعّل <strong>Developer mode</strong>.</li>
-                <li>عد إلى Connectors واضغط <strong>Create</strong>.</li>
+                <li>ارجع إلى Connectors واضغط <strong>Create</strong>.</li>
                 <li>الاسم: «حصّتي في سويتر»، ورابط الخادم (MCP Server URL): الصق رابطك.</li>
                 <li>المصادقة: <strong>No authentication</strong>، ثم احفظ.</li>
-                <li>في محادثةٍ جديدة اختر الموصِّل من «+» ← More، واسأل بلغتك.</li>
+                <li>في محادثة جديدة، اختار الموصِّل من «+» ← More، واسأل بلغتك.</li>
               </ol>
             </details>
           </div>
           <p className="mt-4 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-            المساعد يرى سبع أدوات فقط، كلها قراءة: بياناتي، رأس مالي، قائمة الدخل، الاتجاه، التشغيل، استرداد رأس المال، والملخّص.
-            أرقامها تخصك وحدك — محسوبة بنفس دوال صفحتك، دون إظهار نسبة حصتك أو إجماليات المشروع.
+            مساعدك يشوف سبع أدوات بس، وكلها للقراءة: بياناتي، رأس مالي، قائمة الدخل، الاتجاه، التشغيل، استرداد رأس المال، والملخّص. أرقامها تخصك إنت بس، ومحسوبة بنفس حسبة صفحتك، من غير ما تظهر نسبة حصتك أو إجماليات المشروع.
           </p>
         </Card>
       </main>
@@ -274,11 +270,11 @@ export default function PartnerAssistantPage({ partner, meta }) {
       <SweaterActionDialog
         open={dialog === 'rotate'}
         title="تبديل الرابط"
-        subtitle="يُنشأ رابطٌ جديد ويتوقف القديم في نفس اللحظة — كل مساعدٍ يستعمل القديم سينقطع."
+        subtitle="ننشئ لك رابط جديد، والقديم يتوقف في نفس اللحظة. أي مساعد يستخدم الرابط القديم ما بيقدر يقرأ أرقامك بعد التبديل."
         icon={RefreshCw}
         fields={[]}
-        confirmLabel="بدّل الآن"
-        busyLabel="جارٍ التبديل…"
+        confirmLabel="بدّل الحين"
+        busyLabel="نبدّل الرابط…"
         busy={busy}
         error={dialogError}
         onConfirm={mint}
@@ -287,12 +283,12 @@ export default function PartnerAssistantPage({ partner, meta }) {
       <SweaterActionDialog
         open={dialog === 'revoke'}
         title="إيقاف الرابط"
-        subtitle="لن يعمل بعد الآن. تستطيع إنشاء رابطٍ جديد في أي وقت."
+        subtitle="الرابط بيتوقف وما بيشتغل بعدها. تقدر تنشئ رابط جديد في أي وقت."
         icon={Ban}
         tone="danger"
         fields={REVOKE_FIELDS}
         confirmLabel="أوقف الرابط"
-        busyLabel="جارٍ الإيقاف…"
+        busyLabel="نوقف الرابط…"
         busy={busy}
         error={dialogError}
         onConfirm={revoke}

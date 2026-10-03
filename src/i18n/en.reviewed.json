@@ -510,5 +510,9 @@
   "مجموع المصروفات": "Total Expenses",
   "بعد المرتجعات": "After Sales Returns",
   "تشمل الرسوم واحتياطي التجديد": "Includes Fees and the Renewal Reserve",
-  "بعد الرسوم والاحتياطي؛ مو توزيع مستحق": "After Fees and the Reserve; Not a Distribution Entitlement"
+  "بعد الرسوم والاحتياطي؛ مو توزيع مستحق": "After Fees and the Reserve; Not a Distribution Entitlement",
+  "نتيجتك بعد تغطية التأسيس في [VAR0]": "Your Result After Setup Funding Coverage in [VAR0]",
+  "ما توفرت تفاصيل تغطية التأسيس لكل أشهر السنة": "Setup funding coverage details are not available for every month of the year",
+  "مجموع نتائج الأشهر بعد تغطيتها من التأسيس؛ مو مطالبة أو توزيع نقدي": "Total monthly results after setup funding coverage; not a payment demand or cash distribution",
+  "نتيجتك بعد تغطية التأسيس في": "Your Result After Setup Funding Coverage in"
 }

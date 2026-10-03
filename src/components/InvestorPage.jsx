@@ -58,7 +58,7 @@ import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
 import { usePartnerStatement } from '../hooks/usePartnerStatement';
 import { partnerPaidSummary } from '../lib/accounting/partnerTotals';
 import {
-  roiSummary, ytdTotal,
+  roiSummary, ytdAfterFoundingTotal,
 } from '../lib/accounting/partnerInsights';
 import { comparePartnerReports, COMPARISON_FIELDS, validReportMonth } from '../lib/accounting/partnerReportComparison';
 import { usePartnerInsights } from '../hooks/usePartnerInsights';
@@ -475,7 +475,7 @@ function OverviewView({
   partner, required, paid, remaining, settled,
   receiptsCount, hasShare, latestMonth,
   availableMonths, activeMonth, onMonthChange, monthlySummary,
-  ytd = 0, washShare = null, roi = null, foundingStatus = null,
+  ytd = null, washShare = null, roi = null, foundingStatus = null,
 }) {
   return (
     <>
@@ -523,9 +523,10 @@ function OverviewView({
           <StatCard
             icon={CalendarRange}
             tone="indigo"
-            label={`حصتك التحليلية من نتيجة ${latestMonth.slice(0, 4)}`}
-            value={formatCurrency(ytd)}
-            sub="مجموع نتائج حصتك بعد المصروفات واحتياطي التجديد هذه السنة"
+            label={`نتيجتك بعد تغطية التأسيس في ${latestMonth.slice(0, 4)}`}
+            value={ytd === null ? '—' : formatCurrency(ytd)}
+            sub={ytd === null ? 'ما توفرت تفاصيل تغطية التأسيس لكل أشهر السنة'
+              : 'مجموع نتائج الأشهر بعد تغطيتها من التأسيس؛ مو مطالبة أو توزيع نقدي'}
           />
           <StatCard
             icon={Droplets}
@@ -890,7 +891,8 @@ function InvestorPortal({ partner, view }) {
 
   const roi = useMemo(() => (view === 'overview' ? roiSummary({ nets, paid }) : null), [view, nets, paid]);
 
-  const ytd = useMemo(() => ytdTotal(nets, String(statementMonth).slice(0, 4)), [nets, statementMonth]);
+  const ytd = useMemo(() => ytdAfterFoundingTotal(allocationReport?.statements,
+    String(statementMonth).slice(0, 4)), [allocationReport, statementMonth]);
 
   // غسلات آخر شهرٍ مُرحَّل بحصّته، وأشهر الاتجاه.
   const washShare = useMemo(

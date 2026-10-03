@@ -4,7 +4,8 @@
  * Run: npm test
  */
 import { describe, it, expect } from 'vitest';
-import { roiSummary, momChange, ytdTotal, periodStatusOf, washShare } from '../partnerInsights.js';
+import { roiSummary, momChange, ytdTotal, ytdAfterFoundingTotal, periodStatusOf, washShare } from '../partnerInsights.js';
+import { partnerFoundingAllocation, partnerOperatingStatement } from '../partnerOperatingStatement.js';
 
 const NETS = [
   { month: '2026-03', netProfit: 1000, hasActivity: true },
@@ -91,5 +92,68 @@ describe('منذ بداية السنة وحال الفترة', () => {
     expect(washShare(100, 0.1)).toBe(10);
     expect(washShare(25, 0.1)).toBe(2.5);
     expect(washShare(100, 0)).toBe(0);
+  });
+});
+
+describe('النتيجة السنوية بعد تغطية التأسيس', () => {
+  const row = (net, covered, periodKey = '2026-07') => Object.freeze({ periodKey, netAfterReserve: net,
+    founding: Object.freeze({ available: true, covered, budget: 200000, funded: 200000 }) });
+
+  it.each([
+    [-4000, 4000, 0], [-4000, 1500, -2500], [-4000, 0, -4000], [500, 1200, 1700], [0, 0, 0],
+  ])('يطابق صف قائمة الدخل: النتيجة %s والتغطية %s تعطي %s', (net, covered, expected) => {
+    expect(ytdAfterFoundingTotal([row(net, covered)], '2026')).toBe(expected);
+  });
+
+  it.each([20000, 2400, 0])('يجمع التغطية الفعلية مرة واحدة مع رصيد تأسيس %s', paid => {
+    let spentBefore = 0;
+    const statements = [1000, 2000, 3000].map((cost, i) => {
+      const statement = { periodKey: `2026-0${i + 1}`, netAfterReserve: -cost, totalAllocation: cost };
+      const founding = partnerFoundingAllocation({ workersCount: 1, paid, spentBefore, statement });
+      spentBefore += cost;
+      return Object.freeze({ ...statement, founding: Object.freeze(founding) });
+    });
+    expect(statements.map(s => s.founding.covered)).toEqual(paid === 20000 ? [1000, 2000, 3000]
+      : paid === 2400 ? [1000, 1400, 0] : [0, 0, 0]);
+    expect(ytdAfterFoundingTotal(statements, '2026')).toBe(paid === 20000 ? 0 : paid - 6000);
+    expect(statements.at(-1).founding.remaining).toBe(paid === 20000 ? 14000 : 0);
+  });
+
+  it('يحترم السنة والأشهر وحصة كل شهر دون إعادة ضربها بنسبة أو إدخال السنة السابقة', () => {
+    const statements = [0.2, 0.5].map((scalingFactor, i) => {
+      const statement = partnerOperatingStatement({ periodKey: `2026-0${i + 1}`, scalingFactor,
+        monthlyExpenses: [{ id: 'rent', recurrence: 'monthly', total_monthly_cost: 2000 }] });
+      return { ...statement, founding: { available: true, covered: i === 0 ? 400 : 100 } };
+    });
+    expect(statements.map(s => s.netAfterReserve)).toEqual([-400, -1000]);
+    expect(ytdAfterFoundingTotal([row(90000, 10000, '2025-12'), ...statements].reverse(), '2026')).toBe(-900);
+    expect(ytdAfterFoundingTotal([row(90000, 10000, '2025-12'), ...statements], '2025')).toBe(100000);
+  });
+
+  it('يجمع هللات الصفوف مرة واحدة ويطابق بديل netProfit في قائمة الدخل', () => {
+    expect(ytdAfterFoundingTotal([row(-0.03, 0.01), row(0.04, 0.02, '2026-08')], '2026')).toBe(0.04);
+    expect(ytdAfterFoundingTotal([{ periodKey: '2026-07', netProfit: -100, founding: { available: true, covered: 25 } }], '2026')).toBe(-75);
+  });
+
+  it('السنة الجديدة لا تعيد رصيد التأسيس المستهلك في السنة السابقة', () => {
+    let spentBefore = 0;
+    const statements = [['2025-12', 1500], ['2026-01', 1000], ['2026-02', 2000]].map(([periodKey, cost]) => {
+      const statement = { periodKey, netAfterReserve: -cost, totalAllocation: cost };
+      const founding = partnerFoundingAllocation({ workersCount: 1, paid: 2000, spentBefore, statement });
+      spentBefore += cost;
+      return { ...statement, founding };
+    });
+    expect(statements.map(s => s.founding.covered)).toEqual([1500, 500, 0]);
+    expect(ytdAfterFoundingTotal(statements, '2025')).toBe(0);
+    expect(ytdAfterFoundingTotal(statements, '2026')).toBe(-2500);
+  });
+
+  it.each([
+    [], [row(1, 2, '2025-07')], [row(1, 2), row(1, 2)],
+    [{ periodKey: '2026-07', netAfterReserve: -4000 }],
+    [{ ...row(-4000, 0), founding: { available: false, covered: 0 } }],
+    [{ ...row(-4000, 0), founding: { available: true } }],
+  ].map(statements => ({ statements })))('لا يحول المصدر الناقص أو الشهر المكرر إلى نتيجة مؤكدة: $statements', ({ statements }) => {
+    expect(ytdAfterFoundingTotal(statements, '2026')).toBeNull();
   });
 });

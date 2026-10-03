@@ -83,6 +83,19 @@ export function ytdTotal(nets = [], year) {
     .reduce((s, r) => s + (Number(r.netProfit) || 0), 0));
 }
 
+/** Sum the income statement's after-founding row, using each month's actual coverage once. */
+export function ytdAfterFoundingTotal(statements = [], year) {
+  const y = String(year || '').slice(0, 4);
+  const rows = (statements || []).filter(r => /^\d{4}-(0[1-9]|1[0-2])$/.test(String(r?.periodKey))
+    && r.periodKey.startsWith(`${y}-`));
+  if (!rows.length || new Set(rows.map(r => r.periodKey)).size !== rows.length) return null;
+  // Missing coverage is not a confirmed zero. Match the income row only when available.
+  if (rows.some(r => !r.founding?.available || !Number.isFinite(r.founding.covered)
+    || !Number.isFinite(r.netAfterReserve ?? r.netProfit ?? 0))) return null;
+  return ytdTotal(rows.map(r => ({ month: r.periodKey,
+    netProfit: (r.netAfterReserve ?? r.netProfit ?? 0) + r.founding.covered })), y);
+}
+
 /**
  * حال الفترة: `'closed'` نهائية، `'open'` قد تتغيّر، `null` لا سجل.
  *

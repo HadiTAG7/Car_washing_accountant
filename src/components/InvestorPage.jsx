@@ -286,7 +286,7 @@ export function FoundingStageNotice({ status }) {
       <div className="mt-3">
       <p className="mt-1">ميزانيتك: {formatCurrency(status.budget)} — 20,000 ريال لكل بايكر.</p>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
-        <div>المغطى من التأسيس هذا الشهر<p className="font-bold tabular-nums">{formatCurrency(status.covered)}</p></div>
+        <div>المدفوع من التأسيس هذا الشهر<p className="font-bold tabular-nums">{formatCurrency(status.covered)}</p></div>
         <div>المتبقي من مبلغ التأسيس<p className="font-bold tabular-nums">{formatCurrency(status.remaining)}</p></div>
       </div>
       {status.fundingAsOf && <p className="mt-2 text-xs">دفعات التأسيس المسدّدة حتى {formatDate(status.fundingAsOf)} تغطي حصتك من المصاريف من الأقدم للأحدث، حتى لو سددت متأخر. هذي تغطية من رصيد التأسيس، وما تغيّر تاريخ الدفع.</p>}
@@ -480,6 +480,7 @@ export function IncomeStatementCard({
 function OverviewView({
   partner, required, paid, remaining, settled,
   receiptsCount, hasShare, latestMonth, latestStatement,
+  availableMonths, activeMonth, onMonthChange, monthlySummary,
   mom = null, ytd = 0, washShare = null, roi = null, foundingStatus = null,
 }) {
   return (
@@ -493,6 +494,33 @@ function OverviewView({
         settled={settled}
         receiptsCount={receiptsCount}
       />
+      <Card className="p-5" aria-label="ملخص الشهر">
+        <SectionHeader
+          title="ملخص الشهر"
+          subtitle="أرقام حصتك التشغيلية في الشهر المحدد"
+          action={(
+            <select
+              aria-label="فترة الملخص (الشهر)"
+              value={activeMonth}
+              onChange={(e) => onMonthChange(e.target.value)}
+              className="px-3 py-2 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm font-bold tabular-nums focus:outline-none focus:border-primary-500"
+            >
+              {availableMonths.map((ym) => <option key={ym} value={ym}>{formatMonthLabel(ym)}</option>)}
+            </select>
+          )}
+        />
+        {!hasShare ? (
+          <EmptyState compact icon={TrendingUp} title="للحين ما تسجّل لك عدد عمال" hint="تواصل مع الإدارة عشان يسجّلون عدد عمالك." />
+        ) : !monthlySummary.hasActivity ? (
+          <EmptyState compact icon={Calendar} title="ما فيه حركة مُرحّلة لهالشهر" hint="اختار شهر ثاني؛ ما فيه مصروفات أو إيرادات متاحة لهالفترة." />
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <StatCard icon={TrendingUp} label="مجموع الإيرادات" value={formatCurrency(monthlySummary.netRevenue)} sub="بعد المرتجعات" />
+            <StatCard icon={Wallet} tone="amber" label="مجموع المصروفات" value={formatCurrency(monthlySummary.totalAllocation + monthlySummary.totalFees)} sub="تشمل الرسوم واحتياطي التجديد" />
+            <StatCard icon={HandCoins} tone={monthlySummary.netAfterReserve >= 0 ? 'emerald' : 'slate'} label="صافي الربح" value={formatCurrency(monthlySummary.netAfterReserve)} sub="بعد الرسوم والاحتياطي؛ مو توزيع مستحق" />
+          </div>
+        )}
+      </Card>
       <FoundingStageNotice status={foundingStatus} />
 
       <Card className="p-5">
@@ -983,6 +1011,10 @@ function InvestorPortal({ partner, view }) {
             hasShare={hasShare}
             latestMonth={statementMonth}
             latestStatement={statement}
+            availableMonths={availableMonths}
+            activeMonth={activeMonth}
+            onMonthChange={setSelectedMonth}
+            monthlySummary={allocationReport?.statements.find(s => s.periodKey === activeMonth) || EMPTY_STATEMENT}
             mom={mom}
             ytd={ytd}
             washShare={washShare}

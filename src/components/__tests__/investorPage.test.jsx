@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const partnerView = {
@@ -12,6 +12,7 @@ const paymentsState = { payments: [], loading: false, error: null };
 const ledgerState = { accounts: [], entries: [], lines: [], periods: [], loading: false, error: null };
 const insightsState = { insights: null, washMonths: [], loading: false, error: null };
 let statementError = null;
+let statementOverrides = {};
 vi.mock('../../hooks/usePartnerStatement', () => ({ usePartnerStatement: () => {
   const keys = [...new Set(ledgerState.entries.map(e => e.periodKey))];
   if (!keys.length) keys.push(new Date().toISOString().slice(0, 7));
@@ -21,8 +22,10 @@ vi.mock('../../hooks/usePartnerStatement', () => ({ usePartnerStatement: () => {
     statements: keys.map(periodKey => ({
       ...monthlyStatement({ scalingFactor: factor }), periodKey,
       annualReserve: 10000 * factor, totalAllocation: 150000 * factor,
+      totalFees: 0,
       netAfterReserve: COMPANY_NET * factor,
       founding: { available: true, budget: 60000, funded: 30000, covered: 30000, remaining: 0, uncovered: 15000 },
+      ...statementOverrides[periodKey],
     })),
   } };
 } }));
@@ -86,6 +89,7 @@ afterEach(() => {
   cleanup();
   COMPANY_NET = 50000;
   statementError = null;
+  statementOverrides = {};
   partnerView.investorLinkMissing = false;
   partnerView.partnerLinkLoading = false;
   partnerView.partnerLinkError = null;
@@ -130,6 +134,7 @@ describe('صفحة المستثمر — قائمة الدخل', () => {
       remaining: 38182.14, uncovered, fundingAsOf: '2026-10-03' };
     const before = JSON.stringify(status);
     render(<FoundingStageNotice status={status} />);
+    expect(screen.getByText('المدفوع من التأسيس هذا الشهر').textContent).toContain('30,000.00');
     const remaining = screen.getByText('المتبقي من مبلغ التأسيس');
     expect(remaining.textContent).toContain('38,182.14');
     expect(remaining.parentElement.children).toHaveLength(2);
@@ -510,6 +515,7 @@ describe('صفحة المستثمر — الخيارات الأربعة', () => 
       expect(screen.getByText(/حسابك للحين ما انربط بسجل شريك/)).toBeTruthy();
       expect(screen.queryByText('إيرادات المبيعات')).toBeNull();
       expect(screen.queryByText('سندات قبضك')).toBeNull();
+      expect(screen.queryByLabelText('ملخص الشهر')).toBeNull();
       cleanup();
     }
   });
@@ -523,6 +529,52 @@ describe('صفحة المستثمر — المؤشرات الجديدة', () => 
       { id: 'e2', entryDate: '2026-08-10', periodKey: '2026-08', status: 'posted', lines: [] },
     ];
   };
+
+  it('ملخص الشهر ثلاث بطاقات من تقرير الشريك مع الرسوم والاحتياطي دون إعادة تقسيم', () => {
+    twoMonths();
+    statementOverrides['2026-08'] = Object.freeze({ netRevenue: 60000, totalCosts: 42000,
+      totalFees: 1200, annualReserve: 3000, totalAllocation: 45000, netAfterReserve: 13800 });
+    render(<InvestorPage view="overview" />);
+    const summary = screen.getByLabelText('ملخص الشهر');
+    expect(summary.querySelectorAll('.sw-stat-card')).toHaveLength(3);
+    for (const [label, amount] of [['مجموع الإيرادات', '60,000.00'], ['مجموع المصروفات', '46,200.00'], ['صافي الربح', '13,800.00']]) {
+      expect(within(summary).getByText(label).closest('.sw-stat-card').querySelector('.sw-stat-value').textContent).toContain(amount);
+    }
+    expect(screen.getByText('نتيجة آخر شهر')).toBeTruthy();
+    expect(screen.getByText('المدفوع من التأسيس هذا الشهر')).toBeTruthy();
+    expect(statementOverrides['2026-08'].netAfterReserve).toBe(13800);
+  });
+
+  it('يتغير الملخص بالشهر المختار ويبقي الخسارة سالبة دون تغيير بطاقة آخر شهر', () => {
+    twoMonths();
+    statementOverrides['2026-07'] = { netRevenue: 3000, totalCosts: 9000, totalFees: 0,
+      annualReserve: 0, totalAllocation: 9000, netAfterReserve: -6000 };
+    const { rerender } = render(<InvestorPage view="overview" />);
+    const selector = screen.getByLabelText('فترة الملخص (الشهر)');
+    expect(selector.value).toBe('2026-08');
+    fireEvent.change(selector, { target: { value: '2026-07' } });
+    const summary = screen.getByLabelText('ملخص الشهر');
+    expect(within(summary).getByText('مجموع الإيرادات').closest('.sw-stat-card').textContent).toContain('3,000.00');
+    expect(within(summary).getByText('مجموع المصروفات').closest('.sw-stat-card').textContent).toContain('9,000.00');
+    expect(within(summary).getByText('صافي الربح').closest('.sw-stat-card').querySelector('.sw-stat-value').textContent).toMatch(/-6,000\.00/);
+    expect(screen.getByText('حصتك التحليلية من نتيجة الشركة').closest('.sw-stat-card').textContent).toContain('15,000.00');
+    rerender(<InvestorPage view="income" />);
+    expect(screen.getByLabelText('فترة التقرير (الشهر)').value).toBe('2026-07');
+    rerender(<InvestorPage view="overview" />);
+    expect(screen.getByLabelText('فترة الملخص (الشهر)').value).toBe('2026-07');
+  });
+
+  it('الشهر بلا نشاط أو تعطل المصدر لا يظهران كربح صفري', () => {
+    twoMonths();
+    statementOverrides['2026-07'] = { hasActivity: false };
+    const { rerender } = render(<InvestorPage view="overview" />);
+    fireEvent.change(screen.getByLabelText('فترة الملخص (الشهر)'), { target: { value: '2026-07' } });
+    expect(screen.getByLabelText('ملخص الشهر').querySelectorAll('.sw-stat-card')).toHaveLength(0);
+    expect(within(screen.getByLabelText('ملخص الشهر')).getByText('ما فيه حركة مُرحّلة لهالشهر')).toBeTruthy();
+    statementError = new Error('تعذر قراءة المصروفات');
+    rerender(<InvestorPage view="overview" />);
+    expect(screen.queryByLabelText('ملخص الشهر')).toBeNull();
+  });
 
   it('النظرة العامة لا تصف النتيجة السالبة بأنها ربح الشريك أو دين إضافي', () => {
     COMPANY_NET = -20000;

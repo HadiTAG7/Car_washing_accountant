@@ -445,12 +445,12 @@ describe('صفحة المستثمر — الخيارات الأربعة', () => 
   });
   it('رأس المال يبقى واضحاً بالأرقام دون بطاقة شريط فارغة من أي وصف', () => {
     paymentsState.payments = [{ id: 'r1', partnerId: 'p1', amount: 60000, paymentDate: '2026-07-01' }];
-    const { container } = render(<InvestorPage view="capital" />);
+    const { container } = render(<InvestorPage view="overview" />);
     expect(screen.getByText('✓ مسدّد بالكامل')).toBeTruthy();
     expect(screen.getByText('الرسوم المطلوبة')).toBeTruthy();
     expect(screen.getByText('المسدَّد')).toBeTruthy();
     const cards = [...container.querySelectorAll('.sw-stat-card')];
-    expect(cards).toHaveLength(3);
+    expect(cards.length).toBeGreaterThanOrEqual(3);
     for (const card of cards) expect(card.textContent.trim()).not.toBe('');
   });
   // الادعاء الحامل للتقسيم: كل خيارٍ يحمل شيئه وحده. بدونه يعود الأربعة
@@ -469,7 +469,7 @@ describe('صفحة المستثمر — الخيارات الأربعة', () => 
     expect(screen.queryByText('إيرادات المبيعات')).toBeNull();
   });
 
-  it('«رأس مالي» تخفي تفاصيل السندات والتحصيل وتحتفظ بمجموع الشريك وحده دون تغيير الدفعات', () => {
+  it('النظرة العامة تخفي تفاصيل السندات والتحصيل وتحتفظ بمجموع الشريك وحده دون تغيير الدفعات', () => {
     paymentsState.payments = [
       { id: 'r1', partnerId: 'p1', amount: 20000, paymentDate: '2026-07-01', method: 'cash', notes: 'دفعة أولى' },
       { id: 'r2', partnerId: 'p2', amount: 99999, paymentDate: '2026-07-02', method: 'cash', notes: 'ليست له' },
@@ -477,12 +477,12 @@ describe('صفحة المستثمر — الخيارات الأربعة', () => 
     const original = structuredClone(paymentsState.payments);
     for (const receipt of paymentsState.payments) Object.freeze(receipt);
     Object.freeze(paymentsState.payments);
-    render(<InvestorPage view="capital" />);
+    render(<InvestorPage view="overview" />);
     expect(screen.queryByText('سندات قبضك')).toBeNull();
     expect(screen.queryByText('دفعة أولى')).toBeNull();
     expect(screen.queryByText('تحصيل رأس المال شهرياً')).toBeNull();
     expect(screen.queryByText('كشف حساب (طباعة / PDF)')).toBeNull();
-    expect(screen.queryByRole('table')).toBeNull();
+    expect(screen.queryByText('البند والتاريخ')).toBeNull();
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(screen.getByText('المسدَّد').closest('.sw-stat-card').textContent).toContain('20,000.00');
     expect(screen.getByText('المتبقّي').closest('.sw-stat-card').textContent).toContain('40,000.00');
@@ -494,13 +494,20 @@ describe('صفحة المستثمر — الخيارات الأربعة', () => 
   });
 
   it('وبلا دفعات يبقى ملخص رأس المال دون أقسام أو جداول فارغة', () => {
-    render(<InvestorPage view="capital" />);
+    render(<InvestorPage view="overview" />);
     expect(screen.queryByText('للحين ما فيه دفعات مسجّلة')).toBeNull();
     expect(screen.queryByText('ما فيه سندات قبض في آخر ٦ أشهر')).toBeNull();
     expect(screen.queryByText('سندات قبضك')).toBeNull();
     expect(screen.queryByText('تحصيل رأس المال شهرياً')).toBeNull();
     expect(screen.getByText('المسدَّد').closest('.sw-stat-card').textContent).toContain('0.00');
     expect(screen.getByText('المتبقّي').closest('.sw-stat-card').textContent).toContain('60,000.00');
+  });
+
+  it('العرض القديم لرأس المال يرجع للنظرة العامة دون شاشة فارغة', () => {
+    render(<InvestorPage view="capital" />);
+    expect(screen.getByText('حسابي كشريك')).toBeTruthy();
+    expect(screen.getByLabelText('ملخص الشهر')).toBeTruthy();
+    expect(screen.queryByText('رأس مالي')).toBeNull();
   });
 
   it('«اتجاه ٦ أشهر» تعرض الرسم وحده', () => {
@@ -524,7 +531,7 @@ describe('صفحة المستثمر — الخيارات الأربعة', () => 
     // الحارس فوق الأربعة: خيارٌ واحد يُفلت الحساب المسدود يكفي لتسريب
     // أرقام الشركة كاملةً إلى حسابٍ لم تُتحقَّق هويته.
     partnerView.investorLinkMissing = true;
-    for (const view of ['overview', 'capital', 'journey', 'income', 'trends']) {
+    for (const view of ['overview', 'journey', 'income', 'trends']) {
       render(<InvestorPage view={view} />);
       expect(screen.getByText(/حسابك للحين ما انربط بسجل شريك/)).toBeTruthy();
       expect(screen.queryByText('إيرادات المبيعات')).toBeNull();
@@ -730,12 +737,12 @@ describe('صفحة المستثمر — المؤشرات الجديدة', () => 
     }
   });
 
-  it('رأس مالي: رصيده في الدفاتر، وما لم يُرحَّل بعد يُسمّى «قيد الترحيل»', () => {
+  it('النظرة العامة: رصيده في الدفاتر، وما لم يُرحَّل بعد يُسمّى «قيد الترحيل»', () => {
     paymentsState.payments = [{ id: 'r1', partnerId: 'p1', amount: 20000, paymentDate: '2026-07-01', paymentMethod: 'cash' }];
     ledgerState.entries = [{ id: 'e1', entryDate: '2026-07-02', periodKey: '2026-07', status: 'posted', lines: [] }];
     // حساب رأس مال الشريك 3000-p1 مُرحَّل بـ 15000 فقط.
     ledgerState.lines = [{ id: 'l1', entryId: 'e1', accountId: '3000-p1', debit: 0, credit: 15000 }];
-    render(<InvestorPage view="capital" />);
+    render(<InvestorPage view="overview" />);
     expect(screen.getByText('رصيدك في الدفاتر')).toBeTruthy();
     expect(screen.getByText('قيد الترحيل')).toBeTruthy();
     expect(screen.queryByText('المسدَّد بالسندات')).toBeNull();
@@ -746,9 +753,9 @@ describe('صفحة المستثمر — المؤشرات الجديدة', () => 
 
   it('عند تطابق السندات والدفاتر يظهر ملخص رأس المال مرة واحدة بلا بطاقات مكررة', () => {
     paymentsState.payments = [{ id: 'r1', partnerId: 'p1', amount: 60000, paymentDate: '2026-07-01' }];
-    ledgerState.entries = [{ id: 'e1', status: 'posted' }];
+    ledgerState.entries = [{ id: 'e1', periodKey: '2026-07', status: 'posted' }];
     ledgerState.lines = [{ entryId: 'e1', accountId: '3000-p1', debit: 0, credit: 60000 }];
-    render(<InvestorPage view="capital" />);
+    render(<InvestorPage view="overview" />);
     expect(screen.getAllByText('المسدَّد')).toHaveLength(1);
     expect(screen.queryByText('رصيدك في الدفاتر')).toBeNull();
     expect(screen.queryByText('المسدَّد بالسندات')).toBeNull();
@@ -759,9 +766,9 @@ describe('صفحة المستثمر — المؤشرات الجديدة', () => 
 
   it('لا يخفي الفرق عندما يزيد رصيد الدفاتر عن السندات ولا يدعي المطابقة', () => {
     paymentsState.payments = [{ id: 'r1', partnerId: 'p1', amount: 20000, paymentDate: '2026-07-01' }];
-    ledgerState.entries = [{ id: 'e1', status: 'posted' }];
+    ledgerState.entries = [{ id: 'e1', periodKey: '2026-07', status: 'posted' }];
     ledgerState.lines = [{ entryId: 'e1', accountId: '3000-p1', debit: 0, credit: 25000 }];
-    render(<InvestorPage view="capital" />);
+    render(<InvestorPage view="overview" />);
     expect(screen.getByText('فرق يحتاج مراجعة')).toBeTruthy();
     expect(screen.queryByText('✓ مطابق')).toBeNull();
     expect(screen.getByText(/رصيد الدفاتر أعلى من سنداتك/)).toBeTruthy();
@@ -770,7 +777,7 @@ describe('صفحة المستثمر — المؤشرات الجديدة', () => 
 
   it('وبلا حسابٍ في الدفاتر لا تُعرض بطاقةٌ تدّعي المطابقة', () => {
     paymentsState.payments = [{ id: 'r1', partnerId: 'p1', amount: 20000, paymentDate: '2026-07-01', paymentMethod: 'cash' }];
-    render(<InvestorPage view="capital" />);
+    render(<InvestorPage view="overview" />);
     expect(screen.queryByText('رصيدك في الدفاتر')).toBeNull();
   });
 });

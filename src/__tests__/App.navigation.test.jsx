@@ -68,6 +68,23 @@ describe('بقاء الصفحة عند إعادة التحميل', () => {
     expect(await screen.findByRole('heading', { name: 'حساب الشريك: income' })).toBeTruthy();
   });
 
+  it('الرابط القديم لرأس المال والرجوع إليه يفتحان النظرة العامة مع بقاء الرحلة', async () => {
+    Object.assign(state, { role: 'partner', partnerView: true });
+    window.history.replaceState(null, '', '/?page=investor_capital');
+    render(<App />);
+    await screen.findByRole('heading', { name: 'حساب الشريك: overview' });
+    expect(screen.queryByRole('button', { name: 'رأس مالي', exact: true })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'رحلة رأس مالي' }));
+    await screen.findByRole('heading', { name: 'حساب الشريك: journey' });
+    act(() => {
+      window.history.replaceState(null, '', '/?page=investor_capital');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    await screen.findByRole('heading', { name: 'حساب الشريك: overview' });
+    fireEvent.click(screen.getByRole('button', { name: 'قائمة الدخل' }));
+    expect(await screen.findByRole('heading', { name: 'حساب الشريك: income' })).toBeTruthy();
+  });
+
   it('يتبع زر الرجوع والتقدم في المتصفح', async () => {
     render(<App />);
     await screen.findByRole('heading', { name: 'صفحة الرئيسية للاختبار' });

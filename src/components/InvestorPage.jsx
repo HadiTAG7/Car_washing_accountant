@@ -14,7 +14,6 @@ import { useLanguage } from '../i18n/useLanguage';
 //
 // الآن أربعة عروض، كلٌّ يجيب سؤالاً واحداً:
 //   • `overview`  أين أنا؟ حصّتي ورأس مالي ونتيجة آخر شهرٍ فيه حركة.
-//   • `capital`   كم دفعتُ وكم بقي عليّ؟ السندات وكشف الحساب والتحصيل.
 //   • `income`    ما نصيبي من نتيجة هذا الشهر؟
 //   • `trends`    إلى أين تتجه؟
 //
@@ -70,7 +69,6 @@ import {
 // ليعرف أين هو.
 const VIEW_META = {
   overview: { title: 'حسابي كشريك',  subtitle: 'حصّتك ورأس مالك ونتيجة آخر شهر' },
-  capital:  { title: 'رأس مالي',     subtitle: 'سنداتك والباقي من حصّتك' },
   journey:  { title: 'رحلة رأس مالي', subtitle: 'تفاصيل صرف التأسيس ثم مصاريف التشغيل والرصيد المتبقي' },
   income:   { title: 'قائمة الدخل',  subtitle: 'إيراداتك ومصاريفك ونتيجة الشهر' },
   trends:   { title: 'اتجاه ٦ أشهر', subtitle: 'حصتك التحليلية من إيرادات الشركة وتكاليفها ونتيجتها' },
@@ -226,7 +224,7 @@ function ShareCard({ partner }) {
   );
 }
 
-/** رأس المال في ثلاثة أرقام واضحة. يُعاد في «نظرة عامة» و«رأس مالي». */
+/** رأس المال في ثلاثة أرقام واضحة. يظهر في «نظرة عامة». */
 export function CapitalSummary({ partner, required, paid, remaining, settled, receiptsCount }) {
   return (
     <>
@@ -449,7 +447,7 @@ export function IncomeStatementCard({
             الأرقام اللي فوق هي حصّتك التحليلية من نتائج الشركة الشهرية، محسوبة على عدد العمال. وتشمل المصروفات المسجلة والالتزامات الدورية واحتياطي التجديد. هذا تقرير حصتك التشغيلي، وما يغيّر قائمة الشركة المحاسبية.
           </p>
           <p className="text-xs text-amber-800 dark:text-amber-200 mt-3 p-3 rounded-control bg-amber-50 dark:bg-amber-500/10 leading-relaxed">
-            هذي النتيجة مو مطالبة مالية جديدة عليك، ولا تعني توزيع نقدي. المسجّل في سندات رأس مالك: {formatCurrency(paid)}، وتفاصيله في «رأس مالي». إذا المصروف ظاهر في حسابات الشركة، مو معناته مطلوب منك تدفعه مرة ثانية.
+            هذي النتيجة مو مطالبة مالية جديدة عليك، ولا تعني توزيع نقدي. المسجّل في سندات رأس مالك: {formatCurrency(paid)}، وملخصه في «نظرة عامة». إذا المصروف ظاهر في حسابات الشركة، مو معناته مطلوب منك تدفعه مرة ثانية.
           </p>
         </div>
       )}
@@ -468,7 +466,7 @@ function OverviewView({
   partner, required, paid, remaining, settled,
   receiptsCount, hasShare, latestMonth,
   availableMonths, activeMonth, onMonthChange, monthlySummary,
-  ytd = null, washShare = null, foundingStatus = null,
+  ytd = null, washShare = null, foundingStatus = null, paidSummary = null,
 }) {
   return (
     <>
@@ -481,6 +479,7 @@ function OverviewView({
         settled={settled}
         receiptsCount={receiptsCount}
       />
+      <CapitalLedgerNotice summary={paidSummary} />
       <Card className="p-5" aria-label="ملخص الشهر">
         <SectionHeader
           title="ملخص الشهر"
@@ -551,27 +550,6 @@ export function CapitalLedgerNotice({ summary }) {
         sub={pending ? 'دفعات مسجلة بالسندات، بس للحين ما ترحّلت للدفاتر' : 'رصيد الدفاتر أعلى من سنداتك؛ تواصل مع الإدارة عشان يراجعونه'} />
     </div>
   </Card>;
-}
-
-/** «رأس مالي» — ملخص السداد ورصيد الدفاتر. */
-function CapitalView({
-  partner, required, paid, remaining, settled, receiptsCount, paidSummary = null,
-}) {
-  return (
-    <>
-      <CapitalSummary
-        partner={partner}
-        required={required}
-        paid={paid}
-        remaining={remaining}
-        settled={settled}
-        receiptsCount={receiptsCount}
-      />
-
-      <CapitalLedgerNotice summary={paidSummary} />
-
-    </>
-  );
 }
 
 /** «اتجاه ٦ أشهر» — ستّ قوائم دخلٍ مصغّرة في رسمٍ واحد. */
@@ -763,9 +741,9 @@ function InvestorPortal({ partner, view }) {
     };
   }, [view, insights, washMonths, language]);
 
-  // رصيده في الدفاتر مقابل سنداته — لعرض «رأس مالي».
+  // اختلاف رصيد الدفاتر عن السندات يبقى بجانب ملخص رأس المال.
   const paidSummary = useMemo(
-    () => (view === 'capital' ? partnerPaidSummary(partner.id, { payments: myReceipts, entries, lines }) : null),
+    () => (view === 'overview' ? partnerPaidSummary(partner.id, { payments: myReceipts, entries, lines }) : null),
     [view, partner.id, myReceipts, entries, lines],
   );
 
@@ -815,17 +793,6 @@ function InvestorPortal({ partner, view }) {
             ytd={ytd}
             washShare={washShare}
             foundingStatus={foundingStatus}
-          />
-        )}
-
-        {view === 'capital' && (
-          <CapitalView
-            partner={partner}
-            required={required}
-            paid={paid}
-            remaining={remaining}
-            settled={settled}
-            receiptsCount={myReceipts.length}
             paidSummary={paidSummary}
           />
         )}

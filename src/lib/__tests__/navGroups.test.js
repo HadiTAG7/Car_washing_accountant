@@ -6,10 +6,10 @@ import {
 const idsOf = (groups) => groups.flatMap((g) => g.tabs.map((t) => t.id));
 
 describe('من يرى أي تبويب', () => {
-  it('المستثمر يرى خياراته الستة لا اثنين وعشرين', () => {
+  it('المستثمر يرى خياراته الخمسة لا اثنين وعشرين', () => {
     const ids = idsOf(visibleGroupsFor({ role: 'partner', isPartnerView: true }));
     expect(ids).toEqual([
-      'investor', 'investor_capital', 'investor_journey', 'investor_income', 'investor_trends', 'investor_assistant',
+      'investor', 'investor_journey', 'investor_income', 'investor_trends', 'investor_assistant',
     ]);
     expect(investorViewFor('investor_assistant')).toBe('assistant');
   });
@@ -64,6 +64,9 @@ describe('من يرى أي تبويب', () => {
     // معرّفٌ لا يعرفه الجدول يسقط على الأول لا على فراغ.
     expect(investorViewFor('ledger')).toBe('overview');
     expect(investorViewFor(undefined)).toBe('overview');
+    expect(investorViewFor('investor_capital')).toBe('overview');
+    expect(resolveTab('investor_capital', { investorMode: true })).toBe('investor');
+    expect(resolveTab('investor_capital', { allowedTabIds: idsOf(TAB_GROUPS) })).toBe('overview');
   });
 
   it('وضع المستثمر لا يصيّر تبويباً إدارياً مهما طُلب', () => {

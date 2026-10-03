@@ -9,7 +9,7 @@
 import {
   LayoutDashboard, Landmark, Repeat, Receipt, Activity, Car, Bike, Home,
   BarChart3, Target, Handshake, Plug, HandCoins, RefreshCw, Percent,
-  BookOpen, Scale, Lock, FileText, Boxes, Gauge, Wallet, TrendingUp, Bot,
+  BookOpen, Scale, Lock, FileText, Boxes, Gauge, TrendingUp, Bot,
 } from 'lucide-react';
 
 // Tab ids are untouched: the render chain below keys off them, so regrouping
@@ -83,20 +83,13 @@ export const TAB_GROUPS = [
 ];
 
 // ── ما يراه المستثمر ──────────────────────────────────────────────────────
-// كان تبويباً واحداً: ورقةٌ طويلة تحمل أربعة أشياء مختلفة — حصّته، وسندات
-// رأس ماله، وقائمة دخل الشهر، واتجاه ستة أشهر — فمن أراد رقماً واحداً مرّ
-// على الثلاثة الأخرى، وعلى الجوال يعني ذلك تمريراً لا قراءة.
-//
-// الآن أربعة خيارات، مقسومةٌ بالسؤال الذي يجيب عليه كلٌّ منها لا بمصدر
-// بياناته: «أين أنا؟» و«كم دفعتُ؟» و«ما نصيبي من هذا الشهر؟» و«إلى أين
-// تتجه؟». والقسمة قسمةُ عرضٍ لا قسمةُ صلاحية: أربعتها تقرأ ما كانت تقرؤه
-// الورقة الواحدة، لا حرفاً أكثر.
+// ملخص رأس المال ضمن النظرة العامة، ورحلة رأس المال عرض مستقل.
+// تبويبات الشريك تقسم العرض فقط ولا توسع صلاحيات القراءة.
 //
 // و`view` تُحمل هنا لا في `App.jsx`: التبويب ومحتواه شيءٌ واحد، وفصلهما في
 // ملفين يعني جدولين يفترقان بصمت عند أول إضافة.
 export const INVESTOR_TABS = [
   { id: 'investor',         view: 'overview', label: 'نظرة عامة',    icon: Handshake  },
-  { id: 'investor_capital', view: 'capital',  label: 'رأس مالي',     icon: Wallet     },
   { id: 'investor_journey', view: 'journey',  label: 'رحلة رأس مالي', icon: Receipt    },
   { id: 'investor_income',  view: 'income',   label: 'قائمة الدخل',  icon: BarChart3  },
   { id: 'investor_trends',  view: 'trends',   label: 'اتجاه ٦ أشهر', icon: TrendingUp },

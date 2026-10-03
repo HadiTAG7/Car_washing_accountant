@@ -12,6 +12,45 @@ const { default: Page, CapitalJourneyContent } = await import('../PartnerCapital
 afterEach(() => { cleanup(); query.mockReset(); });
 
 describe('رحلة رأس مال الشريك', () => {
+  it('يبقي مجموعة بصافي صفر ظاهرة ويعرض الحالة الفارغة فقط عندما لا توجد بنود', () => {
+    const report = { ...journeyReport, capitalJourney: { ...journeyReport.capitalJourney,
+      initialTotal: 0, initialItems: [
+        { id: 'b', groupKey: 'startup:bike', kind: 'startup', description: 'الدباب', amount: 38.8 },
+        { id: 'r', groupKey: 'startup:bike', kind: 'startup', description: 'الدباب', amount: -38.8, reversal: true },
+      ],
+    } };
+    const { rerender } = render(<CapitalJourneyContent report={report} />);
+    const table = screen.getByRole('table', { name: 'تفاصيل صرف التأسيس' });
+    expect(table.querySelectorAll('tbody tr')).toHaveLength(1);
+    expect(table.querySelector('tbody').textContent).toContain('0.00');
+    rerender(<CapitalJourneyContent report={{ ...report, capitalJourney: { ...report.capitalJourney, initialItems: [] } }} />);
+    expect(screen.queryByRole('table', { name: 'تفاصيل صرف التأسيس' })).toBeNull();
+    expect(screen.getByText('ما فيه مستندات صرف تأسيس ضمن هالنطاق')).toBeTruthy();
+  });
+  it('يعرض صفاً لكل بند مؤكد دون تاريخ منفرد لإجمالي عدة عمليات، ويُبقي العكس المجهول واضحاً', () => {
+    const initialItems = [
+      { id: 'f1', groupKey: 'startup:franchise', description: 'رسوم الفرنشايز', kind: 'startup', amount: 12000, date: '2026-09-01' },
+      { id: 'f2', groupKey: 'startup:franchise', description: 'رسوم الفرنشايز', kind: 'startup', amount: 38000, date: '2026-09-02' },
+      { id: 'b1', groupKey: 'startup:bike', description: 'الدباب', kind: 'startup', amount: 38800 },
+      { id: 'b2', groupKey: 'startup:bike', description: 'الدباب', kind: 'startup', amount: 38799.97 },
+      { id: 'b3', groupKey: 'startup:bike', description: 'الدباب', kind: 'startup', amount: -38800, reversal: true },
+      { id: 'unknown', description: 'استرداد غير مربوط', kind: 'startup', amount: -1, reversal: true },
+    ];
+    render(<CapitalJourneyContent report={{ ...journeyReport, capitalJourney: {
+      ...journeyReport.capitalJourney, initialItems, initialTotal: 88798.97,
+    } }} />);
+    const table = screen.getByRole('table', { name: 'تفاصيل صرف التأسيس' });
+    expect(table.querySelectorAll('tbody tr')).toHaveLength(3);
+    expect(within(table).getAllByText('رسوم الفرنشايز')).toHaveLength(1);
+    expect(within(table).getByText('رسوم الفرنشايز').closest('tr').textContent).toContain('50,000.00');
+    expect(within(table).getByText('الدباب').closest('tr').textContent).toContain('38,799.97');
+    expect(within(table).getByText(/عكس \/ استرداد — استرداد غير مربوط/)).toBeTruthy();
+    expect(within(table).getByText('صافي بعد العكس / الاسترداد')).toBeTruthy();
+    expect(within(table).queryByText('البند والتاريخ')).toBeNull();
+    expect(within(table).getByText('البند')).toBeTruthy();
+    expect(table.textContent).not.toContain('2026');
+    expect(table.querySelector('tfoot').textContent).toContain('88,798.97');
+  });
   it.each([0.2, 0.35])('لا تعرض نسبة الشريك حتى لو كانت موجودة في التقرير (%s)', factor => {
     const report = { ...journeyReport, factor };
     const before = JSON.stringify(report);

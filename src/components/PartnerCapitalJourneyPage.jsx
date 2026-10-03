@@ -7,6 +7,7 @@ import ErrorState, { SetupRequiredCard } from './ErrorState';
 import { usePartnerStatement } from '../hooks/usePartnerStatement';
 import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
 import { formatCurrency, formatDate } from '../data/initialData';
+import { groupInitialJourneyItems } from '../lib/accounting/partnerCapitalJourneyGroups';
 
 const BASIS_LABEL = {
   posted: 'مسجل في الدفاتر، بس هذا لحاله ما يؤكد الدفع',
@@ -28,6 +29,7 @@ function AmountLine({ label, amount, total = false }) {
 // allocated and scoped by the server; this view performs no financial writes.
 export function CapitalJourneyContent({ report }) {
   const journey = report.capitalJourney;
+  const initialGroups = groupInitialJourneyItems(journey.initialItems);
   return <>
     <Card className="p-5 space-y-3">
       <SectionHeader title="فلوسك وين راحت؟" subtitle="من رأس المال المسدّد إلى التأسيس ثم مصاريف التشغيل" />
@@ -75,12 +77,14 @@ export function CapitalJourneyContent({ report }) {
       {journey.initialItems.length === 0 ? <EmptyState compact icon={Landmark} title="ما فيه مستندات صرف تأسيس ضمن هالنطاق" /> : <div className="overflow-x-auto">
         <table className="w-full text-sm" aria-label="تفاصيل صرف التأسيس">
           <thead><tr className="text-xs text-slate-500 border-b border-slate-200 dark:border-slate-700">
-            <th className="py-3 text-right">البند والتاريخ</th><th className="py-3 text-left">حصتك من الصرف</th>
+            <th className="py-3 text-right">البند</th><th className="py-3 text-left">حصتك من الصرف</th>
           </tr></thead>
-          <tbody>{journey.initialItems.map(item => <tr key={item.id} className="border-b border-slate-100 dark:border-slate-800">
+          <tbody>{initialGroups.map(item => <tr key={item.id} className="border-b border-slate-100 dark:border-slate-800">
             <td className="py-3 pl-3 text-slate-700 dark:text-slate-200">
-              <p className="font-semibold">{item.reversal ? 'عكس / استرداد — ' : ''}{item.description}</p>
-              <p className="text-xs text-slate-500 mt-1">{formatDate(item.date)} · {item.kind === 'annual' ? 'دفعة سنوية أولى' : 'تأسيس'}</p>
+              <p className="font-semibold">{item.reversal && !item.classified ? 'عكس / استرداد — ' : ''}{item.description}</p>
+              <p className="text-xs text-slate-500 mt-1">{item.kind === 'annual' ? 'دفعة سنوية أولى' : 'تأسيس'}</p>
+              {item.reversal && item.classified && <p className="text-xs text-slate-500 mt-1">صافي بعد العكس / الاسترداد</p>}
+              {!item.classified && <p className="text-xs text-slate-500 mt-1">البند معروض منفصل؛ ما توفر ربط مؤكد للمجموعة</p>}
             </td>
             <td className="py-3 text-left tabular-nums whitespace-nowrap">{formatCurrency(item.amount)}</td>
           </tr>)}</tbody>

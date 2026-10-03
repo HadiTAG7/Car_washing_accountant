@@ -515,5 +515,8 @@
   "ما توفرت تفاصيل تغطية التأسيس لكل أشهر السنة": "Setup funding coverage details are not available for every month of the year",
   "مجموع نتائج الأشهر بعد تغطيتها من التأسيس؛ مو مطالبة أو توزيع نقدي": "Total monthly results after setup funding coverage; not a payment demand or cash distribution",
   "نتيجتك بعد تغطية التأسيس في": "Your Result After Setup Funding Coverage in",
-  "، وملخصه في «نظرة عامة». إذا المصروف ظاهر في حسابات الشركة، مو معناته مطلوب منك تدفعه مرة ثانية.": ", with a summary in “Overview”. An expense in the company accounts does not mean you need to pay it again."
+  "، وملخصه في «نظرة عامة». إذا المصروف ظاهر في حسابات الشركة، مو معناته مطلوب منك تدفعه مرة ثانية.": ", with a summary in “Overview”. An expense in the company accounts does not mean you need to pay it again.",
+  "البند": "Item",
+  "صافي بعد العكس / الاسترداد": "Net After Reversals / Refunds",
+  "البند معروض منفصل؛ ما توفر ربط مؤكد للمجموعة": "Shown separately; no confirmed group link is available"
 }

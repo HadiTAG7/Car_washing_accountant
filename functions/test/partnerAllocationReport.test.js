@@ -195,6 +195,8 @@ describe('تقرير مصروفات الشريك الخادمي', () => {
     expect(r.capitalJourney.initialTotal).toBe(18000);
     expect(r.capitalJourney.initialItems.filter(i => i.description === 'الفرنشايز')).toHaveLength(2);
     expect(r.capitalJourney.initialItems.some(i => i.reversal && i.amount === -10)).toBe(true);
+    expect(r.capitalJourney.initialItems.filter(i => i.description === 'الفرنشايز').map(i => i.groupKey)).toEqual(['startup:setup', 'startup:setup']);
+    expect(r.capitalJourney.initialItems.find(i => i.kind === 'annual').groupKey).toBe('annual:rent');
     expect(Math.round(r.capitalJourney.initialItems.reduce((sum, i) => sum + i.amount, 0) * 100)).toBe(1800000);
     expect(r.capitalJourney.remaining).toBe(r.statements.at(-1).founding.remaining);
   });

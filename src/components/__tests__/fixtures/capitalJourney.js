@@ -5,8 +5,8 @@ export const journeyReport = {
     initialTotal: 10000, operatingTotal: 1000, reserveTotal: 200, remaining: 8800, beyondBalance: 0,
     receipts: [{ id: 'own-receipt', date: '2026-09-01', amount: 20000 }],
     initialItems: [
-      { id: 'franchise', description: 'رسوم الفرنشايز', date: '2026-09-02', kind: 'startup', amount: 4000 },
-      { id: 'bike', description: 'قيمة الدباب', date: '2026-09-03', kind: 'startup', amount: 6000 },
+      { id: 'franchise', groupKey: 'startup:franchise', description: 'رسوم الفرنشايز', date: '2026-09-02', kind: 'startup', amount: 4000 },
+      { id: 'bike', groupKey: 'startup:bike', description: 'قيمة الدباب', date: '2026-09-03', kind: 'startup', amount: 6000 },
     ],
     months: [{ periodKey: '2026-09', operatingCost: 1000, reserve: 200, covered: 1200, uncovered: 0, remaining: 8800,
       groups: [

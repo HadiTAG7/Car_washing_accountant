@@ -120,7 +120,10 @@ export async function partnerAllocationReport(db, { partnerId, periodKey, today 
       // supplier details or the free-text journal description.
       const parent = (kind === 'startup' ? data.startup_costs : data.annual_expenses)?.find(p =>
         p.id === (kind === 'startup' ? row.startup_cost_id : row.annual_expense_id));
-      const detail = { kind, description: (kind === 'startup' ? parent?.item_name : parent?.expense_name)
+      // The plan identity is the display grouping boundary. Reversals below
+      // inherit it from their linked source, never from journal wording.
+      const detail = { kind, groupKey: parent ? `${kind}:${parent.id}` : null,
+        description: (kind === 'startup' ? parent?.item_name : parent?.expense_name)
         || (kind === 'startup' ? 'صرف تأسيس' : 'دفعة سنوية أولى') };
       if (!validMonth(monthOf(date))) throw new LedgerError('يوجد صرف تأسيس أو سنوي بلا تاريخ صحيح؛ تعذّر تأكيد رصيد التأسيس.');
       if (kind === 'annual') {

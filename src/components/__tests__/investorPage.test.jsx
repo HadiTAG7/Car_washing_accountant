@@ -101,12 +101,14 @@ afterEach(() => {
   insightsState.washMonths = [];
 });
 
-describe('حالة التقرير ومقارنة فترات الشريك', () => {
-  it('تعرض تقرير التوزيع مبدئياً وتاريخ قراءته لا تاريخ الجهاز ولا اعتماداً غير موجود', () => {
+describe('معلومات المصدر ومقارنة فترات الشريك', () => {
+  it('تعرض معلومات المصدر دون عنوان حالة التقرير أو شارة مبدئي/نهائي', () => {
     render(<PartnerReportStatus report={{ asOf: '2026-10-02T18:00:00Z', from: '2026-05-01', through: '2026-09-30' }} />);
-    expect(screen.getByText('حالة التقرير: مبدئي')).toBeTruthy();
+    expect(screen.queryByText(/حالة التقرير|مبدئي|نهائي/)).toBeNull();
+    expect(screen.queryByLabelText('حالة التقرير')).toBeNull();
     expect(screen.getByText(/ليس كشف توزيع أرباح معتمداً/)).toBeTruthy();
     expect(screen.getByText(/آخر تحديث من المصدر:/).textContent).toContain('2026');
+    expect(screen.getByText(/نطاق البيانات:/)).toBeTruthy();
     expect(screen.queryByText('حالة التقرير: معتمد')).toBeNull();
   });
   it('لا تختلق تاريخاً عندما لا يتوفر تاريخ قراءة المصدر', () => {
@@ -574,16 +576,21 @@ describe('صفحة المستثمر — المؤشرات الجديدة', () => 
     expect(card.textContent).not.toContain('من أصل');
   });
 
-  it('تقرير الالتزامات والاحتياطي يبقى مبدئياً حتى لو أقفل الدفتر', () => {
+  it.each(['open', 'closed'])('تخفي علامات حالة التقرير في عروض الشريك مع فترة %s وتبقي حالة الدفتر', status => {
     ledgerState.entries = [{ id: 'e1', entryDate: '2026-08-10', periodKey: '2026-08', status: 'posted', lines: [] }];
-    ledgerState.periods = [{ id: '2026-08', status: 'closed' }];
-    render(<InvestorPage view="income" />);
-    expect(screen.getByText('مبدئي')).toBeTruthy();
-    expect(screen.queryByText('نهائي')).toBeNull();
-    cleanup();
-    ledgerState.periods = [{ id: '2026-08', status: 'open' }];
-    render(<InvestorPage view="income" />);
-    expect(screen.getByText('مبدئي')).toBeTruthy();
+    ledgerState.periods = [{ id: '2026-08', status }];
+    for (const view of ['overview', 'income', 'trends']) {
+      render(<InvestorPage view={view} />);
+      expect(screen.queryByText(/حالة التقرير|مبدئي|نهائي/)).toBeNull();
+      expect(screen.queryByLabelText('حالة التقرير')).toBeNull();
+      expect(screen.getByText(/آخر تحديث من المصدر:/)).toBeTruthy();
+      expect(screen.getByText(/ليس كشف توزيع أرباح معتمداً/)).toBeTruthy();
+      if (view === 'income') {
+        expect(screen.getByLabelText('فترة التقرير (الشهر)').value).toBe('2026-08');
+      }
+      expect(ledgerState.periods).toEqual([{ id: '2026-08', status }]);
+      cleanup();
+    }
   });
 
   it('رأس مالي: رصيده في الدفاتر، وما لم يُرحَّل بعد يُسمّى «قيد الترحيل»', () => {

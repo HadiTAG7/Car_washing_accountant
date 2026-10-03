@@ -36,7 +36,7 @@ import { useLanguage } from '../i18n/useLanguage';
 
 import { useId, useMemo, useState } from 'react';
 import {
-  Calendar, HandCoins, Printer, TrendingUp, Wallet, Link2Off, Droplets, Lock, Clock3,
+  Calendar, HandCoins, Printer, TrendingUp, Wallet, Link2Off, Droplets, Clock3,
   PiggyBank, BookOpen, CalendarRange, CircleHelp, ChevronDown,
 } from 'lucide-react';
 
@@ -115,30 +115,6 @@ function formatMonthLabel(ym) {
   return new Intl.DateTimeFormat(getLocale(), { year: 'numeric', month: 'long' }).format(date);
 }
 
-/**
- * علامة حال الشهر: مُقفَل = نهائي، مفتوح = مبدئي.
- *
- * الأرقام تتغيّر حتى يُقفل الشهر، وشريكٌ يرى رقم الشهر الماضي يتبدّل يسأل
- * «لماذا؟». العلامة تجيب قبل السؤال — ولا تُعرض حين لا سجل للفترة أصلاً.
- */
-function PeriodBadge({ status }) {
-  if (!status) return null;
-  const closed = status === 'closed';
-  return (
-    <span
-      className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-control border ${
-        closed
-          ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-100 dark:border-emerald-500/30'
-          : 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-100 dark:border-amber-500/30'
-      }`}
-      title={status === 'allocation' ? 'تقرير تشغيلي حسب البنود المسجلة؛ ليس كشف توزيع معتمداً' : closed ? 'الشهر مُقفَل في الدفاتر — الأرقام نهائية' : 'الشهر مفتوح — قد تُضاف قيود فتتغيّر الأرقام'}
-    >
-      {closed ? <Lock size={12} /> : <Clock3 size={12} />}
-      {closed ? 'نهائي' : 'مبدئي'}
-    </span>
-  );
-}
-
 /** This report has no independent approval record. Closing books is not one. */
 export function PartnerReportStatus({ report }) {
   const { language } = useLanguage();
@@ -146,8 +122,7 @@ export function PartnerReportStatus({ report }) {
   const updated = Number.isFinite(timestamp) ? new Intl.DateTimeFormat(getLocale(language), {
     dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Riyadh', numberingSystem: 'latn',
   }).format(new Date(timestamp)) : 'غير متاح';
-  return <section aria-label="حالة التقرير" className="rounded-control border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 p-4 text-sm text-amber-900 dark:text-amber-200 space-y-1">
-    <p className="font-bold flex items-center gap-2"><Clock3 size={16} /> حالة التقرير: مبدئي</p>
+  return <section className="rounded-control border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 p-4 text-sm text-amber-900 dark:text-amber-200 space-y-1">
     <p className="text-xs leading-relaxed">أرقام تشغيلية قابلة للتحديث؛ ليس كشف توزيع أرباح معتمداً ولا مطالبة مالية عليك.</p>
     <p className="text-xs">آخر تحديث من المصدر: {updated}</p>
     {report?.from && report?.through && <p className="text-xs">نطاق البيانات: {formatDate(report.from)} إلى {formatDate(report.through)}</p>}
@@ -407,7 +382,7 @@ function ExpenseStatementGroup({ label, amount, group, explanation = null, expla
  * العامل، فلا حساب جديد هنا ولا فرصة لاختلاف رقمٍ عن رقم.
  */
 export function IncomeStatementCard({
-  hasShare, paid, foundingStatus, availableMonths, activeMonth, onMonthChange, statement, periodStatus = null,
+  hasShare, paid, foundingStatus, availableMonths, activeMonth, onMonthChange, statement,
 }) {
   const groups = Object.fromEntries((statement.expenseBreakdown?.groups || []).map(group => [group.key, group]));
   const hasOtherExpenses = Boolean(groups.other?.amount || groups.other?.items?.length);
@@ -434,7 +409,6 @@ export function IncomeStatementCard({
         subtitle="إيراداتك ومصاريفك ونتيجة الشهر"
         action={(
           <div className="flex items-center gap-2">
-            <PeriodBadge status={periodStatus} />
             <select
               aria-label="فترة التقرير (الشهر)"
               value={activeMonth}
@@ -526,7 +500,7 @@ export function IncomeStatementCard({
  */
 function OverviewView({
   partner, required, paid, remaining, settled,
-  receiptsCount, hasShare, latestMonth, latestStatement, latestStatus = null,
+  receiptsCount, hasShare, latestMonth, latestStatement,
   mom = null, ytd = 0, washShare = null, roi = null, foundingStatus = null,
 }) {
   return (
@@ -546,7 +520,6 @@ function OverviewView({
         <SectionHeader
           title="نتيجة آخر شهر"
           subtitle={`حصتك التحليلية من نتيجة ${formatMonthLabel(latestMonth)}`}
-          action={<PeriodBadge status={latestStatus} />}
         />
         {!hasShare ? (
           <EmptyState
@@ -1032,7 +1005,6 @@ function InvestorPortal({ partner, view }) {
             hasShare={hasShare}
             latestMonth={statementMonth}
             latestStatement={statement}
-            latestStatus="allocation"
             mom={mom}
             ytd={ytd}
             washShare={washShare}
@@ -1065,7 +1037,6 @@ function InvestorPortal({ partner, view }) {
             activeMonth={activeMonth}
             onMonthChange={setSelectedMonth}
             statement={statement}
-            periodStatus="allocation"
           />
           <PartnerComparisonCard key={partner.id} report={allocationReport} activeMonth={activeMonth} />
           </>

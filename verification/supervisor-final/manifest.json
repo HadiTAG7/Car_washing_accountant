@@ -1,0 +1,66 @@
+{
+  "baseSHA": "2465461d961dca583c4eb7f353ce62573276dd40",
+  "candidateSHA": "d93d4ad4cbf18f95064f6afb8a56f5acb86c1aa7",
+  "productionBranch": "claude/laundry-accounting-dashboard-rtl-yyUBw",
+  "repository": "https://github.com/HadiTAG7/Car_washing_accountant.git",
+  "patchedFiles": {
+    "firestore.rules": "20bdf6fea7c6c35b3b97abcaef73f01790f369a7ae52ba849f73c698fcfe139f",
+    "functions/index.js": "ee532bd5df53d823ef6de245eef88de2e063eeb8c577ba057b270be84c142c7a",
+    "functions/src/handlers.js": "5c3e94f3448be0af28e36c6ff0ad32adbd408284dc30f23d6e9c42c788721323",
+    "functions/src/supervisorRead.js": "56b8521e1402de243f2599848fd8dc94d65040f7af93a98ddf6d11d9f62bf1b8",
+    "functions/test/fixtures/supervisor.js": "2458c24453dd2b0d2df1878e3b17cd6bb315a7c918abe362fc653a0ec4a1f20e",
+    "functions/test/supervisor.httpApi.callables.test.js": "38608334e0b089dfcfe6f0c0f7e07c1fd4ebfcbcb5618bc1e9d29a13adfa6f03",
+    "functions/test/supervisorAccess.test.js": "c47506ddf86e0f7663860f3a5a8b899998a761284107b193f32c1dee3e6c1af4",
+    "functions/test/supervisorRead.test.js": "9dbf4cbc9cbcf21a466b4b90a36235286bccd7c2fac19506e96e57d58bfe1ef4",
+    "src/App.jsx": "87246e0bbd21dce0cea9b97ebbd523fc0a0e5fee8c085dd3c3850355e5bdf528",
+    "src/__tests__/App.navigation.test.jsx": "ee4bbfa1e916e52df6fb9f5abddd7433693dde5d11ff111c22feef43c5cdadc6",
+    "src/components/SupervisorPage.jsx": "015d429c377ef45958c415bba7fcf39c4cbdecea9a3ca5dca5b9398441e8ccf9",
+    "src/components/SupervisorRecordsPage.jsx": "bf6c34c4750c4f1893b4d8bf423fde99550a5df02db308db4bfba20079c2268c",
+    "src/components/__tests__/supervisorPage.test.jsx": "4f8d2c386a2c6c2e8743e6b13849c4a4080a0510af6ea147088c103a1acf1936",
+    "src/contexts/PartnerViewContext.jsx": "ec17ede2c5e04e734eca058f7d47a886d59ebe870ec0432203db1bc8a076689c",
+    "src/contexts/__tests__/partnerViewGate.test.jsx": "f8e2e076a19d9b2df4683e51e7b144f6f3dc13cc374331af151ff41c4ab77dd9",
+    "src/hooks/__tests__/membershipAdminBelt.test.jsx": "87e1d80c94a3b676bdbac67236449e7e417809a4e5037f9dcc780fd642bc06df",
+    "src/hooks/useMembership.js": "1e9e9b325485dc1646e41efe8cc2666f8a2e6ad295f04912ac4c34b0b9dbb092",
+    "src/hooks/usePartners.js": "717fe69cd2e46c6facd3e569805de9f381404c8a7ba987da620524ec794871d9",
+    "src/hooks/useSupervisor.js": "b989682bac4edd6b6a980004148c6a4509ec3a6246d0c8737f8c079651caa4bb",
+    "src/i18n/en.reviewed.json": "112f8cfb84c55f0d792204a9c17f2d5318fee2147ee211e19e72dbe1fcc215ee",
+    "src/lib/__tests__/supervisorReport.test.js": "168bf7ea5a3ccf297882b844f57acbde996a9b401bb8b044fc3ca140b7db8788",
+    "src/lib/__tests__/supervisorTransport.test.js": "15b300066047fbbef8a2d35ff4ca95badaed88ac1481431b0de1e1f3549bcac9",
+    "src/lib/accounting/__tests__/supervisor.rules.emulator.test.js": "a4b84133a242f1470cb8a401433a0b04be078d387f577899eb1488487530c6a8",
+    "src/lib/firebaseClient.js": "138f8b6f1dea5231be3295d515dfc3e956a621d68626d130c4bb12798d30fe25",
+    "src/lib/navGroups.js": "ba03f9c85194564bf1d1f8ca939f396fe91cd64849ed7600a084a15e9aff2828",
+    "src/lib/supervisorAccess.js": "1b55058179d3e6f80218f505c7c9d989153fc80d28b4b6080829e6ae03c35853",
+    "src/lib/supervisorReport.js": "7e5d988080a145e3248a421f1ae3b2e4527a779f4a14bdd6f4164c07fbb463b6"
+  },
+  "lockfiles": {
+    "package-lock.json": "cd428fd2ab26379f77bc3696a1bbfdf51a3ccc1d76c54b02b0f46bc758b3d2f7",
+    "functions/package-lock.json": "2c87da223f7aba6fe87132ea274d5f321f66b09150b1a75153c0cf4e66eb9cdb",
+    "mcp/package-lock.json": "decdd35de675a41ba97c564cf1a251614e96daa870d78a8125428ff51025be2c"
+  },
+  "emulators": {
+    "firestore": {
+      "version": "1.22.0",
+      "filename": "cloud-firestore-emulator-v1.22.0.jar",
+      "bytes": 136707194,
+      "sha256": "9b6498b7f62714d67f48f59b3818883cd682dbcd46b9f59511de81c97bb5166c"
+    }
+  },
+  "sourceConfigSHA256": "96e0adae724dc629e42cd4b9384c6ba8bf3aafb2c4b0cc86ff8cd996c0e4eb47",
+  "transportBranch": "feature/supervisor-final-masah",
+  "transportConfigSHA256": "b581bed7973edd859428d91a46bd6d7ac3d066a8d327fa7b05862d6d667d0c60",
+  "kitPath": "verification/supervisor-final",
+  "expectedTests": {
+    "functions/test/sweaterOwnerHandoff.emulator.test.js": 3,
+    ".supervisor-final-check/scopedHandoff.emulator.test.js": 1
+  },
+  "expectedTotal": 4,
+  "excluded": [
+    "Storage runtime and deployment",
+    "Firebase Functions deployment",
+    "Blaze upgrade",
+    "account creation and activation"
+  ],
+  "priorMASAHSHA": "bca1c14c6bac3176653460e329cae7d9e55d8cb6",
+  "priorResult": "198/198 reported by coordinator at 2026-10-04 20:18 UTC",
+  "reusedCountWithEquivalentScope": 195
+}

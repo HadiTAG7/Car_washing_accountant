@@ -1,0 +1,116 @@
+{
+  "candidateSHA": "d93d4ad4cbf18f95064f6afb8a56f5acb86c1aa7",
+  "parentSHA": "2465461d961dca583c4eb7f353ce62573276dd40",
+  "previousMASAHSHA": "bca1c14c6bac3176653460e329cae7d9e55d8cb6",
+  "previousResultAsReportedByCoordinator": "198/198 at 2026-10-04 20:18 UTC",
+  "identicalFiles": {
+    "firestore.rules": {
+      "sha256": "20bdf6fea7c6c35b3b97abcaef73f01790f369a7ae52ba849f73c698fcfe139f",
+      "identicalToBca1": true
+    },
+    "functions/index.js": {
+      "sha256": "ee532bd5df53d823ef6de245eef88de2e063eeb8c577ba057b270be84c142c7a",
+      "identicalToBca1": true
+    },
+    "functions/src/handlers.js": {
+      "sha256": "5c3e94f3448be0af28e36c6ff0ad32adbd408284dc30f23d6e9c42c788721323",
+      "identicalToBca1": true
+    },
+    "functions/src/supervisorRead.js": {
+      "sha256": "56b8521e1402de243f2599848fd8dc94d65040f7af93a98ddf6d11d9f62bf1b8",
+      "identicalToBca1": true
+    },
+    "functions/test/supervisorAccess.test.js": {
+      "sha256": "c47506ddf86e0f7663860f3a5a8b899998a761284107b193f32c1dee3e6c1af4",
+      "identicalToBca1": true
+    },
+    "functions/test/supervisorRead.test.js": {
+      "sha256": "9dbf4cbc9cbcf21a466b4b90a36235286bccd7c2fac19506e96e57d58bfe1ef4",
+      "identicalToBca1": true
+    },
+    "functions/test/supervisor.httpApi.callables.test.js": {
+      "sha256": "38608334e0b089dfcfe6f0c0f7e07c1fd4ebfcbcb5618bc1e9d29a13adfa6f03",
+      "identicalToBca1": true
+    },
+    "functions/test/fixtures/supervisor.js": {
+      "sha256": "2458c24453dd2b0d2df1878e3b17cd6bb315a7c918abe362fc653a0ec4a1f20e",
+      "identicalToBca1": true
+    },
+    "src/lib/accounting/__tests__/supervisor.rules.emulator.test.js": {
+      "sha256": "a4b84133a242f1470cb8a401433a0b04be078d387f577899eb1488487530c6a8",
+      "identicalToBca1": true
+    },
+    "src/lib/accounting/__tests__/rules.emulator.test.js": {
+      "sha256": "45bc1e55a6aac2e2c1fe18e469065853482e78d4c1cb077124fe7e45f8281fb3",
+      "identicalToBca1": true
+    },
+    "src/lib/accounting/__tests__/agentCommandCenter.rules.emulator.test.js": {
+      "sha256": "063978e14fc79cacb5730d4c27030a5122f8a57e7813317cc459d53c941d982c",
+      "identicalToBca1": true
+    },
+    "src/lib/accounting/__tests__/passwordResetThrottle.rules.emulator.test.js": {
+      "sha256": "8f17b7d34284123076e36b932ad0fc51cd9165e10bf2f1773976e0e55568f905",
+      "identicalToBca1": true
+    },
+    "src/lib/supervisorAccess.js": {
+      "sha256": "1b55058179d3e6f80218f505c7c9d989153fc80d28b4b6080829e6ae03c35853",
+      "identicalToBca1": true
+    },
+    "src/lib/supervisorReport.js": {
+      "sha256": "7e5d988080a145e3248a421f1ae3b2e4527a779f4a14bdd6f4164c07fbb463b6",
+      "identicalToBca1": true
+    },
+    "src/lib/firebaseClient.js": {
+      "sha256": "138f8b6f1dea5231be3295d515dfc3e956a621d68626d130c4bb12798d30fe25",
+      "identicalToBca1": true
+    },
+    "src/hooks/useSupervisor.js": {
+      "sha256": "b989682bac4edd6b6a980004148c6a4509ec3a6246d0c8737f8c079651caa4bb",
+      "identicalToBca1": true
+    },
+    "src/contexts/PartnerViewContext.jsx": {
+      "sha256": "ec17ede2c5e04e734eca058f7d47a886d59ebe870ec0432203db1bc8a076689c",
+      "identicalToBca1": true
+    },
+    "src/hooks/useMembership.js": {
+      "sha256": "1e9e9b325485dc1646e41efe8cc2666f8a2e6ad295f04912ac4c34b0b9dbb092",
+      "identicalToBca1": true
+    },
+    "src/hooks/usePartners.js": {
+      "sha256": "717fe69cd2e46c6facd3e569805de9f381404c8a7ba987da620524ec794871d9",
+      "identicalToBca1": true
+    },
+    "functions/src/payroll.js": {
+      "sha256": "d0ece9c1bdfae7e387803977be8c04d6077cc44bd254cf8c25e1eedf53a25b6c",
+      "identicalToBca1": true
+    },
+    "functions/test/payroll.test.js": {
+      "sha256": "3e83088db0bcf370d623b663f8a8e1430a42adfd4532d7991e039d9dc30f02af",
+      "identicalToBca1": true
+    },
+    "functions/test/payrollCommissionPolicy.test.js": {
+      "sha256": "a8302dc61313a0b8039d1b5667a9eab858b2f4647fd1dba7052860bc64fa71b0",
+      "identicalToBca1": true
+    }
+  },
+  "changedComparedToBca1": [
+    "docs/SWEATER_OWNER_HANDOFF.md",
+    "functions/src/sweater/staffHandoff.js",
+    "functions/test/sweaterOwnerHandoff.test.js",
+    "src/components/__tests__/sweaterHandoffPreview.test.jsx",
+    "src/i18n/en.reviewed.json",
+    "src/lib/sweater/handoff.js"
+  ],
+  "sourceCoverageWarningRetained": true,
+  "reusedTests": {
+    "supervisor": 99,
+    "payroll": 31,
+    "existingRoleRules": 65,
+    "total": 195
+  },
+  "excludedFromAutomaticReuse": {
+    "sweaterOwnerHandoff.emulator.test.js": 3,
+    "reason": "staffHandoff.js and handoff.js changed; old emulator result is not validation of the changed code"
+  },
+  "allBaseTranslationValuesRetained": true
+}

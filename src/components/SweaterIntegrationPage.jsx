@@ -9,6 +9,7 @@ import ErrorState from './ErrorState';
 import Toast from './Toast';
 import SweaterActionDialog from './SweaterActionDialog';
 import SweaterHandoffPreview from './SweaterHandoffPreview';
+import SweaterOwnerWashTaxCorrection from './SweaterOwnerWashTaxCorrection';
 import { useSweaterIntegration, useSweaterConfig } from '../hooks/useSweater';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 import { describeBackendError } from '../lib/firebaseClient';
@@ -84,7 +85,7 @@ export default function SweaterIntegrationPage() {
 
       <main className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5">
         {integ.error && <ErrorState error={integ.error} />}
-        {!isPartnerView && ['admin', 'accountant'].includes(role) && <SweaterHandoffPreview />}
+        {!isPartnerView && ['admin', 'accountant'].includes(role) && <><SweaterOwnerWashTaxCorrection /><SweaterHandoffPreview /></>}
 
         {/* ── السرّ يُعرض مرة واحدة ── */}
         {freshSecret && (

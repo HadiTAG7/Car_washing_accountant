@@ -241,6 +241,7 @@ import { partnerWashShare } from './partnerInsights.js';
 import { partnerAllocationReport } from './partnerAllocationReport.js';
 import { previewSweaterHandoff } from './sweater/preview.js';
 import { saveOwnerHandoff } from './sweater/staffHandoff.js';
+import { previewOwnerWashTax, saveOwnerWashTax } from './sweater/ownerWashTax.js';
 import { SweaterIngestError } from './sweater/ingest.js';
 import { getPartnerEligibility, setPartnerEligibility } from './partnerWorkerEligibility.js';
 import { supervisorOverview, supervisorRecords } from './supervisorRead.js';
@@ -495,6 +496,14 @@ export const HANDLERS = {
   sweaterSaveOwnerHandoff: {
     guard: 'accountant',
     run: ({ db, FieldValue, data, uid }) => saveOwnerHandoff(db, FieldValue, data, uid),
+  },
+  sweaterPreviewOwnerWashTax: {
+    guard: 'accountant',
+    run: ({ db, data }) => previewOwnerWashTax(db, data),
+  },
+  sweaterSaveOwnerWashTax: {
+    guard: 'accountant',
+    run: ({ db, FieldValue, data, uid }) => saveOwnerWashTax(db, FieldValue, data, uid),
   },
   sweaterCalculateSettlement: {
     guard: 'accountant',

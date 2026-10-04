@@ -506,9 +506,11 @@ export function mapWash(row) {
     // مباشرة، فالافتراض يصف الواقع ولا يعيد كتابته.
     revenueOrigin: clampRevenueOrigin(row.revenue_origin),
     sspBookingId: row.ssp_booking_id || null,
+    priceMode: ['inclusive', 'exclusive'].includes(row.price_mode) ? row.price_mode : null,
     ...(row.revenue_origin === 'sweater' ? {
       collectionStatus: row.collection_status || null,
       workerCommissionPerWash: row.worker_commission_per_wash ?? null,
+      ownerTaxSnapshot: row.owner_tax_snapshot || null,
     } : {}),
   };
 }

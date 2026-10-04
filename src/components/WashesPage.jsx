@@ -19,6 +19,7 @@ import { useWashes } from '../hooks/useWashes';
 import { useBikers } from '../hooks/useBikers';
 import { useLanguage } from '../i18n/useLanguage';
 import { displayRecordedBikerName } from '../lib/bikerNames';
+import { formatDateOnly } from '../lib/dateOnly';
 import { useAccountingSettings } from '../hooks/useAccountingSettings';
 import { autoPostOnApproval, describeAutoPost, autoPostTone } from '../lib/accounting/autoPost';
 import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
@@ -68,16 +69,7 @@ function EmptyState({ onAdd, canMutate }) {
 }
 
 function formatWashDate(value) {
-  if (!value) return '—';
-  try {
-    const d = new Date(value);
-    if (Number.isNaN(d.getTime())) return value;
-    return new Intl.DateTimeFormat(getLocale(), {
-      year: 'numeric', month: 'long', day: 'numeric', numberingSystem: 'latn',
-    }).format(d);
-  } catch {
-    return value;
-  }
+  return formatDateOnly(value, getLocale());
 }
 
 function todayISO() {

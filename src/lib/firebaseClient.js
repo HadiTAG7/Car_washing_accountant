@@ -171,6 +171,9 @@ export function callSweaterOwnerHandoffSave(payload) {
   return callLedgerApi('sweaterSaveOwnerHandoff', payload, '/api/ledger');
 }
 
+export const callSweaterOwnerWashTaxPreview = () => callLedgerApi('sweaterPreviewOwnerWashTax', {}, '/api/ledger');
+export const callSweaterOwnerWashTaxSave = previewHash => callLedgerApi('sweaterSaveOwnerWashTax', { previewHash }, '/api/ledger');
+
 // These settings remain private server-side. Pin this feature to the Vercel
 // API so it never relies on a separately deployed Firebase callable version.
 export function callPartnerEligibilityGet(payload = {}) {

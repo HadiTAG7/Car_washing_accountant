@@ -17,15 +17,13 @@ import FinancialDetailsModal from './FinancialDetailsModal';
 import { LineTrend } from './charts/TrendCharts';
 import { useWashes } from '../hooks/useWashes';
 import { useVariableExpenses } from '../hooks/useVariableExpenses';
-import { useVariableExpenseCategories } from '../hooks/useVariableExpenseCategories';
 import { useMonthlyExpenses } from '../hooks/useMonthlyExpenses';
-import { useMonthlyExpenseCategories } from '../hooks/useMonthlyExpenseCategories';
 import { useAnnualExpenses } from '../hooks/useAnnualExpenses';
 import { useLedger } from '../hooks/useLedger';
 import { useFeeRules } from '../hooks/useFeeRules';
 import { useAccountingSettings } from '../hooks/useAccountingSettings';
 import {
-  monthlyStatement, operationalWashSales, reconcileOperational,
+  operationalWashSales, reconcileOperational,
 } from '../lib/accounting/monthlyStatement';
 import { isLiveSourceEntry } from '../lib/accounting/firestoreLedger';
 import { taxPolicyAt } from '../lib/accounting/taxPolicy';
@@ -34,28 +32,28 @@ import {
   todayMonth, monthOf,
   formatMonthLabel,
   listAvailableMonths,
-  variableItemsForMonth,
 } from '../lib/variableExpenseTotals';
 import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
+import { liveIncomeStatement } from '../lib/accounting/liveIncomeStatement';
+import { useIncomeStatementSources } from '../hooks/useIncomeStatementSources';
+import { mapWash } from '../lib/mappers';
 
 export default function FinancialSummaryPage() {
   const { language } = useLanguage();
   const { bikers } = useBikers();
-  const { items: washes,    loading: washesLoading,   error: washesError,   refetch: refetchWashes }   = useWashes();
+  const { items: initialWashes, loading: washesLoading, error: washesError, refetch: refetchWashes } = useWashes();
   const { items: variables, loading: varLoading,      error: varError,      refetch: refetchVariables } = useVariableExpenses();
-  const { categories: varCategories } = useVariableExpenseCategories();
   const { items: monthlies, loading: monthlyLoading,  error: monthlyError,  refetch: refetchMonthly }  = useMonthlyExpenses();
-  const { categories: monthlyCats } = useMonthlyExpenseCategories();
   const { items: annuals,   loading: annualLoading,   error: annualError,   refetch: refetchAnnual }   = useAnnualExpenses();
   // ── the statement's actual source ──
-  // Everything on the face of the income statement comes from here: the chart,
-  // the posted journal entries and their lines. The operational hooks above
-  // stay for the drill-down and the reconciliation strip, which are a
-  // different question and are labelled as one.
+  // The chart classifies posted and registered operational contributions.
   const {
-    accounts, entries, lines,
+    accounts,
     loading: ledgerLoading, error: ledgerError, refetch: refetchLedger,
   } = useLedger();
+  const live = useIncomeStatementSources();
+  const { sources, entries, lines } = live;
+  const washes = useMemo(() => isFirebaseConfigured ? sources.washes.map(mapWash) : initialWashes, [sources.washes, initialWashes]);
   const { rules: feeRules } = useFeeRules();
   // The same two switches the wash poster reads. Without them the operational
   // side would be compared gross against a net statement, and VAT alone would
@@ -81,32 +79,22 @@ export default function FinancialSummaryPage() {
       const key = String(e.periodKey || String(e.entryDate || '').slice(0, 7));
       if (/^\d{4}-\d{2}$/.test(key)) set.add(key);
     }
+    for (const row of [...sources.variables, ...sources.monthlies, ...sources.annualEntries, ...sources.vouchers]) {
+      const month = monthOf(row.invoice_date || row.invoiceDate || row.logged_date || row.spent_date || row.dueDate);
+      if (month) set.add(month);
+    }
     return [...set].sort().reverse();
-  }, [washes, variables, entries]);
-
-  // Build the same display list the Variable Expenses page uses for this
-  // month — manual non-dynamic rows logged in the month PLUS one virtual
-  // row per (dynamic category × biker). The helper consumes raw `washes`
-  // and handles the per-biker grouping, so the variable line of the P&L
-  // automatically reflects every biker's commission contribution.
-  const periodVariableItems = useMemo(
-    () => variableItemsForMonth({
-      manualItems: variables,
-      categories:  varCategories,
-      selectedMonth,
-      washes,
-    }),
-    [variables, varCategories, selectedMonth, washes],
-  );
+  }, [washes, variables, entries, sources]);
 
   // ── the statement itself ──────────────────────────────────────────────
-  // One pure function over the ledger bundle. Pro-rata for the partner view is
+  // One pure function over the live sources. Pro-rata for the partner view is
   // applied inside it, once, because every line is linear in that factor.
   const statement = useMemo(
-    () => monthlyStatement({
+    () => liveIncomeStatement({
       accounts, entries, lines, periodKey: selectedMonth, feeRules, scalingFactor,
+      sources, policyAt: date => taxPolicyAt(date, settings),
     }),
-    [accounts, entries, lines, selectedMonth, feeRules, scalingFactor],
+    [accounts, entries, lines, selectedMonth, feeRules, scalingFactor, sources, settings],
   );
 
   const netRevenue          = statement.netRevenue;
@@ -123,11 +111,6 @@ export default function FinancialSummaryPage() {
   // The tax rules in force in the month being viewed, not the ones in force
   // today — said out loud, because it is the difference between a reconciled
   // month and a phantom gap.
-  const monthPolicyLabel = useMemo(() => {
-    const p = taxPolicyAt(`${selectedMonth}-15`, settings);
-    if (!p.vatRegistered) return 'غير مسجّلة في الضريبة';
-    return p.washPriceMode === 'exclusive' ? 'السعر غير شامل الضريبة' : 'السعر شامل الضريبة';
-  }, [selectedMonth, settings]);
 
   // ── مطابقة التشغيل بالدفاتر ──
   // Both answers side by side, with every explainable part named. Only the
@@ -152,7 +135,7 @@ export default function FinancialSummaryPage() {
       isPosted: (w) => washEntryBySource.has(String(w.id)),
       postedEntryOf: (w) => washEntryBySource.get(String(w.id)),
     });
-    return reconcileOperational({ operational, statement, entries, lines, scalingFactor });
+    return reconcileOperational({ operational, statement: { ...statement, netRevenue: statement.ledgerNetRevenue }, entries, lines, scalingFactor });
   }, [washes, selectedMonth, settings, washEntryBySource, entries, lines, statement, scalingFactor]);
 
   // ── 6-month trend ending at the selected month ────────────────────────
@@ -170,8 +153,9 @@ export default function FinancialSummaryPage() {
         label: fmt.format(d),
       });
     }
-    const rows = months.map(({ key }) => monthlyStatement({
+    const rows = months.map(({ key }) => liveIncomeStatement({
       accounts, entries, lines, periodKey: key, feeRules, scalingFactor,
+      sources, policyAt: date => taxPolicyAt(date, settings),
     }));
     return {
       months,
@@ -180,13 +164,14 @@ export default function FinancialSummaryPage() {
       net:     rows.map((r) => r.netProfit),
       any:     rows.some((r) => r.netRevenue !== 0 || r.totalCosts !== 0),
     };
-  }, [selectedMonth, accounts, entries, lines, feeRules, scalingFactor, language]);
+  }, [selectedMonth, accounts, entries, lines, feeRules, scalingFactor, language, sources, settings]);
 
-  const anyError    = ledgerError || washesError || varError || monthlyError || annualError;
-  const anyLoading  = ledgerLoading || washesLoading || varLoading || monthlyLoading || annualLoading;
+  const anyError    = live.error || ledgerError || washesError || varError || monthlyError || annualError;
+  const anyLoading  = live.loading || ledgerLoading || washesLoading || varLoading || monthlyLoading || annualLoading;
   const noData      = !entries.length && !washes.length && !variables.length && !monthlies.length && !annuals.length;
 
   function retryAll() {
+    live.refetch();
     refetchLedger?.();
     refetchWashes?.();
     refetchVariables?.();
@@ -194,65 +179,23 @@ export default function FinancialSummaryPage() {
     refetchAnnual?.();
   }
 
-  // ── Category-label maps for the drill-down modal ─────────────────────
-  const varCategoryMap = useMemo(() => {
-    const m = new Map(); varCategories.forEach((c) => m.set(c.id, c)); return m;
-  }, [varCategories]);
-  const monthlyCategoryMap = useMemo(() => {
-    const m = new Map(); monthlyCats.forEach((c) => m.set(c.id, c)); return m;
-  }, [monthlyCats]);
-
-  // ── Pre-shaped row data for the drill-down modal ─────────────────────
-  // Each table renders columns directly off these objects — no further
-  // resolution / filtering happens inside the modal.
+  // Recorded expense detail uses the same source contribution as the statement.
   const detailData = useMemo(() => {
-    const revenue = washes
-      .filter((w) => w.status === 'مكتملة' && monthOf(w.washDate) === selectedMonth)
-      .map((w) => ({
-        id:       w.id,
-        date:     w.washDate,
-        biker:    displayRecordedBikerName(w, bikers, language),
-        quantity: w.quantity || 0,
-        price:    w.price || 0,
-        total:    (w.quantity || 0) * (w.price || 0),
-      }));
-
-    const variable = periodVariableItems.map((v) => ({
-      id:        v.id,
-      name:      v.expenseName,
-      category:  varCategoryMap.get(v.categoryId)?.label || '—',
-      quantity:  v.quantity || 0,
-      unitCost:  v.unitCost || 0,
-      total:     v.totalVariableCost || 0,
-      isVirtual: Boolean(v.isVirtual),
-    }));
-
-    const monthly = monthlies
-      .filter((m) => {
-        if (m.recurrence !== 'one_time') return true;
-        return monthOf(m.loggedDate) === selectedMonth;
-      })
-      .map((m) => ({
-        id:        m.id,
-        name:      m.expenseName,
-        category:  monthlyCategoryMap.get(m.categoryId)?.label || '—',
-        status:    m.paymentStatus,
-        amount:    m.totalMonthlyCost || 0,
-        isOneTime: m.recurrence === 'one_time',
-      }));
-
-    const annual = annuals.map((a) => ({
-      id:      a.id,
-      name:    a.expenseName,
-      annual:  a.annualCost || 0,
-      monthly: (a.annualCost || 0) / 12,
-    }));
-
+    const revenue = washes.filter(w => w.status === 'مكتملة' && monthOf(w.washDate) === selectedMonth).map(w => {
+      const split = operationalWashSales([w], { periodKey: selectedMonth,
+        policyAt: date => taxPolicyAt(date, settings), isPosted: row => washEntryBySource.has(String(row.id)),
+        postedEntryOf: row => washEntryBySource.get(String(row.id)) });
+      return { id: w.id, date: w.washDate, biker: displayRecordedBikerName(w, bikers, language),
+        quantity: w.quantity, price: w.quantity ? split.net / w.quantity : 0, total: split.net };
+    });
+    const group = key => statement.expenseBreakdown?.groups.find(row => row.key === key)?.items || [];
+    const variable = group('variable').map(row => ({ id: row.id, name: row.description, category: row.accountName,
+      quantity: 1, unitCost: row.rawAmount, total: row.rawAmount }));
+    const monthly = group('monthly').map(row => ({ id: row.id, name: row.description, category: row.accountName,
+      amount: row.rawAmount }));
+    const annual = group('annual').map(row => ({ id: row.id, name: row.description, date: row.entryDate, amount: row.rawAmount }));
     return { revenue, variable, monthly, annual };
-  }, [
-    washes, selectedMonth, periodVariableItems, varCategoryMap,
-    monthlies, monthlyCategoryMap, annuals, bikers, language,
-  ]);
+  }, [washes, selectedMonth, settings, washEntryBySource, bikers, language, statement]);
 
   return (
     <>
@@ -299,7 +242,7 @@ export default function FinancialSummaryPage() {
                 ))}
               </select>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5 leading-relaxed">
-                اختر الشهر لعرض قائمة الدخل المخصصة له. المصاريف الثابتة الشهرية والسنوية موزّعة بالتساوي على كل شهر.
+                اختر الشهر؛ المصروفات حسب تاريخ تسجيلها وتصنيفها، دون إدراج ميزانيات أو مشتريات رأسمالية كمصروف تشغيلي.
               </p>
             </div>
           </div>
@@ -320,14 +263,14 @@ export default function FinancialSummaryPage() {
                 value={formatCurrency(netRevenue)}
                 sub={statement.salesReturns > 0
                   ? `بعد خصم مردودات بقيمة ${formatCurrency(statement.salesReturns)} لشهر ${monthLabel}`
-                  : `إيرادات مُرحّلة في الدفاتر لشهر ${monthLabel}`}
+                  : `إيرادات مسجلة لشهر ${monthLabel}`}
               />
               <StatCard
                 icon={TrendingDown}
                 tone="slate"
                 label="إجمالي تكاليف الشهر"
                 value={formatCurrency(totalCosts)}
-                sub="تكاليف مباشرة + مصاريف تشغيلية مُرحّلة"
+                sub="تكاليف مباشرة + مصاريف تشغيلية مسجلة"
               />
               <StatCard
                 icon={isProfit ? TrendingUp : TrendingDown}
@@ -370,7 +313,7 @@ export default function FinancialSummaryPage() {
                         ['ج', 'غسلات مكتملة غير مُرحّلة',
                           reconciliation.unpostedNet,
                           reconciliation.unpostedCount
-                            ? `${reconciliation.unpostedCount} غسلة — رحّلها من إقفال الفترة`
+                            ? `${reconciliation.unpostedCount} غسلة — تظهر في القائمة فور التسجيل`
                             : 'لا يوجد'],
                         ['د', 'مردودات المبيعات (إشعارات دائنة)',
                           reconciliation.salesReturns, 'تخفض الدفاتر ولا تمسّ سجل الغسلات'],
@@ -411,10 +354,7 @@ export default function FinancialSummaryPage() {
                 <p className="flex items-start gap-2 text-[11px] text-slate-500 dark:text-slate-400 mt-3 leading-relaxed">
                   <Scale size={14} className="shrink-0 mt-0.5" />
                   <span>
-                    القائمة أدناه رسمية وتقرأ القيود المُرحّلة فقط. الضريبة ليست فرق ترحيل —
-                    المقارنة تجري على الصافي في الجانبين. الغسلة المُرحّلة تُقرأ بالأرقام
-                    المُثبَّتة في قيدها، وغير المُرحّلة تُقسَّم بإعدادات الضريبة السارية في
-                    تاريخها ({monthPolicyLabel})، فتغيير الإعداد اليوم لا يحرّك شهراً مُقفلاً.
+                    القائمة تشمل المسجل غير المرحّل، والمقارنة على الصافي دون الضريبة.
                   </span>
                 </p>
               </Card>
@@ -424,7 +364,7 @@ export default function FinancialSummaryPage() {
             <Card className="p-6">
               <SectionHeader
                 title={`هيكل قائمة الدخل — ${monthLabel}`}
-                subtitle="بيان رسمي مبني على القيود المُرحّلة في دفتر الأستاذ — يطابق ميزان المراجعة والمركز المالي"
+                subtitle="تتحدث من التسجيل؛ المصادر المرحّلة تُحتسب مرة واحدة، والضريبة مستبعدة من الإيراد"
                 action={
                   <SecondaryButton
                     icon={Download}

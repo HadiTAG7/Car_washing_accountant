@@ -29,6 +29,7 @@ import { normalizedPriceMode } from '../vatFields.js';
 // → dated policy), the registration test or the deductibility test. It calls
 // the same engine the server posts with; a second copy is a second answer.
 import { resolvePurchaseTax } from './purchaseTax.js';
+import { ownerWashTaxSplit } from '../sweater/ownerWashTax.js';
 
 export const FILING_PERIODS = ['monthly', 'quarterly'];
 export const FILING_PERIOD_LABELS = {
@@ -292,6 +293,12 @@ export function outputTaxFromWashes(washes, {
       gross += recorded.gross; net += recorded.net; vat += recorded.vat; count += 1;
       continue;
     }
+    const ownerSplit = ownerWashTaxSplit(w);
+    if (ownerSplit) {
+      gross += ownerSplit.gross; net += ownerSplit.net; vat += ownerSplit.vat; count += 1;
+      continue;
+    }
+    if (w.revenueOrigin === 'sweater' && w.collectionStatus === 'confirmed_by_owner') { unknownPolicy += 1; continue; }
     const policy = resolve(date);
     if (!policy.known) {
       // Before the policy record begins. Counting it under today's rules is

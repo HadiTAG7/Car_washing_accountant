@@ -27,6 +27,7 @@ import { round2 } from './journal.js';
 import { splitVat, VAT_RATE } from './vat.js';
 import { ACC } from './chartOfAccounts.js';
 import { incomeStatement, movementBySource, postedLines, sourceKindOf } from './reports.js';
+import { ownerWashTaxSplit } from '../sweater/ownerWashTax.js';
 
 /**
  * The fees that apply when `fee_rules` has not been configured.
@@ -86,7 +87,7 @@ function expenseGroup(code, sourceKind) {
 }
 
 /** Detail is drawn from the same posted lines and account sets as the statement. */
-function expenseBreakdown({ accounts, entries, lines, from, to, is, factor, directCosts, operatingExpenses }) {
+function expenseBreakdown({ accounts, entries, lines, from, to, is, factor, directCosts, operatingExpenses, operationalItems = [] }) {
   const accountNames = new Map(accounts.map((a) => [String(a.code), a.nameArabic || a.name || String(a.code)]));
   const directCodes = new Set(is.costOfServices.map((r) => String(r.code)));
   const operatingCodes = new Set(is.expenses.map((r) => String(r.code)));
@@ -110,6 +111,13 @@ function expenseBreakdown({ accounts, entries, lines, from, to, is, factor, dire
       };
     })
     .filter((item) => item.rawAmount !== 0);
+  for (const item of operationalItems) {
+    if (!directCodes.has(item.accountCode) && !operatingCodes.has(item.accountCode)) continue;
+    items.push({ id: `${item.sourceKind}:${item.sourceId}`, entryDate: item.date, accountCode: item.accountCode,
+      accountName: accountNames.get(item.accountCode) || item.accountCode, description: item.description,
+      groupKey: expenseGroup(item.accountCode, item.sourceKind), section: directCodes.has(item.accountCode) ? 'direct' : 'operating',
+      rawAmount: item.amount, amount: round2(item.amount * factor), unposted: true });
+  }
 
   // Rounding each transaction independently can lose cents. Reconcile within
   // each official subtotal, so category totals and the displayed P&L agree.
@@ -148,11 +156,24 @@ function expenseBreakdown({ accounts, entries, lines, from, to, is, factor, dire
  */
 export function monthlyStatement({
   accounts = [], entries = [], lines = [], periodKey,
-  feeRules = null, scalingFactor = 1, includeExpenseBreakdown = false,
+  feeRules = null, scalingFactor = 1, includeExpenseBreakdown = false, operationalItems = [],
 } = {}) {
   const { from, to } = monthRange(periodKey);
   const factor = Number(scalingFactor) || 0;
   const is = incomeStatement(accounts, entries, lines, { from, to });
+  // Display-only operational additions. These are source amounts, not journal
+  // entries; the ledger-only report and posting paths remain unchanged.
+  for (const item of operationalItems) {
+    const account = accounts.find(row => String(row.code) === item.accountCode);
+    if (!account || !['revenue', 'expense'].includes(account.accountType) || item.date < from || item.date > to) continue;
+    const bucket = account.accountType === 'revenue' ? is.revenue
+      : account.directCost || item.accountCode.startsWith('50') || item.accountCode.startsWith('51') ? is.costOfServices : is.expenses;
+    const existing = bucket.find(row => String(row.code) === item.accountCode);
+    if (existing) existing.amount = round2(existing.amount + item.amount);
+    else bucket.push({ code: item.accountCode, name: account.nameArabic || account.name || item.accountCode, amount: item.amount });
+  }
+  is.totalCost = round2(is.costOfServices.reduce((sum, row) => sum + row.amount, 0));
+  is.totalExpenses = round2(is.expenses.reduce((sum, row) => sum + row.amount, 0));
 
   // 4000 gross sales and 4010 returns, kept apart on the face of the
   // statement. Netting them into one line would hide the returns, which is
@@ -200,6 +221,7 @@ export function monthlyStatement({
   const detailedExpenses = includeExpenseBreakdown ? expenseBreakdown({
     accounts, entries, lines, from, to, is, factor,
     directCosts: scaled.directCosts, operatingExpenses: scaled.operatingExpenses,
+    operationalItems,
   }) : null;
 
   return {
@@ -216,6 +238,7 @@ export function monthlyStatement({
     // "Nothing posted in this month" — distinct from "posted and netted to
     // zero", which is a real result the statement should still show.
     hasActivity: is.revenue.length > 0 || is.costOfServices.length > 0 || is.expenses.length > 0,
+    operationalItems,
   };
 }
 
@@ -290,8 +313,9 @@ export function operationalWashSales(washes, {
     // predicate rather than this module guessing at entry shapes.
     const posted = isPosted ? isPosted(w) : false;
     const recorded = posted && postedEntryOf ? postedWashSplit(postedEntryOf(w)) : null;
-    let s = recorded;
+    let s = recorded || ownerWashTaxSplit(w);
     if (!s) {
+      if (w.revenueOrigin === 'sweater' && w.collectionStatus === 'confirmed_by_owner') { unknownPolicy += 1; continue; }
       const policy = resolve(date);
       // Before the policy record begins there is no answer, and today's
       // switches are the wrong one. Counted separately, never folded in.

@@ -3,11 +3,24 @@ import { formatCurrency, formatNumber } from '../data/initialData';
 import { summarizeOwnerWashes } from '../lib/sweater/washSummary';
 import { displayRecordedBikerName } from '../lib/bikerNames';
 import { useLanguage } from '../i18n/useLanguage';
+import { useState } from 'react';
+import { useSweaterWashDetails } from '../hooks/useSweaterWashDetails';
+import { normalizeBookingStatus } from '../../functions/src/sweater/vocab';
+import { BOOKING_STATUS_AR } from '../lib/sweater/labels';
+import { ownerWashTaxSplit } from '../lib/sweater/ownerWashTax';
 
 export default function SweaterWashWorkerSummary({ washes, bikers = [], scalingFactor = 1 }) {
   const { language } = useLanguage();
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const groups = summarizeOwnerWashes(washes).map(group => ({ ...group,
     displayName: displayRecordedBikerName(group, bikers, language) }));
+  const { bookings, loading, error } = useSweaterWashDetails(groups.flatMap(group => group.washes.map(wash => wash.sspBookingId)), detailsOpen);
+  const byBookingId = new Map(bookings.map(booking => [booking.sspBookingId, booking.record]));
+  const statusLabel = rawStatus => {
+    if (!rawStatus) return '—';
+    const code = normalizeBookingStatus(rawStatus);
+    return language === 'ar' && code !== 'unknown' ? BOOKING_STATUS_AR[code] || rawStatus : rawStatus;
+  };
   if (!groups.length) return null;
   return <Card className="p-4 sm:p-5 space-y-3">
     <SectionHeader title="غسلات سويتر حسب العامل" subtitle="محصلة بإفادة المالك؛ العمولة تُدفع مع الراتب" />
@@ -26,13 +39,21 @@ export default function SweaterWashWorkerSummary({ washes, bikers = [], scalingF
         <td className="whitespace-nowrap tabular-nums">{formatCurrency(group.totalAmount * scalingFactor)}</td><td className="whitespace-nowrap tabular-nums">{formatCurrency(group.commission * scalingFactor)}</td>
       </tr>)}</tbody>
     </table></div>
-    <p className="text-xs text-slate-500">العمولة هنا وفق إفادة المالك؛ راجع معدل العمولة في مسير الرواتب قبل اعتماده. الضريبة وطريقة الدفع غير مثبتتين.</p>
-    <details className="text-sm"><summary className="cursor-pointer">تفاصيل الحجوزات</summary>
-      <div className="overflow-x-auto mt-2"><table className="w-full text-sm" aria-label="تفاصيل غسلات سويتر">
-        <thead><tr><th>العامل</th><th>الحجز</th><th>التاريخ</th></tr></thead>
-        <tbody>{groups.flatMap(group => group.washes.map(wash => <tr key={wash.sspBookingId}>
-          <td className="py-2">{group.displayName}</td><td dir="ltr">{wash.sspBookingId}</td><td>{wash.washDate}</td>
-        </tr>))}</tbody>
+    <p className="text-xs text-slate-500">العمولة هنا وفق إفادة المالك؛ راجع معدل العمولة في مسير الرواتب قبل اعتماده. طريقة الدفع غير مثبتة.</p>
+    <details className="text-sm" onToggle={event => setDetailsOpen(event.currentTarget.open)}><summary className="cursor-pointer">تفاصيل الحجوزات</summary>
+      {loading && <p role="status" className="mt-2">نحمّل تفاصيل الحجوزات...</p>}
+      {error && <p role="alert" className="mt-2 text-red-700 dark:text-red-300">تعذّر تحميل حالة الحجز من المصدر المحفوظ.</p>}
+      <div className="overflow-x-auto mt-2"><table className="w-full min-w-[640px] text-sm [&_th]:px-3 [&_td]:px-3 [&_th]:text-start [&_td]:text-start" aria-label="تفاصيل غسلات سويتر">
+        <thead><tr><th>العامل</th><th>{language === 'en' ? 'Booking ID' : 'رقم الحجز'}</th><th>التاريخ</th><th>{language === 'en' ? 'Gross' : 'قيمة الغسلة شاملة الضريبة'}</th><th>الحالة</th></tr></thead>
+        <tbody>{groups.flatMap(group => group.washes.map(wash => {
+          const tax = ownerWashTaxSplit(wash);
+          return <tr key={wash.sspBookingId}>
+            <td className="py-2">{group.displayName}</td><td dir="ltr">{wash.sspBookingId}</td>
+            <td dir="ltr">{byBookingId.get(wash.sspBookingId)?.serviceDate || wash.washDate || '—'}</td>
+            <td className="whitespace-nowrap tabular-nums">{tax ? formatCurrency(tax.gross) : '—'}</td>
+            <td>{statusLabel(byBookingId.get(wash.sspBookingId)?.rawStatus || wash.rawStatus)}</td>
+          </tr>;
+        }))}</tbody>
       </table></div>
     </details>
   </Card>;

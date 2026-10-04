@@ -8,10 +8,11 @@ const HEADER_META = {
   revenue:  { title: 'الإيرادات التشغيلية',                icon: Receipt,        accent: 'text-emerald-700 dark:text-emerald-300', accentBg: 'bg-emerald-50 dark:bg-emerald-500/15' },
   variable: { title: 'التكاليف المتغيرة والعمولات',         icon: Activity,       accent: 'text-rose-700 dark:text-rose-300',       accentBg: 'bg-rose-50 dark:bg-rose-500/15' },
   monthly:  { title: 'المصاريف التشغيلية الشهرية الثابتة',  icon: CalendarClock,  accent: 'text-amber-700 dark:text-amber-300',     accentBg: 'bg-amber-50 dark:bg-amber-500/15' },
-  annual:   { title: 'مخصص المصاريف السنوية الموزعة',      icon: Repeat,         accent: 'text-primary-700 dark:text-primary-300', accentBg: 'bg-primary-50 dark:bg-primary-500/15' },
+  annual:   { title: 'المصروفات السنوية المسجلة',      icon: Repeat,         accent: 'text-primary-700 dark:text-primary-300', accentBg: 'bg-primary-50 dark:bg-primary-500/15' },
 };
 
 function PaymentStatusPill({ status }) {
+  if (!status) return '—';
   const paid = status === 'paid';
   return (
     <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[11px] font-semibold ${
@@ -156,31 +157,29 @@ function MonthlyTable({ rows }) {
 
 function AnnualTable({ rows }) {
   if (!rows.length) return <EmptyState icon={Repeat} title="لا توجد مصاريف سنوية مسجلة" />;
-  const fullTotal     = rows.reduce((s, r) => s + r.annual, 0);
-  const allocatedSum  = rows.reduce((s, r) => s + r.monthly, 0);
+  const total = rows.reduce((sum, row) => sum + row.amount, 0);
   return (
     <table className="w-full min-w-[640px] text-sm">
       <thead>
         <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
           <th className="py-3 px-4 whitespace-nowrap">البند</th>
-          <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">الميزانية السنوية الكاملة</th>
-          <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">القيمة الموزعة للشهر الحالي (÷ 12)</th>
+          <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">التاريخ</th>
+          <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">المصروف المسجل للشهر</th>
         </tr>
       </thead>
       <tbody>
         {rows.map((r) => (
           <tr key={r.id} className="border-b border-slate-50 dark:border-slate-800/60 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
             <td className="py-3 px-4 whitespace-normal break-words font-medium text-slate-900 dark:text-slate-100">{r.name}</td>
-            <td className="py-3 px-4 whitespace-nowrap text-left text-slate-700 dark:text-slate-300 tabular-nums">{formatCurrency(r.annual)}</td>
-            <td className="py-3 px-4 whitespace-nowrap text-left font-bold text-rose-700 dark:text-rose-400 tabular-nums">{formatCurrency(r.monthly)}</td>
+            <td className="py-3 px-4 whitespace-nowrap text-left text-slate-700 dark:text-slate-300 tabular-nums">{formatDate(r.date)}</td>
+            <td className="py-3 px-4 whitespace-nowrap text-left font-bold text-rose-700 dark:text-rose-400 tabular-nums">{formatCurrency(r.amount)}</td>
           </tr>
         ))}
       </tbody>
       <tfoot>
         <tr className="border-t-2 border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800">
-          <td className="py-3 px-4 text-right font-bold text-slate-900 dark:text-slate-100">الإجمالي</td>
-          <td className="py-3 px-4 text-left font-extrabold text-slate-900 dark:text-slate-100 tabular-nums">{formatCurrency(fullTotal)}</td>
-          <td className="py-3 px-4 text-left font-extrabold text-slate-900 dark:text-slate-100 tabular-nums">{formatCurrency(allocatedSum)}</td>
+          <td colSpan={2} className="py-3 px-4 text-right font-bold text-slate-900 dark:text-slate-100">الإجمالي</td>
+          <td className="py-3 px-4 text-left font-extrabold text-slate-900 dark:text-slate-100 tabular-nums">{formatCurrency(total)}</td>
         </tr>
       </tfoot>
     </table>

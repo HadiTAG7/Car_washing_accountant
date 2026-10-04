@@ -79,6 +79,7 @@ export default function SweaterHandoffPreview() {
         <SweaterWashWorkerSummary washes={result.rows.map(row => ({ id: row.washId,
           bikerId: row.bikerId, bikerName: row.bikerName, sspBookingId: row.sspBookingId,
           washDate: row.serviceDate, quantity: 1, price: row.assertedAmount, status: 'مكتملة',
+          rawStatus: row.rawStatus,
           revenueOrigin: 'sweater', collectionStatus: row.collectionStatus, workerCommissionPerWash: row.workerCommission }))} />
         <p>{result.ownerConfirmation.ownerName}: {result.ownerConfirmation.statement}</p>
         {!result.saved && <>

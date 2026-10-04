@@ -134,12 +134,13 @@ describe('owner confirmation is independent, atomic and idempotent', () => {
     const db = dbFixture(); db.rows.delete('bikers/biker-a');
     expect((await previewOwnerHandoff(db, payload())).canSave).toBe(false);
   });
-  it('documents current payroll gap: saved washers are counted but server rate is still 2, not owner 4.50', async () => {
+  it('new October payroll counts each saved wash once at 4.50 and preserves each stored salary', async () => {
     const db = dbFixture(); const result = await save(db);
     const preview = calculatePayrollPreview({ periodKey: '2026-10',
       bikers: [...db.rows.entries()].filter(([key]) => key.startsWith('bikers/')).map(([key, row]) => ({ id: key.split('/')[1], ...row })),
       washes: result.washIds.map(id => ({ id, ...db.rows.get(`washes/${id}`) })) });
-    expect(preview.lines.map(line => line.commission)).toEqual([8, 6]);
+    expect(preview.lines.map(line => line.commission)).toEqual([18, 13.5]);
+    expect(preview.totals.commissions).toBe(31.5);
     expect(preview.lines.map(line => line.monthlySalary)).toEqual([900, 1200]);
     expect(db.writes.some(path => path.startsWith('payroll'))).toBe(false);
   });

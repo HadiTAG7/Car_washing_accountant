@@ -33,7 +33,11 @@ export const PAYROLL_ACCOUNTS = Object.freeze({
   SALARY_EXPENSE: '5010',
 });
 
-const COMMISSION_PER_WASH = 2;
+const LEGACY_COMMISSION_POLICY = Object.freeze({ version: 'completed_wash_v1', unitAmount: 2, effectivePeriodKey: null });
+export const CURRENT_COMMISSION_POLICY = Object.freeze({
+  version: 'completed_wash_v2', unitAmount: 4.5,
+  effectivePeriodKey: '2026-10', decidedByOwnerAt: '2026-10-04',
+});
 const JOURNAL_COUNTER = 'journal';
 const BUSINESS_TIME_ZONE = 'Asia/Riyadh';
 
@@ -191,14 +195,48 @@ function outstandingOfAdvance(row) {
   return round2(amount - recovered);
 }
 
-function commissionFor(biker, washes, periodStart, periodEnd) {
+function commissionPolicy(periodKey, stored = null) {
+  if (stored) {
+    if ((stored.version === LEGACY_COMMISSION_POLICY.version && stored.unitAmount === 2)
+      || (stored.version === CURRENT_COMMISSION_POLICY.version && stored.unitAmount === 4.5)) return { ...stored };
+    fail('لقطة سياسة عمولة المسير غير صالحة؛ تحتاج مراجعة دون إعادة تسعير.', { code: 'failed-precondition' });
+  }
+  return { ...(periodKey >= CURRENT_COMMISSION_POLICY.effectivePeriodKey ? CURRENT_COMMISSION_POLICY : LEGACY_COMMISSION_POLICY) };
+}
+
+// A run created before this change has an implicit historical rate of 2.
+// Save/approve refreshes use that trusted snapshot, never a client override.
+const storedCommissionPolicy = run => run.policySnapshot?.commission || LEGACY_COMMISSION_POLICY;
+
+function uniqueCommissionWashes(washes, from, to) {
+  const seen = new Map();
+  const unique = [];
+  for (const row of washes) {
+    const date = String(row.wash_date || '').slice(0, 10);
+    if (date < from || date > to || !completedWash(row)) continue;
+    const sspId = String(row.ssp_booking_id || '').trim();
+    const key = sspId ? `ssp:${sspId}` : row.id ? `wash:${row.id}` : null;
+    if (sspId && Number(row.quantity) !== 1) fail('غسلة SSP يجب أن تمثل تنفيذًا واحدًا؛ راجع الكمية قبل اعتماد المسير.');
+    const execution = JSON.stringify({ biker: row.biker_id ? `id:${row.biker_id}` : `name:${String(row.biker_name || '').trim()}`,
+      date, quantity: Math.max(0, Number(row.quantity) || 0) });
+    if (key && seen.has(key)) {
+      if (seen.get(key) !== execution) fail('غسلة مكررة بتنفيذ أو عامل مختلف؛ راجع الربط قبل اعتماد المسير.');
+      continue;
+    }
+    if (key) seen.set(key, execution);
+    unique.push(row);
+  }
+  return unique;
+}
+
+function commissionFor(biker, washes, periodStart, periodEnd, unitAmount) {
   return round2(washes.reduce((sum, row) => {
     const date = String(row.wash_date || '').slice(0, 10);
     if (date < periodStart || date > periodEnd || !completedWash(row)) return sum;
     const linked = row.biker_id
       ? String(row.biker_id) === biker.id
       : String(row.biker_name || '').trim() === String(biker.name || '').trim();
-    return linked ? sum + (Math.max(0, Number(row.quantity) || 0) * COMMISSION_PER_WASH) : sum;
+    return linked ? sum + (Math.max(0, Number(row.quantity) || 0) * unitAmount) : sum;
   }, 0));
 }
 
@@ -235,11 +273,14 @@ export function calculatePayrollPreview({
   washes = [],
   advances = [],
   now = new Date(),
-}) {
+}, { commission: trustedCommission = null } = {}) {
   const bounds = payrollMonthBounds(periodKey);
   const from = periodStart || bounds.periodStart;
   const to = periodEnd || bounds.periodEnd;
   eligibleActualDays({ periodKey: bounds.periodKey, periodStart: from, periodEnd: to });
+  const commission = commissionPolicy(bounds.periodKey, trustedCommission);
+  const commissionWashes = commission.version === CURRENT_COMMISSION_POLICY.version
+    ? uniqueCommissionWashes(washes, from, to) : washes;
 
   const adjustmentMap = new Map();
   for (const raw of adjustments || []) {
@@ -278,8 +319,8 @@ export function calculatePayrollPreview({
     const basicDue = basicSalaryDue({
       monthlySalary: biker.salary, daysEntitled: eligibility.daysEntitled, monthDays: bounds.monthDays,
     });
-    const commission = commissionFor(biker, washes, from, to);
-    const beforeAdvance = round2(basicDue + commission + adj.bonus - adj.deduction);
+    const washCommission = commissionFor(biker, commissionWashes, from, to, commission.unitAmount);
+    const beforeAdvance = round2(basicDue + washCommission + adj.bonus - adj.deduction);
     if (beforeAdvance < 0) {
       fail(`خصومات ${biker.name || biker.id} تتجاوز مستحقاته؛ لا يتحول الفرق إلى دين تلقائياً.`, {
         code: 'invalid-argument',
@@ -309,7 +350,8 @@ export function calculatePayrollPreview({
       daysEntitled: eligibility.daysEntitled,
       monthDays: bounds.monthDays,
       basicDue,
-      commission,
+      commission: washCommission,
+      commissionRate: commission.unitAmount,
       bonus: adj.bonus,
       bonusReason: adj.bonusReason || null,
       deduction: adj.deduction,
@@ -324,7 +366,7 @@ export function calculatePayrollPreview({
       formula: {
         text: 'صافي المستحق = الراتب المستحق + العمولة + البونص − الخصومات − السلفة المخصومة',
         values: {
-          basicDue, commission, bonus: adj.bonus, deduction: adj.deduction,
+          basicDue, commission: washCommission, bonus: adj.bonus, deduction: adj.deduction,
           advanceDeduction, netDue,
         },
       },
@@ -357,7 +399,7 @@ export function calculatePayrollPreview({
       date: bounds.distributionDate,
       sourcePeriodKey: bounds.periodKey,
     },
-    policySnapshot: { ...PAYROLL_POLICY, monthDays: bounds.monthDays },
+    policySnapshot: { ...PAYROLL_POLICY, monthDays: bounds.monthDays, commission },
     estimated: isoToday(now) <= to,
     generatedAtIso: new Date(now).toISOString(),
     lineCount: lines.length,
@@ -379,8 +421,26 @@ async function sourceRows(reader, db) {
 }
 
 export async function previewPayroll(db, payload, { now = new Date() } = {}) {
+  const periodKey = validPeriodKey(payload?.periodKey);
+  const meta = await db.collection('payroll_periods').doc(periodKey).get();
+  const runId = meta.exists ? meta.data().currentRunId : null;
+  const snap = runId ? await db.collection('payroll_runs').doc(runId).get() : null;
+  const run = snap?.exists ? snap.data() : null;
+  if (run && [PAYROLL_STATUS.APPROVED, PAYROLL_STATUS.PAID].includes(run.status)) {
+    const items = await db.collection('payroll_runs').doc(runId).collection('items').get();
+    return {
+      runId, periodKey: run.periodKey, periodStart: run.periodStart, periodEnd: run.periodEnd,
+      distributionDate: run.distributionDate, distributionSnapshot: run.distributionSnapshot ?? null,
+      policySnapshot: run.policySnapshot, estimated: run.estimated ?? false,
+      totals: run.totals, lines: items.docs.map(doc => doc.data()), lineCount: items.docs.length,
+      inputAdjustments: run.inputAdjustments ?? [], snapshotOnly: true,
+    };
+  }
+  const active = run && ![PAYROLL_STATUS.REVERSED, PAYROLL_STATUS.CANCELLED].includes(run.status);
   const sources = await sourceRows(db, db);
-  return calculatePayrollPreview({ ...payload, ...sources, now });
+  return calculatePayrollPreview({ ...payload, ...sources, periodKey, now }, {
+    commission: active ? storedCommissionPolicy(run) : null,
+  });
 }
 
 function auditRecord(action, runId, userId, before, after, reason, FieldValue) {
@@ -470,7 +530,9 @@ export async function savePayrollDraft(db, FieldValue, payload, {
       sourceRows(tx, db),
       itemQuery ? tx.get(itemQuery) : Promise.resolve(null),
     ]);
-    const preview = calculatePayrollPreview({ ...payload, ...sources, periodKey, now });
+    const preview = calculatePayrollPreview({ ...payload, ...sources, periodKey, now }, {
+      commission: current ? storedCommissionPolicy(current) : null,
+    });
     if (!preview.lineCount) fail('لا يوجد عامل مستحق ضمن الفترة المختارة.', { code: 'failed-precondition' });
     const runId = current?.runId || runIdFor(periodKey, revision);
     const runRef = db.collection('payroll_runs').doc(runId);
@@ -504,7 +566,7 @@ async function refreshedPreviewInTransaction(tx, db, run, now) {
     adjustments: run.inputAdjustments,
     ...sources,
     now,
-  });
+  }, { commission: storedCommissionPolicy(run) });
 }
 
 export async function approvePayroll(db, FieldValue, { runId }, {

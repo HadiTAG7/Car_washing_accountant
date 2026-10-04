@@ -59,7 +59,12 @@ not paid now. It is never deducted from the wash price.
 
 ## Existing payroll gap
 
-`functions/src/payroll.js` currently calculates 2 per completed wash from
+The subsequent owner-authorized correction is documented in
+[the commission policy](SWEATER_PAYROLL_COMMISSION.md): new drafts for October
+2026 and later use 4.50, while historical snapshots remain unchanged. The
+paragraph below records the discrepancy found before that correction.
+
+Before that correction, `functions/src/payroll.js` calculated 2 per completed wash from
 `washes`, linked by `biker_id` (name fallback for legacy rows). It uses each
 worker's stored salary and a monthly worker payment lock; it does not deduplicate
 commission sources by SSP ID. The new deterministic imported wash IDs prevent

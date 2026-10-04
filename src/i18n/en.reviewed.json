@@ -615,5 +615,8 @@
   "تعارض في الحجوزات أو الإقرار؛ أعد المراجعة دون استبدال البيانات.": "The bookings or confirmation conflict; review again without replacing existing data.",
   "تغيّرت البيانات منذ المعاينة؛ أعد المعاينة قبل الحفظ.": "Data changed since the preview; preview again before saving.",
   "حفظ إقرار المالك يحتاج من ١ إلى ٥٠ غسلة.": "Owner-confirmation saving requires between 1 and 50 washes.",
-  "العمولة": "Commission"
+  "العمولة": "Commission",
+  "لقطة سياسة عمولة المسير غير صالحة؛ تحتاج مراجعة دون إعادة تسعير.": "The saved payroll commission policy is invalid; review it without repricing.",
+  "غسلة SSP يجب أن تمثل تنفيذًا واحدًا؛ راجع الكمية قبل اعتماد المسير.": "An SSP wash must represent one execution; review the quantity before approving payroll.",
+  "غسلة مكررة بتنفيذ أو عامل مختلف؛ راجع الربط قبل اعتماد المسير.": "A duplicate wash has different execution details or worker; review the link before approving payroll."
 }

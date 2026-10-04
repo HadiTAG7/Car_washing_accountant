@@ -74,10 +74,15 @@ export async function callerRole(db, auth) {
     db.collection('users').doc(auth.uid).get(),
     db.collection('app_admins').doc(auth.uid).get(),
   ]);
+  if (userSnap.exists && userSnap.data().role === 'supervisor') return 'supervisor';
+  if (userSnap.exists && !['admin', 'accountant', 'operator', 'partner', 'supervisor'].includes(userSnap.data().role)) {
+    throw new AuthError('دور الحساب غير معروف؛ يلزم مراجعة العضوية.');
+  }
+  // Preserve registered legacy admin markers without inventing an operator
+  // role for a missing/unknown role in an existing membership document.
   if (adminSnap.exists) return 'admin';
   if (!userSnap.exists) throw new AuthError('الحساب غير مُصرَّح له.');
-  const role = userSnap.data().role;
-  return ['admin', 'accountant', 'operator', 'partner'].includes(role) ? role : 'operator';
+  return userSnap.data().role;
 }
 
 async function requireAccountant(db, auth) {
@@ -188,6 +193,14 @@ async function requirePartnerKeyActor(db, auth, keyId) {
 }
 
 export const GUARDS = {
+  supervisorReader: async ({ db, auth }) => {
+    // This deployment is single-tenant. Firebase Identity Platform tenant
+    // tokens need an explicit organization scope before any global reads.
+    if (auth?.token?.firebase?.tenant) throw new AuthError('قراءة المشرف غير متاحة لحساب مؤسسة متعددة دون نطاق معتمد.');
+    const role = await callerRole(db, auth);
+    if (!['supervisor', 'admin'].includes(role)) throw new AuthError('عرض المشرف مقصور على المشرف والمدير.');
+    return { uid: auth.uid, role };
+  },
   accountant: ({ db, auth }) => requireAccountant(db, auth),
   admin: ({ db, auth }) => requireAdmin(db, auth),
   startupWriter: ({ db, auth }) => requireStartupWriter(db, auth),
@@ -227,8 +240,18 @@ import {
 import { partnerWashShare } from './partnerInsights.js';
 import { partnerAllocationReport } from './partnerAllocationReport.js';
 import { getPartnerEligibility, setPartnerEligibility } from './partnerWorkerEligibility.js';
+import { supervisorOverview, supervisorRecords } from './supervisorRead.js';
+import { SUPERVISOR_READ_HANDLERS } from '../../src/lib/supervisorAccess.js';
 
 export const HANDLERS = {
+  supervisorOverview: {
+    guard: 'supervisorReader',
+    run: ({ db, data }) => supervisorOverview(db, data),
+  },
+  supervisorRecords: {
+    guard: 'supervisorReader',
+    run: ({ db, data }) => supervisorRecords(db, data),
+  },
   partnerEligibilityGet: {
     guard: 'admin',
     run: ({ db, data }) => getPartnerEligibility(db, data),
@@ -671,6 +694,18 @@ export async function dispatch(db, FieldValue, name, data, auth) {
     });
   }
   try {
+    // Fail closed for every current and future action except explicit reads.
+    // Read the stored role, never a payload/token claim. Do this before any
+    // permissive legacy guard (startupWriter/partnerSelf/signedIn) can run.
+    if (auth?.uid && name !== 'authBootstrapStatus') {
+      const user = await db.collection('users').doc(auth.uid).get();
+      if (user.exists && !['admin', 'accountant', 'operator', 'partner', 'supervisor'].includes(user.data().role)) {
+        throw new AuthError('دور الحساب غير معروف؛ يلزم مراجعة العضوية.');
+      }
+      if (user.exists && user.data().role === 'supervisor' && !SUPERVISOR_READ_HANDLERS.includes(name)) {
+        throw new AuthError('حساب المشرف للقراءة فقط؛ لا يسمح بتغيير البيانات أو إنشاء مفاتيح.');
+      }
+    }
     // ما يُرجعه الحارس يُمرَّر كله: `uid` و`role` من كل حارس، وما زاد — صفُّ
     // الشريك من `partnerSelf` — من حارسٍ يحتاجه جسمه، فلا يُقرأ مرتين.
     const ctx = await GUARDS[handler.guard]({ db, auth, data });

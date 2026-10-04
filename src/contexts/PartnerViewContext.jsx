@@ -69,7 +69,7 @@ const STORAGE_KEY = 'sweater:actingAsPartnerId';
 
 export function PartnerViewProvider({ children, role = null }) {
   const { user } = useAuth();
-  const { partners, loading: partnersLoading, error: partnersError, refetch } = usePartners();
+  const { partners, loading: partnersLoading, error: partnersError, refetch } = usePartners({ enabled: role !== 'supervisor' });
 
   // Admin's "simulate as X" pick survives reload via localStorage.
   // SSR-safe access guard mirrors useDarkMode's pattern.
@@ -90,17 +90,19 @@ export function PartnerViewProvider({ children, role = null }) {
   }, [actingAsPartnerId]);
 
   // Find the partner row owned by the current user.
+  const isSupervisor = role === 'supervisor';
   const myPartner = useMemo(() => {
+    if (isSupervisor) return null;
     if (!user?.id) return null;
     return partners.find((p) => p.userId && p.userId === user.id) || null;
-  }, [partners, user]);
+  }, [partners, user, isSupervisor]);
 
   const isInvestorAccount = role === 'partner';
   // الحالة التي كانت تُسلّم الواجهة كاملةً: دورٌ مستثمر بلا صفٍّ مربوط.
   const partnerLinkLoading = isInvestorAccount && Boolean(partnersLoading);
   const partnerLinkError = isInvestorAccount ? (partnersError || null) : null;
   const investorLinkMissing = isInvestorAccount && !partnerLinkLoading && !partnerLinkError && !myPartner;
-  const isAdmin = !isInvestorAccount && !myPartner;
+  const isAdmin = !isSupervisor && !isInvestorAccount && !myPartner;
 
   // Admin override wins for admins; partners always see themselves.
   // If the simulated id no longer matches a row (admin deleted that
@@ -131,7 +133,7 @@ export function PartnerViewProvider({ children, role = null }) {
   // المستثمر المنتظر أو المسدود في عرض الشريك أيضاً: كل قمع مشروط بـ `isPartnerView`
   // يجب أن ينطبق عليه، لا أن يُفلته النقصُ إلى المسار الإداري.
   const isPartnerView = viewedPartner !== null || isInvestorAccount;
-  const canMutate     = isAdmin && actingAsPartnerId === null;
+  const canMutate     = !isSupervisor && isAdmin && actingAsPartnerId === null;
 
   const value = useMemo(() => ({
     isAdmin,

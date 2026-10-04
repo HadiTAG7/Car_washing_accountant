@@ -53,6 +53,9 @@ const callable = (name) => onCall(OPTS, async (req) => {
   }
 });
 
+export const supervisorOverview = callable('supervisorOverview');
+export const supervisorRecords = callable('supervisorRecords');
+
 // ─── الترحيل ─────────────────────────────────────────────────────────────
 export const ledgerPostSource = callable('ledgerPostSource');
 export const ledgerPostManual = callable('ledgerPostManual');

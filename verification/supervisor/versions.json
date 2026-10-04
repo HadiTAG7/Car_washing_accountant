@@ -1,0 +1,26 @@
+{
+  "observed": {
+    "node": "24.19.0",
+    "npm": "11.9.0",
+    "java": "21.0.12.1",
+    "firebaseTools": "15.29.0"
+  },
+  "functionsDeclaredNode": "20",
+  "cliDeclaredRange": "^15.26.0",
+  "cliReproductionPin": "15.29.0",
+  "javaMinimumEnforcedByPinnedCLI": 21,
+  "emulators": {
+    "firestore": {
+      "version": "1.22.0",
+      "filename": "cloud-firestore-emulator-v1.22.0.jar",
+      "bytes": 136707194,
+      "sha256": "9b6498b7f62714d67f48f59b3818883cd682dbcd46b9f59511de81c97bb5166c"
+    },
+    "storage": {
+      "version": "1.1.3",
+      "filename": "cloud-storage-rules-runtime-v1.1.3.jar",
+      "bytes": 52892936,
+      "sha256": "0cd52db6f6271d62078f805220706377c849220b73bd68aa27078d977df9c900"
+    }
+  }
+}

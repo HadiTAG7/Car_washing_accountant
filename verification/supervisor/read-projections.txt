@@ -1,0 +1,35 @@
+All records also have document id. journal_entries.lines[]: accountId debit credit. All other compound values are excluded or null.
+washes: biker_id biker_name quantity price status wash_date payment_method revenue_origin
+bikers: name name_ar name_en start_date end_date
+housing_units: name capacity
+monthly_expenses: expense_name category_id quantity unit_cost total_monthly_cost payment_day payment_status recurrence logged_date
+variable_expenses: expense_name category_id quantity unit_cost total_variable_cost logged_date payment_method invoice_number invoice_date vat_amount vat_rate price_mode
+annual_expenses: expense_name category quantity annual_cost actual_amount payment_month payment_day payment_status
+annual_expense_entries: annual_expense_id amount spent_date spend_date date unit payment_method invoice_number invoice_date vat_amount
+startup_costs: item_name category quantity budgeted_amount actual_amount status
+startup_cost_entries: startup_cost_id amount spent_date spend_date payment_method unit invoice_number invoice_date vat_amount
+temporary_expenses: biker_id amount recovered_amount status spent_date recovered_date recovery_method
+partners: partner_name workers_count paid_amount status
+partner_payments: partner_id amount payment_date payment_method
+transactions: type amount date status
+categories: name name_ar category_name type
+category_budgets: category_label budget_type amount
+monthly_expense_categories: label sort_order
+variable_expense_categories: label sort_order is_dynamic
+annual_expense_categories: name
+expense_vouchers: templateId periodKey dueDate amount status paymentMethod
+fixed_assets: name cost salvageValue usefulLifeMonths inServiceDate status
+chart_of_accounts: code name nameArabic accountType normalBalance directCost active contra
+journal_entries: entryDate entryNumber periodKey status sourceType sourceKind sourceId lines
+journal_lines: entryId accountId debit credit
+accounting_periods: periodKey status closedAt
+sales_documents: documentNumber type issueDate supplyDate status
+fee_rules: key label basis rate effective_from active
+payroll_runs: periodKey status distributionDate
+sweater_bookings: bookingId bikerId bikerName serviceDate completedAt quantity status amount netAmount vatAmount
+sweater_settlements: periodKey status from to grossAmount netAmount vatAmount
+sweater_adjustments: settlementId kind type amount status date
+sweater_variances: settlementId type amount status
+sweater_price_list: name serviceType price effectiveFrom active
+sweater_adjustment_types: key kind nameArabic active
+sweater_recognition_policy: effectiveFrom mode status

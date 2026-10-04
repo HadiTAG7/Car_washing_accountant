@@ -46,6 +46,15 @@ afterEach(() => {
 });
 
 describe('بوابة عرض الشريك', () => {
+  it('المشرف لا يرث عرض شريك أو محاكاة أو صلاحية تعديل', () => {
+    window.localStorage.setItem('sweater:actingAsPartnerId', 'p2');
+    mount({ user: { id: 'uidAhmed' }, partners: [P1, P2], role: 'supervisor' });
+    expect(read('isAdmin')).toBe('false');
+    expect(read('canMutate')).toBe('false');
+    expect(read('isPartnerView')).toBe('false');
+    expect(read('viewed')).toBe('none');
+    expect(read('scale')).toBe('1');
+  });
   it('انتظار قراءة الربط ليس عدم ربط ولا يفتح وضع المدير', () => {
     const { rerender } = mount({ user: { id: 'uidAhmed' }, role: 'partner' });
     partnersState.loading = true;

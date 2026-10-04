@@ -46,8 +46,12 @@ export function useMembership(userId) {
         getDoc(doc(db, 'users', userId)),
         getDoc(doc(db, 'app_admins', userId)).catch(() => null),
       ]);
+      if (userSnap.exists() && userSnap.data().role === 'supervisor') return [{ role: 'supervisor' }];
+      if (userSnap.exists() && !['admin', 'accountant', 'operator', 'partner', 'supervisor'].includes(userSnap.data().role)) {
+        return [{ role: null, invalidRole: true }];
+      }
       if (adminSnap?.exists()) return [{ role: 'admin' }];
-      return [{ role: userSnap.exists() ? (userSnap.data().role || 'operator') : null }];
+      return [{ role: userSnap.exists() ? userSnap.data().role : null }];
     },
     { enabled: applicable, deps: [userId], fallback: [{ role: null }] },
   );
@@ -59,7 +63,7 @@ export function useMembership(userId) {
   // Asked before the button is offered, so the app never shows an action that
   // will fail.
   const row = Array.isArray(data) ? data[0] : null;
-  const missing = applicable && !loading && !error && !row?.role;
+  const missing = applicable && !loading && !error && !row?.role && !row?.invalidRole;
 
   const { data: statusData } = useFirestoreQuery(
     async () => [await callServer('authBootstrapStatus', {})],

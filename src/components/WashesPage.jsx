@@ -184,7 +184,7 @@ export default function WashesPage() {
       />
 
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
-        <SweaterWashWorkerSummary washes={items} scalingFactor={scalingFactor} />
+        <SweaterWashWorkerSummary washes={items} bikers={bikers} scalingFactor={scalingFactor} />
         {!isFirebaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
 
         {mutationError && (

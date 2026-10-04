@@ -4,7 +4,12 @@ import { ownerConfirmationProblems } from './ownerConfirmation.js';
 
 export const HANDOFF_MAX_BYTES = 2 * 1024 * 1024;
 const FIELDS = new Set(['importRunId', 'mode', 'dryRun', 'agentStatus', 'coverage', 'records', 'ownerConfirmation', 'workerLinks']);
-const COVERAGE_FIELDS = new Set(['rangeFrom', 'rangeTo', 'extractedAt', 'pageCount', 'pagesFetched', 'recordCount', 'isComplete', 'sourceUrl']);
+const SCOPED_COVERAGE_FIELDS = ['scope', 'scopeComplete', 'sourceRecordCount', 'excludedCancelled', 'imported'];
+const COVERAGE_FIELDS = new Set(['rangeFrom', 'rangeTo', 'extractedAt', 'pageCount', 'pagesFetched', 'recordCount', 'isComplete', 'sourceUrl', ...SCOPED_COVERAGE_FIELDS]);
+export const ACCOUNT_BOOKINGS_SCOPE_WARNING = 'التغطية مكتملة لنطاق accountBookings المقروء فقط؛ Company/B2B غير متحقق، ولا تؤكد اكتمال الشركة أو الشهر أو الإقفال.';
+export const ownerHandoffCoverageComplete = coverage => coverage?.scope === 'accountBookings'
+  ? coverage.scopeComplete === true && coverage.isComplete === false
+  : coverage?.scope === undefined && coverage?.isComplete === true;
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
 const day = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
   && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
@@ -45,6 +50,17 @@ export function reviewSweaterHandoff(input) {
     if (typeof coverage.isComplete !== 'boolean') errors.push('isComplete يجب أن يعبّر عن التغطية الفعلية.');
     if (coverage.isComplete === true && coverage.pagesFetched !== coverage.pageCount) errors.push('لا يمكن تأكيد التغطية مع صفحات مفقودة.');
     if (coverage.isComplete === false) warnings.push('التغطية غير مكتملة؛ المعاينة لا تؤكد اكتمال الشهر.');
+    if (SCOPED_COVERAGE_FIELDS.some(key => Object.hasOwn(coverage, key))) {
+      if (coverage.scope !== 'accountBookings') errors.push('نطاق التغطية غير معروف؛ النطاق المحدد المسموح accountBookings فقط.');
+      if (typeof coverage.scopeComplete !== 'boolean') errors.push('scopeComplete يجب أن يعبّر عن اكتمال النطاق المقروء فقط.');
+      if (coverage.isComplete !== false) errors.push('نطاق accountBookings لا يثبت اكتمال الشركة؛ يجب إبقاء isComplete: false.');
+      if (['sourceRecordCount', 'excludedCancelled', 'imported'].some(key => !Number.isSafeInteger(coverage[key]) || coverage[key] < 0)
+        || coverage.imported !== records.length || coverage.sourceRecordCount !== coverage.excludedCancelled + coverage.imported) {
+        errors.push('أعداد النطاق غير متطابقة: المصدر يساوي المستورد مع الملغى المستبعد، والمستورد يساوي صفوف التسليم.');
+      }
+      if (coverage.scopeComplete === true && (coverage.pagesFetched !== coverage.pageCount || coverage.pageCount < 1)) errors.push('لا يمكن تأكيد اكتمال النطاق مع صفحات مفقودة أو دون صفحة مقروءة.');
+      if (coverage.scope === 'accountBookings' && coverage.scopeComplete === true) warnings.push(ACCOUNT_BOOKINGS_SCOPE_WARNING);
+    }
     if (records.length && coverage.pageCount === 0) errors.push('هناك سجلات دون صفحة مصدر مقروءة.');
     if (coverage.sourceUrl != null && !safeUrl(coverage.sourceUrl)) errors.push('رابط المصدر يجب أن يكون HTTPS بلا معاملات دخول أو أجزاء سرية.');
   }

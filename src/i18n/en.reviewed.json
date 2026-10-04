@@ -618,5 +618,12 @@
   "العمولة": "Commission",
   "لقطة سياسة عمولة المسير غير صالحة؛ تحتاج مراجعة دون إعادة تسعير.": "The saved payroll commission policy is invalid; review it without repricing.",
   "غسلة SSP يجب أن تمثل تنفيذًا واحدًا؛ راجع الكمية قبل اعتماد المسير.": "An SSP wash must represent one execution; review the quantity before approving payroll.",
-  "غسلة مكررة بتنفيذ أو عامل مختلف؛ راجع الربط قبل اعتماد المسير.": "A duplicate wash has different execution details or worker; review the link before approving payroll."
+  "غسلة مكررة بتنفيذ أو عامل مختلف؛ راجع الربط قبل اعتماد المسير.": "A duplicate wash has different execution details or worker; review the link before approving payroll.",
+  "التغطية مكتملة لنطاق accountBookings المقروء فقط؛ Company/B2B غير متحقق، ولا تؤكد اكتمال الشركة أو الشهر أو الإقفال.": "Coverage is complete only for the accountBookings scope read. Company/B2B is unverified; this does not confirm company or month completeness or closing.",
+  "نطاق التغطية غير معروف؛ النطاق المحدد المسموح accountBookings فقط.": "Unknown coverage scope. The only supported scoped module is accountBookings.",
+  "scopeComplete يجب أن يعبّر عن اكتمال النطاق المقروء فقط.": "scopeComplete must describe completeness of the scope read only.",
+  "نطاق accountBookings لا يثبت اكتمال الشركة؛ يجب إبقاء isComplete: false.": "The accountBookings scope does not prove company completeness. Keep isComplete: false.",
+  "أعداد النطاق غير متطابقة: المصدر يساوي المستورد مع الملغى المستبعد، والمستورد يساوي صفوف التسليم.": "Scope counts do not match: source equals imported plus excluded cancelled rows, and imported equals delivered rows.",
+  "لا يمكن تأكيد اكتمال النطاق مع صفحات مفقودة أو دون صفحة مقروءة.": "Scope completeness cannot be confirmed with missing pages or without a page read.",
+  "الحفظ يحتاج ملفاً صالحاً بتغطية كاملة للنطاق المعلن وإقرار مالك مستقل.": "Saving requires a valid file with complete coverage for the declared scope and a separate owner confirmation."
 }

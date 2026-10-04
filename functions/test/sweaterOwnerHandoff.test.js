@@ -6,6 +6,7 @@ import { mapWash } from '../../src/lib/mappers.js';
 import { summarizeOwnerWashes } from '../../src/lib/sweater/washSummary.js';
 import { calculatePayrollPreview } from '../src/payroll.js';
 import { washPostabilityProblem } from '../src/sweater/revenueOrigin.js';
+import { reviewSweaterHandoff, ACCOUNT_BOOKINGS_SCOPE_WARNING } from '../../src/lib/sweater/handoff.js';
 
 const payload = (extra = {}) => ({ importRunId: 'synthetic-owner-oct3',
   records: Array.from({ length: 7 }, (_, i) => ({ sspBookingId: `SYNTHETIC-${i + 1}`,
@@ -18,6 +19,12 @@ const payload = (extra = {}) => ({ importRunId: 'synthetic-owner-oct3',
     statement: 'Synthetic confirmation of collection for these completed washes.', unitAmount: 20, totalAmount: 140, vatAmount: null },
   ...extra });
 const FV = { serverTimestamp: () => 'synthetic-server-time' };
+const scopedPayload = () => {
+  const body = payload();
+  body.coverage = { ...body.coverage, scope: 'accountBookings', scopeComplete: true,
+    sourceRecordCount: 10, excludedCancelled: 3, imported: 7, isComplete: false };
+  return body;
+};
 
 // Atomic, serialized local transaction model: failed transactions write zero
 // documents; races see the committed state of the preceding transaction.
@@ -54,6 +61,48 @@ const request = (body, preview) => ({ payload: body, reviewedPayloadHash: previe
 async function save(db, body = payload()) { const preview = await previewOwnerHandoff(db, body); return saveOwnerHandoff(db, FV, request(body, preview), 'staff'); }
 
 describe('owner confirmation is independent, atomic and idempotent', () => {
+  it('imports only a verified account scope while preserving the company gap through preview, save and replay', async () => {
+    const db = dbFixture(); const body = scopedPayload();
+    const review = reviewSweaterHandoff(body);
+    expect(review.ready).toBe(true); expect(review.warnings).toContain(ACCOUNT_BOOKINGS_SCOPE_WARNING);
+    const preview = await previewOwnerHandoff(db, body);
+    expect(preview).toMatchObject({ canSave: true, counts: { new: 7 }, coverage: body.coverage });
+    expect(preview.reviewWarnings).toContain(ACCOUNT_BOOKINGS_SCOPE_WARNING); expect(db.writes).toEqual([]);
+    const result = await saveOwnerHandoff(db, FV, request(body, preview), 'staff');
+    expect(result).toMatchObject({ saved: true, coverage: { isComplete: false, scopeComplete: true }, ledgerPosted: false, payrollPaid: false });
+    expect(db.rows.get(`sweater_import_runs/${body.importRunId}`)).toMatchObject({ status: 'completed_with_gaps', coverage: body.coverage });
+    expect(db.rows.get('sweater_integration_state/current').lastCoverage).toEqual(body.coverage);
+    const writes = db.writes.length;
+    const replay = await saveOwnerHandoff(db, FV, request(body, preview), 'staff');
+    expect(replay).toMatchObject({ replay: true, coverage: { isComplete: false } });
+    expect(replay.reviewWarnings).toContain(ACCOUNT_BOOKINGS_SCOPE_WARNING); expect(db.writes.length).toBe(writes);
+    const next = { ...body, importRunId: 'another-scoped-run' };
+    const repeated = await previewOwnerHandoff(db, next);
+    expect(repeated.counts).toMatchObject({ new: 0, duplicate: 7 });
+    await saveOwnerHandoff(db, FV, request(next, repeated), 'staff');
+    expect([...db.rows.keys()].filter(key => key.startsWith('washes/'))).toHaveLength(7);
+    expect(db.writes.slice(writes).every(key => key.startsWith('sweater_import_runs/') || key.startsWith('sweater_integration_state/'))).toBe(true);
+  });
+  it.each([
+    ['source count mismatch', body => { body.coverage.sourceRecordCount = 11; }],
+    ['import count mismatch', body => { body.coverage.imported = 6; }],
+    ['negative cancelled count', body => { body.coverage.excludedCancelled = -3; }],
+    ['string count', body => { body.coverage.sourceRecordCount = '10'; }],
+    ['missing source count', body => { delete body.coverage.sourceRecordCount; }],
+    ['missing page', body => { body.coverage.pageCount = 2; }],
+    ['no page', body => { body.coverage.pageCount = 0; body.coverage.pagesFetched = 0; }],
+    ['unknown scope', body => { body.coverage.scope = 'company'; }],
+    ['missing scope', body => { delete body.coverage.scope; }],
+    ['incomplete scope', body => { body.coverage.scopeComplete = false; }],
+    ['untyped scope completeness', body => { body.coverage.scopeComplete = 'true'; }],
+    ['false global completeness claim', body => { body.coverage.isComplete = true; }],
+    ['duplicate source booking', body => { body.records[1].sspBookingId = body.records[0].sspBookingId; }],
+  ])('rejects %s before database reads or writes', async (_name, mutate) => {
+    const body = scopedPayload(); mutate(body);
+    const db = { collection: () => { throw new Error('must not read'); }, runTransaction: () => { throw new Error('must not transact'); } };
+    await expect(previewOwnerHandoff(db, body)).rejects.toMatchObject({ code: 'invalid-argument' });
+    await expect(saveOwnerHandoff(db, FV, { payload: body }, 'staff')).rejects.toMatchObject({ code: 'invalid-argument' });
+  });
   it.each(['Collecting Payment', 'CollectingPayment', 'payment_collection'])('supports %s without claiming platform payment', status => {
     const record = normalizeRecord({ ...payload().records[0], rawStatus: status });
     expect(record.rawStatus).toBe(status); expect(record.normalizedStatus).toBe('payment_collection');

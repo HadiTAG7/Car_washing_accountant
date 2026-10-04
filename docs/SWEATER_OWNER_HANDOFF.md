@@ -6,6 +6,15 @@ The existing HMAC import contract remains separate and unchanged.
 
 1. Read SSP in its authorized visible session. Transfer only sanitized records
    and actual extraction coverage. Exclude cancelled bookings explicitly.
+   For an observed complete `accountBookings` module, use typed coverage
+   `scope: "accountBookings"`, `scopeComplete: true`, `sourceRecordCount`,
+   `excludedCancelled` and `imported`. Keep global `isComplete: false` when
+   Company/B2B has not been verified. For example, 10 source rows minus 3
+   cancelled rows yields 7 imported rows (`recordCount: 7`, `imported: 7`).
+   All counts must be nonnegative integers, source must equal cancelled plus
+   imported, imported must equal delivered rows, and all declared pages must
+   have been fetched. Unknown scopes, missing metadata and incomplete scopes
+   cannot be saved. No source rows are silently filtered or deduplicated.
 2. Supply the observed SSP worker identifier on every record. In `workerLinks`,
    map each identifier to the confirmed internal `bikers` document ID. Never
    create workers, guess a name match, or use a sample salary.
@@ -44,7 +53,10 @@ Saved documents:
   settlement is "already posted through a wash". An operational import does
   not claim that posting happened or alter monthly recognition policy.
 - `sweater_import_runs` and integration state: atomic completed run, hashes,
-  coverage and result IDs for replay/audit.
+  coverage and result IDs for replay/audit. An account-only import has run
+  status `completed_with_gaps`; its saved coverage retains `isComplete: false`.
+  Preview, save and replay keep the warning that Company/B2B is unverified.
+  Scoped import success never claims company/month completeness or closing.
 
 Same run + same complete payload returns the stored result without writing.
 Same run + different source/evidence/worker mapping rejects. Another run cannot

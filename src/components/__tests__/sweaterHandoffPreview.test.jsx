@@ -5,11 +5,31 @@ const call = vi.hoisted(() => vi.fn());
 const saveCall = vi.hoisted(() => vi.fn());
 vi.mock('../../lib/firebaseClient', () => ({ callSweaterImportPreview: call, callSweaterOwnerHandoffSave: saveCall, describeBackendError: e => e.message }));
 import SweaterHandoffPreview from '../SweaterHandoffPreview';
+import { ACCOUNT_BOOKINGS_SCOPE_WARNING } from '../../lib/sweater/handoff';
 const body = () => ({ importRunId: 'ui-review', records: [{ sspBookingId: 'S-1', serviceType: 'verified-service', serviceDate: '2026-10-04', rawStatus: 'Collecting Payment' }],
   coverage: { rangeFrom: '2026-10-04', rangeTo: '2026-10-04', extractedAt: '2026-10-04T10:00:00Z', pageCount: 1, pagesFetched: 1, recordCount: 1, isComplete: true } });
 afterEach(() => { cleanup(); call.mockReset(); saveCall.mockReset(); });
 const fill = value => { fireEvent.change(screen.getByLabelText('بيانات التسليم'), { target: { value: JSON.stringify(value) } }); fireEvent.click(screen.getByRole('button', { name: 'راجع الملف محليًا' })); };
 describe('مراجعة SSP في الواجهة', () => {
+  it('يبقي تحذير نطاق الشركة ظاهراً في المراجعة والمعاينة ونتيجة الحفظ', async () => {
+    const value = body(); value.records[0].driverExternalId = 'worker-1'; value.workerLinks = { 'worker-1': 'biker-1' };
+    value.ownerConfirmation = { source: 'owner_statement', ownerName: 'Synthetic owner', statement: 'Synthetic confirmation', unitAmount: 20, totalAmount: 20, vatAmount: null };
+    value.coverage = { ...value.coverage, scope: 'accountBookings', scopeComplete: true, isComplete: false, sourceRecordCount: 4, excludedCancelled: 3, imported: 1 };
+    const result = { canSave: true, counts: { new: 1, modified: 0, duplicate: 0, rejected: 0, needsReview: 0 }, rows: [],
+      reviewWarnings: [ACCOUNT_BOOKINGS_SCOPE_WARNING], coverage: value.coverage, ownerConfirmation: value.ownerConfirmation,
+      reviewedPayloadHash: 'hash', previewStateHash: 'hash' };
+    call.mockResolvedValue(result); saveCall.mockResolvedValue({ ...result, saved: true });
+    render(<SweaterHandoffPreview />); fill(value);
+    expect(screen.getAllByText(ACCOUNT_BOOKINGS_SCOPE_WARNING)).toHaveLength(1);
+    fireEvent.click(screen.getByRole('checkbox')); fireEvent.click(screen.getByRole('button', { name: 'معاينة dryRun على الخادم' }));
+    await screen.findByRole('button', { name: 'حفظ الغسلات بإقرار المالك' });
+    expect(screen.getAllByText(ACCOUNT_BOOKINGS_SCOPE_WARNING)).toHaveLength(2);
+    fireEvent.click(screen.getByLabelText('راجعت الحجوزات والعامل والإجمالي وإقرار المالك؛ أحفظ دون قيد مالي'));
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ الغسلات بإقرار المالك' }));
+    await screen.findByText('تم حفظ الغسلات وإقرار المالك دون ترحيل أو صرف عمولة');
+    expect(screen.getAllByText(ACCOUNT_BOOKINGS_SCOPE_WARNING)).toHaveLength(2);
+    expect(saveCall.mock.calls[0][0].payload.coverage.isComplete).toBe(false);
+  });
   it('لا يرسل عينة بلا نوع خدمة أو ملف يحمل أسراراً', () => {
     render(<SweaterHandoffPreview />); const value = body(); delete value.records[0].serviceType;
     fill(value); expect(screen.getByText('الملف غير جاهز؛ ما راح ينرسل')).toBeTruthy();

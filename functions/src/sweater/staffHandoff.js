@@ -1,4 +1,4 @@
-import { reviewSweaterHandoff } from '../../../src/lib/sweater/handoff.js';
+import { reviewSweaterHandoff, ownerHandoffCoverageComplete } from '../../../src/lib/sweater/handoff.js';
 import { bookingDocId, rawDocId, classifyRecord, COL, SweaterIngestError } from './ingest.js';
 import { hashBody, hashRecord, normalizeRecord, SCHEMA_VERSION } from './record.js';
 import { LINKS_COL } from './revenueOrigin.js';
@@ -10,8 +10,8 @@ const fail = (message, code = 'failed-precondition') => { throw new SweaterInges
 
 function reviewedInput(payload) {
   const review = reviewSweaterHandoff(payload);
-  if (!review.ready || !review.payload.ownerConfirmation || !review.payload.coverage.isComplete) {
-    fail('الحفظ يحتاج ملفاً صالحاً بتغطية كاملة وإقرار مالك مستقل.', 'invalid-argument');
+  if (!review.ready || !review.payload.ownerConfirmation || !ownerHandoffCoverageComplete(review.payload.coverage)) {
+    fail('الحفظ يحتاج ملفاً صالحاً بتغطية كاملة للنطاق المعلن وإقرار مالك مستقل.', 'invalid-argument');
   }
   // At most seven writes per booking plus run/state stay below 500 writes.
   if (review.payload.records.length > 50) fail('حد الحفظ الذري ٥٠ غسلة؛ قسّم الدفعة.', 'invalid-argument');
@@ -120,7 +120,8 @@ async function plan(db, input, read) {
 const publicResult = value => ({
   importRunId: value.input.importRunId, dryRun: true, replay: false,
   reviewedPayloadHash: value.reviewedPayloadHash, previewStateHash: value.previewStateHash,
-  counts: value.counts, coverageIssues: [], reviewWarnings: [], statusReviewRows: [],
+  counts: value.counts, coverage: value.input.coverage, coverageIssues: [],
+  reviewWarnings: reviewSweaterHandoff(value.input).warnings, statusReviewRows: [],
   canSave: value.counts.needsReview === 0 && value.counts.rejected === 0,
   ownerConfirmation: value.input.ownerConfirmation,
   rows: value.rows.map(row => Object.fromEntries(Object.entries(row).filter(([key]) => !key.startsWith('_')))),
@@ -141,7 +142,7 @@ export async function saveOwnerHandoff(db, FieldValue, data, actor) {
   return db.runTransaction(async tx => {
     const value = await plan(db, input, ref => tx.get(ref));
     if (value.run) {
-      if (value.run.status !== 'completed' || !value.run.result) fail('دفعة سابقة غير مكتملة؛ تحتاج مراجعة.');
+      if (!['completed', 'completed_with_gaps'].includes(value.run.status) || !value.run.result) fail('دفعة سابقة غير مكتملة؛ تحتاج مراجعة.');
       return { ...value.run.result, replay: true };
     }
     if (value.counts.needsReview || value.counts.rejected) fail('تعارض في الحجوزات أو الإقرار؛ أعد المراجعة دون استبدال البيانات.');
@@ -184,7 +185,7 @@ export async function saveOwnerHandoff(db, FieldValue, data, actor) {
       ledgerPosted: false, payrollPaid: false };
     tx.set(value.runRef, {
       importRunId: input.importRunId, bodyHash: hashBody(input.records), handoffHash: value.reviewedPayloadHash,
-      source: 'staff_owner_confirmation', actor, status: 'completed', coverage: input.coverage,
+      source: 'staff_owner_confirmation', actor, status: input.coverage.isComplete ? 'completed' : 'completed_with_gaps', coverage: input.coverage,
       ownerConfirmation: input.ownerConfirmation, recordCount: input.records.length,
       startedAt: FieldValue.serverTimestamp(), startedAtIso: now, finishedAtIso: now, result,
     });

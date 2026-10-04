@@ -25,6 +25,8 @@ vi.mock('../components/Sidebar', () => ({ default: ({ groups, onSelectTab }) => 
   ))}</nav>
 ) }));
 vi.mock('../components/OverviewPage', () => ({ default: () => <h1>صفحة الرئيسية للاختبار</h1> }));
+vi.mock('../components/SupervisorPage', () => ({ default: () => <h1>لوحة المشرف للاختبار</h1> }));
+vi.mock('../components/SupervisorRecordsPage', () => ({ default: () => <h1>بيانات عمل المشرف للاختبار</h1> }));
 vi.mock('../components/FinancialSummaryPage', () => ({ default: () => <h1>قائمة دخل الشركة للاختبار</h1> }));
 vi.mock('../components/InvestorPage', () => ({ default: ({ view }) => <h1>حساب الشريك: {view}</h1> }));
 vi.mock('../components/LoginScreen', () => ({ default: () => <h1>الدخول للاختبار</h1> }));
@@ -38,6 +40,14 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('بقاء الصفحة عند إعادة التحميل', () => {
+  it('المشرف يصل إلى القراءة فقط ويتراجع عن رابط صفحة تعديل', async () => {
+    state.role = 'supervisor'; window.history.replaceState(null, '', '/?page=washes');
+    render(<App />);
+    expect(await screen.findByRole('heading', { name: 'لوحة المشرف للاختبار' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'الغسلات' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'بيانات العمل' }));
+    expect(await screen.findByRole('heading', { name: 'بيانات عمل المشرف للاختبار' })).toBeTruthy();
+  });
   it('يستعيد قائمة الدخل من الرابط بدل الصفحة الرئيسية', async () => {
     window.history.replaceState(null, '', '/?page=summary');
     render(<App />);

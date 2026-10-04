@@ -7,6 +7,7 @@ rules_version = '2';
 //   admin      — full operational access, closes periods, manages accounts
 //   accountant — posts and reverses entries, closes periods, reads everything
 //   operator   — records day-to-day operations; cannot touch the ledger
+//   supervisor — business reads through projected server endpoints; no writes
 //   partner    — read-only on operational data and reports
 //
 // Membership is /users/{uid}; /app_admins/{uid} additionally marks an admin.
@@ -47,12 +48,15 @@ service cloud.firestore {
     function role() {
       return hasUserDoc() && userDoc().keys().hasAny(['role'])
         ? userDoc().role
-        : (isAdminDoc() ? 'admin' : 'operator');
+        : (!hasUserDoc() && isAdminDoc() ? 'admin' : 'unknown');
     }
-    function isAdmin()      { return signedIn() && (isAdminDoc() || role() == 'admin'); }
+    function knownRole() { return role() in ['admin', 'accountant', 'operator', 'partner', 'supervisor']; }
+    function isAdmin()      { return signedIn() && knownRole() && role() != 'supervisor' && (isAdminDoc() || role() == 'admin'); }
     function isAccountant() { return signedIn() && (isAdmin() || role() == 'accountant'); }
     function isOperator()   { return signedIn() && (isAccountant() || role() == 'operator'); }
-    function isMember()     { return signedIn() && (hasUserDoc() || isAdminDoc()); }
+    // Supervisor reads use server projections: raw worker identity and auth
+    // metadata must never reach that browser, even with an old admin marker.
+    function isMember()     { return signedIn() && knownRole() && role() != 'supervisor' && (hasUserDoc() || isAdminDoc()); }
 
     // A source record whose posting lock exists is IN THE BOOKS. The lock is
     // written by the posting transaction, so it is committed before any later
@@ -524,7 +528,7 @@ service cloud.firestore {
     // `partnerMcpRevokeKey`: الإنشاء يضع بصمةَ الرمز في مجموعةٍ لا يقرؤها أي
     // عميل مهما كان دوره، فالبحث عنها بالمعرّف شأن الخادم فقط.
     match /partner_mcp_keys/{keyId} {
-      allow read:  if isAdmin() || (signedIn() && resource.data.ownerUid == request.auth.uid);
+      allow read:  if isAdmin() || (signedIn() && knownRole() && role() != 'supervisor' && resource.data.ownerUid == request.auth.uid);
       allow write: if false;
     }
     match /partner_mcp_key_hashes/{hash} {

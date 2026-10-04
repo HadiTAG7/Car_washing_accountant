@@ -102,6 +102,11 @@ export const INVESTOR_TABS = [
 // فهو أيضاً ما يفتح عليه أول دخول.
 export const INVESTOR_HOME_TAB = INVESTOR_TABS[0].id;
 
+export const SUPERVISOR_GROUPS = [{ id: 'top', title: 'حساب المشرف — قراءة فقط', tabs: [
+  { id: 'overview', label: 'لوحة المشرف', icon: BarChart3 },
+  { id: 'supervisor_data', label: 'بيانات العمل', icon: BookOpen },
+] }];
+
 export const INVESTOR_TAB_IDS = INVESTOR_TABS.map((t) => t.id);
 
 // «نظرة عامة» بلا عنوان مجموعة كما في الواجهة الإدارية — الملخّص لا ينتمي
@@ -160,6 +165,7 @@ export function resolveTab(activeTab, { investorMode = false, allowedTabIds } = 
  * بلا فائدة.
  */
 export function visibleGroupsFor({ role = null, isPartnerView = false, localPreview = false } = {}) {
+  if (role === 'supervisor') return SUPERVISOR_GROUPS;
   if (localPreview) {
     return TAB_GROUPS
       .map((group) => ({ ...group, tabs: group.tabs.filter((tab) => !tab.roles || tab.roles.includes('admin')) }))

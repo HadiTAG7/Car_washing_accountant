@@ -22,6 +22,7 @@ vi.mock('firebase/firestore', () => ({
 }));
 
 const { useMembership } = await import('../useMembership');
+const { callServer } = await import('../../lib/ledgerTransport');
 
 function Probe({ uid }) {
   const m = useMembership(uid);
@@ -34,7 +35,7 @@ const roleAfter = async (uid) => {
   return screen.getByTestId('role').textContent;
 };
 
-afterEach(() => { cleanup(); docs.clear(); denied.clear(); });
+afterEach(() => { cleanup(); docs.clear(); denied.clear(); vi.clearAllMocks(); });
 
 describe('حزام الإدارة: app_admins', () => {
   it('وثيقة app_admins تعني «مدير» ولو قال حقل الدور غير ذلك', async () => {
@@ -66,10 +67,25 @@ describe('حزام الإدارة: app_admins', () => {
     expect(await roleAfter('u5')).toBe('partner');
   });
 
-  it('وثيقة بلا حقل دور تبقى operator كما تفترض القواعد', async () => {
+  it('وثيقة بلا حقل دور تُرفض دون تحويلها إلى operator أو عرض تهيئة المدير', async () => {
     docs.set('users/u6', { email: 'x@y.com' });
     denied.add('app_admins/u6');
-    expect(await roleAfter('u6')).toBe('operator');
+    expect(await roleAfter('u6')).toBe('null');
+    expect(callServer).not.toHaveBeenCalled();
+  });
+
+  it.each(['legacy-unknown', '', null])('الدور غير المعروف %s لا يرث علامة مدير قديمة', async role => {
+    docs.set('users/unresolved', { role });
+    docs.set('app_admins/unresolved', { note: 'legacy' });
+    expect(await roleAfter('unresolved')).toBe('null');
+    expect(callServer).not.toHaveBeenCalled();
+  });
+
+  it('دور المشرف يتقدم على علامة المدير القديمة', async () => {
+    docs.set('users/supervisor', { role: 'supervisor' });
+    docs.set('app_admins/supervisor', { note: 'legacy' });
+    expect(await roleAfter('supervisor')).toBe('supervisor');
+    expect(callServer).not.toHaveBeenCalled();
   });
 
   it('لا وثيقة ولا حزام: ليس عضواً', async () => {

@@ -1,0 +1,19 @@
+{
+  "importRunId": "synthetic-review-2026-10-04",
+  "mode": "import",
+  "dryRun": true,
+  "agentStatus": "ok",
+  "coverage": {
+    "rangeFrom": "2026-10-04",
+    "rangeTo": "2026-10-04",
+    "extractedAt": "2026-10-04T10:00:00Z",
+    "pageCount": 1,
+    "pagesFetched": 1,
+    "recordCount": 2,
+    "isComplete": true
+  },
+  "records": [
+    { "sspBookingId": "SYNTHETIC-1", "serviceType": "interior_exterior_wash", "serviceDate": "2026-10-04", "rawStatus": "Washing Started" },
+    { "sspBookingId": "SYNTHETIC-1", "serviceType": "interior_exterior_wash", "serviceDate": "2026-10-04", "rawStatus": "Washing Started" }
+  ]
+}

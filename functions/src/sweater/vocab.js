@@ -89,6 +89,8 @@ const STATUS_SET = asSet(BOOKING_STATUS);
 /** رمزٌ معروف؟ — وإلا `unknown`، ولا تخمين. */
 export function normalizeBookingStatus(raw) {
   const code = String(raw ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  // Observed SSP spelling; the raw label remains unchanged in record.js.
+  if (code === 'collecting_payment' || code === 'collectingpayment') return 'payment_collection';
   return STATUS_SET.has(code) ? code : UNKNOWN_STATUS;
 }
 

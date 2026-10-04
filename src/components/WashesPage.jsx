@@ -1,6 +1,7 @@
 import { translate } from '../i18n/locale';
 import { getLocale } from '../i18n/locale';
 import { useCallback, useMemo, useState } from 'react';
+import SweaterWashWorkerSummary from './SweaterWashWorkerSummary';
 import {
   Plus, Trash2, Pencil, Wallet, CheckCircle2, CalendarClock, Car,
 } from 'lucide-react';
@@ -183,6 +184,7 @@ export default function WashesPage() {
       />
 
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
+        <SweaterWashWorkerSummary washes={items} scalingFactor={scalingFactor} />
         {!isFirebaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
 
         {mutationError && (

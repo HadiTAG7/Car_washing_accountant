@@ -154,6 +154,14 @@ export function callPartnerAllocationReport(payload = {}) {
   return callLedgerApi('partnerInsights', { ...payload, includeStatements: true }, '/api/ledger');
 }
 
+// Read-only staff preview lives on Vercel; no ingest key/callable is needed.
+export function callSweaterImportPreview(payload) {
+  return callLedgerApi('sweaterPreviewImport', payload, '/api/ledger');
+}
+export function callSweaterOwnerHandoffSave(payload) {
+  return callLedgerApi('sweaterSaveOwnerHandoff', payload, '/api/ledger');
+}
+
 // These settings remain private server-side. Pin this feature to the Vercel
 // API so it never relies on a separately deployed Firebase callable version.
 export function callPartnerEligibilityGet(payload = {}) {

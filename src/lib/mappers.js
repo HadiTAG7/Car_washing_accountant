@@ -499,12 +499,17 @@ export function mapWash(row) {
     washDate:   row.wash_date || '',
     // Which account the money landed in decides the debit side of the entry:
     // cash, bank, or a receivable when the sale is on credit.
-    paymentMethod: clampExpensePaymentMethod(row.payment_method),
+    paymentMethod: row.revenue_origin === 'sweater' && row.payment_method == null
+      ? null : clampExpensePaymentMethod(row.payment_method),
     // ── مصدر الإيراد ──
     // الغياب يعني `direct` — كل الغسلات القديمة سُجّلت قبل التكامل وهي فعلاً
     // مباشرة، فالافتراض يصف الواقع ولا يعيد كتابته.
     revenueOrigin: clampRevenueOrigin(row.revenue_origin),
     sspBookingId: row.ssp_booking_id || null,
+    ...(row.revenue_origin === 'sweater' ? {
+      collectionStatus: row.collection_status || null,
+      workerCommissionPerWash: row.worker_commission_per_wash ?? null,
+    } : {}),
   };
 }
 export function toWashInsert({

@@ -8,6 +8,7 @@ import LoadingState from './LoadingState';
 import ErrorState from './ErrorState';
 import Toast from './Toast';
 import SweaterActionDialog from './SweaterActionDialog';
+import SweaterHandoffPreview from './SweaterHandoffPreview';
 import { useSweaterIntegration, useSweaterConfig } from '../hooks/useSweater';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 import { describeBackendError } from '../lib/firebaseClient';
@@ -36,7 +37,7 @@ function hoursSince(iso) {
 }
 
 export default function SweaterIntegrationPage() {
-  const { canMutate } = usePartnerView();
+  const { canMutate, role, isPartnerView } = usePartnerView();
   const integ = useSweaterIntegration();
   const config = useSweaterConfig();
 
@@ -83,6 +84,7 @@ export default function SweaterIntegrationPage() {
 
       <main className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5">
         {integ.error && <ErrorState error={integ.error} />}
+        {!isPartnerView && ['admin', 'accountant'].includes(role) && <SweaterHandoffPreview />}
 
         {/* ── السرّ يُعرض مرة واحدة ── */}
         {freshSecret && (

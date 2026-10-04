@@ -34,7 +34,7 @@ const ACTIVE_KEY = {
 };
 
 const state = {
-  canMutate: true,
+  canMutate: true, role: 'admin', isPartnerView: false,
   createKey: vi.fn(),
   revokeKey: vi.fn(),
   keys: [],
@@ -42,7 +42,7 @@ const state = {
 };
 
 vi.mock('../../contexts/PartnerViewContext', () => ({
-  usePartnerView: () => ({ canMutate: state.canMutate, scalingFactor: 1 }),
+  usePartnerView: () => ({ canMutate: state.canMutate, role: state.role, isPartnerView: state.isPartnerView, scalingFactor: 1 }),
 }));
 
 vi.mock('../../hooks/useSweater', () => ({
@@ -61,7 +61,7 @@ vi.mock('../../hooks/useSweater', () => ({
 }));
 
 beforeEach(() => {
-  state.canMutate = true;
+  state.canMutate = true; state.role = 'admin'; state.isPartnerView = false;
   state.keys = [];
   state.createKey = vi.fn().mockResolvedValue(NEW_KEY);
   state.revokeKey = vi.fn().mockResolvedValue({ status: 'revoked' });
@@ -270,5 +270,24 @@ describe('نافذة إلغاء المفتاح', () => {
     state.keys = [{ ...ACTIVE_KEY, status: 'revoked' }];
     render(<SweaterIntegrationPage />);
     expect(screen.queryByRole('button', { name: /ألغِ/ })).toBeNull();
+  });
+});
+
+
+describe('معاينة التسليم تستخدم الأدوار الحالية فقط', () => {
+  it.each(['admin', 'accountant'])('تظهر للمراجع %s', role => {
+    state.role = role;
+    render(<SweaterIntegrationPage />);
+    expect(screen.getByText('مراجعة ملف SSP ومعاينة الاستيراد')).toBeTruthy();
+  });
+  it.each(['operator', 'partner'])('لا تظهر لـ%s', role => {
+    state.role = role;
+    render(<SweaterIntegrationPage />);
+    expect(screen.queryByText('مراجعة ملف SSP ومعاينة الاستيراد')).toBeNull();
+  });
+  it('لا تظهر أثناء محاكاة الشريك', () => {
+    state.isPartnerView = true;
+    render(<SweaterIntegrationPage />);
+    expect(screen.queryByText('مراجعة ملف SSP ومعاينة الاستيراد')).toBeNull();
   });
 });

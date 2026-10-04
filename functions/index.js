@@ -97,6 +97,8 @@ export const authClaimFirstAdmin = callable('authClaimFirstAdmin');
 // باب الوكيل ليس هنا: `api/integrations/sweater/import.js` بابٌ مستقل بمفتاحه
 // الخاص، لا يعرف `dispatch` ولا يصل إلى أيٍّ من هذه.
 export const sweaterCalculateSettlement = callable('sweaterCalculateSettlement');
+export const sweaterPreviewImport = callable('sweaterPreviewImport');
+export const sweaterSaveOwnerHandoff = callable('sweaterSaveOwnerHandoff');
 export const sweaterRecordStatement = callable('sweaterRecordStatement');
 export const sweaterApproveSettlement = callable('sweaterApproveSettlement');
 export const sweaterCreateAdjustment = callable('sweaterCreateAdjustment');

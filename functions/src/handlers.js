@@ -226,6 +226,9 @@ import {
 } from './partnerMcpKeys.js';
 import { partnerWashShare } from './partnerInsights.js';
 import { partnerAllocationReport } from './partnerAllocationReport.js';
+import { previewSweaterHandoff } from './sweater/preview.js';
+import { saveOwnerHandoff } from './sweater/staffHandoff.js';
+import { SweaterIngestError } from './sweater/ingest.js';
 import { getPartnerEligibility, setPartnerEligibility } from './partnerWorkerEligibility.js';
 
 export const HANDLERS = {
@@ -462,6 +465,14 @@ export const HANDLERS = {
   // والاحتساب `accountant` لأنه اشتقاقٌ لا يمسّ الدفاتر؛ أما **الاعتماد
   // والإقفال وإنشاء المفاتيح** فـ`admin`: الأول يُثبت إيراد شهرٍ كامل، والثاني
   // قد يُقفل على فرقٍ غير محلول، والثالث يفتح باباً إلى بياناتنا.
+  sweaterPreviewImport: {
+    guard: 'accountant',
+    run: ({ db, data, uid }) => previewSweaterHandoff(db, data, uid),
+  },
+  sweaterSaveOwnerHandoff: {
+    guard: 'accountant',
+    run: ({ db, FieldValue, data, uid }) => saveOwnerHandoff(db, FieldValue, data, uid),
+  },
   sweaterCalculateSettlement: {
     guard: 'accountant',
     run: ({ db, FieldValue, data, uid }) => sweaterCalculateSettlement(db, FieldValue, {
@@ -610,6 +621,7 @@ export const HANDLER_NAMES = Object.keys(HANDLERS);
  * أخرى» for a problem retrying cannot fix.
  */
 export function normalizeError(e) {
+  if (e instanceof SweaterIngestError) return { code: e.code, message: e.message, details: e.details };
   if (e instanceof AuthError) return { code: e.code, message: e.message, details: null };
   if (e instanceof InvoicingError) {
     return { code: e.code || 'failed-precondition', message: e.message, details: null };

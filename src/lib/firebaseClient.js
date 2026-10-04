@@ -154,6 +154,15 @@ export function callPartnerAllocationReport(payload = {}) {
   return callLedgerApi('partnerInsights', { ...payload, includeStatements: true }, '/api/ledger');
 }
 
+// Supervisor projections ship with the Vercel release. Always use this
+// authenticated HTTP path; no Firebase Functions deployment is required.
+export function callSupervisorOverview(payload = {}) {
+  return callLedgerApi('supervisorOverview', payload, '/api/ledger');
+}
+export function callSupervisorRecords(payload = {}) {
+  return callLedgerApi('supervisorRecords', payload, '/api/ledger');
+}
+
 // Read-only staff preview lives on Vercel; no ingest key/callable is needed.
 export function callSweaterImportPreview(payload) {
   return callLedgerApi('sweaterPreviewImport', payload, '/api/ledger');

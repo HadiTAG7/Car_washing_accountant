@@ -1,3 +1,4 @@
+import { isAssignmentMonth } from '../lib/advanceMonth';
 import ModalSurface from './ModalSurface';
 import { useEffect, useState } from 'react';
 import { X, HandCoins } from 'lucide-react';
@@ -18,12 +19,12 @@ const METHODS = [
 
 export default function AddBikerAdvanceModal({ isOpen, onClose, biker, onAdd }) {
   const { language } = useLanguage();
-  const [form, setForm] = useState({ amount: '', spentDate: '', paymentMethod: 'cash', notes: '' });
+  const [form, setForm] = useState({ amount: '', spentDate: '', paymentMethod: 'cash', notes: '', assignmentMonth: '' });
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
-    setForm({ amount: '', spentDate: todayISO(), paymentMethod: 'cash', notes: '' });
+    setForm({ amount: '', spentDate: todayISO(), assignmentMonth: todayISO().slice(0, 7), paymentMethod: 'cash', notes: '' });
   }, [isOpen]);
 
   function handleChange(e) {
@@ -31,7 +32,7 @@ export default function AddBikerAdvanceModal({ isOpen, onClose, biker, onAdd }) 
   }
 
   const amount  = Math.max(0, parseFloat(form.amount) || 0);
-  const isValid = amount > 0 && Boolean(form.spentDate) && Boolean(biker?.id);
+  const isValid = amount > 0 && Boolean(form.spentDate) && isAssignmentMonth(form.assignmentMonth) && Boolean(biker?.id);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -42,6 +43,7 @@ export default function AddBikerAdvanceModal({ isOpen, onClose, biker, onAdd }) 
         title:         `سلفة — ${biker.name}`,
         amount,
         spentDate:     form.spentDate,
+        assignmentMonth: form.assignmentMonth,
         status:        'pending',
         recoveredDate: null,
         notes:         form.notes.trim(),
@@ -113,6 +115,12 @@ export default function AddBikerAdvanceModal({ isOpen, onClose, biker, onAdd }) 
                 required
               />
             </div>
+          </div>
+
+          <div>
+            <label htmlFor="advanceAssignmentMonth" className="block text-sm font-semibold mb-1.5">شهر إسناد السلفة</label>
+            <input id="advanceAssignmentMonth" name="assignmentMonth" type="month" value={form.assignmentMonth} onChange={handleChange} required className="w-full border rounded-control p-3 bg-white dark:bg-slate-800" />
+            <p className="text-xs text-slate-500 mt-1">يحدد شهر خصم السلفة في مسودة الرواتب؛ تاريخ الصرف يبقى مستقلاً.</p>
           </div>
 
           <div>

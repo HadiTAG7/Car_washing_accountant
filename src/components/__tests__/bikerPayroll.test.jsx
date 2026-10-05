@@ -27,7 +27,7 @@ describe('واجهة مسير رواتب البايكر', () => {
     expect(section.textContent).toContain('السياسة المعتمدة: أيام الشهر الفعلية');
     expect(section.textContent).toContain('عن الشهر السابق · بلا تحويل تلقائي');
     expect(section.textContent).toContain('صافي المستحق = الراتب المستحق + العمولة + البونص − الخصومات − السلفة المخصومة');
-    expect(section.textContent).toContain('يُخصم كامل الرصيد القائم افتراضيًا، ويمكن تخفيضه قبل الاعتماد');
+    expect(section.textContent).toContain('يُخصم رصيد سلف شهر المسير افتراضيًا؛ سلف الأشهر الأخرى تبقى ديونًا قائمة');
     expect(screen.getByText('تقديري قبل اكتمال الشهر')).toBeTruthy();
 
     for (const heading of [

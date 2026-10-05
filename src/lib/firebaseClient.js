@@ -319,3 +319,6 @@ export async function uploadInvoiceFile(file, folder = 'misc') {
   await uploadBytes(objectRef, file, { contentType: file.type });
   return getDownloadURL(objectRef);
 }
+
+export const callAdvanceMonthPreview = data => callLedgerApi('payrollPreviewAdvanceMonth', data, '/api/ledger');
+export const callAdvanceMonthSave = data => callLedgerApi('payrollSaveAdvanceMonth', data, '/api/ledger');

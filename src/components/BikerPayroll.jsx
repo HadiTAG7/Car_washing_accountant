@@ -457,7 +457,7 @@ export default function BikerPayroll({ role, previewMode = false, bikers: suppli
       </div>
 
       <Card className="p-4 sm:p-6">
-        <SectionHeader title="تفاصيل الاستحقاق" subtitle="يُخصم كامل الرصيد القائم افتراضيًا، ويمكن تخفيضه قبل الاعتماد. عدّل المسودة ثم أعد المعاينة قبل الحفظ." action={preview?.lines?.length ? (
+        <SectionHeader title="تفاصيل الاستحقاق" subtitle="يُخصم رصيد سلف شهر المسير افتراضيًا؛ سلف الأشهر الأخرى تبقى ديونًا قائمة. عدّل المسودة ثم أعد المعاينة قبل الحفظ." action={preview?.lines?.length ? (
           <div className="flex gap-2 payroll-no-print">
             <button type="button" onClick={exportCsv} className="sw-button sw-button--sm sw-button--secondary"><Download size={16} /> CSV</button>
             <button type="button" disabled={printing} onClick={printPayroll} className="sw-button sw-button--sm sw-button--secondary"><Printer size={16} /> {printing ? 'جارٍ تجهيز PDF…' : 'طباعة PDF'}</button>

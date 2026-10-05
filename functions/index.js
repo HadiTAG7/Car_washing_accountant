@@ -132,3 +132,6 @@ export const payrollUnapprove = callable('payrollUnapprove');
 export const payrollPay = callable('payrollPay');
 export const payrollReverse = callable('payrollReverse');
 export const payrollCancel = callable('payrollCancel');
+
+export const payrollPreviewAdvanceMonth = callable('payrollPreviewAdvanceMonth');
+export const payrollSaveAdvanceMonth = callable('payrollSaveAdvanceMonth');

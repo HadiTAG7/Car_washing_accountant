@@ -7,6 +7,7 @@ import {
   round2,
   totalsOf,
 } from './invariants.js';
+import { advanceAssignmentMonth } from '../../src/lib/advanceMonth.js';
 
 export const PAYROLL_POLICY = Object.freeze({
   method: 'actual_month_days',
@@ -256,6 +257,7 @@ function allocationsFor(requested, advances) {
       priorStatus: advance.status === 'recovered' ? 'recovered' : 'pending',
       priorRecoveredDate: advance.recovered_date || null,
       priorRecoveryMethod: advance.recovery_method || null,
+      assignmentMonth: advanceAssignmentMonth(advance),
       expectedOutstanding: outstanding,
     });
     remaining = round2(remaining - amount);
@@ -294,7 +296,7 @@ export function calculatePayrollPreview({
   const advanceMap = new Map();
   for (const row of advances || []) {
     const bikerId = String(row.biker_id || '').trim();
-    if (!bikerId || outstandingOfAdvance(row) <= 0) continue;
+    if (!bikerId || outstandingOfAdvance(row) <= 0 || advanceAssignmentMonth(row) !== bounds.periodKey) continue;
     const list = advanceMap.get(bikerId) || [];
     list.push(row);
     advanceMap.set(bikerId, list);
@@ -743,6 +745,9 @@ export async function payPayroll(db, FieldValue, payload, {
       if (!snap.exists) fail(`السلفة ${row.allocation.advanceId} غير موجودة.`, { code: 'not-found' });
       const current = { id: snap.id, ...snap.data() };
       const outstanding = outstandingOfAdvance(current);
+      if (row.allocation.assignmentMonth && advanceAssignmentMonth(current) !== row.allocation.assignmentMonth) {
+        fail('تغير شهر إسناد السلفة بعد الاعتماد؛ ألغِ الاعتماد وأعد المعاينة.');
+      }
       if (outstanding !== row.allocation.expectedOutstanding || outstanding < row.allocation.amount) {
         fail(`تغير رصيد سلفة ${row.item.name} بعد الاعتماد؛ ألغِ الاعتماد وأعد المعاينة.`);
       }

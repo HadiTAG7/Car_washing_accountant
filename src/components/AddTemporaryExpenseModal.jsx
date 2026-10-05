@@ -1,3 +1,4 @@
+import { isAssignmentMonth } from '../lib/advanceMonth';
 import ModalSurface from './ModalSurface';
 import { useEffect, useState } from 'react';
 import {
@@ -10,6 +11,7 @@ const EMPTY = {
   title:     '',
   amount:    '',
   spentDate: '',
+  assignmentMonth: '',
   notes:     '',
 };
 
@@ -20,7 +22,7 @@ export default function AddTemporaryExpenseModal({ isOpen, onClose, onAdd }) {
   // Reset every time the modal re-opens, and seed today's date.
   useEffect(() => {
     if (!isOpen) return;
-    setForm({ ...EMPTY, spentDate: todayISO() });
+    setForm({ ...EMPTY, spentDate: todayISO(), assignmentMonth: todayISO().slice(0, 7) });
   }, [isOpen]);
 
   function handleChange(e) {
@@ -28,7 +30,7 @@ export default function AddTemporaryExpenseModal({ isOpen, onClose, onAdd }) {
   }
 
   const amount  = Math.max(0, parseFloat(form.amount) || 0);
-  const isValid = Boolean(form.title.trim()) && amount > 0 && Boolean(form.spentDate);
+  const isValid = Boolean(form.title.trim()) && amount > 0 && Boolean(form.spentDate) && isAssignmentMonth(form.assignmentMonth);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -39,6 +41,7 @@ export default function AddTemporaryExpenseModal({ isOpen, onClose, onAdd }) {
         title:     form.title.trim(),
         amount,
         spentDate: form.spentDate,
+        assignmentMonth: form.assignmentMonth,
         // Every new row starts out pending — recovery is set later via the
         // "تأكيد الاسترداد" quick-action on the tracking table.
         status:        'pending',
@@ -150,6 +153,12 @@ export default function AddTemporaryExpenseModal({ isOpen, onClose, onAdd }) {
             />
               </div>
             </div>
+          </div>
+
+          <div>
+            <label htmlFor="advanceAssignmentMonth" className="block text-sm font-semibold mb-1.5">شهر إسناد السلفة</label>
+            <input id="advanceAssignmentMonth" name="assignmentMonth" type="month" value={form.assignmentMonth} onChange={handleChange} required className="w-full border rounded-control p-3 bg-white dark:bg-slate-800" />
+            <p className="text-xs text-slate-500 mt-1">يحدد شهر خصم السلفة في مسودة الرواتب؛ تاريخ الصرف يبقى مستقلاً.</p>
           </div>
 
           {/* Notes */}

@@ -1,10 +1,11 @@
+import AdvanceMonthEditor from './AdvanceMonthEditor';
 import { translate } from '../i18n/locale';
 import ScrollableTable from './ScrollableTable';
 import { useCallback, useMemo, useState } from 'react';
 import {
   Plus, Trash2, RefreshCw, Coins, Hourglass, CheckCircle2, Inbox,
 } from 'lucide-react';
-import { formatCurrency, formatDate } from '../data/initialData';
+import { formatCurrency, formatDate, todayISO } from '../data/initialData';
 import TopBar from './TopBar';
 import {
   Card, SectionHeader, StatCard, PrimaryButton,
@@ -30,11 +31,14 @@ export default function TemporaryExpensesPage() {
     deleteTemporaryExpense,
     refetch,
   } = useTemporaryExpenses();
-  const { scalingFactor, canMutate } = usePartnerView();
+  const { scalingFactor, canMutate, role } = usePartnerView();
 
+  const canCorrectMonth = canMutate && ['admin', 'accountant'].includes(role);
+  const [monthEditor, setMonthEditor] = useState(null);
+  const [assignmentFilter, setAssignmentFilter] = useState(todayISO().slice(0, 7));
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const filteredExpenses = expenses.filter((e) => (statusFilter === 'all' || e.status === statusFilter) && `${e.title || ''} ${e.notes || ''}`.toLocaleLowerCase('ar').includes(search.trim().toLocaleLowerCase('ar')));
+  const filteredExpenses = expenses.filter((e) => (assignmentFilter === 'all' || e.assignmentMonth === assignmentFilter) && (statusFilter === 'all' || e.status === statusFilter) && `${e.title || ''} ${e.notes || ''}`.toLocaleLowerCase('ar').includes(search.trim().toLocaleLowerCase('ar')));
   const [addOpen, setAddOpen] = useState(false);
   const [mutationError, setMutationError] = useState(null);
   const [toast, setToast] = useState({ open: false, message: '', tone: 'success', duration: 3000 });
@@ -179,6 +183,12 @@ export default function TemporaryExpensesPage() {
           </div>
         </div>
 
+        {canCorrectMonth && <Card className="p-4 space-y-2">
+          <p className="font-semibold">تصحيح إسناد سلف أكتوبر إلى سبتمبر</p>
+          <p className="text-sm">السلف العشر التي حددها المالك: إجمالي 599، منها 399 معلقة و200 مستردة. لا يتغير تاريخ الدفع أو حالة الاسترداد.</p>
+          <button className="sw-button sw-button--secondary" onClick={() => setMonthEditor({ ownerCorrection: true })}>مراجعة إسناد السلف العشر</button>
+        </Card>}
+
         {/* ── Tracking table ───────────────────────────────── */}
         <Card className="p-6">
           <SectionHeader
@@ -211,6 +221,7 @@ export default function TemporaryExpensesPage() {
           ) : (
             <><div className="flex flex-wrap gap-3 mb-4">
               <label>بحث في المصروفات<input className="block border rounded-control p-2 bg-white dark:bg-slate-800" type="search" value={search} onChange={(e) => setSearch(e.target.value)} /></label>
+              <label>شهر إسناد السلفة<select className="block border rounded-control p-2 bg-white dark:bg-slate-800" value={assignmentFilter} onChange={e => setAssignmentFilter(e.target.value)}><option value="all">كل الأشهر</option>{[...new Set([todayISO().slice(0, 7), ...expenses.map(row => row.assignmentMonth).filter(Boolean)])].sort().reverse().map(month => <option key={month} value={month}>{month}</option>)}</select></label>
               <label>حالة الاسترداد<select className="block border rounded-control p-2 bg-white dark:bg-slate-800" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}><option value="all">كل الحالات</option><option value="pending">بانتظار الاسترداد</option><option value="recovered">مسترد</option></select></label>
               <p className="w-full text-xs">عرض {filteredExpenses.length} من {expenses.length} سجل — إجمالي النتائج {formatCurrency(filteredExpenses.reduce((sum, item) => sum + (item.amount || 0), 0) * scalingFactor)}. البطاقات تلخّص جميع السجلات.</p>
               {filteredExpenses.length === 0 && <p role="status">لا توجد نتائج مطابقة للبحث.</p>}
@@ -222,6 +233,7 @@ export default function TemporaryExpensesPage() {
                     <th className="py-3 px-4 whitespace-nowrap">البند</th>
                     <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">المبلغ</th>
                     <th className="py-3 px-4 whitespace-nowrap">تاريخ الصرف</th>
+                    <th className="py-3 px-4 whitespace-nowrap">شهر إسناد السلفة</th>
                     <th className="py-3 px-4 whitespace-nowrap">حالة الاسترداد</th>
                     <th className="py-3 px-4 whitespace-nowrap">تاريخ الاسترداد</th>
                     <th className="py-3 px-4 whitespace-nowrap text-left w-16">إجراءات</th>
@@ -249,6 +261,7 @@ export default function TemporaryExpensesPage() {
                         <td className="py-3 px-4 whitespace-nowrap tabular-nums text-slate-700 dark:text-slate-300">
                           {formatDate(e.spentDate)}
                         </td>
+                        <td className="py-3 px-4 whitespace-nowrap" dir="ltr">{e.assignmentMonth || '—'}</td>
                         <td className="py-3 px-4 whitespace-nowrap">
                           {isRecovered ? (
                             <span className="inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-control border bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-100 dark:border-emerald-500/30">
@@ -298,6 +311,7 @@ export default function TemporaryExpensesPage() {
                           )}
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap text-left">
+                          {canCorrectMonth && <button className="sw-button sw-button--sm sw-button--secondary" onClick={() => setMonthEditor({ expense: e })} aria-label={`تعديل شهر السلفة ${e.title}`}>تعديل الشهر</button>}
                           {canMutate && (
                             <button
                               type="button"
@@ -336,6 +350,8 @@ export default function TemporaryExpensesPage() {
           )}
         </Card>
       </main>
+
+      {monthEditor && <AdvanceMonthEditor {...monthEditor} onClose={() => setMonthEditor(null)} onSaved={async () => { await refetch(); showToast('حُفظ إسناد الشهر مع سجل التدقيق'); }} />}
 
       <AddTemporaryExpenseModal
         isOpen={addOpen}

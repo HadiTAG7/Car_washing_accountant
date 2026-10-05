@@ -128,6 +128,7 @@ const SHAPES = {
   }),
   annual_expenses: (r) => ({ id: r.id, name: r.expense_name || r.name, category: r.category_id, budget: r2(r.total_annual_cost ?? r.amount) }),
   temporary_expenses: (r) => ({
+    assignmentMonth: r.assignment_month || String(r.spent_date || '').slice(0, 7) || null,
     id: r.id, title: r.title, amount: r2(r.amount), date: r.spent_date ?? null, status: r.status,
     recovered: r2(r.recovered_amount), recoveredDate: r.recovered_date ?? null, biker: r.biker_name ?? null, payment: r.payment_method ?? null,
   }),

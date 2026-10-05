@@ -1,3 +1,4 @@
+import { previewAdvanceMonth, saveAdvanceMonth } from './advanceMonth.js';
 // ═══════════════════════════════════════════════════════════════════════════
 // الطبقة المشتركة — مَن المتصل، وما الذي يُسمح له، وأين يُسلَّم
 // ═══════════════════════════════════════════════════════════════════════════
@@ -497,6 +498,8 @@ export const HANDLERS = {
     guard: 'accountant',
     run: ({ db, FieldValue, data, uid }) => saveOwnerHandoff(db, FieldValue, data, uid),
   },
+  payrollPreviewAdvanceMonth: { guard: 'accountant', run: ({ db, data }) => previewAdvanceMonth(db, data) },
+  payrollSaveAdvanceMonth: { guard: 'accountant', run: ({ db, FieldValue, data, uid }) => saveAdvanceMonth(db, FieldValue, data, uid) },
   sweaterPreviewOwnerWashTax: {
     guard: 'accountant',
     run: ({ db, data }) => previewOwnerWashTax(db, data),

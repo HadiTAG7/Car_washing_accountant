@@ -1,3 +1,4 @@
+import { advanceAssignmentMonth, isAssignmentMonth } from './advanceMonth.js';
 import { clampRevenueOrigin } from './sweater/revenueOriginClient.js';
 import { bikerNameFields } from './bikerNames';
 // ═══════════════════════════════════════════════════════════════════════════
@@ -703,6 +704,8 @@ export function mapTemporaryExpense(row) {
     title:          row.title || '',
     amount:         Number(row.amount) || 0,
     spentDate:      row.spent_date || '',
+    assignmentMonth: advanceAssignmentMonth(row),
+    assignmentMonthExplicit: isAssignmentMonth(row.assignment_month),
     status:         clampRecoveryStatus(row.status),
     recoveredDate:  row.recovered_date || '',
     notes:          row.notes || '',
@@ -714,12 +717,14 @@ export function mapTemporaryExpense(row) {
     payrollLockId:   row.payroll_lock_id || null,
   };
 }
-export function toTemporaryExpenseInsert({ title, amount, spentDate, status, recoveredDate, notes, bikerId, paymentMethod }) {
+export function toTemporaryExpenseInsert({ title, amount, spentDate, status, recoveredDate, notes, bikerId, paymentMethod, assignmentMonth }) {
+  if (assignmentMonth != null && !isAssignmentMonth(assignmentMonth)) throw new Error('شهر إسناد السلفة غير صالح.');
   const s = clampRecoveryStatus(status);
   return {
     title:          String(title || '').trim(),
     amount:         clampTemporaryAmount(amount),
     spent_date:     spentDate || null,
+    assignment_month: assignmentMonth || advanceAssignmentMonth({ spentDate }),
     status:         s,
     recovered_date: s === 'recovered' ? (recoveredDate || null) : null,
     notes:          notes && String(notes).trim() ? String(notes).trim() : null,

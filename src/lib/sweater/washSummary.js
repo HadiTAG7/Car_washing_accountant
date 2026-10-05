@@ -1,3 +1,4 @@
+import { WASH_COMMISSION_RATE, WASH_COMMISSION_EFFECTIVE_MONTH } from '../../../functions/src/washCommission.js';
 export function summarizeOwnerWashes(washes) {
   const groups = new Map();
   const seen = new Set();
@@ -10,7 +11,7 @@ export function summarizeOwnerWashes(washes) {
       quantity: 0, totalAmount: 0, commission: 0, washes: [] };
     group.quantity += wash.quantity;
     group.totalAmount += wash.quantity * wash.price;
-    group.commission += wash.quantity * (wash.workerCommissionPerWash ?? 0);
+    group.commission += wash.quantity * (String(wash.washDate || '').slice(0, 7) >= WASH_COMMISSION_EFFECTIVE_MONTH ? WASH_COMMISSION_RATE : (wash.workerCommissionPerWash ?? 0));
     group.washes.push(wash);
     groups.set(key, group);
   }

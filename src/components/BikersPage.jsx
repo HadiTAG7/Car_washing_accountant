@@ -126,7 +126,7 @@ export default function BikersPage({ role, payrollPreview = false }) {
   // One derived bundle per biker — stats, advances, iqama — computed from the
   // same rows every other page reads, so no number here can disagree with them.
   const rows = useMemo(() => bikers.map((b) => {
-    const stats = washStatsFor(b.name, washes || [], month);
+    const stats = washStatsFor(b.name, washes || [], month, undefined, b.id);
     const { advances, total: advancesTotal } = pendingAdvancesFor(b.id, temps || []);
     return { ...b, displayName: displayBikerName(b, language), stats, advances, advancesTotal };
   }), [bikers, washes, temps, month, language]);

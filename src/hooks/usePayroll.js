@@ -1,7 +1,6 @@
 import { useCallback } from 'react';
 import { collection, getDocs } from 'firebase/firestore';
-import { db, isFirebaseConfigured } from '../lib/firebaseClient';
-import { callServer } from '../lib/ledgerTransport';
+import { db, isFirebaseConfigured, callPayroll } from '../lib/firebaseClient';
 import { fetchRows, sortBy } from '../lib/firestoreCrud';
 import { useFirestoreQuery } from './useFirestoreQuery';
 
@@ -12,7 +11,7 @@ export function usePayrollRuns({ enabled = true } = {}) {
   );
 
   const invoke = useCallback(async (name, payload) => {
-    const result = await callServer(name, payload);
+    const result = await callPayroll(name, payload);
     await refetch();
     return result;
   }, [refetch]);
@@ -22,7 +21,7 @@ export function usePayrollRuns({ enabled = true } = {}) {
     loading,
     error,
     refetch,
-    preview: (payload) => callServer('payrollPreview', payload),
+    preview: (payload) => callPayroll('payrollPreview', payload),
     saveDraft: (payload) => invoke('payrollSaveDraft', payload),
     approve: (runId) => invoke('payrollApprove', { runId }),
     unapprove: (runId, reason) => invoke('payrollUnapprove', { runId, reason }),

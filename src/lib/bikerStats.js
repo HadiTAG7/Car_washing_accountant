@@ -8,15 +8,11 @@
 // claims to summarise — the exact bug the partners page already documents
 // with its `paid_amount` cache.
 //
-// ── مفتاح الربط هو الاسم، والقول به أصدق من إخفائه ──
-// Washes carry a free-text `biker_name`; legacy rows have nothing else. So
-// wash/commission stats match on the TRIMMED NAME — the same normalisation
-// `variableItemsForMonth` uses — and renaming a biker leaves their old washes
-// under the old name. Advances are the opposite: they were built for this
-// registry, so they link by `biker_id` and survive a rename.
+// Washes use the registry ID when present, with trimmed names for legacy rows.
+// Advances link by biker_id and survive a rename.
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { monthOf, DEFAULT_DYNAMIC_UNIT_COST } from './variableExpenseTotals';
+import { completedWashesInMonth, DEFAULT_DYNAMIC_UNIT_COST } from './variableExpenseTotals';
 
 /**
  * Completed washes and the commission they earn for ONE biker in ONE month.
@@ -27,14 +23,12 @@ import { monthOf, DEFAULT_DYNAMIC_UNIT_COST } from './variableExpenseTotals';
  * must never quote two different commissions for the same person — the drift
  * test in bikerStats.test.js locks the two together.
  */
-export function washStatsFor(bikerName, washes = [], monthKey, unitCost = DEFAULT_DYNAMIC_UNIT_COST) {
+export function washStatsFor(bikerName, washes = [], monthKey, unitCost = DEFAULT_DYNAMIC_UNIT_COST, bikerId = null) {
   const name = String(bikerName || '').trim();
   if (!name || !monthKey) return { washCount: 0, commission: 0 };
   let qty = 0;
-  for (const w of washes) {
-    if (w.status !== 'مكتملة') continue;
-    if (monthOf(w.washDate) !== monthKey) continue;
-    if (String(w.bikerName || '').trim() !== name) continue;
+  for (const w of completedWashesInMonth(washes, monthKey)) {
+    if (w.bikerId && bikerId ? String(w.bikerId) !== String(bikerId) : String(w.bikerName || '').trim() !== name) continue;
     qty += w.quantity || 0;
   }
   return { washCount: qty, commission: qty * unitCost };

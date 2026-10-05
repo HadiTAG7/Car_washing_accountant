@@ -34,7 +34,7 @@ describe('washStatsFor', () => {
       washCount: 8,
       commission: 8 * DEFAULT_DYNAMIC_UNIT_COST,
     });
-    expect(washStatsFor('سالم', WASHES, MONTH).commission).toBe(8);
+    expect(washStatsFor('سالم', WASHES, MONTH).commission).toBe(2 * DEFAULT_DYNAMIC_UNIT_COST);
     expect(washStatsFor('غائب', WASHES, MONTH)).toEqual({ washCount: 0, commission: 0 });
     expect(washStatsFor('', WASHES, MONTH)).toEqual({ washCount: 0, commission: 0 });
   });

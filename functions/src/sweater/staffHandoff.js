@@ -1,3 +1,4 @@
+import { WASH_COMMISSION_RATE } from '../washCommission.js';
 import { reviewSweaterHandoff, ownerHandoffCoverageComplete } from '../../../src/lib/sweater/handoff.js';
 import { bookingDocId, rawDocId, classifyRecord, COL, SweaterIngestError } from './ingest.js';
 import { hashBody, hashRecord, normalizeRecord, SCHEMA_VERSION } from './record.js';
@@ -26,7 +27,7 @@ const evidenceFor = (input, record) => ({
   assertedAmount: input.ownerConfirmation.unitAmount, currency: 'SAR', vatAmount: null,
   collectionStatus: 'confirmed_by_owner', paymentMethod: null, bankAccountId: null,
   // Preserve this instruction without accruing/paying payroll in the import.
-  workerCommission: { unitAmount: 4.5, currency: 'SAR', paymentTiming: 'payroll', paid: false },
+  workerCommission: { unitAmount: WASH_COMMISSION_RATE, currency: 'SAR', paymentTiming: 'payroll', paid: false },
 });
 
 async function plan(db, input, read) {
@@ -68,7 +69,7 @@ async function plan(db, input, read) {
       driver_external_id: record.driverExternalId, quantity: 1, price: evidence.assertedAmount,
       status: 'مكتملة', wash_date: record.serviceDate, payment_method: null,
       revenue_origin: 'sweater', vat_amount: null, price_basis: 'owner_statement',
-      collection_status: 'confirmed_by_owner', worker_commission_per_wash: 4.5,
+      collection_status: 'confirmed_by_owner', worker_commission_per_wash: WASH_COMMISSION_RATE,
       worker_commission_payment_timing: 'payroll', worker_commission_paid: false };
     const washHash = hashBody(wash);
     let verdict = classifyRecord(record, sourceHash, existing);
@@ -90,7 +91,7 @@ async function plan(db, input, read) {
     rows.push({ sspBookingId: record.sspBookingId, ...verdict,
       collectionStatus: 'confirmed_by_owner', assertedAmount: evidence.assertedAmount,
       vatAmount: null, quantity: 1, driverExternalId: record.driverExternalId,
-      bikerId, bikerName, washId, workerCommission: 4.5,
+      bikerId, bikerName, washId, workerCommission: WASH_COMMISSION_RATE,
       serviceDate: record.serviceDate, rawStatus: record.rawStatus,
       normalizedStatus: record.normalizedStatus, paymentStatus: record.paymentStatus,
       ownerConfirmationOutcome: existingEvidence ? 'duplicate' : 'new',

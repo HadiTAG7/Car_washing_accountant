@@ -7,6 +7,7 @@ import {
   round2,
   totalsOf,
 } from './invariants.js';
+import { WASH_COMMISSION_RATE, WASH_COMMISSION_EFFECTIVE_MONTH, uniqueCompletedCommissionWashes } from './washCommission.js';
 import { advanceAssignmentMonth } from '../../src/lib/advanceMonth.js';
 
 export const PAYROLL_POLICY = Object.freeze({
@@ -36,8 +37,8 @@ export const PAYROLL_ACCOUNTS = Object.freeze({
 
 const LEGACY_COMMISSION_POLICY = Object.freeze({ version: 'completed_wash_v1', unitAmount: 2, effectivePeriodKey: null });
 export const CURRENT_COMMISSION_POLICY = Object.freeze({
-  version: 'completed_wash_v2', unitAmount: 4.5,
-  effectivePeriodKey: '2026-10', decidedByOwnerAt: '2026-10-04',
+  version: 'completed_wash_v2', unitAmount: WASH_COMMISSION_RATE,
+  effectivePeriodKey: WASH_COMMISSION_EFFECTIVE_MONTH, decidedByOwnerAt: '2026-10-04',
 });
 const JOURNAL_COUNTER = 'journal';
 const BUSINESS_TIME_ZONE = 'Asia/Riyadh';
@@ -199,7 +200,7 @@ function outstandingOfAdvance(row) {
 function commissionPolicy(periodKey, stored = null) {
   if (stored) {
     if ((stored.version === LEGACY_COMMISSION_POLICY.version && stored.unitAmount === 2)
-      || (stored.version === CURRENT_COMMISSION_POLICY.version && stored.unitAmount === 4.5)) return { ...stored };
+      || (stored.version === CURRENT_COMMISSION_POLICY.version && stored.unitAmount === WASH_COMMISSION_RATE)) return { ...stored };
     fail('لقطة سياسة عمولة المسير غير صالحة؛ تحتاج مراجعة دون إعادة تسعير.', { code: 'failed-precondition' });
   }
   return { ...(periodKey >= CURRENT_COMMISSION_POLICY.effectivePeriodKey ? CURRENT_COMMISSION_POLICY : LEGACY_COMMISSION_POLICY) };
@@ -209,26 +210,6 @@ function commissionPolicy(periodKey, stored = null) {
 // Save/approve refreshes use that trusted snapshot, never a client override.
 const storedCommissionPolicy = run => run.policySnapshot?.commission || LEGACY_COMMISSION_POLICY;
 
-function uniqueCommissionWashes(washes, from, to) {
-  const seen = new Map();
-  const unique = [];
-  for (const row of washes) {
-    const date = String(row.wash_date || '').slice(0, 10);
-    if (date < from || date > to || !completedWash(row)) continue;
-    const sspId = String(row.ssp_booking_id || '').trim();
-    const key = sspId ? `ssp:${sspId}` : row.id ? `wash:${row.id}` : null;
-    if (sspId && Number(row.quantity) !== 1) fail('غسلة SSP يجب أن تمثل تنفيذًا واحدًا؛ راجع الكمية قبل اعتماد المسير.');
-    const execution = JSON.stringify({ biker: row.biker_id ? `id:${row.biker_id}` : `name:${String(row.biker_name || '').trim()}`,
-      date, quantity: Math.max(0, Number(row.quantity) || 0) });
-    if (key && seen.has(key)) {
-      if (seen.get(key) !== execution) fail('غسلة مكررة بتنفيذ أو عامل مختلف؛ راجع الربط قبل اعتماد المسير.');
-      continue;
-    }
-    if (key) seen.set(key, execution);
-    unique.push(row);
-  }
-  return unique;
-}
 
 function commissionFor(biker, washes, periodStart, periodEnd, unitAmount) {
   return round2(washes.reduce((sum, row) => {
@@ -274,6 +255,7 @@ export function calculatePayrollPreview({
   bikers = [],
   washes = [],
   advances = [],
+  automaticAdvanceDeduction = false,
   now = new Date(),
 }, { commission: trustedCommission = null } = {}) {
   const bounds = payrollMonthBounds(periodKey);
@@ -282,11 +264,11 @@ export function calculatePayrollPreview({
   eligibleActualDays({ periodKey: bounds.periodKey, periodStart: from, periodEnd: to });
   const commission = commissionPolicy(bounds.periodKey, trustedCommission);
   const commissionWashes = commission.version === CURRENT_COMMISSION_POLICY.version
-    ? uniqueCommissionWashes(washes, from, to) : washes;
+    ? uniqueCompletedCommissionWashes(washes, from, to, fail) : washes;
 
   const adjustmentMap = new Map();
   for (const raw of adjustments || []) {
-    const adjustment = normalizeAdjustment(raw);
+    const adjustment = normalizeAdjustment(automaticAdvanceDeduction ? { ...raw, advanceDeduction: undefined } : raw);
     if (adjustmentMap.has(adjustment.bikerId)) {
       fail(`تعديل العامل ${adjustment.bikerId} مكرر.`, { code: 'invalid-argument' });
     }
@@ -393,6 +375,7 @@ export function calculatePayrollPreview({
 
   return {
     periodKey: bounds.periodKey,
+    automaticAdvanceDeduction: automaticAdvanceDeduction === true,
     periodStart: from,
     periodEnd: to,
     distributionDate: bounds.distributionDate,
@@ -431,17 +414,19 @@ export async function previewPayroll(db, payload, { now = new Date() } = {}) {
   if (run && [PAYROLL_STATUS.APPROVED, PAYROLL_STATUS.PAID].includes(run.status)) {
     const items = await db.collection('payroll_runs').doc(runId).collection('items').get();
     return {
-      runId, periodKey: run.periodKey, periodStart: run.periodStart, periodEnd: run.periodEnd,
+      runId, status: run.status, periodKey: run.periodKey, periodStart: run.periodStart, periodEnd: run.periodEnd,
       distributionDate: run.distributionDate, distributionSnapshot: run.distributionSnapshot ?? null,
       policySnapshot: run.policySnapshot, estimated: run.estimated ?? false,
       totals: run.totals, lines: items.docs.map(doc => doc.data()), lineCount: items.docs.length,
-      inputAdjustments: run.inputAdjustments ?? [], snapshotOnly: true,
+      inputAdjustments: run.inputAdjustments ?? [], automaticAdvanceDeduction: run.automaticAdvanceDeduction === true, snapshotOnly: true,
     };
   }
   const active = run && ![PAYROLL_STATUS.REVERSED, PAYROLL_STATUS.CANCELLED].includes(run.status);
   const sources = await sourceRows(db, db);
-  return calculatePayrollPreview({ ...payload, ...sources, periodKey, now }, {
-    commission: active ? storedCommissionPolicy(run) : null,
+  const automaticAdvanceDeduction = payload?.automaticAdvanceDeduction === true || (payload?.automaticAdvanceDeduction == null && active && run.automaticAdvanceDeduction === true);
+  return calculatePayrollPreview({ ...payload, adjustments: payload?.adjustments ?? (active ? run.inputAdjustments : []),
+    ...sources, periodKey, automaticAdvanceDeduction, now }, {
+    commission: active && !automaticAdvanceDeduction ? storedCommissionPolicy(run) : null,
   });
 }
 
@@ -484,6 +469,7 @@ function runDocument(preview, { runId, revision, status, userId, FieldValue, pre
     distributionDate: preview.distributionDate,
     distributionSnapshot: preview.distributionSnapshot,
     policySnapshot: preview.policySnapshot,
+    automaticAdvanceDeduction: preview.automaticAdvanceDeduction === true,
     estimated: preview.estimated,
     lineCount: preview.lineCount,
     totals: preview.totals,
@@ -532,8 +518,10 @@ export async function savePayrollDraft(db, FieldValue, payload, {
       sourceRows(tx, db),
       itemQuery ? tx.get(itemQuery) : Promise.resolve(null),
     ]);
-    const preview = calculatePayrollPreview({ ...payload, ...sources, periodKey, now }, {
-      commission: current ? storedCommissionPolicy(current) : null,
+    const automaticAdvanceDeduction = payload?.automaticAdvanceDeduction === true || (payload?.automaticAdvanceDeduction == null && current?.automaticAdvanceDeduction === true);
+    const preview = calculatePayrollPreview({ ...payload, adjustments: payload?.adjustments ?? current?.inputAdjustments ?? [],
+      ...sources, periodKey, automaticAdvanceDeduction, now }, {
+      commission: current && !automaticAdvanceDeduction ? storedCommissionPolicy(current) : null,
     });
     if (!preview.lineCount) fail('لا يوجد عامل مستحق ضمن الفترة المختارة.', { code: 'failed-precondition' });
     const runId = current?.runId || runIdFor(periodKey, revision);
@@ -566,9 +554,10 @@ async function refreshedPreviewInTransaction(tx, db, run, now) {
     periodStart: run.periodStart,
     periodEnd: run.periodEnd,
     adjustments: run.inputAdjustments,
+    automaticAdvanceDeduction: run.automaticAdvanceDeduction === true,
     ...sources,
     now,
-  }, { commission: storedCommissionPolicy(run) });
+  }, { commission: run.automaticAdvanceDeduction ? null : storedCommissionPolicy(run) });
 }
 
 export async function approvePayroll(db, FieldValue, { runId }, {

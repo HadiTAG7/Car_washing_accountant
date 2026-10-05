@@ -16,14 +16,21 @@ export function payrollAdvanceMax(line, adjustment) {
   return Math.round(Math.min(Number(line.advanceOutstanding) || 0, Math.max(0, beforeAdvance)) * 100) / 100;
 }
 
-export function payrollAdjustmentPayload(adjustments) {
+export function payrollAdjustmentPayload(adjustments, { automaticAdvances = false } = {}) {
   return Object.values(adjustments).map((row) => ({
     bikerId: row.bikerId,
     bonus: Number(row.bonus) || 0,
     bonusReason: row.bonusReason || '',
     deduction: Number(row.deduction) || 0,
     deductionReason: row.deductionReason || '',
-    ...(row.advanceDeductionTouched
+    ...(!automaticAdvances && row.advanceDeductionTouched
       ? { advanceDeduction: Number(row.advanceDeduction) || 0 } : {}),
   }));
+}
+
+// Preserve real manual bonus/deduction components while re-deriving advances.
+export function automaticPayrollAdjustments(run, items = []) {
+  const rows = run?.inputAdjustments ?? payrollAdjustmentPayload(adjustmentsFromPayrollLines(items));
+  return rows.map(row => ({ bikerId: row.bikerId, bonus: Number(row.bonus) || 0,
+    bonusReason: row.bonusReason || '', deduction: Number(row.deduction) || 0, deductionReason: row.deductionReason || '' }));
 }

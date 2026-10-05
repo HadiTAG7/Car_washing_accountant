@@ -13,7 +13,7 @@ import { describeBackendError } from '../lib/firebaseClient';
 import { downloadCsv } from '../lib/exportCsv';
 import { formatCurrency, formatCurrencyPrecise, formatDate, formatNumber } from '../data/initialData';
 import {
-  adjustmentsFromPayrollLines, payrollAdjustmentPayload, payrollAdvanceMax,
+  adjustmentsFromPayrollLines, payrollAdjustmentPayload, payrollAdvanceMax, automaticPayrollAdjustments,
 } from '../lib/payrollUi';
 import { downloadPayrollPdf } from '../lib/payrollPdf';
 import { useLanguage } from '../i18n/useLanguage';
@@ -170,7 +170,7 @@ function AdjustmentInputs({ line, adjustment, disabled, onChange, compact = fals
   const moneyInput = (key, label, max) => (
     <div className={compact ? '' : 'min-w-36'}>
       <label className="sr-only">{label} <span translate="no">{line.name}</span></label>
-      <input type="number" min="0" max={max} step="0.01" disabled={disabled} value={adjustment[key] ?? 0}
+      <input type="number" min="0" max={max} step="0.01" disabled={disabled || key === 'advanceDeduction'} value={key === 'advanceDeduction' ? line.advanceDeduction : adjustment[key] ?? 0}
         onChange={(e) => onChange(key, e.target.value)} className={inputClass} aria-label={`${label} ${line.name}`} />
     </div>
   );
@@ -283,6 +283,7 @@ export default function BikerPayroll({ role, previewMode = false, bikers: suppli
   const activeRun = useMemo(() => api.runs.find((run) => run.periodKey === periodKey
     && !['reversed', 'cancelled'].includes(run.status)) || null, [api.runs, periodKey]);
   const itemsQuery = usePayrollItems(activeRun?.runId, { enabled: !previewMode });
+  const itemsKey = JSON.stringify(itemsQuery.data || []);
 
   useEffect(() => {
     setPeriodStart(bounds.start); setPeriodEnd(bounds.end);
@@ -295,13 +296,31 @@ export default function BikerPayroll({ role, previewMode = false, bikers: suppli
   }, [pdfFile]);
 
   useEffect(() => {
-    if (previewMode || !activeRun || itemsQuery.loading) return;
-    const next = previewFromRun(activeRun, itemsQuery.data || []);
-    setPreview(next);
-    setPeriodStart(activeRun.periodStart || bounds.start);
-    setPeriodEnd(activeRun.periodEnd || bounds.end);
-    setAdjustments(adjustmentsFromPayrollLines(next.lines));
-  }, [activeRun, itemsQuery.data, itemsQuery.loading, bounds.start, bounds.end, previewMode]);
+    if (previewMode || api.loading || itemsQuery.loading) return undefined;
+    const canRecalculate = ['admin', 'accountant'].includes(role);
+    if (!activeRun && !canRecalculate) return undefined;
+    let alive = true;
+    if (activeRun && (!canRecalculate || ['approved', 'paid'].includes(activeRun.status))) {
+      const next = previewFromRun(activeRun, itemsQuery.data || []);
+      setPreview(next);
+      setPeriodStart(activeRun.periodStart || bounds.start);
+      setPeriodEnd(activeRun.periodEnd || bounds.end);
+      setAdjustments(adjustmentsFromPayrollLines(next.lines));
+    } else {
+      // Recalculate in memory, with no draft save or debt/status mutation.
+      api.preview({ periodKey, periodStart: activeRun?.periodStart || bounds.start,
+        periodEnd: activeRun?.periodEnd || bounds.end, automaticAdvanceDeduction: true,
+        adjustments: automaticPayrollAdjustments(activeRun, itemsQuery.data || []) }).then(result => {
+        if (!alive) return;
+        setPreview({ ...result, status: result.status || 'draft', runId: activeRun?.runId || null });
+        setPeriodStart(result.periodStart); setPeriodEnd(result.periodEnd);
+        setAdjustments(adjustmentsFromPayrollLines(result.lines)); setError(null);
+      }).catch(error => { if (alive) setError(error); });
+    }
+    return () => { alive = false; };
+  // The API wrapper is recreated during rendering; inputs identify the read.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeRun, itemsKey, itemsQuery.loading, api.loading, bounds.start, bounds.end, periodKey, role, previewMode]);
 
   const canDraft = role === 'admin' || role === 'accountant' || previewMode;
   const isAdmin = role === 'admin' && !previewMode;
@@ -309,7 +328,8 @@ export default function BikerPayroll({ role, previewMode = false, bikers: suppli
 
   const payload = useCallback(() => ({
     periodKey, periodStart, periodEnd,
-    adjustments: payrollAdjustmentPayload(adjustments),
+    automaticAdvanceDeduction: true,
+    adjustments: payrollAdjustmentPayload(adjustments, { automaticAdvances: true }),
   }), [periodKey, periodStart, periodEnd, adjustments]);
 
   const guarded = useCallback(async (name, fn, message) => {
@@ -318,7 +338,7 @@ export default function BikerPayroll({ role, previewMode = false, bikers: suppli
     try {
       const result = await fn();
       setToast({ open: true, message, tone: 'success' });
-      await api.refetch();
+      if (name !== 'preview') await api.refetch();
       return result;
     } catch (e) {
       const text = describeBackendError(e) || e?.message || 'تعذّر تنفيذ العملية';
@@ -329,7 +349,7 @@ export default function BikerPayroll({ role, previewMode = false, bikers: suppli
 
   const runPreview = () => guarded('preview', async () => {
     const result = await api.preview(payload());
-    setPreview({ ...result, status: activeRun?.status || 'draft', runId: activeRun?.runId || null });
+    setPreview({ ...result, status: result.status || activeRun?.status || 'draft', runId: activeRun?.runId || null });
     setAdjustments(adjustmentsFromPayrollLines(result.lines));
     return result;
   }, 'اكتملت المعاينة الخادمية');
@@ -457,7 +477,7 @@ export default function BikerPayroll({ role, previewMode = false, bikers: suppli
       </div>
 
       <Card className="p-4 sm:p-6">
-        <SectionHeader title="تفاصيل الاستحقاق" subtitle="يُخصم رصيد سلف شهر المسير افتراضيًا؛ سلف الأشهر الأخرى تبقى ديونًا قائمة. عدّل المسودة ثم أعد المعاينة قبل الحفظ." action={preview?.lines?.length ? (
+        <SectionHeader title="تفاصيل الاستحقاق" subtitle="خصم السلف وعمولة الغسلات يُحسبان تلقائيًا للشهر؛ السلف المستردة والأشهر الأخرى لا تُخصم. البونص هنا إضافة يدوية مستقلة عن عمولة الغسلات." action={preview?.lines?.length ? (
           <div className="flex gap-2 payroll-no-print">
             <button type="button" onClick={exportCsv} className="sw-button sw-button--sm sw-button--secondary"><Download size={16} /> CSV</button>
             <button type="button" disabled={printing} onClick={printPayroll} className="sw-button sw-button--sm sw-button--secondary"><Printer size={16} /> {printing ? 'جارٍ تجهيز PDF…' : 'طباعة PDF'}</button>
@@ -486,7 +506,7 @@ export default function BikerPayroll({ role, previewMode = false, bikers: suppli
                     <td className="py-3 px-3 min-w-40"><input type="number" min="0" step="0.01" disabled={locked} value={adj.bonus ?? 0} onChange={(e) => updateAdjustment(line, 'bonus', e.target.value)} className={INPUT} aria-label={`بونص ${line.name}`} />{(Number(adj.bonus) || 0) > 0 && <input disabled={locked} value={adj.bonusReason || ''} onChange={(e) => updateAdjustment(line, 'bonusReason', e.target.value)} className={`${INPUT} mt-1`} placeholder="سبب إلزامي" aria-label={`سبب بونص ${line.name}`} />}</td>
                     <td className="py-3 px-3 min-w-40"><input type="number" min="0" step="0.01" disabled={locked} value={adj.deduction ?? 0} onChange={(e) => updateAdjustment(line, 'deduction', e.target.value)} className={INPUT} aria-label={`خصم ${line.name}`} />{(Number(adj.deduction) || 0) > 0 && <input disabled={locked} value={adj.deductionReason || ''} onChange={(e) => updateAdjustment(line, 'deductionReason', e.target.value)} className={`${INPUT} mt-1`} placeholder="سبب إلزامي" aria-label={`سبب خصم ${line.name}`} />}</td>
                     <td className="py-3 px-3 font-semibold text-amber-700 tabular-nums">{formatCurrency(line.advanceOutstanding)}</td>
-                    <td className="py-3 px-3"><input type="number" min="0" max={advanceMax} step="0.01" disabled={locked} value={adj.advanceDeduction ?? 0} onChange={(e) => updateAdjustment(line, 'advanceDeduction', e.target.value)} className={`${INPUT} w-28`} aria-label={`خصم السلفة ${line.name}`} /><span className="block text-[10px] text-slate-500 mt-1">الحد {formatCurrency(advanceMax)}</span></td>
+                    <td className="py-3 px-3"><input type="number" min="0" max={advanceMax} step="0.01" disabled value={line.advanceDeduction ?? 0} readOnly className={`${INPUT} w-28`} aria-label={`خصم السلفة ${line.name}`} /><span className="block text-[10px] text-slate-500 mt-1">الحد {formatCurrency(advanceMax)}</span></td>
                     <td className="py-3 px-3 font-extrabold text-primary-700 dark:text-primary-300 tabular-nums">{formatCurrency(line.netDue)}</td>
                     <td className="py-3 px-3"><StatusChip status={line.status || status} /></td>
                   </tr>;

@@ -22,7 +22,7 @@ describe('bilingual biker names', () => {
     const mapped = mapBiker({ id: 'b1', name: 'أحمد', ...patch });
     expect(mapped).toMatchObject({ id: 'b1', name: 'أحمد', nameArabic: 'أحمد محمد', nameEnglish: 'Ahmed Mohammed' });
     expect(washStatsFor(mapped.name, [{ bikerName: 'أحمد', status: 'مكتملة', washDate: '2026-10-01', quantity: 3 }], '2026-10'))
-      .toEqual({ washCount: 3, commission: 12 });
+      .toEqual({ washCount: 3, commission: 13.5 });
   });
   it('can create English-only names and trims both fields', () => {
     expect(toBikerInsert({ nameEnglish: '  Ahmed  ' })).toMatchObject({ name: 'Ahmed', name_ar: null, name_en: 'Ahmed' });

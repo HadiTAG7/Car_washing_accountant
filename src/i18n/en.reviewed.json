@@ -828,5 +828,6 @@
   "تغيّرت السلفة أو حالة المسير منذ المعاينة؛ أعد المعاينة.": "The advance or payroll status has changed since preview; preview again.",
   "تغير شهر إسناد السلفة بعد الاعتماد؛ ألغِ الاعتماد وأعد المعاينة.": "The advance assignment month changed after approval; unapprove and preview again.",
   "تغير الإسناد بعد التصحيح السابق؛ راجع السلفة الحالية.": "The assignment changed after the previous correction; review the current advance.",
-  "يُخصم رصيد سلف شهر المسير افتراضيًا؛ سلف الأشهر الأخرى تبقى ديونًا قائمة. عدّل المسودة ثم أعد المعاينة قبل الحفظ.": "Advances assigned to this payroll month are deducted by default; advances from other months remain outstanding debts. Edit the draft and preview again before saving."
+  "يُخصم رصيد سلف شهر المسير افتراضيًا؛ سلف الأشهر الأخرى تبقى ديونًا قائمة. عدّل المسودة ثم أعد المعاينة قبل الحفظ.": "Advances assigned to this payroll month are deducted by default; advances from other months remain outstanding debts. Edit the draft and preview again before saving.",
+  "خصم السلف وعمولة الغسلات يُحسبان تلقائيًا للشهر؛ السلف المستردة والأشهر الأخرى لا تُخصم. البونص هنا إضافة يدوية مستقلة عن عمولة الغسلات.": "Advances and wash commissions are calculated automatically for the month. Recovered advances and other months are excluded. Bonus is a separate manual addition."
 }

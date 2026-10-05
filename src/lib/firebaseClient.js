@@ -322,3 +322,6 @@ export async function uploadInvoiceFile(file, folder = 'misc') {
 
 export const callAdvanceMonthPreview = data => callLedgerApi('payrollPreviewAdvanceMonth', data, '/api/ledger');
 export const callAdvanceMonthSave = data => callLedgerApi('payrollSaveAdvanceMonth', data, '/api/ledger');
+
+// Keep payroll preview, draft and approval on the same deployed server.
+export const callPayroll = (name, payload) => callLedgerApi(name, payload, '/api/ledger');

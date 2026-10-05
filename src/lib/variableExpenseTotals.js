@@ -10,7 +10,11 @@
 // the virtual row as the single source of truth for commissions.
 // ═══════════════════════════════════════════════════════════════════════════
 
-export const DEFAULT_DYNAMIC_UNIT_COST = 4;
+import { WASH_COMMISSION_RATE, uniqueCompletedCommissionWashes } from '../../functions/src/washCommission.js';
+export const DEFAULT_DYNAMIC_UNIT_COST = WASH_COMMISSION_RATE;
+
+export const completedWashesInMonth = (washes, month) => /^\d{4}-\d{2}$/.test(month || '')
+  ? uniqueCompletedCommissionWashes(washes, `${month}-01`, `${month}-31`) : [];
 
 export const ARABIC_MONTHS = [
   'يناير', 'فبراير', 'مارس',   'أبريل', 'مايو',   'يونيو',
@@ -66,8 +70,7 @@ export function listAvailableMonths(washes = [], variables = []) {
  */
 export function sumCompletedWashQuantityInMonth(washes = [], month) {
   if (!month) return 0;
-  return washes
-    .filter((w) => w.status === 'مكتملة' && monthOf(w.washDate) === month)
+  return completedWashesInMonth(washes, month)
     .reduce((sum, w) => sum + (w.quantity || 0), 0);
 }
 
@@ -112,9 +115,8 @@ export function variableItemsForMonth({
   // 3. Group completed washes for the selected month by biker name.
   const UNATTRIBUTED = '__UNATTRIBUTED__';
   const byBiker = new Map();
-  for (const w of washes) {
+  for (const w of completedWashesInMonth(washes, selectedMonth)) {
     if (selectedMonth === '__invalid__') break;
-    if (w.status !== 'مكتملة') continue;
     if (monthOf(w.washDate) !== selectedMonth) continue;
     const key = (w.bikerName || '').trim() || UNATTRIBUTED;
     byBiker.set(key, (byBiker.get(key) || 0) + (w.quantity || 0));

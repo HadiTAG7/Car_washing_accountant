@@ -17,10 +17,10 @@ it('groups by worker and excludes duplicate SSP IDs, cancellations and unrelated
   expect(screen.getByText('محصلة بإفادة المالك؛ العمولة تُدفع مع الراتب')).toBeTruthy();
   expect(screen.getByText('S-1')).toBeTruthy(); expect(screen.queryByText('cancelled')).toBeNull();
 });
-it('does not show an empty summary or assume commission when no evidence exists', () => {
+it('does not show an empty summary; current completed executions use the shared rate', () => {
   render(<SweaterWashWorkerSummary washes={[wash('direct', { revenueOrigin: 'direct' })]} />);
   expect(screen.queryByRole('table')).toBeNull();
-  expect(summarizeOwnerWashes([wash('S-1', { workerCommissionPerWash: null })])[0].commission).toBe(0);
+  expect(summarizeOwnerWashes([wash('S-1', { workerCommissionPerWash: null })])[0].commission).toBe(4.5);
 });
 it('uses the current registered name in each language across mobile, summary and booking details without changing washes', () => {
   const bikers = [{ id: 'worker-1', name: 'اسم قديم', nameArabic: 'اسم عربي مسجل', nameEnglish: 'Registered English Name' }];

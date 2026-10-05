@@ -84,7 +84,7 @@ export default function IncomeStatementDetailsModal({ statement, detailKey, onCl
                 {item.accountCode && <span>{item.accountCode} {translate(item.accountName, language)}</span>}
                 <span>{item.status === 'unposted' ? text('مسجل غير مُرحّل', 'Registered, unposted') : item.status === 'calculated' ? text('رسوم محسوبة', 'Calculated fee') : item.status === 'reversal' ? text('قيد عكس', 'Reversal journal') : item.status === 'reversed' ? text('قيد معكوس', 'Reversed journal') : text('قيد مُرحّل', 'Posted journal')}</span>
               </div>
-              {item.source && <p className="text-xs break-all text-slate-500 dark:text-slate-400">{SOURCES[item.source.kind]?.[english ? 1 : 0] || item.source.kind} · {item.source.entryNumber != null ? `#${item.source.entryNumber} · ` : ''}{item.source.documentNumber || item.source.id || text('معرّف المصدر غير متاح', 'Source identifier unavailable')}</p>}
+              {item.source && <p className="text-xs break-all text-slate-500 dark:text-slate-400">{SOURCES[item.source.kind]?.[english ? 1 : 0] || item.source.kind} · {item.source.entryNumber != null ? `#${item.source.entryNumber} · ` : ''}<bdi dir="ltr">{item.source.documentNumber || item.source.id || text('معرّف المصدر غير متاح', 'Source identifier unavailable')}</bdi></p>}
               {item.periodBasis?.startsWith('payroll') && <p className="text-xs text-primary-700 dark:text-primary-300">{text('فترة استحقاق الراتب', 'Salary accrual period')}: <bdi dir="ltr">{item.accountingPeriod}</bdi> · {text('مصدر الفترة', 'Period source')}: {item.periodBasis === 'payroll_snapshot' ? text('نسخة المسير المحفوظة بالقيد', 'Frozen payroll snapshot') : text('معرّف مسير الرواتب', 'Payroll run identifier')}</p>}
               {item.fee && <p className="text-sm">{text('الأساس', 'Base')}: {formatCurrency(item.fee.base)} · {text('النسبة', 'Rate')}: {item.fee.rate * 100}% · {item.fee.base <= 0 ? text('الأساس غير موجب؛ الرسوم صفر.', 'The base is not positive; the fee is zero.') : text('تُقرّب الرسوم إلى منزلتين عشريتين حسب قاعدة القائمة.', 'The fee is rounded to two decimals under the statement rule.')}</p>}
               {item.source && <SourceDisclosure source={item.source} text={text} language={language} />}
@@ -119,17 +119,17 @@ function SourceDisclosure({ source, text, language }) {
 }
 
 function SourceRecord({ source, text, language }) {
-  const field = (label, value) => <div className="flex flex-wrap justify-between gap-2"><dt className="text-slate-500">{label}</dt><dd className="break-all">{value ?? text('غير متاح', 'Unavailable')}</dd></div>;
+  const field = (label, value, direction = 'auto') => <div className="flex flex-wrap justify-between gap-2"><dt className="text-slate-500">{label}</dt><dd className="break-all"><bdi dir={direction}>{value ?? text('غير متاح', 'Unavailable')}</bdi></dd></div>;
   return <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-control space-y-3">
     <p className="font-semibold">{text('سجل المصدر — للقراءة', 'Source record — read only')}</p>
     <dl className="text-xs space-y-2">
       {field(text('المصدر', 'Source'), SOURCES[source.kind]?.[language === 'en' ? 1 : 0] || source.kind)}
-      {field(text('معرّف المصدر', 'Source ID'), source.id)}
-      {source.entryId && field(text('معرّف القيد', 'Journal ID'), source.entryId)}
-      {field(text('تاريخ السجل / الدفع', 'Record / payment date'), source.date)}
-      {source.accountingPeriod && field(text('الفترة المحاسبية', 'Accounting period'), source.accountingPeriod)}
-      {field(text('رقم المستند / الحجز', 'Document / booking number'), source.documentNumber)}
-      {source.invoiceDate && field(text('تاريخ الفاتورة', 'Invoice date'), source.invoiceDate)}
+      {field(text('معرّف المصدر', 'Source ID'), source.id, 'ltr')}
+      {source.entryId && field(text('معرّف القيد', 'Journal ID'), source.entryId, 'ltr')}
+      {field(text('تاريخ السجل / الدفع', 'Record / payment date'), source.date, 'ltr')}
+      {source.accountingPeriod && field(text('الفترة المحاسبية', 'Accounting period'), source.accountingPeriod, 'ltr')}
+      {field(text('رقم المستند / الحجز', 'Document / booking number'), source.documentNumber, 'ltr')}
+      {source.invoiceDate && field(text('تاريخ الفاتورة', 'Invoice date'), source.invoiceDate, 'ltr')}
       {source.supplier && field(text('المورّد', 'Supplier'), source.supplier)}
       {source.tax && <>
         {field(text('صافي المصدر قبل التجميع', 'Source net before aggregation'), source.tax.net != null ? formatCurrency(source.tax.net) : null)}

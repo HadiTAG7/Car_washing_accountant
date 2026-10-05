@@ -206,7 +206,7 @@ export const ADAPTERS = {
     sourceType: 'recovery',
     sourceId: (r) => r.id,
     dateOf: (r) => r.recovered_date,
-    isApproved: (r) => r.status === 'recovered' && Boolean(r.recovered_date),
+    isApproved: (r) => r.status === 'recovered' && Boolean(r.recovered_date) && !r.payroll_lock_id,
     notApprovedReason: 'لم تُسترد بعد',
     label: (r) => `استرداد ${r.title || ''}`.trim(),
     build: (r) => buildRecoveryEntry({

@@ -90,7 +90,7 @@ export async function collectUnposted() {
   // record goes through two adapters.
   for (const t of temps) {
     consider('temporary_expense', t);
-    if (t.status === 'recovered' && t.recovered_date) consider('recovery', t);
+    if (t.status === 'recovered' && t.recovered_date && !t.payroll_lock_id) consider('recovery', t);
   }
 
   ready.sort((a, b) => String(a.date).localeCompare(String(b.date)));

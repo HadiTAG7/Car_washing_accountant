@@ -26,6 +26,8 @@ export function usePayrollRuns({ enabled = true } = {}) {
     approve: (runId) => invoke('payrollApprove', { runId }),
     unapprove: (runId, reason) => invoke('payrollUnapprove', { runId, reason }),
     pay: (payload) => invoke('payrollPay', payload),
+    previewPartialPayment: payload => callPayroll('payrollPreviewPartialPayment', payload),
+    recordPartialPayment: payload => invoke('payrollRecordPartialPayment', payload),
     reverse: (payload) => invoke('payrollReverse', payload),
     cancel: (runId, reason) => invoke('payrollCancel', { runId, reason }),
   };

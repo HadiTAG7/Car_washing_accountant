@@ -130,6 +130,8 @@ export const payrollSaveDraft = callable('payrollSaveDraft');
 export const payrollApprove = callable('payrollApprove');
 export const payrollUnapprove = callable('payrollUnapprove');
 export const payrollPay = callable('payrollPay');
+export const payrollPreviewPartialPayment = callable('payrollPreviewPartialPayment');
+export const payrollRecordPartialPayment = callable('payrollRecordPartialPayment');
 export const payrollReverse = callable('payrollReverse');
 export const payrollCancel = callable('payrollCancel');
 

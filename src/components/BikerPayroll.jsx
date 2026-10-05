@@ -19,12 +19,13 @@ import { downloadPayrollPdf } from '../lib/payrollPdf';
 import { useLanguage } from '../i18n/useLanguage';
 import { useBikers } from '../hooks/useBikers';
 import { localizedPayrollPreview } from '../lib/bikerNames';
+import PayrollPartialPaymentDialog from './PayrollPartialPaymentDialog';
 import './BikerPayroll.css';
 
 const POLICY = 'أيام الشهر الفعلية';
 const FORMULA = 'صافي المستحق = الراتب المستحق + العمولة + البونص − الخصومات − السلفة المخصومة';
 const STATUS = {
-  draft: 'مسودة', approved: 'معتمد', paid: 'مصروف', reversed: 'معكوس', cancelled: 'ملغى',
+  draft: 'مسودة', approved: 'معتمد', partially_paid: 'مصروف جزئيًا', paid: 'مصروف', reversed: 'معكوس', cancelled: 'ملغى',
 };
 const INPUT = 'w-full px-3 py-2.5 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm tabular-nums focus:outline-none focus:border-primary-500 disabled:opacity-60';
 
@@ -55,6 +56,7 @@ function statusClass(status) {
   return {
     draft: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
     approved: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300',
+    partially_paid: 'bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300',
     paid: 'bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300',
     reversed: 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300',
     cancelled: 'bg-slate-800 text-white dark:bg-slate-700',
@@ -273,6 +275,7 @@ export default function BikerPayroll({ role, previewMode = false, bikers: suppli
   const [adjustments, setAdjustments] = useState(() => adjustmentsFromPayrollLines(previewMode ? DEMO_LINES : []));
   const [busy, setBusy] = useState(null);
   const [action, setAction] = useState(null);
+  const [partialPaymentOpen, setPartialPaymentOpen] = useState(false);
   const [error, setError] = useState(null);
   const [toast, setToast] = useState({ open: false, message: '', tone: 'success' });
   const [printing, setPrinting] = useState(false);
@@ -286,7 +289,7 @@ export default function BikerPayroll({ role, previewMode = false, bikers: suppli
   const itemsKey = JSON.stringify(itemsQuery.data || []);
 
   useEffect(() => {
-    setPeriodStart(bounds.start); setPeriodEnd(bounds.end);
+    setPeriodStart(bounds.start); setPeriodEnd(bounds.end); setPartialPaymentOpen(false);
     setPdfFile(null);
     if (!previewMode) { setPreview(null); setAdjustments({}); }
   }, [bounds.start, bounds.end, previewMode]);
@@ -300,7 +303,7 @@ export default function BikerPayroll({ role, previewMode = false, bikers: suppli
     const canRecalculate = ['admin', 'accountant'].includes(role);
     if (!activeRun && !canRecalculate) return undefined;
     let alive = true;
-    if (activeRun && (!canRecalculate || ['approved', 'paid'].includes(activeRun.status))) {
+    if (activeRun && (!canRecalculate || ['approved', 'paid', 'partially_paid'].includes(activeRun.status))) {
       const next = previewFromRun(activeRun, itemsQuery.data || []);
       setPreview(next);
       setPeriodStart(activeRun.periodStart || bounds.start);
@@ -324,7 +327,7 @@ export default function BikerPayroll({ role, previewMode = false, bikers: suppli
 
   const canDraft = role === 'admin' || role === 'accountant' || previewMode;
   const isAdmin = role === 'admin' && !previewMode;
-  const locked = previewMode || ['approved', 'paid', 'reversed', 'cancelled'].includes(preview?.status);
+  const locked = previewMode || ['approved', 'paid', 'partially_paid', 'reversed', 'cancelled'].includes(preview?.status);
 
   const payload = useCallback(() => ({
     periodKey, periodStart, periodEnd,
@@ -529,17 +532,20 @@ export default function BikerPayroll({ role, previewMode = false, bikers: suppli
 
       {preview?.runId && !previewMode && (
         <Card className="p-4 sm:p-5 payroll-no-print">
+          {preview.paymentSummary && <p className="text-sm mb-3">المسدّدون: {preview.paymentSummary.paidCount} · المتبقون: {preview.paymentSummary.remainingCount}</p>}
           <div className="flex flex-wrap items-center gap-2">
+            {isAdmin && ['draft', 'approved', 'partially_paid'].includes(status) && <button type="button" disabled={busy || itemsQuery.loading || !itemsQuery.data?.length} onClick={() => setPartialPaymentOpen(true)} className="sw-button sw-button--sm sw-button--primary">تسجيل دفعة لعمال محددين</button>}
             {status === 'draft' && <button type="button" disabled={!isAdmin || busy} onClick={() => setAction('approve')} className="sw-button sw-button--sm sw-button--primary"><CheckCircle2 size={16} /> اعتماد المسير</button>}
             {status === 'draft' && <button type="button" disabled={!isAdmin || busy} onClick={() => setAction('cancel')} className="sw-button sw-button--sm sw-button--secondary"><Undo2 size={16} /> إلغاء المسودة</button>}
             {status === 'approved' && <button type="button" disabled={!isAdmin || busy} onClick={() => setAction('pay')} className="sw-button sw-button--sm sw-button--primary"><Landmark size={16} /> صرف نقدي/بنكي</button>}
             {status === 'approved' && <button type="button" disabled={!isAdmin || busy} onClick={() => setAction('unapprove')} className="sw-button sw-button--sm sw-button--secondary"><LockKeyhole size={16} /> إلغاء الاعتماد</button>}
-            {status === 'paid' && <button type="button" disabled={!isAdmin || busy} onClick={() => setAction('reverse')} className="sw-button sw-button--sm sw-button--secondary"><RotateCcw size={16} /> عكس المسير</button>}
+            {status === 'paid' && !preview.partialPayments && <button type="button" disabled={!isAdmin || busy} onClick={() => setAction('reverse')} className="sw-button sw-button--sm sw-button--secondary"><RotateCcw size={16} /> عكس المسير</button>}
             <span className="text-[11px] text-slate-500 mr-auto">الاعتماد لا ينشئ قيداً. القيد وتسوية السلف يحدثان فقط عند الصرف وبعد تأكيد المستخدم.</span>
           </div>
         </Card>
       )}
 
+      {partialPaymentOpen && activeRun && <PayrollPartialPaymentDialog run={activeRun} items={itemsQuery.data || []} api={api} onClose={() => setPartialPaymentOpen(false)} onRecorded={async () => { setPartialPaymentOpen(false); await Promise.all([api.refetch(), itemsQuery.refetch()]); setToast({ open: true, tone: 'success', message: 'سُجلت دفعة العمال المحددين دون سداد بقية المسير' }); }} />}
       <PayrollActionDialog key={action || 'none'} action={action} run={preview} busy={busy !== null} onClose={() => setAction(null)} onSubmit={submitAction} />
       {/* Audited printouts retain the name captured in the payroll snapshot. */}
       <PayrollPrintSheet preview={preview} periodKey={periodKey} periodStart={periodStart} periodEnd={periodEnd} totals={totals} status={status} printRef={printRef} />

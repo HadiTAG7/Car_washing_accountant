@@ -406,7 +406,7 @@ export const ADAPTERS = {
     collection: 'temporary_expenses',
     lockKind: 'recovery',
     dateOf: (r) => String(r.recovered_date || '').slice(0, 10),
-    approved: (r) => r.status === 'recovered' && Boolean(r.recovered_date),
+    approved: (r) => r.status === 'recovered' && Boolean(r.recovered_date) && !r.payroll_lock_id,
     notApproved: 'العهدة لم تُسترد بعد.',
     build: (row, id) => {
       const amount = round2(row.amount);

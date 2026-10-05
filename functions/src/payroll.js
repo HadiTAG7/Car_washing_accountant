@@ -1,3 +1,5 @@
+import { payrollRecoveryReconciliation } from './payrollRecoveryReconciliation.js';
+import { createHash } from 'node:crypto';
 import {
   buildReversalLines,
   isRealDate,
@@ -22,6 +24,7 @@ export const PAYROLL_STATUS = Object.freeze({
   DRAFT: 'draft',
   APPROVED: 'approved',
   PAID: 'paid',
+  PARTIALLY_PAID: 'partially_paid',
   REVERSED: 'reversed',
   CANCELLED: 'cancelled',
 });
@@ -411,10 +414,12 @@ export async function previewPayroll(db, payload, { now = new Date() } = {}) {
   const runId = meta.exists ? meta.data().currentRunId : null;
   const snap = runId ? await db.collection('payroll_runs').doc(runId).get() : null;
   const run = snap?.exists ? snap.data() : null;
-  if (run && [PAYROLL_STATUS.APPROVED, PAYROLL_STATUS.PAID].includes(run.status)) {
-    const items = await db.collection('payroll_runs').doc(runId).collection('items').get();
+  const savedItems = run ? await db.collection('payroll_runs').doc(runId).collection('items').get() : null;
+  const hasPaidItems = savedItems?.docs.some(doc => doc.data().status === PAYROLL_STATUS.PAID);
+  if (run && (hasPaidItems || [PAYROLL_STATUS.APPROVED, PAYROLL_STATUS.PAID, PAYROLL_STATUS.PARTIALLY_PAID].includes(run.status))) {
+    const items = savedItems;
     return {
-      runId, status: run.status, periodKey: run.periodKey, periodStart: run.periodStart, periodEnd: run.periodEnd,
+      runId, status: hasPaidItems && [PAYROLL_STATUS.DRAFT, PAYROLL_STATUS.APPROVED].includes(run.status) ? (savedItems.docs.every(doc => doc.data().status === PAYROLL_STATUS.PAID) ? PAYROLL_STATUS.PAID : PAYROLL_STATUS.PARTIALLY_PAID) : run.status, partialPayments: run.partialPayments === true || (hasPaidItems && [PAYROLL_STATUS.DRAFT, PAYROLL_STATUS.APPROVED].includes(run.status)), periodKey: run.periodKey, periodStart: run.periodStart, periodEnd: run.periodEnd,
       distributionDate: run.distributionDate, distributionSnapshot: run.distributionSnapshot ?? null,
       policySnapshot: run.policySnapshot, estimated: run.estimated ?? false,
       totals: run.totals, lines: items.docs.map(doc => doc.data()), lineCount: items.docs.length,
@@ -497,7 +502,7 @@ export async function savePayrollDraft(db, FieldValue, payload, {
     let currentSnap = currentRef ? await tx.get(currentRef) : null;
     let current = currentSnap?.exists ? currentSnap.data() : null;
 
-    if (current && current.status === PAYROLL_STATUS.PAID) {
+    if (current && [PAYROLL_STATUS.PAID, PAYROLL_STATUS.PARTIALLY_PAID].includes(current.status)) {
       fail('المسير مصروف؛ التصحيح يكون بعكس ذري ثم مسير تصحيحي.', { code: 'failed-precondition' });
     }
     if (current && current.status === PAYROLL_STATUS.APPROVED) {
@@ -519,6 +524,7 @@ export async function savePayrollDraft(db, FieldValue, payload, {
       itemQuery ? tx.get(itemQuery) : Promise.resolve(null),
     ]);
     const automaticAdvanceDeduction = payload?.automaticAdvanceDeduction === true || (payload?.automaticAdvanceDeduction == null && current?.automaticAdvanceDeduction === true);
+    if (oldItems?.docs.some(doc => doc.data().status === PAYROLL_STATUS.PAID)) fail('المسير يتضمن سدادًا سابقًا؛ لا يُعاد احتساب أو استبدال سطور مصروفة.');
     const preview = calculatePayrollPreview({ ...payload, adjustments: payload?.adjustments ?? current?.inputAdjustments ?? [],
       ...sources, periodKey, automaticAdvanceDeduction, now }, {
       commission: current && !automaticAdvanceDeduction ? storedCommissionPolicy(current) : null,
@@ -571,6 +577,7 @@ export async function approvePayroll(db, FieldValue, { runId }, {
     const run = runSnap.data();
     if (run.status !== PAYROLL_STATUS.DRAFT) fail('لا يُعتمد إلا مسير بحالة مسودة.');
     const oldItems = await tx.get(runRef.collection('items'));
+    if (oldItems.docs.some(doc => doc.data().status === PAYROLL_STATUS.PAID)) fail('المسير يتضمن سدادًا سابقًا؛ لا يُعاد احتساب أو استبدال سطور مصروفة.');
     const preview = await refreshedPreviewInTransaction(tx, db, run, now);
     if (!preview.lineCount) fail('لا يوجد عامل مستحق ضمن المسير.');
 
@@ -609,6 +616,7 @@ export async function unapprovePayroll(db, FieldValue, { runId, reason }, { user
     if (!runSnap.exists) fail('المسير غير موجود.', { code: 'not-found' });
     const run = runSnap.data();
     if (run.status !== PAYROLL_STATUS.APPROVED) fail('لا يمكن إلغاء اعتماد هذه الحالة.');
+    if (itemsSnap.docs.some(doc => doc.data().status === PAYROLL_STATUS.PAID)) fail('المسير يتضمن سدادًا سابقًا؛ لا يُعاد احتساب أو استبدال سطور مصروفة.');
     tx.update(runRef, {
       status: PAYROLL_STATUS.DRAFT, approvedAt: null, approvedBy: null,
       unapprovedAt: FieldValue.serverTimestamp(), unapprovedBy: userId,
@@ -664,37 +672,174 @@ function ensurePaymentMethod(value) {
   return method;
 }
 
+// Recording an external payment uses the saved item amounts, never live repricing.
+function partialPaymentRequest(payload, now) {
+  const runId = cleanText(payload?.runId, 'معرّف المسير', { required: true });
+  const ids = payload?.bikerIds;
+  if (!Array.isArray(ids) || !ids.length || ids.length > 300 || ids.some(id => typeof id !== 'string' || !id.trim() || id !== id.trim() || id.includes('/'))
+    || new Set(ids).size !== ids.length) fail('اختر معرّفات عمال محددة دون تكرار.', { code: 'invalid-argument' });
+  const paymentMethod = ensurePaymentMethod(payload?.paymentMethod);
+  const payDate = String(payload?.payDate || '');
+  if (!isRealDate(payDate) || payDate > isoToday(now)) fail('أدخل تاريخ السداد الفعلي؛ لا يُسجّل سداد مستقبلي.', { code: 'invalid-argument' });
+  if (payload?.recordedNetAmount == null || payload.recordedNetAmount === '' || !Number.isFinite(Number(payload.recordedNetAmount))) {
+    fail('أدخل صافي المبلغ المدفوع فعلاً.', { code: 'invalid-argument' });
+  }
+  const reconciledAdvances = payload.reconciledAdvances || [];
+  if (!Array.isArray(reconciledAdvances) || reconciledAdvances.some(row => !row || !ids.includes(row.bikerId) || typeof row.advanceId !== 'string' || !row.advanceId || row.advanceId.includes('/')) || new Set(reconciledAdvances.map(row => row.advanceId)).size !== reconciledAdvances.length) fail('مطابقة السلف تتطلب معرّفات سلف وعمال محددين دون تكرار.');
+  const unrelatedLegacyPayments = payload.unrelatedLegacyPayments || [];
+  if (!Array.isArray(unrelatedLegacyPayments) || unrelatedLegacyPayments.some(id => typeof id !== 'string')) fail('إقرار السجلات السابقة غير صالح.');
+  return { runId, bikerIds: [...ids].sort(), paymentMethod, payDate, reconciledAdvances: reconciledAdvances.map(({ advanceId, bikerId }) => ({ advanceId, bikerId })).sort((a,b)=>a.advanceId.localeCompare(b.advanceId)), unrelatedLegacyPayments: [...new Set(unrelatedLegacyPayments)].sort(),
+    recordedNetAmount: money(payload.recordedNetAmount, 'المبلغ المدفوع'),
+    reason: cleanText(payload?.reason, 'بيان الدفعة', { required: true }),
+    paymentReference: cleanText(payload?.paymentReference, 'مرجع السداد') || null };
+}
+function stablePaymentJson(value) {
+  if (Array.isArray(value)) return value.map(stablePaymentJson);
+  if (value && typeof value === 'object') return Object.fromEntries(Object.keys(value).sort().map(key => [key, stablePaymentJson(value[key])]));
+  return value;
+}
+function partialPaymentPreviewFor(run, allItems, request) {
+  if (![PAYROLL_STATUS.DRAFT, PAYROLL_STATUS.APPROVED, PAYROLL_STATUS.PARTIALLY_PAID].includes(run.status)) fail('لا يمكن تسجيل دفعة لهذه الحالة.');
+  const byId = new Map(allItems.map(item => [item.bikerId, item]));
+  if (byId.size !== allItems.length) fail('معرّفات سطور المسير غير فريدة؛ تحتاج مراجعة.');
+  const selected = request.bikerIds.map(id => {
+    const item = byId.get(id);
+    if (!item) fail(`العامل ${id} ليس ضمن المسير.`, { code: 'not-found' });
+    if (![PAYROLL_STATUS.DRAFT, PAYROLL_STATUS.APPROVED].includes(item.status)) fail(`سبق تسجيل سداد العامل ${item.name || id} أو أن حالته لا تسمح بالسداد.`, { code: 'already-exists' });
+    const snapshot = Object.fromEntries(Object.entries(item).filter(([key]) => !['ref', 'id'].includes(key)));
+    const gross = round2(money(item.basicDue, 'الأساسي') + money(item.commission, 'العمولة') + money(item.bonus, 'البونص'));
+    const deductions = round2(money(item.deduction, 'الخصم') + money(item.advanceDeduction, 'السلفة'));
+    if (round2(gross - deductions) !== money(item.netDue, 'صافي السطر')) fail('مكونات صافي السطر المحفوظ غير متطابقة؛ تحتاج مراجعة.');
+    return { ...snapshot, gross };
+  });
+  const totals = selected.reduce((t, item) => ({ basic: round2(t.basic + Number(item.basicDue || 0)), commissions: round2(t.commissions + Number(item.commission || 0)),
+    bonuses: round2(t.bonuses + Number(item.bonus || 0)), deductions: round2(t.deductions + Number(item.deduction || 0)),
+    advances: round2(t.advances + Number(item.advanceDeduction || 0)), net: round2(t.net + Number(item.netDue || 0)) }),
+  { basic: 0, commissions: 0, bonuses: 0, deductions: 0, advances: 0, net: 0 });
+  const fingerprint = { request, revision: run.revision, periodKey: run.periodKey, policySnapshot: run.policySnapshot || null, selected };
+  const previewHash = createHash('sha256').update(JSON.stringify(stablePaymentJson(fingerprint))).digest('hex');
+  return { ...request, periodKey: run.periodKey, previewHash, totals, gross: round2(totals.basic + totals.commissions + totals.bonuses),
+    lines: selected, selectedCount: selected.length, remainingCount: allItems.length - allItems.filter(item => item.status === PAYROLL_STATUS.PAID).length - selected.length,
+    matchesRecordedAmount: request.recordedNetAmount === totals.net, snapshotOnly: true };
+}
+async function historicalPartialPaymentEvidence(tx, db, run, request, allItems) {
+  const readRows = async name => (await tx.get(db.collection(name))).docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  const [monthly, journals, otherRuns, registry] = await Promise.all([
+    readRows('monthly_expenses'), readRows('journal_entries'), readRows('payroll_runs'), readRows('bikers'),
+  ]);
+  const locks = await Promise.all(request.bikerIds.map(id => tx.get(db.collection('payroll_payment_locks').doc(`${run.periodKey}__${id}`))));
+  const evidence = [];
+  const selected = new Set(request.bikerIds);
+  const names = new Map(request.bikerIds.map(id => [id, [...new Set([allItems.find(item => item.bikerId === id)?.name,
+    ...registry.filter(b => b.id === id).flatMap(b => [b.name, b.name_arabic, b.name_english])].filter(Boolean).map(name => String(name).trim().toLowerCase()))]]));
+  const periodMatches = row => {
+    const explicit = row.payroll_period || row.salary_month || row.payrollSnapshot?.periodKey;
+    if (explicit) return explicit === run.periodKey;
+    const date = String(row.logged_date || row.entryDate || row.payDate || '').slice(0, 7);
+    return [run.periodKey, String(run.distributionDate || '').slice(0, 7), request.payDate.slice(0, 7)].includes(date);
+  };
+  const addLegacy = (collection, row) => {
+    if (!periodMatches(row)) return;
+    const declaredIds = row.biker_id ? [row.biker_id] : row.bikerId ? [row.bikerId] : row.payrollSnapshot?.bikerIds
+      || row.payrollSnapshot?.selectedLines?.map(line => line.bikerId) || [];
+    if (declaredIds.length && !declaredIds.some(id => selected.has(id))) return;
+    const text = String(row.expense_name || row.description || '').trim();
+    const named = [...names].filter(([, aliases]) => aliases.some(name => text.toLowerCase().includes(name))).map(([id]) => id);
+    // Name matching flags legacy evidence only; it never assigns money or workers.
+    evidence.push({ collection, id: row.id, description: text, amount: Number(row.total_monthly_cost || row.payrollSnapshot?.totals?.net || row.totalCredit || 0),
+      date: row.logged_date || row.entryDate || null, bikerIds: declaredIds.length ? declaredIds.filter(id => selected.has(id)) : named,
+      confidence: declaredIds.length ? 'linked' : named.length ? 'name_match' : 'needs_review' });
+  };
+  for (const [index, lock] of locks.entries()) if (lock.exists) evidence.push({ collection: 'payroll_payment_locks', id: lock.id,
+    bikerIds: [request.bikerIds[index]], confidence: 'linked', description: 'قفل سداد سابق' });
+  for (const row of monthly) if (['مدفوع', 'paid'].includes(row.payment_status) && (row.biker_id || row.bikerId || /راتب|رواتب|salary|payroll|wage/i.test(row.expense_name || ''))) addLegacy('monthly_expenses', row);
+  for (const row of journals) if (row.status === 'posted' && !row.reversalOf && (row.sourceType === 'payroll' || /راتب|رواتب|salary|payroll|wage/i.test(row.description || ''))) {
+    if (row.sourceType === 'payroll' && row.sourceId === request.runId && row.payrollSnapshot?.bikerIds?.every(id => !selected.has(id))) continue;
+    addLegacy('journal_entries', row);
+  }
+  for (const prior of otherRuns) if (prior.runId !== request.runId && prior.periodKey === run.periodKey && !['reversed', 'cancelled'].includes(prior.status)) {
+    const items = await tx.get(db.collection('payroll_runs').doc(prior.id).collection('items'));
+    for (const doc of items.docs) {
+      const item = doc.data();
+      if (item.status === 'paid' && selected.has(item.bikerId)) evidence.push({ collection: 'payroll_runs', id: `${prior.id}/items/${doc.id}`,
+        bikerIds: [item.bikerId], confidence: 'linked', description: item.name, amount: item.netDue, date: item.payDate || null });
+    }
+  }
+  return evidence.sort((a, b) => `${a.collection}/${a.id}`.localeCompare(`${b.collection}/${b.id}`));
+}
+function withPartialPaymentEvidence(preview, evidence) {
+  if (preview.unrelatedLegacyPayments.some(id => !evidence.some(row => `${row.collection}/${row.id}` === id && row.confidence === 'needs_review'))) fail('لا يمكن استبعاد سداد مربوط بالعامل أو سجل غير موجود.');
+  const reviewed = evidence.map(row => ({ ...row, confirmedUnrelated: row.confidence === 'needs_review' && preview.unrelatedLegacyPayments.includes(`${row.collection}/${row.id}`) }));
+  return { ...preview, historicalPayments: reviewed, canRecord: preview.matchesRecordedAmount && !reviewed.some(row => !row.confirmedUnrelated),
+    previewHash: createHash('sha256').update(JSON.stringify(stablePaymentJson({ previewHash: preview.previewHash, evidence }))).digest('hex') };
+}
+export async function previewPartialPayrollPayment(db, payload, { now = new Date() } = {}) {
+  const request = partialPaymentRequest(payload, now);
+  return db.runTransaction(async tx => {
+    const ref = db.collection('payroll_runs').doc(request.runId);
+    const snap = await tx.get(ref);
+    if (!snap.exists) fail('المسير غير موجود.', { code: 'not-found' });
+    const items = await tx.get(ref.collection('items'));
+    const allItems = items.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const reconciliation = await payrollRecoveryReconciliation(tx, db, snap.data(), allItems, request);
+    const preview = partialPaymentPreviewFor(snap.data(), reconciliation.items, request);
+    return { ...withPartialPaymentEvidence(preview, await historicalPartialPaymentEvidence(tx, db, snap.data(), request, allItems)), recoveryCandidates: reconciliation.candidates };
+  });
+}
+export const recordPartialPayrollPayment = (db, FieldValue, payload, options = {}) => payPayroll(db, FieldValue, payload, { ...options, recordExternal: true });
+
 export async function payPayroll(db, FieldValue, payload, {
-  userId = null, now = new Date(), onBeforeCommit = null,
+  userId = null, now = new Date(), onBeforeCommit = null, recordExternal = false,
 } = {}) {
   const id = cleanText(payload?.runId, 'معرّف المسير', { required: true });
   const paymentMethod = ensurePaymentMethod(payload?.paymentMethod);
   const runRef = db.collection('payroll_runs').doc(id);
+  const externalRequest = recordExternal ? partialPaymentRequest(payload, now) : null;
+  if (recordExternal && (payload.recordedExternally !== true || !/^[a-f0-9]{64}$/.test(payload.previewHash || ''))) fail('تأكيد السداد الخارجي ومعاينة صالحة مطلوبان.');
 
   return db.runTransaction(async (tx) => {
+    const receiptRef = recordExternal ? runRef.collection('payments').doc(payload.previewHash) : null;
+    const receiptSnap = receiptRef ? await tx.get(receiptRef) : null;
+    if (receiptSnap?.exists) {
+      const receipt = receiptSnap.data();
+      if (JSON.stringify(stablePaymentJson(receipt.request)) !== JSON.stringify(stablePaymentJson(externalRequest))) fail('معرّف الدفعة لا يطابق طلب التسجيل.');
+      return { ...receipt.result, replay: true };
+    }
     const runSnap = await tx.get(runRef);
     if (!runSnap.exists) fail('المسير غير موجود.', { code: 'not-found' });
     const run = runSnap.data();
-    if (run.status !== PAYROLL_STATUS.APPROVED) fail('المسير يجب أن يكون معتمداً قبل الصرف.');
+    if (!recordExternal && run.status !== PAYROLL_STATUS.APPROVED) fail('المسير يجب أن يكون معتمداً قبل الصرف.');
     const early = isoToday(now) < run.distributionDate;
     const earlyReason = cleanText(payload?.earlyReason, 'سبب الصرف المبكر');
     const requestedPayDate = String(payload?.payDate || run.distributionDate || '').slice(0, 10);
     if (!isRealDate(requestedPayDate)) fail('تاريخ الصرف غير صالح.', { code: 'invalid-argument' });
-    if (early && !earlyReason) {
+    if (!recordExternal && early && !earlyReason) {
       fail(`لا يُصرف راتب ${run.periodKey} قبل ${run.distributionDate} إلا بسبب تدقيق صريح من المدير.`);
     }
-    if (!early && requestedPayDate !== run.distributionDate) {
+    if (!recordExternal && !early && requestedPayDate !== run.distributionDate) {
       fail(`تاريخ الصرف الثابت لهذا المسير هو ${run.distributionDate}.`, { code: 'invalid-argument' });
     }
-    if (early && requestedPayDate !== isoToday(now)) {
+    if (!recordExternal && early && requestedPayDate !== isoToday(now)) {
       fail('الصرف المبكر الاستثنائي يُسجّل بتاريخ التنفيذ الفعلي فقط.', { code: 'invalid-argument' });
     }
-    const payDate = early ? requestedPayDate : run.distributionDate;
+    const payDate = recordExternal ? externalRequest.payDate : early ? requestedPayDate : run.distributionDate;
 
     const itemSnap = await tx.get(runRef.collection('items'));
     if (itemSnap.empty) fail('المسير بلا سطور.');
-    const items = itemSnap.docs.map((doc) => ({ id: doc.id, ref: doc.ref, ...doc.data() }));
-    if (items.some((item) => item.status !== PAYROLL_STATUS.APPROVED)) fail('بعض سطور المسير غير معتمدة.');
+    const allItems = itemSnap.docs.map((doc) => ({ id: doc.id, ref: doc.ref, ...doc.data() }));
+    const reconciliation = recordExternal ? await payrollRecoveryReconciliation(tx, db, run, allItems, externalRequest) : null;
+    if (recordExternal && externalRequest.reconciledAdvances.length && payload.confirmAdvanceReconciliation !== true) fail('أقر صراحة أن السلف المحددة خُصمت من الراتب ولم تُرد نقداً.');
+    const paymentItems = reconciliation?.items || allItems;
+    const paymentPreview = recordExternal ? withPartialPaymentEvidence(partialPaymentPreviewFor(run, paymentItems, externalRequest),
+      await historicalPartialPaymentEvidence(tx, db, run, externalRequest, allItems)) : null;
+    if (recordExternal && paymentPreview.previewHash !== payload.previewHash) fail('تغيرت معاينة الدفعة؛ أعد المعاينة قبل التسجيل.');
+    if (recordExternal && paymentPreview.historicalPayments.some(row => !row.confirmedUnrelated)) fail('توجد أدلة سداد سابقة أو سجلات رواتب تحتاج مطابقة؛ لا يُسجل سداد جديد قبل المراجعة.');
+    if (recordExternal && !paymentPreview.matchesRecordedAmount) fail('المبلغ المدفوع لا يطابق صافي الصفوف المحفوظة؛ راجع فروقات السلف قبل التسجيل.');
+    const items = recordExternal ? paymentItems.filter(item => externalRequest.bikerIds.includes(item.bikerId)) : allItems;
+    if (!recordExternal && items.some((item) => item.status !== PAYROLL_STATUS.APPROVED)) fail('بعض سطور المسير غير معتمدة.');
+    if (recordExternal && items.some(item => round2((item.advanceAllocations || []).reduce((sum, allocation) => sum + Number(allocation.amount || 0), 0)) !== Number(item.advanceDeduction || 0))) fail('خصم السلفة لا يطابق تخصيصات السلف المحفوظة؛ يحتاج مراجعة.');
+    const paymentTotals = paymentPreview?.totals || run.totals;
+    const resultStatus = recordExternal && paymentPreview.remainingCount > 0 ? PAYROLL_STATUS.PARTIALLY_PAID : PAYROLL_STATUS.PAID;
 
     const periodKey = periodKeyOf(payDate);
     const periodRef = db.collection('accounting_periods').doc(periodKey);
@@ -734,6 +879,11 @@ export async function payPayroll(db, FieldValue, payload, {
       if (!snap.exists) fail(`السلفة ${row.allocation.advanceId} غير موجودة.`, { code: 'not-found' });
       const current = { id: snap.id, ...snap.data() };
       const outstanding = outstandingOfAdvance(current);
+      if (row.allocation.recoveryReconciliation) {
+        if (current.status !== 'recovered' || Number(current.recovered_amount || 0) !== 0 || current.payroll_lock_id || Number(current.amount) !== row.allocation.amount || advanceAssignmentMonth(current) !== run.periodKey) fail('تغيرت السلفة المستردة بعد معاينة المطابقة.');
+        continue;
+      }
+      if (recordExternal && (String(current.biker_id || '') !== String(row.item.bikerId) || advanceAssignmentMonth(current) !== run.periodKey)) fail('السلفة لا تخص العامل أو شهر المسير المحدد.');
       if (row.allocation.assignmentMonth && advanceAssignmentMonth(current) !== row.allocation.assignmentMonth) {
         fail('تغير شهر إسناد السلفة بعد الاعتماد؛ ألغِ الاعتماد وأعد المعاينة.');
       }
@@ -742,7 +892,7 @@ export async function payPayroll(db, FieldValue, payload, {
       }
     }
 
-    const lines = payrollJournalLines(run.totals, paymentMethod);
+    const lines = payrollJournalLines(paymentTotals, paymentMethod);
     const journalTotals = totalsOf(lines);
     const nextNumber = counterSnap.exists ? (Number(counterSnap.data().nextNumber) || 1) : 1;
     const entryRef = db.collection('journal_entries').doc();
@@ -762,12 +912,13 @@ export async function payPayroll(db, FieldValue, payload, {
     });
     tx.set(entryRef, {
       entryDate: payDate, periodKey, sourceType: 'payroll', sourceId: id,
-      description: `صرف مسير رواتب ${run.periodKey}`,
+      description: recordExternal ? `تسجيل سداد خارجي لـ${items.length} عامل من مسير ${run.periodKey}` : `صرف مسير رواتب ${run.periodKey}`,
       status: 'posted', entryNumber: nextNumber, lines, lineCount: lines.length,
       totalDebit: journalTotals.debit, totalCredit: journalTotals.credit,
       payrollSnapshot: {
         runId: id, periodKey: run.periodKey, distributionDate: run.distributionDate,
-        policySnapshot: run.policySnapshot, distributionSnapshot: run.distributionSnapshot, totals: run.totals,
+        policySnapshot: run.policySnapshot, distributionSnapshot: run.distributionSnapshot, totals: paymentTotals,
+        ...(recordExternal ? { bikerIds: externalRequest.bikerIds, selectedLines: paymentPreview.lines, recordedExternally: true, actualPayDate: payDate, paymentReference: externalRequest.paymentReference, reason: externalRequest.reason } : {}),
         accounts: { ...PAYROLL_ACCOUNTS, payment: paymentMethod === 'cash' ? PAYROLL_ACCOUNTS.CASH : PAYROLL_ACCOUNTS.BANK },
       },
       createdBy: userId, createdAt: FieldValue.serverTimestamp(), postedAt: FieldValue.serverTimestamp(),
@@ -783,10 +934,15 @@ export async function payPayroll(db, FieldValue, payload, {
         status: PAYROLL_STATUS.PAID, paymentMethod, payDate,
         journalEntryId: entryRef.id, journalEntryNumber: nextNumber,
         paidAt: FieldValue.serverTimestamp(), paidBy: userId,
+        ...(item.recoveryReconciled ? { advanceDeduction: item.advanceDeduction, netDue: item.netDue, advanceAllocations: item.advanceAllocations, recoveryReconciled: true, originalSavedAdvanceDeduction: item.originalSavedAdvanceDeduction, originalSavedNetDue: item.originalSavedNetDue } : {}),
       });
     }
     for (const [index, row] of allocationRows.entries()) {
       const current = advanceSnaps[index].data();
+      if (row.allocation.recoveryReconciliation) {
+        tx.update(row.ref, { payroll_lock_id: id, payroll_reconciled_at: FieldValue.serverTimestamp(), payroll_reconciliation: { bikerId: row.item.bikerId, amount: row.allocation.amount, actualPayDate: payDate, journalEntryId: entryRef.id, priorRecovery: row.allocation.sourceSnapshot, confirmedBy: userId } });
+        continue;
+      }
       const original = money(current.amount, 'قيمة السلفة');
       const recovered = round2((Number(current.recovered_amount) || 0) + row.allocation.amount);
       const fullyRecovered = recovered >= original;
@@ -799,7 +955,17 @@ export async function payPayroll(db, FieldValue, payload, {
         payroll_recovered_at: FieldValue.serverTimestamp(),
       });
     }
-    tx.update(runRef, {
+    const result = { runId: id, status: resultStatus, payDate, paymentMethod,
+      entryId: entryRef.id, entryNumber: nextNumber, totals: paymentTotals, atIso: nowIso,
+      ...(recordExternal ? { bikerIds: externalRequest.bikerIds, selectedCount: items.length, remainingCount: paymentPreview.remainingCount, recordedExternally: true } : {}) };
+    if (recordExternal) {
+      tx.set(receiptRef, { previewHash: payload.previewHash, request: externalRequest, snapshot: paymentPreview, result,
+        createdBy: userId, createdAt: FieldValue.serverTimestamp() });
+      const aggregateTotals = paymentItems.reduce((totals, item) => ({ basic: round2(totals.basic + Number(item.basicDue || 0)), commissions: round2(totals.commissions + Number(item.commission || 0)), bonuses: round2(totals.bonuses + Number(item.bonus || 0)), deductions: round2(totals.deductions + Number(item.deduction || 0)), advances: round2(totals.advances + Number(item.advanceDeduction || 0)), net: round2(totals.net + Number(item.netDue || 0)) }), { basic: 0, commissions: 0, bonuses: 0, deductions: 0, advances: 0, net: 0 });
+      tx.update(runRef, { status: resultStatus, partialPayments: true, totals: aggregateTotals, originalSavedTotals: run.originalSavedTotals || run.totals,
+        paymentSummary: { paidCount: allItems.filter(item => item.status === PAYROLL_STATUS.PAID).length + items.length,
+          remainingCount: paymentPreview.remainingCount, paidNet: round2(allItems.filter(item => item.status === PAYROLL_STATUS.PAID).reduce((sum,item)=>sum + Number(item.netDue || 0), 0) + paymentTotals.net), remainingNet: round2(aggregateTotals.net - allItems.filter(item => item.status === PAYROLL_STATUS.PAID).reduce((sum,item)=>sum + Number(item.netDue || 0), 0) - paymentTotals.net) }, updatedAt: FieldValue.serverTimestamp(), updatedBy: userId });
+    } else tx.update(runRef, {
       status: PAYROLL_STATUS.PAID, paymentMethod, payDate,
       journalEntryId: entryRef.id, journalEntryNumber: nextNumber,
       earlyPayment: early, earlyPaymentReason: early ? earlyReason : null,
@@ -807,16 +973,14 @@ export async function payPayroll(db, FieldValue, payload, {
       updatedAt: FieldValue.serverTimestamp(), updatedBy: userId,
     });
     tx.set(db.collection('audit_logs').doc(), auditRecord(
-      'payroll-pay', id, userId,
-      { status: run.status },
-      { status: PAYROLL_STATUS.PAID, payDate, paymentMethod, entryId: entryRef.id, entryNumber: nextNumber },
-      early ? `صرف مبكر: ${earlyReason}` : `صرف في موعد التوزيع ${run.distributionDate}`,
+      recordExternal ? 'payroll-record-partial-payment' : 'payroll-pay', id, userId,
+      { status: run.status, ...(recordExternal ? { selectedItems: allItems.filter(item => externalRequest.bikerIds.includes(item.bikerId)).map(item => ({ bikerId: item.bikerId, status: item.status, basicDue: item.basicDue, commission: item.commission, bonus: item.bonus, deduction: item.deduction, advanceDeduction: item.advanceDeduction, netDue: item.netDue })) } : {}) },
+      { status: resultStatus, payDate, paymentMethod, entryId: entryRef.id, entryNumber: nextNumber,
+        ...(recordExternal ? { bikerIds: externalRequest.bikerIds, totals: paymentTotals, paymentReference: externalRequest.paymentReference, recordedExternally: true, reconciledAdvances: externalRequest.reconciledAdvances, unrelatedLegacyPayments: externalRequest.unrelatedLegacyPayments } : {}) },
+      recordExternal ? externalRequest.reason : early ? `صرف مبكر: ${earlyReason}` : `صرف في موعد التوزيع ${run.distributionDate}`,
       FieldValue,
     ));
-    return {
-      runId: id, status: PAYROLL_STATUS.PAID, payDate, paymentMethod,
-      entryId: entryRef.id, entryNumber: nextNumber, totals: run.totals, atIso: nowIso,
-    };
+    return result;
   });
 }
 
@@ -831,6 +995,7 @@ export async function reversePayroll(db, FieldValue, payload, { userId = null, n
     const runSnap = await tx.get(runRef);
     if (!runSnap.exists) fail('المسير غير موجود.', { code: 'not-found' });
     const run = runSnap.data();
+    if (run.partialPayments) fail('الدفعات الجزئية تحتاج عكس كل دفعة مستقلاً؛ عكس كامل المسير غير متاح.');
     if (run.status !== PAYROLL_STATUS.PAID || !run.journalEntryId) fail('لا يمكن عكس مسير غير مصروف.');
     const entryRef = db.collection('journal_entries').doc(run.journalEntryId);
     const [entrySnap, itemsSnap] = await Promise.all([tx.get(entryRef), tx.get(runRef.collection('items'))]);
@@ -927,6 +1092,7 @@ export async function cancelPayroll(db, FieldValue, { runId, reason }, { userId 
     if (!runSnap.exists) fail('المسير غير موجود.', { code: 'not-found' });
     const run = runSnap.data();
     if (run.status !== PAYROLL_STATUS.DRAFT) fail('لا يُلغى إلا مسير مسودة؛ المعتمد يُلغى اعتماده أولاً.');
+    if (itemsSnap.docs.some(doc => doc.data().status === PAYROLL_STATUS.PAID)) fail('المسير يتضمن سدادًا سابقًا؛ لا يُعاد احتساب أو استبدال سطور مصروفة.');
     tx.update(runRef, {
       status: PAYROLL_STATUS.CANCELLED, cancelledAt: FieldValue.serverTimestamp(),
       cancelledBy: userId, cancellationReason: why, updatedAt: FieldValue.serverTimestamp(),

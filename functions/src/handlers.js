@@ -55,6 +55,7 @@ import {
   reversePayroll,
   savePayrollDraft,
   unapprovePayroll,
+  previewPartialPayrollPayment, recordPartialPayrollPayment,
 } from './payroll.js';
 
 /** A refusal with a code the transport can translate. Never a bug. */
@@ -599,6 +600,8 @@ export const HANDLERS = {
     guard: 'admin',
     run: ({ db, FieldValue, data, uid }) => unapprovePayroll(db, FieldValue, data || {}, { userId: uid }),
   },
+  payrollPreviewPartialPayment: { guard: 'admin', run: ({ db, data }) => previewPartialPayrollPayment(db, data || {}) },
+  payrollRecordPartialPayment: { guard: 'admin', run: ({ db, FieldValue, data, uid }) => recordPartialPayrollPayment(db, FieldValue, data || {}, { userId: uid }) },
   payrollPay: {
     guard: 'admin',
     run: ({ db, FieldValue, data, uid }) => payPayroll(db, FieldValue, data || {}, { userId: uid }),

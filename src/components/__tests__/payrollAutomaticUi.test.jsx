@@ -33,7 +33,7 @@ it('keeps real manual bonus but drops stale zero advance override; preview does 
   await waitFor(() => expect(state.preview).toHaveBeenCalledTimes(2));
   expect(state.refetch).not.toHaveBeenCalled(); expect(state.saveDraft).not.toHaveBeenCalled();
 });
-it.each(['approved', 'paid'])('does not recalculate a %s snapshot', async status => {
+it.each(['approved', 'paid', 'partially_paid'])('does not recalculate a %s snapshot', async status => {
   const month = new Date().toISOString().slice(0, 7);
   state.runs = [{ runId: 'locked', periodKey: month, status, totals: { commissions: 40 } }];
   state.items = result(month).lines;

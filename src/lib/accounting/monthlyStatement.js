@@ -26,8 +26,9 @@
 import { round2 } from './journal.js';
 import { splitVat, VAT_RATE } from './vat.js';
 import { ACC } from './chartOfAccounts.js';
-import { incomeStatement, movementBySource, postedLines, sourceKindOf } from './reports.js';
+import { incomeStatement, movementBySource, incomeStatementLines, sourceKindOf } from './reports.js';
 import { ownerWashTaxSplit } from '../sweater/ownerWashTax.js';
+import { incomeStatementDetails } from './incomeStatementDetails.js';
 
 /**
  * The fees that apply when `fee_rules` has not been configured.
@@ -92,7 +93,7 @@ function expenseBreakdown({ accounts, entries, lines, from, to, is, factor, dire
   const directCodes = new Set(is.costOfServices.map((r) => String(r.code)));
   const operatingCodes = new Set(is.expenses.map((r) => String(r.code)));
   const entryKinds = new Map(entries.map((e) => [e.id, sourceKindOf(e)]));
-  const items = postedLines(entries, lines, { from, to })
+  const items = incomeStatementLines(entries, lines, { from, to })
     .filter((line) => directCodes.has(String(line.accountId)) || operatingCodes.has(String(line.accountId)))
     .map((line) => {
       const accountCode = String(line.accountId);
@@ -160,12 +161,14 @@ export function monthlyStatement({
 } = {}) {
   const { from, to } = monthRange(periodKey);
   const factor = Number(scalingFactor) || 0;
-  const is = incomeStatement(accounts, entries, lines, { from, to });
+  const is = incomeStatement(accounts, entries, lines, { from, to, salaryAccrual: true });
+  const acceptedOperationalItems = [];
   // Display-only operational additions. These are source amounts, not journal
   // entries; the ledger-only report and posting paths remain unchanged.
   for (const item of operationalItems) {
     const account = accounts.find(row => String(row.code) === item.accountCode);
     if (!account || !['revenue', 'expense'].includes(account.accountType) || item.date < from || item.date > to) continue;
+    acceptedOperationalItems.push(item);
     const bucket = account.accountType === 'revenue' ? is.revenue
       : account.directCost || item.accountCode.startsWith('50') || item.accountCode.startsWith('51') ? is.costOfServices : is.expenses;
     const existing = bucket.find(row => String(row.code) === item.accountCode);
@@ -224,7 +227,7 @@ export function monthlyStatement({
     operationalItems,
   }) : null;
 
-  return {
+  const statement = {
     periodKey, from, to,
     ...scaled,
     totalCosts: round2(scaled.directCosts + scaled.operatingExpenses),
@@ -240,6 +243,8 @@ export function monthlyStatement({
     hasActivity: is.revenue.length > 0 || is.costOfServices.length > 0 || is.expenses.length > 0,
     operationalItems,
   };
+  return { ...statement, details: includeExpenseBreakdown ? incomeStatementDetails({ statement, accounts, entries, lines,
+    operationalItems: acceptedOperationalItems, factor }) : null };
 }
 
 /**

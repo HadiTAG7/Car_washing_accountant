@@ -2,7 +2,7 @@
 // changes the official company income statement. Annual amounts are a renewal
 // reserve (not a second recognition of the first annual payment).
 import { monthlyStatement, DEFAULT_FEE_RULES, monthRange } from './monthlyStatement.js';
-import { postedLines, sourceKindOf } from './reports.js';
+import { postedLines, incomeStatementLines, sourceKindOf } from './reports.js';
 import { ACC } from './chartOfAccounts.js';
 import { round2 } from './journal.js';
 import { ADAPTERS } from './sourceAdapters.js';
@@ -75,7 +75,7 @@ export function partnerOperatingStatement({
     ...variableExpenses.map(r => [sourceKey('variable', r.id), r.expense_name]),
     ...vouchers.map(r => [sourceKey('voucher', r.id), r.templateName]),
   ]);
-  for (const line of postedLines(entries, lines, range)) {
+  for (const line of incomeStatementLines(entries, lines, range)) {
     const code = String(line.accountId);
     if (!expenseCodes.has(code)) continue;
     const kind = sourceKindOf(entryIndex.get(line.entryId));
@@ -87,7 +87,7 @@ export function partnerOperatingStatement({
         : ['monthly', 'voucher'].includes(kind) || code === ACC.RENT_MONTHLY ? 'monthly' : 'other';
     const rawAmount = round2((Number(line.debit) || 0) - (Number(line.credit) || 0));
     if (!rawAmount) continue;
-    items.push({ id: `ledger:${line.id}`, groupKey, entryDate: line.entryDate,
+    items.push({ id: `ledger:${line.id}`, groupKey, entryDate: line.entryDate, accountingPeriod: line.accountingPeriod,
       // Do not send payroll line descriptions or names to another partner.
       description: sources.get(sourceKey(kind, entryIndex.get(line.entryId)?.sourceId))
         || accountIndex.get(code)?.nameArabic || 'مصروف مرحّل',

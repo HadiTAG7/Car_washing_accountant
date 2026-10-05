@@ -14,6 +14,7 @@ import LoadingState from './LoadingState';
 import StatementRow from './statement/StatementRow';
 import ErrorState, { SetupRequiredCard } from './ErrorState';
 import FinancialDetailsModal from './FinancialDetailsModal';
+import IncomeStatementDetailsModal from './IncomeStatementDetailsModal';
 import { LineTrend } from './charts/TrendCharts';
 import { useWashes } from '../hooks/useWashes';
 import { useVariableExpenses } from '../hooks/useVariableExpenses';
@@ -37,6 +38,7 @@ import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
 import { liveIncomeStatement } from '../lib/accounting/liveIncomeStatement';
 import { useIncomeStatementSources } from '../hooks/useIncomeStatementSources';
 import { mapWash } from '../lib/mappers';
+import { payrollExpensePeriod } from '../lib/accounting/payrollExpensePeriod';
 
 export default function FinancialSummaryPage() {
   const { language } = useLanguage();
@@ -64,10 +66,13 @@ export default function FinancialSummaryPage() {
   // honestly display as 72 ر.س), so opening it under a scaled headline
   // would both contradict the statement and leak full-company figures to
   // a partner. Partners get the scaled statement only.
-  const { scalingFactor, isPartnerView } = usePartnerView();
+  const { scalingFactor, isPartnerView, role } = usePartnerView();
+  const canReadDetails = !isPartnerView && role !== 'supervisor';
 
   const [selectedMonth, setSelectedMonth] = useState(todayMonth());
   const [detailCategory, setDetailCategory] = useState(null);
+  const [statementDetail, setStatementDetail] = useState(null);
+  const openStatementDetail = key => canReadDetails ? () => setStatementDetail({ key, month: selectedMonth }) : undefined;
 
   // Every month the statement could have something to say about. The ledger is
   // included alongside the operational registers: a standalone sales invoice
@@ -75,9 +80,12 @@ export default function FinancialSummaryPage() {
   // select is a month whose figures nobody can read.
   const availableMonths = useMemo(() => {
     const set = new Set(listAvailableMonths(washes, variables).filter((key) => key !== '__invalid__'));
+    const byEntry = new Map(entries.map(entry => [entry.id, entry]));
     for (const e of entries) {
       const key = String(e.periodKey || String(e.entryDate || '').slice(0, 7));
       if (/^\d{4}-\d{2}$/.test(key)) set.add(key);
+      const payrollPeriod = payrollExpensePeriod(e, byEntry);
+      if (payrollPeriod) set.add(payrollPeriod.periodKey);
     }
     for (const row of [...sources.variables, ...sources.monthlies, ...sources.annualEntries, ...sources.vouchers]) {
       const month = monthOf(row.invoice_date || row.invoiceDate || row.logged_date || row.spent_date || row.dueDate);
@@ -234,7 +242,7 @@ export default function FinancialSummaryPage() {
               <select
                 id="period-selector"
                 value={selectedMonth}
-                onChange={(e) => setSelectedMonth(e.target.value)}
+                onChange={(e) => { setSelectedMonth(e.target.value); setStatementDetail(null); setDetailCategory(null); }}
                 className="w-full max-w-xs px-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm font-bold tabular-nums focus:outline-none focus:border-primary-500 transition-colors"
               >
                 {availableMonths.map((ym) => (
@@ -242,7 +250,7 @@ export default function FinancialSummaryPage() {
                 ))}
               </select>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5 leading-relaxed">
-                اختر الشهر؛ المصروفات حسب تاريخ تسجيلها وتصنيفها، دون إدراج ميزانيات أو مشتريات رأسمالية كمصروف تشغيلي.
+                اختر الشهر؛ الرواتب حسب فترة الاستحقاق، وبقية المصروفات حسب تاريخ تسجيلها وتصنيفها، دون إدراج ميزانيات أو مشتريات رأسمالية كمصروف تشغيلي.
               </p>
             </div>
           </div>
@@ -404,15 +412,11 @@ export default function FinancialSummaryPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {/* No drill-down on these rows any more. They are LEDGER
-                        figures; the drill-down lists operational records, and
-                        after a credit note the two legitimately differ. Wiring
-                        a ledger number to an operational list would imply the
-                        list adds up to it. The operational detail has its own
-                        clearly-labelled row of buttons below. */}
+                    {/* Details follow the exact accepted calculation sources. */}
                     <StatementRow
                       label="إيرادات المبيعات"
                       amount={statement.grossRevenue}
+                      onClick={openStatementDetail('grossRevenue')}
                       kind="plus"
                     />
                     {/* Shown only when there are returns — but shown on its own
@@ -422,6 +426,7 @@ export default function FinancialSummaryPage() {
                       <StatementRow
                         label="يُخصم منه: مردودات وخصومات المبيعات (إشعارات دائنة)"
                         amount={statement.salesReturns}
+                        onClick={openStatementDetail('salesReturns')}
                         kind="minus"
                       />
                     )}
@@ -429,32 +434,38 @@ export default function FinancialSummaryPage() {
                       <StatementRow
                         label="إيرادات أخرى"
                         amount={statement.otherRevenue}
+                        onClick={openStatementDetail('otherRevenue')}
                         kind="plus"
                       />
                     )}
                     <StatementRow
                       label="= صافي الإيرادات"
                       amount={netRevenue}
+                      onClick={openStatementDetail('netRevenue')}
                       kind="subtotal"
                     />
                     <StatementRow
                       label="يُخصم منه: التكاليف المباشرة والعمولات"
                       amount={variableTotal}
+                      onClick={openStatementDetail('directCosts')}
                       kind="minus"
                     />
                     <StatementRow
                       label="= مجمل الربح التشغيلي"
                       amount={grossProfit}
+                      onClick={openStatementDetail('grossProfit')}
                       kind="subtotal"
                     />
                     <StatementRow
                       label="يُخصم منه: المصاريف التشغيلية"
                       amount={fixedExpensesTotal}
+                      onClick={openStatementDetail('operatingExpenses')}
                       kind="expenseSubtotal"
                     />
                     <StatementRow
                       label="= صافي الربح قبل الرسوم"
                       amount={netProfitBeforeFees}
+                      onClick={openStatementDetail('netProfitBeforeFees')}
                       kind="subtotal"
                     />
                     {statement.fees.map((f) => (
@@ -462,23 +473,29 @@ export default function FinancialSummaryPage() {
                         key={f.key}
                         label={`يُخصم منه: ${f.label}`}
                         amount={f.amount}
+                        onClick={openStatementDetail(`fee:${f.key}`)}
                         kind="minus"
                       />
                     ))}
                     <StatementRow
                       label="= صافي نتيجة الشركة بعد الرسوم"
                       amount={finalNetProfit}
+                      onClick={openStatementDetail('netProfit')}
                       kind="final"
                     />
                   </tbody>
                 </table>
               </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-3 leading-relaxed">
+                {canReadDetails && 'اضغط على المبلغ أو البند لعرض مكوناته ومصادره. '}
+                مصروف الرواتب يتبع فترة الاستحقاق المحفوظة بالمسير؛ تاريخ الدفع وحركة النقد في الدفتر يبقيان في تاريخ الصرف الفعلي.
+              </p>
               {(statement.costRows.length > 0 || statement.expenseRows.length > 0) && (
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-3 leading-relaxed">
                   التكاليف والمصاريف أعلاه مجمّعة من حسابات:
                   {' '}
                   {[...statement.costRows, ...statement.expenseRows]
-                    .map((r) => `${r.code} ${r.nameArabic || ''}`.trim()).join(' · ')}.
+                    .map((r) => `${r.code} ${r.nameArabic || r.name || ''}`.trim()).join(' · ')}.
                 </p>
               )}
 
@@ -489,7 +506,7 @@ export default function FinancialSummaryPage() {
                   not there, and a credit note appears there and not here. That
                   gap is the point of the reconciliation, so the two are never
                   presented as the same figure. */}
-              {!isPartnerView && (
+              {canReadDetails && (
                 <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-800">
                   <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-2">
                     تفاصيل تشغيلية للمطابقة — سجلات مُدخَلة، وليست أرقام القائمة أعلاه
@@ -566,12 +583,22 @@ export default function FinancialSummaryPage() {
         )}
       </main>
 
-      <FinancialDetailsModal
+      {canReadDetails && <FinancialDetailsModal
         category={detailCategory}
         monthLabel={monthLabel}
         data={detailData}
         onClose={() => setDetailCategory(null)}
-      />
+      />}
+      {canReadDetails && !anyLoading && statementDetail?.month === selectedMonth && (
+        <IncomeStatementDetailsModal
+          key={`${selectedMonth}:${statementDetail.key}`}
+          statement={statement}
+          detailKey={statementDetail.key}
+          onSelect={key => setStatementDetail({ key, month: selectedMonth })}
+          onPeriodSelect={(month, key) => { setSelectedMonth(month); setStatementDetail({ key, month }); setDetailCategory(null); }}
+          onClose={() => setStatementDetail(null)}
+        />
+      )}
     </>
   );
 }

@@ -163,3 +163,17 @@ describe('رصيد التأسيس لكل شريك — 20 ألف للبايكر',
     expect(r).toMatchObject({ covered: 500, uncovered: 500, remaining: 0 });
   });
 });
+
+it('keeps allocated salary detail in the same earned month as the monthly statement, without exposing worker names', () => {
+  const entries = [{ id: 'synthetic-payroll', entryDate: '2026-10-04', status: 'posted', sourceType: 'payroll',
+    sourceId: '2026-09__r1', payrollSnapshot: { periodKey: '2026-09' } }];
+  const lines = [{ id: 'salary', entryId: entries[0].id, accountId: '5010', debit: 11460, description: 'Private worker name' }];
+  const input = { accounts, entries, lines, scalingFactor: 0.1 };
+  const september = partnerOperatingStatement({ ...input, periodKey: '2026-09' });
+  const october = partnerOperatingStatement({ ...input, periodKey: '2026-10' });
+  expect(september.totalCosts).toBe(1146); expect(september.ledgerStatement.totalCosts).toBe(1146);
+  expect(october.totalCosts).toBe(0); expect(october.ledgerStatement.totalCosts).toBe(0);
+  const item = september.expenseBreakdown.groups.find(group => group.key === 'monthly').items[0];
+  expect(item).toMatchObject({ accountingPeriod: '2026-09', entryDate: '2026-10-04', amount: 1146 });
+  expect(JSON.stringify(september)).not.toContain('Private worker name');
+});

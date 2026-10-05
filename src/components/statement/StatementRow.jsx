@@ -12,6 +12,8 @@
 
 import { ListFilter } from 'lucide-react';
 import { formatCurrency } from '../../data/initialData';
+import { useLanguage } from '../../i18n/useLanguage';
+import { translate } from '../../i18n/locale';
 
 // ─── Income statement row ────────────────────────────────────────────────
 // `kind`: 'plus' (revenue) | 'minus' (cost) | 'subtotal' (gross profit)
@@ -20,6 +22,7 @@ import { formatCurrency } from '../../data/initialData';
 // `onClick`: when provided, the row becomes a button-styled drill-down
 // trigger (cursor + hover tint + leading filter icon).
 export default function StatementRow({ label, amount, kind = 'minus', tone = 'auto', onClick }) {
+  const { language } = useLanguage();
   const isPlus            = kind === 'plus';
   const isSubtotal        = kind === 'subtotal';
   const isExpenseSubtotal = kind === 'expenseSubtotal';
@@ -104,7 +107,7 @@ export default function StatementRow({ label, amount, kind = 'minus', tone = 'au
       onKeyDown={clickable
         ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }
         : undefined}
-      aria-label={clickable ? `عرض تفاصيل: ${label}` : undefined}
+      aria-label={clickable ? (language === 'en' ? `Show details: ${translate(label, language)}` : `عرض تفاصيل: ${label}`) : undefined}
     >
       <td className={`py-3 px-4 whitespace-nowrap ${labelClass}`}>
         <span className="inline-flex items-center gap-2">

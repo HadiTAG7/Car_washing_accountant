@@ -12,6 +12,7 @@
 
 import { round2, MONEY_EPSILON } from './journal.js';
 import { indexAccounts } from './chartOfAccounts.js';
+import { payrollExpensePeriod, payrollRecognitionDate } from './payrollExpensePeriod.js';
 
 /**
  * Keeps only lines belonging to POSTED entries, optionally within a date
@@ -46,6 +47,21 @@ export function postedLines(entries, lines, { from = null, to = null } = {}) {
     });
   }
   return out;
+}
+
+/** Same posted movements, with salary expense attributed to its earned month.
+ * No cash date, journal, balance sheet or trial-balance movement is changed.
+ * Month-only payroll accrual is recognised at month end for date-range reports.
+ */
+export function incomeStatementLines(entries, lines, { from = null, to = null } = {}) {
+  const byId = new Map((entries || []).map(entry => [entry.id, entry]));
+  return postedLines(entries, lines).map(line => {
+    const entry = byId.get(line.entryId);
+    const payroll = String(line.accountId) === '5010' ? payrollExpensePeriod(entry, byId) : null;
+    return { ...line, accountingDate: payroll ? payrollRecognitionDate(payroll.periodKey) : line.entryDate,
+      accountingPeriod: payroll?.periodKey || String(line.entryDate || '').slice(0, 7),
+      periodBasis: payroll?.basis || 'journal_date' };
+  }).filter(line => (!from || line.accountingDate >= from) && (!to || line.accountingDate <= to));
 }
 
 /**
@@ -160,10 +176,14 @@ export function generalLedger(accountCode, entries, lines, { from = null, to = n
  * they do, and `difference` is what to hunt for when they do not.
  */
 export function trialBalance(accounts, entries, lines, { from = null, to = null } = {}) {
+  return summarizeTrialBalance(accounts, postedLines(entries, lines, { from, to }));
+}
+
+function summarizeTrialBalance(accounts, selectedLines) {
   const index = indexAccounts(accounts);
   const rows = new Map();
 
-  for (const l of postedLines(entries, lines, { from, to })) {
+  for (const l of selectedLines) {
     const code = String(l.accountId);
     if (!rows.has(code)) {
       const a = index.get(code);
@@ -222,8 +242,13 @@ export function trialBalance(accounts, entries, lines, { from = null, to = null 
  * operational tables. Management/supervisor fees come in as CONFIGURED rules
  * (`feeRules`), each with an effective date, so no percentage is hard-coded.
  */
-export function incomeStatement(accounts, entries, lines, { from = null, to = null, feeRules = [] } = {}) {
-  const tb = trialBalance(accounts, entries, lines, { from, to });
+export function incomeStatement(accounts, entries, lines, { from = null, to = null, feeRules = [], salaryAccrual = false } = {}) {
+  // The monthly P&L opts into earned payroll periods. Ledger reports and the
+  // balance sheet retain their journal-date basis until an actual accrual
+  // journal is authorised; otherwise retrospective equity would not balance.
+  const tb = salaryAccrual
+    ? summarizeTrialBalance(accounts, incomeStatementLines(entries, lines, { from, to }))
+    : trialBalance(accounts, entries, lines, { from, to });
   const index = indexAccounts(accounts);
 
   const revenue = [], costOfServices = [], expenses = [];

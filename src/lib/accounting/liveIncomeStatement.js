@@ -57,6 +57,8 @@ export function liveIncomeStatement({ accounts = [], entries = [], lines = [], p
         invoiceNumber: field('invoice_number', 'invoiceNumber'), invoiceDate: field('invoice_date', 'invoiceDate'), supplier: row.supplier,
         vatAmount: field('vat_amount', 'vatAmount') ?? null, vatRate: field('vat_rate', 'vatRate') ?? null }, { policyAt });
       operationalItems.push({ sourceKind: kind, sourceId: row.id, accountCode, date, amount: tax.net,
+        documentNumber: field('invoice_number', 'invoiceNumber'), invoiceDate: field('invoice_date', 'invoiceDate'),
+        supplier: row.supplier, taxSnapshot: tax.snapshot,
         description: row.expense_name || row.description || row.templateName || '' });
     } catch { issues.push({ sourceId: row.id, reason: 'unresolved_purchase_tax' }); }
   };

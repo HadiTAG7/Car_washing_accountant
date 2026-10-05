@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { dispatch } from '../src/handlers.js';
 import { normalizeRecord } from '../src/sweater/record.js';
-import { previewOwnerHandoff, saveOwnerHandoff, OWNER_CONFIRMATIONS, sspWashId } from '../src/sweater/staffHandoff.js';
+import { previewOwnerHandoff, saveOwnerHandoff, OWNER_CONFIRMATIONS, OWNER_BOOKING_CLAIMS, sspWashId } from '../src/sweater/staffHandoff.js';
 import { mapWash } from '../../src/lib/mappers.js';
 import { summarizeOwnerWashes } from '../../src/lib/sweater/washSummary.js';
 import { calculatePayrollPreview } from '../src/payroll.js';
@@ -38,7 +38,7 @@ function dbFixture(role = 'accountant') {
   const ref = path => ({ path, get: async () => snapshot(path) });
   let queue = Promise.resolve();
   const db = { rows, writes,
-    collection: name => ({ doc: id => ref(`${name}/${id}`), where: (field, _op, value) => ({
+    collection: name => ({ get: async () => ({ docs: [...rows.keys()].filter(path => path.startsWith(`${name}/`) && !path.slice(name.length + 1).includes('/')).map(snapshot) }), doc: id => ref(`${name}/${id}`), where: (field, _op, value) => ({
       get: async () => ({ docs: [...rows.keys()].filter(path => path.startsWith(`${name}/`) && rows.get(path)[field] === value).map(snapshot) }),
     }) }),
     runTransaction: callback => {
@@ -192,5 +192,67 @@ describe('owner confirmation is independent, atomic and idempotent', () => {
     expect(preview.totals.commissions).toBe(31.5);
     expect(preview.lines.map(line => line.monthlySalary)).toEqual([900, 1200]);
     expect(db.writes.some(path => path.startsWith('payroll'))).toBe(false);
+  });
+});
+
+const taxedPayload = () => {
+  const body=payload();body.importRunId='synthetic-owner-tax-oct5';
+  body.records=Array.from({length:4},(_,i)=>({sspBookingId:`S-${920001+i}`,serviceDate:'2026-10-05',rawStatus:'CollectingPayment',rawPaymentStatus:'Pending',driverExternalId:'worker-a'}));
+  body.workerLinks={'worker-a':'biker-a'};
+  body.coverage={rangeFrom:'2026-10-05',rangeTo:'2026-10-05',extractedAt:'2026-10-05T12:00:00Z',pageCount:1,pagesFetched:1,recordCount:4,isComplete:false,scope:'accountBookings',scopeComplete:true,sourceRecordCount:5,excludedCancelled:1,imported:4};
+  body.ownerConfirmation={source:'owner_statement',ownerName:'Synthetic owner',statement:'Owner explicitly asserts net20 VAT3 gross23 for each of these4 washes; service type not visible.',unitAmount:20,totalAmount:80,vatAmount:3,priceMode:'exclusive',grossAmount:23,totalVatAmount:12,totalGrossAmount:92};return body;
+};
+describe('explicit owner VAT contract and numeric booking claims',()=>{
+  it('previews80/12/92 and saves4 operational washes without inventing service, platform payment, bank, payroll or ledger',async()=>{
+    const db=dbFixture();
+    for(let i=0;i<12;i++)db.rows.set(`washes/old-${i}`,{ssp_booking_id:`S-${910000+i}`,price:20,vat_amount:3,net_amount:20,gross_amount:23,owner_tax_snapshot:{historical:true}});
+    db.rows.set('bank_accounts/protected',{balance:999});db.rows.set('journal_entries/protected',{entryNumber:163,status:'posted'});
+    const protectedRows=structuredClone([...db.rows]);const body=taxedPayload();const before=structuredClone(body);
+    const local=reviewSweaterHandoff(body);expect(local.ready).toBe(true);expect(local.warnings.some(x=>x.includes('نوع الخدمة غير مثبت'))).toBe(true);
+    const p=await previewOwnerHandoff(db,body);expect(p).toMatchObject({canSave:true,counts:{new:4},ownerConfirmation:{totalAmount:80,totalVatAmount:12,totalGrossAmount:92}});expect(db.writes).toEqual([]);
+    for(const row of p.rows)expect(row).toMatchObject({netAmount:20,vatAmount:3,grossAmount:23,workerCommission:4.5,rawStatus:'CollectingPayment',paymentStatus:'pending'});
+    const result=await saveOwnerHandoff(db,FV,request(body,p),'staff');expect(result).toMatchObject({ledgerPosted:false,payrollPaid:false,saved:true});
+    for(const id of result.bookingIds){
+      const record=db.rows.get(`sweater_bookings/${id}`).record;expect(record).toMatchObject({serviceType:'',bookingKind:'unknown',rawStatus:'CollectingPayment',rawPaymentStatus:'Pending',paymentStatus:'pending',platformAmount:null});
+      const wash=db.rows.get(`washes/${sspWashId(id)}`);expect(wash).toMatchObject({price:20,net_amount:20,vat_amount:3,gross_amount:23,price_mode:'exclusive',vat_rate:0.15,worker_commission_per_wash:4.5,worker_commission_paid:false,payment_method:null,collection_status:'confirmed_by_owner'});
+      expect(washPostabilityProblem(wash)).toBeTruthy();
+      expect(mapWash({id:sspWashId(id),...wash}).ownerTaxSnapshot).toMatchObject({net:20,vat:3,gross:23,source:'owner_statement'});
+      expect(db.rows.get(`${OWNER_CONFIRMATIONS}/${id}`)).toMatchObject({assertedAmount:20,vatAmount:3,taxSplit:{net:20,vat:3,gross:23},paymentMethod:null,bankAccountId:null});
+    }
+    expect(protectedRows.every(([path,row])=>JSON.stringify(db.rows.get(path))===JSON.stringify(row))).toBe(true);
+    const washes=result.washIds.map(id=>({id,...db.rows.get(`washes/${id}`)}));
+    const payroll=calculatePayrollPreview({periodKey:'2026-10',bikers:[{id:'biker-a',salary:900}],washes});expect(payroll.totals.commissions).toBe(18);
+    expect(db.writes.every(path=>/^(washes|sweater_)/.test(path))).toBe(true);expect(body).toEqual(before);
+  });
+  it.each([
+    ['missing gross',b=>{delete b.ownerConfirmation.grossAmount;}],['wrong unit gross',b=>{b.ownerConfirmation.grossAmount=24;}],
+    ['wrong VAT total',b=>{b.ownerConfirmation.totalVatAmount=11;}],['wrong gross total',b=>{b.ownerConfirmation.totalGrossAmount=91;}],
+    ['negative VAT',b=>{b.ownerConfirmation.vatAmount=-3;}],['string VAT',b=>{b.ownerConfirmation.vatAmount='3';}],
+    ['fractional cent',b=>{b.ownerConfirmation.vatAmount=3.001;}],['missing price mode',b=>{delete b.ownerConfirmation.priceMode;}],
+    ['null with asserted split',b=>{b.ownerConfirmation.vatAmount=null;}],['prefix collision in batch',b=>{b.records[1].sspBookingId='C-920001';}],
+    ['cancelled booking',b=>{b.records[0].rawStatus='Cancelled';}],
+  ])('rejects%s before writes',async(_label,mutate)=>{const db=dbFixture();const b=taxedPayload();mutate(b);await expect(previewOwnerHandoff(db,b)).rejects.toMatchObject({code:'invalid-argument'});expect(db.writes).toEqual([]);});
+  it('blocks prefix variants already present in the12 legacy washes, orphan evidence, bookings and financial links',async()=>{
+    for(const [collection,data] of [['washes',{ssp_booking_id:'C-920001'}],['sweater_bookings',{sspBookingId:'C-920001'}],[OWNER_CONFIRMATIONS,{sspBookingId:'C-920001'}],['sweater_booking_links',{sspBookingId:'C-920001'}]]){
+      const db=dbFixture();db.rows.set(`${collection}/legacy`,data);const b=taxedPayload();const p=await previewOwnerHandoff(db,b);
+      expect(p.canSave).toBe(false);expect(p.rows[0]).toMatchObject({reasonCode:'booking_number_conflict'});
+      await expect(saveOwnerHandoff(db,FV,request(b,p),'staff')).rejects.toMatchObject({code:'failed-precondition'});expect(db.writes).toEqual([]);
+    }
+  });
+  it('claims the primary booking number atomically against competing prefixes and never creates a second wash',async()=>{
+    const db=dbFixture();const a=taxedPayload();const b=structuredClone(a);b.importRunId='synthetic-prefix-race';b.records[0].sspBookingId='C-920001';
+    const [pa,pb]=await Promise.all([previewOwnerHandoff(db,a),previewOwnerHandoff(db,b)]);
+    const results=await Promise.allSettled([saveOwnerHandoff(db,FV,request(a,pa),'staff'),saveOwnerHandoff(db,FV,request(b,pb),'staff')]);
+    expect(results.filter(x=>x.status==='fulfilled')).toHaveLength(1);expect(results.find(x=>x.status==='rejected').reason.code).toBe('failed-precondition');
+    expect([...db.rows.keys()].filter(path=>path.startsWith('washes/'))).toHaveLength(4);
+    expect(db.rows.get(`${OWNER_BOOKING_CLAIMS}/920001`)).toMatchObject({sspBookingId:'S-920001',washId:'ssp__S-920001'});
+  });
+  it('a lost save response is recovered with the same batch and fresh preview, without any second write or commission',async()=>{
+    const db=dbFixture();const b=taxedPayload();const p=await previewOwnerHandoff(db,b);
+    await expect((async()=>{await saveOwnerHandoff(db,FV,request(b,p),'staff');throw new Error('synthetic response lost');})()).rejects.toThrow('response lost');
+    const writes=db.writes.length;const again=await previewOwnerHandoff(db,b);expect(again).toMatchObject({previousRun:{sameRecords:true},counts:{duplicate:4}});
+    expect(await saveOwnerHandoff(db,FV,request(b,again),'staff')).toMatchObject({saved:true,replay:true});expect(db.writes).toHaveLength(writes);
+    const other={...b,importRunId:'synthetic-same-tax-new-run'};const duplicate=await previewOwnerHandoff(db,other);expect(duplicate.counts.duplicate).toBe(4);
+    await saveOwnerHandoff(db,FV,request(other,duplicate),'staff');expect([...db.rows.keys()].filter(path=>path.startsWith('washes/'))).toHaveLength(4);
   });
 });

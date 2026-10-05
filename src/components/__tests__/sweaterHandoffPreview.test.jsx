@@ -5,6 +5,7 @@ const call = vi.hoisted(() => vi.fn());
 const saveCall = vi.hoisted(() => vi.fn());
 vi.mock('../../lib/firebaseClient', () => ({ callSweaterImportPreview: call, callSweaterOwnerHandoffSave: saveCall, describeBackendError: e => e.message }));
 import SweaterHandoffPreview from '../SweaterHandoffPreview';
+import { formatCurrency } from '../../data/initialData';
 import { ACCOUNT_BOOKINGS_SCOPE_WARNING } from '../../lib/sweater/handoff';
 const body = () => ({ importRunId: 'ui-review', records: [{ sspBookingId: 'S-1', serviceType: 'verified-service', serviceDate: '2026-10-04', rawStatus: 'Collecting Payment' }],
   coverage: { rangeFrom: '2026-10-04', rangeTo: '2026-10-04', extractedAt: '2026-10-04T10:00:00Z', pageCount: 1, pagesFetched: 1, recordCount: 1, isComplete: true } });
@@ -87,4 +88,26 @@ describe('مراجعة SSP في الواجهة', () => {
     expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'Data changed; preview again.');
     expect(saveCall).toHaveBeenCalledTimes(1); expect(screen.queryByLabelText('نتيجة dryRun')).toBeNull();
   });
+});
+
+it('يعرض80/12/92 بإقرار المالك ويعيد المعاينة بنفس الدفعة بعد استجابة حفظ مفقودة دون إعادة تلقائية',async()=>{
+  const value=body();value.records=Array.from({length:4},(_,i)=>({sspBookingId:`S-${830001+i}`,serviceDate:'2026-10-04',rawStatus:'CollectingPayment',rawPaymentStatus:'Pending',driverExternalId:'worker-1'}));
+  value.coverage.recordCount=4;value.workerLinks={'worker-1':'biker-1'};
+  value.ownerConfirmation={source:'owner_statement',ownerName:'Synthetic owner',statement:'Explicit owner net/VAT/gross assertion; type not visible',unitAmount:20,totalAmount:80,vatAmount:3,priceMode:'exclusive',grossAmount:23,totalVatAmount:12,totalGrossAmount:92};
+  const rows=value.records.map(row=>({...row,outcome:'new',washId:`ssp__${row.sspBookingId}`,bikerId:'biker-1',bikerName:'Synthetic worker',assertedAmount:20,netAmount:20,vatAmount:3,grossAmount:23,collectionStatus:'confirmed_by_owner',workerCommission:4.5,ownerTaxSnapshot:{source:'owner_statement',currency:'SAR',clarificationId:`owner-handoff:${row.sspBookingId}`,priceMode:'exclusive',quantity:1,net:20,vat:3,gross:23}}));
+  const result={canSave:true,counts:{new:4,modified:0,duplicate:0,rejected:0,needsReview:0},rows,ownerConfirmation:value.ownerConfirmation,reviewedPayloadHash:'body-hash',previewStateHash:'first-state'};
+  call.mockResolvedValueOnce(result).mockResolvedValueOnce({...result,counts:{...result.counts,new:0,duplicate:4},previousRun:{sameRecords:true},previewStateHash:'committed-state'});
+  saveCall.mockRejectedValueOnce(new Error('Synthetic response lost')).mockResolvedValueOnce({...result,saved:true,replay:true});
+  render(<SweaterHandoffPreview/>);fill(value);fireEvent.click(screen.getByRole('checkbox'));fireEvent.click(screen.getByRole('button',{name:'معاينة dryRun على الخادم'}));
+  const split=await screen.findByLabelText('فصل الضريبة بإقرار المالك');
+  for(const amount of [80,12,92])expect(split.textContent).toContain(formatCurrency(amount));
+  fireEvent.click(screen.getByLabelText('راجعت الحجوزات والعامل والإجمالي وإقرار المالك؛ أحفظ دون قيد مالي'));fireEvent.click(screen.getByRole('button',{name:'حفظ الغسلات بإقرار المالك'}));
+  await screen.findByText('Synthetic response lost');expect(saveCall).toHaveBeenCalledTimes(1);expect(call).toHaveBeenCalledTimes(1);
+  expect(screen.getByLabelText('بيانات التسليم').value).toContain(value.importRunId);
+  fireEvent.click(screen.getByRole('button',{name:'معاينة dryRun على الخادم'}));await screen.findByText('المعرّف مستخدم سابقًا بنفس السجلات؛ هذه قراءة فقط، مو إعادة استيراد.');
+  expect(screen.getByRole('button',{name:'حفظ الغسلات بإقرار المالك'}).disabled).toBe(true);
+  fireEvent.click(screen.getByLabelText('راجعت الحجوزات والعامل والإجمالي وإقرار المالك؛ أحفظ دون قيد مالي'));fireEvent.click(screen.getByRole('button',{name:'حفظ الغسلات بإقرار المالك'}));
+  await screen.findByText('تم حفظ الغسلات وإقرار المالك دون ترحيل أو صرف عمولة');
+  expect(saveCall).toHaveBeenCalledTimes(2);expect(saveCall.mock.calls[1][0]).toMatchObject({payload:{importRunId:value.importRunId,ownerConfirmation:value.ownerConfirmation},previewStateHash:'committed-state'});
+  expect(call.mock.calls[0][0]).toEqual(call.mock.calls[1][0]);
 });

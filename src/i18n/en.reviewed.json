@@ -911,5 +911,13 @@
   "لا تُعدّل لقطة عامل مصروف أو مقفل أثناء المطابقة.": "A paid or locked worker snapshot cannot be changed during reconciliation.",
   "مطابقة السلف تتجاوز صافي العامل المحفوظ.": "Reconciled advances exceed the worker’s saved net amount.",
   "السلفة مخصصة في السطر بالفعل.": "This advance is already allocated to the payroll row.",
-  "المسير يتضمن سدادًا سابقًا؛ لا يُعاد احتساب أو استبدال سطور مصروفة.": "This payroll includes a previous payment. Paid rows cannot be recalculated or replaced."
+  "المسير يتضمن سدادًا سابقًا؛ لا يُعاد احتساب أو استبدال سطور مصروفة.": "This payroll includes a previous payment. Paid rows cannot be recalculated or replaced.",
+  "فصل الضريبة يحتاج مبلغ ضريبة مثبتاً في إقرار المالك.": "A tax split requires an explicit VAT amount in the owner statement.",
+  "فصل إقرار المالك يجب أن يطابق الصافي والضريبة والإجمالي لكل غسلة وللدفعة.": "The owner statement must reconcile net, VAT and gross for each wash and the batch.",
+  "نوع الخدمة غير مثبت من SSP؛ القيم من إقرار المالك فقط، دون سعر تعاقدي أو ترحيل.": "The service type is not established by SSP. Amounts come only from the owner statement, without contractual pricing or posting.",
+  "الرقم الأساسي للحجز موجود ببادئة أخرى أو ربط مختلف؛ لا تُنشأ غسلة ثانية.": "The booking number already exists under a different prefix or link. A second wash will not be created.",
+  "راجعت الصفحات وحفظت نوع الخدمة كما ورد، دون تخمين": "I reviewed the pages and preserved the service type as supplied, without guessing.",
+  "فصل الضريبة بإقرار المالك": "Owner-confirmed tax split",
+  "الصافي قبل الضريبة": "Net before VAT",
+  "الإجمالي شامل الضريبة": "Gross including VAT"
 }

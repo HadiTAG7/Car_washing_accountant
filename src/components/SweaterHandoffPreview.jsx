@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { formatCurrency } from '../data/initialData';
 import { Card, SectionHeader, SecondaryButton } from './UI';
 import { callSweaterImportPreview, callSweaterOwnerHandoffSave, describeBackendError } from '../lib/firebaseClient';
 import { HANDOFF_MAX_BYTES, reviewSweaterHandoff } from '../lib/sweater/handoff';
@@ -62,7 +63,7 @@ export default function SweaterHandoffPreview() {
         {row.problems.map((problem, index) => <p key={index}>{problem.message}</p>)}
       </div>)}
       <label className="flex items-start gap-2"><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} disabled={!review.ready || busy} />
-        راجعت الصفحات ونوع الخدمة من المصدر، دون تخمين</label>
+        راجعت الصفحات وحفظت نوع الخدمة كما ورد، دون تخمين</label>
       <SecondaryButton onClick={preview} disabled={!review.ready || !confirmed || busy}>
         {busy ? 'نحمّل المعاينة...' : 'معاينة dryRun على الخادم'}
       </SecondaryButton>
@@ -76,10 +77,15 @@ export default function SweaterHandoffPreview() {
         <tbody>{result.rows.map((row, index) => <tr key={index}><td className="py-2">{row.sspBookingId}</td><td>{row.outcome}</td><td>{row.reasonAr || '—'}</td></tr>)}</tbody></table></div>
       <p className="break-all text-xs">بصمة الملف المراجع: {result.reviewedPayloadHash}</p>
       {result.ownerConfirmation && <>
+        {result.ownerConfirmation.vatAmount != null && <dl aria-label="فصل الضريبة بإقرار المالك" className="grid grid-cols-3 gap-2 text-xs">
+          <div><dt>الصافي قبل الضريبة</dt><dd>{formatCurrency(result.ownerConfirmation.totalAmount)}</dd></div>
+          <div><dt>ضريبة القيمة المضافة</dt><dd>{formatCurrency(result.ownerConfirmation.totalVatAmount)}</dd></div>
+          <div><dt>الإجمالي شامل الضريبة</dt><dd>{formatCurrency(result.ownerConfirmation.totalGrossAmount)}</dd></div>
+        </dl>}
         <SweaterWashWorkerSummary washes={result.rows.map(row => ({ id: row.washId,
           bikerId: row.bikerId, bikerName: row.bikerName, sspBookingId: row.sspBookingId,
           washDate: row.serviceDate, quantity: 1, price: row.assertedAmount, status: 'مكتملة',
-          rawStatus: row.rawStatus,
+          rawStatus: row.rawStatus, ownerTaxSnapshot: row.ownerTaxSnapshot,
           revenueOrigin: 'sweater', collectionStatus: row.collectionStatus, workerCommissionPerWash: row.workerCommission }))} />
         <p>{result.ownerConfirmation.ownerName}: {result.ownerConfirmation.statement}</p>
         {!result.saved && <>

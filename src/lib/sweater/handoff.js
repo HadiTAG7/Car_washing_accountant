@@ -2,6 +2,7 @@ import { recordProblems } from '../../../functions/src/sweater/recordContract.js
 import { normalizeBookingStatus, UNKNOWN_STATUS } from '../../../functions/src/sweater/vocab.js';
 import { ownerConfirmationProblems } from './ownerConfirmation.js';
 
+const OWNER_SERVICE_UNKNOWN_WARNING = 'نوع الخدمة غير مثبت من SSP؛ القيم من إقرار المالك فقط، دون سعر تعاقدي أو ترحيل.';
 export const HANDOFF_MAX_BYTES = 2 * 1024 * 1024;
 const FIELDS = new Set(['importRunId', 'mode', 'dryRun', 'agentStatus', 'coverage', 'records', 'ownerConfirmation', 'workerLinks']);
 const SCOPED_COVERAGE_FIELDS = ['scope', 'scopeComplete', 'sourceRecordCount', 'excludedCancelled', 'imported'];
@@ -19,7 +20,8 @@ const safeUrl = value => {
 };
 
 // Local review and server preview share this check. Raw SSP labels stay raw;
-// missing service types are rejected, never inferred from booking prefixes.
+// Missing service types stay missing. Only the explicit owner tax split can
+// save an operational wash without a contractual service/price assertion.
 export function reviewSweaterHandoff(input) {
   const errors = []; const warnings = [];
   if (!object(input)) return { ready: false, errors: ['ملف التسليم يجب أن يكون كائن JSON.'], warnings, rows: [] };
@@ -65,7 +67,10 @@ export function reviewSweaterHandoff(input) {
     if (coverage.sourceUrl != null && !safeUrl(coverage.sourceUrl)) errors.push('رابط المصدر يجب أن يكون HTTPS بلا معاملات دخول أو أجزاء سرية.');
   }
   const rows = records.map((record, index) => {
-    const problems = recordProblems(record).map(p => ({ code: p.code, message: p.ar }));
+    const ownerSplit = input.ownerConfirmation?.priceMode === 'exclusive' && typeof input.ownerConfirmation?.vatAmount === 'number';
+    const problems = recordProblems(record).filter(p => !(ownerSplit && p.code === 'unknown_service_type'))
+      .map(p => ({ code: p.code, message: p.ar }));
+    if (ownerSplit && !String(record?.serviceType ?? '').trim() && !warnings.includes(OWNER_SERVICE_UNKNOWN_WARNING)) warnings.push(OWNER_SERVICE_UNKNOWN_WARNING);
     if (object(record)) {
       if (Object.values(record).some(value => value !== null && typeof value === 'object')) problems.push({ code: 'bad_type', message: 'حقول السجل يجب أن تكون قيماً بسيطة؛ لا ترسل كائنات جلسة أو بيانات متداخلة.' });
       for (const key of ['sspBookingId', 'serviceType', 'serviceDate', 'rawStatus']) {

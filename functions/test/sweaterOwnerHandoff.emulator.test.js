@@ -57,4 +57,17 @@ suite('SSP atomic save on isolated Firestore emulator', () => {
     expect((await db.collection('washes').get()).size).toBe(0);
     expect((await db.collection('sweater_import_runs').get()).size).toBe(0);
   });
+  it('tax split and numeric claims atomically prevent concurrent prefix variants on Firestore', async () => {
+    const a=body();a.records=[{sspBookingId:'S-870001',driverExternalId:'worker-1',serviceDate:'2026-10-03',rawStatus:'CollectingPayment',rawPaymentStatus:'Pending'}];a.coverage.recordCount=1;
+    a.ownerConfirmation={...a.ownerConfirmation,totalAmount:20,vatAmount:3,priceMode:'exclusive',grossAmount:23,totalVatAmount:3,totalGrossAmount:23};
+    const b=structuredClone(a);b.importRunId='synthetic-emulator-other-prefix';b.records[0].sspBookingId='C-870001';
+    const [pa,pb]=await Promise.all([previewOwnerHandoff(db,a),previewOwnerHandoff(db,b)]);
+    const results=await Promise.allSettled([saveOwnerHandoff(db,FieldValue,request(a,pa),'emulator-staff'),saveOwnerHandoff(db,FieldValue,request(b,pb),'emulator-staff')]);
+    expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(1);
+    const washes=await db.collection('washes').get();expect(washes.size).toBe(1);
+    expect(washes.docs[0].data()).toMatchObject({price:20,vat_amount:3,net_amount:20,gross_amount:23,worker_commission_paid:false});
+    expect((await db.collection('sweater_owner_booking_claims').doc('870001').get()).exists).toBe(true);
+    expect((await db.collection('journal_entries').get()).empty).toBe(true);
+  });
+
 });

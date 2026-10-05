@@ -1,3 +1,5 @@
+import { ownerBookingIdentity } from '../../../src/lib/sweater/bookingIdentity.js';
+import { ownerConfirmationTaxSplit } from '../../../src/lib/sweater/ownerConfirmation.js';
 import { WASH_COMMISSION_RATE } from '../washCommission.js';
 import { reviewSweaterHandoff, ownerHandoffCoverageComplete } from '../../../src/lib/sweater/handoff.js';
 import { bookingDocId, rawDocId, classifyRecord, COL, SweaterIngestError } from './ingest.js';
@@ -5,6 +7,7 @@ import { hashBody, hashRecord, normalizeRecord, SCHEMA_VERSION } from './record.
 import { LINKS_COL } from './revenueOrigin.js';
 
 export const OWNER_CONFIRMATIONS = 'sweater_owner_collection_confirmations';
+export const OWNER_BOOKING_CLAIMS = 'sweater_owner_booking_claims';
 export const OPERATIONAL_LINKS = 'sweater_operational_wash_links';
 export const sspWashId = id => `ssp__${bookingDocId(id)}`;
 const fail = (message, code = 'failed-precondition') => { throw new SweaterIngestError(message, { code }); };
@@ -14,7 +17,7 @@ function reviewedInput(payload) {
   if (!review.ready || !review.payload.ownerConfirmation || !ownerHandoffCoverageComplete(review.payload.coverage)) {
     fail('الحفظ يحتاج ملفاً صالحاً بتغطية كاملة للنطاق المعلن وإقرار مالك مستقل.', 'invalid-argument');
   }
-  // At most seven writes per booking plus run/state stay below 500 writes.
+  // At most eight writes per booking plus run/state stay below 500 writes.
   if (review.payload.records.length > 50) fail('حد الحفظ الذري ٥٠ غسلة؛ قسّم الدفعة.', 'invalid-argument');
   return review.payload;
 }
@@ -24,7 +27,8 @@ const evidenceFor = (input, record) => ({
   driverExternalId: record.driverExternalId, quantity: 1,
   source: 'owner_statement', ownerName: input.ownerConfirmation.ownerName.trim(),
   statement: input.ownerConfirmation.statement.trim(),
-  assertedAmount: input.ownerConfirmation.unitAmount, currency: 'SAR', vatAmount: null,
+  assertedAmount: input.ownerConfirmation.unitAmount, currency: 'SAR', vatAmount: input.ownerConfirmation.vatAmount,
+  ...(input.ownerConfirmation.vatAmount !== null ? { taxSplit: ownerConfirmationTaxSplit(input.ownerConfirmation, `owner-handoff:${record.sspBookingId}`) } : {}),
   collectionStatus: 'confirmed_by_owner', paymentMethod: null, bankAccountId: null,
   // Preserve this instruction without accruing/paying payroll in the import.
   workerCommission: { unitAmount: WASH_COMMISSION_RATE, currency: 'SAR', paymentTiming: 'payroll', paid: false },
@@ -39,6 +43,15 @@ async function plan(db, input, read) {
     || (run.handoffHash && run.handoffHash !== reviewedPayloadHash))) fail('معرّف الدفعة مستخدم بمحتوى مختلف.', 'already-exists');
   if (run && run.source !== 'staff_owner_confirmation') fail('معرّف الدفعة مستخدم في مسار آخر؛ استخدم معرّفاً جديداً.', 'already-exists');
 
+  // Inspect older records once: they predate numeric claims and must not be
+  // duplicated or rewritten when the displayed prefix changes.
+  const legacyCollections = ['washes', COL.BOOKINGS, OWNER_CONFIRMATIONS, OPERATIONAL_LINKS, LINKS_COL];
+  const legacySnaps = await Promise.all(legacyCollections.map(name => read(db.collection(name))));
+  const legacyIds = legacySnaps.flatMap((snap, index) => snap.docs.flatMap(doc => {
+    const data = doc.data();
+    const id = data.ssp_booking_id || data.sspBookingId || data.record?.sspBookingId;
+    return id ? [{ id, collection: legacyCollections[index], docId: doc.id }] : [];
+  }));
   const rows = [];
   const counts = { new: 0, modified: 0, duplicate: 0, rejected: 0, needsReview: 0 };
   for (const raw of input.records) {
@@ -46,6 +59,12 @@ async function plan(db, input, read) {
     const sourceHash = hashRecord(record);
     const id = bookingDocId(record.sspBookingId);
     const bookingRef = db.collection(COL.BOOKINGS).doc(id);
+    const identity = ownerBookingIdentity(record.sspBookingId);
+    const claimRef = db.collection(OWNER_BOOKING_CLAIMS).doc(bookingDocId(identity));
+    const claimSnap = await read(claimRef);
+    const claim = claimSnap.exists ? claimSnap.data() : null;
+    const aliases = legacyIds.filter(row => ownerBookingIdentity(row.id) === identity && row.id !== record.sspBookingId);
+    aliases.sort((a,b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
     const evidenceRef = db.collection(OWNER_CONFIRMATIONS).doc(id);
     const washId = sspWashId(record.sspBookingId);
     const washRef = db.collection('washes').doc(washId);
@@ -68,7 +87,9 @@ async function plan(db, input, read) {
     const wash = { ssp_booking_id: record.sspBookingId, biker_id: bikerId, biker_name: bikerName,
       driver_external_id: record.driverExternalId, quantity: 1, price: evidence.assertedAmount,
       status: 'مكتملة', wash_date: record.serviceDate, payment_method: null,
-      revenue_origin: 'sweater', vat_amount: null, price_basis: 'owner_statement',
+      revenue_origin: 'sweater', vat_amount: evidence.vatAmount, price_basis: 'owner_statement',
+      ...(evidence.taxSplit ? { price_mode: 'exclusive', net_amount: evidence.taxSplit.net, gross_amount: evidence.taxSplit.gross,
+        vat_rate: evidence.taxSplit.vat / evidence.taxSplit.net, owner_tax_snapshot: evidence.taxSplit } : {}),
       collection_status: 'confirmed_by_owner', worker_commission_per_wash: WASH_COMMISSION_RATE,
       worker_commission_payment_timing: 'payroll', worker_commission_paid: false };
     const washHash = hashBody(wash);
@@ -79,22 +100,26 @@ async function plan(db, input, read) {
     if (existingEvidence && !existing) verdict = { outcome: 'needs_review', reasonCode: 'orphan_confirmation', reasonAr: 'إقرار دون حجز؛ يحتاج مراجعة.' };
     if (!bikerName) verdict = { outcome: 'needs_review', reasonCode: 'missing_worker', reasonAr: 'سجل العامل الداخلي غير موجود أو بلا اسم؛ لا يُنشأ عامل افتراضي.' };
     if ((washSnap.exists && (washSnap.data().handoffWashHash !== washHash
-      || Object.entries(wash).some(([key, expected]) => washSnap.data()[key] !== expected)))
+      || Object.entries(wash).some(([key, expected]) => hashBody(washSnap.data()[key]) !== hashBody(expected))))
       || otherWashes.docs.some(doc => doc.id !== washId)
       || financialLinkSnap.exists
       || (bookingLinkSnap.exists && bookingLinkSnap.data().washId !== washId)
       || (washLinkSnap.exists && washLinkSnap.data().sspBookingId !== record.sspBookingId)) {
       verdict = { outcome: 'needs_review', reasonCode: 'wash_link_conflict', reasonAr: 'غسلة أو ربط موجود للحجز بمحتوى مختلف؛ لا تُنشأ غسلة ثانية ولا يُستبدل الموجود.' };
     }
+    if (aliases.length || (claim && (claim.sspBookingId !== record.sspBookingId || claim.washId !== washId))) {
+      verdict = { outcome: 'needs_review', reasonCode: 'booking_number_conflict', reasonAr: 'الرقم الأساسي للحجز موجود ببادئة أخرى أو ربط مختلف؛ لا تُنشأ غسلة ثانية.' };
+    }
     const key = verdict.outcome === 'needs_review' ? 'needsReview' : verdict.outcome;
     counts[key] += 1;
     rows.push({ sspBookingId: record.sspBookingId, ...verdict,
       collectionStatus: 'confirmed_by_owner', assertedAmount: evidence.assertedAmount,
-      vatAmount: null, quantity: 1, driverExternalId: record.driverExternalId,
+      vatAmount: evidence.vatAmount, ...(evidence.taxSplit ? { netAmount: evidence.taxSplit.net, grossAmount: evidence.taxSplit.gross, ownerTaxSnapshot: evidence.taxSplit } : {}), quantity: 1, driverExternalId: record.driverExternalId,
       bikerId, bikerName, washId, workerCommission: WASH_COMMISSION_RATE,
       serviceDate: record.serviceDate, rawStatus: record.rawStatus,
       normalizedStatus: record.normalizedStatus, paymentStatus: record.paymentStatus,
       ownerConfirmationOutcome: existingEvidence ? 'duplicate' : 'new',
+      _claimRef: claimRef, _claim: claim, _identity: identity, _aliases: aliases,
       _record: record, _sourceHash: sourceHash, _evidence: evidence, _evidenceHash: evidenceHash,
       _existing: existing, _existingEvidence: existingEvidence, _bookingRef: bookingRef, _evidenceRef: evidenceRef,
       _wash: wash, _washHash: washHash, _washRef: washRef, _existingWash: washSnap.exists ? washSnap.data() : null,
@@ -113,7 +138,7 @@ async function plan(db, input, read) {
     evidenceSourceHash: row._existingEvidence?.sourceHash ?? null,
     wash: row._existingWash, bikerName: row._bikerName,
     bookingLink: row._bookingLink, washLink: row._washLink, otherWashIds: row._otherWashIds,
-    financialLink: row._financialLink,
+    financialLink: row._financialLink, identityClaim: row._claim, aliases: row._aliases,
   })));
   return { input, run, runRef, rows, counts, reviewedPayloadHash, previewStateHash };
 }
@@ -150,6 +175,8 @@ export async function saveOwnerHandoff(db, FieldValue, data, actor) {
     if (value.previewStateHash !== data.previewStateHash) fail('تغيّرت البيانات منذ المعاينة؛ أعد المعاينة قبل الحفظ.');
     const now = new Date().toISOString();
     for (const row of value.rows) {
+      if (!row._claim && !row._existingWash) tx.set(row._claimRef, { bookingNumber: row._identity, sspBookingId: row.sspBookingId, washId: row.washId,
+        importRunId: input.importRunId, claimedBy: actor, claimedAt: FieldValue.serverTimestamp() });
       if (!row._existingWash) tx.set(row._washRef, { ...row._wash, handoffWashHash: row._washHash,
         created_at: now, import_run_id: input.importRunId, created_by: actor });
       const link = { washId: row.washId, sspBookingId: row.sspBookingId, linkedBy: actor,

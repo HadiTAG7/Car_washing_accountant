@@ -91,6 +91,7 @@ export function normalizeBookingStatus(raw) {
   const code = String(raw ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_');
   // Observed SSP spelling; the raw label remains unchanged in record.js.
   if (code === 'collecting_payment' || code === 'collectingpayment') return 'payment_collection';
+  if (code === 'cancelled_by_admin') return 'admin_cancelled';
   return STATUS_SET.has(code) ? code : UNKNOWN_STATUS;
 }
 

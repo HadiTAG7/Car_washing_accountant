@@ -70,4 +70,25 @@ suite('SSP atomic save on isolated Firestore emulator', () => {
     expect((await db.collection('journal_entries').get()).empty).toBe(true);
   });
 
+  it('saves the explicit cancelled-booking decision once, retaining raw status and making no financial writes', async () => {
+    await db.collection('bikers').doc('2N4FP4rQAxXQ7rpuBrla').set({ name: 'Emulator Ajith', salary: 900 });
+    const payload = body(); payload.importRunId = 'emulator-owner-cancelled-5584720';
+    payload.records = [{ sspBookingId: 'C-5584720', driverExternalId: '1984', serviceDate: '2026-10-06', rawStatus: 'Cancelled by Admin' }];
+    payload.workerLinks = { '1984': '2N4FP4rQAxXQ7rpuBrla' };
+    payload.coverage = { rangeFrom: '2026-10-06', rangeTo: '2026-10-06', extractedAt: '2026-10-06T12:00:00Z', pageCount: 1, pagesFetched: 1, recordCount: 1,
+      isComplete: false, scope: 'singleBooking', scopeBookingId: 'C-5584720', scopeComplete: true, sourceRecordCount: 1, excludedCancelled: 0, imported: 1 };
+    payload.ownerConfirmation = { ...payload.ownerConfirmation, totalAmount: 20, vatAmount: 3, priceMode: 'exclusive', grossAmount: 23, totalVatAmount: 3, totalGrossAmount: 23 };
+    payload.ownerCompletionDecision = { source: 'owner_statement', ownerName: 'Synthetic owner', statement: 'Emulator-only explicit owner completion decision',
+      approved: true, decision: 'record_as_completed_wash', sspBookingId: 'C-5584720', bookingNumber: '5584720', driverExternalId: '1984', serviceDate: '2026-10-06', rawStatus: 'Cancelled by Admin' };
+    const p = await previewOwnerHandoff(db, payload);
+    expect((await db.collection('washes').get()).empty).toBe(true);
+    const results = await Promise.all([saveOwnerHandoff(db, FieldValue, request(payload, p), 'emulator-staff'), saveOwnerHandoff(db, FieldValue, request(payload, p), 'emulator-staff')]);
+    expect(results.filter(r => !r.replay)).toHaveLength(1);
+    const washes = await db.collection('washes').get(); expect(washes.size).toBe(1);
+    expect(washes.docs[0].data()).toMatchObject({ status: 'مكتملة', ssp_raw_status: 'Cancelled by Admin', net_amount: 20, vat_amount: 3, gross_amount: 23, worker_commission_paid: false });
+    expect((await db.collection('sweater_bookings').doc('C-5584720').get()).data()).toMatchObject({ record: { rawStatus: 'Cancelled by Admin', normalizedStatus: 'admin_cancelled' }, ownerCompletionDecision: payload.ownerCompletionDecision });
+    expect((await db.collection('sweater_owner_booking_claims').doc('5584720').get()).data().sspBookingId).toBe('C-5584720');
+    for (const name of ['journal_entries', 'bank_accounts', 'transactions', 'payroll', 'sweater_collections', 'sweater_booking_links']) expect((await db.collection(name).get()).empty).toBe(true);
+  });
+
 });

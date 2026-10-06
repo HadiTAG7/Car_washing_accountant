@@ -13,7 +13,8 @@ export default function SweaterHandoffPreview() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [saveConfirmed, setSaveConfirmed] = useState(false);
-  const change = value => { setText(value); setReview(null); setResult(null); setConfirmed(false); setSaveConfirmed(false); setError(''); };
+  const [completionDecisionConfirmed, setCompletionDecisionConfirmed] = useState(false);
+  const change = value => { setText(value); setReview(null); setResult(null); setConfirmed(false); setSaveConfirmed(false); setCompletionDecisionConfirmed(false); setError(''); };
   const readFile = async event => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -21,23 +22,23 @@ export default function SweaterHandoffPreview() {
     try { change(await file.text()); } catch { setError('ما قدرنا نقرأ الملف.'); }
   };
   const reviewLocal = () => {
-    setResult(null); setConfirmed(false); setSaveConfirmed(false); setError('');
+    setResult(null); setConfirmed(false); setSaveConfirmed(false); setCompletionDecisionConfirmed(false); setError('');
     try { setReview(reviewSweaterHandoff(JSON.parse(text))); }
     catch { setReview(null); setError('الملف ليس JSON صالحاً؛ لا تضع بيانات الدخول في الملف.'); }
   };
   const preview = async () => {
     if (!review?.ready || !confirmed || busy) return;
-    setBusy(true); setError(''); setResult(null); setSaveConfirmed(false);
+    setBusy(true); setError(''); setResult(null); setSaveConfirmed(false); setCompletionDecisionConfirmed(false);
     try { setResult(await callSweaterImportPreview(review.payload)); }
     catch (err) { setError(describeBackendError(err)); }
     finally { setBusy(false); }
   };
   const save = async () => {
-    if (!result?.canSave || result.saved || !saveConfirmed || !review?.ready || busy) return;
+    if (!result?.canSave || result.saved || !saveConfirmed || (review?.payload?.ownerCompletionDecision && !completionDecisionConfirmed) || !review?.ready || busy) return;
     setBusy(true); setError('');
     try { setResult(await callSweaterOwnerHandoffSave({ payload: review.payload,
       reviewedPayloadHash: result.reviewedPayloadHash, previewStateHash: result.previewStateHash })); }
-    catch (err) { setError(describeBackendError(err)); setResult(null); setSaveConfirmed(false); }
+    catch (err) { setError(describeBackendError(err)); setResult(null); setSaveConfirmed(false); setCompletionDecisionConfirmed(false); }
     finally { setBusy(false); }
   };
   const download = () => {
@@ -75,6 +76,11 @@ export default function SweaterHandoffPreview() {
       {[...(result.coverageIssues || []), ...(result.reviewWarnings || [])].map((message, index) => <p key={index} className="text-amber-700 dark:text-amber-300">{message}</p>)}
       <div className="overflow-x-auto"><table className="w-full text-sm" aria-label="تصنيف سجلات المعاينة"><thead><tr><th>الحجز</th><th>النتيجة</th><th>الملاحظة</th></tr></thead>
         <tbody>{result.rows.map((row, index) => <tr key={index}><td className="py-2">{row.sspBookingId}</td><td>{row.outcome}</td><td>{row.reasonAr || '—'}</td></tr>)}</tbody></table></div>
+      {result.ownerCompletionDecision && <div aria-label="قرار إكمال المالك وحالة SSP الأصلية" className="space-y-2">
+        <p>حالة SSP الأصلية: {result.ownerCompletionDecision.rawStatus}</p>
+        <p>قرار المالك للحجز المحدد: {result.ownerCompletionDecision.sspBookingId}</p>
+        <p>{result.ownerCompletionDecision.ownerName}: {result.ownerCompletionDecision.statement}</p>
+      </div>}
       <p className="break-all text-xs">بصمة الملف المراجع: {result.reviewedPayloadHash}</p>
       {result.ownerConfirmation && <>
         {result.ownerConfirmation.vatAmount != null && <dl aria-label="فصل الضريبة بإقرار المالك" className="grid grid-cols-3 gap-2 text-xs">
@@ -89,10 +95,13 @@ export default function SweaterHandoffPreview() {
           revenueOrigin: 'sweater', collectionStatus: row.collectionStatus, workerCommissionPerWash: row.workerCommission }))} />
         <p>{result.ownerConfirmation.ownerName}: {result.ownerConfirmation.statement}</p>
         {!result.saved && <>
+          {review?.payload?.ownerCompletionDecision && <label className="flex items-start gap-2"><input type="checkbox" checked={completionDecisionConfirmed}
+            onChange={event => setCompletionDecisionConfirmed(event.target.checked)} disabled={!result.canSave || busy} />
+            راجعت حالة SSP الملغاة وقرار المالك لهذا الحجز وحده</label>}
           <label className="flex items-start gap-2"><input type="checkbox" checked={saveConfirmed}
             onChange={event => setSaveConfirmed(event.target.checked)} disabled={!result.canSave || busy} />
             راجعت الحجوزات والعامل والإجمالي وإقرار المالك؛ أحفظ دون قيد مالي</label>
-          <SecondaryButton onClick={save} disabled={!result.canSave || !saveConfirmed || busy}>
+          <SecondaryButton onClick={save} disabled={!result.canSave || !saveConfirmed || (review?.payload?.ownerCompletionDecision && !completionDecisionConfirmed) || busy}>
             {busy ? 'نحفظ الغسلات...' : 'حفظ الغسلات بإقرار المالك'}
           </SecondaryButton>
         </>}

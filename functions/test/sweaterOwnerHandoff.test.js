@@ -256,3 +256,106 @@ describe('explicit owner VAT contract and numeric booking claims',()=>{
     await saveOwnerHandoff(db,FV,request(other,duplicate),'staff');expect([...db.rows.keys()].filter(path=>path.startsWith('washes/'))).toHaveLength(4);
   });
 });
+
+const completionPayload = () => ({
+  importRunId: 'owner-oct6-exception-5584720',
+  records: [{ sspBookingId: 'C-5584720', serviceDate: '2026-10-06', driverExternalId: '1984', rawStatus: 'Cancelled by Admin' }],
+  workerLinks: { '1984': '2N4FP4rQAxXQ7rpuBrla' },
+  coverage: { rangeFrom: '2026-10-06', rangeTo: '2026-10-06', extractedAt: '2026-10-06T12:00:00Z', pageCount: 1, pagesFetched: 1, recordCount: 1,
+    isComplete: false, scope: 'singleBooking', scopeBookingId: 'C-5584720', scopeComplete: true, sourceRecordCount: 1, excludedCancelled: 0, imported: 1 },
+  ownerConfirmation: { source: 'owner_statement', ownerName: 'Synthetic owner', statement: 'Collection confirmed by owner; no bank receipt.',
+    unitAmount: 20, totalAmount: 20, vatAmount: 3, priceMode: 'exclusive', grossAmount: 23, totalVatAmount: 3, totalGrossAmount: 23 },
+  ownerCompletionDecision: { source: 'owner_statement', ownerName: 'Synthetic owner', statement: 'Explicit owner decision to record this booking as a completed wash despite the SSP cancellation.',
+    approved: true, decision: 'record_as_completed_wash', sspBookingId: 'C-5584720', bookingNumber: '5584720', serviceDate: '2026-10-06', driverExternalId: '1984', rawStatus: 'Cancelled by Admin' },
+});
+const completionDb = () => { const db = dbFixture(); db.rows.set('bikers/2N4FP4rQAxXQ7rpuBrla', { name: 'Synthetic Ajith', salary: 900 }); return db; };
+
+describe('one explicitly authorized cancelled booking, independent of SSP status', () => {
+  it('preserves source cancellation and stores separate decision, net/VAT/gross and unpaid commission without touching the previous ten-wash batch', async () => {
+    const db = completionDb(); const prior = taxedPayload(); prior.importRunId = 'owner-oct6-ten-5583608-5585862';
+    prior.records = Array.from({ length: 10 }, (_, i) => ({ ...prior.records[0], sspBookingId: `S-${5583608 + i}` }));
+    prior.coverage.recordCount = 10; prior.coverage.imported = 10; prior.coverage.sourceRecordCount = 11;
+    Object.assign(prior.ownerConfirmation, { totalAmount: 200, totalVatAmount: 30, totalGrossAmount: 230 });
+    await save(db, prior);
+    db.rows.set('bank_accounts/protected', { balance: 999 }); db.rows.set('journal_entries/protected', { status: 'posted' });
+    db.rows.set('payroll/protected', { paid: false }); db.rows.set('loans/protected', { balance: 50 });
+    const protectedRows = structuredClone([...db.rows].filter(([path]) => path !== 'sweater_integration_state/current'));
+    db.writes.length = 0;
+    const body = completionPayload(); const original = structuredClone(body);
+    const p = await previewOwnerHandoff(db, body);
+    expect(db.writes).toEqual([]); expect(p.canSave).toBe(true);
+    expect(p.rows[0]).toMatchObject({ bookingNumber: '5584720', rawStatus: 'Cancelled by Admin', normalizedStatus: 'admin_cancelled', netAmount: 20, vatAmount: 3, grossAmount: 23, workerCommission: 4.5, bikerId: '2N4FP4rQAxXQ7rpuBrla' });
+    expect(p.coverage).toMatchObject({ scope: 'singleBooking', isComplete: false });
+    const result = await saveOwnerHandoff(db, FV, request(body, p), 'staff');
+    expect(result).toMatchObject({ saved: true, ledgerPosted: false, payrollPaid: false });
+    const booking = db.rows.get('sweater_bookings/C-5584720');
+    expect(booking).toMatchObject({ normalizedStatus: 'admin_cancelled', bookingNumber: '5584720', ownerCompletionDecision: body.ownerCompletionDecision });
+    expect(booking.record.rawStatus).toBe('Cancelled by Admin'); expect(booking.record.ownerCompletionDecision).toBeUndefined();
+    expect([...db.rows].find(([path, row]) => path.startsWith('sweater_raw_payloads/') && row.sspBookingId === 'C-5584720')?.[1]?.rawPayload.rawStatus).toBe('Cancelled by Admin');
+    const wash = db.rows.get('washes/ssp__C-5584720');
+    expect(wash).toMatchObject({ status: 'مكتملة', ssp_booking_id: 'C-5584720', ssp_booking_number: '5584720', ssp_raw_status: 'Cancelled by Admin',
+      owner_completion_decision: body.ownerCompletionDecision, net_amount: 20, vat_amount: 3, gross_amount: 23, quantity: 1, worker_commission_per_wash: 4.5,
+      worker_commission_payment_timing: 'payroll', worker_commission_paid: false, payment_method: null });
+    expect(db.rows.get(`${OWNER_CONFIRMATIONS}/C-5584720`)).toMatchObject({ completionDecision: body.ownerCompletionDecision, collectionStatus: 'confirmed_by_owner', paymentMethod: null, bankAccountId: null });
+    expect(db.rows.get(`${OWNER_BOOKING_CLAIMS}/5584720`)).toMatchObject({ bookingNumber: '5584720', sspBookingId: 'C-5584720' });
+    expect(washPostabilityProblem(wash)).toBeTruthy();
+    expect(calculatePayrollPreview({ periodKey: '2026-10', bikers: [{ id: wash.biker_id, salary: 900 }], washes: [{ id: result.washIds[0], ...wash }] }).totals.commissions).toBe(4.5);
+    expect(db.writes.every(path => /^(washes|sweater_)/.test(path))).toBe(true);
+    for (const [path, row] of protectedRows) expect(db.rows.get(path)).toEqual(row);
+    expect(body).toEqual(original);
+    const writes = db.writes.length; expect((await saveOwnerHandoff(db, FV, request(body, p), 'staff')).replay).toBe(true); expect(db.writes).toHaveLength(writes);
+  });
+  it.each([
+    ['missing decision', b => { delete b.ownerCompletionDecision; }],
+    ['not approved', b => { b.ownerCompletionDecision.approved = false; }],
+    ['string approval', b => { b.ownerCompletionDecision.approved = 'true'; }],
+    ['other booking', b => { b.records[0].sspBookingId = b.ownerCompletionDecision.sspBookingId = 'C-5584721'; }],
+    ['other prefix', b => { b.records[0].sspBookingId = b.ownerCompletionDecision.sspBookingId = 'S-5584720'; }],
+    ['other date', b => { b.records[0].serviceDate = b.ownerCompletionDecision.serviceDate = '2026-10-07'; }],
+    ['other driver', b => { b.records[0].driverExternalId = b.ownerCompletionDecision.driverExternalId = 'other'; }],
+    ['other worker link', b => { b.workerLinks['1984'] = 'biker-a'; }],
+    ['rewritten status', b => { b.records[0].rawStatus = b.ownerCompletionDecision.rawStatus = 'Collecting Payment'; }],
+    ['another owner', b => { b.ownerCompletionDecision.ownerName = 'Another owner'; }],
+    ['no statement', b => { b.ownerCompletionDecision.statement = ''; }],
+    ['decision spoof field', b => { b.ownerCompletionDecision.bankAccountId = 'invented'; }],
+    ['wrong primary ID', b => { b.ownerCompletionDecision.bookingNumber = '5584721'; }],
+    ['other VAT', b => { b.ownerConfirmation.vatAmount = b.ownerConfirmation.totalVatAmount = 4; b.ownerConfirmation.grossAmount = b.ownerConfirmation.totalGrossAmount = 24; }],
+    ['second cancelled row', b => { b.records.push({ ...b.records[0], sspBookingId: 'C-5584721' }); }],
+    ['false account coverage', b => { b.coverage.scope = 'accountBookings'; delete b.coverage.scopeBookingId; }],
+    ['different scope ID', b => { b.coverage.scopeBookingId = 'C-5584721'; }],
+    ['scope incomplete', b => { b.coverage.scopeComplete = false; }],
+  ])('rejects %s before reading or writing the database', async (_name, mutate) => {
+    const b = completionPayload(); mutate(b);
+    const db = { collection: () => { throw new Error('must not read'); }, runTransaction: () => { throw new Error('must not write'); } };
+    await expect(previewOwnerHandoff(db, b)).rejects.toMatchObject({ code: 'invalid-argument' });
+    await expect(saveOwnerHandoff(db, FV, { payload: b }, 'staff')).rejects.toMatchObject({ code: 'invalid-argument' });
+  });
+  it('ordinary owner collection confirmation alone cannot turn this or any other cancellation into a wash', async () => {
+    for (const id of ['C-5584720', 'C-5584721']) {
+      const b = completionPayload(); delete b.ownerCompletionDecision;
+      b.records[0].sspBookingId = id; b.coverage = { ...payload().coverage, rangeFrom: '2026-10-06', rangeTo: '2026-10-06', recordCount: 1 };
+      const db = completionDb(); await expect(previewOwnerHandoff(db, b)).rejects.toMatchObject({ code: 'invalid-argument' }); expect(db.writes).toEqual([]);
+    }
+  });
+  it('binds decision text to preview hashes and requires a new preview after a worker changes', async () => {
+    const db = completionDb(); const b = completionPayload(); const p = await previewOwnerHandoff(db, b);
+    const changed = structuredClone(b); changed.ownerCompletionDecision.statement += ' changed';
+    await expect(saveOwnerHandoff(db, FV, request(changed, p), 'staff')).rejects.toMatchObject({ code: 'invalid-argument' });
+    db.rows.get('bikers/2N4FP4rQAxXQ7rpuBrla').name = 'Changed name';
+    await expect(saveOwnerHandoff(db, FV, request(b, p), 'staff')).rejects.toMatchObject({ code: 'failed-precondition' }); expect(db.writes).toEqual([]);
+  });
+  it('prevents prefix duplication against existing records and simultaneous ordinary imports', async () => {
+    for (const [collection, data] of [['washes', { ssp_booking_id: 'S-5584720' }], ['sweater_bookings', { sspBookingId: '5584720' }], [OWNER_CONFIRMATIONS, { sspBookingId: 'S-5584720' }]]) {
+      const db = completionDb(); db.rows.set(`${collection}/legacy`, data); const b = completionPayload(); const p = await previewOwnerHandoff(db, b);
+      expect(p.canSave).toBe(false); expect(p.rows[0].reasonCode).toBe('booking_number_conflict');
+      await expect(saveOwnerHandoff(db, FV, request(b, p), 'staff')).rejects.toMatchObject({ code: 'failed-precondition' }); expect(db.writes).toEqual([]);
+    }
+    const db = completionDb(); const a = completionPayload(); const b = structuredClone(a); delete b.ownerCompletionDecision;
+    b.importRunId = 'synthetic-ordinary-prefix-race'; b.records[0].sspBookingId = 'S-5584720'; b.records[0].rawStatus = 'Collecting Payment';
+    b.coverage = { ...payload().coverage, rangeFrom: '2026-10-06', rangeTo: '2026-10-06', recordCount: 1 };
+    const [pa, pb] = await Promise.all([previewOwnerHandoff(db, a), previewOwnerHandoff(db, b)]);
+    const results = await Promise.allSettled([saveOwnerHandoff(db, FV, request(a, pa), 'staff'), saveOwnerHandoff(db, FV, request(b, pb), 'staff')]);
+    expect(results.filter(x => x.status === 'fulfilled')).toHaveLength(1); expect([...db.rows.keys()].filter(x => x.startsWith('washes/'))).toHaveLength(1);
+    expect(db.rows.get(`${OWNER_BOOKING_CLAIMS}/5584720`).bookingNumber).toBe('5584720');
+  });
+});

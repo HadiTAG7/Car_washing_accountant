@@ -1,14 +1,16 @@
 import { recordProblems } from '../../../functions/src/sweater/recordContract.js';
 import { normalizeBookingStatus, UNKNOWN_STATUS } from '../../../functions/src/sweater/vocab.js';
 import { ownerConfirmationProblems } from './ownerConfirmation.js';
+import { ownerCompletionDecisionProblems, hasOwnerCompletionDecision } from './ownerCompletionDecision.js';
 
 const OWNER_SERVICE_UNKNOWN_WARNING = 'نوع الخدمة غير مثبت من SSP؛ القيم من إقرار المالك فقط، دون سعر تعاقدي أو ترحيل.';
 export const HANDOFF_MAX_BYTES = 2 * 1024 * 1024;
-const FIELDS = new Set(['importRunId', 'mode', 'dryRun', 'agentStatus', 'coverage', 'records', 'ownerConfirmation', 'workerLinks']);
-const SCOPED_COVERAGE_FIELDS = ['scope', 'scopeComplete', 'sourceRecordCount', 'excludedCancelled', 'imported'];
+const FIELDS = new Set(['importRunId', 'mode', 'dryRun', 'agentStatus', 'coverage', 'records', 'ownerConfirmation', 'workerLinks', 'ownerCompletionDecision']);
+const SCOPED_COVERAGE_FIELDS = ['scope', 'scopeBookingId', 'scopeComplete', 'sourceRecordCount', 'excludedCancelled', 'imported'];
 const COVERAGE_FIELDS = new Set(['rangeFrom', 'rangeTo', 'extractedAt', 'pageCount', 'pagesFetched', 'recordCount', 'isComplete', 'sourceUrl', ...SCOPED_COVERAGE_FIELDS]);
 export const ACCOUNT_BOOKINGS_SCOPE_WARNING = 'التغطية مكتملة لنطاق accountBookings المقروء فقط؛ Company/B2B غير متحقق، ولا تؤكد اكتمال الشركة أو الشهر أو الإقفال.';
-export const ownerHandoffCoverageComplete = coverage => coverage?.scope === 'accountBookings'
+export const SINGLE_BOOKING_SCOPE_WARNING = 'التغطية للحجز المحدد فقط؛ لا تؤكد اكتمال نطاق الحساب أو الشركة أو الشهر.';
+export const ownerHandoffCoverageComplete = coverage => ['accountBookings', 'singleBooking'].includes(coverage?.scope)
   ? coverage.scopeComplete === true && coverage.isComplete === false
   : coverage?.scope === undefined && coverage?.isComplete === true;
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
@@ -39,6 +41,8 @@ export function reviewSweaterHandoff(input) {
     || Object.values(input.workerLinks).some(value => typeof value !== 'string' || !value.trim() || value.length > 180 || value.includes('/'))
     || Object.keys(input.workerLinks).some(key => !records.some(row => row?.driverExternalId === key)))) errors.push('ربط معرّف العامل في SSP بمعرّفه في سجل العاملين مطلوب.');
   if (input.workerLinks !== undefined && input.ownerConfirmation === undefined) errors.push('حقول غير مسموحة في جسم التسليم؛ احذفها قبل الإرسال.');
+  errors.push(...ownerCompletionDecisionProblems(input));
+  const completionDecision = hasOwnerCompletionDecision(input);
   const coverage = input.coverage;
   if (!object(coverage)) errors.push('معلومات التغطية مطلوبة.');
   else {
@@ -53,7 +57,7 @@ export function reviewSweaterHandoff(input) {
     if (coverage.isComplete === true && coverage.pagesFetched !== coverage.pageCount) errors.push('لا يمكن تأكيد التغطية مع صفحات مفقودة.');
     if (coverage.isComplete === false) warnings.push('التغطية غير مكتملة؛ المعاينة لا تؤكد اكتمال الشهر.');
     if (SCOPED_COVERAGE_FIELDS.some(key => Object.hasOwn(coverage, key))) {
-      if (coverage.scope !== 'accountBookings') errors.push('نطاق التغطية غير معروف؛ النطاق المحدد المسموح accountBookings فقط.');
+      if (!['accountBookings', 'singleBooking'].includes(coverage.scope)) errors.push('نطاق التغطية غير معروف؛ النطاق المحدد المسموح accountBookings فقط.');
       if (typeof coverage.scopeComplete !== 'boolean') errors.push('scopeComplete يجب أن يعبّر عن اكتمال النطاق المقروء فقط.');
       if (coverage.isComplete !== false) errors.push('نطاق accountBookings لا يثبت اكتمال الشركة؛ يجب إبقاء isComplete: false.');
       if (['sourceRecordCount', 'excludedCancelled', 'imported'].some(key => !Number.isSafeInteger(coverage[key]) || coverage[key] < 0)
@@ -61,11 +65,20 @@ export function reviewSweaterHandoff(input) {
         errors.push('أعداد النطاق غير متطابقة: المصدر يساوي المستورد مع الملغى المستبعد، والمستورد يساوي صفوف التسليم.');
       }
       if (coverage.scopeComplete === true && (coverage.pagesFetched !== coverage.pageCount || coverage.pageCount < 1)) errors.push('لا يمكن تأكيد اكتمال النطاق مع صفحات مفقودة أو دون صفحة مقروءة.');
+      if (coverage.scope === 'singleBooking') {
+        if (!completionDecision || coverage.scopeBookingId !== 'C-5584720'
+          || coverage.rangeFrom !== '2026-10-06' || coverage.rangeTo !== '2026-10-06'
+          || coverage.sourceRecordCount !== 1 || coverage.excludedCancelled !== 0 || coverage.imported !== 1) {
+          errors.push('نطاق الحجز الواحد يقتصر على C-5584720 وقرار المالك الصريح؛ لا يثبت اكتمال الحساب.');
+        }
+        warnings.push(SINGLE_BOOKING_SCOPE_WARNING);
+      } else if (coverage.scopeBookingId !== undefined) errors.push('معرّف نطاق الحجز الواحد لا يقبل في نطاق الحساب.');
       if (coverage.scope === 'accountBookings' && coverage.scopeComplete === true) warnings.push(ACCOUNT_BOOKINGS_SCOPE_WARNING);
     }
     if (records.length && coverage.pageCount === 0) errors.push('هناك سجلات دون صفحة مصدر مقروءة.');
     if (coverage.sourceUrl != null && !safeUrl(coverage.sourceUrl)) errors.push('رابط المصدر يجب أن يكون HTTPS بلا معاملات دخول أو أجزاء سرية.');
   }
+  if (input.ownerCompletionDecision !== undefined && coverage?.scope !== 'singleBooking') errors.push('قرار الإكمال الاستثنائي يحتاج نطاق الحجز الواحد فقط.');
   const rows = records.map((record, index) => {
     const ownerSplit = input.ownerConfirmation?.priceMode === 'exclusive' && typeof input.ownerConfirmation?.vatAmount === 'number';
     const problems = recordProblems(record).filter(p => !(ownerSplit && p.code === 'unknown_service_type'))
@@ -83,7 +96,7 @@ export function reviewSweaterHandoff(input) {
     }
     const status = normalizeBookingStatus(record?.rawStatus);
     if (input.ownerConfirmation !== undefined) {
-      if (status !== 'payment_collection') problems.push({ code: 'unconfirmed_completion', message: 'إقرار التحصيل يقبل غسلات Collecting Payment فقط؛ الملغاة وغير المكتملة مستبعدة.' });
+      if (status !== 'payment_collection' && !completionDecision) problems.push({ code: 'unconfirmed_completion', message: 'إقرار التحصيل يقبل غسلات Collecting Payment فقط؛ الملغاة وغير المكتملة مستبعدة.' });
       if (typeof record?.driverExternalId !== 'string' || !record.driverExternalId.trim()) problems.push({ code: 'missing_worker', message: 'معرّف العامل المنفذ من SSP مطلوب لحفظ الغسلة.' });
       if (!object(input.workerLinks) || !Object.hasOwn(input.workerLinks, record?.driverExternalId)) problems.push({ code: 'missing_worker_link', message: 'اربط العامل المنفذ بسجله الداخلي قبل حفظ الغسلة.' });
     }

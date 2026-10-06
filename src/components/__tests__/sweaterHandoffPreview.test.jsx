@@ -111,3 +111,39 @@ it('يعرض80/12/92 بإقرار المالك ويعيد المعاينة بن�
   expect(saveCall).toHaveBeenCalledTimes(2);expect(saveCall.mock.calls[1][0]).toMatchObject({payload:{importRunId:value.importRunId,ownerConfirmation:value.ownerConfirmation},previewStateHash:'committed-state'});
   expect(call.mock.calls[0][0]).toEqual(call.mock.calls[1][0]);
 });
+
+
+it('يعرض حالة الإلغاء وقرار المالك منفصلين ويتطلب تأكيدهما بعد المعاينة وقبل الحفظ', async () => {
+  const value = body();
+  value.records = [{ sspBookingId: 'C-5584720', serviceDate: '2026-10-06', rawStatus: 'Cancelled by Admin', driverExternalId: '1984' }];
+  value.workerLinks = { '1984': '2N4FP4rQAxXQ7rpuBrla' };
+  value.coverage = { rangeFrom: '2026-10-06', rangeTo: '2026-10-06', extractedAt: '2026-10-06T12:00:00Z', pageCount: 1, pagesFetched: 1, recordCount: 1,
+    isComplete: false, scope: 'singleBooking', scopeBookingId: 'C-5584720', scopeComplete: true, sourceRecordCount: 1, excludedCancelled: 0, imported: 1 };
+  value.ownerConfirmation = { source: 'owner_statement', ownerName: 'Synthetic owner', statement: 'Collection only, no bank receipt',
+    unitAmount: 20, totalAmount: 20, vatAmount: 3, priceMode: 'exclusive', grossAmount: 23, totalVatAmount: 3, totalGrossAmount: 23 };
+  value.ownerCompletionDecision = { source: 'owner_statement', ownerName: 'Synthetic owner', statement: 'Explicit decision for this booking only',
+    approved: true, decision: 'record_as_completed_wash', sspBookingId: 'C-5584720', bookingNumber: '5584720', serviceDate: '2026-10-06', driverExternalId: '1984', rawStatus: 'Cancelled by Admin' };
+  const result = { canSave: true, counts: { new: 1, modified: 0, duplicate: 0, rejected: 0, needsReview: 0 }, rows: [],
+    ownerConfirmation: value.ownerConfirmation, ownerCompletionDecision: value.ownerCompletionDecision, reviewedPayloadHash: 'decision-hash', previewStateHash: 'state-hash' };
+  call.mockResolvedValue(result); saveCall.mockResolvedValue({ ...result, saved: true });
+  render(<SweaterHandoffPreview />); fill(value);
+  fireEvent.click(screen.getByRole('checkbox')); fireEvent.click(screen.getByRole('button', { name: 'معاينة dryRun على الخادم' }));
+  const button = await screen.findByRole('button', { name: 'حفظ الغسلات بإقرار المالك' });
+  const audit = screen.getByLabelText('قرار إكمال المالك وحالة SSP الأصلية');
+  expect(audit.textContent).toContain('Cancelled by Admin'); expect(audit.textContent).toContain(value.ownerCompletionDecision.statement);
+  fireEvent.click(screen.getByLabelText('راجعت الحجوزات والعامل والإجمالي وإقرار المالك؛ أحفظ دون قيد مالي'));
+  expect(button.disabled).toBe(true); fireEvent.click(button); expect(saveCall).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByLabelText('راجعت حالة SSP الملغاة وقرار المالك لهذا الحجز وحده'));
+  expect(button.disabled).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: 'معاينة dryRun على الخادم' }));
+  await waitFor(() => expect(call).toHaveBeenCalledTimes(2));
+  await screen.findByRole('button', { name: 'حفظ الغسلات بإقرار المالك' });
+  expect(screen.getByLabelText('راجعت حالة SSP الملغاة وقرار المالك لهذا الحجز وحده').checked).toBe(false);
+  fireEvent.click(screen.getByLabelText('راجعت الحجوزات والعامل والإجمالي وإقرار المالك؛ أحفظ دون قيد مالي'));
+  fireEvent.click(screen.getByLabelText('راجعت حالة SSP الملغاة وقرار المالك لهذا الحجز وحده'));
+  fireEvent.click(screen.getByRole('button', { name: 'حفظ الغسلات بإقرار المالك' }));
+  await screen.findByText('تم حفظ الغسلات وإقرار المالك دون ترحيل أو صرف عمولة');
+  expect(saveCall).toHaveBeenCalledTimes(1);
+  expect(saveCall.mock.calls[0][0]).toMatchObject({ payload: { ownerCompletionDecision: value.ownerCompletionDecision }, reviewedPayloadHash: 'decision-hash', previewStateHash: 'state-hash' });
+  fill(value); expect(screen.queryByLabelText('قرار إكمال المالك وحالة SSP الأصلية')).toBeNull();
+});

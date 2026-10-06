@@ -29,6 +29,7 @@ const evidenceFor = (input, record) => ({
   statement: input.ownerConfirmation.statement.trim(),
   assertedAmount: input.ownerConfirmation.unitAmount, currency: 'SAR', vatAmount: input.ownerConfirmation.vatAmount,
   ...(input.ownerConfirmation.vatAmount !== null ? { taxSplit: ownerConfirmationTaxSplit(input.ownerConfirmation, `owner-handoff:${record.sspBookingId}`) } : {}),
+  ...(input.ownerCompletionDecision ? { completionDecision: { ...input.ownerCompletionDecision }, bookingNumber: ownerBookingIdentity(record.sspBookingId) } : {}),
   collectionStatus: 'confirmed_by_owner', paymentMethod: null, bankAccountId: null,
   // Preserve this instruction without accruing/paying payroll in the import.
   workerCommission: { unitAmount: WASH_COMMISSION_RATE, currency: 'SAR', paymentTiming: 'payroll', paid: false },
@@ -86,6 +87,7 @@ async function plan(db, input, read) {
     const bikerName = bikerSnap.exists ? String(bikerSnap.data().name ?? '').trim() : '';
     const wash = { ssp_booking_id: record.sspBookingId, biker_id: bikerId, biker_name: bikerName,
       driver_external_id: record.driverExternalId, quantity: 1, price: evidence.assertedAmount,
+      ...(evidence.completionDecision ? { ssp_booking_number: identity, ssp_raw_status: record.rawStatus, owner_completion_decision: evidence.completionDecision } : {}),
       status: 'مكتملة', wash_date: record.serviceDate, payment_method: null,
       revenue_origin: 'sweater', vat_amount: evidence.vatAmount, price_basis: 'owner_statement',
       ...(evidence.taxSplit ? { price_mode: 'exclusive', net_amount: evidence.taxSplit.net, gross_amount: evidence.taxSplit.gross,
@@ -113,6 +115,7 @@ async function plan(db, input, read) {
     const key = verdict.outcome === 'needs_review' ? 'needsReview' : verdict.outcome;
     counts[key] += 1;
     rows.push({ sspBookingId: record.sspBookingId, ...verdict,
+      ...(evidence.completionDecision ? { bookingNumber: identity, ownerCompletionDecision: evidence.completionDecision } : {}),
       collectionStatus: 'confirmed_by_owner', assertedAmount: evidence.assertedAmount,
       vatAmount: evidence.vatAmount, ...(evidence.taxSplit ? { netAmount: evidence.taxSplit.net, grossAmount: evidence.taxSplit.gross, ownerTaxSnapshot: evidence.taxSplit } : {}), quantity: 1, driverExternalId: record.driverExternalId,
       bikerId, bikerName, washId, workerCommission: WASH_COMMISSION_RATE,
@@ -150,6 +153,7 @@ const publicResult = value => ({
   reviewWarnings: reviewSweaterHandoff(value.input).warnings, statusReviewRows: [],
   canSave: value.counts.needsReview === 0 && value.counts.rejected === 0,
   ownerConfirmation: value.input.ownerConfirmation,
+  ...(value.input.ownerCompletionDecision ? { ownerCompletionDecision: value.input.ownerCompletionDecision } : {}),
   rows: value.rows.map(row => Object.fromEntries(Object.entries(row).filter(([key]) => !key.startsWith('_')))),
 });
 
@@ -193,6 +197,7 @@ export async function saveOwnerHandoff(db, FieldValue, data, actor) {
           sspBookingId: row.sspBookingId, record: row._record, sourceHash: row._sourceHash,
           schemaVersion: SCHEMA_VERSION, source: 'staff_owner_confirmation', lastImportRunId: input.importRunId,
           serviceDate: row.serviceDate, periodKey: row.serviceDate.slice(0, 7),
+          ...(row._evidence.completionDecision ? { bookingNumber: row._identity, ownerCompletionDecision: row._evidence.completionDecision } : {}),
           normalizedStatus: row.normalizedStatus, processingStatus: 'validated',
           recognitionEligibility: null, recognitionReason: null,
           updatedAt: FieldValue.serverTimestamp(), updatedAtIso: now,
@@ -214,6 +219,7 @@ export async function saveOwnerHandoff(db, FieldValue, data, actor) {
     tx.set(value.runRef, {
       importRunId: input.importRunId, bodyHash: hashBody(input.records), handoffHash: value.reviewedPayloadHash,
       source: 'staff_owner_confirmation', actor, status: input.coverage.isComplete ? 'completed' : 'completed_with_gaps', coverage: input.coverage,
+      ...(input.ownerCompletionDecision ? { ownerCompletionDecision: input.ownerCompletionDecision } : {}),
       ownerConfirmation: input.ownerConfirmation, recordCount: input.records.length,
       startedAt: FieldValue.serverTimestamp(), startedAtIso: now, finishedAtIso: now, result,
     });

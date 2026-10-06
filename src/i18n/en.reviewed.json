@@ -977,5 +977,14 @@
   "الحساب والبيان": "Account and description",
   "رواتب تُحتسب في فترة أخرى": "Salary expense in another period",
   "قيود الرواتب التالية بتاريخ هذه الفترة، لكن مصروفها في فترة الاستحقاق المبينة؛ ليست ضمن المبلغ أعلاه.": "These salary journals are dated in this period, but their expense belongs to the accrual period below. They are excluded from the amount above.",
-  "فتح مصروف الرواتب في": "Open salary expense in"
+  "فتح مصروف الرواتب في": "Open salary expense in",
+  "قرار إكمال المالك مطلوب صراحة للحجز C-5584720 وحده، بنفس حالة SSP والعامل والتاريخ والصافي 20 والضريبة 3 والإجمالي 23.": "An explicit owner completion decision is required for C-5584720 alone, with the same SSP status, worker, date, net 20, VAT 3 and gross 23.",
+  "التغطية للحجز المحدد فقط؛ لا تؤكد اكتمال نطاق الحساب أو الشركة أو الشهر.": "Coverage is limited to the specified booking; it does not confirm completeness of the account, company or month.",
+  "نطاق الحجز الواحد يقتصر على C-5584720 وقرار المالك الصريح؛ لا يثبت اكتمال الحساب.": "Single-booking coverage is restricted to C-5584720 and the explicit owner decision; it does not establish complete account coverage.",
+  "معرّف نطاق الحجز الواحد لا يقبل في نطاق الحساب.": "A single-booking scope ID is not accepted in account coverage.",
+  "قرار الإكمال الاستثنائي يحتاج نطاق الحجز الواحد فقط.": "The exceptional completion decision requires single-booking coverage.",
+  "قرار إكمال المالك وحالة SSP الأصلية": "Owner completion decision and original SSP status",
+  "حالة SSP الأصلية:": "Original SSP status:",
+  "قرار المالك للحجز المحدد:": "Owner decision for the specified booking:",
+  "راجعت حالة SSP الملغاة وقرار المالك لهذا الحجز وحده": "I reviewed the cancelled SSP status and the owner decision for this booking alone"
 }

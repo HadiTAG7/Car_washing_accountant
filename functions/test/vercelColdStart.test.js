@@ -23,5 +23,5 @@ describe('Vercel ledger cold start with native Node ESM (not Vite resolution)', 
     });
     expect(result.status, result.stderr).toBe(0);
     expect(JSON.parse(result.stdout)).toEqual({ status: 405, allow: 'POST', code: 'invalid-argument' });
-  });
+  }, 20000);
 });

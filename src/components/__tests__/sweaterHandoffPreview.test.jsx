@@ -113,6 +113,30 @@ it('يعرض80/12/92 بإقرار المالك ويعيد المعاينة بن�
 });
 
 
+it.each([
+  ['C-5589967', '1986', 'KehSV5K73zkyWWEE8hE9'],
+  ['C-5595180', '1988', '5MMg7pj0wjYM06NLuzS7'],
+])('يراجع استثناء 8 أكتوبر %s ويرسل معاينة فقط دون حفظ', async (id, driver, worker) => {
+  const value = body();
+  value.records = [{ sspBookingId: id, serviceDate: '2026-10-08', rawStatus: 'Cancelled by Admin', driverExternalId: driver }];
+  value.workerLinks = { [driver]: worker };
+  value.coverage = { rangeFrom: '2026-10-08', rangeTo: '2026-10-08', extractedAt: '2026-10-08T20:24:47Z', pageCount: 1, pagesFetched: 1, recordCount: 1,
+    isComplete: false, scope: 'singleBooking', scopeBookingId: id, scopeComplete: true, sourceRecordCount: 1, excludedCancelled: 0, imported: 1 };
+  value.ownerConfirmation = { source: 'owner_statement', ownerName: 'Synthetic owner', statement: 'Synthetic source confirmation',
+    unitAmount: 20, totalAmount: 20, vatAmount: 3, priceMode: 'exclusive', grossAmount: 23, totalVatAmount: 3, totalGrossAmount: 23 };
+  value.ownerCompletionDecision = { source: 'owner_statement', ownerName: 'Synthetic owner', statement: 'Synthetic approved completion despite source cancellation',
+    approved: true, decision: 'record_as_completed_wash', sspBookingId: id, bookingNumber: id.slice(2), serviceDate: '2026-10-08', driverExternalId: driver, rawStatus: 'Cancelled by Admin' };
+  call.mockResolvedValue({ canSave: true, counts: { new: 1 }, rows: [], coverage: value.coverage,
+    ownerConfirmation: value.ownerConfirmation, ownerCompletionDecision: value.ownerCompletionDecision, reviewedPayloadHash: 'file-hash', previewStateHash: 'state-hash' });
+  render(<SweaterHandoffPreview />); fill(value);
+  fireEvent.click(screen.getByRole('checkbox'));
+  const preview = screen.getByRole('button', { name: 'معاينة dryRun على الخادم' });
+  expect(preview.disabled).toBe(false); fireEvent.click(preview);
+  await screen.findByLabelText('قرار إكمال المالك وحالة SSP الأصلية');
+  expect(call.mock.calls[0][0]).toMatchObject({ dryRun: true, records: value.records, ownerCompletionDecision: value.ownerCompletionDecision });
+  expect(saveCall).not.toHaveBeenCalled();
+});
+
 it('يعرض حالة الإلغاء وقرار المالك منفصلين ويتطلب تأكيدهما بعد المعاينة وقبل الحفظ', async () => {
   const value = body();
   value.records = [{ sspBookingId: 'C-5584720', serviceDate: '2026-10-06', rawStatus: 'Cancelled by Admin', driverExternalId: '1984' }];

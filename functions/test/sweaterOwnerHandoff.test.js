@@ -270,6 +270,55 @@ const completionPayload = () => ({
 });
 const completionDb = () => { const db = dbFixture(); db.rows.set('bikers/2N4FP4rQAxXQ7rpuBrla', { name: 'Synthetic Ajith', salary: 900 }); return db; };
 
+const oct8Targets = [
+  ['C-5589967', '1986', 'KehSV5K73zkyWWEE8hE9'],
+  ['C-5595180', '1988', '5MMg7pj0wjYM06NLuzS7'],
+];
+const oct8CompletionPayload = (id, driver, worker) => {
+  const b = completionPayload();
+  b.importRunId = `synthetic-owner-oct8-${id}`;
+  Object.assign(b.records[0], { sspBookingId: id, serviceDate: '2026-10-08', driverExternalId: driver });
+  Object.assign(b.coverage, { scopeBookingId: id, rangeFrom: '2026-10-08', rangeTo: '2026-10-08', extractedAt: '2026-10-08T20:24:47Z' });
+  Object.assign(b.ownerCompletionDecision, { sspBookingId: id, bookingNumber: id.slice(2), serviceDate: '2026-10-08', driverExternalId: driver });
+  b.workerLinks = { [driver]: worker };
+  return b;
+};
+
+describe.each(oct8Targets)('authorized October 8 exception %s', (id, driver, worker) => {
+  it('passes local review and read-only server preview with original cancellation and verified worker', async () => {
+    const b = oct8CompletionPayload(id, driver, worker); const original = structuredClone(b);
+    expect(reviewSweaterHandoff(b).ready).toBe(true);
+    const db = completionDb(); db.rows.set(`bikers/${worker}`, { name: 'Synthetic October worker', salary: 900 });
+    const p = await previewOwnerHandoff(db, b);
+    expect(p).toMatchObject({ canSave: true, coverage: { scopeBookingId: id, isComplete: false }, counts: { new: 1 } });
+    expect(p.rows[0]).toMatchObject({ sspBookingId: id, driverExternalId: driver, bikerId: worker,
+      rawStatus: 'Cancelled by Admin', normalizedStatus: 'admin_cancelled', netAmount: 20, vatAmount: 3, grossAmount: 23 });
+    expect(db.writes).toEqual([]); expect(b).toEqual(original);
+  });
+  it.each([
+    ['unapproved', b => { b.ownerCompletionDecision.approved = false; }],
+    ['another ID', b => { b.records[0].sspBookingId = b.ownerCompletionDecision.sspBookingId = 'C-5595181'; }],
+    ['wrong worker', b => { b.workerLinks[driver] = 'biker-a'; }],
+    ['wrong date', b => { b.records[0].serviceDate = b.ownerCompletionDecision.serviceDate = '2026-10-09'; }],
+    ['rewritten raw status', b => { b.records[0].rawStatus = b.ownerCompletionDecision.rawStatus = 'Collecting Payment'; }],
+    ['different scope', b => { b.coverage.scopeBookingId = 'C-5584720'; }],
+    ['changed price', b => { b.ownerConfirmation.unitAmount = b.ownerConfirmation.totalAmount = 21; }],
+    ['mixed bookings', b => { b.records.push({ ...b.records[0], sspBookingId: 'C-5584720' }); }],
+  ])('rejects %s before any database access', async (_label, mutate) => {
+    const b = oct8CompletionPayload(id, driver, worker); mutate(b);
+    expect(reviewSweaterHandoff(b).ready).toBe(false);
+    const db = { collection: () => { throw new Error('must not read'); } };
+    await expect(previewOwnerHandoff(db, b)).rejects.toMatchObject({ code: 'invalid-argument' });
+  });
+  it('prevents primary-number duplicates even if the existing booking uses a different prefix', async () => {
+    const db = completionDb(); db.rows.set(`bikers/${worker}`, { name: 'Synthetic October worker' });
+    db.rows.set('washes/existing-alias', { ssp_booking_id: `S-${id.slice(2)}` });
+    const p = await previewOwnerHandoff(db, oct8CompletionPayload(id, driver, worker));
+    expect(p.canSave).toBe(false); expect(p.rows[0].reasonCode).toBe('booking_number_conflict');
+    expect(db.writes).toEqual([]);
+  });
+});
+
 describe('one explicitly authorized cancelled booking, independent of SSP status', () => {
   it('preserves source cancellation and stores separate decision, net/VAT/gross and unpaid commission without touching the previous ten-wash batch', async () => {
     const db = completionDb(); const prior = taxedPayload(); prior.importRunId = 'owner-oct6-ten-5583608-5585862';

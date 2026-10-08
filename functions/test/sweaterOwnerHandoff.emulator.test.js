@@ -70,6 +70,28 @@ suite('SSP atomic save on isolated Firestore emulator', () => {
     expect((await db.collection('journal_entries').get()).empty).toBe(true);
   });
 
+  it.each([
+    ['C-5589967', '1986', 'KehSV5K73zkyWWEE8hE9'],
+    ['C-5595180', '1988', '5MMg7pj0wjYM06NLuzS7'],
+  ])('previews the authorized October 8 booking %s on Firestore without creating any wash or financial record', async (id, driver, worker) => {
+    const ref = db.collection('bikers').doc(worker);
+    await ref.set({ name: 'Synthetic October worker', salary: 900 });
+    const before = await ref.get();
+    const payload = body(); payload.importRunId = `emulator-oct8-${id}`;
+    payload.records = [{ sspBookingId: id, driverExternalId: driver, serviceDate: '2026-10-08', rawStatus: 'Cancelled by Admin' }];
+    payload.workerLinks = { [driver]: worker };
+    payload.coverage = { rangeFrom: '2026-10-08', rangeTo: '2026-10-08', extractedAt: '2026-10-08T20:24:47Z', pageCount: 1, pagesFetched: 1, recordCount: 1,
+      isComplete: false, scope: 'singleBooking', scopeBookingId: id, scopeComplete: true, sourceRecordCount: 1, excludedCancelled: 0, imported: 1 };
+    payload.ownerConfirmation = { ...payload.ownerConfirmation, totalAmount: 20, vatAmount: 3, priceMode: 'exclusive', grossAmount: 23, totalVatAmount: 3, totalGrossAmount: 23 };
+    payload.ownerCompletionDecision = { source: 'owner_statement', ownerName: 'Synthetic owner', statement: 'Emulator-only owner completion decision',
+      approved: true, decision: 'record_as_completed_wash', sspBookingId: id, bookingNumber: id.slice(2), driverExternalId: driver, serviceDate: '2026-10-08', rawStatus: 'Cancelled by Admin' };
+    const preview = await previewOwnerHandoff(db, payload);
+    expect(preview.canSave).toBe(true);
+    expect(preview.rows[0]).toMatchObject({ sspBookingId: id, bikerId: worker, rawStatus: 'Cancelled by Admin', normalizedStatus: 'admin_cancelled' });
+    expect((await ref.get()).updateTime.isEqual(before.updateTime)).toBe(true);
+    expect((await db.listCollections()).map(c => c.id)).toEqual(['bikers']);
+  });
+
   it('saves the explicit cancelled-booking decision once, retaining raw status and making no financial writes', async () => {
     await db.collection('bikers').doc('2N4FP4rQAxXQ7rpuBrla').set({ name: 'Emulator Ajith', salary: 900 });
     const payload = body(); payload.importRunId = 'emulator-owner-cancelled-5584720';

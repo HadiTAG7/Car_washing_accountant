@@ -66,10 +66,10 @@ export function reviewSweaterHandoff(input) {
       }
       if (coverage.scopeComplete === true && (coverage.pagesFetched !== coverage.pageCount || coverage.pageCount < 1)) errors.push('لا يمكن تأكيد اكتمال النطاق مع صفحات مفقودة أو دون صفحة مقروءة.');
       if (coverage.scope === 'singleBooking') {
-        if (!completionDecision || coverage.scopeBookingId !== 'C-5584720'
-          || coverage.rangeFrom !== '2026-10-06' || coverage.rangeTo !== '2026-10-06'
+        if (!completionDecision || coverage.scopeBookingId !== input.ownerCompletionDecision?.sspBookingId
+          || coverage.rangeFrom !== input.ownerCompletionDecision?.serviceDate || coverage.rangeTo !== input.ownerCompletionDecision?.serviceDate
           || coverage.sourceRecordCount !== 1 || coverage.excludedCancelled !== 0 || coverage.imported !== 1) {
-          errors.push('نطاق الحجز الواحد يقتصر على C-5584720 وقرار المالك الصريح؛ لا يثبت اكتمال الحساب.');
+          errors.push('نطاق الحجز الواحد يقتصر على الحجز المعتمد وقرار المالك الصريح؛ لا يثبت اكتمال الحساب.');
         }
         warnings.push(SINGLE_BOOKING_SCOPE_WARNING);
       } else if (coverage.scopeBookingId !== undefined) errors.push('معرّف نطاق الحجز الواحد لا يقبل في نطاق الحساب.');

@@ -8,6 +8,7 @@ import { round2 } from './journal.js';
 import { ADAPTERS } from './sourceAdapters.js';
 import { templateActiveIn } from './recurring.js';
 import { taxPolicyAt } from './taxPolicy.js';
+import { liveIncomeStatement } from './liveIncomeStatement.js';
 
 const GROUPS = [
   ['variable', 'المصروفات المتغيرة والعمولات'],
@@ -54,12 +55,24 @@ export function partnerOperatingStatement({
   feeRules = null, monthlyExpenses = [], variableExpenses = [], annualExpenses = [],
   vouchers = [], settings = {},
   dynamicCommissions = [], dynamicVariableIds = [],
+  revenueSources = {},
 } = {}) {
   const range = monthRange(periodKey);
   if (!range.from) throw new Error('شهر التقرير غير صالح.');
   const factor = Math.max(0, Number(scalingFactor) || 0);
   entries = normalizePartnerEntrySources(entries, { monthly: monthlyExpenses, variable: variableExpenses, voucher: vouchers });
   const ledgerStatement = monthlyStatement({ accounts, entries, lines, periodKey, scalingFactor: factor });
+  // Same revenue calculation as the administration report: an execution
+  // contributes through its posted journal OR registered wash, never both.
+  // Pass no expense sources: founding, recurring costs and renewal reserve
+  // retain their separate partner allocation policy below.
+  const revenueStatement = liveIncomeStatement({ accounts, entries, lines, periodKey, scalingFactor: factor,
+    sources: { washes: revenueSources.washes, bookings: revenueSources.bookings, settlements: revenueSources.settlements },
+    policyAt: date => taxPolicyAt(date, settings) });
+  if (revenueStatement.issues.length) {
+    throw new Error('تعذّر تأكيد إيرادات الغسلات؛ يوجد مصدر يحتاج مراجعة بيانات الضريبة قبل عرض التقرير.');
+  }
+  const { grossRevenue, salesReturns, otherRevenue, netRevenue } = revenueStatement;
   const accountIndex = new Map(accounts.map(a => [String(a.code), a]));
   const expenseCodes = new Set(accounts.filter(a => a.accountType === 'expense').map(a => String(a.code)));
   const entryIndex = new Map(entries.map(e => [e.id, e]));
@@ -168,11 +181,11 @@ export function partnerOperatingStatement({
   const directCosts = sum(items.filter(i => i.section === 'direct'));
   const operatingExpenses = sum(items.filter(i => i.section === 'operating'));
   const totalCosts = round2(directCosts + operatingExpenses);
-  const netProfitBeforeFees = round2(ledgerStatement.netRevenue - totalCosts);
+  const netProfitBeforeFees = round2(netRevenue - totalCosts);
   // Available profit is after operating costs and fee estimates, before the
   // renewal reservation. Rates, official fee postings and books stay intact.
   const rules = (feeRules?.length ? feeRules : DEFAULT_FEE_RULES).filter(r => !r.effectiveFrom || r.effectiveFrom <= range.to);
-  const fees = rules.map(r => ({ ...r, amount: round2(Math.max(0, r.basis === 'profit' ? netProfitBeforeFees : ledgerStatement.netRevenue) * (Number(r.rate) || 0)) }));
+  const fees = rules.map(r => ({ ...r, amount: round2(Math.max(0, r.basis === 'profit' ? netProfitBeforeFees : netRevenue) * (Number(r.rate) || 0)) }));
   const totalFees = sum(fees);
   const netProfit = round2(netProfitBeforeFees - totalFees);
   const reserveItems = items.filter(i => i.section === 'reserve');
@@ -196,12 +209,13 @@ export function partnerOperatingStatement({
     reason: scheduledAmount <= 0 ? 'no-schedule' : availableProfit <= 0 ? 'no-profit'
       : annualReserve < scheduledAmount ? 'limited' : 'full' };
   return { ...ledgerStatement, ledgerStatement, basis: 'partner-allocation',
+    grossRevenue, salesReturns, otherRevenue, netRevenue,
     directCosts, operatingExpenses, totalCosts, annualReserve, totalAllocation, renewalReserve,
-    grossProfit: round2(ledgerStatement.netRevenue - directCosts), netProfitBeforeFees,
+    grossProfit: round2(netRevenue - directCosts), netProfitBeforeFees,
     fees, totalFees, netProfit,
     netAfterReserve: round2(netProfit - annualReserve),
     expenseBreakdown: { groups, total: totalAllocation, fixedTotal: sum(items.filter(i => ['monthly', 'annual'].includes(i.groupKey))) },
-    hasActivity: ledgerStatement.hasActivity || items.some(i => i.amount !== 0) || scheduledAmount > 0 };
+    hasActivity: revenueStatement.hasActivity || items.some(i => i.amount !== 0) || scheduledAmount > 0 };
 }
 
 export function partnerFoundingAllocation({ workersCount = 0, paid = 0, spentBefore = 0,

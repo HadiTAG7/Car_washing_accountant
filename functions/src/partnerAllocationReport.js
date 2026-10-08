@@ -46,13 +46,23 @@ export async function partnerAllocationReport(db, { partnerId, periodKey, today 
     'monthly_expenses', 'variable_expenses', 'annual_expenses', 'expense_vouchers',
     'annual_expense_entries', 'startup_cost_entries', 'partner_payments', 'fee_rules', 'variable_expense_categories'];
   if (includeCapitalJourney) names.push('startup_costs', 'categories');
-  const [rows, settingsSnap, washSnap, eligibilityStates] = await Promise.all([
+  const [rows, settingsSnap, washSnap, bookingSnap, settlementSnap, eligibilityStates] = await Promise.all([
     Promise.all(names.map(name => readRows(db, name))),
     db.collection('app_settings').doc('accounting').get(),
-    db.collection('washes').select('quantity', 'status', 'wash_date').get(),
+    db.collection('washes').select('quantity', 'status', 'wash_date', 'price', 'price_mode',
+      'ssp_booking_id', 'revenue_origin', 'collection_status', 'owner_tax_snapshot').get(),
+    db.collection('sweater_bookings').select('sspBookingId', 'postedEntryId', 'processingStatus').get(),
+    db.collection('sweater_settlements').select('figures').get(),
     readEligibilityStates(db),
   ]);
   const data = Object.fromEntries(names.map((name, i) => [name, rows[i]]));
+  // Only financial/identity fields needed for the shared revenue calculator.
+  // Worker names and full booking documents are neither selected nor returned.
+  const revenueSources = {
+    washes: washSnap.docs.map(d => ({ ...d.data(), id: d.id })),
+    bookings: bookingSnap.docs.map(d => ({ ...d.data(), id: d.id })),
+    settlements: settlementSnap.docs.map(d => ({ ...d.data(), id: d.id })),
+  };
   const partners = data.partners;
   const selected = partners.find(p => p.id === String(partnerId));
   if (!selected) throw new LedgerError('لا شريك بهذا المعرّف.', { code: 'not-found' });
@@ -173,7 +183,7 @@ export async function partnerAllocationReport(db, { partnerId, periodKey, today 
     const eligibility = operatingParticipation(partners, eligibilityStates, selected.id, period);
     const statement = partnerOperatingStatement({
       accounts: data.chart_of_accounts, entries, lines, periodKey: period, scalingFactor: eligibility.factor,
-      feeRules, settings, monthlyExpenses: data.monthly_expenses,
+      feeRules, settings, revenueSources, monthlyExpenses: data.monthly_expenses,
       variableExpenses: data.variable_expenses.filter(v => !dynamicIds.has(v.category_id)), annualExpenses: data.annual_expenses,
       vouchers: data.expense_vouchers,
       dynamicCommissions: dynamicCategories.map(c => ({ id: c.id, periodKey: period, amount: (washQuantities.get(period) || 0) * DEFAULT_DYNAMIC_UNIT_COST })),

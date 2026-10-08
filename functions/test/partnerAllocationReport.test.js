@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { partnerAllocationReport } from '../src/partnerAllocationReport.js';
 import { dispatch } from '../src/handlers.js';
+import { liveIncomeStatement } from '../../src/lib/accounting/liveIncomeStatement.js';
 
 function database(overrides = {}) {
   const rows = {
@@ -26,9 +27,10 @@ function database(overrides = {}) {
   const snap = list => ({ docs: list.map(doc), size: list.length, empty: !list.length });
   const db = { collection(name) {
     let selected = rows[name] || [];
+    let projection = null;
     const q = {
-      get: async () => snap(selected),
-      select: () => q,
+      get: async () => snap(projection ? selected.map(row => ({ id: row.id, ...Object.fromEntries(projection.filter(key => key in row).map(key => [key, row[key]])) })) : selected),
+      select: (...fields) => { projection = fields; return q; },
       where: (key, _operator, value) => { selected = selected.filter(r => r[key] === value); return q; },
       limit: n => { selected = selected.slice(0, n); return q; },
       doc: id => ({ get: async () => selected.find(r => r.id === id) ? doc(selected.find(r => r.id === id)) : { exists: false } }),
@@ -108,6 +110,70 @@ describe('توزيع التشغيل حسب المؤهلين مع ثبات رأس
   it('الأهلية والتقرير يدخلان شهر السعودية نفسه عند بداية الشهر', async () => {
     const r = await partnerAllocationReport(setup(), { partnerId: 'p1', today: new Date('2026-09-30T21:05:00Z') });
     expect(r.statements.at(-1)).toMatchObject({ periodKey: '2026-10', eligibility: { eligibleWorkers: 5, factor: 0.2 } });
+  });
+});
+
+describe('partner registered revenue matches the company without exposing operational rows', () => {
+  const wash = (id = 'test-wash', extra = {}) => ({ id, ssp_booking_id: id,
+    wash_date: '2026-10-08', status: 'مكتملة', quantity: 1, price: 20,
+    revenue_origin: 'sweater', collection_status: 'confirmed_by_owner', biker_name: 'Private worker',
+    owner_tax_snapshot: { source: 'owner_statement', clarificationId: 'private-tax-evidence', currency: 'SAR',
+      priceMode: 'exclusive', quantity: 1, net: 20, vat: 3, gross: 23 }, ...extra });
+  const rows = extra => ({ monthly_expenses: [], variable_expenses: [], annual_expenses: [], annual_expense_entries: [],
+    washes: [wash()], ...extra });
+  const options = { partnerId: 'p1', periodKey: '2026-10', today: new Date('2026-10-09') };
+  const report = extra => partnerAllocationReport(database(rows(extra)), options);
+  const entry = (kind, sourceId, amount = 20, extra = {}) => ({ id: 'sale', status: 'posted', sourceKind: kind, sourceId,
+    entryDate: '2026-10-08', lines: [{ accountId: '4000', credit: amount }], ...extra });
+  it('counts completed unposted net revenue once, not VAT, and applies server eligibility', async () => {
+    const washes = Array.from({ length: 61 }, (_, i) => wash(`test-${i}`));
+    const input = rows({ washes }); const before = structuredClone(input);
+    const db = database(input);
+    const r = await partnerAllocationReport(db, options);
+    const st = r.statements.at(-1);
+    const accounts = (await db.collection('chart_of_accounts').get()).docs.map(d => d.data());
+    const company = liveIncomeStatement({ accounts, periodKey: '2026-10', sources: { washes } });
+    expect(company.netRevenue).toBe(1220);
+    expect(st.netRevenue).toBe(122);
+    expect(input).toEqual(before);
+    expect(JSON.stringify(r)).not.toMatch(/Private worker|private-tax-evidence|test-60|ownerTaxSnapshot/);
+    expect(st.operationalItems).toEqual([]);
+    const reduced = await report({ washes, partner_worker_eligibility: [{ id: 'p1', changes: { '2026-10': { eligibleWorkers: 0 } } }] });
+    expect(reduced.statements.at(-1).netRevenue).toBe(0);
+  });
+  it('posting the wash replaces its registered contribution, even when a duplicate document exists', async () => {
+    const washes = [wash(), wash('duplicate', { ssp_booking_id: 'test-wash' })];
+    expect((await report({ washes })).statements.at(-1).netRevenue).toBe(2);
+    expect((await report({ washes, journal_entries: [entry('wash', 'duplicate')] })).statements.at(-1).netRevenue).toBe(2);
+  });
+  it('excludes washes included in a posted settlement, but retains other registered washes', async () => {
+    const r = await report({ washes: [wash(), wash('other')],
+      sweater_settlements: [{ id: 'settlement', figures: { lines: { eligible: [{ sspBookingId: 'test-wash' }] } } }],
+      journal_entries: [entry('sweater_settlement', 'settlement')] });
+    expect(r.statements.at(-1).netRevenue).toBe(4);
+  });
+  it('honours booking posting links, frozen ledger amounts, returns and reversals', async () => {
+    const sale = entry('wash', 'test-wash', 15);
+    const washes = [wash('test-wash', { price: 999 })];
+    expect((await report({ washes, journal_entries: [sale] })).statements.at(-1).netRevenue).toBe(1.5);
+    const mirror = { id: 'reverse', status: 'posted', reversalOf: 'sale', entryDate: '2026-10-09', lines: [{ accountId: '4000', debit: 15 }] };
+    expect((await report({ journal_entries: [{ ...sale, status: 'reversed' }, mirror] })).statements.at(-1).netRevenue).toBe(0);
+    expect((await report({ sweater_bookings: [{ id: 'booking', sspBookingId: 'test-wash', processingStatus: 'posted' }],
+      journal_entries: [entry('sweater_settlement', 'other-settlement')] })).statements.at(-1).netRevenue).toBe(2);
+  });
+  it('ignores unfinished and out-of-month washes; rejects unknown owner tax evidence instead of a false zero', async () => {
+    const r = await report({ washes: [wash('unfinished', { status: 'قيد التنفيذ' }), wash('old', { wash_date: '2026-09-30' })] });
+    expect(r.statements.at(-1).netRevenue).toBe(0);
+    await expect(report({ washes: [wash('unknown', { owner_tax_snapshot: null })] })).rejects.toThrow(/ضريب/);
+  });
+  it('uses dated tax policy for ordinary washes, never todays policy for earlier months', async () => {
+    const r = await report({ washes: [wash('direct', { revenue_origin: 'direct', collection_status: null,
+      owner_tax_snapshot: null, price: 115, wash_date: '2026-09-30' })],
+      app_settings: [{ id: 'accounting', value: { taxPolicyHistory: [
+        { effectiveFrom: '2026-09-01', vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15 },
+        { effectiveFrom: '2026-10-01', vatRegistered: true, washPriceMode: 'exclusive', vatRate: 0.15 },
+      ] } }] });
+    expect(r.statements.find(st => st.periodKey === '2026-09').netRevenue).toBe(10);
   });
 });
 

@@ -1,4 +1,4 @@
-import { getLanguage } from '../i18n/locale';
+import { getLanguage } from '../i18n/locale.js';
 
 const trimmed = value => String(value ?? '').trim();
 

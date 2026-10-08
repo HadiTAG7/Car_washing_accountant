@@ -1,6 +1,6 @@
 import { advanceAssignmentMonth, isAssignmentMonth } from './advanceMonth.js';
 import { clampRevenueOrigin } from './sweater/revenueOriginClient.js';
-import { bikerNameFields } from './bikerNames';
+import { bikerNameFields } from './bikerNames.js';
 // ═══════════════════════════════════════════════════════════════════════════
 // Row ↔ model mappers
 // Keep DB column naming (snake_case) at the edge; internal app uses camelCase.
@@ -8,7 +8,7 @@ import { bikerNameFields } from './bikerNames';
 
 // "Not stated" vs "stated zero" is decided in ONE place — see vatFields.js for
 // why. Three modules used to answer it separately and disagreed.
-import { statedVatAmount, statedVatRate, normalizedPriceMode } from './vatFields';
+import { statedVatAmount, statedVatRate, normalizedPriceMode } from './vatFields.js';
 
 // ── startup_costs ─────────────────────────────────────────────────────────
 // App-side shape: { id, category, itemName, quantity, plannedAmount, actualAmount, status }

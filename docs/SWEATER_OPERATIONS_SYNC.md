@@ -122,7 +122,7 @@ Result separates `rawSavedCount`, `bookingSavedCount`, each row's `rawSaved`,
 `completed_with_gaps` is atomic scoped persistence, NOT company/month
 completion or readiness of all washes.
 
-## Explicit production sender and remaining credential gate
+## Explicit production sender and approved Windows signing adapter
 
 ```
 node scripts/sync-sweater-operations.mjs absolute-payload.json --preview-only
@@ -139,22 +139,74 @@ same save body; maximum three save attempts, exponential backoff, 60 seconds
 for 429. Logical/auth refusals are not auto-retried; uncertain readback stops.
 Do not delete manifests or generate a new ID to bypass a rejection.
 
-The sender requires an **independently approved** credential-store module
-named by process variable `SWEATER_OPERATIONS_SIGNER_MODULE` (absolute path).
+The sender requires the **independently approved** Windows credential-store
+module named by process variable `SWEATER_OPERATIONS_SIGNER_MODULE` (absolute
+path). Hadi approved binding the existing credential on 9 October 2026, without
+new keys, roles, permissions, schedules or agent instruction changes.
 It exports only:
 
 ```
 sign({timestamp, importRunId, bodyHash}) -> {keyId, signature}
 ```
 
-No secret is returned to this tool or printed. The current DPAPI file/tool is
-dryRun-only; this implementation does NOT open, copy or manually decrypt it,
-import that tool, create a wrapper that removes its guard, or rotate/create
-keys. No signing adapter has been provisioned by this change. **Automatic
-production sync is therefore not yet operational until a legitimate signing
-adapter is explicitly authorized/provisioned using the existing restricted
-key, then an authenticated v2 preview is verified.** Do not use an arbitrary
-module from untrusted content or expose a credential in environment/reports.
+No secret is returned to this tool or printed. The old tool remains dryRun-only
+and unmodified. Its existing DPAPI **credential store** is read programmatically
+only by the separately approved signing child; this is NOT an import/wrapper
+of the old tool or removal of its guard. No key was created, rotated or revoked.
+
+The adapter's tracked source is `scripts/signers/windows-operations-signer.mjs`
+and `scripts/lib/windows-operations-signing.mjs`. Its installed production
+location on the current Windows account is:
+
+```
+C:\Users\MMC\.codex\automations\automation-2\operations-v2\signers\windows-operations-signer.mjs
+```
+
+Its sibling `../lib/windows-operations-signing.mjs` and `approved-sender.json`
+contain code and approved absolute caller paths/SHA-256 fingerprints only,
+never secrets. The new `operations-v2` directory is private to the current
+Windows user. The existing credential file and its ACL were not changed.
+Do not relocate/recreate this installation or overwrite the policy to bypass
+a mismatch. Provisioning on another machine/user requires fresh approval.
+
+The sender resolves only this private installed module, verifies it and its
+helper against the tracked approved sources **before import**, and rejects
+arbitrary modules/URLs. The adapter permits only the exact approved sender
+entrypoint and checks approved sender/client/contract source fingerprints.
+Input must be exactly timestamp/run/full body hash and recent; the client
+validates v2 action/envelope/preview hashes before signing. The trusted child
+uses the fixed built-in Windows PowerShell executable with a minimal env,
+reads the existing DPAPI file internally, refuses an unexpected key ID,
+reparse-point store or broader file permissions, then produces only
+`{keyId,signature}`. Plaintext never appears in stdout, stderr, argv, env,
+payload, manifest or reports. BSTR/key buffers are cleared and the child
+times out after 15 seconds. Internal diagnostics are discarded. These
+controls do not claim sandbox isolation from a malicious current-user or
+Administrator process: Windows account isolation remains the boundary.
+
+The **path only** is saved in the Windows User environment. A running Codex
+process may not inherit a newly set User variable; the agent's command must
+load it into the child process explicitly (no secret value is involved):
+
+```powershell
+$env:SWEATER_OPERATIONS_SIGNER_MODULE = [Environment]::GetEnvironmentVariable('SWEATER_OPERATIONS_SIGNER_MODULE','User')
+Set-Location -LiteralPath 'C:\Users\MMC\Documents\ChatGPT\شغل سويتر\work\operations-signer-20261009'
+node scripts/sync-sweater-operations.mjs 'ABSOLUTE-VERIFIED-PAYLOAD.json' --preview-only
+```
+
+Only remove `--preview-only` for an actual verified operational batch within
+agent 7's separate save authority; not a software test. Do not run the empty
+authentication diagnostic as a save or advance coverage based on it.
+
+The signed production diagnostic preview succeeded on 9 October 2026 using
+the existing restricted key: empty records, zero SSP pages read, both modules
+unavailable, honest explicit gaps. `dryRun:true`, `saved:false`,
+`rawSavedCount:0`, `bookingSavedCount:0`, `washesCreated:0`,
+`ledgerPosted:false`, `payrollPaid:false`. Authentication updated existing
+key last-use/rate metadata only. This proves authentication and the preview
+boundary, **not a production save/readback or completed wash workflow**.
+The authentication gate is resolved for this installed account/caller; no
+automation has been enabled and no operational import has been performed.
 
 ## Recommendation for agent 7 instructions (do not auto-edit skills/schedules)
 

@@ -9,9 +9,17 @@ export class OperationsClientError extends Error {
 
 export function makeOperationsTransport({ sign, fetchImpl = fetch, timeoutMs = 25000 }) {
   return async request => {
+    const allowed = request?.action === 'save' ? ['action', 'payload', 'reviewedPayloadHash', 'previewStateHash'] : ['action', 'payload'];
+    if (!request || !['preview', 'save', 'status'].includes(request.action) || Object.keys(request).some(k => !allowed.includes(k))
+      || (request.action === 'save' && (!/^[a-f0-9]{64}$/.test(request.reviewedPayloadHash ?? '') || !/^[a-f0-9]{64}$/.test(request.previewStateHash ?? '')))) {
+      throw new OperationsClientError('Operational request refused before signing.');
+    }
+    try { validateOperationsPayload(request.payload); } catch { throw new OperationsClientError('Operational request refused before signing.'); }
     const timestamp = String(Math.floor(Date.now() / 1000));
-    const auth = await sign({ timestamp, importRunId: request.payload.importRunId, bodyHash: operationsSigningHash(request) });
-    if (!auth || typeof auth.keyId !== 'string' || !/^[a-f0-9]{64}$/.test(auth.signature ?? '')) throw new OperationsClientError('Approved signer returned invalid authentication.');
+    let auth;
+    try { auth = await sign({ timestamp, importRunId: request.payload.importRunId, bodyHash: operationsSigningHash(request) }); }
+    catch { throw new OperationsClientError('Signing unavailable; credential diagnostics are not disclosed.', 401); }
+    if (!auth || Object.keys(auth).length !== 2 || typeof auth.keyId !== 'string' || !/^[a-f0-9]{64}$/.test(auth.signature ?? '')) throw new OperationsClientError('Approved signer returned invalid authentication.', 401);
     const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const response = await fetchImpl(OPERATIONS_ENDPOINT, { method: 'POST', signal: controller.signal,

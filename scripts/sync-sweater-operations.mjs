@@ -1,8 +1,8 @@
 // Explicit production tool. The old sweater_dryrun.mjs is neither imported nor
-// changed, and its encrypted secret is NOT opened or reused by this program.
+// changed. Credential access occurs only inside the separately approved signer.
 import { readFile, writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
-import { isAbsolute } from 'node:path';
+import { approvedSignerPath } from './lib/windows-operations-signing.mjs';
 import { hashBody } from '../functions/src/sweater/record.js';
 import { validateOperationsPayload } from '../functions/src/sweater/operationsSync.js';
 import { makeOperationsTransport, syncOperations } from './lib/sweater-operations-client.mjs';
@@ -15,11 +15,11 @@ if (!input || args.some(a => a.startsWith('--') && a !== '--preview-only')) thro
 // sign({timestamp, importRunId, bodyHash}) -> {keyId, signature}. No secret is
 // returned to this tool or stored in the input/manifest/receipt.
 const signerPath = process.env.SWEATER_OPERATIONS_SIGNER_MODULE;
-if (!signerPath || !isAbsolute(signerPath)) throw new Error('Production signing adapter is not configured. Do not reuse or decrypt the dryRun-only secret manually.');
+const approvedPath = await approvedSignerPath(signerPath);
 const payload = JSON.parse(await readFile(input, 'utf8'));
 validateOperationsPayload(payload);
 let adapter;
-try { adapter = await import(pathToFileURL(signerPath).href); }
+try { adapter = await import(pathToFileURL(approvedPath).href); }
 catch { throw new Error('Cannot load the approved signing adapter. Credential-store diagnostics are not logged.'); }
 const { sign } = adapter;
 if (typeof sign !== 'function') throw new Error('The approved signing adapter must export sign().');

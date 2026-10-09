@@ -42,7 +42,10 @@ export function validateOperationsPayload(payload) {
 }
 
 function rowProblems(raw, coverage) {
-  const problems = recordProblems(raw);
+  // Hadi's 10 Oct approval: v2 may retain an otherwise valid observation
+  // without a service as pending review. Keep the shared financial/owner
+  // contract strict and continue ALL scalar/source/identity checks below.
+  const problems = recordProblems(raw).filter(p => p.code !== 'unknown_service_type');
   if (problems.length) return problems;
   // The old general validator coerces objects to strings; v2 never stores nested arbitrary values.
   const numeric = new Set(['platformAmount', 'customerDiscount', 'partnerOperationalDeduction', 'compensationAmount', 'rating']);
@@ -113,12 +116,16 @@ async function plan(db, payload, read) {
     const protectedRecord = protectedRows.length > 0 || protectedBooking || claimConflict || alias;
     const unchanged = existing?.sourceHash === sourceHash && existing.record && hashRecord(existing.record) === sourceHash
       && (protectedRecord || existing.operationalWorkerId === (established ? candidate : null));
+    const missingService = !record.serviceType;
+    // Incomplete new evidence must never erase an already evidenced service.
+    const retainKnownService = missingService && Boolean(String(existing?.record?.serviceType ?? '').trim());
     let outcome = unchanged ? 'duplicate' : existing ? 'modified' : 'new';
     let reasonCode = null;
     if (protectedRecord && !unchanged) { outcome = 'needs_review'; reasonCode = 'protected_existing_record'; }
+    else if (missingService) { outcome = 'needs_review'; reasonCode = 'unknown_service_type'; }
     else if (!unchanged && !established) { outcome = 'needs_review'; reasonCode = 'unverified_worker_link'; }
     else if (!unchanged && record.normalizedStatus === 'unknown') { outcome = 'needs_review'; reasonCode = 'unknown_status'; }
-    const writeBooking = !protectedRecord && !unchanged;
+    const writeBooking = !protectedRecord && !unchanged && !retainKnownService;
     const washId = related.find(d => d.collection === 'washes')?.id
       ?? related.find(d => d.data.washId)?.data.washId ?? null;
     const row = { sspBookingId: record.sspBookingId, bookingNumber: identity, outcome, reasonCode,

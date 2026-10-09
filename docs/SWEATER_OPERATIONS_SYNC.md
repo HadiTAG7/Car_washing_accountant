@@ -47,7 +47,15 @@ No ownerConfirmation, financial fields, secret, customer PII or unknown fields.
 Record fields use the original whitelist; additionally v2 requires a genuine
 SSP `sourceUrl`, `bookingKind` (`individual`/`corporate`), strict calendar date
 within coverage, stable ID, and plain scalar values (no nested objects).
-Missing service rejects that row without storing its raw values. New statuses
+With Hadi's specific approval on 10 October 2026, missing service is retained
+only as `needs_review` / `unknown_service_type`, with an empty normalized
+service (never a guessed placeholder). All other row/source/scalar/privacy
+checks still apply. A missing-service observation cannot erase an existing
+known service or overwrite a protected booking; its raw evidence is retained
+separately. The shared financial/owner contract remains strict: no completed
+wash, price, tax, recognition eligibility or revenue is created. This exception
+applies only to operations v2, not the legacy/owner/financial workflows.
+New statuses
 remain raw review; they are never completion/payment evidence.
 
 Coverage has exactly:

@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { validateOperationsPayload, previewOperations, saveOperations, operationsStatus } from '../src/sweater/operationsSync.js';
+import { recordProblems } from '../src/sweater/record.js';
+import { computeSettlement } from '../src/sweater/settlement.js';
+import { RECOGNITION_POLICY_SEED } from '../src/sweater/recognition.js';
 
 export const syncPayload = () => ({ contractVersion: 2, importRunId: 'synthetic-sync-1', agentStatus: 'ok',
   coverage: { rangeFrom: '2026-10-08', rangeTo: '2026-10-08', extractedAt: '2026-10-09T00:00:00+03:00',
@@ -71,11 +74,64 @@ describe('bounded operational raw sync, not a financial or owner assertion', () 
     expect(db.rows.get('sweater_bookings/C-990001').processingStatus).toBe('needs_review');
     expect(db.writes.some(p => /^(washes|journal_entries|sweater_owner_collection_confirmations)\//.test(p))).toBe(false);
   });
-  it('missing service is rejected, missing worker is retained for review without a guessed link', async () => {
+  it('missing service is retained for raw review only; financial validation still rejects it', async () => {
     const db = syncDb(), b = syncPayload(); delete b.records[0].serviceType;
-    expect((await save(db, b)).rows[0]).toMatchObject({ outcome: 'rejected', rawSaved: false });
+    const preview = await previewOperations(db, b);
+    expect(preview.rows[0]).toMatchObject({ outcome: 'needs_review', reasonCode: 'unknown_service_type' });
+    expect(db.writes).toEqual([]);
+    const result = await saveOperations(db, syncFV, syncRequest(b, preview), 'agent');
+    expect(result).toMatchObject({ rawSavedCount: 1, bookingSavedCount: 1, washesCreated: 0, ledgerPosted: false, payrollPaid: false });
+    expect(result.rows[0]).toMatchObject({ outcome: 'needs_review', rawSaved: true, reasonCode: 'unknown_service_type' });
+    const booking = db.rows.get('sweater_bookings/C-990001');
+    expect(booking).toMatchObject({ processingStatus: 'needs_review', reviewReasonCode: 'unknown_service_type', recognitionEligibility: null });
+    expect(booking.record.serviceType).toBe('');
+    expect(recordProblems(booking.record)).toContainEqual(expect.objectContaining({ code: 'unknown_service_type' }));
+    const settlement = computeSettlement({ bookings: [booking],
+      policyRows: [{ ...RECOGNITION_POLICY_SEED, status: 'active', effectiveFrom: '2026-01-01' }],
+      // Even a malformed blank-key price cannot price a missing service.
+      priceRows: [{ serviceType: '', effectiveFrom: '2026-01-01', status: 'active', netRate: 20, vatRate: 0.15 }] });
+    expect(settlement.counts.eligible).toBe(0); expect(settlement.services.gross).toBe(0);
+    expect(settlement.counts.needsReview).toBe(1);
+    expect(await operationsStatus(db, b)).toMatchObject({ verified: true, rawVerified: true, linksVerified: true });
+    const writes = db.writes.length;
+    expect((await save(db, b)).replay).toBe(true); expect(db.writes).toHaveLength(writes);
+    expect(db.writes.some(p => /^(washes|journal_entries|sweater_owner_collection_confirmations)\//.test(p))).toBe(false);
+  });
+  it('missing worker is retained for review without a guessed link', async () => {
+    const db = syncDb(), b = syncPayload();
     b.importRunId = 'synthetic-missing-worker'; b.records[0].serviceType = 'observed-service'; delete b.records[0].driverExternalId;
     expect((await save(db, b)).rows[0]).toMatchObject({ outcome: 'needs_review', rawSaved: true, bikerId: null });
+  });
+  it('an incomplete observation never erases an existing known service, even on an unposted booking', async () => {
+    const db = syncDb(), b = syncPayload(); await save(db, b);
+    const original = structuredClone(db.rows.get('sweater_bookings/C-990001'));
+    b.importRunId = 'synthetic-service-gap'; delete b.records[0].serviceType;
+    expect((await save(db, b)).rows[0]).toMatchObject({ outcome: 'needs_review', reasonCode: 'unknown_service_type', rawSaved: true, bookingSaved: false });
+    expect(db.rows.get('sweater_bookings/C-990001')).toEqual(original);
+    expect(await operationsStatus(db, b)).toMatchObject({ verified: true });
+  });
+  it.each([
+    r => { r.customerPhone = 'synthetic-prohibited'; },
+    r => { r.netAmount = 20; },
+    r => { r.serviceDate = '2026-02-30'; },
+    r => { r.sourceUrl = 'https://evil.example/'; },
+    r => { r.bookingKind = 'guessed'; },
+    r => { r.driverName = { nested: 'no' }; },
+    r => { r.rawStatus = ''; },
+  ])('missing service does not bypass any other row validation', async mutate => {
+    const db = syncDb(), b = syncPayload(); delete b.records[0].serviceType; mutate(b.records[0]);
+    const result = await save(db, b);
+    expect(result.rows[0]).toMatchObject({ outcome: 'rejected', rawSaved: false, bookingSaved: false });
+    expect(result.rawSavedCount).toBe(0);
+  });
+  it('later evidenced service can update a pending booking, without creating a wash or revenue', async () => {
+    const db = syncDb(), b = syncPayload(); delete b.records[0].serviceType; await save(db, b);
+    b.importRunId = 'synthetic-evidenced-service'; b.records[0].serviceType = 'observed-service';
+    const result = await save(db, b);
+    expect(result).toMatchObject({ bookingSavedCount: 1, washesCreated: 0, ledgerPosted: false });
+    expect(db.rows.get('sweater_bookings/C-990001').record.serviceType).toBe('observed-service');
+    expect(db.rows.get('sweater_bookings/C-990001').recognitionEligibility).toBeNull();
+    expect(await operationsStatus(db, b)).toMatchObject({ verified: true });
   });
   it('a worker map is not enough without an established registry or existing operational link', async () => {
     const db = syncDb(), b = syncPayload(); delete db.rows.get('bikers/worker-1').driver_external_id;

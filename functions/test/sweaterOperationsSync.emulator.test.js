@@ -46,6 +46,31 @@ suite('production operations sync in isolated demo Firestore', () => {
     expect((await save(b)).rows[0]).toMatchObject({ outcome: 'needs_review', bookingSaved: false, rawSaved: true });
     expect((await db.collection('sweater_bookings').get()).size).toBe(1);
   });
+  it('retains missing-service facts for review, verifies readback and replay, and later accepts evidenced service', async () => {
+    const b = payload(); delete b.records[0].serviceType;
+    const preview = await previewOperations(db, b);
+    expect(preview.rows[0]).toMatchObject({ outcome: 'needs_review', reasonCode: 'unknown_service_type' });
+    expect((await db.collection('sweater_raw_payloads').get()).empty).toBe(true);
+    const result = await saveOperations(db, FieldValue, req(b, preview), 'agent');
+    expect(result).toMatchObject({ rawSavedCount: 1, bookingSavedCount: 1, washesCreated: 0, ledgerPosted: false, payrollPaid: false });
+    const booking = (await db.collection('sweater_bookings').doc('C-980001').get()).data();
+    expect(booking).toMatchObject({ processingStatus: 'needs_review', reviewReasonCode: 'unknown_service_type', recognitionEligibility: null });
+    expect(booking.record.serviceType).toBe('');
+    expect(await operationsStatus(db, b)).toMatchObject({ verified: true });
+    expect((await save(b)).replay).toBe(true);
+    expect((await db.collection('sweater_raw_payloads').get()).size).toBe(1);
+    const evidenced = structuredClone(b); evidenced.importRunId = 'evidenced-service'; evidenced.records[0].serviceType = 'observed-service';
+    expect((await save(evidenced)).bookingSavedCount).toBe(1);
+    const knownBefore = await db.collection('sweater_bookings').doc('C-980001').get();
+    const gap = { ...b, importRunId: 'missing-again' };
+    expect((await save(gap)).rows[0]).toMatchObject({ rawSaved: true, bookingSaved: false, reasonCode: 'unknown_service_type' });
+    const knownAfter = await db.collection('sweater_bookings').doc('C-980001').get();
+    expect(knownAfter.updateTime.isEqual(knownBefore.updateTime)).toBe(true);
+    expect(await operationsStatus(db, gap)).toMatchObject({ verified: true });
+    for (const col of ['washes', 'journal_entries', 'sweater_owner_collection_confirmations', 'sweater_collections']) {
+      expect((await db.collection(col).get()).empty).toBe(true);
+    }
+  });
   it('competing new runs recheck preview state and do not overwrite an update', async () => {
     const a = payload(), b = { ...a, importRunId: 'concurrent-other', records: [{ ...a.records[0], rawStatus: 'Cancelled by Admin' }] };
     const [pa, pb] = await Promise.all([previewOperations(db, a), previewOperations(db, b)]);

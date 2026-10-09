@@ -2,7 +2,10 @@
 
 The staff handoff uses the existing admin/accountant Firebase session and
 `/api/ledger`. It needs no integration key, new role, or Firestore rules change.
-The existing HMAC import contract remains separate and unchanged.
+The staff owner workflow remains separate from the general HMAC raw sync.
+The latter now uses [operational sync v2](SWEATER_OPERATIONS_SYNC.md);
+general sync authority is never an owner assertion. This staff workflow and
+its specific cancellation exceptions are unchanged.
 
 1. Read SSP in its authorized visible session. Transfer only sanitized records
    and actual extraction coverage. Exclude cancelled bookings explicitly.

@@ -85,6 +85,14 @@ export default async function handler(req, res) {
   const importRunId = String(body?.importRunId ?? '').trim();
   const dryRun = body?.dryRun === true;
 
+  // Legacy signatures cover records only and the writer was multi-phase.
+  // Retain its read-only preview and heartbeat; never allow those signatures
+  // to enter the new atomic/full-envelope production writer.
+  if (mode !== 'heartbeat' && !dryRun) {
+    return res.status(412).json({ error: { code: 'failed-precondition',
+      message: 'Production operational writes require the signed v2 /api/integrations/sweater/operations workflow.' } });
+  }
+
   try {
     // ── التوقيع يغطي الجسم والزمن والدفعة معاً ──
     // `bodyHash` يُحسب هنا من السجلات الفعلية، لا يُؤخذ من المُرسِل — وإلا

@@ -2,6 +2,9 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "vite",
   "functions": {
+    "api/integrations/sweater/operations.js": {
+      "maxDuration": 60
+    },
     "api/agent-command-center-ingest.js": {
       "maxDuration": 30
     },

@@ -203,7 +203,7 @@ export async function checkRateLimit(db, FieldValue, keyId, nowMs, {
  * يُعطي من يجرّب خريطةً لما يجرّبه.
  */
 export async function verifyIngestRequest(db, FieldValue, {
-  keyId, timestamp, importRunId, bodyHash, signature, nowMs = Date.now(),
+  keyId, timestamp, importRunId, bodyHash, signature, nowMs = Date.now(), requiredPrincipal = null,
 }) {
   if (!keyId || !timestamp || !signature || !importRunId || !bodyHash) {
     throw new IntegrationAuthError('طلبٌ غير موثّق — ينقصه المفتاح أو الطابع الزمني أو التوقيع.');
@@ -218,6 +218,9 @@ export async function verifyIngestRequest(db, FieldValue, {
   if (key.scope !== INTEGRATION_SCOPE) {
     // مفتاحٌ بصلاحيةٍ أخرى لا يدخل من هذا الباب مهما كانت.
     throw new IntegrationAuthError('صلاحية المفتاح لا تسمح بالاستلام.', { code: 'permission-denied' });
+  }
+  if (requiredPrincipal && key.principal !== requiredPrincipal) {
+    throw new IntegrationAuthError('هوية المفتاح لا تسمح بهذا المسار.', { code: 'permission-denied' });
   }
 
   const ts = Number(timestamp);

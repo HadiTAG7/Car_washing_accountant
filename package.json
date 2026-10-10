@@ -13,7 +13,7 @@
     "test:watch": "vitest",
     "test:emulator": "firebase emulators:exec --only firestore --project demo-sweater --config firebase.test.json \"vitest run --testTimeout=120000 --no-file-parallelism --exclude work/** ledger.emulator invoicing.emulator assets.emulator recurring.emulator autoPost.emulator startupMigration.emulator\"",
     "test:rules": "firebase emulators:exec --only firestore --project demo-sweater --config firebase.test.json \"vitest run --testTimeout=120000 --exclude work/** rules.emulator\"",
-    "test:functions": "firebase emulators:exec --only firestore --project demo-sweater --config firebase.test.json \"vitest run --testTimeout=120000 --no-file-parallelism --dir functions --exclude **/callables.test.js --exclude work/**\"",
+    "test:functions": "firebase emulators:exec --only firestore --project demo-sweater --config firebase.test.json \"vitest run --testTimeout=120000 --no-file-parallelism --dir functions --exclude **/callables.test.js --exclude **/partnerRevenue.emulator.test.js --exclude work/**\" && firebase emulators:exec --only firestore --project demo-sweater-partner-revenue --config firebase.test.json \"vitest run --testTimeout=120000 --no-file-parallelism functions/test/partnerRevenue.emulator.test.js\"",
     "test:callables": "firebase emulators:exec --only firestore,functions,auth --project demo-sweater --config firebase.test.json \"vitest run --testTimeout=180000 --no-file-parallelism --dir functions --exclude work/** callables httpApi\"",
     "verify": "npm run lint && npm run build && npm test && npm run test:emulator && npm run test:rules && npm run test:functions && npm run test:callables",
     "deploy": "npm run verify && npm run deploy:backend",

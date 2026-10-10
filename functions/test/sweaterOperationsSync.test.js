@@ -3,6 +3,7 @@ import { validateOperationsPayload, previewOperations, saveOperations, operation
 import { recordProblems } from '../src/sweater/record.js';
 import { computeSettlement } from '../src/sweater/settlement.js';
 import { RECOGNITION_POLICY_SEED } from '../src/sweater/recognition.js';
+import { calculatePayrollPreview } from '../src/payroll.js';
 
 export const syncPayload = () => ({ contractVersion: 2, importRunId: 'synthetic-sync-1', agentStatus: 'ok',
   coverage: { rangeFrom: '2026-10-08', rangeTo: '2026-10-08', extractedAt: '2026-10-09T00:00:00+03:00',
@@ -28,6 +29,73 @@ export function syncDb() {
 export const syncFV = { serverTimestamp: () => 'synthetic-time' };
 export const syncRequest = (payload, p) => ({ payload, reviewedPayloadHash: p.reviewedPayloadHash, previewStateHash: p.previewStateHash });
 const save = async (db, payload) => saveOperations(db, syncFV, syncRequest(payload, await previewOperations(db, payload)), 'sweater-browser-agent');
+
+// Characterize the boundary before implementing the separately authorized
+// execution register. These assertions do NOT mean that v2 creates washes.
+describe('execution-independent-of-collection implementation boundary', () => {
+  it('even an observation carrying start/end evidence remains raw-only in current v2', async () => {
+    const db = syncDb(), payload = syncPayload();
+    Object.assign(payload.records[0], {
+      rawPaymentStatus: 'Pending', startedAt: '2026-10-08T10:00:00+03:00',
+      completedAt: '2026-10-08T10:30:00+03:00',
+    });
+    expect(await save(db, payload)).toMatchObject({
+      washesCreated: 0, ledgerPosted: false, payrollPaid: false,
+    });
+    const status = await operationsStatus(db, payload);
+    expect(status).toMatchObject({ verified: true, rawVerified: true, linksVerified: true });
+    expect(db.rows.get('sweater_bookings/C-990001')).toMatchObject({
+      processingStatus: 'needs_review', recognitionEligibility: null,
+      operationalWorkerId: 'worker-1', record: {
+        paymentStatus: 'pending', completedAt: '2026-10-08T10:30:00+03:00',
+        serviceDate: '2026-10-08', serviceType: 'observed-service',
+      },
+    });
+    expect([...db.rows.keys()].some(path => /^(washes|payroll_runs|journal_entries|sweater_collections)\//.test(path))).toBe(false);
+  });
+
+  it.each(['Approved', 'Cancelled by Admin'])('payment recorded with %s is not an executed wash', async rawStatus => {
+    const db = syncDb(), payload = syncPayload();
+    Object.assign(payload.records[0], { rawPaymentStatus: 'Recorded', rawStatus });
+    await save(db, payload);
+    expect(db.rows.get('sweater_bookings/C-990001').record).toMatchObject({
+      paymentStatus: 'recorded', completedAt: null,
+    });
+    expect([...db.rows.keys()].filter(path => path.startsWith('washes/'))).toEqual([]);
+    expect(await operationsStatus(db, payload)).toMatchObject({ verified: true });
+  });
+
+  it.each([0, null])('a hypothetical completed legacy wash changes payroll despite price %s and pending collection', price => {
+    const input = {
+      periodKey: '2026-10', now: new Date('2026-10-09T12:00:00Z'),
+      bikers: [{ id: 'worker-1', name: 'Synthetic worker', salary: 900, start_date: '2026-10-01' }],
+      washes: [],
+    };
+    const before = calculatePayrollPreview(input);
+    const after = calculatePayrollPreview({ ...input, washes: [{
+      id: 'hypothetical-not-persisted', ssp_booking_id: 'C-990001',
+      biker_id: 'worker-1', quantity: 1, status: 'مكتملة',
+      wash_date: '2026-10-08', price, collection_status: 'pending',
+    }] });
+    expect(before.totals.commissions).toBe(0);
+    expect(after.totals.commissions).toBe(4.5);
+    expect(after.totals.net - before.totals.net).toBe(4.5);
+  });
+
+  it('retains original service day when observed completion crosses midnight', async () => {
+    const db = syncDb(), payload = syncPayload();
+    payload.coverage.extractedAt = '2026-10-09T00:15:00+03:00';
+    Object.assign(payload.records[0], {
+      startedAt: '2026-10-08T23:45:00+03:00', completedAt: '2026-10-09T00:10:00+03:00',
+    });
+    await save(db, payload);
+    expect(db.rows.get('sweater_bookings/C-990001')).toMatchObject({
+      serviceDate: '2026-10-08', periodKey: '2026-10',
+      record: { serviceDate: '2026-10-08', completedAt: '2026-10-09T00:10:00+03:00' },
+    });
+    expect(await operationsStatus(db, payload)).toMatchObject({ verified: true });
+  });
+});
 
 describe('bounded operational raw sync, not a financial or owner assertion', () => {
   it('previews without writing and atomically saves raw facts only with B2B gaps', async () => {

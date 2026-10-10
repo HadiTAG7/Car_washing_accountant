@@ -28,6 +28,23 @@ suite('production operations sync in isolated demo Firestore', () => {
   });
   afterAll(async () => { if (originalEncryption == null) delete process.env.SWEATER_KEY_ENCRYPTION_KEY; else process.env.SWEATER_KEY_ENCRYPTION_KEY = originalEncryption;
     await db?.terminate(); if (app) await deleteApp(app); });
+  it('persists unpaid start/end observations with verified readback but does not create an execution register', async () => {
+    const b = payload();
+    Object.assign(b.records[0], { rawPaymentStatus: 'Pending',
+      startedAt: '2026-10-08T10:00:00+03:00', completedAt: '2026-10-08T10:30:00+03:00' });
+    const result = await save(b);
+    expect(result).toMatchObject({ washesCreated: 0, ledgerPosted: false, payrollPaid: false });
+    expect(await operationsStatus(db, b)).toMatchObject({ verified: true, rawVerified: true, linksVerified: true });
+    const booking = (await db.collection('sweater_bookings').doc('C-980001').get()).data();
+    expect(booking).toMatchObject({ processingStatus: 'needs_review', operationalWorkerId: 'biker-1',
+      recognitionEligibility: null, serviceDate: '2026-10-08',
+      record: { paymentStatus: 'pending', completedAt: '2026-10-08T10:30:00+03:00' } });
+    for (const name of ['washes', 'journal_entries', 'payroll_runs', 'advances', 'sweater_collections', 'sweater_owner_collection_confirmations']) {
+      expect((await db.collection(name).get()).empty).toBe(true);
+    }
+    expect((await save(b)).replay).toBe(true);
+    expect((await db.collection('sweater_bookings').get()).size).toBe(1);
+  });
   it('writes no financial or wash collections, verifies all rows, preserves incomplete coverage and replays safely', async () => {
     const b = payload(); await save(b);
     expect(await operationsStatus(db, b)).toMatchObject({ verified: true, status: 'completed_with_gaps', result: { washesCreated: 0 } });

@@ -597,7 +597,7 @@ function ExecutiveConsole({ snapshot, onLoadCaseHistory }) {
   );
 }
 
-function AgentDetailsDrawer({ agent, onClose, returnFocusRef }) {
+function AgentDetailsDrawer({ agent, observedAt, onClose, returnFocusRef }) {
   const closeButtonRef = useRef(null);
   const drawerRef = useRef(null);
   const [activeTab, setActiveTab] = useState('summary');
@@ -633,6 +633,11 @@ function AgentDetailsDrawer({ agent, onClose, returnFocusRef }) {
   }, [agentId, onClose, returnFocusRef]);
 
   if (!agent) return null;
+  // nextRunAt is a received schedule hint, not a live scheduler calculation.
+  // Retain an expired hint separately; never roll it forward or change state.
+  const scheduledAt = agent.nextRunAt ? Date.parse(agent.nextRunAt) : NaN;
+  const upcomingRun = scheduledAt > Date.parse(observedAt);
+  const previousSchedule = Number.isFinite(scheduledAt) && scheduledAt <= Date.parse(observedAt);
   const Icon = ICONS[agent.icon] || Bot;
   const visibleApprovals = agent.isTeamLeader
     ? [...agent.approvals, ...agent.teamApprovals]
@@ -665,7 +670,11 @@ function AgentDetailsDrawer({ agent, onClose, returnFocusRef }) {
               <p className="acc-connection-note">{CONNECTION_LABELS[agent.connection]} · آخر اتصال: {formatAgentDate(agent.lastSeen)}{agent.connection === 'stale' ? ' — الحالة السابقة ليست تأكيدًا للصحة الآن.' : ''}</p>
               <WorkSummary task={agent.currentTask} report={agent.latestReport} />
               {agent.isTeamLeader ? <ManagerReview review={agent.managerReview} /> : null}
-              <dl className="acc-detail-times"><div><dt>آخر تشغيل</dt><dd>{formatAgentDate(agent.lastRunAt)}</dd></div><div><dt>التشغيل القادم</dt><dd>{formatAgentDate(agent.nextRunAt)}</dd></div></dl>
+              <dl className="acc-detail-times">
+                <div><dt>آخر تشغيل</dt><dd>{formatAgentDate(agent.lastRunAt)}</dd></div>
+                <div><dt>التشغيل القادم</dt><dd>{upcomingRun ? formatAgentDate(agent.nextRunAt) : 'غير متوفر'}</dd></div>
+                {previousSchedule ? <div><dt>آخر موعد مُبلّغ (مضى)</dt><dd>{formatAgentDate(agent.nextRunAt)}</dd></div> : null}
+              </dl>
               <section className="acc-detail-section"><h3>الدور</h3><p>{agent.role}</p></section>
               <section className="acc-detail-section"><h3>الصلاحيات والحدود</h3><ul className="acc-permissions">{agent.permissions.map((permission) => <li key={permission}>{permission}</li>)}</ul></section>
               <section className="acc-detail-section"><h3>{agent.isTeamLeader ? 'طلبات موافقة الفريق المرفوعة إلى المدير وCEO' : 'طلبات الموافقة المرفوعة إلى المدير وCEO'}</h3>{visibleApprovals.length ? <ul className="acc-detail-list">{visibleApprovals.map((approval) => <li key={`${approval.sourceAgentId || agent.id}-${approval.id}`}>{approval.sourceAgentName ? <small className="acc-escalation-source">من {approval.sourceAgentName}</small> : null}<strong>{approval.title}</strong><AgentMessage text={approval.summary} /></li>)}</ul> : <p className="acc-inline-empty">لا توجد طلبات موافقة معلّقة لهذا الوكيل أو فريقه.</p>}</section>
@@ -754,7 +763,7 @@ export function AgentCommandCenterView({
 
         <ExecutiveConsole snapshot={snapshot} onLoadCaseHistory={onLoadCaseHistory} />
 
-        <AgentDetailsDrawer key={selectedAgent?.id || 'closed'} agent={selectedAgent} onClose={closeAgent} returnFocusRef={returnFocusRef} />
+        <AgentDetailsDrawer key={selectedAgent?.id || 'closed'} agent={selectedAgent} observedAt={snapshot.observedAt} onClose={closeAgent} returnFocusRef={returnFocusRef} />
       </main>
     </>
   );

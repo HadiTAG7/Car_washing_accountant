@@ -1,4 +1,5 @@
 {
+  "آخر موعد مُبلّغ (مضى)": "Last reported schedule (past)",
   "هوية المفتاح لا تسمح بهذا المسار.": "The key principal is not authorized for this workflow.",
   "عقد التشغيل v2 أو حجم/معرّف الدفعة غير صالح.": "Invalid v2 operational contract, batch identifier or payload size.",
   "بيانات التغطية/المصدر ناقصة أو غير صالحة.": "Source or coverage evidence is incomplete or invalid.",

@@ -10,6 +10,7 @@ import {
   EMPTY_COMMAND_CENTER_SNAPSHOT,
   assembleAgentOrganization,
   assembleCommandCenterSnapshot,
+  formatAgentDate,
 } from '../../lib/agentCommandCenter';
 
 afterEach(() => {
@@ -18,6 +19,46 @@ afterEach(() => {
 });
 
 describe('Agent command-center view', () => {
+  it.each([
+    ['past', '2026-08-30T04:30:00Z', false, true],
+    ['future', '2026-10-11T04:30:00Z', true, false],
+    ['missing', null, false, false],
+    ['invalid', 'not-a-date', false, false],
+    ['at observation time', '2026-10-10T08:10:00Z', false, true],
+  ])('does not present a %s schedule as an upcoming run', (_case, nextRunAt, future, previous) => {
+    const now = Date.parse('2026-10-10T08:10:00Z');
+    const lastRunAt = '2026-10-05T05:48:00Z';
+    const snapshot = assembleCommandCenterSnapshot({ agents: [{
+      id: 'operations-manager', lastRunAt, nextRunAt,
+    }] }, { now });
+    render(<AgentCommandCenterView snapshot={snapshot} />);
+    fireEvent.click(screen.getByRole('button', { name: /^مدير العمليات COO —/ }));
+    const drawer = screen.getByRole('dialog', { name: 'مدير العمليات COO' });
+    const upcoming = within(drawer).getByText('التشغيل القادم').nextElementSibling;
+    expect(upcoming.textContent).toBe(future ? formatAgentDate(nextRunAt) : 'غير متوفر');
+    expect(within(drawer).getByText('آخر تشغيل').nextElementSibling.textContent).toBe(formatAgentDate(lastRunAt));
+    if (previous) {
+      expect(within(drawer).getByText('آخر موعد مُبلّغ (مضى)').nextElementSibling.textContent).toBe(formatAgentDate(nextRunAt));
+    } else {
+      expect(within(drawer).queryByText('آخر موعد مُبلّغ (مضى)')).toBeNull();
+    }
+    // Presentation must not mutate the received schedule or connection state.
+    expect(snapshot.agents.find(agent => agent.id === 'operations-manager').nextRunAt)
+      .toBe(future || previous ? new Date(nextRunAt).toISOString() : null);
+  });
+
+  it('reclassifies a received next-run date as time advances without changing its source', () => {
+    const nextRunAt = '2026-10-10T08:10:00Z';
+    const raw = { agents: [{ id: 'operations-manager', nextRunAt }] };
+    const { rerender } = render(<AgentCommandCenterView snapshot={assembleCommandCenterSnapshot(raw, { now: Date.parse(nextRunAt) - 1 })} />);
+    fireEvent.click(screen.getByRole('button', { name: /^مدير العمليات COO —/ }));
+    expect(screen.getByText('التشغيل القادم').nextElementSibling.textContent).toBe(formatAgentDate(nextRunAt));
+    rerender(<AgentCommandCenterView snapshot={assembleCommandCenterSnapshot(raw, { now: Date.parse(nextRunAt) })} />);
+    expect(screen.getByText('التشغيل القادم').nextElementSibling.textContent).toBe('غير متوفر');
+    expect(screen.getByText('آخر موعد مُبلّغ (مضى)').nextElementSibling.textContent).toBe(formatAgentDate(nextRunAt));
+    expect(raw.agents[0].nextRunAt).toBe(nextRunAt);
+  });
+
   it('returns from a focused department to the readable manager overview', () => {
     render(<AgentCommandCenterView snapshot={EMPTY_COMMAND_CENTER_SNAPSHOT} />);
     fireEvent.click(screen.getByRole('button', { name: /إبراز فريق المالية/ }));

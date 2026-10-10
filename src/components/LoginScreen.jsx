@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { LogIn, Loader2, Mail, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import { SweaterWordmark } from './SweaterLogo';
 import { BRAND } from '../data/initialData';
@@ -10,6 +10,8 @@ import LanguageSwitcher from './LanguageSwitcher';
 
 export default function LoginScreen() {
   const { signIn } = useAuth();
+  const emailId = useId();
+  const passwordId = useId();
   // 'signin' | 'forgot' — `forgot` shows just the email field + "send
   // reset link" button; success state shows an inline confirmation note.
   // There is deliberately NO public signup mode: accounts are provisioned
@@ -98,10 +100,11 @@ export default function LoginScreen() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+              <label htmlFor={emailId} className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
                 البريد الإلكتروني
               </label>
               <input
+                id={emailId}
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -117,7 +120,7 @@ export default function LoginScreen() {
             {mode !== 'forgot' && (
               <div>
                 <div className="flex items-baseline justify-between mb-1.5">
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  <label htmlFor={passwordId} className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
                     كلمة المرور
                   </label>
                   <button
@@ -130,6 +133,7 @@ export default function LoginScreen() {
                 </div>
                 <div className="relative">
                   <input
+                    id={passwordId}
                     type={showPw ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}

@@ -159,13 +159,19 @@ suite('production operations sync in isolated demo Firestore', () => {
       await handler({ method: 'POST', body, headers: { 'x-sweater-key-id': key.keyId, 'x-sweater-timestamp': ts,
         'x-sweater-signature': computeSignature(key.secret, ts, signed.payload.importRunId, operationsSigningHash(signed)) } }, res); return res;
     };
-    const b = { action: 'preview', payload: payload() }; const p = await call(b); expect(p.code).toBe(200);
+    const b = { action: 'preview', payload: payload() };
+    Object.assign(b.payload.records[0], { serviceType: 'interior_exterior_wash', rawPaymentStatus: 'Pending',
+      startedAt: '2026-10-08T10:00:00+03:00', completedAt: '2026-10-08T10:30:00+03:00' });
+    const p = await call(b); expect(p.code).toBe(200);
     expect((await db.collection('sweater_import_runs').get()).empty).toBe(true);
     const altered = structuredClone(b); altered.payload.coverage.gaps = ['Changed metadata']; expect((await call(altered, b)).code).toBe(401);
     expect((await call({ ...b, action: 'status' }, b)).code).toBe(401);
     const saved = await call({ action: 'save', ...req(b.payload, p.body.result) }); expect(saved.code).toBe(200);
-    const status = await call({ action: 'status', payload: b.payload }); expect(status.body.result.verified).toBe(true);
-    expect((await db.collection('washes').get()).empty).toBe(true);
+    const status = await call({ action: 'status', payload: b.payload });
+    expect(status.body.result).toMatchObject({ verified: true, result: { washesCreated: 1, ledgerPosted: false, payrollPaid: false } });
+    const executions = await db.collection('washes').get(); expect(executions.size).toBe(1);
+    expect(executions.docs[0].data()).toMatchObject({ price: 20, gross_amount: 23, vat_amount: 3,
+      collection_status: 'pending', worker_commission_per_wash: 4.5, worker_commission_paid: false });
     await db.collection('sweater_integration_keys').doc(key.keyId).set({ scope: 'admin' }, { merge: true }); expect((await call(b)).code).toBe(403);
   });
   it('shared natural claim serializes raw sync against owner handoff while retaining owner behavior', async () => {

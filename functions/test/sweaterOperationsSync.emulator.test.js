@@ -6,6 +6,7 @@ import { previewOperations, saveOperations, operationsStatus } from '../src/swea
 import { operationsHandler, operationsSigningHash } from '../src/sweater/operationsHttp.js';
 import { createIntegrationKey, computeSignature } from '../src/sweater/integrationKeys.js';
 import { previewOwnerHandoff, saveOwnerHandoff } from '../src/sweater/staffHandoff.js';
+import { calculatePayrollPreview } from '../src/payroll.js';
 
 const suite = process.env.FIRESTORE_EMULATOR_HOST ? describe : describe.skip;
 let app, db, originalEncryption;
@@ -28,6 +29,43 @@ suite('production operations sync in isolated demo Firestore', () => {
   });
   afterAll(async () => { if (originalEncryption == null) delete process.env.SWEATER_KEY_ENCRYPTION_KEY; else process.env.SWEATER_KEY_ENCRYPTION_KEY = originalEncryption;
     await db?.terminate(); if (app) await deleteApp(app); });
+  it('atomically saves an unpaid execution once, increases commission once, and retains all financial stores', async () => {
+    const b = payload(); Object.assign(b.records[0], { serviceType: 'interior_exterior_wash', rawPaymentStatus: 'Pending',
+      startedAt: '2026-10-08T10:00:00+03:00', completedAt: '2026-10-08T10:30:00+03:00' });
+    const protectedData = { 'journal_entries/synthetic': { status: 'posted', amount: 99 },
+      'payroll_runs/synthetic': { status: 'paid', totals: { net: 99 } }, 'advances/synthetic': { amount: 99, recovered_amount: 10 },
+      'sweater_collections/synthetic': { amount: 99 }, 'sweater_settlements/synthetic': { status: 'closed', amount: 99 } };
+    for (const [path, row] of Object.entries(protectedData)) await db.doc(path).set(row);
+    const p = await previewOperations(db, b);
+    expect((await db.collection('washes').get()).empty).toBe(true);
+    const results = await Promise.all(Array.from({ length: 3 }, () => saveOperations(db, FieldValue, req(b, p), 'sweater-browser-agent')));
+    expect(results.filter(r => !r.replay)).toHaveLength(1);
+    expect(results[0].washesCreated).toBe(1);
+    const alias = { ...b, importRunId: 'executed-alias', records: [{ ...b.records[0], sspBookingId: 'S-980001' }] };
+    expect((await save(alias)).washesCreated).toBe(0);
+    const ws = await db.collection('washes').get(); expect(ws.size).toBe(1);
+    const wash = ws.docs[0].data(); expect(wash).toMatchObject({ status: 'مكتملة', quantity: 1, price: 20, vat_amount: 3,
+      gross_amount: 23, collection_status: 'pending', payment_method: null, worker_commission_paid: false });
+    const payroll = calculatePayrollPreview({ periodKey: '2026-10', now: new Date('2026-10-09T12:00:00Z'),
+      bikers: [{ id: 'biker-1', name: 'Synthetic worker', salary: 900, start_date: '2026-10-01' }],
+      washes: ws.docs.map(d => ({ id: d.id, ...d.data() })) });
+    expect(payroll.totals.commissions).toBe(4.5);
+    expect(await operationsStatus(db, b)).toMatchObject({ verified: true, rawVerified: true, linksVerified: true, result: { washesCreated: 1 } });
+    for (const [path, row] of Object.entries(protectedData)) expect((await db.doc(path).get()).data()).toEqual(row);
+    expect((await db.collection('sweater_owner_collection_confirmations').get()).empty).toBe(true);
+  });
+  it('concurrent distinct executed batches recheck the claim, and later cancellation does not reverse execution', async () => {
+    const a = payload(); Object.assign(a.records[0], { serviceType: 'interior_exterior_wash',
+      startedAt: '2026-10-08T10:00:00+03:00', completedAt: '2026-10-08T10:30:00+03:00' });
+    const b = { ...a, importRunId: 'other-executed', records: [{ ...a.records[0], sspBookingId: 'S-980001' }] };
+    const [pa, pb] = await Promise.all([previewOperations(db, a), previewOperations(db, b)]);
+    const saves = await Promise.allSettled([saveOperations(db, FieldValue, req(a, pa), 'agent'), saveOperations(db, FieldValue, req(b, pb), 'agent')]);
+    expect(saves.filter(r => r.status === 'fulfilled')).toHaveLength(1);
+    const ws = await db.collection('washes').get(); expect(ws.size).toBe(1); const original = ws.docs[0].data();
+    const cancelled = { ...a, importRunId: 'later-execution-cancel', records: [{ ...a.records[0], rawStatus: 'Cancelled by Admin' }] };
+    expect((await save(cancelled)).washesCreated).toBe(0);
+    expect((await ws.docs[0].ref.get()).data()).toEqual(original);
+  });
   it('persists unpaid start/end observations with verified readback but does not create an execution register', async () => {
     const b = payload();
     Object.assign(b.records[0], { rawPaymentStatus: 'Pending',

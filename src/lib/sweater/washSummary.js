@@ -3,7 +3,9 @@ export function summarizeOwnerWashes(washes) {
   const groups = new Map();
   const seen = new Set();
   for (const wash of washes) {
-    if (wash.revenueOrigin !== 'sweater' || wash.collectionStatus !== 'confirmed_by_owner'
+    // Persisted completed executions earn commission regardless of collection.
+    // This summary never promotes a raw booking/payment status to execution.
+    if (wash.revenueOrigin !== 'sweater'
       || wash.status !== 'مكتملة' || !wash.sspBookingId || seen.has(wash.sspBookingId)) continue;
     seen.add(wash.sspBookingId);
     const key = wash.bikerId || wash.bikerName;

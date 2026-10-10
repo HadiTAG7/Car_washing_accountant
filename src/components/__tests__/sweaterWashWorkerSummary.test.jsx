@@ -14,8 +14,19 @@ it('groups by worker and excludes duplicate SSP IDs, cancellations and unrelated
   expect(result).toHaveLength(1); expect(result[0]).toMatchObject({ quantity: 2, totalAmount: 40, commission: 9 });
   render(<SweaterWashWorkerSummary washes={rows} />);
   expect(screen.getByRole('table', { name: 'ملخص غسلات سويتر حسب العامل' })).toBeTruthy();
-  expect(screen.getByText('محصلة بإفادة المالك؛ العمولة تُدفع مع الراتب')).toBeTruthy();
+  expect(screen.getByText('غسلات منفذة؛ استحقاق العمولة مستقل عن التحصيل')).toBeTruthy();
   expect(screen.getByText('S-1')).toBeTruthy(); expect(screen.queryByText('cancelled')).toBeNull();
+});
+it('shows an executed unpaid wash and commission without calling it collected', () => {
+  const rows = [wash('S-unpaid', { collectionStatus: 'pending', ownerTaxSnapshot: {
+    source: 'owner_statement', clarificationId: 'synthetic-price-approval', currency: 'SAR',
+    priceMode: 'exclusive', quantity: 1, net: 20, vat: 3, gross: 23,
+  } })];
+  expect(summarizeOwnerWashes(rows)[0]).toMatchObject({ quantity: 1, totalAmount: 20, commission: 4.5 });
+  render(<SweaterWashWorkerSummary washes={rows} />);
+  expect(screen.getByText('S-unpaid')).toBeTruthy();
+  expect(screen.queryByText(/محصلة بإفادة المالك/)).toBeNull();
+  expect(screen.getByText('غسلات منفذة؛ استحقاق العمولة مستقل عن التحصيل')).toBeTruthy();
 });
 it('does not show an empty summary; current completed executions use the shared rate', () => {
   render(<SweaterWashWorkerSummary washes={[wash('direct', { revenueOrigin: 'direct' })]} />);

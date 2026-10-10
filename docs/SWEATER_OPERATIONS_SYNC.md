@@ -1,4 +1,4 @@
-# Agent 7 operational sync v2 — raw facts, not financial approval
+# Agent 7 operational sync v2 — raw facts and evidenced wash executions
 
 ## Existing paths and the change
 
@@ -20,7 +20,9 @@ resubmit those bookings through the owner path as part of setup/testing.
 `POST https://sweater-hadi-alghanim.vercel.app/api/integrations/sweater/operations`
 
 Actions: `preview`, `save`, `status`. No ledger dispatch, collection, settlement,
-payroll, worker creation, price, VAT, owner assertion or SSP writer is reachable.
+payroll payment/approval, worker creation, price-policy/VAT-setting change,
+owner collection assertion or SSP writer is reachable. Only the11Oct
+owner-authorized wash pricing snapshot may accompany evidenced execution.
 Authentication uses the existing active key with **both** scope
 `integration_ingest` and principal `sweater-browser-agent`. No new key, role or
 broader permission is created. Wrong/revoked scope/principal is refused.
@@ -52,8 +54,8 @@ only as `needs_review` / `unknown_service_type`, with an empty normalized
 service (never a guessed placeholder). All other row/source/scalar/privacy
 checks still apply. A missing-service observation cannot erase an existing
 known service or overwrite a protected booking; its raw evidence is retained
-separately. The shared financial/owner contract remains strict: no completed
-wash, price, tax, recognition eligibility or revenue is created. This exception
+separately. A missing-service observation creates no completed wash, price,
+tax, recognition eligibility or revenue. This exception
 applies only to operations v2, not the legacy/owner/financial workflows.
 New statuses
 remain raw review; they are never completion/payment evidence.
@@ -105,7 +107,8 @@ An incomplete legacy run is never falsely acknowledged as successful.
 
 One atomic transaction writes `sweater_raw_payloads` (exact sanitized
 observation + normalized copy), unprotected `sweater_bookings`, shared natural
-claims (`sweater_owner_booking_claims`), review variances, and run/state only.
+claims (`sweater_owner_booking_claims`), review variances, and run/state; an
+eligible execution may also write one wash using the existing representation.
 The claim coordinates with the existing owner workflow but does not assert
 completion; its reserved deterministic wash ID does not mean a wash exists.
 
@@ -116,16 +119,22 @@ stored only as raw review, never replacing the booking/link/evidence.
 Repeated IDs within one batch reject all occurrences rather than choosing
 the first. A different run cannot create a second booking/wash naturally.
 
-**This version creates zero washes.** All saved bookings remain review-only;
-recognition eligibility is not asserted. `Collecting Payment`, `Initiated`,
-completion-looking labels and displayed amounts do not create a completed
-wash, bank receipt, price/VAT snapshot or ownerConfirmation. Any existing
-separately approved monthly recognition/owner workflow remains independent.
-Unconfigured prices/tax/service evidence are not seeded to bypass a blocker.
+**11 Oct 2026 owner-authorized execution extension:** raw-only observations
+remain compatible. A proven `interior_exterior_wash`, with actual Start/End
+Service timestamps, original date and established worker, may additionally
+create one completed wash, independent of customer collection. Hadi approved
+SAR23 gross = SAR20 net service value + SAR3 VAT, and SAR4.50 worker commission.
+The existing wash/tax-snapshot representation is used. No receipt, owner
+collection assertion, payroll payment or journal is created. Payment labels
+or Collecting Payment alone are NOT execution evidence. Unknown services,
+other service types, ambiguous timestamps/workers and protected records remain
+review-only. Historical commission policies and closed/settled periods are
+not overridden. See `SWEATER_EXECUTED_SERVICE_PROPOSAL.md` for the final contract.
 
 Result separates `rawSavedCount`, `bookingSavedCount`, each row's `rawSaved`,
-`bookingSaved`, `washId` (existing only), `washCreated:false`,
-`washesCreated:0`, `ledgerPosted:false`, `payrollPaid:false`.
+`bookingSaved`, `washId`, `washCreated` and actual persisted `washesCreated`,
+`ledgerPosted:false`, `payrollPaid:false`. Preview never claims a saved wash.
+Replay returns the historical count, not new creations; do not sum it as new.
 `needs_review` can mean raw saved but protected booking unchanged.
 `completed_with_gaps` is atomic scoped persistence, NOT company/month
 completion or readiness of all washes.

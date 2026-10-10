@@ -1,4 +1,7 @@
 {
+  "غسلات منفذة؛ استحقاق العمولة مستقل عن التحصيل": "Completed washes; commission entitlement is independent of collection",
+  "قيمة الخدمة المسجلة": "Recorded service value",
+  "العمولة استحقاق وليست صرفًا؛ راجع المسير قبل اعتماده. هذه الأرقام لا تثبت التحصيل.": "Commission is an entitlement, not a payment. Review payroll before approval; these figures do not prove collection.",
   "آخر موعد مُبلّغ (مضى)": "Last reported schedule (past)",
   "هوية المفتاح لا تسمح بهذا المسار.": "The key principal is not authorized for this workflow.",
   "عقد التشغيل v2 أو حجم/معرّف الدفعة غير صالح.": "Invalid v2 operational contract, batch identifier or payload size.",

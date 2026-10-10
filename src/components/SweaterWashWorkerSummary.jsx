@@ -23,23 +23,27 @@ export default function SweaterWashWorkerSummary({ washes, bikers = [], scalingF
   };
   if (!groups.length) return null;
   return <Card className="p-4 sm:p-5 space-y-3">
-    <SectionHeader title="غسلات سويتر حسب العامل" subtitle="محصلة بإفادة المالك؛ العمولة تُدفع مع الراتب" />
+    <SectionHeader title="غسلات سويتر حسب العامل" subtitle={language === 'en'
+      ? 'Completed washes; commission entitlement is independent of collection'
+      : 'غسلات منفذة؛ استحقاق العمولة مستقل عن التحصيل'} />
     <div className="sm:hidden space-y-3">{groups.map(group => <div key={group.bikerId || group.bikerName} className="border-b border-slate-100 dark:border-slate-800 pb-3 last:border-0">
       <p className="font-semibold text-sm mb-2">{group.displayName}</p>
       <dl className="grid grid-cols-3 gap-2 text-xs">
         <div><dt className="text-slate-500">الغسلات</dt><dd className="mt-1 tabular-nums">{formatNumber(Math.round(group.quantity * scalingFactor))}</dd></div>
-        <div><dt className="text-slate-500">الإجمالي</dt><dd className="mt-1 tabular-nums">{formatCurrency(group.totalAmount * scalingFactor)}</dd></div>
+        <div><dt className="text-slate-500">{language === 'en' ? 'Recorded service value' : 'قيمة الخدمة المسجلة'}</dt><dd className="mt-1 tabular-nums">{formatCurrency(group.totalAmount * scalingFactor)}</dd></div>
         <div><dt className="text-slate-500">العمولة</dt><dd className="mt-1 tabular-nums">{formatCurrency(group.commission * scalingFactor)}</dd></div>
       </dl>
     </div>)}</div>
     <div className="hidden sm:block overflow-x-auto"><table className="w-full text-sm [&_th]:px-2 [&_td]:px-2 [&_td]:py-2 [&_th]:text-start [&_td]:text-start" aria-label="ملخص غسلات سويتر حسب العامل">
-      <thead><tr><th>العامل</th><th>الغسلات</th><th>الإجمالي</th><th>عمولة مستحقة مع الراتب</th></tr></thead>
+      <thead><tr><th>العامل</th><th>الغسلات</th><th>{language === 'en' ? 'Recorded service value' : 'قيمة الخدمة المسجلة'}</th><th>عمولة مستحقة مع الراتب</th></tr></thead>
       <tbody>{groups.map(group => <tr key={group.bikerId || group.bikerName}>
         <td className="py-2">{group.displayName}</td><td>{formatNumber(Math.round(group.quantity * scalingFactor))}</td>
         <td className="whitespace-nowrap tabular-nums">{formatCurrency(group.totalAmount * scalingFactor)}</td><td className="whitespace-nowrap tabular-nums">{formatCurrency(group.commission * scalingFactor)}</td>
       </tr>)}</tbody>
     </table></div>
-    <p className="text-xs text-slate-500">العمولة هنا وفق إفادة المالك؛ راجع معدل العمولة في مسير الرواتب قبل اعتماده. طريقة الدفع غير مثبتة.</p>
+    <p className="text-xs text-slate-500">{language === 'en'
+      ? 'Commission is an entitlement, not a payment. Review payroll before approval; these figures do not prove collection.'
+      : 'العمولة استحقاق وليست صرفًا؛ راجع المسير قبل اعتماده. هذه الأرقام لا تثبت التحصيل.'}</p>
     <details className="text-sm" onToggle={event => setDetailsOpen(event.currentTarget.open)}><summary className="cursor-pointer">تفاصيل الحجوزات</summary>
       {loading && <p role="status" className="mt-2">نحمّل تفاصيل الحجوزات...</p>}
       {error && <p role="alert" className="mt-2 text-red-700 dark:text-red-300">تعذّر تحميل حالة الحجز من المصدر المحفوظ.</p>}

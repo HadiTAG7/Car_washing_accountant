@@ -129,13 +129,15 @@ describe('restricted Windows operations signer without secret disclosure', () =>
         copied[copied.length - 1] = copied[copied.length - 1].replace(/throw 'refused'/g, () => `throw 'refused-dummy-step-${++step}'`).replace('} catch { exit 1 }', '} catch { [Console]::Error.Write($_.Exception.Message); exit 1 }');
         const child = spawn(executable, copied, config); child.stderr.on('data', chunk => { dummyDiagnostics += chunk; }); return child;
       };
-      const signed = await signFromWindowsStore(data, { credentialPath, spawnImpl: fixtureSpawn }).catch(() => { throw new Error(`Dummy fixture diagnostic: ${dummyDiagnostics}`); });
+      // Hosted Windows cold-started BOTH PowerShell processes at ~35s each.
+      // This timeout is only for this disposable dummy fixture; the separate
+      // stuck-child test still verifies termination and production defaults stay 15s.
+      const signed = await signFromWindowsStore(data, { credentialPath, spawnImpl: fixtureSpawn, timeoutMs: 60000 }).catch(() => { throw new Error(`Dummy fixture diagnostic: ${dummyDiagnostics}`); });
       expect(signed).toEqual({ keyId, signature: createHmac('sha256', dummy).update(`${data.timestamp}.${data.importRunId}.${data.bodyHash}`).digest('hex') });
       expect(JSON.stringify(signed)).not.toContain(dummy);
     } finally { await rm(directory, { recursive: true, force: true }); }
-  // Hosted Windows may need >20s for the initial synchronous PowerShell/DPAPI
-  // setup (observed 35s). The signer's own 15s child timeout remains unchanged.
-  }, 60000);
+  // Two cold processes plus teardown; assertions and production limits are unchanged.
+  }, 120000);
   it('does not pass signer errors (or credentials) into callers', async () => {
     const sign = vi.fn().mockRejectedValue(new Error('dummy-private-secret'));
     // Valid payload from the full-envelope test above.

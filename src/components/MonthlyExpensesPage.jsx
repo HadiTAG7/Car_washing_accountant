@@ -24,6 +24,10 @@ import { taxPolicyAt } from '../lib/accounting/taxPolicy';
 import { autoPost, describeAutoPost, autoPostTone } from '../lib/accounting/autoPost';
 import { isFirebaseConfigured, missingEnvNames, describeBackendError } from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
+import { useMonthlyPayrollExpenses } from '../hooks/useMonthlyPayrollExpenses';
+import { monthlyItemsForPeriod, hasManualSalaryRows } from '../lib/monthlyPayrollExpenses';
+import { riyadhTodayISO } from '../lib/washesYesterday';
+import MonthlyPayrollDetails from './MonthlyPayrollDetails';
 
 // Only http(s) values become clickable — mirrors the guard used by the
 // ledger modal and the VAT report so a pasted `javascript:` URL can never
@@ -77,7 +81,7 @@ function formatLoggedDate(iso) {
 
 export default function MonthlyExpensesPage() {
   const {
-    items, loading, error,
+    items: allItems, loading, error,
     addItem, updateItem, updateStatus, deleteItem, refetch,
   } = useMonthlyExpenses();
 
@@ -85,7 +89,17 @@ export default function MonthlyExpensesPage() {
     categories, addCategory, deleteCategory, getCategoryLabel,
   } = useMonthlyExpenseCategories();
 
-  const { scalingFactor, canMutate } = usePartnerView();
+  const { scalingFactor, canMutate, role, isPartnerView } = usePartnerView();
+  const [selectedMonth, setSelectedMonth] = useState(() => riyadhTodayISO().slice(0, 7));
+  const items = useMemo(() => monthlyItemsForPeriod(allItems, selectedMonth), [allItems, selectedMonth]);
+  const payrollEnabled = !isPartnerView && ['admin', 'accountant'].includes(role);
+  const payroll = useMonthlyPayrollExpenses(selectedMonth, { enabled: payrollEnabled });
+  const payrollReport = payrollEnabled && payroll.data?.periodKey === selectedMonth ? payroll.data : null;
+  const salaryOverlap = payrollEnabled && hasManualSalaryRows(items, categories);
+  const includePayroll = payrollReport && !salaryOverlap;
+  const payrollUnavailable = payrollEnabled && (!payrollReport || payroll.loading || payroll.error || salaryOverlap);
+  const totalsUnavailable = loading || Boolean(error) || payrollUnavailable;
+  const expenseCount = items.length + (includePayroll && payrollReport.rows.length ? 1 : 0);
   // The dated tax record, so a 5%-era invoice is shown at 5% rather than at
   // today's rate. `useCallback`-free on purpose: `settings` is the only input
   // and it changes rarely. See docs/AMOUNT_DEFINITION.md.
@@ -117,6 +131,11 @@ export default function MonthlyExpensesPage() {
       if (i.paymentStatus === 'paid') paid += i.totalMonthlyCost;
       else pending += i.totalMonthlyCost;
     });
+    if (includePayroll) {
+      total += payrollReport.total;
+      paid += payrollReport.paid;
+      pending += payrollReport.pending;
+    }
     // Pro-rata: every aggregate is multiplied by the viewing partner's
     // workforce share. Admin view → scalingFactor=1 → identity math.
     return {
@@ -124,7 +143,7 @@ export default function MonthlyExpensesPage() {
       paid:    paid    * scalingFactor,
       pending: pending * scalingFactor,
     };
-  }, [items, scalingFactor]);
+  }, [items, scalingFactor, includePayroll, payrollReport]);
 
   async function handleAddItem(item) {
     try { await addItem(item); showToast('تم إضافة المصروف الشهري بنجاح'); }
@@ -191,6 +210,17 @@ export default function MonthlyExpensesPage() {
       />
 
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
+        <label className="inline-flex flex-wrap items-center gap-3 text-sm font-semibold">
+          شهر المصاريف
+          <input type="month" aria-label="شهر المصاريف" value={selectedMonth}
+            onChange={event => { if (/^\d{4}-(0[1-9]|1[0-2])$/.test(event.target.value)) setSelectedMonth(event.target.value); }}
+            className="px-3 py-2 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800" />
+        </label>
+        {payrollEnabled && <p className="text-xs text-slate-500 leading-relaxed">الرواتب تظهر تلقائيًا من معاينة المسير قبل الدفع. المبلغ يشمل الأساسي والبونص ناقص الخصومات؛ العمولات والسلف ليست مصروف راتب إضافيًا هنا. هذا عرض تشغيلي، ولا يحفظ مصروفًا أو يرحّل قيدًا.</p>}
+        {payrollEnabled && !payrollReport && !payroll.error && <p role="status" className="text-sm text-slate-500">نحمّل مصروف الرواتب...</p>}
+        {payrollEnabled && payroll.error && <ErrorState title="تعذّر تحميل مصروف الرواتب" error={payroll.error} onRetry={payroll.refetch} />}
+        {salaryOverlap && <p role="alert" className="p-4 rounded-control bg-amber-50 dark:bg-amber-500/10 text-amber-800 dark:text-amber-300 text-sm">توجد بنود رواتب مسجلة يدويًا؛ نحتاج مطابقتها مع المسير قبل جمع الإجمالي، حتى لا نحتسب الرواتب مرتين.</p>}
+        {payrollReport?.estimated && <p className="text-xs text-amber-700 dark:text-amber-300">راتب الشهر الجاري تقديري حتى اكتمال الشهر واعتماد المسير؛ السداد لا يُفترض تلقائيًا.</p>}
         {!isFirebaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
 
         {mutationError && (
@@ -216,16 +246,16 @@ export default function MonthlyExpensesPage() {
             icon={Wallet}
             tone="primary"
             label="إجمالي المصاريف الشهرية"
-            value={formatCurrency(totals.total)}
-            sub={`${items.length} ${items.length === 1 ? 'مصروف' : 'مصاريف'}`}
+            value={totalsUnavailable ? 'غير متاح' : formatCurrency(totals.total)}
+            sub={`${expenseCount} ${expenseCount === 1 ? 'مصروف' : 'مصاريف'}`}
           />
           <StatCard
             icon={CheckCircle2}
             tone="emerald"
             label="مصاريف مدفوعة"
-            value={formatCurrency(totals.paid)}
+            value={totalsUnavailable ? 'غير متاح' : formatCurrency(totals.paid)}
             sub={
-              totals.total > 0
+              totalsUnavailable ? 'الإجمالي ينتظر التحقق من المصاريف' : totals.total > 0
                 ? `${((totals.paid / totals.total) * 100).toFixed(0)}% من الإجمالي`
                 : 'لا توجد مدفوعات بعد'
             }
@@ -234,9 +264,9 @@ export default function MonthlyExpensesPage() {
             icon={Clock}
             tone="amber"
             label="مصاريف معلقة"
-            value={formatCurrency(totals.pending)}
+            value={totalsUnavailable ? 'غير متاح' : formatCurrency(totals.pending)}
             sub={
-              totals.total > 0
+              totalsUnavailable ? 'الإجمالي ينتظر التحقق من المصاريف' : totals.total > 0
                 ? `${((totals.pending / totals.total) * 100).toFixed(0)}% من الإجمالي`
                 : 'لا توجد مصاريف معلقة'
             }
@@ -259,7 +289,7 @@ export default function MonthlyExpensesPage() {
 
           {loading && !items.length ? (
             <LoadingState rows={4} />
-          ) : items.length === 0 ? (
+          ) : expenseCount === 0 ? (
             <EmptyState onAdd={openAddModal} canMutate={canMutate} />
           ) : (
             <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
@@ -277,6 +307,16 @@ export default function MonthlyExpensesPage() {
                   </tr>
                 </thead>
                 <tbody>
+                  {includePayroll && payrollReport.rows.length > 0 && <tr className="border-b border-slate-100 dark:border-slate-800">
+                    <td className="py-3 px-4 font-semibold whitespace-nowrap">رواتب البايكر</td>
+                    <td className="py-3 px-4 whitespace-nowrap">رواتب وأجور</td>
+                    <td className="py-3 px-4 text-center">{formatNumber(payrollReport.rows.length)}</td>
+                    <td className="py-3 px-4 text-left">—</td>
+                    <td className="py-3 px-4 text-left font-bold">{formatCurrency(payrollReport.total)}</td>
+                    <td className="py-3 px-4"><span className="inline-block" dir="ltr">{selectedMonth}</span><p className="text-xs text-slate-500">شهر الاستحقاق</p></td>
+                    <td className="py-3 px-4 whitespace-nowrap">{payrollReport.pending === 0 ? 'مدفوع' : payrollReport.paid > 0 ? 'مدفوع جزئيًا' : 'غير مدفوع'}</td>
+                    <td className="py-3 px-4"><a href="/?page=bikers" className="text-xs text-primary-700 dark:text-primary-300 hover:underline">إدارة الرواتب من صفحة البايكر</a></td>
+                  </tr>}
                   {items.map((i) => (
                     <tr
                       key={i.id}
@@ -391,6 +431,7 @@ export default function MonthlyExpensesPage() {
               </table>
             </div>
           )}
+          {payrollReport && <MonthlyPayrollDetails report={payrollReport} />}
         </Card>
       </main>
 

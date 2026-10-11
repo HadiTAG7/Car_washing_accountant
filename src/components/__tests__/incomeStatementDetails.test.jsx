@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-const state = vi.hoisted(() => ({ sources: {}, entries: [], accounts: [], partner: false, role: 'admin', loading: false }));
+const state = vi.hoisted(() => ({ sources: {}, entries: [], accounts: [], partner: false, role: 'admin', loading: false,
+  payroll: [], payrollLoading: false, payrollError: null }));
+vi.mock('../../hooks/useIncomePayrollPreviews', () => ({ useIncomePayrollPreviews: () => ({ data: state.payroll, loading: state.payrollLoading, error: state.payrollError, refetch: vi.fn() }) }));
 vi.mock('../../hooks/useBikers', () => ({ useBikers: () => ({ bikers: [] }) }));
 vi.mock('../../hooks/useWashes', () => ({ useWashes: () => ({ items: [], loading: false }) }));
 vi.mock('../../hooks/useVariableExpenses', () => ({ useVariableExpenses: () => ({ items: [], loading: false }) }));
@@ -13,7 +15,8 @@ vi.mock('../../hooks/useAccountingSettings', () => ({ useAccountingSettings: () 
 vi.mock('../../hooks/useIncomeStatementSources', () => ({ useIncomeStatementSources: () => ({ sources: state.sources,
   entries: state.entries, lines: state.entries.flatMap(entry => entry.lines.map((line, index) => ({ ...line, id: `${entry.id}:${index}`, entryId: entry.id }))), loading: state.loading }) }));
 vi.mock('../../contexts/PartnerViewContext', () => ({ usePartnerView: () => ({ isPartnerView: state.partner, scalingFactor: state.partner ? 0.5 : 1, role: state.role }) }));
-vi.mock('../../lib/firebaseClient', () => ({ isFirebaseConfigured: true, missingEnvNames: [], db: {}, callLedger: vi.fn() }));
+vi.mock('../../lib/firebaseClient', () => ({ isFirebaseConfigured: true, missingEnvNames: [], db: {}, callLedger: vi.fn(),
+  describeBackendError: e => e.message, maskedProjectRef: () => null }));
 vi.mock('../../lib/variableExpenseTotals', async original => ({ ...await original(), todayMonth: () => '2026-10' }));
 vi.mock('../TopBar', () => ({ default: () => null }));
 vi.mock('../charts/TrendCharts', () => ({ LineTrend: () => null }));
@@ -27,6 +30,7 @@ import { liveIncomeStatement } from '../../lib/accounting/liveIncomeStatement';
 
 beforeEach(() => {
   setLanguage('ar'); state.partner = false; state.role = 'admin'; state.loading = false; state.accounts = DEFAULT_CHART_OF_ACCOUNTS;
+  state.payroll = []; state.payrollLoading = false; state.payrollError = null;
   state.sources = { washes: [], variables: [{ id: 'synthetic-expense', expense_name: 'مصروف تجريبي', total_variable_cost: 115,
     invoice_date: '2026-10-03', invoice_number: 'synthetic-invoice', supplier: 'Synthetic supplier', is_tax_invoice: true, vat_amount: 15 }], monthlies: [], annualEntries: [], vouchers: [] };
   state.entries = [{ id: 'synthetic-payroll', entryDate: '2026-10-04', entryNumber: 163, status: 'posted', sourceType: 'payroll',
@@ -37,6 +41,18 @@ afterEach(() => { cleanup(); setLanguage('ar'); });
 const openCosts = () => fireEvent.click(screen.getByRole('button', { name: 'عرض تفاصيل: يُخصم منه: التكاليف المباشرة والعمولات' }));
 
 describe('statement drilldown UI', () => {
+  it('shows unpaid salaries in the exact statement and drilldown, never an incomplete subtotal while loading or failed', () => {
+    state.payroll = [{ periodKey: '2026-10', estimated: true, lines: [{ basicDue: 900, advanceDeduction: 200 }] }];
+    const { rerender } = render(<FinancialSummaryPage />); openCosts();
+    expect(screen.getByTestId('statement-detail-amount').textContent).toBe(formatCurrency(1000));
+    expect(screen.getByText('رواتب مستحقة غير مُرحّلة')).toBeTruthy();
+    state.payrollLoading = true; rerender(<FinancialSummaryPage />);
+    expect(screen.queryByTestId('statement-detail-amount')).toBeNull();
+    expect(screen.queryByRole('button', { name: /عرض تفاصيل:/ })).toBeNull();
+    state.payrollLoading = false; state.payrollError = new Error('Payroll source unavailable'); rerender(<FinancialSummaryPage />);
+    expect(screen.queryByRole('button', { name: /عرض تفاصيل:/ })).toBeNull();
+    expect(screen.getByText('Payroll source unavailable')).toBeTruthy();
+  });
   it('opens the amount from the statement, identifies net cost and its source document, and follows live updates without refetching', () => {
     const { rerender } = render(<FinancialSummaryPage />); openCosts();
     const dialog = screen.getByRole('dialog');

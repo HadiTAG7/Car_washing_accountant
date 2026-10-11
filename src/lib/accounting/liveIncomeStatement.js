@@ -6,6 +6,7 @@ import { expenseAccountFor } from './postingRules.js';
 import { mapWash } from '../mappers.js';
 import { ownerWashTaxSplit } from '../sweater/ownerWashTax.js';
 import { isRealCalendarDate } from '../vatFields.js';
+import { unpaidPayrollIncome } from './unpaidPayrollIncome.js';
 
 const round2 = n => Math.round(n * 100) / 100;
 const recognized = e => ['posted', 'reversed'].includes(e.status) && !e.reversalOf;
@@ -71,8 +72,13 @@ export function liveIncomeStatement({ accounts = [], entries = [], lines = [], p
   for (const row of sources.annualEntries || []) addExpense('annual', row, Number(row.amount) || 0, dateOf(row));
   for (const row of sources.vouchers || []) if (row.status !== 'cancelled') addExpense('voucher', row, Number(row.amount) || 0,
     isRealCalendarDate(row.invoiceDate) ? row.invoiceDate : row.dueDate, true);
+  const payroll = unpaidPayrollIncome({ preview: sources.payrollPreviews?.find(p => p.periodKey === periodKey),
+    accounts, entries, lines, periodKey, monthlyExpenses: sources.monthlies });
+  operationalItems.push(...payroll.items);
   const statement = monthlyStatement({ accounts, entries, lines, periodKey, feeRules, scalingFactor, operationalItems, includeExpenseBreakdown: true });
   const ledger = monthlyStatement({ accounts, entries, lines, periodKey, feeRules, scalingFactor });
-  return { ...statement, basis: 'ledger_and_registered_operations', ledgerNetRevenue: ledger.netRevenue,
+  return { ...statement, salaryAccrual: payroll.summary && { ...payroll.summary,
+    amount: round2(payroll.summary.amount * scalingFactor), posted: round2(payroll.summary.posted * scalingFactor),
+    unposted: round2(payroll.summary.unposted * scalingFactor) }, basis: 'ledger_and_registered_operations', ledgerNetRevenue: ledger.netRevenue,
     unpostedNetRevenue: round2(operationalItems.filter(row => row.accountCode === '4000').reduce((sum, row) => sum + row.amount, 0) * scalingFactor), issues };
 }

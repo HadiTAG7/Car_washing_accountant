@@ -40,6 +40,12 @@ jobs:
       - run: npm test
       - name: Firestore persistence and existing access rules (demo projects only)
         run: npm run test:rules
+      - name: Ledger regressions (isolated demo emulator only)
+        run: npm run test:emulator
+      - name: Trusted payroll and partner reporting regressions
+        run: npm run test:functions
+      - name: Real callable and HTTP role boundaries (demo auth, functions, Firestore)
+        run: npm run test:callables
 
   windows-signer:
     runs-on: windows-latest

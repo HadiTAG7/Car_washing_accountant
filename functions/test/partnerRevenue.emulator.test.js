@@ -61,4 +61,28 @@ suite('partner revenue on isolated Firestore: real projections, scoped read-only
   it('still rejects an unauthenticated request', async () => {
     await expect(dispatch(db, null, 'partnerInsights', payload, null)).rejects.toMatchObject({ code: 'unauthenticated' });
   });
+  it('actual partner gets earned wages once before, after partial and full posting, never company payroll records', async () => {
+    const biker = await seed('bikers', 'private-payroll-worker', { name: 'Private employee salary', salary: 1000, start_date: '2026-10-01' });
+    await seed('chart_of_accounts', '5010', { code: '5010', accountType: 'expense', normalBalance: 'debit' });
+    const before = await biker.get();
+    const unpaid = await run();
+    expect(unpaid.statements.at(-1)).toMatchObject({ totalCosts: 100, salaryAccrual: { amount: 100, posted: 0, unposted: 100 } });
+    const runId = '2026-10__r1';
+    await seed('payroll_periods', '2026-10', { currentRunId: runId });
+    await seed('payroll_runs', runId, { status: 'partially_paid', periodKey: '2026-10' });
+    await seed(`payroll_runs/${runId}/items`, 'first', { bikerId: 'private-payroll-worker', basicDue: 400, status: 'paid' });
+    const remaining = await seed(`payroll_runs/${runId}/items`, 'remaining', { bikerId: 'private-other-worker', basicDue: 600, status: 'draft' });
+    const journal = amount => ({ status: 'posted', entryDate: '2026-11-01', sourceType: 'payroll', sourceId: runId,
+      payrollSnapshot: { periodKey: '2026-10' }, lines: [{ accountId: '5010', debit: amount }, { accountId: '1020', credit: amount }] });
+    await seed('journal_entries', 'partial-salary', journal(400));
+    expect((await run()).statements.at(-1)).toMatchObject({ totalCosts: 100, salaryAccrual: { posted: 40, unposted: 60 } });
+    await seed('journal_entries', 'rest-salary', journal(600));
+    await remaining.update({ status: 'paid' });
+    const paid = await run();
+    expect(paid.statements.at(-1)).toMatchObject({ totalCosts: 100, salaryAccrual: { posted: 100, unposted: 0 } });
+    expect(paid.partnerId).toBe('own-partner');
+    expect(JSON.stringify(paid)).not.toMatch(/Private employee salary|private-payroll-worker|private-other-worker|basicDue/);
+    const after = await biker.get();
+    expect(after.data()).toEqual(before.data()); expect(after.updateTime.isEqual(before.updateTime)).toBe(true);
+  });
 });

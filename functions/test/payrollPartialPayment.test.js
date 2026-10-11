@@ -1,6 +1,8 @@
 import { expect, it } from 'vitest';
 import { previewPartialPayrollPayment, recordPartialPayrollPayment, savePayrollDraft, approvePayroll, reversePayroll, payPayroll, previewPayroll, cancelPayroll, unapprovePayroll } from '../src/payroll.js';
 import { dispatch } from '../src/handlers.js';
+import { liveIncomeStatement } from '../../src/lib/accounting/liveIncomeStatement.js';
+import { DEFAULT_CHART_OF_ACCOUNTS } from '../../src/lib/accounting/chartOfAccounts.js';
 const runId = '2026-09__r1';
 const now = new Date('2026-10-05T08:00:00Z');
 const FV = { serverTimestamp: () => 'synthetic-server-time' };
@@ -37,6 +39,24 @@ const ids = Array.from({ length: 8 }, (_, i) => `worker-${i + 1}`);
 const request = extra => ({ runId, bikerIds: ids, paymentMethod: 'cash', payDate: '2026-10-05', recordedNetAmount: 6960, reason: 'Owner confirmed external payment', ...extra });
 const preview = (db, payload = request()) => previewPartialPayrollPayment(db, payload, { now });
 const record = (db, payload) => recordPartialPayrollPayment(db, FV, payload, { now, userId: 'admin' });
+it('income stays24360 through actual isolated payment transitions: unpaid→8paid→all28paid, with no report writes', async () => {
+  const db = fixture(); db.rows.get(`payroll_runs/${runId}`).status = 'approved';
+  const income = async () => {
+    const before = db.writes.length;
+    const p = await previewPayroll(db, { periodKey: '2026-09', automaticAdvanceDeduction: true }, { now });
+    const entries = [...db.rows].filter(([path]) => path.startsWith('journal_entries/')).map(([path, row]) => ({ ...row, id: path.split('/').at(-1) }));
+    const lines = entries.flatMap(e => e.lines.map((line, i) => ({ ...line, entryId: e.id, id: `${e.id}:${i}` })));
+    const statement = liveIncomeStatement({ accounts: DEFAULT_CHART_OF_ACCOUNTS, periodKey: '2026-09', entries, lines,
+      sources: { payrollPreviews: [p] } });
+    expect(db.writes.length).toBe(before); return statement;
+  };
+  expect((await income()).totalCosts).toBe(24360);
+  const first = await preview(db); await record(db, { ...request(), previewHash: first.previewHash, recordedExternally: true });
+  expect(await income()).toMatchObject({ totalCosts: 24360, salaryAccrual: { posted: 6960, unposted: 17400 } });
+  const remaining = request({ bikerIds: Array.from({ length: 20 }, (_, i) => `worker-${i + 9}`), recordedNetAmount: 17400 });
+  const second = await preview(db, remaining); await record(db, { ...remaining, previewHash: second.previewHash, recordedExternally: true });
+  expect(await income()).toMatchObject({ totalCosts: 24360, salaryAccrual: { posted: 24360, unposted: 0 } });
+});
 it('read-only preview names exactly8 IDs with saved gross/advance/net; detects6310 vs6960 mismatch', async () => {
   const db = fixture(); const before = structuredClone([...db.rows]);
   const p = await preview(db, request({ recordedNetAmount: 6310 }));

@@ -13,6 +13,7 @@ import { normalizeExpenseDate } from '../../src/lib/expenseDates.js';
 import { isRealCalendarDate } from '../../src/lib/vatFields.js';
 import { partnerCapitalJourney } from './partnerCapitalJourney.js';
 import { operatingParticipation, readEligibilityStates, currentEligibilityMonth } from './partnerWorkerEligibility.js';
+import { previewPayrollPeriods } from './payroll.js';
 
 const readRows = async (db, name) => {
   const snap = await db.collection(name).get();
@@ -44,20 +45,20 @@ export async function partnerAllocationReport(db, { partnerId, periodKey, today 
   }
   const names = ['partners', 'chart_of_accounts', 'journal_entries', 'journal_lines',
     'monthly_expenses', 'variable_expenses', 'annual_expenses', 'expense_vouchers',
-    'annual_expense_entries', 'startup_cost_entries', 'partner_payments', 'fee_rules', 'variable_expense_categories'];
+    'annual_expense_entries', 'startup_cost_entries', 'partner_payments', 'fee_rules', 'variable_expense_categories', 'bikers', 'temporary_expenses'];
   if (includeCapitalJourney) names.push('startup_costs', 'categories');
   const [rows, settingsSnap, washSnap, bookingSnap, settlementSnap, eligibilityStates] = await Promise.all([
     Promise.all(names.map(name => readRows(db, name))),
     db.collection('app_settings').doc('accounting').get(),
     db.collection('washes').select('quantity', 'status', 'wash_date', 'price', 'price_mode',
-      'ssp_booking_id', 'revenue_origin', 'collection_status', 'owner_tax_snapshot').get(),
+      'ssp_booking_id', 'revenue_origin', 'collection_status', 'owner_tax_snapshot', 'biker_id', 'biker_name').get(),
     db.collection('sweater_bookings').select('sspBookingId', 'postedEntryId', 'processingStatus').get(),
     db.collection('sweater_settlements').select('figures').get(),
     readEligibilityStates(db),
   ]);
   const data = Object.fromEntries(names.map((name, i) => [name, rows[i]]));
-  // Only financial/identity fields needed for the shared revenue calculator.
-  // Worker names and full booking documents are neither selected nor returned.
+  // Payroll's worker linkage stays on the trusted server. Only financial
+  // aggregates leave it; worker names and full booking documents are not returned.
   const revenueSources = {
     washes: washSnap.docs.map(d => ({ ...d.data(), id: d.id })),
     bookings: bookingSnap.docs.map(d => ({ ...d.data(), id: d.id })),
@@ -96,6 +97,7 @@ export async function partnerAllocationReport(db, { partnerId, periodKey, today 
     data.startup_cost_entries.map(e => monthOf(e.spent_date)),
     data.partner_payments.filter(p => p.partner_id === selected.id).map(p => monthOf(p.payment_date)),
     washSnap.docs.map(d => monthOf(d.data().wash_date)),
+    data.bikers.map(b => monthOf(b.start_date || b.startDate)),
   ).filter(validMonth).filter(m => m <= through);
   const first = dates.length ? dates.sort()[0] : through;
   const dynamicCategories = data.variable_expense_categories.filter(c => c.is_dynamic === true);
@@ -179,11 +181,16 @@ export async function partnerAllocationReport(db, { partnerId, periodKey, today 
     && validMonth(monthOf(p.payment_date)) && String(p.payment_date).slice(0, 10) <= fundingAsOf);
   const paid = fundingPayments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
   let spentBefore = 0;
+  let payrollPreviews;
+  try { payrollPreviews = await previewPayrollPeriods(db, months, { now: today,
+    sourceData: { bikers: data.bikers, washes: revenueSources.washes, advances: data.temporary_expenses } }); }
+  catch { throw new LedgerError('تعذّر تأكيد مصروف الرواتب المستحقة؛ يحتاج المسير مراجعة من الإدارة قبل عرض التقرير.'); }
   const results = months.map(period => {
     const eligibility = operatingParticipation(partners, eligibilityStates, selected.id, period);
     const statement = partnerOperatingStatement({
       accounts: data.chart_of_accounts, entries, lines, periodKey: period, scalingFactor: eligibility.factor,
       feeRules, settings, revenueSources, monthlyExpenses: data.monthly_expenses,
+      payrollPreview: payrollPreviews.find(p => p.periodKey === period),
       variableExpenses: data.variable_expenses.filter(v => !dynamicIds.has(v.category_id)), annualExpenses: data.annual_expenses,
       vouchers: data.expense_vouchers,
       dynamicCommissions: dynamicCategories.map(c => ({ id: c.id, periodKey: period, amount: (washQuantities.get(period) || 0) * DEFAULT_DYNAMIC_UNIT_COST })),

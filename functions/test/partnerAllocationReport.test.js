@@ -33,12 +33,47 @@ function database(overrides = {}) {
       select: (...fields) => { projection = fields; return q; },
       where: (key, _operator, value) => { selected = selected.filter(r => r[key] === value); return q; },
       limit: n => { selected = selected.slice(0, n); return q; },
-      doc: id => ({ get: async () => selected.find(r => r.id === id) ? doc(selected.find(r => r.id === id)) : { exists: false } }),
+      doc: id => ({ get: async () => selected.find(r => r.id === id) ? doc(selected.find(r => r.id === id)) : { exists: false },
+        collection: sub => db.collection(`${name}/${id}/${sub}`) }),
     };
     return q;
   } };
   return db;
 }
+
+describe('server earned payroll in partner statements, no salary records or permissions changed', () => {
+  const options = { partnerId: 'p1', periodKey: '2026-10', today: new Date('2026-10-11') };
+  const inputs = extra => ({ monthly_expenses: [], variable_expenses: [], annual_expenses: [], annual_expense_entries: [],
+    chart_of_accounts: [{ id: '5010', code: '5010', accountType: 'expense', normalBalance: 'debit' }],
+    bikers: [{ id: 'private-worker', name: 'Private employee', salary: 1000, start_date: '2026-09-16' }], ...extra });
+  it('includes earned wages before payment and the join month in historical coverage without exposing a worker', async () => {
+    const input = inputs(); const original = structuredClone(input);
+    const report = await partnerAllocationReport(database(input), options);
+    expect(report.statements.find(s => s.periodKey === '2026-09').totalCosts).toBe(50);
+    expect(report.statements.at(-1).totalCosts).toBe(100);
+    expect(report.statements.at(-1).salaryAccrual).toMatchObject({ amount: 100, unposted: 100, estimated: true });
+    expect(JSON.stringify(report)).not.toMatch(/Private employee|private-worker|basicDue|salaryExpense/);
+    expect(input).toEqual(original);
+  });
+  it.each([0, 400, 1000])('frozen approved/partially paid payroll and %s posted expense count once despite edited worker facts', async amount => {
+    const runId = '2026-10__r1';
+    const db = database(inputs({ bikers: [{ id: 'private-worker', name: 'Private employee', salary: 9999, start_date: '2026-10-01' }],
+      payroll_periods: [{ id: '2026-10', currentRunId: runId }],
+      payroll_runs: [{ id: runId, periodKey: '2026-10', status: amount ? 'partially_paid' : 'approved' }],
+      [`payroll_runs/${runId}/items`]: [{ id: 'private-worker', name: 'Private employee', basicDue: 1000 }],
+      journal_entries: amount ? [{ id: 'payment', sourceType: 'payroll', sourceId: runId, status: 'posted', entryDate: '2026-11-01',
+        payrollSnapshot: { periodKey: '2026-10' }, lines: [{ accountId: '5010', debit: amount }, { accountId: '1020', credit: amount }] }] : [],
+    }));
+    const report = await partnerAllocationReport(db, options);
+    expect(report.statements.at(-1)).toMatchObject({ totalCosts: 100, salaryAccrual: { amount: 100, unposted: (1000 - amount) / 10 } });
+    expect(JSON.stringify(report)).not.toMatch(/Private employee|private-worker|9999/);
+  });
+  it('retains the genuine partner guard: another supplied partner id is ignored, admin preview is not required', async () => {
+    const report = await dispatch(database(inputs()), null, 'partnerInsights', { partnerId: 'p2', includeStatements: true, periodKey: '2026-10' }, { uid: 'u1' });
+    expect(report.partnerId).toBe('p1');
+    expect(report.statements.at(-1).salaryAccrual.amount).toBe(100);
+  });
+});
 
 describe('توزيع التشغيل حسب المؤهلين مع ثبات رأس المال وخصوصية الشركاء', () => {
   it('تصنيف التأسيس المؤكد يجمع خططاً مختلفة والعكس يرث فئته دون دمج السنوي أو البنود بلا تصنيف', async () => {

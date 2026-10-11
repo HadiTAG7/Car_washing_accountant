@@ -441,6 +441,9 @@ export function IncomeStatementCard({
               <p>إجمالي المصروفات الثابتة الشهرية والسنوية: {formatCurrency(statement.expenseBreakdown.fixedTotal)}</p>
               <p>إجمالي مصروفاتك واحتياطي التجديد: {formatCurrency(statement.expenseBreakdown.total)}</p>
               <p>المصاريف الشهرية والمتغيّرة تخص نفس شهرها. كل بند سنوي ÷ 12 لتجديد السنة الجاية، ونحسبه بس من الربح المتاح؛ الدفعة الأولى ما تنخصم مرة ثانية.</p>
+              {statement.salaryAccrual && <p>الرواتب تُحتسب في شهر استحقاقها قبل السداد؛ عند الترحيل يُخصم الجزء المرحّل من الاستحقاق غير المرحّل، فلا تتكرر.
+                {statement.salaryAccrual.estimated && <> الرواتب للشهر الجاري تقديرية حتى إقفال المسير.</>}
+              </p>}
             </div>
           )}
           <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-3 leading-relaxed">

@@ -408,7 +408,7 @@ async function sourceRows(reader, db) {
   return { bikers: rows(bikersSnap), washes: rows(washesSnap), advances: rows(advancesSnap) };
 }
 
-export async function previewPayroll(db, payload, { now = new Date() } = {}) {
+export async function previewPayroll(db, payload, { now = new Date(), sourceData = null } = {}) {
   const periodKey = validPeriodKey(payload?.periodKey);
   const meta = await db.collection('payroll_periods').doc(periodKey).get();
   const runId = meta.exists ? meta.data().currentRunId : null;
@@ -427,12 +427,19 @@ export async function previewPayroll(db, payload, { now = new Date() } = {}) {
     };
   }
   const active = run && ![PAYROLL_STATUS.REVERSED, PAYROLL_STATUS.CANCELLED].includes(run.status);
-  const sources = await sourceRows(db, db);
+  const sources = sourceData || await sourceRows(db, db);
   const automaticAdvanceDeduction = payload?.automaticAdvanceDeduction === true || (payload?.automaticAdvanceDeduction == null && active && run.automaticAdvanceDeduction === true);
   return calculatePayrollPreview({ ...payload, adjustments: payload?.adjustments ?? (active ? run.inputAdjustments : []),
     ...sources, periodKey, automaticAdvanceDeduction, now }, {
     commission: active && !automaticAdvanceDeduction ? storedCommissionPolicy(run) : null,
   });
+}
+
+// Server-only batching for historical income reports. The caller cannot supply
+// financial sources; reuse one read of the same trusted payroll source rows.
+export async function previewPayrollPeriods(db, periodKeys, { now = new Date(), sourceData = null } = {}) {
+  sourceData ||= await sourceRows(db, db);
+  return Promise.all(periodKeys.map(periodKey => previewPayroll(db, { periodKey, automaticAdvanceDeduction: true }, { now, sourceData })));
 }
 
 function auditRecord(action, runId, userId, before, after, reason, FieldValue) {

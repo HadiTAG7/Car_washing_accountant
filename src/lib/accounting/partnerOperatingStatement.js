@@ -9,6 +9,7 @@ import { ADAPTERS } from './sourceAdapters.js';
 import { templateActiveIn } from './recurring.js';
 import { taxPolicyAt } from './taxPolicy.js';
 import { liveIncomeStatement } from './liveIncomeStatement.js';
+import { unpaidPayrollIncome } from './unpaidPayrollIncome.js';
 
 const GROUPS = [
   ['variable', 'المصروفات المتغيرة والعمولات'],
@@ -55,7 +56,7 @@ export function partnerOperatingStatement({
   feeRules = null, monthlyExpenses = [], variableExpenses = [], annualExpenses = [],
   vouchers = [], settings = {},
   dynamicCommissions = [], dynamicVariableIds = [],
-  revenueSources = {},
+  revenueSources = {}, payrollPreview = null,
 } = {}) {
   const range = monthRange(periodKey);
   if (!range.from) throw new Error('شهر التقرير غير صالح.');
@@ -83,6 +84,10 @@ export function partnerOperatingStatement({
     if (original?.sourceId) seen.add(sourceKey(sourceKindOf(original), original.sourceId));
   }
   const items = [];
+  const payroll = unpaidPayrollIncome({ preview: payrollPreview, accounts, entries, lines, periodKey, monthlyExpenses });
+  for (const row of payroll.items) items.push({ id: `salary:${periodKey}`, groupKey: 'monthly', entryDate: row.date,
+    description: row.description, accountName: 'حسب مسير الرواتب — دون تسجيل سداد', rawAmount: row.amount,
+    amount: round2(row.amount * factor), section: accountIndex.get('5010')?.directCost ? 'direct' : 'operating', basis: 'accrued' });
   const sources = new Map([
     ...monthlyExpenses.map(r => [sourceKey('monthly', r.id), r.expense_name]),
     ...variableExpenses.map(r => [sourceKey('variable', r.id), r.expense_name]),
@@ -209,6 +214,8 @@ export function partnerOperatingStatement({
     reason: scheduledAmount <= 0 ? 'no-schedule' : availableProfit <= 0 ? 'no-profit'
       : annualReserve < scheduledAmount ? 'limited' : 'full' };
   return { ...ledgerStatement, ledgerStatement, basis: 'partner-allocation',
+    salaryAccrual: payroll.summary && { amount: round2(payroll.summary.amount * factor),
+      posted: round2(payroll.summary.posted * factor), unposted: round2(payroll.summary.unposted * factor), estimated: payroll.summary.estimated },
     grossRevenue, salesReturns, otherRevenue, netRevenue,
     directCosts, operatingExpenses, totalCosts, annualReserve, totalAllocation, renewalReserve,
     grossProfit: round2(netRevenue - directCosts), netProfitBeforeFees,

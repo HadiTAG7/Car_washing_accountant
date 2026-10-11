@@ -39,14 +39,15 @@ import { liveIncomeStatement } from '../lib/accounting/liveIncomeStatement';
 import { useIncomeStatementSources } from '../hooks/useIncomeStatementSources';
 import { mapWash } from '../lib/mappers';
 import { payrollExpensePeriod } from '../lib/accounting/payrollExpensePeriod';
+import { useIncomePayrollPreviews } from '../hooks/useIncomePayrollPreviews';
 
 export default function FinancialSummaryPage() {
   const { language } = useLanguage();
   const { bikers } = useBikers();
   const { items: initialWashes, loading: washesLoading, error: washesError, refetch: refetchWashes } = useWashes();
   const { items: variables, loading: varLoading,      error: varError,      refetch: refetchVariables } = useVariableExpenses();
-  const { items: monthlies, loading: monthlyLoading,  error: monthlyError,  refetch: refetchMonthly }  = useMonthlyExpenses();
-  const { items: annuals,   loading: annualLoading,   error: annualError,   refetch: refetchAnnual }   = useAnnualExpenses();
+  const { loading: monthlyLoading,  error: monthlyError,  refetch: refetchMonthly }  = useMonthlyExpenses();
+  const { loading: annualLoading,   error: annualError,   refetch: refetchAnnual }   = useAnnualExpenses();
   // ── the statement's actual source ──
   // The chart classifies posted and registered operational contributions.
   const {
@@ -70,6 +71,10 @@ export default function FinancialSummaryPage() {
   const canReadDetails = !isPartnerView && role !== 'supervisor';
 
   const [selectedMonth, setSelectedMonth] = useState(todayMonth());
+  const payroll = useIncomePayrollPreviews(selectedMonth, {
+    enabled: !isPartnerView && ['admin', 'accountant'].includes(role),
+    revision: JSON.stringify([sources.payrollRuns, sources.bikers, entries, sources.washes]),
+  });
   const [detailCategory, setDetailCategory] = useState(null);
   const [statementDetail, setStatementDetail] = useState(null);
   const openStatementDetail = key => canReadDetails ? () => setStatementDetail({ key, month: selectedMonth }) : undefined;
@@ -80,6 +85,7 @@ export default function FinancialSummaryPage() {
   // select is a month whose figures nobody can read.
   const availableMonths = useMemo(() => {
     const set = new Set(listAvailableMonths(washes, variables).filter((key) => key !== '__invalid__'));
+    for (const run of sources.payrollRuns || []) if (/^\d{4}-(0[1-9]|1[0-2])$/.test(run.periodKey)) set.add(run.periodKey);
     const byEntry = new Map(entries.map(entry => [entry.id, entry]));
     for (const e of entries) {
       const key = String(e.periodKey || String(e.entryDate || '').slice(0, 7));
@@ -98,11 +104,13 @@ export default function FinancialSummaryPage() {
   // One pure function over the live sources. Pro-rata for the partner view is
   // applied inside it, once, because every line is linear in that factor.
   const statement = useMemo(
-    () => liveIncomeStatement({
-      accounts, entries, lines, periodKey: selectedMonth, feeRules, scalingFactor,
-      sources, policyAt: date => taxPolicyAt(date, settings),
-    }),
-    [accounts, entries, lines, selectedMonth, feeRules, scalingFactor, sources, settings],
+    () => {
+      const input = { accounts, entries, lines, periodKey: selectedMonth, feeRules, scalingFactor,
+        sources, policyAt: date => taxPolicyAt(date, settings) };
+      try { return liveIncomeStatement({ ...input, sources: { ...sources, payrollPreviews: payroll.data } }); }
+      catch (payrollError) { return { ...liveIncomeStatement(input), payrollError }; }
+    },
+    [accounts, entries, lines, selectedMonth, feeRules, scalingFactor, sources, settings, payroll.data],
   );
 
   const netRevenue          = statement.netRevenue;
@@ -150,6 +158,7 @@ export default function FinancialSummaryPage() {
   // The SAME function, run six times, so the chart cannot disagree with the
   // statement above it.
   const trend = useMemo(() => {
+    if (payroll.loading || payroll.error || statement.payrollError) return null;
     const [yy, mm] = selectedMonth.split('-').map(Number);
     if (!yy || !mm) return null;
     const fmt = new Intl.DateTimeFormat(getLocale(language), { month: 'short', numberingSystem: 'latn' });
@@ -161,10 +170,11 @@ export default function FinancialSummaryPage() {
         label: fmt.format(d),
       });
     }
-    const rows = months.map(({ key }) => liveIncomeStatement({
+    let rows;
+    try { rows = months.map(({ key }) => liveIncomeStatement({
       accounts, entries, lines, periodKey: key, feeRules, scalingFactor,
-      sources, policyAt: date => taxPolicyAt(date, settings),
-    }));
+      sources: { ...sources, payrollPreviews: payroll.data }, policyAt: date => taxPolicyAt(date, settings),
+    })); } catch (error) { return { error }; }
     return {
       months,
       revenue: rows.map((r) => r.netRevenue),
@@ -172,13 +182,13 @@ export default function FinancialSummaryPage() {
       net:     rows.map((r) => r.netProfit),
       any:     rows.some((r) => r.netRevenue !== 0 || r.totalCosts !== 0),
     };
-  }, [selectedMonth, accounts, entries, lines, feeRules, scalingFactor, language, sources, settings]);
+  }, [selectedMonth, accounts, entries, lines, feeRules, scalingFactor, language, sources, settings, payroll.data, payroll.loading, payroll.error, statement.payrollError]);
 
-  const anyError    = live.error || ledgerError || washesError || varError || monthlyError || annualError;
-  const anyLoading  = live.loading || ledgerLoading || washesLoading || varLoading || monthlyLoading || annualLoading;
-  const noData      = !entries.length && !washes.length && !variables.length && !monthlies.length && !annuals.length;
+  const anyError    = payroll.error || statement.payrollError || trend?.error || live.error || ledgerError || washesError || varError || monthlyError || annualError;
+  const anyLoading  = payroll.loading || live.loading || ledgerLoading || washesLoading || varLoading || monthlyLoading || annualLoading;
 
   function retryAll() {
+    payroll.refetch();
     live.refetch();
     refetchLedger?.();
     refetchWashes?.();
@@ -257,7 +267,7 @@ export default function FinancialSummaryPage() {
         </div>
 
         {(washes.some((row) => !monthOf(row.washDate)) || variables.some((row) => !monthOf(row.loggedDate))) && <p role="status" className="text-sm text-amber-800 dark:text-amber-300">توجد سجلات تشغيل بتواريخ غير صالحة أو مفقودة لا يمكن إسنادها إلى شهر. راجع مجموعة التواريخ غير الصالحة في المصاريف المتغيرة وسجل الغسلات؛ لم تُحذف هذه السجلات.</p>}
-        {anyLoading && noData ? (
+        {anyError ? null : anyLoading ? (
           <LoadingState rows={4} />
         ) : (
           <>
@@ -490,6 +500,10 @@ export default function FinancialSummaryPage() {
                 {canReadDetails && 'اضغط على المبلغ أو البند لعرض مكوناته ومصادره. '}
                 مصروف الرواتب يتبع فترة الاستحقاق المحفوظة بالمسير؛ تاريخ الدفع وحركة النقد في الدفتر يبقيان في تاريخ الصرف الفعلي.
               </p>
+              {statement.salaryAccrual && <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                الرواتب تُحتسب في شهر استحقاقها قبل السداد؛ عند الترحيل يُخصم الجزء المرحّل من الاستحقاق غير المرحّل، فلا تتكرر.
+                {statement.salaryAccrual.estimated && <> الرواتب للشهر الجاري تقديرية حتى إقفال المسير.</>}
+              </p>}
               {(statement.costRows.length > 0 || statement.expenseRows.length > 0) && (
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-3 leading-relaxed">
                   التكاليف والمصاريف أعلاه مجمّعة من حسابات:

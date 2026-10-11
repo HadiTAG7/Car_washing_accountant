@@ -14,7 +14,13 @@ it('shows the same unscaled Sweater ID separately in desktop, mobile and booking
   const original = structuredClone({ bikers, rows });
   render(<SweaterWashWorkerSummary washes={rows} bikers={bikers} scalingFactor={0.5} />);
   const summary = screen.getByRole('table', { name: 'ملخص غسلات سويتر حسب العامل' });
-  expect([...summary.querySelectorAll('th')].slice(0,2).map(x=>x.textContent)).toEqual(['العامل','Sweater ID']);
+  expect([...summary.querySelectorAll('th')].slice(0,2).map(x=>x.textContent)).toEqual(['Sweater ID','العامل']);
+  expect([...summary.querySelectorAll('tbody td')].slice(0,2).map(x=>x.textContent)).toEqual(['001986','Worker 1']);
+  const details = screen.getByRole('table', { name: 'تفاصيل غسلات سويتر' });
+  expect([...details.querySelectorAll('th')].slice(0,2).map(x=>x.textContent)).toEqual(['Sweater ID','العامل']);
+  expect([...details.querySelectorAll('tbody td')].slice(0,2).map(x=>x.textContent)).toEqual(['001986','Worker 1']);
+  const mobileId = screen.getAllByText('001986').find(e => e.tagName === 'SPAN');
+  expect(mobileId.parentElement.nextElementSibling.textContent).toBe('Worker 1');
   expect(within(summary).getByText('001986').getAttribute('dir')).toBe('ltr');
   expect(screen.getAllByText('001986')).toHaveLength(3);
   expect({ bikers, rows }).toEqual(original);

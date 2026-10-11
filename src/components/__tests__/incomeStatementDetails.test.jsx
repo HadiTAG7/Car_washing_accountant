@@ -50,6 +50,7 @@ describe('statement drilldown UI', () => {
     expect(screen.queryByTestId('statement-detail-amount')).toBeNull();
     expect(screen.queryByRole('button', { name: /عرض تفاصيل:/ })).toBeNull();
     state.payrollLoading = false; state.payrollError = new Error('Payroll source unavailable'); rerender(<FinancialSummaryPage />);
+    expect(screen.queryByRole('dialog')).toBeNull();
     expect(screen.queryByRole('button', { name: /عرض تفاصيل:/ })).toBeNull();
     expect(screen.getByText('Payroll source unavailable')).toBeTruthy();
   });

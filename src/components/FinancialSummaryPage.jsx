@@ -600,13 +600,13 @@ export default function FinancialSummaryPage() {
         )}
       </main>
 
-      {canReadDetails && <FinancialDetailsModal
+      {canReadDetails && !anyError && !anyLoading && <FinancialDetailsModal
         category={detailCategory}
         monthLabel={monthLabel}
         data={detailData}
         onClose={() => setDetailCategory(null)}
       />}
-      {canReadDetails && !anyLoading && statementDetail?.month === selectedMonth && (
+      {canReadDetails && !anyError && !anyLoading && statementDetail?.month === selectedMonth && (
         <IncomeStatementDetailsModal
           key={`${selectedMonth}:${statementDetail.key}`}
           statement={statement}

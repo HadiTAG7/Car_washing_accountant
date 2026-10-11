@@ -306,8 +306,8 @@ export default function BikersPage({ role, payrollPreview = false }) {
             <table className="w-full min-w-[1440px] text-sm">
               <thead>
                 <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
-                  <SortableTh sort={sort} onSort={applySort} id="name" />
                   <SortableTh sort={sort} onSort={applySort} id="sweaterId" />
+                  <SortableTh sort={sort} onSort={applySort} id="name" />
                   <SortableTh sort={sort} onSort={applySort} id="currentStatus" />
                   <SortableTh sort={sort} onSort={applySort} id="contact" />
                   <SortableTh sort={sort} onSort={applySort} id="residence" />
@@ -348,6 +348,9 @@ export default function BikersPage({ role, payrollPreview = false }) {
                 {bikers.length > 0 && filteredRows.length === 0 && <tr><td colSpan={13} className="py-8 text-center text-slate-500 dark:text-slate-400">لا توجد نتائج مطابقة للبحث</td></tr>}
                 {filteredRows.map((r) => (
                   <tr key={r.id} className="border-b border-slate-50 dark:border-slate-800/60 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+                    <td className="py-3 px-4 min-w-[110px] whitespace-nowrap text-center tabular-nums text-slate-600 dark:text-slate-400">
+                      <span translate="no" dir="ltr" className="inline-block">{r.driverExternalId || '—'}</span>
+                    </td>
                     <td className="py-3 px-4 whitespace-normal break-words min-w-[160px] font-medium text-slate-800 dark:text-slate-200">
                       <div className="flex items-center gap-2">
                         <span className="bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300 w-8 h-8 rounded-control flex items-center justify-center shrink-0">
@@ -362,9 +365,6 @@ export default function BikersPage({ role, payrollPreview = false }) {
                           )}
                         </span>
                       </div>
-                    </td>
-                    <td translate="no" dir="ltr" className="py-3 px-4 min-w-[110px] whitespace-nowrap text-center tabular-nums text-slate-600 dark:text-slate-400">
-                      {r.driverExternalId || '—'}
                     </td>
                     <td className="py-3 px-4 min-w-[130px] whitespace-normal break-words">
                       <span translate="no" dir="auto" className="inline-block rounded-control bg-slate-100 dark:bg-slate-800 px-2.5 py-1 text-xs font-medium text-slate-700 dark:text-slate-300">

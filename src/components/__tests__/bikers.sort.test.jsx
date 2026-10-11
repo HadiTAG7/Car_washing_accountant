@@ -48,21 +48,23 @@ const { default: BikersPage } = await import('../BikersPage');
 const namesInTable = () => {
   const table = document.querySelector('table');
   return [...table.querySelectorAll('tbody tr')]
-    .map((tr) => tr.querySelector('td')?.textContent?.trim())
+    .map((tr) => tr.cells[1]?.textContent?.trim())
     .filter(Boolean)
     .map((t) => t.split('\n')[0].trim());
 };
 
 const header = (label) => screen.getByTitle(`ترتيب حسب ${label}`);
 
-it('shows a separate Sweater ID column directly after the name, searchable and sortable with missing IDs last', () => {
+it('shows Sweater ID before the name, searchable and sortable with missing IDs last', () => {
   const { container } = render(<BikersPage role="admin" />);
   const headers = [...container.querySelectorAll('thead th')].map(th => th.textContent);
-  expect(headers.slice(0, 3)).toEqual(['الاسم', 'Sweater ID', 'حالة العامل']);
+  expect(headers.slice(0, 3)).toEqual(['Sweater ID', 'الاسم', 'حالة العامل']);
   const rows = [...container.querySelectorAll('tbody tr')];
-  expect(rows.find(tr => tr.cells[0].textContent.includes('خالد')).cells[1].textContent).toBe('001986');
-  expect(rows.find(tr => tr.cells[0].textContent.includes('سالم')).cells[1].textContent).toBe('—');
-  expect(rows[0].cells[1].getAttribute('dir')).toBe('ltr');
+  expect(rows.find(tr => tr.cells[1].textContent.includes('خالد')).cells[0].textContent).toBe('001986');
+  expect(rows.find(tr => tr.cells[1].textContent.includes('سالم')).cells[0].textContent).toBe('—');
+  // The sticky cell inherits table direction; only the identifier text is LTR.
+  expect(rows[0].cells[0].getAttribute('dir')).toBeNull();
+  expect(rows[0].cells[0].querySelector('span').getAttribute('dir')).toBe('ltr');
   fireEvent.click(header('Sweater ID'));
   expect(namesInTable()).toEqual(['أحمد', 'خالد', 'سالم']);
   fireEvent.click(header('Sweater ID'));

@@ -187,7 +187,7 @@ export default function FinancialSummaryPage() {
     };
   }, [selectedMonth, accounts, entries, lines, feeRules, scalingFactor, language, sources, settings, payroll.data, payroll.loading, payroll.error, statement.payrollError]);
 
-  const anyError    = payroll.error || statement.payrollError || trend?.error || live.error || ledgerError || washesError || varError || monthlyError || annualError;
+  const anyError    = payroll.error || statement.payrollError || live.error || ledgerError || washesError || varError || monthlyError || annualError;
   const anyLoading  = payroll.loading || live.loading || ledgerLoading || washesLoading || varLoading || monthlyLoading || annualLoading;
 
   function retryAll() {
@@ -556,7 +556,7 @@ export default function FinancialSummaryPage() {
                 title="اتجاه ٦ أشهر"
                 subtitle={`الإيرادات مقابل التكاليف وصافي الربح حتى ${monthLabel}`}
               />
-              {trend?.any ? (
+              {trend?.error ? <ErrorState title="تعذّر تأكيد اتجاه الأشهر السابقة" error={trend.error} onRetry={retryAll} /> : trend?.any ? (
                 <LineTrend
                   months={trend.months}
                   formatValue={formatCurrency}

@@ -41,3 +41,14 @@ it('fails closed for an unavailable or mismatched required salary source, never 
   await waitFor(() => expect(hook.result.current.error).toBeTruthy());
   expect(hook.result.current.data).toBeNull();
 });
+it('keeps an older missing preview explicitly unavailable without hiding the verified current month', async () => {
+  state.call.mockImplementation(async (_, p) => {
+    if (p.periodKey === '2026-09') throw new Error('Old payroll unavailable');
+    return { periodKey: p.periodKey, lines: [{ basicDue: 900 }] };
+  });
+  const hook = renderHook(() => useIncomePayrollPreviews('2026-10', { enabled: true }));
+  await waitFor(() => expect(hook.result.current.data?.length).toBe(6));
+  expect(hook.result.current.error).toBeNull();
+  expect(hook.result.current.data.find(p => p.periodKey === '2026-09')).toEqual({ periodKey: '2026-09', unavailable: true });
+  expect(hook.result.current.data.at(-1).lines[0].basicDue).toBe(900);
+});

@@ -1,4 +1,5 @@
 {
+  "تعذّر تأكيد اتجاه الأشهر السابقة": "Unable to verify the historical monthly trend",
   "رواتب مستحقة غير مُرحّلة": "Accrued salaries, not yet posted",
   "حسب مسير الرواتب — دون تسجيل سداد": "From payroll — no payment recorded",
   "الرواتب تُحتسب في شهر استحقاقها قبل السداد؛ عند الترحيل يُخصم الجزء المرحّل من الاستحقاق غير المرحّل، فلا تتكرر.": "Salaries count in their earned month before payment. Posting replaces the corresponding unposted accrual, so they are never counted twice.",

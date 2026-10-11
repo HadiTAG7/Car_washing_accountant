@@ -14,8 +14,15 @@ export function useIncomePayrollPreviews(periodKey, { enabled = false, revision 
   const ready = enabled && isFirebaseConfigured && !loading && Boolean(user?.id)
     && /^\d{4}-(0[1-9]|1[0-2])$/.test(periodKey);
   return useFirestoreQuery(async () => Promise.all(incomePayrollMonths(periodKey).map(async month => {
-    const preview = await callPayroll('payrollPreview', { periodKey: month, automaticAdvanceDeduction: true });
-    if (preview?.periodKey !== month || !Array.isArray(preview.lines)) throw new Error('معاينة الرواتب لا تطابق شهر قائمة الدخل.');
-    return preview;
+    try {
+      const preview = await callPayroll('payrollPreview', { periodKey: month, automaticAdvanceDeduction: true });
+      if (preview?.periodKey !== month || !Array.isArray(preview.lines)) throw new Error('معاينة الرواتب لا تطابق شهر قائمة الدخل.');
+      return preview;
+    } catch (error) {
+      if (month === periodKey) throw error;
+      // A historical chart gap cannot hide a verified selected-month report.
+      // Keep its period explicitly unavailable, never substitute zero wages.
+      return { periodKey: month, unavailable: true };
+    }
   })), { enabled: ready, preserveResult: true, queryKey: JSON.stringify([user?.id, periodKey, enabled, revision]), fallback: [] });
 }

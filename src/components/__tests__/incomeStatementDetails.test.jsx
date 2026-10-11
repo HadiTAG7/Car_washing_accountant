@@ -41,6 +41,12 @@ afterEach(() => { cleanup(); setLanguage('ar'); });
 const openCosts = () => fireEvent.click(screen.getByRole('button', { name: 'عرض تفاصيل: يُخصم منه: التكاليف المباشرة والعمولات' }));
 
 describe('statement drilldown UI', () => {
+  it('a historical payroll gap blocks the chart, not the verified selected-month income or its details', () => {
+    state.payroll = [{ periodKey: '2026-09', unavailable: true }, { periodKey: '2026-10', lines: [{ basicDue: 900 }] }];
+    render(<FinancialSummaryPage />); openCosts();
+    expect(screen.getByTestId('statement-detail-amount').textContent).toBe(formatCurrency(1000));
+    expect(screen.getByText('تعذّر تأكيد اتجاه الأشهر السابقة')).toBeTruthy();
+  });
   it('shows unpaid salaries in the exact statement and drilldown, never an incomplete subtotal while loading or failed', () => {
     state.payroll = [{ periodKey: '2026-10', estimated: true, lines: [{ basicDue: 900, advanceDeduction: 200 }] }];
     const { rerender } = render(<FinancialSummaryPage />); openCosts();

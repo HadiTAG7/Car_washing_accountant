@@ -806,6 +806,7 @@ export function mapBiker(row) {
     residence:     row.residence || '',
     sponsor:       row.sponsor || '',
     nationality:   row.nationality || '',
+    currentStatus: String(row.current_status || '').trim(),
     salary:        Math.max(0, Number(row.salary) || 0),
     startDate:     row.start_date || '',
     endDate:       row.end_date || '',
@@ -814,7 +815,7 @@ export function mapBiker(row) {
   };
 }
 export function toBikerInsert({
-  name, nameArabic, nameEnglish, contactNumber, residence, sponsor, nationality, salary, startDate, endDate, iqamaNumber, iqamaExpiry,
+  name, nameArabic, nameEnglish, contactNumber, residence, sponsor, nationality, currentStatus, salary, startDate, endDate, iqamaNumber, iqamaExpiry,
 }) {
   const names = bikerNameFields({ name, nameArabic, nameEnglish });
   return {
@@ -825,6 +826,7 @@ export function toBikerInsert({
     residence:      String(residence || '').trim() || null,
     sponsor:        String(sponsor || '').trim() || null,
     nationality:    String(nationality || '').trim() || null,
+    current_status: String(currentStatus || '').trim() || null,
     salary:         Math.max(0, Number(salary) || 0),
     start_date:     startDate || null,
     end_date:       endDate || null,
@@ -841,6 +843,7 @@ export function toBikerUpdate(updates = {}) {
   if (updates.residence     !== undefined) payload.residence      = String(updates.residence || '').trim() || null;
   if (updates.sponsor       !== undefined) payload.sponsor        = String(updates.sponsor || '').trim() || null;
   if (updates.nationality   !== undefined) payload.nationality    = String(updates.nationality || '').trim() || null;
+  if (updates.currentStatus !== undefined) payload.current_status = String(updates.currentStatus || '').trim() || null;
   if (updates.salary        !== undefined) payload.salary         = Math.max(0, Number(updates.salary) || 0);
   if (updates.startDate     !== undefined) payload.start_date     = updates.startDate || null;
   if (updates.endDate       !== undefined) payload.end_date       = updates.endDate || null;

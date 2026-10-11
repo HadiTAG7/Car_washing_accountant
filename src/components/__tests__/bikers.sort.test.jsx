@@ -21,8 +21,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, cleanup, fireEvent, screen } from '@testing-library/react';
 
 const BIKERS = [
-  { id: '1', name: 'خالد', sponsor: 'مؤسسة النور', nationality: 'باكستاني', residence: 'سكن الغرب', salary: 1800 },
-  { id: '2', name: 'أحمد', sponsor: 'شركة الفجر', nationality: 'بنغلاديشي', residence: 'سكن الشمال', salary: 2200 },
+  { id: '1', name: 'خالد', currentStatus: 'يشتغل', sponsor: 'مؤسسة النور', nationality: 'باكستاني', residence: 'سكن الغرب', salary: 1800 },
+  { id: '2', name: 'أحمد', currentStatus: 'تدريب', sponsor: 'شركة الفجر', nationality: 'بنغلاديشي', residence: 'سكن الشمال', salary: 2200 },
   { id: '3', name: 'سالم', sponsor: null, nationality: 'هندي', residence: null, salary: 2000 },
 ];
 
@@ -54,6 +54,19 @@ const namesInTable = () => {
 };
 
 const header = (label) => screen.getByTitle(`ترتيب حسب ${label}`);
+
+it('shows current status beside the name and searches/sorts it without changing summary amounts', () => {
+  const { container } = render(<BikersPage role="admin" />);
+  expect(screen.getByText('غير محددة')).toBeTruthy();
+  const before = [...container.querySelectorAll('.sw-stat-card')].map(card => card.textContent);
+  fireEvent.click(header('حالة العامل'));
+  expect(namesInTable()).toEqual(['أحمد', 'خالد', 'سالم']);
+  fireEvent.click(header('حالة العامل'));
+  expect(namesInTable()).toEqual(['خالد', 'أحمد', 'سالم']);
+  fireEvent.change(screen.getByRole('searchbox', { name: 'البحث في سجل العمال' }), { target: { value: 'تدريب' } });
+  expect(namesInTable()).toEqual(['أحمد']);
+  expect([...container.querySelectorAll('.sw-stat-card')].map(card => card.textContent)).toEqual(before);
+});
 
 beforeEach(() => { window.localStorage.clear(); });
 afterEach(() => { cleanup(); window.localStorage.clear(); });

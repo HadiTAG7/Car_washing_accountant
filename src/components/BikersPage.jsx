@@ -1,5 +1,6 @@
 import { translate } from '../i18n/locale';
 import { useLanguage } from '../i18n/useLanguage';
+import { bikerCurrentStatusLabel } from '../lib/bikerCurrentStatus';
 import { displayBikerName } from '../lib/bikerNames';
 import ScrollableTable from './ScrollableTable';
 import TableSearch from './TableSearch';
@@ -128,7 +129,7 @@ export default function BikersPage({ role, payrollPreview = false }) {
   const rows = useMemo(() => bikers.map((b) => {
     const stats = washStatsFor(b.name, washes || [], month, undefined, b.id);
     const { advances, total: advancesTotal } = pendingAdvancesFor(b.id, temps || []);
-    return { ...b, displayName: displayBikerName(b, language), stats, advances, advancesTotal };
+    return { ...b, displayName: displayBikerName(b, language), currentStatusLabel: bikerCurrentStatusLabel(b.currentStatus, language), stats, advances, advancesTotal };
   }), [bikers, washes, temps, month, language]);
 
   // ── الترتيب باختيار المالك ──
@@ -139,6 +140,7 @@ export default function BikersPage({ role, payrollPreview = false }) {
   const sortedRows = useMemo(() => sortBikers(rows, sort), [rows, sort]);
   const filteredRows = sortedRows.filter((row) => matchesTableSearch(search, [
     row.name, row.nameArabic, row.nameEnglish, row.contactNumber, row.residence, row.sponsor, row.nationality,
+    row.currentStatus, row.currentStatusLabel,
   ]));
   const applySort = useCallback((columnId) => {
     setSort((prev) => {
@@ -305,6 +307,7 @@ export default function BikersPage({ role, payrollPreview = false }) {
               <thead>
                 <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
                   <SortableTh sort={sort} onSort={applySort} id="name" />
+                  <SortableTh sort={sort} onSort={applySort} id="currentStatus" />
                   <SortableTh sort={sort} onSort={applySort} id="contact" />
                   <SortableTh sort={sort} onSort={applySort} id="residence" />
                   <SortableTh sort={sort} onSort={applySort} id="sponsor" />
@@ -320,14 +323,14 @@ export default function BikersPage({ role, payrollPreview = false }) {
               <tbody>
                 {loading && bikers.length === 0 && (
                   <tr>
-                    <td colSpan={11} className="py-10">
+                    <td colSpan={12} className="py-10">
                       <LoadingState message="جارٍ تحميل سجل البايكرات..." />
                     </td>
                   </tr>
                 )}
                 {!loading && bikers.length === 0 && !error && (
                   <tr>
-                    <td colSpan={11}>
+                    <td colSpan={12}>
                       <EmptyState
                         compact
                         icon={Bike}
@@ -341,7 +344,7 @@ export default function BikersPage({ role, payrollPreview = false }) {
                     </td>
                   </tr>
                 )}
-                {bikers.length > 0 && filteredRows.length === 0 && <tr><td colSpan={11} className="py-8 text-center text-slate-500 dark:text-slate-400">لا توجد نتائج مطابقة للبحث</td></tr>}
+                {bikers.length > 0 && filteredRows.length === 0 && <tr><td colSpan={12} className="py-8 text-center text-slate-500 dark:text-slate-400">لا توجد نتائج مطابقة للبحث</td></tr>}
                 {filteredRows.map((r) => (
                   <tr key={r.id} className="border-b border-slate-50 dark:border-slate-800/60 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
                     <td className="py-3 px-4 whitespace-normal break-words min-w-[160px] font-medium text-slate-800 dark:text-slate-200">
@@ -358,6 +361,11 @@ export default function BikersPage({ role, payrollPreview = false }) {
                           )}
                         </span>
                       </div>
+                    </td>
+                    <td className="py-3 px-4 min-w-[130px] whitespace-normal break-words">
+                      <span translate="no" dir="auto" className="inline-block rounded-control bg-slate-100 dark:bg-slate-800 px-2.5 py-1 text-xs font-medium text-slate-700 dark:text-slate-300">
+                        {r.currentStatusLabel}
+                      </span>
                     </td>
                     <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums" dir="ltr">
                       {r.contactNumber || '—'}

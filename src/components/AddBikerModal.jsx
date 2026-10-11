@@ -5,6 +5,8 @@ import { formatCurrency } from '../data/initialData';
 import { normalizeUnitName } from '../lib/accounting/startupMigration';
 import DateField from './DateField';
 import { bikerNameFields } from '../lib/bikerNames';
+import { BIKER_CURRENT_STATUSES } from '../lib/bikerCurrentStatus';
+import { useLanguage } from '../i18n/useLanguage';
 
 // One modal for add AND edit, keyed on `initialValues?.id` — the same
 // combined pattern AddWashModal already uses, so the two stay one code path.
@@ -16,6 +18,7 @@ const EMPTY = {
   residence:     '',
   sponsor:       '',
   nationality:   '',
+  currentStatus: '',
   salary:        '',
   startDate:     '',
   endDate:       '',
@@ -52,6 +55,7 @@ function suggestionsFrom(bikers, pick) {
 // holds the list, so a hook here would open a second read of the same
 // collection and drag firebaseClient into a modal that has none.
 export default function AddBikerModal({ isOpen, onClose, onAdd, onUpdate, initialValues = null, bikers = [] }) {
+  const { language } = useLanguage();
   const editing = Boolean(initialValues?.id);
   const [form, setForm] = useState(EMPTY);
   const [submitting, setSubmitting] = useState(false);
@@ -59,6 +63,10 @@ export default function AddBikerModal({ isOpen, onClose, onAdd, onUpdate, initia
   // every render while the query loads, and an effect on it would spin.
   const sponsors = useMemo(() => suggestionsFrom(bikers, (b) => b?.sponsor), [bikers]);
   const nationalities = useMemo(() => suggestionsFrom(bikers, (b) => b?.nationality), [bikers]);
+  const statusSuggestions = useMemo(() => [...new Set([
+    ...BIKER_CURRENT_STATUSES.map(item => item[language === 'en' ? 'en' : 'ar']),
+    ...suggestionsFrom(bikers, b => b?.currentStatus),
+  ])], [bikers, language]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -70,6 +78,7 @@ export default function AddBikerModal({ isOpen, onClose, onAdd, onUpdate, initia
         residence:     initialValues.residence || '',
         sponsor:       initialValues.sponsor || '',
         nationality:   initialValues.nationality || '',
+        currentStatus: initialValues.currentStatus || '',
         salary:        initialValues.salary ? String(initialValues.salary) : '',
         startDate:     initialValues.startDate || '',
         endDate:       initialValues.endDate || '',
@@ -105,6 +114,7 @@ export default function AddBikerModal({ isOpen, onClose, onAdd, onUpdate, initia
         residence:     form.residence.trim(),
         sponsor:       form.sponsor.trim(),
         nationality:   form.nationality.trim(),
+        currentStatus: form.currentStatus.trim(),
         salary,
         startDate:     form.startDate || '',
         endDate:       form.endDate || '',
@@ -182,6 +192,23 @@ export default function AddBikerModal({ isOpen, onClose, onAdd, onUpdate, initia
             <input id="bikerFormNameEnglish" type="text" name="nameEnglish" value={form.nameEnglish}
               onChange={handleChange} dir="ltr" placeholder="Ahmed Mohammed"
               className="w-full px-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:border-primary-500 transition-colors" />
+          </div>
+
+          <div>
+            <label htmlFor="bikerFormCurrentStatus" className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+              حالة العامل الحالية
+            </label>
+            <input id="bikerFormCurrentStatus" name="currentStatus" type="text" dir="auto"
+              value={form.currentStatus} onChange={handleChange} list="bikerCurrentStatusOptions"
+              maxLength={100} placeholder="اختر اقتراحًا أو اكتب حالة أخرى"
+              aria-describedby="bikerCurrentStatusHint"
+              className="w-full px-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:border-primary-500 transition-colors" />
+            <datalist id="bikerCurrentStatusOptions">
+              {statusSuggestions.map(status => <option key={status} value={status} />)}
+            </datalist>
+            <p id="bikerCurrentStatusHint" className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              وصف للحالة فقط؛ لا يغيّر الراتب أو العمولات أو تاريخ نهاية الخدمة.
+            </p>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

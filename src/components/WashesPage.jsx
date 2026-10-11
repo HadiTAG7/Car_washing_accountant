@@ -1,6 +1,6 @@
 import { translate } from '../i18n/locale';
 import { getLocale } from '../i18n/locale';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import SweaterWashWorkerSummary from './SweaterWashWorkerSummary';
 import {
   Plus, Trash2, Pencil, Wallet, CheckCircle2, CalendarClock, Car,
@@ -20,6 +20,7 @@ import { useBikers } from '../hooks/useBikers';
 import { useLanguage } from '../i18n/useLanguage';
 import { displayRecordedBikerName } from '../lib/bikerNames';
 import { formatDateOnly } from '../lib/dateOnly';
+import { completedWashesBeforeToday, riyadhTodayISO } from '../lib/washesThroughYesterday';
 import { useAccountingSettings } from '../hooks/useAccountingSettings';
 import { autoPostOnApproval, describeAutoPost, autoPostTone } from '../lib/accounting/autoPost';
 import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
@@ -72,12 +73,6 @@ function formatWashDate(value) {
   return formatDateOnly(value, getLocale());
 }
 
-function todayISO() {
-  const d = new Date();
-  const tzOffsetMs = d.getTimezoneOffset() * 60_000;
-  return new Date(d.getTime() - tzOffsetMs).toISOString().slice(0, 10);
-}
-
 export default function WashesPage() {
   const { bikers } = useBikers();
   const { language } = useLanguage();
@@ -92,6 +87,14 @@ export default function WashesPage() {
   const [editingItem, setEditingItem]     = useState(null);
   const [mutationError, setMutationError] = useState(null);
   const [toast, setToast] = useState({ open: false, message: '', tone: 'success', duration: 3000 });
+  const [today, setToday] = useState(() => riyadhTodayISO());
+  useEffect(() => {
+    // Keep an open page correct after midnight (also catches background-tab wakeup).
+    const refreshDay = () => setToday(riyadhTodayISO());
+    const timer = window.setInterval(refreshDay, 60_000);
+    window.addEventListener('focus', refreshDay);
+    return () => { window.clearInterval(timer); window.removeEventListener('focus', refreshDay); };
+  }, []);
 
   const showToast = useCallback((message, tone = 'success') => {
     setToast({ open: true, message, tone, duration: tone === 'error' ? 8000 : 3000 });
@@ -106,24 +109,22 @@ export default function WashesPage() {
   function closeModal()        { setLocalOpen(false); setEditingItem(null); }
 
   const totals = useMemo(() => {
-    const today = todayISO();
-    let completed = 0, revenue = 0, todays = 0;
+    let completed = 0, revenue = 0;
     items.forEach((w) => {
       const q = w.quantity || 0;
       if (w.status === 'مكتملة') {
         completed += q;
         revenue   += q * w.price;
       }
-      if (w.washDate === today) todays += q;
     });
     // Pro-rata: revenue is a currency total (continuous), wash counts
     // round to the nearest integer so the KPI doesn't read "3.7 غسلة".
     return {
       completed: Math.round(completed * scalingFactor),
       revenue:   revenue * scalingFactor,
-      todays:    Math.round(todays   * scalingFactor),
+      throughYesterday: Math.round(completedWashesBeforeToday(items, today) * scalingFactor),
     };
-  }, [items, scalingFactor]);
+  }, [items, scalingFactor, today]);
 
   async function handleAddItem(item) {
     try { await addItem(item); showToast('تم إضافة الغسلة بنجاح'); }
@@ -219,9 +220,9 @@ export default function WashesPage() {
           <StatCard
             icon={CalendarClock}
             tone="amber"
-            label="غسلات اليوم"
-            value={formatNumber(totals.todays)}
-            sub="إجمالي الغسلات المسجّلة لتاريخ اليوم"
+            label="إجمالي الغسلات حتى أمس"
+            value={formatNumber(totals.throughYesterday)}
+            sub="الغسلات المكتملة المسجلة قبل اليوم — بتوقيت الرياض"
           />
         </div>
 

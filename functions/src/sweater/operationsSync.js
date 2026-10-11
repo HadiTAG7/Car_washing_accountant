@@ -4,6 +4,7 @@ import { hashBody, hashRecord, normalizeRecord, recordProblems, ALLOWED_RECORD_F
 import { bookingDocId, rawDocId, COL, MAX_BODY_BYTES, SweaterIngestError } from './ingest.js';
 import { ownerBookingIdentity } from '../../../src/lib/sweater/bookingIdentity.js';
 import { executionEligibility, executionWash } from './operationsExecution.js';
+import { inspectIdentity5596423, preservedResolutionClaimMatches } from './operationsIdentity5596423.js';
 
 export const OPERATIONS_SOURCE = 'operations_sync_v2';
 export const OPERATIONS_MAX_RECORDS = 100; // <= 4 writes/row + run + state, one atomic transaction
@@ -115,7 +116,7 @@ async function plan(db, payload, read) {
     const protectedBooking = financialProtection(existing);
     const alias = related.some(d => (d.data.ssp_booking_id || d.data.sspBookingId || d.data.record?.sspBookingId) !== record.sspBookingId);
     const execution = executionEligibility(record, payload.coverage, worker);
-    const proposedWashId = `ssp__${id}`;
+    let proposedWashId = `ssp__${id}`;
     const washCollision = execution.eligible && documents.some(d => d.collection === 'washes' && d.id === proposedWashId);
     const claimConflict = claim && (claim.sspBookingId !== record.sspBookingId
       || (execution.eligible && (claim.washId !== proposedWashId || claim.source !== OPERATIONS_SOURCE)));
@@ -126,7 +127,11 @@ async function plan(db, payload, read) {
     const settlement = settlementSnap?.data();
     const settlementProtected = Boolean(settlement && (settlement.journalEntryId || settlement.postedEntryId
       || ['approved', 'invoiced', 'partially_collected', 'collected', 'closed'].includes(settlement.status)));
-    const protectedRecord = protectedRows.length > 0 || protectedBooking || claimConflict || alias || washCollision || foreignBooking || periodClosed || settlementProtected;
+    const resolution = await inspectIdentity5596423({ db, read, payload, record, documents, naturallyRelated: related, claim, candidate, established, execution,
+      period: periodSnap?.data(), settlement });
+    const protectedRecord = resolution ? !resolution.public.eligible
+      : protectedRows.length > 0 || protectedBooking || claimConflict || alias || washCollision || foreignBooking || periodClosed || settlementProtected;
+    if (resolution?.public.eligible) proposedWashId = resolution.public.canonicalWashId;
     const unchanged = existing?.sourceHash === sourceHash && existing.record && hashRecord(existing.record) === sourceHash
       && (protectedRecord || existing.operationalWorkerId === (established ? candidate : null));
     const missingService = !record.serviceType;
@@ -151,6 +156,7 @@ async function plan(db, payload, read) {
       bookingMustMatch: Boolean(writeBooking || unchanged),
       washId, washCreated: false, bikerId: established ? candidate : null,
       existingLinkRefs: protectedRows.map(d => ({ collection: d.collection, id: d.id, hash: hashBody(d.data) })),
+      ...(resolution ? { identityResolution: resolution.public } : {}),
       rawStatus: record.rawStatus, serviceDate: record.serviceDate, driverExternalId: record.driverExternalId,
       sourceHash, rawId: rawDocId(payload.importRunId, record.sspBookingId),
       _raw: raw, _record: record, _bookingRef: bookingRef, _claimRef: claimRef, _claim: claim,
@@ -159,6 +165,7 @@ async function plan(db, payload, read) {
       _wash: writeWash ? executionWash(record, candidate, worker.name) : null };
     rows.push(row); counts[outcome === 'needs_review' ? 'needsReview' : outcome]++;
     state.push({ id: record.sspBookingId, related, claim, worker, existingWorkerIds: [...existingWorkerIds].sort(),
+      ...(resolution ? { identityResolution: resolution.state } : {}),
       ...(periodSnap ? { period: periodSnap.data() ?? null, settlement: settlement ?? null } : {}) });
   }
   return { payload, run, runRef, rows, counts, reviewedPayloadHash, previewStateHash: hashBody(state) };
@@ -202,6 +209,14 @@ export async function saveOperations(db, FieldValue, request, actor) {
           import_run_id: value.payload.importRunId, created_by: actor };
         tx.set(row._washRef, wash);
         row.washCreated = true;
+        if (row.identityResolution?.eligible) {
+          row.identityResolution.resolutionSaved = true;
+          // Historical raw, B booking and original reserved claim are kept
+          // intact and hash-verified alongside the one new execution.
+          for (const ref of row.identityResolution.evidenceRefs) {
+            if (!row.existingLinkRefs.some(link => link.collection === ref.collection && link.id === ref.id)) row.existingLinkRefs.push(ref);
+          }
+        }
         row.existingLinkRefs.push({ collection: 'washes', id: row.washId, hash: hashBody(wash) });
       }
       if (row._writeBooking) {
@@ -256,7 +271,9 @@ export async function operationsStatus(db, payload) {
       currentBookingMatches: booking?.sourceHash === row.sourceHash && Boolean(booking?.record)
         && hashRecord(booking.record) === row.sourceHash,
       currentWorkerId: booking?.operationalWorkerId ?? null,
-      currentNaturalClaimMatches: claim?.sspBookingId === row.sspBookingId,
+      currentNaturalClaimMatches: claim?.sspBookingId === row.sspBookingId || preservedResolutionClaimMatches(row, claim),
+      ...(row.identityResolution ? { identityResolutionSaved: row.identityResolution.resolutionSaved === true,
+        identityResolutionVerified: preservedResolutionClaimMatches(row, claim) && linkChecks.every(link => link.unchanged) } : {}),
       existingLinks: linkChecks,
       washId: row.washId, existingWashVerified: row.washId ? identityOf(wash ?? {}) === row.bookingNumber : null,
       washCreated: row.washCreated === true };

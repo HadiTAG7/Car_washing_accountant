@@ -16,6 +16,15 @@ const payload = () => ({ contractVersion: 2, importRunId: 'synthetic-operations'
     isComplete: false, sourceUrl: 'https://ssp-portal.sweater.sa/', modules: { individual: 'partial', corporate: 'unavailable' }, gaps: ['Missing page 2 and B2B'] } });
 const req = (b, p) => ({ payload: b, reviewedPayloadHash: p.reviewedPayloadHash, previewStateHash: p.previewStateHash });
 const save = async b => saveOperations(db, FieldValue, req(b, await previewOperations(db, b)), 'sweater-browser-agent');
+const identityPayload = (legacy = false) => {
+  const b = payload(); b.importRunId = legacy ? 'ops-20261011-oct10-210648' : 'synthetic-isolated-5596423';
+  Object.assign(b.coverage, { rangeFrom: '2026-10-10', rangeTo: '2026-10-10', extractedAt: '2026-10-11T05:43:10Z' });
+  b.workerLinks = legacy ? {} : { '1986': 'KehSV5K73zkyWWEE8hE9' };
+  b.records = [{ sspBookingId: legacy ? 'B-5596423' : 'S-5596423', bookingKind: 'individual', driverExternalId: '1986',
+    serviceDate: '2026-10-10', rawStatus: legacy ? 'completed' : 'Collecting Payment', sourceUrl: 'https://ssp-portal.sweater.sa/bookings',
+    ...(legacy ? {} : { serviceType: 'interior_exterior_wash', startedAt: '2026-10-10T22:42:00+03:00', completedAt: '2026-10-10T23:35:00+03:00' }) }];
+  return b;
+};
 suite('production operations sync in isolated demo Firestore', () => {
   beforeAll(() => {
     if (!String(process.env.GCLOUD_PROJECT || '').startsWith('demo-sweater')) throw new Error('Only isolated demo-sweater allowed');
@@ -184,5 +193,90 @@ suite('production operations sync in isolated demo Firestore', () => {
     expect((await db.collection('sweater_bookings').get()).size).toBe(1);
     expect((await db.collection('washes').get()).size).toBeLessThanOrEqual(1);
     expect((await db.collection('journal_entries').get()).empty).toBe(true);
+  });
+  it('signed approved5596423 decision is read-only; atomic completion preserves B/raw/claim and all24other washes', async () => {
+    await db.collection('bikers').doc('KehSV5K73zkyWWEE8hE9').set({ name: 'Synthetic isolated worker', driver_external_id: '1986', salary: 900 });
+    const legacy = identityPayload(true); await save(legacy);
+    for (let i = 0; i < 24; i++) await db.collection('washes').doc(`synthetic-other-${i}`).set({ ssp_booking_id: `S-${880000 + i}`, price: 20 });
+    const originals = await Promise.all(['sweater_bookings/B-5596423', 'sweater_owner_booking_claims/5596423',
+      'sweater_raw_payloads/ops-20261011-oct10-210648__B-5596423', ...Array.from({ length: 24 }, (_, i) => `washes/synthetic-other-${i}`)].map(path => db.doc(path).get()));
+    const key = await createIntegrationKey(db, FieldValue, { label: 'Synthetic identity-only demo key' });
+    const handler = operationsHandler({ getDb: () => db, FieldValue });
+    const call = async (body, signatureBody = body) => {
+      const timestamp = String(Math.floor(Date.now() / 1000));
+      const res = { setHeader() {}, status(code) { this.code = code; return this; }, json(value) { this.body = value; return this; } };
+      await handler({ method: 'POST', body, headers: { 'x-sweater-key-id': key.keyId, 'x-sweater-timestamp': timestamp,
+        'x-sweater-signature': computeSignature(key.secret, timestamp, signatureBody.payload.importRunId, operationsSigningHash(signatureBody)) } }, res);
+      return res;
+    };
+    const p = identityPayload(), preview = await call({ action: 'preview', payload: p }); expect(preview.code).toBe(200);
+    expect(preview.body.result.rows[0]).toMatchObject({ washCreated: false, identityResolution: { eligible: true, resolutionSaved: false } });
+    expect((await db.collection('washes').get()).size).toBe(24);
+    const altered = structuredClone(p); altered.records[0].completedAt = '2026-10-10T23:36:00+03:00';
+    expect((await call({ action: 'preview', payload: altered }, { action: 'preview', payload: p })).code).toBe(401);
+    const body = { action: 'save', ...req(p, preview.body.result) };
+    const responses = await Promise.all([call(body), call(body)]);
+    expect(responses.every(r => r.code === 200)).toBe(true);
+    expect(responses.filter(r => !r.body.result.replay)).toHaveLength(1);
+    const status = await call({ action: 'status', payload: p });
+    expect(status.body.result).toMatchObject({ verified: true, result: { washesCreated: 1 } });
+    expect(status.body.result.verification[0]).toMatchObject({ identityResolutionSaved: true, identityResolutionVerified: true });
+    expect((await db.collection('washes').get()).size).toBe(25);
+    expect((await db.doc('washes/ssp__B-5596423').get()).data()).toMatchObject({ ssp_booking_id: 'S-5596423',
+      price: 20, vat_amount: 3, gross_amount: 23, collection_status: 'pending', worker_commission_per_wash: 4.5, worker_commission_paid: false });
+    for (const original of originals) expect((await original.ref.get()).updateTime.isEqual(original.updateTime)).toBe(true);
+    const writesAfterResponseLoss = await call(body); expect(writesAfterResponseLoss.body.result.replay).toBe(true);
+    expect((await db.collection('journal_entries').get()).empty).toBe(true);
+    expect((await db.collection('sweater_owner_collection_confirmations').get()).empty).toBe(true);
+  });
+  it('a non-ingest principal cannot save5596423; no fallback or second wash is attempted', async () => {
+    await db.doc('bikers/KehSV5K73zkyWWEE8hE9').set({ name: 'Synthetic worker', driver_external_id: '1986' }); await save(identityPayload(true));
+    const key = await createIntegrationKey(db, FieldValue, { label: 'Synthetic unauthorized key' });
+    await db.doc(`sweater_integration_keys/${key.keyId}`).set({ scope: 'admin' }, { merge: true });
+    const p = identityPayload(), body = { action: 'save', ...req(p, await previewOperations(db, p)) }, timestamp = String(Math.floor(Date.now() / 1000));
+    const res = { setHeader() {}, status(code) { this.code = code; return this; }, json(value) { this.body = value; return this; } };
+    await operationsHandler({ getDb: () => db, FieldValue })({ method: 'POST', body, headers: {
+      'x-sweater-key-id': key.keyId, 'x-sweater-timestamp': timestamp, 'x-sweater-signature': computeSignature(key.secret, timestamp, p.importRunId, operationsSigningHash(body)),
+    } }, res);
+    expect(res.code).toBe(403); expect((await db.collection('washes').get()).empty).toBe(true);
+    expect((await db.doc('sweater_bookings/S-5596423').get()).exists).toBe(false);
+  });
+  it('a financial effect introduced after preview invalidates CAS and leaves every document unchanged', async () => {
+    await db.doc('bikers/KehSV5K73zkyWWEE8hE9').set({ name: 'Synthetic worker', driver_external_id: '1986' }); await save(identityPayload(true));
+    const p = identityPayload(), preview = await previewOperations(db, p);
+    await db.doc('journal_entries/synthetic-protected').set({ sourceId: 'ssp__B-5596423', status: 'posted' });
+    const original = await db.doc('sweater_bookings/B-5596423').get();
+    await expect(saveOperations(db, FieldValue, req(p, preview), 'sweater-browser-agent')).rejects.toMatchObject({ code: 'failed-precondition' });
+    expect((await original.ref.get()).updateTime.isEqual(original.updateTime)).toBe(true);
+    expect((await db.collection('washes').get()).empty).toBe(true);
+    expect((await db.doc('sweater_import_runs/synthetic-isolated-5596423').get()).exists).toBe(false);
+  });
+  it.each([
+    ['washes/manual-protected', { ssp_booking_id: 'C-5596423', quantity: 1, status: 'مكتملة', postedEntryId: 'synthetic-entry' }],
+    ['sweater_owner_collection_confirmations/manual-protected', { evidence: { sspBookingId: 'OTHER-5596423' } }],
+    ['journal_entries/manual-protected', { sourceId: 'ssp__C-5596423', status: 'posted', amount: 999 }],
+  ])('all-prefix protection at %s is fail-closed before and after CAS without touching its data', async (path, protectedRecord) => {
+    await db.doc('bikers/KehSV5K73zkyWWEE8hE9').set({ name: 'Synthetic worker', driver_external_id: '1986' });
+    await save(identityPayload(true)); const p = identityPayload(), before = await previewOperations(db, p);
+    expect(before.rows[0].identityResolution.eligible).toBe(true);
+    await db.doc(path).set(protectedRecord); const original = await db.doc(path).get();
+    await expect(saveOperations(db, FieldValue, req(p, before), 'sweater-browser-agent')).rejects.toMatchObject({ code: 'failed-precondition' });
+    const fresh = await previewOperations(db, p);
+    expect(fresh.rows[0]).toMatchObject({ reasonCode: 'protected_existing_record', washCreated: false, identityResolution: { eligible: false } });
+    const result = await saveOperations(db, FieldValue, req(p, fresh), 'sweater-browser-agent');
+    expect(result.washesCreated).toBe(0);
+    expect((await db.doc('washes/ssp__B-5596423').get()).exists).toBe(false);
+    expect((await original.ref.get()).data()).toEqual(protectedRecord);
+    expect((await original.ref.get()).updateTime.isEqual(original.updateTime)).toBe(true);
+  });
+  it('a Firestore document-reference financial pointer to an orphaned other-prefix wash is protected', async () => {
+    await db.doc('bikers/KehSV5K73zkyWWEE8hE9').set({ name: 'Synthetic worker', driver_external_id: '1986' });
+    await save(identityPayload(true)); const p = identityPayload();
+    await db.doc('transactions/synthetic-reference').set({ sourceRef: db.doc('washes/ssp__PREFIX-5596423'), amount: 999 });
+    const original = await db.doc('transactions/synthetic-reference').get();
+    expect((await previewOperations(db, p)).rows[0].identityResolution).toMatchObject({ eligible: false, checks: { noReferencedFinancialEffect: false } });
+    expect((await save(p)).washesCreated).toBe(0);
+    expect((await original.ref.get()).updateTime.isEqual(original.updateTime)).toBe(true);
+    expect((await db.doc('washes/ssp__B-5596423').get()).exists).toBe(false);
   });
 });

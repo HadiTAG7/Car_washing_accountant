@@ -29,6 +29,7 @@
  */
 export const BIKER_SORT_COLUMNS = Object.freeze({
   name:        { label: 'الاسم',        type: 'text',   key: (r) => r.displayName ?? r.name },
+  sweaterId:   { label: 'Sweater ID',   type: 'text',   key: (r) => r.driverExternalId },
   currentStatus: { label: 'حالة العامل', type: 'text', key: (r) => r.currentStatus ? r.currentStatusLabel ?? r.currentStatus : '' },
   contact:     { label: 'الجوال',       type: 'text',   key: (r) => r.contactNumber },
   residence:   { label: 'السكن',        type: 'text',   key: (r) => r.residence },

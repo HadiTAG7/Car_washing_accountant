@@ -800,6 +800,8 @@ export function toHousingUnitUpdate(updates = {}) {
 export function mapBiker(row) {
   return {
     id:            row.id,
+    // Existing SSP identity only. Never substitute the document/iqama ID.
+    driverExternalId: String(row.driver_external_id ?? '').trim(),
     name:          row.name || '',
     ...bikerNameFields({ name: row.name, nameArabic: row.name_ar, nameEnglish: row.name_en }),
     contactNumber: row.contact_number || '',

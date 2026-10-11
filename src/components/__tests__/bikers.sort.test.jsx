@@ -21,8 +21,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, cleanup, fireEvent, screen } from '@testing-library/react';
 
 const BIKERS = [
-  { id: '1', name: 'خالد', currentStatus: 'يشتغل', sponsor: 'مؤسسة النور', nationality: 'باكستاني', residence: 'سكن الغرب', salary: 1800 },
-  { id: '2', name: 'أحمد', currentStatus: 'تدريب', sponsor: 'شركة الفجر', nationality: 'بنغلاديشي', residence: 'سكن الشمال', salary: 2200 },
+  { id: '1', driverExternalId: '001986', name: 'خالد', currentStatus: 'يشتغل', sponsor: 'مؤسسة النور', nationality: 'باكستاني', residence: 'سكن الغرب', salary: 1800 },
+  { id: '2', driverExternalId: '42', name: 'أحمد', currentStatus: 'تدريب', sponsor: 'شركة الفجر', nationality: 'بنغلاديشي', residence: 'سكن الشمال', salary: 2200 },
   { id: '3', name: 'سالم', sponsor: null, nationality: 'هندي', residence: null, salary: 2000 },
 ];
 
@@ -54,6 +54,22 @@ const namesInTable = () => {
 };
 
 const header = (label) => screen.getByTitle(`ترتيب حسب ${label}`);
+
+it('shows a separate Sweater ID column directly after the name, searchable and sortable with missing IDs last', () => {
+  const { container } = render(<BikersPage role="admin" />);
+  const headers = [...container.querySelectorAll('thead th')].map(th => th.textContent);
+  expect(headers.slice(0, 3)).toEqual(['الاسم', 'Sweater ID', 'حالة العامل']);
+  const rows = [...container.querySelectorAll('tbody tr')];
+  expect(rows.find(tr => tr.cells[0].textContent.includes('خالد')).cells[1].textContent).toBe('001986');
+  expect(rows.find(tr => tr.cells[0].textContent.includes('سالم')).cells[1].textContent).toBe('—');
+  expect(rows[0].cells[1].getAttribute('dir')).toBe('ltr');
+  fireEvent.click(header('Sweater ID'));
+  expect(namesInTable()).toEqual(['أحمد', 'خالد', 'سالم']);
+  fireEvent.click(header('Sweater ID'));
+  expect(namesInTable()).toEqual(['خالد', 'أحمد', 'سالم']);
+  fireEvent.change(screen.getByRole('searchbox', { name: 'البحث في سجل العمال' }), { target: { value: '001986' } });
+  expect(namesInTable()).toEqual(['خالد']);
+});
 
 it('shows current status beside the name and searches/sorts it without changing summary amounts', () => {
   const { container } = render(<BikersPage role="admin" />);

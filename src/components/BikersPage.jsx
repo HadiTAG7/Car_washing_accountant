@@ -140,7 +140,7 @@ export default function BikersPage({ role, payrollPreview = false }) {
   const sortedRows = useMemo(() => sortBikers(rows, sort), [rows, sort]);
   const filteredRows = sortedRows.filter((row) => matchesTableSearch(search, [
     row.name, row.nameArabic, row.nameEnglish, row.contactNumber, row.residence, row.sponsor, row.nationality,
-    row.currentStatus, row.currentStatusLabel,
+    row.currentStatus, row.currentStatusLabel, row.driverExternalId,
   ]));
   const applySort = useCallback((columnId) => {
     setSort((prev) => {
@@ -303,10 +303,11 @@ export default function BikersPage({ role, payrollPreview = false }) {
 
           <TableSearch id="biker-search" label="البحث في سجل العمال" value={search} onChange={setSearch} shown={filteredRows.length} total={rows.length} hint="الملخصات تشمل جميع العمال" />
           <ScrollableTable stickyIdentity className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
-            <table className="w-full min-w-[1320px] text-sm">
+            <table className="w-full min-w-[1440px] text-sm">
               <thead>
                 <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
                   <SortableTh sort={sort} onSort={applySort} id="name" />
+                  <SortableTh sort={sort} onSort={applySort} id="sweaterId" />
                   <SortableTh sort={sort} onSort={applySort} id="currentStatus" />
                   <SortableTh sort={sort} onSort={applySort} id="contact" />
                   <SortableTh sort={sort} onSort={applySort} id="residence" />
@@ -323,14 +324,14 @@ export default function BikersPage({ role, payrollPreview = false }) {
               <tbody>
                 {loading && bikers.length === 0 && (
                   <tr>
-                    <td colSpan={12} className="py-10">
+                    <td colSpan={13} className="py-10">
                       <LoadingState message="جارٍ تحميل سجل البايكرات..." />
                     </td>
                   </tr>
                 )}
                 {!loading && bikers.length === 0 && !error && (
                   <tr>
-                    <td colSpan={12}>
+                    <td colSpan={13}>
                       <EmptyState
                         compact
                         icon={Bike}
@@ -344,7 +345,7 @@ export default function BikersPage({ role, payrollPreview = false }) {
                     </td>
                   </tr>
                 )}
-                {bikers.length > 0 && filteredRows.length === 0 && <tr><td colSpan={12} className="py-8 text-center text-slate-500 dark:text-slate-400">لا توجد نتائج مطابقة للبحث</td></tr>}
+                {bikers.length > 0 && filteredRows.length === 0 && <tr><td colSpan={13} className="py-8 text-center text-slate-500 dark:text-slate-400">لا توجد نتائج مطابقة للبحث</td></tr>}
                 {filteredRows.map((r) => (
                   <tr key={r.id} className="border-b border-slate-50 dark:border-slate-800/60 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
                     <td className="py-3 px-4 whitespace-normal break-words min-w-[160px] font-medium text-slate-800 dark:text-slate-200">
@@ -361,6 +362,9 @@ export default function BikersPage({ role, payrollPreview = false }) {
                           )}
                         </span>
                       </div>
+                    </td>
+                    <td translate="no" dir="ltr" className="py-3 px-4 min-w-[110px] whitespace-nowrap text-center tabular-nums text-slate-600 dark:text-slate-400">
+                      {r.driverExternalId || '—'}
                     </td>
                     <td className="py-3 px-4 min-w-[130px] whitespace-normal break-words">
                       <span translate="no" dir="auto" className="inline-block rounded-control bg-slate-100 dark:bg-slate-800 px-2.5 py-1 text-xs font-medium text-slate-700 dark:text-slate-300">

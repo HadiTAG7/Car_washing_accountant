@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Users } from 'lucide-react';
+import { Eye } from 'lucide-react';
 import { usePartners } from '../hooks/usePartners';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 import CategorySelect from './CategorySelect';
@@ -7,48 +7,49 @@ import CategorySelect from './CategorySelect';
 /**
  * AdminPartnerSelector — admin-only TopBar control that flips the
  * dashboard into a simulated partner view. Renders nothing for partners
- * (they can't escape their own view). Shape mirrors the rest of the
- * TopBar right-cluster controls: chip-height pill with an icon prefix.
- *
- * Sat in the TopBar's `actions` slot via each page's TopBar instantiation.
+ * (they can't escape their own view). Its own TopBar row works on mobile
+ * as well as desktop, without changing authentication or any partner data.
  */
 export default function AdminPartnerSelector() {
-  const { partners } = usePartners();
-  const { isAdmin, actingAsPartnerId, setActingAsPartnerId } = usePartnerView();
+  const { isAdmin, role, actingAsPartnerId, setActingAsPartnerId } = usePartnerView();
+  const allowed = isAdmin && role === 'admin';
+  const { partners, loading, error, refetch } = usePartners({ enabled: allowed });
 
-  // Reshape into CategorySelect's { id, label } contract. Only partners
-  // with an active status get to be simulated — there's no reason to
-  // show an archived partner in the picker.
+  // Include every recorded partner, irrespective of operating status.
+  // This changes only the local preview, never the authenticated account.
   const options = useMemo(
-    () => partners
-      .filter((p) => p.status === 'active')
-      .map((p) => ({ id: p.id, label: p.partnerName })),
+    () => [{ id: '', label: 'عرض الأدمن' }, ...partners
+      .map((p) => ({ id: p.id, label: p.partnerName }))],
     [partners],
   );
 
   // Partners (non-admins) don't see this control at all.
-  if (!isAdmin) return null;
-  // Nothing to simulate yet.
-  if (options.length === 0) return null;
+  if (!allowed) return null;
 
   return (
     <div
-      className="hidden md:flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-control pr-2 pl-1 py-1"
-      title="محاكاة عرض شريك معيّن"
+      className="px-4 sm:px-6 lg:px-8 pb-3"
     >
-      <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-500 dark:text-slate-400 pr-1">
-        <Users size={13} strokeWidth={2.3} />
-        محاكاة عرض شريك
+      <div className="max-w-xl flex flex-col sm:flex-row sm:items-center gap-2 min-w-0">
+      <span className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 dark:text-slate-400 shrink-0">
+        <Eye size={15} strokeWidth={2.3} />
+        حسابات الشركاء
       </span>
-      <div className="min-w-[180px]">
+      <div className="flex-1 min-w-0">
+        {loading ? <p role="status" className="text-xs text-slate-500">نحمّل حسابات الشركاء...</p>
+          : error ? <div className="flex flex-wrap items-center gap-2 text-xs">
+            <p role="alert" className="text-red-700 dark:text-red-300">تعذّر تحميل حسابات الشركاء</p>
+            <button type="button" onClick={refetch} className="sw-button sw-button--sm sw-button--secondary">إعادة تحميل حسابات الشركاء</button>
+          </div> :
         <CategorySelect
           categories={options}
           value={actingAsPartnerId}
           onChange={(id) => setActingAsPartnerId(id || null)}
-          placeholder="— عرض المشرف الكامل —"
-          emptyLabel="— لا يوجد شركاء —"
-          ariaLabel="اختر شريكاً لمحاكاة عرضه"
+          placeholder="اختر حساب الشريك للمعاينة"
+          ariaLabel="اختر حساب الشريك للمعاينة"
         />
+        }
+      </div>
       </div>
     </div>
   );

@@ -40,6 +40,19 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('بقاء الصفحة عند إعادة التحميل', () => {
+  it('معاينة الأدمن تستخدم صفحات الشريك فقط وتعيد التنقل الإداري عند الخروج', async () => {
+    window.history.replaceState(null, '', '/?page=summary');
+    const page = render(<App />);
+    await screen.findByRole('heading', { name: 'قائمة دخل الشركة للاختبار' });
+    state.partnerView = true; page.rerender(<App />);
+    await screen.findByRole('heading', { name: 'حساب الشريك: overview' });
+    expect(screen.queryByRole('button', { name: 'إدارة الشركاء' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'قائمة الدخل' }));
+    await screen.findByRole('heading', { name: 'حساب الشريك: income' });
+    state.partnerView = false; page.rerender(<App />);
+    await screen.findByRole('heading', { name: 'صفحة الرئيسية للاختبار' });
+    expect(screen.getByRole('button', { name: 'إدارة الشركاء' })).toBeTruthy();
+  });
   it.each(['admin', 'operator', 'partner', 'supervisor'])('يستعيد مساحة القائمة المخفية دون تغيير وجهة الدور: %s', async (role) => {
     Object.assign(state, { role, partnerView: role === 'partner', desktopHidden: true });
     const view = render(<App />);

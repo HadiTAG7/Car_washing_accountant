@@ -42,10 +42,6 @@ export default function TopBar({ title, subtitle, actions, hidePartnerSelector =
             exists behind them, and dead controls erode trust in the
             ones that work. */}
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* Admin-only: simulate-as-partner dropdown. Renders null for
-              partners (and when there are no active partners). */}
-          {!hidePartnerSelector ? <AdminPartnerSelector /> : null}
-
           {actions}
           <LanguageSwitcher />
 
@@ -110,6 +106,8 @@ export default function TopBar({ title, subtitle, actions, hidePartnerSelector =
           </button>
         </div>
       </div>
+      {/* Separate row keeps partner preview usable on mobile without crowding title controls. */}
+      {!hidePartnerSelector ? <AdminPartnerSelector /> : null}
     </header>
   );
 }

@@ -8,12 +8,8 @@ import { usePartnerView } from '../contexts/PartnerViewContext';
  * shape so the two can stack cleanly. Indigo palette keeps it visually
  * distinct from DemoBanner's amber.
  *
- * Extra UX: when the *project owner's own email* is linked to a
- * partner row, they end up locked into partner view with no admin
- * dropdown to escape. We detect that case (a real partner login, not
- * an admin simulation) and surface a small "How do I get back to
- * admin view?" toggle that reveals the exact SQL to copy-paste into
- * the Supabase SQL Editor.
+ * The admin preview is read-only and clearly distinguished from a real
+ * partner login. Only previewing admins get a return-to-admin button.
  */
 export default function PartnerViewBanner() {
   const {
@@ -41,7 +37,8 @@ export default function PartnerViewBanner() {
       <div className="px-6 py-2 flex items-center gap-3">
         <Eye size={14} className="shrink-0" />
         <span className="min-w-0 flex-1 leading-relaxed">
-          <strong>وضع عرض الشريك:</strong> <span translate="no">{viewedPartner.partnerName}</span>
+          <strong>{canExit ? 'معاينة حساب الشريك:' : 'وضع عرض الشريك:'}</strong> <span translate="no">{viewedPartner.partnerName}</span>
+          {canExit && <span className="block text-[11px]">للقراءة فقط؛ حساب الشريك وبياناته لا تتغير.</span>}
         </span>
         {/* Chip-density controls on purpose: the banner mirrors DemoBanner's
             height so the two stack cleanly, which a full 40px pill would
@@ -51,10 +48,10 @@ export default function PartnerViewBanner() {
             type="button"
             onClick={() => setActingAsPartnerId(null)}
             className="inline-flex items-center gap-1 bg-white dark:bg-slate-900 border border-indigo-100 dark:border-indigo-500/30 hover:bg-indigo-50 dark:hover:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 px-2.5 py-1 rounded-control text-[11px] font-semibold transition-colors shrink-0"
-            title="رجوع إلى عرض المشرف الكامل"
+            title="الرجوع إلى حساب الأدمن"
           >
             <X size={11} strokeWidth={2.5} />
-            إنهاء المحاكاة
+            الرجوع إلى حساب الأدمن
           </button>
         )}
       </div>

@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
-  Plus, Users, UserCheck, Briefcase, Trash2, Pencil, Building2, Coins, FileText, Bot, Ban,
+  Plus, Users, UserCheck, Briefcase, Trash2, Pencil, Building2, Coins, FileText, Bot, Ban, Eye,
 } from 'lucide-react';
 import { formatNumber, formatCurrency, PER_WORKER_FEE } from '../data/initialData';
 import TopBar from './TopBar';
@@ -34,7 +34,8 @@ export default function PartnersPage() {
     deletePartner,
     refetch,
   } = usePartners();
-  const { isPartnerView, viewedPartner, canMutate, role } = usePartnerView();
+  const { isPartnerView, viewedPartner, canMutate, role, isAdmin, setActingAsPartnerId } = usePartnerView();
+  const canPreviewPartner = role === 'admin' && isAdmin && !isPartnerView;
   const canManageEligibility = canMutate && role === 'admin';
   const [eligibilityPartner, setEligibilityPartner] = useState(null);
   // Paid-to-date is DERIVED from the receipts, not read off the cached
@@ -352,6 +353,11 @@ export default function PartnersPage() {
                       {/* 8. إجراءات */}
                       <td className="py-3 px-4 whitespace-nowrap text-left">
                         <div className="inline-flex items-center gap-1">
+                          {canPreviewPartner && <button type="button" onClick={() => setActingAsPartnerId(p.id)}
+                            className="sw-button sw-button--sm sw-button--secondary"
+                            aria-label={`عرض حساب الشريك: ${p.partnerName}`}>
+                            <Eye size={15} />عرض حساب الشريك
+                          </button>}
                           {/* Statement: available to everyone (a partner
                               can print their own even in read-only view). */}
                           <button

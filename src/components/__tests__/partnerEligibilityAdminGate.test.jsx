@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, it, expect, vi } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 const view = vi.hoisted(() => ({ role: 'admin', canMutate: true, isPartnerView: false, viewedPartner: null }));
 vi.mock('../../contexts/PartnerViewContext', () => ({ usePartnerView: () => view }));
 vi.mock('../../hooks/usePartners', () => ({ usePartners: () => ({ partners: [{ id: 'p1', partnerName: 'هادي', workersCount: 10 }], loading: false }) }));
@@ -23,5 +23,14 @@ describe('زر أهلية البايكرز للأدمن فقط', () => {
     view.role = 'admin'; view.canMutate = false;
     render(<PartnersPage />);
     expect(screen.queryByRole('button', { name: 'أهلية بايكرز هادي' })).toBeNull();
+  });
+});
+describe('فتح عرض حساب الشريك من إدارة الشركاء', () => {
+  it.each(['admin', 'operator', 'accountant', 'partner', 'supervisor'])('يظهر زر المعاينة للأدمن وحده: %s', role => {
+    Object.assign(view, { role, isAdmin: true, canMutate: true, isPartnerView: false, setActingAsPartnerId: vi.fn() });
+    render(<PartnersPage />);
+    const button = screen.queryByRole('button', { name: 'عرض حساب الشريك: هادي' });
+    expect(Boolean(button)).toBe(role === 'admin');
+    if (button) { fireEvent.click(button); expect(view.setActingAsPartnerId).toHaveBeenCalledWith('p1'); }
   });
 });

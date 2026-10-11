@@ -20,7 +20,9 @@ function childFor(output, code = 0, stderr = '') {
   queueMicrotask(() => { child.stdout.end(output); child.stderr.end(stderr); child.emit('close', code); });
   return child;
 }
-const options = spawnImpl => ({ nowMs: now, platform: 'win32', credentialPath: 'C:\\private\\synthetic.json', spawnImpl });
+// The child is mocked, but the input path must be absolute on the host OS too.
+// A Windows literal is relative on Linux and rejects before the mock is reached.
+const options = spawnImpl => ({ nowMs: now, platform: 'win32', credentialPath: join(tmpdir(), 'synthetic.json'), spawnImpl });
 
 describe('restricted Windows operations signer without secret disclosure', () => {
   it('returns only keyId/signature and sends no plaintext credential in argv/env/stdin', async () => {
@@ -131,7 +133,9 @@ describe('restricted Windows operations signer without secret disclosure', () =>
       expect(signed).toEqual({ keyId, signature: createHmac('sha256', dummy).update(`${data.timestamp}.${data.importRunId}.${data.bodyHash}`).digest('hex') });
       expect(JSON.stringify(signed)).not.toContain(dummy);
     } finally { await rm(directory, { recursive: true, force: true }); }
-  }, 20000);
+  // Hosted Windows may need >20s for the initial synchronous PowerShell/DPAPI
+  // setup (observed 35s). The signer's own 15s child timeout remains unchanged.
+  }, 60000);
   it('does not pass signer errors (or credentials) into callers', async () => {
     const sign = vi.fn().mockRejectedValue(new Error('dummy-private-secret'));
     // Valid payload from the full-envelope test above.

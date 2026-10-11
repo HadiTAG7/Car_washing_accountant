@@ -1,0 +1,57 @@
+name: Verify worker status release
+
+# Secret-free verification only. No Firebase or Vercel deployment commands.
+on:
+  push:
+    branches:
+      - codex/biker-current-status-20261011
+  pull_request:
+    paths:
+      - src/components/AddBikerModal.jsx
+      - src/components/BikersPage.jsx
+      - src/lib/bikerCurrentStatus.js
+      - src/lib/mappers.js
+      - .github/workflows/verify-worker-status.yml
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - run: npm ci --prefix functions
+      - run: npm ci --prefix mcp
+      - run: npm run lint
+      - run: npm run build
+      - run: npm test
+      - name: Firestore persistence and existing access rules (demo projects only)
+        run: npm run test:rules
+
+  windows-signer:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Verify signer with disposable DPAPI dummy, never production credentials
+        run: npx vitest run functions/test/windowsOperationsSigner.test.js --maxWorkers=1

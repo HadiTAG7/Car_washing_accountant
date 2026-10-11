@@ -8,12 +8,13 @@
  *
  * Run: npm run test:rules
  */
-import { describe, it, beforeAll, beforeEach, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
   initializeTestEnvironment, assertFails, assertSucceeds,
 } from '@firebase/rules-unit-testing';
 import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs } from 'firebase/firestore';
+import { mapBiker, toBikerInsert, toBikerUpdate } from '../../mappers';
 
 const EMU = process.env.FIRESTORE_EMULATOR_HOST;
 const d = EMU ? describe : describe.skip;
@@ -101,6 +102,29 @@ d('قواعد أمان Firestore', () => {
     ctx.partner = env.authenticatedContext('partner1').firestore();
     ctx.anon    = env.unauthenticatedContext().firestore();
   }, 30_000);
+
+  describe('descriptive worker current status', () => {
+    it('admin saves/reloads/clears it without changing salary or service dates', async () => {
+      const ref = doc(ctx.admin, 'bikers', 'status-test-only');
+      await assertSucceeds(setDoc(ref, toBikerInsert({
+        name: 'Test worker', salary: 900, startDate: '2026-09-01', currentStatus: 'تدريب',
+      })));
+      await assertSucceeds(updateDoc(ref, toBikerUpdate({ currentStatus: 'يشتغل' })));
+      const reloaded = await assertSucceeds(getDoc(ref));
+      expect(mapBiker({ id: reloaded.id, ...reloaded.data() })).toMatchObject({
+        currentStatus: 'يشتغل', salary: 900, startDate: '2026-09-01', endDate: '',
+      });
+      await assertSucceeds(updateDoc(ref, toBikerUpdate({ currentStatus: '' })));
+      expect((await getDoc(ref)).data().current_status).toBeNull();
+    });
+    it('partner and anonymous users cannot create or change a worker status', async () => {
+      await assertSucceeds(setDoc(doc(ctx.admin, 'bikers', 'status-test-only'), { name: 'Test worker', current_status: 'تدريب' }));
+      for (const db of [ctx.partner, ctx.anon]) {
+        await assertFails(updateDoc(doc(db, 'bikers', 'status-test-only'), { current_status: 'يشتغل' }));
+        await assertFails(setDoc(doc(db, 'bikers', 'new-status-test-only'), { name: 'Test worker', current_status: 'تدريب' }));
+      }
+    });
+  });
 
   // ── تصعيد الصلاحيات ────────────────────────────────────────────────
   describe('app_admins محميّة من العميل', () => {

@@ -8,13 +8,14 @@ export function riyadhTodayISO(now = new Date()) {
   return `${value('year')}-${value('month')}-${value('day')}`;
 }
 
-export function completedWashesBeforeToday(items, today) {
+export function completedWashesYesterday(items, today) {
+  if (typeof today !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(today)) return 0;
+  const previousDay = new Date(`${today}T12:00:00Z`);
+  if (!Number.isFinite(previousDay.getTime()) || previousDay.toISOString().slice(0, 10) !== today) return 0;
+  previousDay.setUTCDate(previousDay.getUTCDate() - 1);
+  const yesterday = previousDay.toISOString().slice(0, 10);
   return items.reduce((total, wash) => {
-    const date = wash.washDate;
-    if (wash.status !== 'مكتملة' || typeof date !== 'string'
-      || !/^\d{4}-\d{2}-\d{2}$/.test(date) || date >= today) return total;
-    const parsed = new Date(`${date}T12:00:00Z`);
-    if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date) return total;
+    if (wash.status !== 'مكتملة' || wash.washDate !== yesterday) return total;
     const quantity = Number(wash.quantity);
     return Number.isFinite(quantity) && quantity > 0 ? total + quantity : total;
   }, 0);

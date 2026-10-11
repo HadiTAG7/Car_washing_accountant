@@ -23,10 +23,10 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
-it('replaces today with cumulative completed washes through yesterday, without changing other KPIs', () => {
+it('shows only yesterday completed washes, excluding older days, without changing other KPIs', () => {
   const original = structuredClone(state.items);
   render(<WashesPage />);
-  expect(kpi('إجمالي الغسلات حتى أمس').querySelector('.sw-stat-value').textContent).toBe('5');
+  expect(kpi('غسلات أمس').querySelector('.sw-stat-value').textContent).toBe('3');
   expect(screen.queryByText('غسلات اليوم')).toBeNull();
   expect(kpi('إجمالي الغسلات المكتملة').querySelector('.sw-stat-value').textContent).toBe('14');
   expect(kpi('إجمالي الإيرادات').querySelector('.sw-stat-value').textContent).toMatch(/280/);
@@ -35,19 +35,19 @@ it('replaces today with cumulative completed washes through yesterday, without c
 it('preserves the existing partner scaling for the new count', () => {
   state.scalingFactor = 0.4;
   render(<WashesPage />);
-  expect(kpi('إجمالي الغسلات حتى أمس').querySelector('.sw-stat-value').textContent).toBe('2');
+  expect(kpi('غسلات أمس').querySelector('.sw-stat-value').textContent).toBe('1');
 });
 it('updates the cutoff after Riyadh midnight while the page remains open', () => {
   vi.setSystemTime(new Date('2026-10-10T20:59:30Z'));
   render(<WashesPage />);
-  expect(kpi('إجمالي الغسلات حتى أمس').querySelector('.sw-stat-value').textContent).toBe('2');
+  expect(kpi('غسلات أمس').querySelector('.sw-stat-value').textContent).toBe('0');
   act(() => { vi.advanceTimersByTime(60_000); });
-  expect(kpi('إجمالي الغسلات حتى أمس').querySelector('.sw-stat-value').textContent).toBe('5');
+  expect(kpi('غسلات أمس').querySelector('.sw-stat-value').textContent).toBe('3');
 });
-it('shows zero when there are no completed washes before today', () => {
-  state.items = [wash('2026-10-11', 4), wash('2026-10-10', 7, 'قيد التنفيذ')];
+it('shows zero when yesterday has no completed washes, even with earlier completed activity', () => {
+  state.items = [wash('2026-10-09', 9), wash('2026-10-11', 4), wash('2026-10-10', 7, 'قيد التنفيذ')];
   render(<WashesPage />);
-  expect(kpi('إجمالي الغسلات حتى أمس').querySelector('.sw-stat-value').textContent).toBe('0');
+  expect(kpi('غسلات أمس').querySelector('.sw-stat-value').textContent).toBe('0');
 });
 it('refreshes on window focus and removes the timer when leaving the page', () => {
   vi.setSystemTime(new Date('2026-10-10T20:59:30Z'));
@@ -55,7 +55,7 @@ it('refreshes on window focus and removes the timer when leaving the page', () =
   const timers = vi.getTimerCount();
   vi.setSystemTime(new Date('2026-10-10T21:00:01Z'));
   act(() => { window.dispatchEvent(new Event('focus')); });
-  expect(kpi('إجمالي الغسلات حتى أمس').querySelector('.sw-stat-value').textContent).toBe('5');
+  expect(kpi('غسلات أمس').querySelector('.sw-stat-value').textContent).toBe('3');
   view.unmount();
   expect(vi.getTimerCount()).toBeLessThan(timers);
 });
@@ -82,7 +82,7 @@ it('shows completed, exceptional and ticketed washes from persisted evidence wit
   expect(table.getByText('مكتملة')).toBeTruthy(); expect(table.getByText('استثنائية')).toBeTruthy();
   expect(table.getByText('عليها تكت')).toBeTruthy(); expect(table.getByText('T-7').dir).toBe('ltr');
   expect(table.getAllByRole('button', { name: /تغيير اكتمال دفعة/ })).toHaveLength(3);
-  expect(kpi('إجمالي الغسلات حتى أمس').querySelector('.sw-stat-value').textContent).toBe('3');
+  expect(kpi('غسلات أمس').querySelector('.sw-stat-value').textContent).toBe('3');
   expect(kpi('إجمالي الإيرادات').querySelector('.sw-stat-value').textContent).toMatch(/60/);
   expect(state.items).toEqual(original);
 });

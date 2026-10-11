@@ -20,7 +20,7 @@ import { useBikers } from '../hooks/useBikers';
 import { useLanguage } from '../i18n/useLanguage';
 import { displayRecordedBikerName, recordedBikerSweaterId } from '../lib/bikerNames';
 import { formatDateOnly } from '../lib/dateOnly';
-import { completedWashesBeforeToday, riyadhTodayISO } from '../lib/washesThroughYesterday';
+import { completedWashesYesterday, riyadhTodayISO } from '../lib/washesYesterday';
 import { washDisplayStatus } from '../lib/sweater/washDisplayStatus';
 import { useSweaterWashDetails } from '../hooks/useSweaterWashDetails';
 import { useAccountingSettings } from '../hooks/useAccountingSettings';
@@ -128,7 +128,7 @@ export default function WashesPage() {
     return {
       completed: Math.round(completed * scalingFactor),
       revenue:   revenue * scalingFactor,
-      throughYesterday: Math.round(completedWashesBeforeToday(items, today) * scalingFactor),
+      yesterday: Math.round(completedWashesYesterday(items, today) * scalingFactor),
     };
   }, [items, scalingFactor, today]);
 
@@ -226,9 +226,9 @@ export default function WashesPage() {
           <StatCard
             icon={CalendarClock}
             tone="amber"
-            label="إجمالي الغسلات حتى أمس"
-            value={formatNumber(totals.throughYesterday)}
-            sub="الغسلات المكتملة المسجلة قبل اليوم — بتوقيت الرياض"
+            label="غسلات أمس"
+            value={formatNumber(totals.yesterday)}
+            sub="الغسلات المكتملة المسجلة ليوم أمس فقط — بتوقيت الرياض"
           />
         </div>
 

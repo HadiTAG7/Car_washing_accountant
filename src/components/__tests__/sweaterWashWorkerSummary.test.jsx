@@ -8,6 +8,21 @@ afterEach(cleanup);
 const wash = (id, extra = {}) => ({ sspBookingId: id, bikerId: 'worker-1', bikerName: 'Worker 1',
   quantity: 1, price: 20, workerCommissionPerWash: 4.5, washDate: '2026-10-03',
   status: 'مكتملة', revenueOrigin: 'sweater', collectionStatus: 'confirmed_by_owner', ...extra });
+it.each(['ar', 'en'])('sorts workers numerically by recorded Sweater ID, with missing IDs last, in %s', language => {
+  const bikers = ['10', '2', '001986', '1982', ''].map((driverExternalId, i) => ({ id: `worker-${i}`, name: `Worker ${i}`, driverExternalId }));
+  const rows = bikers.map((b, i) => wash(`S-${i}`, { bikerId: b.id, bikerName: b.name, quantity: i + 1 }));
+  const original = structuredClone({ bikers, rows });
+  const { container } = render(<LanguageContext.Provider value={{ language }}><SweaterWashWorkerSummary washes={rows} bikers={bikers} /></LanguageContext.Provider>);
+  const summary = screen.getByRole('table', { name: 'ملخص غسلات سويتر حسب العامل' });
+  const cells = [...summary.querySelectorAll('tbody tr')].map(r => [...r.querySelectorAll('td')].map(c => c.textContent));
+  expect(cells.map(r => r[0])).toEqual(['2', '10', '1982', '001986', '—']);
+  expect(cells.map(r => r[1])).toEqual(['Worker 1', 'Worker 0', 'Worker 3', 'Worker 2', 'Worker 4']);
+  expect(cells.map(r => Number(r[2]))).toEqual([2, 1, 4, 3, 5]);
+  expect([...container.querySelectorAll('span[translate="no"]')].map(e => e.textContent)).toEqual(['2', '10', '1982', '001986', '—']);
+  const details = screen.getByRole('table', { name: 'تفاصيل غسلات سويتر' });
+  expect([...details.querySelectorAll('tbody tr')].map(r => r.querySelector('td').textContent)).toEqual(['2', '10', '1982', '001986', '—']);
+  expect({ bikers, rows }).toEqual(original);
+});
 it('shows the same unscaled Sweater ID separately in desktop, mobile and booking details', () => {
   const bikers = [{ id: 'worker-1', name: 'Worker 1', driverExternalId: '001986' }];
   const rows = [wash('S-1')];

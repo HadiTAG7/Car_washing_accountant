@@ -6,8 +6,10 @@ describe('Sweater worker identifier display', () => {
     expect(mapBiker({ id: 'internal-document', driver_external_id: '001986', iqama_number: '1234567890' }).driverExternalId).toBe('001986');
     expect(mapBiker({ id: 'internal-document', iqama_number: '1234567890' }).driverExternalId).toBe('');
   });
-  it('accepts numeric IDs without adding them to editable updates', () => {
+  it('accepts numeric IDs and saves only the explicitly requested identity patch', () => {
     expect(mapBiker({ id: 'internal', driver_external_id: 1986 }).driverExternalId).toBe('1986');
-    expect(toBikerUpdate({ driverExternalId: 'different', currentStatus: 'تدريب' })).toEqual({ current_status: 'تدريب' });
+    expect(toBikerUpdate({ driverExternalId: ' 001986 ' })).toEqual({ driver_external_id: '001986' });
+    expect(mapBiker({ id: 'internal', ...toBikerUpdate({ driverExternalId: '001986' }) }).driverExternalId).toBe('001986');
+    expect(toBikerUpdate({ currentStatus: 'تدريب' })).toEqual({ current_status: 'تدريب' });
   });
 });

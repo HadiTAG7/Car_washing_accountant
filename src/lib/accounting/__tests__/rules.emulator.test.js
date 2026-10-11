@@ -104,6 +104,18 @@ d('قواعد أمان Firestore', () => {
   }, 30_000);
 
   describe('descriptive worker current status', () => {
+    it('admin saves a separate Sweater ID and clean display name without changing legacy name, salary or dates', async () => {
+      const ref = doc(ctx.admin, 'bikers', 'sweater-id-test-only');
+      await assertSucceeds(setDoc(ref, toBikerInsert({ name: 'Test worker (001986)', nameEnglish: 'Test worker (001986)', salary: 900, startDate: '2026-09-01' })));
+      await assertSucceeds(updateDoc(ref, toBikerUpdate({ driverExternalId: '001986', nameEnglish: 'Test worker' })));
+      const saved = await getDoc(ref);
+      expect(mapBiker({ id: saved.id, ...saved.data() })).toMatchObject({
+        driverExternalId: '001986', name: 'Test worker (001986)', nameEnglish: 'Test worker', salary: 900, startDate: '2026-09-01', endDate: '',
+      });
+      for (const db of [ctx.partner, ctx.anon]) {
+        await assertFails(updateDoc(doc(db, 'bikers', 'sweater-id-test-only'), toBikerUpdate({ driverExternalId: 'different' })));
+      }
+    });
     it('admin saves/reloads/clears it without changing salary or service dates', async () => {
       const ref = doc(ctx.admin, 'bikers', 'status-test-only');
       await assertSucceeds(setDoc(ref, toBikerInsert({

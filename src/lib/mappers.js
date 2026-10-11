@@ -817,13 +817,14 @@ export function mapBiker(row) {
   };
 }
 export function toBikerInsert({
-  name, nameArabic, nameEnglish, contactNumber, residence, sponsor, nationality, currentStatus, salary, startDate, endDate, iqamaNumber, iqamaExpiry,
+  name, nameArabic, nameEnglish, driverExternalId, contactNumber, residence, sponsor, nationality, currentStatus, salary, startDate, endDate, iqamaNumber, iqamaExpiry,
 }) {
   const names = bikerNameFields({ name, nameArabic, nameEnglish });
   return {
     name:           String(name || '').trim() || names.nameArabic || names.nameEnglish,
     name_ar:        names.nameArabic || null,
     name_en:        names.nameEnglish || null,
+    ...(driverExternalId !== undefined ? { driver_external_id: String(driverExternalId ?? '').trim() || null } : {}),
     contact_number: String(contactNumber || '').trim() || null,
     residence:      String(residence || '').trim() || null,
     sponsor:        String(sponsor || '').trim() || null,
@@ -838,6 +839,7 @@ export function toBikerInsert({
 }
 export function toBikerUpdate(updates = {}) {
   const payload = {};
+  if (updates.driverExternalId !== undefined) payload.driver_external_id = String(updates.driverExternalId ?? '').trim() || null;
   if (updates.nameArabic !== undefined) payload.name_ar = String(updates.nameArabic || '').trim() || null;
   if (updates.nameEnglish !== undefined) payload.name_en = String(updates.nameEnglish || '').trim() || null;
   if (updates.name          !== undefined) payload.name           = String(updates.name || '').trim();

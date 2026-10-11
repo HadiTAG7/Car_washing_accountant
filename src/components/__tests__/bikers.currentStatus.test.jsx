@@ -9,6 +9,17 @@ import { loadEnglish } from '../../i18n/locale';
 afterEach(cleanup);
 
 describe('worker current status form', () => {
+  it('saves Sweater ID separately and cleans the display name without changing the legacy wash identity or salary', () => {
+    const onUpdate = vi.fn();
+    render(<AddBikerModal isOpen onClose={() => {}} onUpdate={onUpdate}
+      initialValues={{ id: 'test', name: 'Test worker (001986)', nameEnglish: 'Test worker (001986)', salary: 900 }} />);
+    fireEvent.change(screen.getByLabelText('Sweater ID'), { target: { value: '001986' } });
+    fireEvent.change(screen.getByLabelText('اسم البايكر بالإنجليزي'), { target: { value: 'Test worker' } });
+    fireEvent.submit(document.querySelector('form'));
+    expect(onUpdate).toHaveBeenCalledWith('test', expect.objectContaining({
+      driverExternalId: '001986', nameEnglish: 'Test worker', name: 'Test worker (001986)', salary: 900,
+    }));
+  });
   it('offers English suggestions and retains entered text in the saved payload', async () => {
     await loadEnglish();
     const onUpdate = vi.fn();

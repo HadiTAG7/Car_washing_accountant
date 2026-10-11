@@ -14,6 +14,7 @@ const EMPTY = {
   name:          '',
   nameArabic:    '',
   nameEnglish:   '',
+  driverExternalId: '',
   contactNumber: '',
   residence:     '',
   sponsor:       '',
@@ -74,6 +75,7 @@ export default function AddBikerModal({ isOpen, onClose, onAdd, onUpdate, initia
       setForm({
         name:          initialValues.name || '',
         ...bikerNameFields(initialValues),
+        driverExternalId: initialValues.driverExternalId || '',
         contactNumber: initialValues.contactNumber || '',
         residence:     initialValues.residence || '',
         sponsor:       initialValues.sponsor || '',
@@ -110,6 +112,7 @@ export default function AddBikerModal({ isOpen, onClose, onAdd, onUpdate, initia
         name:          editing ? initialValues.name : form.nameArabic.trim() || form.nameEnglish.trim(),
         nameArabic:    form.nameArabic.trim(),
         nameEnglish:   form.nameEnglish.trim(),
+        driverExternalId: form.driverExternalId.trim(),
         contactNumber: form.contactNumber.trim(),
         residence:     form.residence.trim(),
         sponsor:       form.sponsor.trim(),
@@ -192,6 +195,19 @@ export default function AddBikerModal({ isOpen, onClose, onAdd, onUpdate, initia
             <input id="bikerFormNameEnglish" type="text" name="nameEnglish" value={form.nameEnglish}
               onChange={handleChange} dir="ltr" placeholder="Ahmed Mohammed"
               className="w-full px-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:border-primary-500 transition-colors" />
+          </div>
+
+          <div>
+            <label htmlFor="bikerFormSweaterId" className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+              Sweater ID
+            </label>
+            <input id="bikerFormSweaterId" name="driverExternalId" type="text" dir="ltr"
+              value={form.driverExternalId} onChange={handleChange} maxLength={100}
+              aria-describedby="bikerSweaterIdHint"
+              className="w-full px-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:border-primary-500 transition-colors" />
+            <p id="bikerSweaterIdHint" className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              رقم العامل في منصة سويتر، مستقل عن الاسم ورقم الإقامة.
+            </p>
           </div>
 
           <div>

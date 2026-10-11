@@ -512,6 +512,7 @@ export function mapWash(row) {
       collectionStatus: row.collection_status || null,
       workerCommissionPerWash: row.worker_commission_per_wash ?? null,
       ownerTaxSnapshot: row.owner_tax_snapshot || null,
+      ownerCompletionDecision: row.owner_completion_decision || null,
     } : {}),
   };
 }

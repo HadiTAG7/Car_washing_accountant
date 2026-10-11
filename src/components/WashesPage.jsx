@@ -18,16 +18,18 @@ import Toast from './Toast';
 import { useWashes } from '../hooks/useWashes';
 import { useBikers } from '../hooks/useBikers';
 import { useLanguage } from '../i18n/useLanguage';
-import { displayRecordedBikerName } from '../lib/bikerNames';
+import { displayRecordedBikerName, recordedBikerSweaterId } from '../lib/bikerNames';
 import { formatDateOnly } from '../lib/dateOnly';
 import { completedWashesBeforeToday, riyadhTodayISO } from '../lib/washesThroughYesterday';
+import { washDisplayStatus } from '../lib/sweater/washDisplayStatus';
+import { useSweaterWashDetails } from '../hooks/useSweaterWashDetails';
 import { useAccountingSettings } from '../hooks/useAccountingSettings';
 import { autoPostOnApproval, describeAutoPost, autoPostTone } from '../lib/accounting/autoPost';
 import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 
 // ─── Status toggle pill (مكتملة ↔ قيد التنفيذ) ────────────────────────────
-function WashStatusPill({ status, onChange, disabled }) {
+function WashStatusPill({ status, onChange, disabled, label }) {
   const isCompleted = status === 'مكتملة';
   const next        = isCompleted ? 'قيد التنفيذ' : 'مكتملة';
   const classes = isCompleted
@@ -37,6 +39,7 @@ function WashStatusPill({ status, onChange, disabled }) {
   return (
     <button
       type="button"
+      aria-label={`تغيير اكتمال دفعة ${label}`}
       onClick={() => !disabled && onChange(next)}
       disabled={disabled}
       title={disabled
@@ -45,7 +48,7 @@ function WashStatusPill({ status, onChange, disabled }) {
       className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-semibold transition-colors ${classes} ${disabled ? 'cursor-not-allowed opacity-70' : ''}`}
     >
       <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />
-      {isCompleted ? 'مكتملة' : 'قيد التنفيذ'}
+      تغيير الاكتمال
     </button>
   );
 }
@@ -82,6 +85,9 @@ export default function WashesPage() {
   } = useWashes();
   const { scalingFactor, canMutate } = usePartnerView();
   const { settings } = useAccountingSettings();
+  const bookingIds = items.filter(wash => wash.revenueOrigin === 'sweater' && wash.sspBookingId).map(wash => wash.sspBookingId);
+  const washDetails = useSweaterWashDetails(bookingIds, bookingIds.length > 0);
+  const byBookingId = new Map(washDetails.bookings.map(booking => [booking.sspBookingId, booking.record]));
 
   const [localOpen, setLocalOpen]         = useState(false);
   const [editingItem, setEditingItem]     = useState(null);
@@ -177,7 +183,7 @@ export default function WashesPage() {
       />
 
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
-        <SweaterWashWorkerSummary washes={items} bikers={bikers} scalingFactor={scalingFactor} />
+        <SweaterWashWorkerSummary washes={items} bikers={bikers} scalingFactor={scalingFactor} detailsSource={washDetails} />
         {!isFirebaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
 
         {mutationError && (
@@ -239,6 +245,8 @@ export default function WashesPage() {
               </PrimaryButton>
             ) : null}
           />
+          {washDetails.loading && <p role="status" className="text-xs text-slate-500 mb-3">نحمّل حالة التكت من السجلات المحفوظة...</p>}
+          {washDetails.error && <p role="alert" className="text-xs text-amber-700 dark:text-amber-300 mb-3">تعذّر التحقق من التكت؛ حالة اكتمال الغسلة ما زالت معروضة من السجل.</p>}
 
           {loading && !items.length ? (
             <LoadingState rows={4} />
@@ -246,12 +254,12 @@ export default function WashesPage() {
             <EmptyState onAdd={openAddModal} canMutate={canMutate} />
           ) : (
             <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
-              <table className="w-full min-w-[640px] text-sm">
+              <table className="w-full min-w-[800px] text-sm" aria-label="سجل الغسلات">
                 <thead>
                   <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
-                    <th className="py-3 px-4 whitespace-nowrap">البيان / اسم البايكر</th>
-                    <th className="py-3 px-4 whitespace-nowrap text-center tabular-nums">عدد الغسلات</th>
-                    <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">سعر الغسلة</th>
+                    <th className="py-3 px-4 whitespace-nowrap">ID الغسلة</th>
+                    <th className="py-3 px-4 whitespace-nowrap">ID العامل</th>
+                    <th className="py-3 px-4 whitespace-nowrap">اسم العامل</th>
                     <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">إجمالي الإيرادات</th>
                     <th className="py-3 px-4 whitespace-nowrap">التاريخ</th>
                     <th className="py-3 px-4 whitespace-nowrap">الحالة</th>
@@ -262,22 +270,27 @@ export default function WashesPage() {
                   {items.map((w) => {
                     const total = (w.quantity || 0) * (w.price || 0);
                     const label = displayRecordedBikerName(w, bikers, language);
+                    const sourceRecord = byBookingId.get(w.sspBookingId);
+                    const displayStatus = washDisplayStatus(w, sourceRecord);
+                    const statusClasses = {
+                      completed: 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+                      exceptional: 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300',
+                      ticket: 'bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-300',
+                      pending: 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300',
+                    };
                     return (
                       <tr
                         key={w.id}
                         className="border-b border-slate-50 dark:border-slate-800/60 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors"
                       >
+                        <td dir="ltr" translate="no" className="py-3 px-4 whitespace-nowrap text-start tabular-nums align-top">
+                          {w.sspBookingId || w.id || '—'}
+                        </td>
+                        <td dir="ltr" translate="no" className="py-3 px-4 whitespace-nowrap text-start tabular-nums align-top">
+                          {recordedBikerSweaterId(w, bikers) || '—'}
+                        </td>
                         <td className="py-3 px-4 whitespace-normal break-words min-w-[180px] font-medium text-slate-800 dark:text-slate-200 align-top">
                           <span translate="no" dir="auto">{label}</span>
-                        </td>
-                        <td className="py-3 px-4 whitespace-nowrap text-center tabular-nums text-slate-700 dark:text-slate-300 align-top">
-                          {formatNumber(w.quantity)}
-                        </td>
-                        <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums text-slate-700 dark:text-slate-300 align-top">
-                          {/* Scaled like the row total so qty × price =
-                              total stays visibly true in partner view
-                              (same pattern as Startup/Monthly). */}
-                          {formatCurrency(w.price * scalingFactor)}
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums font-bold text-slate-900 dark:text-slate-100 align-top">
                           {formatCurrency(total * scalingFactor)}
@@ -289,15 +302,16 @@ export default function WashesPage() {
                           </span>
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap align-top">
-                          <WashStatusPill
-                            status={w.status}
-                            onChange={(next) => handleUpdateStatus(w.id, next)}
-                            disabled={!canMutate}
-                          />
+                          <span className={`inline-flex px-2.5 py-1 rounded-full text-[11px] font-semibold ${statusClasses[displayStatus.tone]}`}>{displayStatus.label}</span>
+                          {displayStatus.ticketRef && <p dir="ltr" translate="no" className="text-[11px] tabular-nums mt-1">{displayStatus.ticketRef}</p>}
+                          {displayStatus.exceptional && <p className="text-[11px] text-slate-500 mt-1">اعتماد استثنائي أيضًا</p>}
+                          {w.revenueOrigin === 'sweater' && !sourceRecord && !washDetails.loading && !washDetails.error
+                            && <p className="text-[11px] text-slate-500 mt-1">بيانات التكت غير متاحة</p>}
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap text-left align-top">
                           {canMutate && (
                             <div className="inline-flex items-center gap-1">
+                              <WashStatusPill status={w.status} label={label} onChange={(next) => handleUpdateStatus(w.id, next)} disabled={!canMutate} />
                               <button
                                 type="button"
                                 onClick={() => openEditModal(w)}

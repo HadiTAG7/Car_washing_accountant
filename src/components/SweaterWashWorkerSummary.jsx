@@ -9,13 +9,14 @@ import { normalizeBookingStatus } from '../../functions/src/sweater/vocab';
 import { BOOKING_STATUS_AR } from '../lib/sweater/labels';
 import { ownerWashTaxSplit } from '../lib/sweater/ownerWashTax';
 
-export default function SweaterWashWorkerSummary({ washes, bikers = [], scalingFactor = 1 }) {
+export default function SweaterWashWorkerSummary({ washes, bikers = [], scalingFactor = 1, detailsSource }) {
   const { language } = useLanguage();
   const [detailsOpen, setDetailsOpen] = useState(false);
   const groups = summarizeOwnerWashes(washes).map(group => ({ ...group,
     displayName: displayRecordedBikerName(group, bikers, language),
     sweaterId: recordedBikerSweaterId(group, bikers) }));
-  const { bookings, loading, error } = useSweaterWashDetails(groups.flatMap(group => group.washes.map(wash => wash.sspBookingId)), detailsOpen);
+  const ownDetails = useSweaterWashDetails(groups.flatMap(group => group.washes.map(wash => wash.sspBookingId)), detailsOpen && !detailsSource);
+  const { bookings, loading, error } = detailsSource || ownDetails;
   const byBookingId = new Map(bookings.map(booking => [booking.sspBookingId, booking.record]));
   const statusLabel = rawStatus => {
     if (!rawStatus) return '—';

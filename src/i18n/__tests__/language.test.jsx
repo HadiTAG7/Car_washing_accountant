@@ -26,6 +26,9 @@ function Form({ inputRef }) {
 async function toEnglish() {
   fireEvent.click(screen.getByRole('button', { name: 'Switch to English' }));
   await screen.findByRole('heading', { name: 'Income Statement' });
+  // Labels commit before the provider's document-direction effect under load.
+  // Wait for the same observable outcome rather than racing that effect in CI.
+  await waitFor(() => expect(document.documentElement.dir).toBe('ltr'));
 }
 
 describe('site-wide language selection', () => {

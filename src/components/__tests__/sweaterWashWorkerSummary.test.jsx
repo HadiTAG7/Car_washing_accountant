@@ -18,10 +18,25 @@ it.each(['ar', 'en'])('sorts workers numerically by recorded Sweater ID, with mi
   expect(cells.map(r => r[0])).toEqual(['2', '10', '1982', '001986', '—']);
   expect(cells.map(r => r[1])).toEqual(['Worker 1', 'Worker 0', 'Worker 3', 'Worker 2', 'Worker 4']);
   expect(cells.map(r => Number(r[2]))).toEqual([2, 1, 4, 3, 5]);
-  expect([...container.querySelectorAll('span[translate="no"]')].map(e => e.textContent)).toEqual(['2', '10', '1982', '001986', '—']);
+  expect([...container.querySelectorAll('[class~="sm:hidden"] span[translate="no"]')].map(e => e.textContent)).toEqual(['2', '10', '1982', '001986', '—']);
   const details = screen.getByRole('table', { name: 'تفاصيل غسلات سويتر' });
   expect([...details.querySelectorAll('tbody tr')].map(r => r.querySelector('td').textContent)).toEqual(['2', '10', '1982', '001986', '—']);
   expect({ bikers, rows }).toEqual(original);
+});
+it.each(['ar', 'en'])('keeps ID cells aligned with their headers while isolating numeral direction in %s', language => {
+  render(<div dir={language === 'ar' ? 'rtl' : 'ltr'}><LanguageContext.Provider value={{ language }}>
+    <SweaterWashWorkerSummary washes={[wash('S-1')]} bikers={[{ id: 'worker-1', name: 'Worker 1', driverExternalId: '001986' }]} />
+  </LanguageContext.Provider></div>);
+  for (const label of ['ملخص غسلات سويتر حسب العامل', 'تفاصيل غسلات سويتر']) {
+    const table = screen.getByRole('table', { name: label });
+    const header = table.querySelector('th:first-child');
+    const cell = table.querySelector('tbody td:first-child');
+    expect(cell.getAttribute('dir')).toBeNull();
+    expect(cell.querySelector('span').getAttribute('dir')).toBe('ltr');
+    expect(cell.querySelector('span').textContent).toBe('001986');
+    expect(header.classList.contains('w-px')).toBe(true);
+    expect(header.classList.contains('whitespace-nowrap')).toBe(true);
+  }
 });
 it('shows the same unscaled Sweater ID separately in desktop, mobile and booking details', () => {
   const bikers = [{ id: 'worker-1', name: 'Worker 1', driverExternalId: '001986' }];

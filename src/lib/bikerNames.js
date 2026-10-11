@@ -33,3 +33,14 @@ export function displayRecordedBikerName(record, bikers = [], language = getLang
     : bikers.find(item => trimmed(item.name) === trimmed(record?.bikerName) && trimmed(item.name));
   return displayBikerName(biker || { name: record?.bikerName }, language);
 }
+
+// Presentation only: a stable registry link wins; legacy names must be unique.
+// Never present a document ID or a guessed numeric suffix as the SSP worker ID.
+export function recordedBikerSweaterId(record, bikers = []) {
+  if (record?.bikerId) {
+    return trimmed(bikers.find(item => item.id === record.bikerId)?.driverExternalId);
+  }
+  const name = trimmed(record?.bikerName);
+  const matches = name ? bikers.filter(item => trimmed(item.name) === name) : [];
+  return matches.length === 1 ? trimmed(matches[0].driverExternalId) : '';
+}

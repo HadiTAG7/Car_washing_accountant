@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import { afterEach, expect, it } from 'vitest';
 import SweaterWashWorkerSummary from '../SweaterWashWorkerSummary';
 import { summarizeOwnerWashes } from '../../lib/sweater/washSummary';
@@ -8,6 +8,18 @@ afterEach(cleanup);
 const wash = (id, extra = {}) => ({ sspBookingId: id, bikerId: 'worker-1', bikerName: 'Worker 1',
   quantity: 1, price: 20, workerCommissionPerWash: 4.5, washDate: '2026-10-03',
   status: 'مكتملة', revenueOrigin: 'sweater', collectionStatus: 'confirmed_by_owner', ...extra });
+it('shows the same unscaled Sweater ID separately in desktop, mobile and booking details', () => {
+  const bikers = [{ id: 'worker-1', name: 'Worker 1', driverExternalId: '001986' }];
+  const rows = [wash('S-1')];
+  const original = structuredClone({ bikers, rows });
+  render(<SweaterWashWorkerSummary washes={rows} bikers={bikers} scalingFactor={0.5} />);
+  const summary = screen.getByRole('table', { name: 'ملخص غسلات سويتر حسب العامل' });
+  expect([...summary.querySelectorAll('th')].slice(0,2).map(x=>x.textContent)).toEqual(['العامل','Sweater ID']);
+  expect(within(summary).getByText('001986').getAttribute('dir')).toBe('ltr');
+  expect(screen.getAllByText('001986')).toHaveLength(3);
+  expect({ bikers, rows }).toEqual(original);
+  expect(summarizeOwnerWashes(rows)[0]).toMatchObject({ quantity: 1, totalAmount: 20, commission: 4.5 });
+});
 it('groups by worker and excludes duplicate SSP IDs, cancellations and unrelated washes', () => {
   const rows = [wash('S-1'), wash('S-2'), wash('S-1'), wash('cancelled', { status: 'قيد التنفيذ' }), wash('direct', { revenueOrigin: 'direct' })];
   const result = summarizeOwnerWashes(rows);

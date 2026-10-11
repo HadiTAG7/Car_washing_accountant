@@ -21,6 +21,6 @@ it('preserves unknown raw status and does not invent gross from an unclarified p
   mocks.bookings = [{ sspBookingId: 'S-1', record: { rawStatus: 'Unexpected source status' } }];
   render(<SweaterWashWorkerSummary washes={[{ ...wash, ownerTaxSnapshot: null }]} />);
   const table = within(screen.getByRole('table', { name: 'تفاصيل غسلات سويتر' }));
-  expect(table.getByText('Unexpected source status')).toBeTruthy(); expect(table.getByText('—')).toBeTruthy();
+  expect(table.getByText('Unexpected source status')).toBeTruthy(); expect(table.getAllByText('—')).toHaveLength(2);
   expect(table.queryByText(/23/)).toBeNull(); expect(table.getByText('2026-10-03')).toBeTruthy();
 });

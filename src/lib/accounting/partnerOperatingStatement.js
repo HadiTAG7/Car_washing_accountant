@@ -209,7 +209,12 @@ export function partnerOperatingStatement({
     cumulativeReserved = target;
   }
   const totalAllocation = round2(totalCosts + annualReserve);
-  const groups = GROUPS.map(([key, label]) => ({ key, label, items: items.filter(i => i.groupKey === key), amount: sum(items.filter(i => i.groupKey === key)) }));
+  const groups = GROUPS.map(([key, label]) => ({ key, label,
+    // rawAmount is a company-level rounding input, not a partner report field.
+    // Returning it beside the scaled wage would disclose the company payroll
+    // and let the recipient derive their concealed participation ratio.
+    items: items.filter(i => i.groupKey === key).map(({ rawAmount: _raw, ...item }) => item),
+    amount: sum(items.filter(i => i.groupKey === key)) }));
   const renewalReserve = { scheduledAmount, availableProfit,
     reason: scheduledAmount <= 0 ? 'no-schedule' : availableProfit <= 0 ? 'no-profit'
       : annualReserve < scheduledAmount ? 'limited' : 'full' };

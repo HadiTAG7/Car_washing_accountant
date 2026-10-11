@@ -52,6 +52,7 @@ describe('server earned payroll in partner statements, no salary records or perm
     expect(report.statements.find(s => s.periodKey === '2026-09').totalCosts).toBe(50);
     expect(report.statements.at(-1).totalCosts).toBe(100);
     expect(report.statements.at(-1).salaryAccrual).toMatchObject({ amount: 100, unposted: 100, estimated: true });
+    expect(JSON.stringify(report)).not.toContain('"rawAmount"');
     expect(JSON.stringify(report)).not.toMatch(/Private employee|private-worker|basicDue|salaryExpense/);
     expect(input).toEqual(original);
   });
@@ -66,6 +67,7 @@ describe('server earned payroll in partner statements, no salary records or perm
     }));
     const report = await partnerAllocationReport(db, options);
     expect(report.statements.at(-1)).toMatchObject({ totalCosts: 100, salaryAccrual: { amount: 100, unposted: (1000 - amount) / 10 } });
+    expect(JSON.stringify(report)).not.toContain('"rawAmount"');
     expect(JSON.stringify(report)).not.toMatch(/Private employee|private-worker|9999/);
   });
   it('retains the genuine partner guard: another supplied partner id is ignored, admin preview is not required', async () => {

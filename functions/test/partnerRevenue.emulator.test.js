@@ -81,6 +81,7 @@ suite('partner revenue on isolated Firestore: real projections, scoped read-only
     const paid = await run();
     expect(paid.statements.at(-1)).toMatchObject({ totalCosts: 100, salaryAccrual: { posted: 100, unposted: 0 } });
     expect(paid.partnerId).toBe('own-partner');
+    expect(JSON.stringify(paid)).not.toContain('"rawAmount"');
     expect(JSON.stringify(paid)).not.toMatch(/Private employee salary|private-payroll-worker|private-other-worker|basicDue/);
     const after = await biker.get();
     expect(after.data()).toEqual(before.data()); expect(after.updateTime.isEqual(before.updateTime)).toBe(true);

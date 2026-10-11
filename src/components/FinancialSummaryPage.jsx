@@ -72,8 +72,11 @@ export default function FinancialSummaryPage() {
 
   const [selectedMonth, setSelectedMonth] = useState(todayMonth());
   const payroll = useIncomePayrollPreviews(selectedMonth, {
-    enabled: !isPartnerView && ['admin', 'accountant'].includes(role),
-    revision: JSON.stringify([sources.payrollRuns, sources.bikers, entries, sources.washes]),
+    enabled: !live.loading && !isPartnerView && ['admin', 'accountant'].includes(role),
+    revision: JSON.stringify([sources.payrollRuns,
+      (sources.bikers || []).map(b => [b.id, b.salary, b.name, b.start_date || b.startDate, b.end_date || b.endDate]),
+      entries.map(e => [e.id, e.status]),
+      sources.washes.map(w => [w.id, w.quantity, w.wash_date, w.status, w.biker_id, w.biker_name, w.ssp_booking_id])]),
   });
   const [detailCategory, setDetailCategory] = useState(null);
   const [statementDetail, setStatementDetail] = useState(null);

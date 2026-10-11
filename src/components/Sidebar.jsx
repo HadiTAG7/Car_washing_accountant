@@ -31,6 +31,7 @@ export default function Sidebar({
   onSignOut,
   onAddEntry,
   mobileOpen = false,
+  desktopHidden = false,
   onCloseMobile,
 }) {
   // Modal for in-app password change — opened from the footer "تغيير
@@ -136,10 +137,11 @@ export default function Sidebar({
           emphasis, not surfaces — so the rail is a calm white / #292929
           panel and orange appears only on the active item and the CTA. */}
       <aside
+        id="app-sidebar"
         className={`fixed top-0 right-0 h-screen w-72 md:w-64 bg-white dark:bg-slate-900 border-l border-slate-100 dark:border-slate-800 flex flex-col z-40
           transform transition-transform duration-300 ease-out
           ${mobileOpen ? 'translate-x-0' : 'translate-x-full'}
-          md:translate-x-0`}
+          md:translate-x-0 ${desktopHidden ? 'md:hidden' : ''}`}
         style={{ boxShadow: 'var(--sw-shadow-card)' }}
       >
         {/* Official brand lockup + mobile close button */}

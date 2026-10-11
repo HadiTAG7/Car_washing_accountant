@@ -1,4 +1,4 @@
-import { Calendar, Sun, Moon, Menu } from 'lucide-react';
+import { Calendar, Sun, Moon, Menu, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { useDarkMode } from '../hooks/useDarkMode';
 import { useAuth } from '../hooks/useAuth';
 import { useMobileMenu } from '../contexts/MobileMenuContext';
@@ -25,7 +25,7 @@ export default function TopBar({ title, subtitle, actions, hidePartnerSelector =
   }).format(today);
 
   const { darkMode, toggle } = useDarkMode();
-  const { toggle: toggleMobileMenu } = useMobileMenu();
+  const { open: mobileMenuOpen, toggle: toggleMobileMenu, desktopHidden, toggleDesktop } = useMobileMenu();
   const { session } = useAuth();
 
   return (
@@ -84,11 +84,26 @@ export default function TopBar({ title, subtitle, actions, hidePartnerSelector =
             {(session?.user?.email || 'س').trim().charAt(0)}
           </div>
 
+          {/* Desktop toggle stays outside the rail so it can always restore it. */}
+          <button
+            type="button"
+            onClick={toggleDesktop}
+            aria-label={desktopHidden ? 'إظهار القائمة الجانبية' : 'إخفاء القائمة الجانبية'}
+            title={desktopHidden ? 'إظهار القائمة الجانبية' : 'إخفاء القائمة الجانبية'}
+            aria-expanded={!desktopHidden}
+            aria-controls="app-sidebar"
+            className="sw-tap hidden md:flex w-10 h-10 rounded-lg bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-100 dark:border-slate-700 items-center justify-center text-slate-700 dark:text-slate-200 transition-colors duration-200 shrink-0"
+          >
+            {desktopHidden ? <PanelRightOpen size={20} /> : <PanelRightClose size={20} />}
+          </button>
+
           {/* Hamburger — mobile only, on the far edge (left in RTL) */}
           <button
             type="button"
             onClick={toggleMobileMenu}
-            aria-label="فتح القائمة"
+            aria-label={mobileMenuOpen ? 'إغلاق القائمة' : 'فتح القائمة'}
+            aria-expanded={mobileMenuOpen}
+            aria-controls="app-sidebar"
             className="sw-tap md:hidden w-10 h-10 rounded-lg bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-100 dark:border-slate-700 flex items-center justify-center text-slate-700 dark:text-slate-200 transition-colors duration-200 shrink-0"
           >
             <Menu size={20} />

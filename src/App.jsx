@@ -107,7 +107,7 @@ function AppShell({ membership }) {
   const [showEntrySelector, setShowEntrySelector] = useState(false);
   const [pendingEntry, setPendingEntry] = useState(null);
 
-  const { open: mobileMenuOpen, setOpen: setMobileMenuOpen } = useMobileMenu();
+  const { open: mobileMenuOpen, setOpen: setMobileMenuOpen, desktopHidden } = useMobileMenu();
 
   const clearPendingEntry = useCallback(() => setPendingEntry(null), []);
 
@@ -183,10 +183,11 @@ function AppShell({ membership }) {
           ? () => { setShowEntrySelector(true); setMobileMenuOpen(false); }
           : null}
         mobileOpen={mobileMenuOpen}
+        desktopHidden={desktopHidden}
         onCloseMobile={() => setMobileMenuOpen(false)}
       />
 
-      <div className="min-h-screen md:mr-64 flex flex-col">
+      <div className={`min-h-screen flex flex-col ${desktopHidden ? '' : 'md:mr-64'}`}>
         <PartnerViewBanner />
         {!isFirebaseConfigured && <DemoBanner missing={missingEnvNames} />}
         {!localPreview && !membership.loading && !membership.isMember && (

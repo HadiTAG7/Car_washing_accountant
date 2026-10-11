@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const state = vi.hoisted(() => ({ role: 'admin', loading: false, authenticated: true, authLoading: false, partnerView: false }));
+const state = vi.hoisted(() => ({ role: 'admin', loading: false, authenticated: true, authLoading: false, partnerView: false, desktopHidden: false }));
 vi.mock('../hooks/useAuth', () => ({ useAuth: () => ({
   session: state.authenticated ? { user: { id: 'navigation-test' } } : null,
   loading: state.authLoading,
@@ -11,7 +11,7 @@ vi.mock('../hooks/useMembership', () => ({ useMembership: () => ({ role: state.r
 vi.mock('../lib/firebaseClient', () => ({ isFirebaseConfigured: true, requireAuth: true, missingEnvNames: [] }));
 vi.mock('../contexts/MobileMenuContext', () => ({
   MobileMenuProvider: ({ children }) => children,
-  useMobileMenu: () => ({ open: false, setOpen: vi.fn() }),
+  useMobileMenu: () => ({ open: false, setOpen: vi.fn(), desktopHidden: state.desktopHidden }),
 }));
 vi.mock('../contexts/PartnerViewContext', () => ({
   PartnerViewProvider: ({ children }) => children,
@@ -34,12 +34,23 @@ vi.mock('../components/UpdatePasswordScreen', () => ({ default: () => <h1>تحد
 import App from '../App';
 
 beforeEach(() => {
-  Object.assign(state, { role: 'admin', loading: false, authenticated: true, authLoading: false, partnerView: false });
+  Object.assign(state, { role: 'admin', loading: false, authenticated: true, authLoading: false, partnerView: false, desktopHidden: false });
   window.history.replaceState(null, '', '/');
 });
 afterEach(cleanup);
 
 describe('بقاء الصفحة عند إعادة التحميل', () => {
+  it.each(['admin', 'operator', 'partner', 'supervisor'])('يستعيد مساحة القائمة المخفية دون تغيير وجهة الدور: %s', async (role) => {
+    Object.assign(state, { role, partnerView: role === 'partner', desktopHidden: true });
+    const view = render(<App />);
+    const expectedHeading = role === 'partner' ? 'حساب الشريك: overview' : role === 'supervisor' ? 'لوحة المشرف للاختبار' : 'صفحة الرئيسية للاختبار';
+    const page = await screen.findByRole('heading', { name: expectedHeading });
+    expect(page.closest('.min-h-screen').classList.contains('md:mr-64')).toBe(false);
+    const beforeUrl = window.location.href;
+    state.desktopHidden = false; view.rerender(<App />);
+    expect(screen.getByRole('heading', { name: expectedHeading }).closest('.min-h-screen').classList.contains('md:mr-64')).toBe(true);
+    expect(window.location.href).toBe(beforeUrl);
+  });
   it('المشرف يصل إلى القراءة فقط ويتراجع عن رابط صفحة تعديل', async () => {
     state.role = 'supervisor'; window.history.replaceState(null, '', '/?page=washes');
     render(<App />);

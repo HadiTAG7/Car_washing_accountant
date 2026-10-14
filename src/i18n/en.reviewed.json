@@ -1155,5 +1155,13 @@
   "غسلات مسجلة": "recorded washes",
   "يوم قادم": "Future day",
   "خارج فترة العامل": "Outside worker period",
-  "الرقم داخل اليوم = عدد الغسلات المسجلة. — يوم قادم أو خارج فترة العامل أو بيانات غير متاحة.": "Number inside each day = recorded washes. — means a future day, outside the worker period, or unavailable data."
+  "الرقم داخل اليوم = عدد الغسلات المسجلة. — يوم قادم أو خارج فترة العامل أو بيانات غير متاحة.": "Number inside each day = recorded washes. — means a future day, outside the worker period, or unavailable data.",
+  "تقييم البايكر": "Biker rating",
+  "المتوسط": "Average",
+  "كيف يُحسب؟": "How is it calculated?",
+  "غسلات الشهر ÷ عدد الأيام التي فيها غسلات مسجلة فقط. الأيام بدون غسلات لا تدخل في المتوسط.": "Monthly washes ÷ days with recorded washes only. Days without washes are excluded.",
+  "اختيار الشهر": "Choose month",
+  "السنة السابقة": "Previous year",
+  "السنة التالية": "Next year",
+  "من تقييمات العملاء المتاحة": "From available customer ratings"
 }

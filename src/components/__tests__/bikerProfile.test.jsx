@@ -20,6 +20,10 @@ const { default: BikersPage } = await import('../BikersPage');
 beforeEach(() => { state.partnerView = false; state.qualityLoading = false; state.qualityError = null; readQuality.mockClear(); });
 afterEach(cleanup);
 const props = () => ({ role: 'admin', biker, washes: [], advances: [], onClose: vi.fn() });
+const chooseMonth = label => {
+  fireEvent.click(screen.getByRole('button', { name: 'الشهر', exact: true }));
+  fireEvent.click(screen.getByRole('button', { name: label, exact: true }));
+};
 
 it('opens a profile by clicking the admin worker name and closes without a write', () => {
   render(<BikersPage role="admin" />);
@@ -48,15 +52,19 @@ it('hides the admin profile immediately when switching to partner preview', () =
 });
 it('switches month and removes the previous period rating and ticket', () => {
   render(<BikerProfile {...props()} />);
-  fireEvent.change(screen.getByLabelText('الشهر'), { target: { value: '2026-10' } });
+  chooseMonth('أكتوبر 2026');
   expect(screen.getByText('T-test')).toBeTruthy();
-  fireEvent.change(screen.getByLabelText('الشهر'), { target: { value: '2026-09' } });
+  chooseMonth('سبتمبر 2026');
   expect(screen.queryByText('T-test')).toBeNull();
   expect(readQuality).toHaveBeenLastCalledWith('fake-a', '2026-09');
 });
-it('updates the selected month when the browser emits a native input event', () => {
+it('supports month selection and closes its picker on Escape without closing the profile', () => {
   render(<BikerProfile {...props()} />);
-  fireEvent.input(screen.getByLabelText('الشهر'), { target: { value: '2026-09' } });
+  fireEvent.click(screen.getByRole('button', { name: 'الشهر', exact: true }));
+  fireEvent.keyDown(screen.getByRole('dialog', { name: 'اختيار الشهر' }), { key: 'Escape' });
+  expect(screen.queryByRole('dialog', { name: 'اختيار الشهر' })).toBeNull();
+  expect(screen.getByRole('dialog', { name: biker.name })).toBeTruthy();
+  chooseMonth('سبتمبر 2026');
   expect(readQuality).toHaveBeenLastCalledWith('fake-a', '2026-09');
   expect(screen.queryByText('T-test')).toBeNull();
 });
@@ -75,9 +83,30 @@ it('renders explicit English labels, worker name and direction', () => {
 });
 it('presents daily washes as a monthly calendar rather than a scrolling date list', () => {
   render(<BikerProfile {...props()} />);
-  fireEvent.change(screen.getByLabelText('الشهر'), { target: { value: '2026-10' } });
+  chooseMonth('أكتوبر 2026');
   const calendar = screen.getByRole('table', { name: 'تقويم الغسلات اليومية' });
   expect(calendar.querySelectorAll('thead th')).toHaveLength(7);
   expect(calendar.querySelectorAll('time')).toHaveLength(31);
   expect(calendar.querySelector('time[datetime="2026-10-01"]')).toBeTruthy();
+});
+it('uses only the wash-day average and replaces calendar-day average with rating', () => {
+  render(<BikerProfile {...props()} washes={[
+    { id: 'w1', bikerId: biker.id, washDate: '2026-10-12', quantity: 3, status: 'مكتملة' },
+    { id: 'w2', bikerId: biker.id, washDate: '2026-10-13', quantity: 5, status: 'مكتملة' },
+  ]} />);
+  expect(screen.queryByText('متوسط اليوم التقويمي')).toBeNull();
+  expect(screen.getByText('المتوسط').closest('.sw-biker-profile__metric').querySelector('strong').textContent).toBe('4');
+  expect(screen.getByText('تقييم البايكر').closest('.sw-biker-profile__metric').querySelector('strong').textContent).toBe('5 / 5');
+  fireEvent.click(screen.getByText('كيف يُحسب؟'));
+  expect(screen.getByText('8 ÷ 2 = 4')).toBeTruthy();
+});
+it('orders all worker information left-to-right without changing values', () => {
+  render(<BikerProfile {...props()} />);
+  expect(document.querySelector('.sw-biker-profile__info').getAttribute('dir')).toBe('ltr');
+  expect(screen.getByText('1986')).toBeTruthy();
+});
+it('uses a branded month control rather than the browser native month input', () => {
+  render(<BikerProfile {...props()} />);
+  expect(document.querySelector('input[type="month"]')).toBeNull();
+  expect(screen.getByRole('button', { name: 'الشهر' })).toBeTruthy();
 });

@@ -10,10 +10,25 @@
 .sw-biker-profile__info div, .sw-biker-profile__metrics div { background: #64748b12; border: 1px solid #64748b30; border-radius: 12px; padding: 12px; min-width: 0; overflow-wrap: anywhere; }
 .sw-biker-profile dt, .sw-biker-profile__metrics span { display: block; font-size: .8rem; opacity: .8; margin-bottom: 6px; }
 .sw-biker-profile dd, .sw-biker-profile__metrics strong { display: block; font-weight: 600; }
+.sw-biker-profile__info, .sw-biker-profile__info dt, .sw-biker-profile__info dd { text-align: left; }
 .sw-biker-profile__metrics { margin: 16px 0; }
 .sw-biker-profile__metrics strong { font-size: 1.2rem; }
 .sw-biker-profile__period { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
-.sw-biker-profile input { padding: 8px; border: 1px solid #64748b60; border-radius: 8px; margin-inline-start: 8px; max-width: 100%; }
+.sw-profile-month-picker { position: relative; max-width: 100%; }
+.sw-profile-month-picker__trigger { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 44px; padding: 10px 14px; border: 1px solid var(--sw-primary, #f97316); border-radius: 14px; background: #f9731615; color: var(--sw-text); font-weight: 600; }
+.sw-profile-month-picker__trigger > svg { color: var(--sw-primary, #f97316); }
+.sw-profile-month-picker__panel { position: absolute; top: calc(100% + 8px); inset-inline-end: 0; z-index: 5; width: 320px; max-width: calc(100vw - 64px); padding: 12px; border-radius: 16px; border: 1px solid var(--sw-border-subtle); background: var(--sw-surface); box-shadow: var(--sw-shadow-overlay); }
+.sw-profile-month-picker__year { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.sw-profile-month-picker__year button { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 10px; border: 1px solid var(--sw-border-subtle); }
+.sw-profile-month-picker__months { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.sw-profile-month-picker__months button { min-height: 44px; padding: 8px 4px; border-radius: 10px; font-size: .85rem; border: 1px solid var(--sw-border-subtle); }
+.sw-profile-month-picker button:hover:not(:disabled) { background: #f9731628; }
+.sw-profile-month-picker button:focus-visible { outline: 2px solid var(--sw-primary, #f97316); outline-offset: 2px; }
+.sw-profile-month-picker button:disabled { opacity: .35; cursor: not-allowed; }
+.sw-profile-month-picker__months button[aria-pressed="true"] { background: var(--sw-primary, #f97316); color: #fff; border-color: transparent; }
+.sw-biker-profile .sw-biker-profile__average-help { padding: 8px 0 0; font-size: .8rem; }
+.sw-biker-profile__average-help summary { color: var(--sw-primary, #f97316); }
+.sw-biker-profile__average-help p { margin-top: 8px; }
 .sw-biker-profile details { padding: 12px 0; }
 .sw-biker-profile summary { cursor: pointer; font-weight: 600; }
 .sw-biker-profile table { width: 100%; text-align: start; }
@@ -33,4 +48,4 @@
 .sw-biker-calendar-wrap > p { margin-top: 10px; }
 .sw-biker-profile li { margin-top: 8px; overflow-wrap: anywhere; }
 .sw-biker-profile [role="alert"] { padding: 10px; border: 1px solid #d97706; border-radius: 8px; margin: 8px 0; }
-@media (max-width: 640px) { .sw-biker-profile__info, .sw-biker-profile__metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .sw-biker-profile__body, .sw-biker-profile__header { padding: 12px; } .sw-biker-profile .sw-biker-calendar { border-spacing: 3px; } .sw-biker-profile .sw-biker-calendar th { font-size: .65rem; } .sw-biker-calendar__day { min-height: 66px; border-radius: 7px; } .sw-biker-calendar strong { font-size: 1rem; } }
+@media (max-width: 640px) { .sw-biker-profile__info, .sw-biker-profile__metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .sw-biker-profile__body, .sw-biker-profile__header { padding: 12px; } .sw-biker-profile .sw-biker-calendar { border-spacing: 3px; } .sw-biker-profile .sw-biker-calendar th { font-size: .65rem; } .sw-biker-calendar__day { min-height: 66px; border-radius: 7px; } .sw-biker-calendar strong { font-size: 1rem; } .sw-profile-month-picker { width: 100%; } .sw-profile-month-picker__trigger { width: 100%; } .sw-profile-month-picker__panel { position: static; width: 100%; max-width: none; margin-top: 8px; } }

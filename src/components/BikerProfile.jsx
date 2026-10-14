@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import ModalSurface from './ModalSurface';
 import BikerWashCalendar from './BikerWashCalendar';
+import BikerProfileMonthPicker from './BikerProfileMonthPicker';
 import { useLanguage } from '../i18n/useLanguage';
 import { useBikerProfileBookings } from '../hooks/useBikerProfileBookings';
 import { bikerProfileStats, riyadhToday } from '../lib/bikerProfile';
@@ -27,6 +28,7 @@ function AdminBikerProfile({ biker, washes, washesLoading, washesError, advances
   const washReady = !washesLoading && !washesError && Array.isArray(washes) && stats.validPeriod && !stats.conflicts.length;
   const metric = value => washReady && value !== null ? formatNumber(value) : unavailable;
   const qualityReady = source.available && stats.validPeriod;
+  const rating = qualityReady && stats.quality.averageRating !== null ? `${formatNumber(stats.quality.averageRating)} / 5` : unavailable;
   const ownAdvances = (advances || []).filter(a => a.bikerId === biker.id && a.status === 'pending')
     .reduce((sum, a) => sum + Math.max(0, (Number(a.amount) || 0) - (Number(a.recoveredAmount) || 0)), 0);
   const information = [
@@ -49,11 +51,11 @@ function AdminBikerProfile({ biker, washes, washesLoading, washesError, advances
     </header>
     <div className="sw-biker-profile__body" dir={language === 'en' ? 'ltr' : 'rtl'}>
       <section><h3>{text('بيانات العامل', 'Worker information')}</h3>
-        <dl className="sw-biker-profile__info">{information.map(([ar, en, value]) => <div key={en}><dt>{text(ar, en)}</dt><dd translate="no" dir="auto">{value || unavailable}</dd></div>)}</dl>
+        <dl className="sw-biker-profile__info" dir="ltr">{information.map(([ar, en, value]) => <div key={en}><dt>{text(ar, en)}</dt><dd translate="no" dir="auto">{value || unavailable}</dd></div>)}</dl>
       </section>
       <section>
         <div className="sw-biker-profile__period"><h3>{text('أداء الغسلات', 'Wash activity')}</h3>
-          <label>{text('الشهر', 'Month')}<input type="month" value={periodKey} max={today.slice(0, 7)} onChange={e => setPeriodKey(e.target.value)} /></label></div>
+          <BikerProfileMonthPicker value={periodKey} max={today.slice(0, 7)} language={language} onChange={setPeriodKey} /></div>
         <p className="sw-biker-profile__note">{text('الأرقام من الغسلات المسجلة بالموقع، ولا تثبت اكتمال الاستيراد أو الحضور. اليوم وأمس بتوقيت الرياض.', 'Figures use washes recorded in this app, not proof of complete imports or attendance. Today and yesterday use Riyadh time.')}</p>
         {washesLoading && <p role="status">{text('جارٍ تحميل الغسلات…', 'Loading washes…')}</p>}
         {washesError && <p role="alert">{text('تعذّر تحميل الغسلات؛ لا يمكن تأكيد الأرقام.', 'Washes could not be loaded; figures cannot be confirmed.')}</p>}
@@ -61,12 +63,17 @@ function AdminBikerProfile({ biker, washes, washesLoading, washesError, advances
         {stats.conflicts?.length > 0 && <p role="alert">{text('توجد سجلات تنفيذ مكررة متعارضة؛ الأرقام غير مؤكدة حتى مراجعتها.', 'Conflicting duplicate executions exist; figures are unconfirmed pending review.')}</p>}
         {stats.unlinkedLegacyRows > 0 && <p role="alert">{text('غسلات قديمة تحمل نفس الاسم دون ربط بمعرّف العامل، لم تُضم تلقائياً:', 'Legacy washes share this name without a worker ID; not automatically included:')} {formatNumber(stats.unlinkedLegacyRows)}</p>}
         <div className="sw-biker-profile__metrics">{[
-          ['غسلات اليوم', 'Today’s washes', stats.todayWashes], ['غسلات أمس', 'Yesterday’s washes', stats.yesterdayWashes],
-          ['غسلات الشهر المحدد', 'Selected month washes', stats.monthWashes], ['إجمالي الغسلات المسجلة', 'All recorded washes', stats.lifetimeWashes],
-          ['متوسط اليوم التقويمي', 'Average per calendar day', stats.averagePerCalendarDay], ['متوسط أيام الغسيل', 'Average per wash day', stats.averagePerWashDay],
-        ].map(([ar, en, value]) => <div key={en}><span>{text(ar, en)}</span><strong>{metric(value)}</strong></div>)}</div>
-        {stats.validPeriod && <p className="sw-biker-profile__note">{text('مقام المتوسط: أيام الفترة المنقضية ضمن تاريخَي بدء ونهاية العامل', 'Average denominator: elapsed days within worker start/end dates')}: {formatNumber(stats.calendarDays)} · {text('أيام لها غسلات مسجلة', 'Days with recorded washes')}: {washReady ? formatNumber(stats.washDays) : unavailable}</p>}
-        <details open><summary>{text('الغسلات يوماً بيوم', 'Daily wash counts')}</summary>
+          ['غسلات اليوم', 'Today’s washes', metric(stats.todayWashes)], ['غسلات أمس', 'Yesterday’s washes', metric(stats.yesterdayWashes)],
+          ['غسلات الشهر المحدد', 'Selected month washes', metric(stats.monthWashes)], ['إجمالي الغسلات المسجلة', 'All recorded washes', metric(stats.lifetimeWashes)],
+          ['تقييم البايكر', 'Biker rating', rating], ['المتوسط', 'Average', metric(stats.averagePerWashDay), true],
+        ].map(([ar, en, value, explain]) => <div key={en} className="sw-biker-profile__metric"><span>{text(ar, en)}</span><strong><bdi dir={en === 'Biker rating' ? 'ltr' : 'auto'}>{value}</bdi></strong>
+          {en === 'Biker rating' && <small>{text('من تقييمات العملاء المتاحة', 'From available customer ratings')}</small>}
+          {explain && <details className="sw-biker-profile__average-help"><summary tabIndex={0}>{text('كيف يُحسب؟', 'How is it calculated?')}</summary>
+            <p>{text('غسلات الشهر ÷ عدد الأيام التي فيها غسلات مسجلة فقط. الأيام بدون غسلات لا تدخل في المتوسط.', 'Monthly washes ÷ days with recorded washes only. Days without washes are excluded.')}</p>
+            <p><bdi dir="ltr">{washReady && stats.washDays > 0 ? `${formatNumber(stats.monthWashes)} ÷ ${formatNumber(stats.washDays)} = ${metric(stats.averagePerWashDay)}` : unavailable}</bdi></p>
+          </details>}
+        </div>)}</div>
+        <details open><summary tabIndex={0}>{text('الغسلات يوماً بيوم', 'Daily wash counts')}</summary>
           <BikerWashCalendar periodKey={periodKey} today={today} daily={stats.daily} available={washReady} language={language} />
         </details>
       </section>
@@ -74,10 +81,10 @@ function AdminBikerProfile({ biker, washes, washesLoading, washesError, advances
         <p className="sw-biker-profile__note">{text('من التقييمات ومراجع التكتات الموجودة في الحجوزات المستوردة فقط؛ ليس سجل تكتات سويتر الكامل أو حكماً على العامل.', 'Uses ratings and ticket references present in imported bookings only; not Sweater’s full ticket register or a worker assessment.')}</p>
         {source.loading && <p role="status">{text('جارٍ تحميل بيانات الجودة…', 'Loading quality data…')}</p>}
         {source.error && <p role="alert">{text('تعذّر تحميل مصدر الجودة؛ البيانات غير متاحة.', 'Quality source could not be loaded; data is unavailable.')}</p>}
-        <p>{text('متوسط التقييم', 'Average rating')}: <strong>{qualityReady && stats.quality.averageRating !== null ? `${formatNumber(stats.quality.averageRating)} / 5` : unavailable}</strong>
-          {qualityReady && <> · {text('عدد التقييمات', 'Ratings')}: {formatNumber(stats.quality.ratedCount)} · {text('الحجوزات المستوردة المرتبطة', 'Linked imported bookings')}: {formatNumber(stats.quality.importedBookings)}</>}</p>
-        <details><summary>{text('التقييمات المسجلة', 'Recorded ratings')}</summary>{qualityReady && stats.quality.ratings.length ? <ul>{stats.quality.ratings.map(r => <li key={r.sspBookingId}><bdi>{r.sspBookingId}</bdi> · {formatDate(r.serviceDate)} · {formatNumber(Number(r.rating))} / 5</li>)}</ul> : <p>{unavailable}</p>}</details>
-        <details><summary>{text('مراجع التكتات المتاحة', 'Available ticket references')}{qualityReady && stats.quality.tickets.length > 0 ? ` (${formatNumber(stats.quality.tickets.length)})` : ''}</summary>
+        <p>{text('عدد التقييمات', 'Ratings')}: {qualityReady ? formatNumber(stats.quality.ratedCount) : unavailable}
+          {qualityReady && <> · {text('الحجوزات المستوردة المرتبطة', 'Linked imported bookings')}: {formatNumber(stats.quality.importedBookings)}</>}</p>
+        <details><summary tabIndex={0}>{text('التقييمات المسجلة', 'Recorded ratings')}</summary>{qualityReady && stats.quality.ratings.length ? <ul>{stats.quality.ratings.map(r => <li key={r.sspBookingId}><bdi>{r.sspBookingId}</bdi> · {formatDate(r.serviceDate)} · {formatNumber(Number(r.rating))} / 5</li>)}</ul> : <p>{unavailable}</p>}</details>
+        <details><summary tabIndex={0}>{text('مراجع التكتات المتاحة', 'Available ticket references')}{qualityReady && stats.quality.tickets.length > 0 ? ` (${formatNumber(stats.quality.tickets.length)})` : ''}</summary>
           {qualityReady && stats.quality.tickets.length ? <ul>{stats.quality.tickets.map(t => <li key={t.ref}><bdi>{t.ref}</bdi> · {text('الحجوزات المرتبطة', 'Linked bookings')}: <bdi>{t.bookingIds.join('، ')}</bdi></li>)}</ul> : <p>{text('لا توجد مراجع تكتات متاحة في المصدر المقروء؛ هذا لا يثبت عدم وجود تكتات.', 'No ticket references are available from the read source; this does not prove there are no tickets.')}</p>}
         </details>
       </section>

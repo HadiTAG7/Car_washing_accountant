@@ -48,4 +48,15 @@
 .sw-biker-calendar-wrap > p { margin-top: 10px; }
 .sw-biker-profile li { margin-top: 8px; overflow-wrap: anywhere; }
 .sw-biker-profile [role="alert"] { padding: 10px; border: 1px solid #d97706; border-radius: 8px; margin: 8px 0; }
+.sw-biker-quality__report { border: 1px solid var(--sw-border-subtle); border-radius: 14px; padding: 14px; margin: 14px 0; }
+.sw-biker-quality__heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.sw-biker-quality__heading strong { color: var(--sw-primary, #f97316); }
+.sw-biker-quality__metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(125px, 1fr)); gap: 8px; margin: 12px 0; }
+.sw-biker-quality__metrics > div { padding: 12px; border: 1px solid var(--sw-border-subtle); border-radius: 10px; }
+.sw-biker-quality__metrics span { display: block; font-size: .8rem; margin-bottom: 6px; }
+.sw-biker-quality__table-wrap { overflow-x: auto; }
+.sw-biker-quality caption { text-align: start; font-weight: 600; margin: 12px 0; }
+.sw-biker-quality td small { display: block; font-size: .72rem; opacity: .8; margin-top: 4px; }
+.sw-biker-quality h4 { font-weight: 600; margin: 12px 0 8px; }
+.sw-biker-quality__publish textarea { display: block; width: 100%; margin: 12px 0; padding: 12px; border: 1px solid var(--sw-border-subtle); background: var(--sw-surface); color: var(--sw-text); border-radius: 12px; }
 @media (max-width: 640px) { .sw-biker-profile__info, .sw-biker-profile__metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .sw-biker-profile__body, .sw-biker-profile__header { padding: 12px; } .sw-biker-profile .sw-biker-calendar { border-spacing: 3px; } .sw-biker-profile .sw-biker-calendar th { font-size: .65rem; } .sw-biker-calendar__day { min-height: 66px; border-radius: 7px; } .sw-biker-calendar strong { font-size: 1rem; } .sw-profile-month-picker { width: 100%; } .sw-profile-month-picker__trigger { width: 100%; } .sw-profile-month-picker__panel { position: static; width: 100%; max-width: none; margin-top: 8px; } }

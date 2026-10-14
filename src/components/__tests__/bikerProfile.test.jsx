@@ -5,6 +5,10 @@ import { LanguageContext } from '../../i18n/LanguageContext';
 
 const state = vi.hoisted(() => ({ partnerView: false, qualityLoading: false, qualityError: null }));
 const readQuality = vi.hoisted(() => vi.fn());
+const readComposite = vi.hoisted(() => vi.fn());
+vi.mock('../../hooks/useBikerQualityReports', () => ({ useBikerQualityReports: (...args) => {
+  readComposite(...args); return { available: true, data: { reports: [] }, loading: false, error: null };
+} }));
 const biker = { id: 'fake-a', name: 'عامل تجريبي', nameEnglish: 'Test worker', driverExternalId: '1986', salary: 900 };
 vi.mock('../../hooks/useBikers', () => ({ useBikers: () => ({ bikers: [biker], loading: false, error: null }) }));
 vi.mock('../../hooks/useWashes', () => ({ useWashes: () => ({ items: [], loading: false, error: null }) }));
@@ -17,7 +21,7 @@ vi.mock('../../hooks/useBikerProfileBookings', () => ({ useBikerProfileBookings:
 } }));
 const { default: BikerProfile } = await import('../BikerProfile');
 const { default: BikersPage } = await import('../BikersPage');
-beforeEach(() => { state.partnerView = false; state.qualityLoading = false; state.qualityError = null; readQuality.mockClear(); });
+beforeEach(() => { state.partnerView = false; state.qualityLoading = false; state.qualityError = null; readQuality.mockClear(); readComposite.mockClear(); });
 afterEach(cleanup);
 const props = () => ({ role: 'admin', biker, washes: [], advances: [], onClose: vi.fn() });
 const chooseMonth = label => {
@@ -40,6 +44,7 @@ it.each(['partner', 'accountant', 'operator', 'supervisor'])('does not mount the
   render(<BikerProfile {...props()} role={role} />);
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(readQuality).not.toHaveBeenCalled();
+  expect(readComposite).not.toHaveBeenCalled();
 });
 it('hides the admin profile immediately when switching to partner preview', () => {
   const view = render(<BikersPage role="admin" />);

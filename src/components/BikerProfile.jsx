@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 import ModalSurface from './ModalSurface';
 import BikerWashCalendar from './BikerWashCalendar';
 import BikerProfileMonthPicker from './BikerProfileMonthPicker';
+import BikerQualitySection from './BikerQualitySection';
 import { useLanguage } from '../i18n/useLanguage';
 import { useBikerProfileBookings } from '../hooks/useBikerProfileBookings';
 import { bikerProfileStats, riyadhToday } from '../lib/bikerProfile';
@@ -77,6 +78,7 @@ function AdminBikerProfile({ biker, washes, washesLoading, washesError, advances
           <BikerWashCalendar periodKey={periodKey} today={today} daily={stats.daily} available={washReady} language={language} />
         </details>
       </section>
+      <BikerQualitySection key={`${biker.id}:${periodKey}`} bikerUID={biker.id} periodKey={periodKey} />
       <section><h3>{text('الجودة والتكتات · الشهر المحدد', 'Quality and tickets · Selected month')}</h3>
         <p className="sw-biker-profile__note">{text('من التقييمات ومراجع التكتات الموجودة في الحجوزات المستوردة فقط؛ ليس سجل تكتات سويتر الكامل أو حكماً على العامل.', 'Uses ratings and ticket references present in imported bookings only; not Sweater’s full ticket register or a worker assessment.')}</p>
         {source.loading && <p role="status">{text('جارٍ تحميل بيانات الجودة…', 'Loading quality data…')}</p>}

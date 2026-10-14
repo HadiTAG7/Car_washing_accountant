@@ -1,0 +1,24 @@
+.sw-modal-surface.sw-biker-profile { width: min(960px, calc(100vw - 24px)); height: min(900px, calc(100dvh - 24px)); margin: auto; max-width: none; padding: 0; max-height: calc(100dvh - 24px); background: var(--sw-surface); color: var(--sw-text); border: 1px solid var(--sw-border-subtle); border-radius: 20px; overflow: hidden; box-shadow: var(--sw-shadow-overlay); }
+.sw-modal-surface.sw-biker-profile[open] { display: flex; flex-direction: column; }
+.sw-biker-profile__header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px; border-bottom: 1px solid #64748b40; flex-shrink: 0; }
+.sw-biker-profile h2 { font-size: 1.3rem; font-weight: 700; overflow-wrap: anywhere; }
+.sw-biker-profile h3 { font-weight: 700; margin-bottom: 12px; }
+.sw-biker-profile__header p, .sw-biker-profile__note { font-size: .8rem; opacity: .8; margin-bottom: 8px; }
+.sw-biker-profile__body { padding: 20px; overflow-y: auto; min-height: 0; flex: 1; }
+.sw-biker-profile section + section { border-top: 1px solid #64748b40; margin-top: 24px; padding-top: 20px; }
+.sw-biker-profile__info, .sw-biker-profile__metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.sw-biker-profile__info div, .sw-biker-profile__metrics div { background: #64748b12; border: 1px solid #64748b30; border-radius: 12px; padding: 12px; min-width: 0; overflow-wrap: anywhere; }
+.sw-biker-profile dt, .sw-biker-profile__metrics span { display: block; font-size: .8rem; opacity: .8; margin-bottom: 6px; }
+.sw-biker-profile dd, .sw-biker-profile__metrics strong { display: block; font-weight: 600; }
+.sw-biker-profile__metrics { margin: 16px 0; }
+.sw-biker-profile__metrics strong { font-size: 1.2rem; }
+.sw-biker-profile__period { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+.sw-biker-profile input { padding: 8px; border: 1px solid #64748b60; border-radius: 8px; margin-inline-start: 8px; max-width: 100%; }
+.sw-biker-profile details { padding: 12px 0; }
+.sw-biker-profile summary { cursor: pointer; font-weight: 600; }
+.sw-biker-profile__table { overflow-x: auto; max-height: 300px; margin-top: 12px; }
+.sw-biker-profile table { width: 100%; text-align: start; }
+.sw-biker-profile th, .sw-biker-profile td { padding: 8px; text-align: start; border-bottom: 1px solid #64748b30; }
+.sw-biker-profile li { margin-top: 8px; overflow-wrap: anywhere; }
+.sw-biker-profile [role="alert"] { padding: 10px; border: 1px solid #d97706; border-radius: 8px; margin: 8px 0; }
+@media (max-width: 640px) { .sw-biker-profile__info, .sw-biker-profile__metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .sw-biker-profile__body, .sw-biker-profile__header { padding: 12px; } }

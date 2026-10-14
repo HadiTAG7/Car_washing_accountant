@@ -5,12 +5,17 @@ on:
   push:
     branches:
       - codex/biker-current-status-20261011
+      - codex/admin-biker-profile-20261014
   pull_request:
     paths:
       - src/components/AddBikerModal.jsx
       - src/components/BikersPage.jsx
       - src/lib/bikerCurrentStatus.js
       - src/lib/mappers.js
+      - src/components/BikerProfile.jsx
+      - src/components/BikerProfile.css
+      - src/lib/bikerProfile.js
+      - src/hooks/useBikerProfileBookings.js
       - .github/workflows/verify-worker-status.yml
 
 permissions:

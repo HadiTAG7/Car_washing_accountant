@@ -18,6 +18,7 @@ import Toast from './Toast';
 import AddBikerModal from './AddBikerModal';
 import AddBikerAdvanceModal from './AddBikerAdvanceModal';
 import BikerPayroll from './BikerPayroll';
+import BikerProfile from './BikerProfile';
 import { useBikers } from '../hooks/useBikers';
 import { useWashes } from '../hooks/useWashes';
 import { useTemporaryExpenses } from '../hooks/useTemporaryExpenses';
@@ -105,9 +106,11 @@ function SortableTh({ id, sort, onSort, className = '' }) {
 export default function BikersPage({ role, payrollPreview = false }) {
   const { language } = useLanguage();
   const { bikers, loading, error, addBiker, updateBiker, deleteBiker, refetch } = useBikers();
-  const { items: washes } = useWashes();
-  const { expenses: temps, addTemporaryExpense } = useTemporaryExpenses();
-  const { canMutate } = usePartnerView();
+  const { items: washes, loading: washesLoading, error: washesError } = useWashes();
+  const { expenses: temps, addTemporaryExpense, loading: advancesLoading, error: advancesError } = useTemporaryExpenses();
+  const { canMutate, isPartnerView } = usePartnerView();
+  const canViewProfile = role === 'admin' && !isPartnerView;
+  const [profileBikerId, setProfileBikerId] = useState(null);
 
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [editingBiker, setEditingBiker] = useState(null);
@@ -357,7 +360,11 @@ export default function BikersPage({ role, payrollPreview = false }) {
                           <Bike size={14} />
                         </span>
                         <span className="min-w-0">
-                          <span translate="no" dir="auto" className="block break-words">{r.displayName}</span>
+                          {canViewProfile ? <button type="button" translate="no" dir="auto"
+                            className="block break-words text-start underline decoration-primary-500/40 underline-offset-4 hover:text-primary-600"
+                            aria-label={`${language === 'en' ? 'Open profile:' : 'فتح بروفايل:'} ${r.displayName}`}
+                            onClick={() => setProfileBikerId(r.id)}>{r.displayName}</button>
+                            : <span translate="no" dir="auto" className="block break-words">{r.displayName}</span>}
                           {r.startDate && (
                             <span className="block text-[11px] font-normal text-slate-500 dark:text-slate-400">
                               منذ {formatDate(r.startDate)}
@@ -450,6 +457,9 @@ export default function BikersPage({ role, payrollPreview = false }) {
         )}
       </main>
 
+      {canViewProfile && profileBikerId && <BikerProfile key={profileBikerId} role={role} isPartnerView={isPartnerView}
+        biker={bikers.find(b => b.id === profileBikerId)} washes={washes} washesLoading={washesLoading} washesError={washesError}
+        advances={temps} advancesLoading={advancesLoading} advancesError={advancesError} onClose={() => setProfileBikerId(null)} />}
       <AddBikerModal
         isOpen={isAddOpen}
         onClose={() => setIsAddOpen(false)}

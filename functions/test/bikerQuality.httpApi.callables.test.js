@@ -84,6 +84,13 @@ suite('Admin private quality HTTP: verified Firebase identity and unchanged memb
     expect((await request('save', { reports: [report()] }, tokens.admin)).statusCode).toBe(412);
     await db.collection('washes').doc('quality-demo-wash').update({ biker_id: read.bikerUID });
   });
+  it.each(['مكتملة', 'completed', 'complete'])('accepts canonical stored completion %s and refuses in-progress rows', async status => {
+    await db.collection('washes').doc('quality-demo-wash').update({ status });
+    expect((await request('save', { reports: [report()] }, tokens.admin)).statusCode).toBe(200);
+    await db.collection('washes').doc('quality-demo-wash').update({ status: 'قيد التنفيذ' });
+    expect((await request('save', { reports: [report()] }, tokens.admin)).statusCode).toBe(412);
+    await db.collection('washes').doc('quality-demo-wash').update({ status: 'completed' });
+  });
   it('re-reads revoked role even with the same previously valid admin token', async () => {
     await db.collection('users').doc(users.admin).update({ role: 'partner' });
     expect((await request('read', read, tokens.admin)).statusCode).toBe(403);

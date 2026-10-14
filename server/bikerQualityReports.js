@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { AuthError, callerRole } from '../functions/src/handlers.js';
+import { completedCommissionWash } from '../functions/src/washCommission.js';
 
 export const QUALITY_COLLECTION = 'biker_quality_reports';
 export const QUALITY_RULES_VERSION = 'cqo-20261014-v1';
@@ -93,7 +94,7 @@ export async function saveQualityReports(db, auth, input) {
       for (const sample of report.samples) {
         const wash = evidence[cursor++];
         const row = wash.data();
-        if (!wash.exists || row.biker_id !== report.bikerUID || row.status !== 'completed'
+        if (!wash.exists || row.biker_id !== report.bikerUID || !completedCommissionWash(row)
           || String(row.wash_date).slice(0, 10) !== sample.serviceDate || Number(row.quantity) !== 1) {
           throw new AuthError('دليل غسلة لا يطابق العامل والفترة والتنفيذ؛ لم يُحفظ شيء.', { code: 'failed-precondition' });
         }

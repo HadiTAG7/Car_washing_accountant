@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { normalizeQualityReport, qualityReportId } from '../bikerQualityReports.js';
+import { normalizeQualityReport, qualityReportId, saveQualityReports } from '../bikerQualityReports.js';
 
 export const partialReport = () => ({ bikerUID: 'test-worker', periodKey: '2026-10',
   from: '2026-10-01', to: '2026-10-13', rulesVersion: 'cqo-20261014-v1', sourceReadDate: '2026-10-14',
@@ -33,4 +33,14 @@ it('keys stored reports by stable UID, full period and rule version, not names',
   const first = normalizeQualityReport(partialReport());
   expect(qualityReportId(first)).not.toBe(qualityReportId({ ...first, bikerUID: 'other-worker' }));
   expect(qualityReportId(first)).not.toBe(qualityReportId({ ...first, to: '2026-10-12' }));
+});
+it.each(['مكتملة', 'completed', 'complete'])('accepts the existing canonical completion vocabulary %s without changing wash data', async status => {
+  const rows = new Map([['users/admin', { role: 'admin' }], ['bikers/test-worker', { start_date: '2026-08-01' }],
+    ...partialReport().samples.map(s => [`washes/${s.washId}`, { biker_id: 'test-worker', wash_date: s.serviceDate, quantity: 1, status }])]);
+  const db = { collection: name => ({ doc: id => ({ path: `${name}/${id}`, get: async () => ({
+    exists: rows.has(`${name}/${id}`), data: () => rows.get(`${name}/${id}`) }) }) }),
+  runTransaction: callback => callback({ get: ref => ref.get(), create: (ref, data) => rows.set(ref.path, data) }) };
+  const result = await saveQualityReports(db, { uid: 'admin' }, { reports: [partialReport()] });
+  expect(result.created).toBe(1);
+  expect(rows.get('washes/wash-0').status).toBe(status);
 });

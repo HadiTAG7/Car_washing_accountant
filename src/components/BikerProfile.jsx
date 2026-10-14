@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import ModalSurface from './ModalSurface';
+import BikerWashCalendar from './BikerWashCalendar';
 import { useLanguage } from '../i18n/useLanguage';
 import { useBikerProfileBookings } from '../hooks/useBikerProfileBookings';
 import { bikerProfileStats, riyadhToday } from '../lib/bikerProfile';
@@ -66,8 +67,7 @@ function AdminBikerProfile({ biker, washes, washesLoading, washesError, advances
         ].map(([ar, en, value]) => <div key={en}><span>{text(ar, en)}</span><strong>{metric(value)}</strong></div>)}</div>
         {stats.validPeriod && <p className="sw-biker-profile__note">{text('مقام المتوسط: أيام الفترة المنقضية ضمن تاريخَي بدء ونهاية العامل', 'Average denominator: elapsed days within worker start/end dates')}: {formatNumber(stats.calendarDays)} · {text('أيام لها غسلات مسجلة', 'Days with recorded washes')}: {washReady ? formatNumber(stats.washDays) : unavailable}</p>}
         <details open><summary>{text('الغسلات يوماً بيوم', 'Daily wash counts')}</summary>
-          {washReady ? <div className="sw-biker-profile__table"><table><thead><tr><th>{text('التاريخ', 'Date')}</th><th>{text('الغسلات المسجلة', 'Recorded washes')}</th></tr></thead><tbody>{stats.daily.map(d => <tr key={d.date}><td>{formatDate(d.date)}</td><td>{formatNumber(d.count)}</td></tr>)}</tbody></table>
-            {!stats.daily.length && <p>{text('لا توجد أيام منقضية ضمن هذه الفترة.', 'No elapsed days in this period.')}</p>}</div> : <p>{unavailable}</p>}
+          <BikerWashCalendar periodKey={periodKey} today={today} daily={stats.daily} available={washReady} language={language} />
         </details>
       </section>
       <section><h3>{text('الجودة والتكتات · الشهر المحدد', 'Quality and tickets · Selected month')}</h3>

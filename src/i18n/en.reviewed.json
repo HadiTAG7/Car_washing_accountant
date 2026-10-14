@@ -1143,5 +1143,17 @@
   "مراجع التكتات المتاحة": "Available ticket references",
   "الحجوزات المرتبطة": "Linked bookings",
   "لا توجد مراجع تكتات متاحة في المصدر المقروء؛ هذا لا يثبت عدم وجود تكتات.": "No ticket references are available from the read source; this does not prove there are no tickets.",
-  "فتح بروفايل:": "Open profile:"
+  "فتح بروفايل:": "Open profile:",
+  "الأحد": "Sunday",
+  "الاثنين": "Monday",
+  "الثلاثاء": "Tuesday",
+  "الأربعاء": "Wednesday",
+  "الخميس": "Thursday",
+  "الجمعة": "Friday",
+  "السبت": "Saturday",
+  "تقويم الغسلات اليومية": "Daily wash calendar",
+  "غسلات مسجلة": "recorded washes",
+  "يوم قادم": "Future day",
+  "خارج فترة العامل": "Outside worker period",
+  "الرقم داخل اليوم = عدد الغسلات المسجلة. — يوم قادم أو خارج فترة العامل أو بيانات غير متاحة.": "Number inside each day = recorded washes. — means a future day, outside the worker period, or unavailable data."
 }

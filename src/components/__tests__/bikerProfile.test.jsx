@@ -73,3 +73,11 @@ it('renders explicit English labels, worker name and direction', () => {
   expect(screen.getByText('Worker information')).toBeTruthy();
   expect(document.querySelector('.sw-biker-profile__body').getAttribute('dir')).toBe('ltr');
 });
+it('presents daily washes as a monthly calendar rather than a scrolling date list', () => {
+  render(<BikerProfile {...props()} />);
+  fireEvent.change(screen.getByLabelText('الشهر'), { target: { value: '2026-10' } });
+  const calendar = screen.getByRole('table', { name: 'تقويم الغسلات اليومية' });
+  expect(calendar.querySelectorAll('thead th')).toHaveLength(7);
+  expect(calendar.querySelectorAll('time')).toHaveLength(31);
+  expect(calendar.querySelector('time[datetime="2026-10-01"]')).toBeTruthy();
+});

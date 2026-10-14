@@ -16,9 +16,21 @@
 .sw-biker-profile input { padding: 8px; border: 1px solid #64748b60; border-radius: 8px; margin-inline-start: 8px; max-width: 100%; }
 .sw-biker-profile details { padding: 12px 0; }
 .sw-biker-profile summary { cursor: pointer; font-weight: 600; }
-.sw-biker-profile__table { overflow-x: auto; max-height: 300px; margin-top: 12px; }
 .sw-biker-profile table { width: 100%; text-align: start; }
 .sw-biker-profile th, .sw-biker-profile td { padding: 8px; text-align: start; border-bottom: 1px solid #64748b30; }
+.sw-biker-calendar-wrap { margin-top: 12px; }
+.sw-biker-profile .sw-biker-calendar { table-layout: fixed; border-collapse: separate; border-spacing: 6px; }
+.sw-biker-calendar caption { font-weight: 700; padding: 0 0 12px; text-align: center; }
+.sw-biker-profile .sw-biker-calendar th { padding: 4px 0; text-align: center; border: 0; font-size: .8rem; }
+.sw-biker-calendar abbr { text-decoration: none; }
+.sw-biker-profile .sw-biker-calendar td { padding: 0; border: 0; vertical-align: top; text-align: center; }
+.sw-biker-calendar__day { min-height: 78px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 6px 2px; background: #64748b12; border: 1px solid #64748b30; border-radius: 10px; }
+.sw-biker-calendar time { font-size: .8rem; opacity: .8; }
+.sw-biker-calendar strong { font-size: 1.15rem; line-height: 1.25; }
+.sw-biker-calendar td:not([data-state="recorded"]) .sw-biker-calendar__day { opacity: .55; background: transparent; }
+.sw-biker-calendar__day--today { border: 2px solid var(--sw-primary, #f97316); }
+.sw-biker-calendar small { font-size: .65rem; line-height: 1; }
+.sw-biker-calendar-wrap > p { margin-top: 10px; }
 .sw-biker-profile li { margin-top: 8px; overflow-wrap: anywhere; }
 .sw-biker-profile [role="alert"] { padding: 10px; border: 1px solid #d97706; border-radius: 8px; margin: 8px 0; }
-@media (max-width: 640px) { .sw-biker-profile__info, .sw-biker-profile__metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .sw-biker-profile__body, .sw-biker-profile__header { padding: 12px; } }
+@media (max-width: 640px) { .sw-biker-profile__info, .sw-biker-profile__metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .sw-biker-profile__body, .sw-biker-profile__header { padding: 12px; } .sw-biker-profile .sw-biker-calendar { border-spacing: 3px; } .sw-biker-profile .sw-biker-calendar th { font-size: .65rem; } .sw-biker-calendar__day { min-height: 66px; border-radius: 7px; } .sw-biker-calendar strong { font-size: 1rem; } }

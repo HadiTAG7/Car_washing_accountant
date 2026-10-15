@@ -30,16 +30,13 @@ export default function BikerQualityOriginalValue({ report, component: c, langua
     const rating = ratingMean(report, c);
     label = text('سويتر · نجوم العينة', 'Sweater · sample stars');
     if (rating) value = `${fixed(rating.mean)} / 5`;
-    note = rating?.combined ? text('متوسط موزون بعدد التقييمات من مقاطع غير متداخلة؛ تقريبي من متوسطات المصدر المدورة',
-      'Weighted by rating counts across non-overlapping segments; approximate from rounded source means')
-      : text('متوسط النجوم المحفوظ من المصدر؛ لا يُستنتج من النقاط', 'Saved source star mean; never inferred from points');
   } else if (c.key === 'productivity') {
     label = text('محسوب من السجلات', 'Calculated from records');
     if (count(c.completed) && positiveCount(c.n) && ['wash-days', 'work-days'].includes(c.unit)) {
       value = `${formatNumber(c.completed)} ÷ ${formatNumber(c.n)} = ${fixed(c.completed / c.n)}`;
     }
     note = c.unit === 'work-days' ? text('غسلة / يوم عمل مثبت', 'washes / verified work day')
-      : text('غسلة / يوم فيه غسلات؛ ليست أيام دوام ولا رقمًا مباشرًا من لوحة سويتر', 'washes / day with washes; not attendance or a direct Sweater dashboard figure');
+      : text('غسلة / يوم فيه غسلات', 'washes / day with washes');
   } else if (c.key === 'duration') {
     label = text('المدة الأصلية · دقيقة', 'Original duration · minutes');
     if (positiveCount(report.duration?.n) && report.duration.n === c.n && Number.isFinite(report.duration.averageMinutes)
@@ -56,6 +53,7 @@ export default function BikerQualityOriginalValue({ report, component: c, langua
     note = manual ? (current ? text('مواعيد بملاحظة يدوية / النطاق المؤكد؛ ليست قراءة من سويتر', 'Appointments with manual notes / confirmed scope; not a Sweater reading')
       : text('دليل تاريخي فقط؛ ليس عدد مخالفات عدم التحديث اليدوية الحالية', 'Historical evidence only; not the current manual missing-update count'))
       : text('الحالات المؤهلة والمنسوبة داخل العينة؛ ليست كل التذاكر الخام أو نسبة مباشرة من لوحة سويتر', 'Eligible attributed cases within the sample; not all raw tickets or a direct Sweater dashboard rate');
+    if (c.key === 'complaints') note = undefined;
   }
   return <div className="sw-biker-quality__original">
     <small>{label}</small>

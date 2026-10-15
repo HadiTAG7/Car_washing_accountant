@@ -1377,5 +1377,6 @@
   "دليل تاريخي فقط؛ ليس عدد مخالفات عدم التحديث اليدوية الحالية": "Historical evidence only; not the current manual missing-update count",
   "الحالات المؤهلة والمنسوبة داخل العينة؛ ليست كل التذاكر الخام أو نسبة مباشرة من لوحة سويتر": "Eligible attributed cases within the sample; not all raw tickets or a direct Sweater dashboard rate",
   "القيمة الأصلية ثم نقاطنا": "Original value, then our points",
-  "نقاطنا / الوزن": "Our points / weight"
+  "نقاطنا / الوزن": "Our points / weight",
+  "غسلة / يوم فيه غسلات": "washes / day with washes"
 }

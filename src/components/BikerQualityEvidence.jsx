@@ -1,9 +1,13 @@
 import { formatDate, formatNumber } from '../data/initialData';
 
 export default function BikerQualityEvidence({ report, language }) {
-  if (!report.evidence) return null;
+  const components = report.components || [];
+  const ratings = components.filter(c => ['washQuality', 'behavior'].includes(c.key));
+  const productivity = components.find(c => c.key === 'productivity');
+  const complaints = components.find(c => c.key === 'complaints');
+  if (!report.evidence && !ratings.length && !productivity && !complaints) return null;
   const text = (ar, en) => language === 'en' ? en : ar;
-  const e = report.evidence;
+  const e = report.evidence || {};
   const proofs = [...(e.ratings || []).map(r => r.source), e.productivity?.source,
     ...(e.updates?.reviews || []).map(r => r.source), e.complaints?.source, e.cancellations?.source, e.lateness?.source].filter(Boolean);
   const sources = [...new Map(proofs.map(p => [`${p.hash}:${p.reference}:${p.readDate}`, p])).values()];
@@ -13,6 +17,27 @@ export default function BikerQualityEvidence({ report, language }) {
   return <details><summary tabIndex={0}>{text('تفاصيل مصدر التقييم', 'Assessment source details')}</summary>
     <p className="sw-biker-profile__note">{text('عينات مؤرخة، لا تغطية كاملة للشهر ولا تعديل لنجوم المصدر. المتوسطات المدورة تعطي نتائج تقريبية.',
       'Dated samples, not full-month coverage or changes to source stars. Rounded source means produce approximate results.')}</p>
+    {ratings.length > 0 && <>
+      <h4>{text('جودة الغسيل', 'Wash quality')} / {text('السلوك', 'Behavior')}</h4>
+      <p>{text('متوسط النجوم المحفوظ من المصدر؛ لا يُستنتج من النقاط', 'Saved source star mean; never inferred from points')}</p>
+      <p>{text('النطاق لا يعني فحص كل خدمة أو اختلاق نجوم لغير المقيّم', 'Scope does not mean every service was inspected or unrated washes received invented stars')}</p>
+      {ratings.some(c => c.reason === 'partial-rounded-rating-sample') && <p>{text('عينة نجوم مدوّرة · نتيجة تقريبية', 'Rounded rating sample · approximate result')}</p>}
+      {(e.ratings || []).length > 1 && <p>{text('متوسط موزون بعدد التقييمات من مقاطع غير متداخلة؛ تقريبي من متوسطات المصدر المدورة', 'Weighted by rating counts across non-overlapping segments; approximate from rounded source means')}</p>}
+    </>}
+    {productivity && <>
+      <h4>{text('الإنتاجية', 'Productivity')}</h4>
+      {productivity.unit === 'wash-days' && <>
+        <p>{text('غسلة / يوم فيه غسلات؛ ليست أيام دوام ولا رقمًا مباشرًا من لوحة سويتر', 'washes / day with washes; not attendance or a direct Sweater dashboard figure')}</p>
+        <p>{text('الغسلات ÷ أيام وجود غسلات فقط؛ ليست أيام دوام', 'Washes ÷ days with washes only; not attendance days')}</p>
+      </>}
+      {report.coverage?.criteria?.productivity === false && productivity.points !== null && <p>{text('تغطية الدليل جزئية لهذا المعيار', 'Evidence coverage for this criterion is partial')}</p>}
+    </>}
+    {complaints && <>
+      <h4>{text('الشكاوى', 'Complaints')}</h4>
+      <p>{text('الحالات المؤهلة والمنسوبة داخل العينة؛ ليست كل التذاكر الخام أو نسبة مباشرة من لوحة سويتر', 'Eligible attributed cases within the sample; not all raw tickets or a direct Sweater dashboard rate')}</p>
+      {complaints.reason === 'approved-attributed-rate' && <p>{text('نسبة مؤهلة ومنسوبة وفق القاعدة المعتمدة', 'Eligible attributed rate under the approved rule')}</p>}
+      {report.coverage?.criteria?.complaints === false && complaints.points !== null && <p>{text('تغطية الدليل جزئية لهذا المعيار', 'Evidence coverage for this criterion is partial')}</p>}
+    </>}
     {report.sourceIdentity?.externalId && <p><bdi dir="ltr">Sweater ID: {report.sourceIdentity.externalId} · SSP ID: {report.sourceIdentity.sspId || '—'}</bdi></p>}
     {e.ratings?.length > 0 && <div className="sw-biker-quality__table-wrap"><table>
       <caption>{text('مقاطع عينات النجوم غير المتداخلة', 'Non-overlapping rating sample segments')}</caption>

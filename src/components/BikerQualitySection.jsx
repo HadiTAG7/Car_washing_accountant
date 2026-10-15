@@ -12,6 +12,8 @@ const labels = { washQuality: ['جودة الغسيل', 'Wash quality'], behavio
   productivity: ['الإنتاجية', 'Productivity'], complaints: ['الشكاوى', 'Complaints'],
   cancellations: ['الإلغاء', 'Cancellations'], lateness: ['التأخر', 'Lateness'],
   duration: ['مدة الغسلة', 'Wash duration'], statusUpdates: ['تحديث الحالة', 'Status updates'] };
+const relocatedReasons = { washQuality: ['partial-rounded-rating-sample'], behavior: ['partial-rounded-rating-sample'],
+  productivity: ['wash-day-productivity'], complaints: ['approved-attributed-rate'] };
 const reasons = {
   'partial-sample': ['عينة فقط', 'Sample only'],
   'partial-rounded-rating-sample': ['عينة نجوم مدوّرة · نتيجة تقريبية', 'Rounded rating sample · approximate result'],
@@ -103,16 +105,15 @@ export default function BikerQualitySection({ query, sectionRef }) {
           <td><BikerQualityOriginalValue report={report} component={c} language={language} current={index === 0} manualConfirmed={Boolean(manual?.confirmed)} />
             <small>{text('نقاطنا / الوزن', 'Our points / weight')}</small>
             {c.points === null ? text('غير مكتمل', 'Incomplete') : <bdi dir="ltr">{formatNumber(c.points)} / {c.weight}</bdi>}
-            <small>{c.key === 'lateness' && c.points === null ? <>{text('بيانات التأخر للفترة غير مكتملة من المصدر؛ النقاط غير محسوبة', 'Source lateness data for this period is incomplete; points are not calculated')}
+            {!relocatedReasons[c.key]?.includes(c.reason) && <small>{c.key === 'lateness' && c.points === null ? <>{text('بيانات التأخر للفترة غير مكتملة من المصدر؛ النقاط غير محسوبة', 'Source lateness data for this period is incomplete; points are not calculated')}
               {' · '}{formatDate(report.from)} — {formatDate(report.to)} · {text('آخر قراءة صالحة', 'Last valid read')}: {formatDate(report.evidence?.lateness?.source?.readDate || report.sourceReadDate)}</>
-              : text(...(reasons[c.reason] || ['الأدلة غير متاحة', 'Evidence unavailable']))}</small>
-            {c.affected !== undefined && c.affected !== null && Number.isInteger(c.n) && c.n > 0 && <small>{c.key === 'statusUpdates' ? (index === 0 ? text('المواعيد ذات ملاحظة يدوية من النطاق المؤكد', 'Appointments with a manual note out of confirmed scope') : text('المواعيد ذات نقص الطوابع من المقام', 'Appointments with missing timestamps out of denominator')) : text('الحالات المنسوبة من المقام', 'Attributed cases out of denominator')}: <bdi dir="ltr">{formatNumber(c.affected)} / {formatNumber(c.n)}</bdi></small>}
+              : text(...(reasons[c.reason] || ['الأدلة غير متاحة', 'Evidence unavailable']))}</small>}
+            {c.key !== 'complaints' && c.affected !== undefined && c.affected !== null && Number.isInteger(c.n) && c.n > 0 && <small>{c.key === 'statusUpdates' ? (index === 0 ? text('المواعيد ذات ملاحظة يدوية من النطاق المؤكد', 'Appointments with a manual note out of confirmed scope') : text('المواعيد ذات نقص الطوابع من المقام', 'Appointments with missing timestamps out of denominator')) : text('الحالات المنسوبة من المقام', 'Attributed cases out of denominator')}: <bdi dir="ltr">{formatNumber(c.affected)} / {formatNumber(c.n)}</bdi></small>}
             {c.unreadable > 0 && <small>{text('قراءات متعذرة مستبعدة', 'Excluded unreadable reviews')}: {formatNumber(c.unreadable)}</small>}
-            {c.key !== 'statusUpdates' && report.coverage?.criteria?.[c.key] === false && c.points !== null && <small>{text('تغطية الدليل جزئية لهذا المعيار', 'Evidence coverage for this criterion is partial')}</small>}</td>
+            {!['statusUpdates', 'productivity', 'complaints'].includes(c.key) && report.coverage?.criteria?.[c.key] === false && c.points !== null && <small>{text('تغطية الدليل جزئية لهذا المعيار', 'Evidence coverage for this criterion is partial')}</small>}</td>
           <td>{['washQuality', 'behavior'].includes(c.key) ? <>
             <small>{text('نطاق المراجعة', 'Review scope')}: {washScope == null ? text('غير متاح', 'Unavailable') : `${formatNumber(washScope)} ${text('غسلة', 'washes')}`}</small>
             <small>{text('تقييمات العملاء الفعلية', 'Actual customer ratings')}: {c.n == null ? text('غير متاح', 'Unavailable') : formatNumber(c.n)}</small>
-            <small>{text('النطاق لا يعني فحص كل خدمة أو اختلاق نجوم لغير المقيّم', 'Scope does not mean every service was inspected or unrated washes received invented stars')}</small>
           </> : c.n === null ? '—' : formatNumber(c.n)}{c.unit === 'work-days' && <small>{text('أيام عمل مثبتة', 'Verified working days')}</small>}
             {c.unit === 'wash-days' && <small>{text('أيام وجود غسلات', 'Days with washes')}</small>}
             {c.unit === 'reviewed-washes' && <small>{text('غسلات مراجعة صراحة', 'Explicitly reviewed washes')}</small>}</td></tr>)}</tbody></table></div>

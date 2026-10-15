@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it } from 'vitest';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { LanguageContext } from '../../i18n/LanguageContext';
 import BikerQualitySection from '../BikerQualitySection';
 
@@ -126,4 +126,48 @@ it('does not show manual zero from an unconfirmed or differently scoped review',
   show(report, 'ar', { policy: 'manual-status-20261015-v1', bikerUID: 'another-worker', periodKey: report.periodKey,
     from: report.from, to: report.to, confirmed: true, component: { key: 'statusUpdates', n: 59, affected: 0, points: 10, weight: 10, reason: 'manual-status-reviewed' } });
   expect(within(row('عدم تحديث الحالة — مراجعة يدوية')).getByText('غير متاح')).toBeTruthy();
+});
+
+it.each(['ar', 'en'])('keeps the selected rows compact and moves their methodology into source details (%s)', language => {
+  const report = fixture(); report.coverage.criteria.productivity = false; report.coverage.criteria.complaints = false;
+  show(report, language);
+  const ar = language === 'ar';
+  const wash = row(ar ? 'جودة الغسيل' : 'Wash quality');
+  const behavior = row(ar ? 'السلوك' : 'Behavior');
+  for (const ratingRow of [wash, behavior]) {
+    expect(ratingRow.textContent).not.toContain(ar ? 'النطاق لا يعني فحص' : 'Scope does not mean');
+    expect(ratingRow.textContent).not.toContain(ar ? 'متوسط النجوم المحفوظ' : 'Saved source star mean');
+    expect(ratingRow.textContent).not.toContain(ar ? 'عينة نجوم مدوّرة' : 'Rounded rating sample');
+    expect(ratingRow.textContent).toContain(ar ? '59 غسلة' : '59 washes');
+    expect(ratingRow.textContent).toContain('16');
+  }
+  expect(within(wash).getByText('3.88 / 5')).toBeTruthy();
+  expect(within(wash).getByText('23.28 / 30')).toBeTruthy();
+  const productivity = row(ar ? 'الإنتاجية' : 'Productivity');
+  expect(productivity.textContent).toContain('58 ÷ 12 = 4.83');
+  expect(productivity.textContent).toContain('6.04 / 10');
+  expect(productivity.textContent).not.toContain(ar ? 'ليست أيام دوام' : 'not attendance');
+  expect(productivity.textContent).not.toContain(ar ? 'الغسلات ÷ أيام' : 'Washes ÷ days');
+  expect(productivity.textContent).not.toContain(ar ? 'تغطية الدليل جزئية' : 'Evidence coverage');
+  const complaints = row(ar ? 'الشكاوى' : 'Complaints');
+  expect(complaints.textContent).toContain('1 / 58 ≈ 1.72%');
+  expect(complaints.textContent.match(/1 \/ 58/g)).toHaveLength(1);
+  expect(complaints.textContent).toContain('8.19 / 10');
+  expect(complaints.textContent).not.toContain(ar ? 'الحالات المؤهلة' : 'Eligible attributed');
+  expect(complaints.textContent).not.toContain(ar ? 'نسبة مؤهلة' : 'Eligible attributed rate');
+  expect(complaints.textContent).not.toContain(ar ? 'تغطية الدليل جزئية' : 'Evidence coverage');
+  const details = screen.getByText(ar ? 'تفاصيل مصدر التقييم' : 'Assessment source details').closest('details');
+  expect(details.open).toBe(false);
+  fireEvent.click(within(details).getByText(ar ? 'تفاصيل مصدر التقييم' : 'Assessment source details'));
+  expect(details.open).toBe(true);
+  expect(details.textContent).toContain(ar ? 'النطاق لا يعني فحص' : 'Scope does not mean');
+  expect(details.textContent).toContain(ar ? 'متوسط النجوم المحفوظ' : 'Saved source star mean');
+  expect(details.textContent).toContain(ar ? 'الغسلات ÷ أيام' : 'Washes ÷ days');
+  expect(details.textContent).toContain(ar ? 'نسبة مؤهلة' : 'Eligible attributed rate');
+  expect(details.textContent).toContain(ar ? 'تغطية الدليل جزئية' : 'Evidence coverage');
+  // Other rows and the general incomplete warning are deliberately outside this cleanup.
+  expect(row(ar ? 'الإلغاء' : 'Cancellations').textContent).toContain(ar ? 'الحالات المؤهلة' : 'Eligible attributed');
+  expect(row(ar ? 'التأخر' : 'Lateness').textContent).toContain(ar ? 'بيانات التأخر للفترة غير مكتملة' : 'Source lateness data for this period is incomplete');
+  expect(row(ar ? 'مدة الغسلة' : 'Wash duration').textContent).toContain(ar ? 'متوسط نقاط كل غسلة' : 'Average of per-wash points');
+  expect(screen.getByText(ar ? 'التقييم النهائي غير مكتمل' : 'Final assessment incomplete')).toBeTruthy();
 });

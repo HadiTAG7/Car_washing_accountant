@@ -17,6 +17,10 @@ const report = () => ({ bikerUID: 'quality-demo-worker', periodKey: '2026-10', f
   samples: [{ washId: 'quality-demo-wash', serviceDate: '2026-10-12', start: '2026-10-12T10:00:00+03:00',
     end: '2026-10-12T11:00:00+03:00', sourceHash: 'a'.repeat(64) }] });
 const read = { bikerUID: 'quality-demo-worker', periodKey: '2026-10', rulesVersion: 'cqo-20261014-v1' };
+const v2 = () => ({ ...report(), to: '2026-10-14', sourceReadDate: '2026-10-15', rulesVersion: 'cqo-20261015-v2', snapshotAt: '2026-10-15T09:00:00Z',
+  sourceIdentity: { externalId: '1984', sspId: '1320' }, evidence: { ratings: [{ from: '2026-10-10', to: '2026-10-10',
+    wash: { mean: 3, n: 2 }, behavior: { mean: 4, n: 2 }, source: { reference: 'Isolated source evidence', hash: 'b'.repeat(64), readDate: '2026-10-15' } }] } });
+const v2Ids = () => [qualityReportId(v2()), qualityReportId({ ...v2(), snapshotAt: '2026-10-15T09:01:00Z' })];
 async function request(operation, data, token, method = 'POST') {
   const res = { headers: {}, statusCode: null, body: null,
     setHeader(key, value) { this.headers[key] = value; }, status(value) { this.statusCode = value; return this; },
@@ -40,13 +44,15 @@ suite('Admin private quality HTTP: verified Firebase identity and unchanged memb
       const credential = await signInWithEmailAndPassword(clientAuth, email, 'quality-demo-only-123');
       tokens[role] = await credential.user.getIdToken();
     }
-    await db.collection('bikers').doc(read.bikerUID).set({ name: 'Dummy worker', start_date: '2026-08-01' });
+    await db.collection('bikers').doc(read.bikerUID).set({ name: 'Dummy worker', start_date: '2026-08-01', driver_external_id: '1984' });
     await db.collection('washes').doc('quality-demo-wash').set({ biker_id: read.bikerUID, wash_date: '2026-10-12', quantity: 1, status: 'completed' });
     await db.collection(QUALITY_COLLECTION).doc(qualityReportId(report())).delete();
+    for (const id of v2Ids()) await db.collection(QUALITY_COLLECTION).doc(id).delete();
   });
   afterAll(async () => {
     if (db) {
       await db.collection(QUALITY_COLLECTION).doc(qualityReportId(report())).delete();
+      for (const id of v2Ids()) await db.collection(QUALITY_COLLECTION).doc(id).delete();
       await db.collection('bikers').doc(read.bikerUID).delete();
       await db.collection('washes').doc('quality-demo-wash').delete();
       for (const uid of Object.values(users)) { await db.collection('users').doc(uid).delete(); await auth.deleteUser(uid); }
@@ -62,6 +68,8 @@ suite('Admin private quality HTTP: verified Firebase identity and unchanged memb
   it.each(['partner', 'accountant', 'operator', 'supervisor', 'unknown'])('refuses read, write and worker existence probing for %s', async role => {
     expect((await request('read', { ...read, bikerUID: 'non-existent' }, tokens[role])).statusCode).toBe(403);
     expect((await request('save', { reports: [report()] }, tokens[role])).statusCode).toBe(403);
+    expect((await request('read', { ...read, rulesVersion: 'all-approved' }, tokens[role])).statusCode).toBe(403);
+    expect((await request('save', { reports: [v2()] }, tokens[role])).statusCode).toBe(403);
   });
   it('saves and reads by UID/month/version; retry is idempotent; no invented final score', async () => {
     const saved = await request('save', { reports: [report()] }, tokens.admin);
@@ -83,6 +91,22 @@ suite('Admin private quality HTTP: verified Firebase identity and unchanged memb
     await db.collection('washes').doc('quality-demo-wash').update({ biker_id: 'other-worker' });
     expect((await request('save', { reports: [report()] }, tokens.admin)).statusCode).toBe(412);
     await db.collection('washes').doc('quality-demo-wash').update({ biker_id: read.bikerUID });
+  });
+  it('persists and reads separate immutable v2 snapshots alongside unchanged v1, with current external identity validation', async () => {
+    const old = (await db.collection(QUALITY_COLLECTION).doc(qualityReportId(report())).get()).data();
+    const first = await request('save', { reports: [v2()] }, tokens.admin);
+    expect(first.statusCode).toBe(200); expect(first.body.result.created).toBe(1);
+    expect((await request('save', { reports: [v2()] }, tokens.admin)).body.result).toMatchObject({ created: 0, unchanged: 1 });
+    expect((await request('save', { reports: [{ ...v2(), improvement: 'Changed' }] }, tokens.admin)).statusCode).toBe(409);
+    expect((await request('save', { reports: [{ ...v2(), snapshotAt: '2026-10-15T09:01:00Z' }] }, tokens.admin)).statusCode).toBe(200);
+    const got = await request('read', { ...read, rulesVersion: 'all-approved' }, tokens.admin);
+    expect(got.body.result.reports).toHaveLength(3);
+    expect(got.body.result.reports[0]).toMatchObject({ rulesVersion: 'cqo-20261015-v2', availablePoints: 42, availableWeight: 60, finalScore: null });
+    expect(got.body.result.reports[0].components.find(c => c.key === 'washQuality')).toMatchObject({ points: 18, n: 2, approximate: true });
+    expect((await db.collection(QUALITY_COLLECTION).doc(qualityReportId(report())).get()).data()).toEqual(old);
+    expect((await request('save', { reports: [{ ...v2(), sourceIdentity: { externalId: 'other', sspId: '1320' } }] }, tokens.admin)).statusCode).toBe(412);
+    expect((await request('read', { ...read, periodKey: '2026-09', rulesVersion: 'all-approved' }, tokens.admin)).body.result.reports).toEqual([]);
+    expect((await request('read', { ...read, bikerUID: 'other-worker', rulesVersion: 'all-approved' }, tokens.admin)).body.result.reports).toEqual([]);
   });
   it.each(['مكتملة', 'completed', 'complete'])('accepts canonical stored completion %s and refuses in-progress rows', async status => {
     await db.collection('washes').doc('quality-demo-wash').update({ status });

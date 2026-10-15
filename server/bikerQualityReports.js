@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { AuthError, callerRole } from '../functions/src/handlers.js';
 import { completedCommissionWash } from '../functions/src/washCommission.js';
+import { QUALITY_V2, normalizeQualityV2, validateV2Worker, v2WashReferences } from './bikerQualityV2.js';
 
 export const QUALITY_COLLECTION = 'biker_quality_reports';
 export const QUALITY_RULES_VERSION = 'cqo-20261014-v1';
@@ -22,7 +23,7 @@ const inputSchema = z.object({ bikerUID: identity, periodKey: month, from: day, 
 }).strict();
 const bad = message => { throw new AuthError(message, { code: 'invalid-argument' }); };
 const round = number => Math.round(number * 100) / 100;
-export function normalizeQualityReport(input) {
+function normalizeQualityV1(input) {
   const parsed = inputSchema.safeParse(input);
   if (!parsed.success) bad('تقرير الجودة غير صالح أو يحتوي حقولاً غير معتمدة.');
   const report = parsed.data;
@@ -50,7 +51,11 @@ export function normalizeQualityReport(input) {
       : ['complaints', 'cancellations', 'lateness'].includes(key) ? 'rule-and-evidence-incomplete' : 'missing-evidence' }));
   return { ...report, samples, duration, components, finalScore: null, status: 'incomplete' };
 }
-export const qualityReportId = report => `${report.bikerUID}__${report.from}__${report.to}__${report.rulesVersion}`;
+export function normalizeQualityReport(input) {
+  return input?.rulesVersion === QUALITY_V2 ? normalizeQualityV2(input, normalizeQualityV1) : normalizeQualityV1(input);
+}
+export const qualityReportId = report => `${report.bikerUID}__${report.from}__${report.to}__${report.rulesVersion}`
+  + (report.rulesVersion === QUALITY_V2 ? `__${new Date(report.snapshotAt).toISOString().replace(/\D/g, '')}` : '');
 const digest = report => createHash('sha256').update(JSON.stringify(report)).digest('hex');
 async function adminOnly(db, auth) {
   if (await callerRole(db, auth) !== 'admin') throw new AuthError('تقارير الجودة مقصورة على الأدمن.');
@@ -59,14 +64,16 @@ async function adminOnly(db, auth) {
 export async function readQualityReports(db, auth, input) {
   await adminOnly(db, auth); // Before all report/worker access, including existence.
   const parsed = z.object({ bikerUID: identity, periodKey: month,
-    rulesVersion: z.literal(QUALITY_RULES_VERSION) }).strict().safeParse(input);
+    rulesVersion: z.enum([QUALITY_RULES_VERSION, QUALITY_V2, 'all-approved']) }).strict().safeParse(input);
   if (!parsed.success) bad('معرّف العامل أو الفترة غير صالح.');
   const { bikerUID, periodKey, rulesVersion } = parsed.data;
   const snapshot = await db.collection(QUALITY_COLLECTION).where('bikerUID', '==', bikerUID).limit(100).get();
   if (snapshot.size >= 100) throw new AuthError('تحتاج قائمة التقارير تقسيم صفحات.', { code: 'failed-precondition' });
   return { reports: snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-    .filter(report => report.periodKey === periodKey && report.rulesVersion === rulesVersion)
-    .sort((a, b) => b.to.localeCompare(a.to)) };
+    .filter(report => report.periodKey === periodKey && (rulesVersion === 'all-approved'
+      ? [QUALITY_RULES_VERSION, QUALITY_V2].includes(report.rulesVersion) : report.rulesVersion === rulesVersion))
+    .sort((a, b) => b.to.localeCompare(a.to) || String(b.snapshotAt || '').localeCompare(String(a.snapshotAt || ''))
+      || String(b.createdAt || '').localeCompare(String(a.createdAt || ''))) };
 }
 
 export async function saveQualityReports(db, auth, input) {
@@ -74,6 +81,9 @@ export async function saveQualityReports(db, auth, input) {
   const parsed = z.object({ reports: z.array(z.unknown()).min(1).max(50) }).strict().safeParse(input);
   if (!parsed.success) bad('اختر من تقرير واحد إلى 50 تقريرًا.');
   const reports = parsed.data.reports.map(normalizeQualityReport);
+  const washIds = [...new Set(reports.flatMap(r => [...r.samples, ...v2WashReferences(r)].map(s => s.washId)))];
+  if (reports.some(r => r.rulesVersion === QUALITY_V2)
+    && washIds.length + reports.length * 2 > 450) bad('قسّم حفظ أدلة الجودة إلى دفعات أصغر.');
   const ids = reports.map(qualityReportId);
   if (new Set(ids).size !== ids.length) bad('التقارير مكررة.');
   return db.runTransaction(async tx => {
@@ -83,20 +93,25 @@ export async function saveQualityReports(db, auth, input) {
     const refs = ids.map(id => db.collection(QUALITY_COLLECTION).doc(id));
     const existing = await Promise.all(refs.map(ref => tx.get(ref)));
     const workers = await Promise.all(reports.map(r => tx.get(db.collection('bikers').doc(r.bikerUID))));
-    const evidence = await Promise.all(reports.flatMap(r => r.samples.map(s => tx.get(db.collection('washes').doc(s.washId)))));
-    let cursor = 0;
+    const evidence = await Promise.all(washIds.map(id => tx.get(db.collection('washes').doc(id))));
+    const evidenceById = new Map(washIds.map((id, index) => [id, evidence[index]]));
     for (let i = 0; i < reports.length; i++) {
       const report = reports[i];
       if (!workers[i].exists) throw new AuthError('العامل غير موجود؛ لم يُحفظ شيء.', { code: 'failed-precondition' });
       const worker = workers[i].data();
+      validateV2Worker(report, worker);
       if (worker.start_date && worker.start_date > report.to && report.samples.length) bad('العامل خارج فترة الأدلة.');
       report.status = worker.start_date && worker.start_date > report.to ? 'outside-period' : 'incomplete';
-      for (const sample of report.samples) {
-        const wash = evidence[cursor++];
+      for (const sample of [...report.samples, ...v2WashReferences(report)]) {
+        const wash = evidenceById.get(sample.washId);
         const row = wash.data();
         if (!wash.exists || row.biker_id !== report.bikerUID || !completedCommissionWash(row)
           || String(row.wash_date).slice(0, 10) !== sample.serviceDate || Number(row.quantity) !== 1) {
           throw new AuthError('دليل غسلة لا يطابق العامل والفترة والتنفيذ؛ لم يُحفظ شيء.', { code: 'failed-precondition' });
+        }
+        if (report.rulesVersion === QUALITY_V2 && sample.appointmentId
+          && String(row.ssp_booking_id || '') !== sample.appointmentId) {
+          throw new AuthError('موعد مراجعة التحديث لا يطابق الغسلة؛ لم يُحفظ شيء.', { code: 'failed-precondition' });
         }
       }
       if (existing[i].exists && existing[i].data().contentHash !== digest(report)) {

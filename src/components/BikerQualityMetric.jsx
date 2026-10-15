@@ -17,6 +17,9 @@ export default function BikerQualityMetric({ query, bikerUID, periodKey, today, 
         : <>
           {summary.incomplete && <small>{text('النهائي غير مكتمل', 'Final assessment incomplete')}</small>}
           {summary.points !== null && <small>{text('النقاط المتاحة فقط · دون إعادة وزن', 'Available points only · not rescaled')}</small>}
+          {summary.approximate && <small>{text('يشمل عينات نجوم تقريبية', 'Includes approximate rating samples')}</small>}
+          {summary.ratingSamples?.washQuality !== undefined && <small>{text('عينة تقييم الغسيل', 'Wash rating sample')}: {formatNumber(summary.ratingSamples.washQuality)}</small>}
+          {summary.ratingSamples?.behavior !== undefined && <small>{text('عينة تقييم السلوك', 'Behavior rating sample')}: {formatNumber(summary.ratingSamples.behavior)}</small>}
           {summary.durationN !== null && <small>{text('عينة المدة', 'Duration sample')}: {formatNumber(summary.durationN)}</small>}
           {summary.report && <small>{formatDate(summary.report.from)} — {formatDate(summary.report.to)}</small>}
         </>}

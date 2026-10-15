@@ -22,3 +22,14 @@ it('does not mutate the saved records or accept unsupported rule versions', () =
   const reports = [row(), row({ rulesVersion: 'unapproved', to: '2026-10-15' })]; const before = JSON.stringify(reports);
   expect(summarize(reports).report.id).toBe('new'); expect(JSON.stringify(reports)).toBe(before);
 });
+it('selects one latest dated v2 snapshot over v1 without adding the older partial score', () => {
+  const v2 = row({ id: 'v2', rulesVersion: 'cqo-20261015-v2', snapshotAt: '2026-10-15T09:00:00.000Z', components: [
+    { key: 'washQuality', weight: 30, points: 18, n: 4, approximate: true },
+    { key: 'behavior', weight: 20, points: 12, n: 4, approximate: true },
+    { key: 'duration', weight: 10, points: 9.33, n: 19 },
+  ] });
+  const r = summarize([row(), v2, { ...v2, id: 'older-v2', snapshotAt: '2026-10-15T08:00:00.000Z' }]);
+  expect(r.report.id).toBe('v2'); expect(r.points).toBe(39.33); expect(r.weight).toBe(60);
+  expect(r.approximate).toBe(true); expect(r.ratingSamples).toEqual({ washQuality: 4, behavior: 4 });
+  expect(summarize([row(), { ...v2, components: [] }]).points).toBeNull();
+});

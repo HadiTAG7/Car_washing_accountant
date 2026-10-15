@@ -43,3 +43,19 @@ it('has English headings and makes clear this is not customer stars', () => {
   expect(screen.getByText('Final assessment incomplete')).toBeTruthy();
   expect(screen.getByText(/not customer stars/)).toBeTruthy();
 });
+it('explains each missing criterion separately and renders saved partial v2 totals and dated snapshots', () => {
+  state.reports = [{ ...partial(), rulesVersion: 'cqo-20261015-v2', snapshotAt: '2026-10-15T09:00:00.000Z',
+    availablePoints: 39.33, availableWeight: 60, components: [
+      { key: 'washQuality', weight: 30, points: 18, n: 4, approximate: true, reason: 'partial-rounded-rating-sample' },
+      { key: 'productivity', weight: 10, points: null, n: null, reason: 'missing-work-days' },
+      { key: 'statusUpdates', weight: 10, points: null, n: null, reason: 'missing-explicit-status-review' },
+      { key: 'complaints', weight: 10, points: null, n: 10, affected: 0, reason: 'awaiting-approved-rule' },
+    ] }];
+  render(<BikerQualitySection {...props} />);
+  expect(screen.getByText('39.33 / 60')).toBeTruthy();
+  expect(screen.getByText('عينة نجوم مدوّرة · نتيجة تقريبية')).toBeTruthy();
+  expect(screen.getByText('ينقص دليل أيام العمل المثبتة')).toBeTruthy();
+  expect(screen.getByText('تنقص مراجعة صريحة لتحديثات الوصول والبدء والإنهاء')).toBeTruthy();
+  expect(screen.getByText('الأدلة محفوظة؛ بانتظار اعتماد قاعدة الخصم')).toBeTruthy();
+  expect(screen.queryByText('39.33 / 100')).toBeNull(); expect(api).not.toHaveBeenCalled();
+});

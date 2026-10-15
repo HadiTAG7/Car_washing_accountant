@@ -2,11 +2,24 @@ import { useState } from 'react';
 import { useLanguage } from '../i18n/useLanguage';
 import { callBikerQuality } from '../lib/bikerQualityApi';
 import { formatDate, formatNumber } from '../data/initialData';
+import BikerQualityEvidence from './BikerQualityEvidence';
 
 const labels = { washQuality: ['جودة الغسيل', 'Wash quality'], behavior: ['السلوك', 'Behavior'],
   productivity: ['الإنتاجية', 'Productivity'], complaints: ['الشكاوى', 'Complaints'],
   cancellations: ['الإلغاء', 'Cancellations'], lateness: ['التأخر', 'Lateness'],
   duration: ['مدة الغسلة', 'Wash duration'], statusUpdates: ['تحديث الحالة', 'Status updates'] };
+const reasons = {
+  'partial-sample': ['عينة فقط', 'Sample only'],
+  'partial-rounded-rating-sample': ['عينة نجوم مدوّرة · نتيجة تقريبية', 'Rounded rating sample · approximate result'],
+  'missing-rating-sample': ['تنقص عينة تقييمات مرتبطة بالعامل والفترة', 'Missing rating sample linked to this worker and period'],
+  'missing-work-days': ['ينقص دليل أيام العمل المثبتة', 'Missing verified working-day evidence'],
+  'missing-explicit-status-review': ['تنقص مراجعة صريحة لتحديثات الوصول والبدء والإنهاء', 'Missing explicit arrival/start/end status review'],
+  'verified-work-days': ['من أيام العمل المثبتة، بما فيها أيام الصفر', 'From verified working days, including zero-service days'],
+  'explicit-status-review': ['من مراجعة صريحة؛ الموعد المتأثر يُحسب مرة واحدة', 'Explicit review; each affected appointment counted once'],
+  'awaiting-approved-rule': ['الأدلة محفوظة؛ بانتظار اعتماد قاعدة الخصم', 'Evidence saved; awaiting approval of the deduction rule'],
+  'awaiting-rule-and-evidence': ['بانتظار قاعدة خصم معتمدة ومقام حالات موثق', 'Awaiting an approved rule and evidenced eligible denominator'],
+  'rule-and-evidence-incomplete': ['القاعدة والأدلة غير مكتملة', 'Rule and evidence incomplete'],
+};
 
 export default function BikerQualitySection({ query, sectionRef }) {
   const { language } = useLanguage();
@@ -42,6 +55,11 @@ export default function BikerQualitySection({ query, sectionRef }) {
         <span>{formatDate(report.from)} — {formatDate(report.to)}</span></div>
       {report.status === 'outside-period' && <p>{text('العامل خارج فترة التقرير؛ لا توجد درجة.', 'Worker is outside the report period; no score.')}</p>}
       <p className="sw-biker-profile__note">{text('نسخة القاعدة', 'Rule version')}: <bdi>{report.rulesVersion}</bdi> · {text('تاريخ قراءة المصدر', 'Source read date')}: {formatDate(report.sourceReadDate)}</p>
+      {report.snapshotAt && <p className="sw-biker-profile__note">{text('وقت اللقطة', 'Snapshot time')}: {new Intl.DateTimeFormat(language === 'en' ? 'en-GB' : 'ar-SA', {
+        dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Riyadh', calendar: 'gregory',
+      }).format(new Date(report.snapshotAt))}</p>}
+      {report.availableWeight > 0 && <p>{text('مجموع البنود المتاحة', 'Available component total')}: <strong><bdi dir="ltr">{formatNumber(report.availablePoints)} / {formatNumber(report.availableWeight)}</bdi></strong></p>}
+      {report.rulesVersion === 'cqo-20261014-v1' && <p className="sw-biker-profile__note">{text('نسخة سابقة تحفظ دليل المدة فقط؛ ليست تقييم المعايير الأخرى.', 'Earlier version stores duration evidence only, not the other criteria.')}</p>}
       <div className="sw-biker-quality__metrics"><div><span>{text('الغسلات المقاسة', 'Measured washes')}</span><strong>{formatNumber(report.duration.n)}</strong></div>
         <div><span>{text('متوسط المدة · دقيقة', 'Average duration · minutes')}</span><strong>{report.duration.averageMinutes === null ? text('غير متاح', 'Unavailable') : formatNumber(report.duration.averageMinutes)}</strong></div>
         <div><span>{text('أكثر من 50 دقيقة في العينة', 'Over 50 minutes in sample')}</span><strong>{report.duration.n ? formatNumber(report.duration.over50) : text('غير متاح', 'Unavailable')}</strong></div></div>
@@ -51,9 +69,11 @@ export default function BikerQualitySection({ query, sectionRef }) {
         <thead><tr><th>{text('المعيار', 'Criterion')}</th><th>{text('الوزن', 'Weight')}</th><th>{text('النقاط المتاحة', 'Available points')}</th><th>{text('العينة', 'Sample')}</th></tr></thead>
         <tbody>{report.components.map(c => <tr key={c.key}><th>{text(...labels[c.key])}</th><td><bdi>{c.weight}</bdi></td>
           <td>{c.points === null ? text('غير مكتمل', 'Incomplete') : <bdi dir="ltr">{formatNumber(c.points)} / {c.weight}</bdi>}
-            <small>{c.reason === 'partial-sample' ? text('عينة فقط', 'Sample only') : c.reason === 'rule-and-evidence-incomplete'
-              ? text('القاعدة والأدلة غير مكتملة', 'Rule and evidence incomplete') : text('الأدلة غير متاحة', 'Evidence unavailable')}</small></td>
-          <td>{c.n === null ? '—' : formatNumber(c.n)}</td></tr>)}</tbody></table></div>
+            <small>{text(...(reasons[c.reason] || ['الأدلة غير متاحة', 'Evidence unavailable']))}</small>
+            {c.affected !== undefined && <small>{text('الحالات المنسوبة من المقام', 'Attributed cases out of denominator')}: <bdi dir="ltr">{formatNumber(c.affected)} / {formatNumber(c.n)}</bdi></small>}</td>
+          <td>{c.n === null ? '—' : formatNumber(c.n)}{c.unit === 'work-days' && <small>{text('أيام عمل مثبتة', 'Verified working days')}</small>}
+            {c.unit === 'reviewed-washes' && <small>{text('غسلات مراجعة صراحة', 'Explicitly reviewed washes')}</small>}</td></tr>)}</tbody></table></div>
+      <BikerQualityEvidence report={report} language={language} />
       <details><summary tabIndex={0}>{text('طريقة حساب المدة', 'Duration calculation')}</summary>
         <p>{text('تُحسب نقاط كل غسلة أولاً: 10 نقاط، وخصم 0.2 لكل دقيقة فوق 50، بحد أدنى صفر؛ ثم يؤخذ متوسط نقاط الغسلات المقاسة.',
           'Score each wash first: 10 points less 0.2 per minute above 50, with a floor of zero; then average measured wash points.')}</p></details>

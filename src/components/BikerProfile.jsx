@@ -1,11 +1,13 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import ModalSurface from './ModalSurface';
 import BikerWashCalendar from './BikerWashCalendar';
 import BikerProfileMonthPicker from './BikerProfileMonthPicker';
 import BikerQualitySection from './BikerQualitySection';
+import BikerQualityMetric from './BikerQualityMetric';
 import { useLanguage } from '../i18n/useLanguage';
 import { useBikerProfileBookings } from '../hooks/useBikerProfileBookings';
+import { useBikerQualityReports } from '../hooks/useBikerQualityReports';
 import { bikerProfileStats, riyadhToday } from '../lib/bikerProfile';
 import { displayBikerName } from '../lib/bikerNames';
 import { bikerCurrentStatusLabel } from '../lib/bikerCurrentStatus';
@@ -23,13 +25,14 @@ function AdminBikerProfile({ biker, washes, washesLoading, washesError, advances
   const today = riyadhToday();
   const [periodKey, setPeriodKey] = useState(today.slice(0, 7));
   const source = useBikerProfileBookings(biker.id, periodKey);
+  const qualityReports = useBikerQualityReports(biker.id, periodKey);
+  const qualityDetails = useRef(null);
   const stats = useMemo(() => bikerProfileStats({ biker, washes, bookings: source.bookings, periodKey, today }),
     [biker, washes, source.bookings, periodKey, today]);
   const unavailable = text('غير متاح', 'Unavailable');
   const washReady = !washesLoading && !washesError && Array.isArray(washes) && stats.validPeriod && !stats.conflicts.length;
   const metric = value => washReady && value !== null ? formatNumber(value) : unavailable;
   const qualityReady = source.available && stats.validPeriod;
-  const rating = qualityReady && stats.quality.averageRating !== null ? `${formatNumber(stats.quality.averageRating)} / 5` : unavailable;
   const ownAdvances = (advances || []).filter(a => a.bikerId === biker.id && a.status === 'pending')
     .reduce((sum, a) => sum + Math.max(0, (Number(a.amount) || 0) - (Number(a.recoveredAmount) || 0)), 0);
   const information = [
@@ -66,9 +69,13 @@ function AdminBikerProfile({ biker, washes, washesLoading, washesError, advances
         <div className="sw-biker-profile__metrics">{[
           ['غسلات اليوم', 'Today’s washes', metric(stats.todayWashes)], ['غسلات أمس', 'Yesterday’s washes', metric(stats.yesterdayWashes)],
           ['غسلات الشهر المحدد', 'Selected month washes', metric(stats.monthWashes)], ['إجمالي الغسلات المسجلة', 'All recorded washes', metric(stats.lifetimeWashes)],
-          ['تقييم البايكر', 'Biker rating', rating], ['المتوسط', 'Average', metric(stats.averagePerWashDay), true],
-        ].map(([ar, en, value, explain]) => <div key={en} className="sw-biker-profile__metric"><span>{text(ar, en)}</span><strong><bdi dir={en === 'Biker rating' ? 'ltr' : 'auto'}>{value}</bdi></strong>
-          {en === 'Biker rating' && <small>{text('من تقييمات العملاء المتاحة', 'From available customer ratings')}</small>}
+          ['تقييم الجودة المركّب', 'Composite quality assessment', null], ['المتوسط', 'Average', metric(stats.averagePerWashDay), true],
+        ].map(([ar, en, value, explain]) => en === 'Composite quality assessment'
+          ? <BikerQualityMetric key={en} query={qualityReports} bikerUID={biker.id} periodKey={periodKey} today={today} onShowDetails={() => {
+            qualityDetails.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+            qualityDetails.current?.focus({ preventScroll: true });
+          }} />
+          : <div key={en} className="sw-biker-profile__metric"><span>{text(ar, en)}</span><strong><bdi dir="auto">{value}</bdi></strong>
           {explain && <details className="sw-biker-profile__average-help"><summary tabIndex={0}>{text('كيف يُحسب؟', 'How is it calculated?')}</summary>
             <p>{text('غسلات الشهر ÷ عدد الأيام التي فيها غسلات مسجلة فقط. الأيام بدون غسلات لا تدخل في المتوسط.', 'Monthly washes ÷ days with recorded washes only. Days without washes are excluded.')}</p>
             <p><bdi dir="ltr">{washReady && stats.washDays > 0 ? `${formatNumber(stats.monthWashes)} ÷ ${formatNumber(stats.washDays)} = ${metric(stats.averagePerWashDay)}` : unavailable}</bdi></p>
@@ -78,7 +85,7 @@ function AdminBikerProfile({ biker, washes, washesLoading, washesError, advances
           <BikerWashCalendar periodKey={periodKey} today={today} daily={stats.daily} available={washReady} language={language} />
         </details>
       </section>
-      <BikerQualitySection key={`${biker.id}:${periodKey}`} bikerUID={biker.id} periodKey={periodKey} />
+      <BikerQualitySection key={`${biker.id}:${periodKey}`} query={qualityReports} sectionRef={qualityDetails} />
       <section><h3>{text('الجودة والتكتات · الشهر المحدد', 'Quality and tickets · Selected month')}</h3>
         <p className="sw-biker-profile__note">{text('من التقييمات ومراجع التكتات الموجودة في الحجوزات المستوردة فقط؛ ليس سجل تكتات سويتر الكامل أو حكماً على العامل.', 'Uses ratings and ticket references present in imported bookings only; not Sweater’s full ticket register or a worker assessment.')}</p>
         {source.loading && <p role="status">{text('جارٍ تحميل بيانات الجودة…', 'Loading quality data…')}</p>}

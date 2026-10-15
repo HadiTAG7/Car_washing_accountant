@@ -7,11 +7,10 @@ import BikerQualitySection from '../BikerQualitySection';
 const state = vi.hoisted(() => ({ available: true, loading: false, error: null, reports: [] }));
 const refetch = vi.hoisted(() => vi.fn());
 const api = vi.hoisted(() => vi.fn());
-vi.mock('../../hooks/useBikerQualityReports', () => ({ useBikerQualityReports: () => ({ ...state, data: { reports: state.reports }, refetch }) }));
 vi.mock('../../lib/bikerQualityApi', () => ({ callBikerQuality: api }));
 beforeEach(() => { state.available = true; state.loading = false; state.error = null; state.reports = []; api.mockReset(); refetch.mockReset(); });
 afterEach(cleanup);
-const props = { bikerUID: 'dummy', periodKey: '2026-10' };
+const props = { get query() { return { ...state, data: { reports: state.reports }, refetch }; } };
 const partial = () => ({ id: 'private-report', bikerUID: 'dummy', from: '2026-10-01', to: '2026-10-13', sourceReadDate: '2026-10-14',
   rulesVersion: 'cqo-20261014-v1', status: 'incomplete', finalScore: null, duration: { n: 3, points: 8, averageMinutes: 60, over50: 2 },
   components: [{ key: 'duration', weight: 10, points: 8, n: 3, reason: 'partial-sample' },

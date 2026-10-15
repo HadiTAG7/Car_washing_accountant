@@ -1,13 +1,15 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { LanguageContext } from '../../i18n/LanguageContext';
 
-const state = vi.hoisted(() => ({ partnerView: false, qualityLoading: false, qualityError: null }));
+const state = vi.hoisted(() => ({ partnerView: false, qualityLoading: false, qualityError: null,
+  compositeLoading: false, compositeError: null, compositeReports: [] }));
 const readQuality = vi.hoisted(() => vi.fn());
 const readComposite = vi.hoisted(() => vi.fn());
 vi.mock('../../hooks/useBikerQualityReports', () => ({ useBikerQualityReports: (...args) => {
-  readComposite(...args); return { available: true, data: { reports: [] }, loading: false, error: null };
+  readComposite(...args); return { available: !state.compositeLoading && !state.compositeError,
+    data: { reports: state.compositeReports }, loading: state.compositeLoading, error: state.compositeError, refetch: vi.fn() };
 } }));
 const biker = { id: 'fake-a', name: 'عامل تجريبي', nameEnglish: 'Test worker', driverExternalId: '1986', salary: 900 };
 vi.mock('../../hooks/useBikers', () => ({ useBikers: () => ({ bikers: [biker], loading: false, error: null }) }));
@@ -21,7 +23,9 @@ vi.mock('../../hooks/useBikerProfileBookings', () => ({ useBikerProfileBookings:
 } }));
 const { default: BikerProfile } = await import('../BikerProfile');
 const { default: BikersPage } = await import('../BikersPage');
-beforeEach(() => { state.partnerView = false; state.qualityLoading = false; state.qualityError = null; readQuality.mockClear(); readComposite.mockClear(); });
+beforeEach(() => { state.partnerView = false; state.qualityLoading = false; state.qualityError = null;
+  state.compositeLoading = false; state.compositeError = null; state.compositeReports = [];
+  readQuality.mockClear(); readComposite.mockClear(); });
 afterEach(cleanup);
 const props = () => ({ role: 'admin', biker, washes: [], advances: [], onClose: vi.fn() });
 const chooseMonth = label => {
@@ -50,10 +54,12 @@ it('hides the admin profile immediately when switching to partner preview', () =
   const view = render(<BikersPage role="admin" />);
   fireEvent.click(screen.getByRole('button', { name: /فتح بروفايل/ }));
   expect(screen.getByRole('dialog')).toBeTruthy();
+  const compositeReads = readComposite.mock.calls.length;
   state.partnerView = true;
   view.rerender(<BikersPage role="admin" />);
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(screen.queryByRole('button', { name: /فتح بروفايل/ })).toBeNull();
+  expect(readComposite).toHaveBeenCalledTimes(compositeReads);
 });
 it('switches month and removes the previous period rating and ticket', () => {
   render(<BikerProfile {...props()} />);
@@ -94,16 +100,69 @@ it('presents daily washes as a monthly calendar rather than a scrolling date lis
   expect(calendar.querySelectorAll('time')).toHaveLength(31);
   expect(calendar.querySelector('time[datetime="2026-10-01"]')).toBeTruthy();
 });
-it('uses only the wash-day average and replaces calendar-day average with rating', () => {
+it('uses only the wash-day average and does not substitute customer stars for composite quality', () => {
   render(<BikerProfile {...props()} washes={[
     { id: 'w1', bikerId: biker.id, washDate: '2026-10-12', quantity: 3, status: 'مكتملة' },
     { id: 'w2', bikerId: biker.id, washDate: '2026-10-13', quantity: 5, status: 'مكتملة' },
   ]} />);
   expect(screen.queryByText('متوسط اليوم التقويمي')).toBeNull();
   expect(screen.getByText('المتوسط').closest('.sw-biker-profile__metric').querySelector('strong').textContent).toBe('4');
-  expect(screen.getByText('تقييم البايكر').closest('.sw-biker-profile__metric').querySelector('strong').textContent).toBe('5 / 5');
+  expect(screen.queryByText('تقييم البايكر')).toBeNull();
+  expect(within(screen.getByRole('group', { name: 'تقييم الجودة المركّب' })).getByText('غير متاح')).toBeTruthy();
   fireEvent.click(screen.getByText('كيف يُحسب؟'));
   expect(screen.getByText('8 ÷ 2 = 4')).toBeTruthy();
+});
+const compositeReport = (changes = {}) => ({ id: 'saved-v1', bikerUID: biker.id, periodKey: '2026-10',
+  rulesVersion: 'cqo-20261014-v1', from: '2026-10-01', to: '2026-10-14', sourceReadDate: '2026-10-15',
+  finalScore: null, status: 'incomplete', duration: { n: 19, points: 9.3263, averageMinutes: 48, over50: 7 },
+  components: [{ key: 'duration', weight: 10, points: 9.3263, n: 19, reason: 'partial-sample' }],
+  improvement: 'Synthetic evidence review.', ...changes });
+it('puts latest saved composite points in the fifth top metric without adding overlapping snapshots', () => {
+  state.compositeReports = [compositeReport({ id: 'old', to: '2026-10-13', components: [{ key: 'duration', weight: 10, points: 9.49, n: 14 }] }), compositeReport()];
+  render(<BikerProfile {...props()} />);
+  const card = screen.getByRole('group', { name: 'تقييم الجودة المركّب' });
+  expect(document.querySelectorAll('.sw-biker-profile__metrics > div')[4]).toBe(card);
+  expect(within(card).getByText('9.33 / 10')).toBeTruthy();
+  expect(card.textContent).toContain('النهائي غير مكتمل');
+  expect(card.textContent).toContain('19');
+  expect(card.textContent).not.toContain('/ 100');
+  expect(card.textContent).not.toContain('9.49');
+  expect(card.textContent).not.toContain('/ 5');
+  expect(readComposite).toHaveBeenCalledTimes(1);
+});
+it('shows the second saved worker example from six measured washes as 9.93 of 10', () => {
+  state.compositeReports = [compositeReport({ components: [{ key: 'duration', weight: 10, points: 9.9333, n: 6 }] })];
+  render(<BikerProfile {...props()} />);
+  const card = screen.getByRole('group', { name: 'تقييم الجودة المركّب' });
+  expect(within(card).getByText('9.93 / 10')).toBeTruthy();
+  expect(card.textContent).toContain('6');
+});
+it('links the top composite card to its existing detailed section without saving or another query', () => {
+  state.compositeReports = [compositeReport()];
+  render(<BikerProfile {...props()} />);
+  fireEvent.click(within(screen.getByRole('group', { name: 'تقييم الجودة المركّب' })).getByRole('button', { name: 'تفاصيل التقييم' }));
+  expect(document.activeElement).toBe(document.querySelector('.sw-biker-quality'));
+  expect(readComposite).toHaveBeenCalledTimes(1);
+});
+it('renders the composite card in English with the saved denominator and incomplete final label', () => {
+  state.compositeReports = [compositeReport()];
+  render(<LanguageContext.Provider value={{ language: 'en' }}><BikerProfile {...props()} /></LanguageContext.Provider>);
+  const card = screen.getByRole('group', { name: 'Composite quality assessment' });
+  expect(within(card).getByText('9.33 / 10')).toBeTruthy();
+  expect(within(card).getByText('Final assessment incomplete')).toBeTruthy();
+});
+it.each(['loading', 'error', 'no-sample'])('never uses customer stars or full points while composite is %s', mode => {
+  state.compositeLoading = mode === 'loading'; state.compositeError = mode === 'error' ? new Error('synthetic') : null;
+  state.compositeReports = [compositeReport({ duration: { n: 0, points: null, averageMinutes: null, over50: 0 },
+    components: [{ key: 'duration', weight: 10, points: null, n: 0, reason: 'missing-evidence' }] })];
+  render(<BikerProfile {...props()} />);
+  const card = screen.getByRole('group', { name: 'تقييم الجودة المركّب' });
+  expect(card.textContent).not.toContain('5 / 5');
+  expect(card.textContent).not.toContain('10 / 10');
+  expect(card.textContent).not.toContain('0 / 10');
+  if (mode === 'loading') expect(within(card).getByRole('status')).toBeTruthy();
+  else expect(within(card).getByText('غير متاح')).toBeTruthy();
+  if (mode === 'error') expect(within(card).getByRole('alert')).toBeTruthy();
 });
 it('orders all worker information left-to-right without changing values', () => {
   render(<BikerProfile {...props()} />);

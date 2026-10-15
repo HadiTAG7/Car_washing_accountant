@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useLanguage } from '../i18n/useLanguage';
-import { useBikerQualityReports } from '../hooks/useBikerQualityReports';
 import { callBikerQuality } from '../lib/bikerQualityApi';
 import { formatDate, formatNumber } from '../data/initialData';
 
@@ -9,10 +8,9 @@ const labels = { washQuality: ['جودة الغسيل', 'Wash quality'], behavio
   cancellations: ['الإلغاء', 'Cancellations'], lateness: ['التأخر', 'Lateness'],
   duration: ['مدة الغسلة', 'Wash duration'], statusUpdates: ['تحديث الحالة', 'Status updates'] };
 
-export default function BikerQualitySection({ bikerUID, periodKey }) {
+export default function BikerQualitySection({ query, sectionRef }) {
   const { language } = useLanguage();
   const text = (ar, en) => language === 'en' ? en : ar;
-  const query = useBikerQualityReports(bikerUID, periodKey);
   const [input, setInput] = useState('');
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState(null);
@@ -31,7 +29,7 @@ export default function BikerQualitySection({ bikerUID, periodKey }) {
     } catch (error) { setFeedback({ success: false, message: error.message }); }
     finally { setSaving(false); }
   };
-  return <section className="sw-biker-quality">
+  return <section ref={sectionRef} tabIndex={-1} className="sw-biker-quality">
     <h3>{text('تقييم الجودة المركّب', 'Composite quality assessment')}</h3>
     <p className="sw-biker-profile__note">{text('تقييم مستقل من 100، وليس نجوم العملاء من 5. لا تُرفع نقاط العينة إلى 100 ولا تُستنتج أيام الدوام من أيام الغسلات.',
       'Separate assessment out of 100, not customer stars out of 5. Partial points are not rescaled to 100; wash days do not prove attendance.')}</p>

@@ -1,4 +1,11 @@
 {
+  "جارٍ تحميل التقييم…": "Loading assessment…",
+  "نقرأ تقارير الجودة المحفوظة": "Reading saved quality reports",
+  "تعذّر قراءة التقييم": "Assessment could not be read",
+  "النهائي غير مكتمل": "Final assessment incomplete",
+  "النقاط المتاحة فقط · دون إعادة وزن": "Available points only · not rescaled",
+  "عينة المدة": "Duration sample",
+  "تفاصيل التقييم": "Assessment details",
   "جودة الغسيل": "Wash quality",
   "السلوك": "Behavior",
   "الإنتاجية": "Productivity",

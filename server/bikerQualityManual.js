@@ -24,17 +24,18 @@ export function manualReviewProjection(source, record, scope) {
   validateManualScope(scope);
   const eligible = source?.available ? source.eligible.filter(r => r.serviceDate >= scope.from && r.serviceDate <= scope.to) : [];
   const cohortHash = source?.available ? hash(eligible) : null;
+  const unlinkedWashes = eligible.filter(w => !w.sspBookingId).length;
   const notes = (record?.notes || []).filter(n => n.serviceDate >= scope.from && n.serviceDate <= scope.to);
   const active = notes.filter(n => n.stages.length && eligible.some(w => w.washId === n.washId && w.sspBookingId === n.appointmentId));
   const unresolvedNotes = notes.filter(n => n.stages.length && !active.includes(n)).length;
   const affected = new Set(active.map(n => n.appointmentId)).size;
   const confirmation = record?.confirmation || null;
-  const matched = Boolean(source?.available && !unresolvedNotes && confirmation && confirmation.from === scope.from && confirmation.to === scope.to
+  const matched = Boolean(source?.available && !unresolvedNotes && !unlinkedWashes && confirmation && confirmation.from === scope.from && confirmation.to === scope.to
     && confirmation.cohortHash === cohortHash && confirmation.revision === (record?.revision || 0));
   const unreviewed = source?.available ? (source.eligible || []).filter(w => !confirmation?.washIds?.includes(w.washId)).length : null;
   const points = matched && eligible.length ? Math.round(Math.max(0, 10 - 100 * affected / eligible.length) * 100) / 100 : null;
   return { policy: MANUAL_STATUS_POLICY, ...scope, revision: record?.revision || 0, sourceAvailable: Boolean(source?.available),
-    eligible, cohortHash, notes, confirmation, confirmed: matched, pendingWashes: unreviewed, unresolvedNotes,
+    eligible, cohortHash, notes, confirmation, confirmed: matched, pendingWashes: unreviewed, unresolvedNotes, unlinkedWashes,
     history: (record?.history || []).filter(e => e.from === scope.from && e.to === scope.to),
     component: { key: 'statusUpdates', weight: 10, points, n: matched ? eligible.length : null, affected: matched ? affected : null,
       reason: matched ? 'manual-status-reviewed' : 'awaiting-manual-status-review', unit: 'manually-reviewed-washes',
@@ -82,7 +83,7 @@ export async function saveManualReview(db, auth, input, operation) {
     const event = { operation, requestId: data.requestId, contentHash, from: data.from, to: data.to, at: timestamp, by: auth.uid, revision };
     if (operation === 'manual-confirm') {
       if (!projection.eligible.length || data.cohortHash !== projection.cohortHash) fail('تغيّر نطاق الغسلات؛ راجعه من جديد.', 'failed-precondition');
-      if (projection.unresolvedNotes) fail('تغيّر نطاق الغسلات؛ راجعه من جديد.', 'failed-precondition');
+      if (projection.unresolvedNotes || projection.unlinkedWashes) fail('تعذّر تأكيد الغسلات المؤهلة؛ لم يُحفظ شيء.', 'failed-precondition');
       const hasCases = projection.notes.some(n => n.stages.length);
       if (data.noCases === hasCases) fail('تأكيد عدم وجود حالات لا يطابق الملاحظات المسجلة.');
       record.confirmation = { ...scope, cohortHash: projection.cohortHash, washIds: projection.eligible.map(w => w.washId),

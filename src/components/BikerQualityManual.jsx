@@ -39,6 +39,7 @@ export default function BikerQualityManual({ manual, language, onReload }) {
     <p>{text('يسجل الأدمن الملاحظات فقط؛ نقص طوابع سويتر لا يُنشئ مخالفة تلقائية. كل موعد يُحسب مرة واحدة مهما تعددت المراحل.', 'Only admin-entered notes count; missing Sweater timestamps never create an automatic case. Each appointment counts once, regardless of stages.')}</p>
     {!available ? <p role="status">{text('تعذّر تحميل نطاق المراجعة اليدوية؛ لا توجد نقاط مؤكدة.', 'Manual review scope is unavailable; no points are confirmed.')}</p> : <>
       <p>{formatDate(manual.from)} — {formatDate(manual.to)} · {text('نطاق الغسلات المؤهل', 'Eligible wash scope')}: {formatNumber(manual.eligible.length)}</p>
+      {(manual.unlinkedWashes > 0 || manual.unresolvedNotes > 0) && <p role="alert">{text('توجد غسلات بلا معرّف موعد أو ملاحظات تغيّر ربطها؛ لا يمكن تأكيد التغطية قبل مراجعتها.', 'Some washes lack an appointment ID or notes no longer match their links. Coverage cannot be confirmed until reviewed.')}</p>}
       <p role="status"><span>{manual.confirmed ? text('مراجعة الفترة مؤكدة يدويًا', 'Period review explicitly confirmed') : text('بانتظار المراجعة اليدوية', 'Awaiting manual review')}</span>
         {' · '}{text('غسلات خارج التغطية المؤكدة تحتاج مراجعة', 'Washes outside confirmed coverage requiring review')}: {formatNumber(manual.pendingWashes)}</p>
       <details open={editorOpen} onToggle={event => setEditorOpen(event.currentTarget.open)}><summary>{text('تسجيل عدم تحديث', 'Record a missing status update')}</summary>
@@ -76,7 +77,7 @@ export default function BikerQualityManual({ manual, language, onReload }) {
           <label><input type="radio" name="manual-review-choice" value="cases" checked={reviewChoice === 'cases'} onChange={() => setReviewChoice('cases')} disabled={!manual.notes.some(n => n.stages.length)} />{text('راجعت النطاق والحالات اليدوية المسجلة', 'I reviewed the scope and the recorded manual cases')}</label>
           <label><input type="radio" name="manual-review-choice" value="zero" checked={reviewChoice === 'zero'} onChange={() => setReviewChoice('zero')} disabled={manual.notes.some(n => n.stages.length)} />{text('راجعت النطاق وأؤكد عدم وجود حالات عدم تحديث', 'I reviewed the scope and explicitly confirm no missing-update cases')}</label>
         </fieldset>
-        <button type="submit" className="sw-button sw-button--primary" disabled={saving || !reviewChoice || !manual.eligible.length}>{text('تأكيد المراجعة اليدوية', 'Confirm manual review')}</button>
+        <button type="submit" className="sw-button sw-button--primary" disabled={saving || !reviewChoice || !manual.eligible.length || manual.unlinkedWashes > 0 || manual.unresolvedNotes > 0}>{text('تأكيد المراجعة اليدوية', 'Confirm manual review')}</button>
       </form>
       {manual.confirmation && <p>{text('آخر تأكيد يدوي', 'Last manual confirmation')}: {timestamp(manual.confirmation.at)}{!manual.confirmed && ` · ${text('يحتاج إعادة مراجعة النطاق أو الملاحظات', 'Scope or notes require another review')}`}</p>}
       <details><summary>{text('سجل تدقيق المراجعة اليدوية', 'Manual review audit trail')}</summary><ul>{manual.history.map(e => <li key={e.requestId}>

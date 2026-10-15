@@ -98,3 +98,19 @@ it('refuses a stale confirmation cohort and never changes business records', asy
   await expect(save({ cohortHash: 'a'.repeat(64), acknowledged: true, noCases: true }, 'manual-confirm')).rejects.toThrow(/تغيّر نطاق/);
   expect(JSON.stringify([...rows])).toBe(before);
 });
+it('does not confirm zero cases while a wash has no appointment ID or a note binding changed', async () => {
+  rows.set('washes/w-1', { ...rows.get('washes/w-1'), ssp_booking_id: null });
+  expect(manualReviewProjection(source(), null, scope).unlinkedWashes).toBe(1);
+  await expect(confirm(true)).rejects.toMatchObject({ code: 'failed-precondition' });
+  rows.set('washes/w-1', { ...rows.get('washes/w-1'), ssp_booking_id: 'S-1' });
+  await save({ washId: 'w-1', stages: ['start'] });
+  rows.set('washes/w-1', { ...rows.get('washes/w-1'), ssp_booking_id: 'S-changed' });
+  expect(manualReviewProjection(source(), record(), scope).unresolvedNotes).toBe(1);
+  await expect(confirm(false)).rejects.toMatchObject({ code: 'failed-precondition' });
+});
+it('rechecks revoked membership inside the transaction before writing', async () => {
+  const original = db.runTransaction;
+  db.runTransaction = callback => { rows.set('users/admin', { role: 'partner' }); return original(callback); };
+  await expect(save({ washId: 'w-1', stages: ['start'] })).rejects.toMatchObject({ code: 'permission-denied' });
+  expect(record()).toBeUndefined();
+});

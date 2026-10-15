@@ -3,6 +3,7 @@ import { useLanguage } from '../i18n/useLanguage';
 import { callBikerQuality } from '../lib/bikerQualityApi';
 import { formatDate, formatNumber } from '../data/initialData';
 import BikerQualityEvidence from './BikerQualityEvidence';
+import BikerQualitySource from './BikerQualitySource';
 
 const labels = { washQuality: ['جودة الغسيل', 'Wash quality'], behavior: ['السلوك', 'Behavior'],
   productivity: ['الإنتاجية', 'Productivity'], complaints: ['الشكاوى', 'Complaints'],
@@ -19,6 +20,13 @@ const reasons = {
   'awaiting-approved-rule': ['الأدلة محفوظة؛ بانتظار اعتماد قاعدة الخصم', 'Evidence saved; awaiting approval of the deduction rule'],
   'awaiting-rule-and-evidence': ['بانتظار قاعدة خصم معتمدة ومقام حالات موثق', 'Awaiting an approved rule and evidenced eligible denominator'],
   'rule-and-evidence-incomplete': ['القاعدة والأدلة غير مكتملة', 'Rule and evidence incomplete'],
+  'missing-canonical-wash-source': ['تعذّر تأكيد مجموعة الغسلات المرتبطة بالمعرّف', 'Canonical UID-linked wash cohort is unconfirmed'],
+  'wash-day-productivity': ['الغسلات ÷ أيام وجود غسلات فقط؛ ليست أيام دوام', 'Washes ÷ days with washes only; not attendance days'],
+  'no-eligible-wash-days': ['لا يوجد مقام أيام غسلات مؤهل للحساب', 'No eligible wash-day denominator'],
+  'timestamp-completeness': ['اكتمال الطوابع المقروءة، لا إثبات نسيان', 'Completeness of readable timestamps, not proven forgetting'],
+  'missing-readable-ssp-events': ['تنقص قراءة أحداث سويتر الفعلية المؤهلة', 'Missing eligible readable Sweater events'],
+  'missing-attributed-denominator': ['ينقص مقام مؤهل وحالات منسوبة بدليل', 'Missing eligible denominator and evidenced attribution'],
+  'approved-attributed-rate': ['نسبة مؤهلة ومنسوبة وفق القاعدة المعتمدة', 'Eligible attributed rate under the approved rule'],
 };
 
 export default function BikerQualitySection({ query, sectionRef }) {
@@ -51,27 +59,35 @@ export default function BikerQualitySection({ query, sectionRef }) {
       <button type="button" className="sw-button sw-button--secondary" onClick={query.refetch}>{text('إعادة المحاولة', 'Retry')}</button></>}
     {query.available && reports.length === 0 && <p>{text('لا يوجد تقرير جودة محفوظ لهذا الشهر.', 'No quality report is saved for this month.')}</p>}
     {reports.map(report => <article key={report.id} className="sw-biker-quality__report">
-      <div className="sw-biker-quality__heading"><strong>{text('التقييم النهائي غير مكتمل', 'Final assessment incomplete')}</strong>
+      <div className="sw-biker-quality__heading"><strong>{report.status === 'complete' && Number.isFinite(report.finalScore)
+        ? <>{text('التقييم النهائي', 'Final assessment')}: <bdi dir="ltr">{formatNumber(report.finalScore)} / 100</bdi></>
+        : text('التقييم النهائي غير مكتمل', 'Final assessment incomplete')}</strong>
         <span>{formatDate(report.from)} — {formatDate(report.to)}</span></div>
       {report.status === 'outside-period' && <p>{text('العامل خارج فترة التقرير؛ لا توجد درجة.', 'Worker is outside the report period; no score.')}</p>}
       <p className="sw-biker-profile__note">{text('نسخة القاعدة', 'Rule version')}: <bdi>{report.rulesVersion}</bdi> · {text('تاريخ قراءة المصدر', 'Source read date')}: {formatDate(report.sourceReadDate)}</p>
       {report.snapshotAt && <p className="sw-biker-profile__note">{text('وقت اللقطة', 'Snapshot time')}: {new Intl.DateTimeFormat(language === 'en' ? 'en-GB' : 'ar-SA', {
         dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Riyadh', calendar: 'gregory',
       }).format(new Date(report.snapshotAt))}</p>}
-      {report.availableWeight > 0 && <p>{text('مجموع البنود المتاحة', 'Available component total')}: <strong><bdi dir="ltr">{formatNumber(report.availablePoints)} / {formatNumber(report.availableWeight)}</bdi></strong></p>}
+      {report.availableWeight > 0 && <p>{text('مجموع البنود المتاحة', 'Available component total')}: <strong><bdi dir="ltr">{formatNumber(report.availablePoints)}{report.availableWeight === 100 && report.finalScore === null
+        ? ` ${text('نقطة متاحة', 'available points')}` : ` / ${formatNumber(report.availableWeight)}`}</bdi></strong></p>}
       {report.rulesVersion === 'cqo-20261014-v1' && <p className="sw-biker-profile__note">{text('نسخة سابقة تحفظ دليل المدة فقط؛ ليست تقييم المعايير الأخرى.', 'Earlier version stores duration evidence only, not the other criteria.')}</p>}
-      <div className="sw-biker-quality__metrics"><div><span>{text('الغسلات المقاسة', 'Measured washes')}</span><strong>{formatNumber(report.duration.n)}</strong></div>
+      <div className="sw-biker-quality__metrics"><div><span>{text('الغسلات المقاسة', 'Measured washes')}</span><strong><bdi dir="ltr">{formatNumber(report.duration.n)}{report.coverage?.canonicalCompleted !== null && report.coverage?.canonicalCompleted !== undefined ? ` / ${formatNumber(report.coverage.canonicalCompleted)}` : ''}</bdi></strong></div>
         <div><span>{text('متوسط المدة · دقيقة', 'Average duration · minutes')}</span><strong>{report.duration.averageMinutes === null ? text('غير متاح', 'Unavailable') : formatNumber(report.duration.averageMinutes)}</strong></div>
         <div><span>{text('أكثر من 50 دقيقة في العينة', 'Over 50 minutes in sample')}</span><strong>{report.duration.n ? formatNumber(report.duration.over50) : text('غير متاح', 'Unavailable')}</strong></div></div>
       <p className="sw-biker-profile__note">{text('تغطية جزئية: المدة تخص الغسلات المقاسة فقط، ولا تثبت تغطية جميع غسلات الفترة أو الشهر.',
         'Partial coverage: duration includes measured washes only, not all washes in the period or month.')}</p>
+      {report.coverage && <p className="sw-biker-profile__note">{text('غسلات لم تكتمل أدلة مدتها', 'Washes without complete duration evidence')}: {report.coverage.durationMissing === null ? text('غير متاح', 'Unavailable') : formatNumber(report.coverage.durationMissing)} · {text('سجلات مستبعدة تحتاج مراجعة', 'Excluded records requiring review')}: {report.coverage.excludedSourceRecords === null ? text('غير متاح', 'Unavailable') : formatNumber(report.coverage.excludedSourceRecords)}</p>}
+      {report.rulesVersion === 'cqo-20261015-v3' && <p className="sw-biker-profile__note">{text('مؤشر اكتمال الطوابع لا يثبت النسيان. تعذّر قراءة المصدر يُستبعد من البسط والمقام ويظل فجوة معلنة.', 'Timestamp completeness does not prove forgetting. Unreadable sources are excluded from numerator and denominator and remain explicit gaps.')}</p>}
       <div className="sw-biker-quality__table-wrap"><table><caption>{text('تفصيل المعايير والأوزان المعتمدة', 'Approved criteria and weights')}</caption>
         <thead><tr><th>{text('المعيار', 'Criterion')}</th><th>{text('الوزن', 'Weight')}</th><th>{text('النقاط المتاحة', 'Available points')}</th><th>{text('العينة', 'Sample')}</th></tr></thead>
-        <tbody>{report.components.map(c => <tr key={c.key}><th>{text(...labels[c.key])}</th><td><bdi>{c.weight}</bdi></td>
+        <tbody>{report.components.map(c => <tr key={c.key}><th>{c.key === 'statusUpdates' && report.rulesVersion === 'cqo-20261015-v3' ? text('اكتمال تحديث الحالة', 'Status timestamp completeness') : text(...labels[c.key])}</th><td><bdi>{c.weight}</bdi></td>
           <td>{c.points === null ? text('غير مكتمل', 'Incomplete') : <bdi dir="ltr">{formatNumber(c.points)} / {c.weight}</bdi>}
             <small>{text(...(reasons[c.reason] || ['الأدلة غير متاحة', 'Evidence unavailable']))}</small>
-            {c.affected !== undefined && <small>{text('الحالات المنسوبة من المقام', 'Attributed cases out of denominator')}: <bdi dir="ltr">{formatNumber(c.affected)} / {formatNumber(c.n)}</bdi></small>}</td>
+            {c.affected !== undefined && <small>{c.key === 'statusUpdates' ? text('المواعيد ذات نقص الطوابع من المقام', 'Appointments with missing timestamps out of denominator') : text('الحالات المنسوبة من المقام', 'Attributed cases out of denominator')}: <bdi dir="ltr">{formatNumber(c.affected)} / {formatNumber(c.n)}</bdi></small>}
+            {c.unreadable > 0 && <small>{text('قراءات متعذرة مستبعدة', 'Excluded unreadable reviews')}: {formatNumber(c.unreadable)}</small>}
+            {report.coverage?.criteria?.[c.key] === false && c.points !== null && <small>{text('تغطية الدليل جزئية لهذا المعيار', 'Evidence coverage for this criterion is partial')}</small>}</td>
           <td>{c.n === null ? '—' : formatNumber(c.n)}{c.unit === 'work-days' && <small>{text('أيام عمل مثبتة', 'Verified working days')}</small>}
+            {c.unit === 'wash-days' && <small>{text('أيام وجود غسلات', 'Days with washes')}</small>}
             {c.unit === 'reviewed-washes' && <small>{text('غسلات مراجعة صراحة', 'Explicitly reviewed washes')}</small>}</td></tr>)}</tbody></table></div>
       <BikerQualityEvidence report={report} language={language} />
       <details><summary tabIndex={0}>{text('طريقة حساب المدة', 'Duration calculation')}</summary>
@@ -79,6 +95,7 @@ export default function BikerQualitySection({ query, sectionRef }) {
           'Score each wash first: 10 points less 0.2 per minute above 50, with a floor of zero; then average measured wash points.')}</p></details>
       <h4>{text('خطوة التحسين', 'Improvement step')}</h4><p dir="auto" translate="no">{report.improvement}</p>
     </article>)}
+    <BikerQualitySource source={query.available ? query.data.source : null} language={language} />
     <details className="sw-biker-quality__publish"><summary tabIndex={0}>{text('حفظ تقارير جودة معتمدة · للأدمن', 'Save approved quality reports · Admin')}</summary>
       <p className="sw-biker-profile__note">{text('يُحفظ التقرير بمعرّف العامل والفترة ونسخة القاعدة. لا يستبدل تقريرًا مختلفًا محفوظًا، ولا يغيّر الرواتب أو نجوم العملاء.',
         'Reports are linked by worker UID, period and rule version. Existing different reports are not overwritten; wages and customer stars are unchanged.')}</p>

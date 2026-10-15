@@ -99,11 +99,11 @@ export function normalizeQualityV2(input, normalizeV1) {
 }
 
 export function v2WashReferences(report) {
-  return [...(report.evidence?.productivity?.completed || []), ...(report.evidence?.updates?.reviews || [])];
+  return [...(report.evidence?.productivity?.completed || []), ...(report.evidence?.updates?.reviews || []), ...(report.evidence?.gaps || [])];
 }
 
 export function validateV2Worker(report, worker) {
-  if (report.rulesVersion !== QUALITY_V2) return;
+  if (![QUALITY_V2, 'cqo-20261015-v3'].includes(report.rulesVersion)) return;
   if (report.sourceIdentity.externalId && String(worker.driver_external_id || '').trim() !== report.sourceIdentity.externalId) {
     throw new AuthError('هوية سويتر لا تطابق العامل؛ لم يُحفظ شيء.', { code: 'failed-precondition' });
   }
@@ -114,3 +114,5 @@ export function validateV2Worker(report, worker) {
     throw new AuthError('الدليل خارج فترة العامل؛ لم يُحفظ شيء.', { code: 'failed-precondition' });
   }
 }
+export { id as qualityIdentitySchema, day as qualityDaySchema, proof as qualityProofSchema,
+  wash as qualityWashSchema, segment as qualityRatingSegmentSchema, rate as qualityRateSchema };

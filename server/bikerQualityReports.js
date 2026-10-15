@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { AuthError, callerRole } from '../functions/src/handlers.js';
 import { completedCommissionWash } from '../functions/src/washCommission.js';
 import { QUALITY_V2, normalizeQualityV2, validateV2Worker, v2WashReferences } from './bikerQualityV2.js';
+import { QUALITY_V3, normalizeQualityV3, readCanonicalQualitySource, finalizeQualityV3 } from './bikerQualityV3.js';
 
 export const QUALITY_COLLECTION = 'biker_quality_reports';
 export const QUALITY_RULES_VERSION = 'cqo-20261014-v1';
@@ -52,10 +53,11 @@ function normalizeQualityV1(input) {
   return { ...report, samples, duration, components, finalScore: null, status: 'incomplete' };
 }
 export function normalizeQualityReport(input) {
+  if (input?.rulesVersion === QUALITY_V3) return normalizeQualityV3(input, normalizeQualityV1);
   return input?.rulesVersion === QUALITY_V2 ? normalizeQualityV2(input, normalizeQualityV1) : normalizeQualityV1(input);
 }
 export const qualityReportId = report => `${report.bikerUID}__${report.from}__${report.to}__${report.rulesVersion}`
-  + (report.rulesVersion === QUALITY_V2 ? `__${new Date(report.snapshotAt).toISOString().replace(/\D/g, '')}` : '');
+  + ([QUALITY_V2, QUALITY_V3].includes(report.rulesVersion) ? `__${new Date(report.snapshotAt).toISOString().replace(/\D/g, '')}` : '');
 const digest = report => createHash('sha256').update(JSON.stringify(report)).digest('hex');
 async function adminOnly(db, auth) {
   if (await callerRole(db, auth) !== 'admin') throw new AuthError('تقارير الجودة مقصورة على الأدمن.');
@@ -64,16 +66,21 @@ async function adminOnly(db, auth) {
 export async function readQualityReports(db, auth, input) {
   await adminOnly(db, auth); // Before all report/worker access, including existence.
   const parsed = z.object({ bikerUID: identity, periodKey: month,
-    rulesVersion: z.enum([QUALITY_RULES_VERSION, QUALITY_V2, 'all-approved']) }).strict().safeParse(input);
+    rulesVersion: z.enum([QUALITY_RULES_VERSION, QUALITY_V2, QUALITY_V3, 'all-approved']), includeSource: z.boolean().optional() }).strict().safeParse(input);
   if (!parsed.success) bad('معرّف العامل أو الفترة غير صالح.');
   const { bikerUID, periodKey, rulesVersion } = parsed.data;
   const snapshot = await db.collection(QUALITY_COLLECTION).where('bikerUID', '==', bikerUID).limit(100).get();
   if (snapshot.size >= 100) throw new AuthError('تحتاج قائمة التقارير تقسيم صفحات.', { code: 'failed-precondition' });
-  return { reports: snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+  const reports = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
     .filter(report => report.periodKey === periodKey && (rulesVersion === 'all-approved'
-      ? [QUALITY_RULES_VERSION, QUALITY_V2].includes(report.rulesVersion) : report.rulesVersion === rulesVersion))
-    .sort((a, b) => b.to.localeCompare(a.to) || String(b.snapshotAt || '').localeCompare(String(a.snapshotAt || ''))
-      || String(b.createdAt || '').localeCompare(String(a.createdAt || ''))) };
+      ? [QUALITY_RULES_VERSION, QUALITY_V2, QUALITY_V3].includes(report.rulesVersion) : report.rulesVersion === rulesVersion))
+    .sort((a, b) => b.rulesVersion.localeCompare(a.rulesVersion) || b.to.localeCompare(a.to) || String(b.snapshotAt || '').localeCompare(String(a.snapshotAt || ''))
+      || String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+  if (!parsed.data.includeSource) return { reports };
+  let source;
+  try { source = await readCanonicalQualitySource(db, bikerUID, periodKey); }
+  catch { source = { available: false, reason: 'read-failed' }; }
+  return { reports, source };
 }
 
 export async function saveQualityReports(db, auth, input) {
@@ -82,7 +89,7 @@ export async function saveQualityReports(db, auth, input) {
   if (!parsed.success) bad('اختر من تقرير واحد إلى 50 تقريرًا.');
   const reports = parsed.data.reports.map(normalizeQualityReport);
   const washIds = [...new Set(reports.flatMap(r => [...r.samples, ...v2WashReferences(r)].map(s => s.washId)))];
-  if (reports.some(r => r.rulesVersion === QUALITY_V2)
+  if (reports.some(r => [QUALITY_V2, QUALITY_V3].includes(r.rulesVersion))
     && washIds.length + reports.length * 2 > 450) bad('قسّم حفظ أدلة الجودة إلى دفعات أصغر.');
   const ids = reports.map(qualityReportId);
   if (new Set(ids).size !== ids.length) bad('التقارير مكررة.');
@@ -95,6 +102,8 @@ export async function saveQualityReports(db, auth, input) {
     const workers = await Promise.all(reports.map(r => tx.get(db.collection('bikers').doc(r.bikerUID))));
     const evidence = await Promise.all(washIds.map(id => tx.get(db.collection('washes').doc(id))));
     const evidenceById = new Map(washIds.map((id, index) => [id, evidence[index]]));
+    const canonicalSources = await Promise.all(reports.map((r, i) => r.rulesVersion === QUALITY_V3 && workers[i].exists
+      ? readCanonicalQualitySource(db, r.bikerUID, r.periodKey, { transaction: tx, worker: workers[i].data() }) : null));
     for (let i = 0; i < reports.length; i++) {
       const report = reports[i];
       if (!workers[i].exists) throw new AuthError('العامل غير موجود؛ لم يُحفظ شيء.', { code: 'failed-precondition' });
@@ -109,10 +118,14 @@ export async function saveQualityReports(db, auth, input) {
           || String(row.wash_date).slice(0, 10) !== sample.serviceDate || Number(row.quantity) !== 1) {
           throw new AuthError('دليل غسلة لا يطابق العامل والفترة والتنفيذ؛ لم يُحفظ شيء.', { code: 'failed-precondition' });
         }
-        if (report.rulesVersion === QUALITY_V2 && sample.appointmentId
+        if ([QUALITY_V2, QUALITY_V3].includes(report.rulesVersion) && sample.appointmentId
           && String(row.ssp_booking_id || '') !== sample.appointmentId) {
           throw new AuthError('موعد مراجعة التحديث لا يطابق الغسلة؛ لم يُحفظ شيء.', { code: 'failed-precondition' });
         }
+      }
+      if (report.rulesVersion === QUALITY_V3) {
+        finalizeQualityV3(report, canonicalSources[i]);
+        if (worker.start_date && worker.start_date > report.to) report.status = 'outside-period';
       }
       if (existing[i].exists && existing[i].data().contentHash !== digest(report)) {
         throw new AuthError('تقرير الفترة محفوظ بمحتوى مختلف؛ لا يُستبدل تلقائيًا.', { code: 'already-exists' });
@@ -122,7 +135,7 @@ export async function saveQualityReports(db, auth, input) {
     reports.forEach((report, i) => {
       if (existing[i].exists) return;
       tx.create(refs[i], { ...report, contentHash: digest(report), createdBy: auth.uid,
-        createdAt: new Date().toISOString() });
+        createdAt: new Date().toISOString(), ...(report.rulesVersion === QUALITY_V3 ? { canonicalValidatedAt: new Date().toISOString() } : {}) });
       created++;
     });
     return { ids, created, unchanged: reports.length - created };

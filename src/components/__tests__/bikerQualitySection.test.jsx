@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { LanguageContext } from '../../i18n/LanguageContext';
 import BikerQualitySection from '../BikerQualitySection';
+import BikerQualityMetric from '../BikerQualityMetric';
 
 const state = vi.hoisted(() => ({ available: true, loading: false, error: null, reports: [] }));
 const refetch = vi.hoisted(() => vi.fn());
@@ -58,4 +59,29 @@ it('explains each missing criterion separately and renders saved partial v2 tota
   expect(screen.getByText('تنقص مراجعة صريحة لتحديثات الوصول والبدء والإنهاء')).toBeTruthy();
   expect(screen.getByText('الأدلة محفوظة؛ بانتظار اعتماد قاعدة الخصم')).toBeTruthy();
   expect(screen.queryByText('39.33 / 100')).toBeNull(); expect(api).not.toHaveBeenCalled();
+});
+it('never presents a partial 100-weight snapshot as a final /100 score', () => {
+  const report={...partial(),periodKey:'2026-10',rulesVersion:'cqo-20261015-v3',snapshotAt:'2026-10-15T09:00:00.000Z',availablePoints:100,availableWeight:100,
+    components:Object.entries({washQuality:30,behavior:20,productivity:10,complaints:10,cancellations:5,lateness:5,duration:10,statusUpdates:10})
+      .map(([key,weight])=>({key,weight,points:weight,n:1,reason:'partial-sample'}))};
+  state.reports=[report];
+  render(<><BikerQualitySection {...props}/><BikerQualityMetric query={props.query} bikerUID="dummy" periodKey="2026-10" today="2026-10-15"/></>);
+  expect(screen.queryByText('100 / 100')).toBeNull();
+  expect(screen.getAllByText('100 نقطة متاحة')).toHaveLength(2);
+});
+it('keeps reports readable when canonical source is unavailable, not a verified zero', () => {
+  state.reports=[partial()];
+  render(<BikerQualitySection query={{...props.query,data:{reports:state.reports,source:{available:false,reason:'requires-pagination'}}}}/>);
+  expect(screen.getByText('8 / 10')).toBeTruthy();
+  expect(screen.getByText('تعذّر تأكيد مصدر الغسلات؛ ليس صفراً.')).toBeTruthy();
+  expect(screen.queryByRole('table',{name:'دليل الغسلات للشهر المحدد'})).toBeNull(); expect(api).not.toHaveBeenCalled();
+});
+it('renders unreadable SSP events as source gaps, never missing recorded timestamps', () => {
+  state.reports=[{...partial(),rulesVersion:'cqo-20261015-v3',evidence:{updates:{reviews:[{
+    washId:'dummy-wash',appointmentId:'S-DEMO',serviceDate:'2026-10-12',readStatus:'unreadable',reason:'Isolated unavailable detail',
+    source:{reference:'Fixture only',hash:'a'.repeat(64),readDate:'2026-10-14'},
+  }]}}}];
+  render(<BikerQualitySection {...props}/>);
+  expect(screen.getByText('تعذّرت قراءة المصدر:')).toBeTruthy(); expect(screen.queryByText('غير مسجّل')).toBeNull();
+  expect(api).not.toHaveBeenCalled();
 });

@@ -8,6 +8,7 @@ export default function BikerQualityMetric({ query, bikerUID, periodKey, today, 
   const title = text('تقييم الجودة المركّب', 'Composite quality assessment');
   const summary = bikerQualitySummary(query.available ? query.data?.reports : [], bikerUID, periodKey, today);
   const value = summary.points === null ? text('غير متاح', 'Unavailable')
+    : summary.weight === 100 && summary.incomplete ? `${formatNumber(Math.round(summary.points * 100) / 100)} ${text('نقطة متاحة', 'available points')}`
     : `${formatNumber(Math.round(summary.points * 100) / 100)} / ${formatNumber(summary.weight)}`;
   return <div role="group" aria-label={title} className="sw-biker-profile__metric sw-biker-quality-card">
     <span>{title}</span>
@@ -20,7 +21,7 @@ export default function BikerQualityMetric({ query, bikerUID, periodKey, today, 
           {summary.approximate && <small>{text('يشمل عينات نجوم تقريبية', 'Includes approximate rating samples')}</small>}
           {summary.ratingSamples?.washQuality !== undefined && <small>{text('عينة تقييم الغسيل', 'Wash rating sample')}: {formatNumber(summary.ratingSamples.washQuality)}</small>}
           {summary.ratingSamples?.behavior !== undefined && <small>{text('عينة تقييم السلوك', 'Behavior rating sample')}: {formatNumber(summary.ratingSamples.behavior)}</small>}
-          {summary.durationN !== null && <small>{text('عينة المدة', 'Duration sample')}: {formatNumber(summary.durationN)}</small>}
+          {summary.durationN !== null && <small>{summary.durationTotal === null ? text('عينة المدة', 'Duration sample') : text('المقاس من الغسلات المرتبطة', 'Measured out of linked washes')}: <bdi dir="ltr">{formatNumber(summary.durationN)}{summary.durationTotal !== null ? ` / ${formatNumber(summary.durationTotal)}` : ''}</bdi></small>}
           {summary.report && <small>{formatDate(summary.report.from)} — {formatDate(summary.report.to)}</small>}
         </>}
     {!query.loading && !query.error && summary.report && <button type="button" onClick={onShowDetails} className="sw-biker-quality-card__details">{text('تفاصيل التقييم', 'Assessment details')}</button>}

@@ -6,7 +6,7 @@ import { callBikerQuality } from '../lib/bikerQualityApi';
 export function useBikerQualityReports(bikerUID, periodKey) {
   const { user } = useAuth();
   const enabled = isFirebaseConfigured && Boolean(user?.id && bikerUID && periodKey);
-  const query = useFirestoreQuery(() => callBikerQuality('read', { bikerUID, periodKey, rulesVersion: 'all-approved' }),
+  const query = useFirestoreQuery(() => callBikerQuality('read', { bikerUID, periodKey, rulesVersion: 'all-approved', includeSource: true }),
     { enabled, preserveResult: true, deps: [periodKey], queryKey: `${user?.id || ''}:${bikerUID}:${periodKey}`, fallback: null });
   return { ...query, available: enabled && !query.loading && !query.error && query.data !== null };
 }

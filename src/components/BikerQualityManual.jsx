@@ -67,7 +67,7 @@ export default function BikerQualityManual({ manual, language, onReload }) {
       {!manual.notes.length && <p>{text('لا توجد ملاحظات مدخلة؛ هذا لا يعني تأكيد عدم وجود حالات.', 'No notes have been entered; this does not confirm zero cases.')}</p>}
       <ul>{manual.notes.map(n => <li key={n.washId}><bdi dir="ltr">{n.appointmentId} · {n.serviceDate}</bdi>{' · '}
         {n.stages.length ? n.stages.map(k => text(...stageNames[k])).join('، ') : text('مسحوبة بتصحيح مدقق', 'Withdrawn by audited correction')}
-        <p dir="auto">{n.note}</p><small>{text('مصدر يدوي — الأدمن', 'Manual source — admin')} · {timestamp(n.at)}</small>
+        <p dir="auto" translate="no">{n.note}</p><small>{text('مصدر يدوي — الأدمن', 'Manual source — admin')} · {timestamp(n.at)}</small>
         <details><summary>{text('تصحيح الملاحظة', 'Correct this note')}</summary><button type="button" className="sw-button sw-button--secondary" disabled={saving}
           onClick={() => { setEditorOpen(true); setEditing(true); setWashId(n.washId); setStages(n.stages); setNote(n.note); setCorrectionReason(''); }}>
           {text('تحميل الملاحظة في نموذج التصحيح أعلاه', 'Load this note into the correction form above')}</button></details>
@@ -82,7 +82,7 @@ export default function BikerQualityManual({ manual, language, onReload }) {
       {manual.confirmation && <p>{text('آخر تأكيد يدوي', 'Last manual confirmation')}: {timestamp(manual.confirmation.at)}{!manual.confirmed && ` · ${text('يحتاج إعادة مراجعة النطاق أو الملاحظات', 'Scope or notes require another review')}`}</p>}
       <details><summary>{text('سجل تدقيق المراجعة اليدوية', 'Manual review audit trail')}</summary><ul>{manual.history.map(e => <li key={e.requestId}>
         {timestamp(e.at)} · <bdi dir="ltr">{e.operation}</bdi>{e.after && <> · <bdi dir="ltr">{e.after.appointmentId}</bdi></>}
-        {e.correctionReason && <p dir="auto">{e.correctionReason}</p>}
+        {e.correctionReason && <p dir="auto" translate="no">{e.correctionReason}</p>}
       </li>)}</ul></details>
     </>}
     {feedback && <p role={feedback.success ? 'status' : 'alert'}>{feedback.message}</p>}

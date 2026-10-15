@@ -114,3 +114,9 @@ it('rechecks revoked membership inside the transaction before writing', async ()
   await expect(save({ washId: 'w-1', stages: ['start'] })).rejects.toMatchObject({ code: 'permission-denied' });
   expect(record()).toBeUndefined();
 });
+it('keeps newly excluded source records from completing overall coverage', async () => {
+  await confirm(true);
+  const result = manualReviewProjection({ ...source(), excluded: [{ washId: 'invalid', serviceDate: '2026-10-12', reason: 'outside-employment' }] }, record(), scope);
+  expect(result.sourceExcluded).toBe(1);
+  expect(result.component.coverageComplete).toBe(false);
+});

@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import BikerQualityManual from '../BikerQualityManual';
 import BikerQualitySection from '../BikerQualitySection';
 import { LanguageContext } from '../../i18n/LanguageContext';
+import { loadEnglish } from '../../i18n/locale';
 const api = vi.hoisted(() => vi.fn());
 vi.mock('../../lib/bikerQualityApi', () => ({ callBikerQuality: api }));
 beforeEach(() => { api.mockReset(); }); afterEach(cleanup);
@@ -69,4 +70,12 @@ it('supports the manual form in English and does not render a form when the sour
   expect(screen.getByText('Awaiting manual review')).toBeTruthy();
   view.rerender(<BikerQualityManual manual={{ available: false }} language="en" onReload={vi.fn()} />);
   expect(screen.queryByRole('button', { name: 'Confirm manual review' })).toBeNull(); expect(api).not.toHaveBeenCalled();
+});
+it('preserves the original entered note and correction reason when switching to English', async () => {
+  await loadEnglish();
+  const review = { ...manual(), notes: [{ washId: 'demo-wash', appointmentId: 'S-DEMO', serviceDate: '2026-10-12', stages: ['arrival'], note: 'قيد الانتظار', at: '2026-10-15T10:00:00Z' }],
+    history: [{ requestId: 'demo-request', operation: 'manual-correct', correctionReason: 'حذف', at: '2026-10-15T10:00:00Z' }] };
+  render(<LanguageContext.Provider value={{ language: 'en' }}><BikerQualityManual manual={review} language="en" onReload={vi.fn()} /></LanguageContext.Provider>);
+  expect(screen.getByText('قيد الانتظار').getAttribute('translate')).toBe('no');
+  expect(screen.getByText('حذف').getAttribute('translate')).toBe('no');
 });

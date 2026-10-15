@@ -25,6 +25,8 @@ export function manualReviewProjection(source, record, scope) {
   const eligible = source?.available ? source.eligible.filter(r => r.serviceDate >= scope.from && r.serviceDate <= scope.to) : [];
   const cohortHash = source?.available ? hash(eligible) : null;
   const unlinkedWashes = eligible.filter(w => !w.sspBookingId).length;
+  const sourceExcluded = source?.available ? (source.excluded || []).filter(w => w.reason === 'invalid-date'
+    || (w.serviceDate >= scope.from && w.serviceDate <= scope.to)).length : null;
   const notes = (record?.notes || []).filter(n => n.serviceDate >= scope.from && n.serviceDate <= scope.to);
   const active = notes.filter(n => n.stages.length && eligible.some(w => w.washId === n.washId && w.sspBookingId === n.appointmentId));
   const unresolvedNotes = notes.filter(n => n.stages.length && !active.includes(n)).length;
@@ -35,11 +37,11 @@ export function manualReviewProjection(source, record, scope) {
   const unreviewed = source?.available ? (source.eligible || []).filter(w => !confirmation?.washIds?.includes(w.washId)).length : null;
   const points = matched && eligible.length ? Math.round(Math.max(0, 10 - 100 * affected / eligible.length) * 100) / 100 : null;
   return { policy: MANUAL_STATUS_POLICY, ...scope, revision: record?.revision || 0, sourceAvailable: Boolean(source?.available),
-    eligible, cohortHash, notes, confirmation, confirmed: matched, pendingWashes: unreviewed, unresolvedNotes, unlinkedWashes,
+    eligible, cohortHash, notes, confirmation, confirmed: matched, pendingWashes: unreviewed, unresolvedNotes, unlinkedWashes, sourceExcluded,
     history: (record?.history || []).filter(e => e.from === scope.from && e.to === scope.to),
     component: { key: 'statusUpdates', weight: 10, points, n: matched ? eligible.length : null, affected: matched ? affected : null,
       reason: matched ? 'manual-status-reviewed' : 'awaiting-manual-status-review', unit: 'manually-reviewed-washes',
-      coverageComplete: matched && eligible.length > 0 } };
+      coverageComplete: matched && eligible.length > 0 && sourceExcluded === 0 } };
 }
 async function adminOnly(db, auth) {
   if (await callerRole(db, auth) !== 'admin') fail('مراجعة الجودة مقصورة على الأدمن.', 'permission-denied');

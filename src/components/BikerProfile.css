@@ -57,6 +57,12 @@
 .sw-biker-quality__table-wrap { overflow-x: auto; }
 .sw-biker-quality caption { text-align: start; font-weight: 600; margin: 12px 0; }
 .sw-biker-quality td small { display: block; font-size: .72rem; opacity: .8; margin-top: 4px; }
+.sw-biker-quality__original { padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid var(--sw-border-subtle); }
+.sw-biker-quality__original strong { display: block; margin-top: 4px; }
+.sw-biker-quality__criteria { table-layout: fixed; overflow-wrap: anywhere; }
+.sw-biker-quality__criteria thead th:first-child { width: 28%; }
+.sw-biker-quality__criteria thead th:nth-child(2) { width: 46%; }
+.sw-biker-quality__criteria thead th:last-child { width: 26%; }
 .sw-biker-quality h4 { font-weight: 600; margin: 12px 0 8px; }
 .sw-biker-quality__publish textarea { display: block; width: 100%; margin: 12px 0; padding: 12px; border: 1px solid var(--sw-border-subtle); background: var(--sw-surface); color: var(--sw-text); border-radius: 12px; }
 .sw-biker-quality-manual { border: 1px solid var(--sw-border-subtle); border-radius: 14px; padding: 14px; }

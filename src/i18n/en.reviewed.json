@@ -1361,5 +1361,21 @@
   "اختيار الشهر": "Choose month",
   "السنة السابقة": "Previous year",
   "السنة التالية": "Next year",
-  "من تقييمات العملاء المتاحة": "From available customer ratings"
+  "من تقييمات العملاء المتاحة": "From available customer ratings",
+  "القيمة الأصلية": "Original value",
+  "سويتر · نجوم العينة": "Sweater · sample stars",
+  "متوسط موزون بعدد التقييمات من مقاطع غير متداخلة؛ تقريبي من متوسطات المصدر المدورة": "Weighted by rating counts across non-overlapping segments; approximate from rounded source means",
+  "متوسط النجوم المحفوظ من المصدر؛ لا يُستنتج من النقاط": "Saved source star mean; never inferred from points",
+  "محسوب من السجلات": "Calculated from records",
+  "غسلة / يوم عمل مثبت": "washes / verified work day",
+  "غسلة / يوم فيه غسلات؛ ليست أيام دوام ولا رقمًا مباشرًا من لوحة سويتر": "washes / day with washes; not attendance or a direct Sweater dashboard figure",
+  "المدة الأصلية · دقيقة": "Original duration · minutes",
+  "متوسط نقاط كل غسلة، وليس نقاط متوسط المدة": "Average of per-wash points, not points for the average duration",
+  "مدخلات يدوية": "Manual input",
+  "دليل المراجعة التاريخي": "Historical review evidence",
+  "مواعيد بملاحظة يدوية / النطاق المؤكد؛ ليست قراءة من سويتر": "Appointments with manual notes / confirmed scope; not a Sweater reading",
+  "دليل تاريخي فقط؛ ليس عدد مخالفات عدم التحديث اليدوية الحالية": "Historical evidence only; not the current manual missing-update count",
+  "الحالات المؤهلة والمنسوبة داخل العينة؛ ليست كل التذاكر الخام أو نسبة مباشرة من لوحة سويتر": "Eligible attributed cases within the sample; not all raw tickets or a direct Sweater dashboard rate",
+  "القيمة الأصلية ثم نقاطنا": "Original value, then our points",
+  "نقاطنا / الوزن": "Our points / weight"
 }

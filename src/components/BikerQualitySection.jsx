@@ -5,6 +5,7 @@ import { formatDate, formatNumber } from '../data/initialData';
 import BikerQualityEvidence from './BikerQualityEvidence';
 import BikerQualitySource from './BikerQualitySource';
 import BikerQualityManual from './BikerQualityManual';
+import BikerQualityOriginalValue from './BikerQualityOriginalValue';
 import { currentManualQualityReport } from '../lib/bikerQualitySummary';
 
 const labels = { washQuality: ['جودة الغسيل', 'Wash quality'], behavior: ['السلوك', 'Behavior'],
@@ -95,15 +96,17 @@ export default function BikerQualitySection({ query, sectionRef }) {
         'Partial coverage: duration includes measured washes only, not all washes in the period or month.')}</p>
       {report.coverage && <p className="sw-biker-profile__note">{text('غسلات لم تكتمل أدلة مدتها', 'Washes without complete duration evidence')}: {report.coverage.durationMissing === null ? text('غير متاح', 'Unavailable') : formatNumber(report.coverage.durationMissing)} · {text('سجلات مستبعدة تحتاج مراجعة', 'Excluded records requiring review')}: {report.coverage.excludedSourceRecords === null ? text('غير متاح', 'Unavailable') : formatNumber(report.coverage.excludedSourceRecords)}</p>}
       {report.rulesVersion === 'cqo-20261015-v3' && <p className="sw-biker-profile__note">{text('طوابع سويتر دليل تاريخي فقط، ولا تثبت نسيان التحديث. نقاطها السابقة مستبعدة من التقييم الحالي؛ عدم التحديث يُسجّل يدويًا.', 'Sweater timestamps are historical evidence only, not proof of forgotten updates. Their old points are excluded from the current assessment; missing updates are recorded manually.')}</p>}
-      <div className="sw-biker-quality__table-wrap"><table><caption>{text('تفصيل المعايير والأوزان المعتمدة', 'Approved criteria and weights')}</caption>
-        <thead><tr><th>{text('المعيار', 'Criterion')}</th><th>{text('الوزن', 'Weight')}</th><th>{text('النقاط المتاحة', 'Available points')}</th><th>{text('العينة', 'Sample')}</th></tr></thead>
+      <div className="sw-biker-quality__table-wrap"><table className="sw-biker-quality__criteria"><caption>{text('تفصيل المعايير والأوزان المعتمدة', 'Approved criteria and weights')}</caption>
+        <thead><tr><th>{text('المعيار', 'Criterion')}</th><th>{text('القيمة الأصلية ثم نقاطنا', 'Original value, then our points')}</th><th>{text('العينة', 'Sample')}</th></tr></thead>
         <tbody>{report.components.map(c => <tr key={c.key}><th scope="row">{c.key === 'statusUpdates' ? (index === 0 ? text('عدم تحديث الحالة — مراجعة يدوية', 'Missing status updates — manual review')
-          : text('مؤشر التحديث التاريخي — ليس مراجعة يدوية حالية', 'Historical status metric — not a current manual review')) : text(...labels[c.key])}</th><td><bdi>{c.weight}</bdi></td>
-          <td>{c.points === null ? text('غير مكتمل', 'Incomplete') : <bdi dir="ltr">{formatNumber(c.points)} / {c.weight}</bdi>}
+          : text('مؤشر التحديث التاريخي — ليس مراجعة يدوية حالية', 'Historical status metric — not a current manual review')) : text(...labels[c.key])}</th>
+          <td><BikerQualityOriginalValue report={report} component={c} language={language} current={index === 0} manualConfirmed={Boolean(manual?.confirmed)} />
+            <small>{text('نقاطنا / الوزن', 'Our points / weight')}</small>
+            {c.points === null ? text('غير مكتمل', 'Incomplete') : <bdi dir="ltr">{formatNumber(c.points)} / {c.weight}</bdi>}
             <small>{c.key === 'lateness' && c.points === null ? <>{text('بيانات التأخر للفترة غير مكتملة من المصدر؛ النقاط غير محسوبة', 'Source lateness data for this period is incomplete; points are not calculated')}
               {' · '}{formatDate(report.from)} — {formatDate(report.to)} · {text('آخر قراءة صالحة', 'Last valid read')}: {formatDate(report.evidence?.lateness?.source?.readDate || report.sourceReadDate)}</>
               : text(...(reasons[c.reason] || ['الأدلة غير متاحة', 'Evidence unavailable']))}</small>
-            {c.affected !== undefined && c.affected !== null && <small>{c.key === 'statusUpdates' ? (index === 0 ? text('المواعيد ذات ملاحظة يدوية من النطاق المؤكد', 'Appointments with a manual note out of confirmed scope') : text('المواعيد ذات نقص الطوابع من المقام', 'Appointments with missing timestamps out of denominator')) : text('الحالات المنسوبة من المقام', 'Attributed cases out of denominator')}: <bdi dir="ltr">{formatNumber(c.affected)} / {formatNumber(c.n)}</bdi></small>}
+            {c.affected !== undefined && c.affected !== null && Number.isInteger(c.n) && c.n > 0 && <small>{c.key === 'statusUpdates' ? (index === 0 ? text('المواعيد ذات ملاحظة يدوية من النطاق المؤكد', 'Appointments with a manual note out of confirmed scope') : text('المواعيد ذات نقص الطوابع من المقام', 'Appointments with missing timestamps out of denominator')) : text('الحالات المنسوبة من المقام', 'Attributed cases out of denominator')}: <bdi dir="ltr">{formatNumber(c.affected)} / {formatNumber(c.n)}</bdi></small>}
             {c.unreadable > 0 && <small>{text('قراءات متعذرة مستبعدة', 'Excluded unreadable reviews')}: {formatNumber(c.unreadable)}</small>}
             {c.key !== 'statusUpdates' && report.coverage?.criteria?.[c.key] === false && c.points !== null && <small>{text('تغطية الدليل جزئية لهذا المعيار', 'Evidence coverage for this criterion is partial')}</small>}</td>
           <td>{['washQuality', 'behavior'].includes(c.key) ? <>

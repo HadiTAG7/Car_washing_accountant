@@ -45,6 +45,5 @@ export default function BikerWashCalendar({ periodKey, today, daily = [], availa
         </td>;
       })}</tr>)}</tbody>
     </table>
-    <p className="sw-biker-profile__note">{text('الرقم داخل اليوم = عدد الغسلات المسجلة. — يوم قادم أو خارج فترة العامل أو بيانات غير متاحة.', 'Number inside each day = recorded washes. — means a future day, outside the worker period, or unavailable data.')}</p>
   </div>;
 }

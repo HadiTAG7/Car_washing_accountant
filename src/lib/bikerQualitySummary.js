@@ -25,16 +25,19 @@ export function currentManualQualityReport(report, manual) {
   return { ...report, components, availableWeight, availablePoints, finalScore: complete ? availablePoints : null,
     status: report.status === 'outside-period' ? report.status : complete ? 'complete' : 'incomplete', manualPolicyApplied: true };
 }
-export function bikerQualitySummary(reports, bikerUID, periodKey, today, manual) {
-  const empty = report => ({ report, points: null, weight: null, durationN: null, incomplete: true });
-  if (!bikerUID || !/^\d{4}-(0[1-9]|1[0-2])$/.test(periodKey || '') || !validDay(today)) return empty(null);
-  const saved = (Array.isArray(reports) ? reports : []).filter(r => r?.bikerUID === bikerUID
+export function selectBikerQualityReport(reports, bikerUID, periodKey, today) {
+  if (!bikerUID || !/^\d{4}-(0[1-9]|1[0-2])$/.test(periodKey || '') || !validDay(today)) return null;
+  return (Array.isArray(reports) ? reports : []).filter(r => r?.bikerUID === bikerUID
     && r.periodKey === periodKey && ['cqo-20261014-v1', 'cqo-20261015-v2', 'cqo-20261015-v3'].includes(r.rulesVersion)
     && validDay(r.from) && validDay(r.to) && r.from <= r.to && r.to <= today
     && r.from.slice(0, 7) === periodKey && r.to.slice(0, 7) === periodKey)
     .sort((a, b) => b.rulesVersion.localeCompare(a.rulesVersion) || b.to.localeCompare(a.to) || String(b.snapshotAt || '').localeCompare(String(a.snapshotAt || ''))
       || String(b.sourceReadDate || '').localeCompare(String(a.sourceReadDate || ''))
-      || String(b.createdAt || '').localeCompare(String(a.createdAt || '')) || String(b.id || '').localeCompare(String(a.id || '')))[0];
+      || String(b.createdAt || '').localeCompare(String(a.createdAt || '')) || String(b.id || '').localeCompare(String(a.id || '')))[0] || null;
+}
+export function bikerQualitySummary(reports, bikerUID, periodKey, today, manual) {
+  const empty = report => ({ report, points: null, weight: null, durationN: null, incomplete: true });
+  const saved = selectBikerQualityReport(reports, bikerUID, periodKey, today);
   const report = currentManualQualityReport(saved, manual);
   if (!report || report.status === 'outside-period' || !Array.isArray(report.components)) return empty(report || null);
   const available = report.components.filter(c => c.points !== null && c.points !== undefined);

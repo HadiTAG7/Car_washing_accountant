@@ -5,7 +5,6 @@ export default function BikerQualityEvidence({ report, language }) {
   const ratings = components.filter(c => ['washQuality', 'behavior'].includes(c.key));
   const productivity = components.find(c => c.key === 'productivity');
   const complaints = components.find(c => c.key === 'complaints');
-  if (!report.evidence && !ratings.length && !productivity && !complaints) return null;
   const text = (ar, en) => language === 'en' ? en : ar;
   const e = report.evidence || {};
   const proofs = [...(e.ratings || []).map(r => r.source), e.productivity?.source,
@@ -15,6 +14,14 @@ export default function BikerQualityEvidence({ report, language }) {
     dateStyle: 'short', timeStyle: 'short', calendar: 'gregory', timeZone: 'Asia/Riyadh',
   }).format(new Date(value)) : text('غير مسجّل', 'Not recorded');
   return <details><summary tabIndex={0}>{text('تفاصيل مصدر التقييم', 'Assessment source details')}</summary>
+    <p className="sw-biker-profile__note">{text('نسخة القاعدة', 'Rule version')}: <bdi>{report.rulesVersion}</bdi> · {text('تاريخ قراءة المصدر', 'Source read date')}: {formatDate(report.sourceReadDate)}</p>
+    {report.snapshotAt && <p className="sw-biker-profile__note">{text('وقت اللقطة', 'Snapshot time')}: {new Intl.DateTimeFormat(language === 'en' ? 'en-GB' : 'ar-SA', {
+      dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Riyadh', calendar: 'gregory',
+    }).format(new Date(report.snapshotAt))}</p>}
+    <p className="sw-biker-profile__note">{text('تغطية جزئية: المدة تخص الغسلات المقاسة فقط، ولا تثبت تغطية جميع غسلات الفترة أو الشهر.',
+      'Partial coverage: duration includes measured washes only, not all washes in the period or month.')}</p>
+    {report.coverage && <p className="sw-biker-profile__note">{text('غسلات لم تكتمل أدلة مدتها', 'Washes without complete duration evidence')}: {report.coverage.durationMissing === null ? text('غير متاح', 'Unavailable') : formatNumber(report.coverage.durationMissing)} · {text('سجلات مستبعدة تحتاج مراجعة', 'Excluded records requiring review')}: {report.coverage.excludedSourceRecords === null ? text('غير متاح', 'Unavailable') : formatNumber(report.coverage.excludedSourceRecords)}</p>}
+    {report.rulesVersion === 'cqo-20261015-v3' && <p className="sw-biker-profile__note">{text('طوابع سويتر دليل تاريخي فقط، ولا تثبت نسيان التحديث. نقاطها السابقة مستبعدة من التقييم الحالي؛ عدم التحديث يُسجّل يدويًا.', 'Sweater timestamps are historical evidence only, not proof of forgotten updates. Their old points are excluded from the current assessment; missing updates are recorded manually.')}</p>}
     <p className="sw-biker-profile__note">{text('عينات مؤرخة، لا تغطية كاملة للشهر ولا تعديل لنجوم المصدر. المتوسطات المدورة تعطي نتائج تقريبية.',
       'Dated samples, not full-month coverage or changes to source stars. Rounded source means produce approximate results.')}</p>
     {ratings.length > 0 && <>

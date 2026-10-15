@@ -53,7 +53,7 @@ it('separates 59 washes from 16 ratings, preserves points, and explains missing 
       { key: 'lateness', points: null, weight: 5, n: null }, { key: 'statusUpdates', points: 10, weight: 10, n: 59 },
     ] };
   const review = { ...manual(), eligible: Array.from({ length: 59 }, (_, i) => ({ washId: `demo-${i}` })) };
-  render(<BikerQualitySection query={{ available: true, data: { reports: [report], manual: review }, refetch: vi.fn() }} />);
+  render(<BikerQualitySection bikerUID="demo-worker" periodKey="2026-10" today="2026-10-15" query={{ available: true, data: { reports: [report], manual: review }, refetch: vi.fn() }} />);
   const table = screen.getByRole('table', { name: 'تفصيل المعايير والأوزان المعتمدة' });
   for (const label of ['جودة الغسيل', 'السلوك']) {
     const row = within(table).getByRole('rowheader', { name: label }).closest('tr');

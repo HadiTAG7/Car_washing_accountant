@@ -11,8 +11,8 @@ const api = vi.hoisted(() => vi.fn());
 vi.mock('../../lib/bikerQualityApi', () => ({ callBikerQuality: api }));
 beforeEach(() => { state.available = true; state.loading = false; state.error = null; state.reports = []; api.mockReset(); refetch.mockReset(); });
 afterEach(cleanup);
-const props = { get query() { return { ...state, data: { reports: state.reports }, refetch }; } };
-const partial = () => ({ id: 'private-report', bikerUID: 'dummy', from: '2026-10-01', to: '2026-10-13', sourceReadDate: '2026-10-14',
+const props = { bikerUID: 'dummy', periodKey: '2026-10', today: '2026-10-15', get query() { return { ...state, data: { reports: state.reports }, refetch }; } };
+const partial = () => ({ id: 'private-report', bikerUID: 'dummy', periodKey: '2026-10', from: '2026-10-01', to: '2026-10-13', sourceReadDate: '2026-10-14',
   rulesVersion: 'cqo-20261014-v1', status: 'incomplete', finalScore: null, duration: { n: 3, points: 8, averageMinutes: 60, over50: 2 },
   components: [{ key: 'duration', weight: 10, points: 8, n: 3, reason: 'partial-sample' },
     { key: 'productivity', weight: 10, points: null, n: null, reason: 'missing-evidence' }], improvement: 'Review 2 measured exceptions.' });
@@ -22,7 +22,7 @@ it('shows incomplete final assessment and sample-only points with evidence-based
   expect(screen.getAllByText('8 / 10')).toHaveLength(2);
   expect(screen.queryByText('80 / 100')).toBeNull();
   expect(screen.getByText('Review 2 measured exceptions.')).toBeTruthy();
-  expect(screen.getByText(/لا تُرفع نقاط العينة/)).toBeTruthy();
+  expect(screen.queryByText(/لا تُرفع نقاط العينة/)).toBeNull();
   expect(api).not.toHaveBeenCalled();
 });
 it('shows a read failure, not missing report or zero score', () => {
@@ -38,11 +38,11 @@ it('publishes only on explicit admin submit, then reloads persisted results', as
   await waitFor(() => expect(refetch).toHaveBeenCalled());
   expect(api).toHaveBeenCalledWith('save', { reports: [] });
 });
-it('has English headings and makes clear this is not customer stars', () => {
+it('has an accessible English section name without a repeated visible heading or introduction', () => {
   state.reports = [partial()]; render(<LanguageContext.Provider value={{ language: 'en' }}><BikerQualitySection {...props} /></LanguageContext.Provider>);
-  expect(screen.getByText('Composite quality assessment')).toBeTruthy();
+  expect(screen.getByRole('region', { name: 'Composite quality assessment' })).toBeTruthy();
   expect(screen.getByText('Final assessment incomplete')).toBeTruthy();
-  expect(screen.getByText(/not customer stars/)).toBeTruthy();
+  expect(screen.queryByText(/not customer stars/)).toBeNull();
 });
 it('explains each missing criterion separately and renders saved partial v2 totals and dated snapshots', () => {
   state.reports = [{ ...partial(), rulesVersion: 'cqo-20261015-v2', snapshotAt: '2026-10-15T09:00:00.000Z',
@@ -72,7 +72,7 @@ it('never presents a partial 100-weight snapshot as a final /100 score', () => {
 });
 it('keeps reports readable when canonical source is unavailable, not a verified zero', () => {
   state.reports=[partial()];
-  render(<BikerQualitySection query={{...props.query,data:{reports:state.reports,source:{available:false,reason:'requires-pagination'}}}}/>);
+  render(<BikerQualitySection {...props} query={{...props.query,data:{reports:state.reports,source:{available:false,reason:'requires-pagination'}}}}/>);
   expect(screen.getAllByText('8 / 10')).toHaveLength(2);
   expect(screen.getByText('تعذّر تأكيد مصدر الغسلات؛ ليس صفراً.')).toBeTruthy();
   expect(screen.queryByRole('table',{name:'دليل الغسلات للشهر المحدد'})).toBeNull(); expect(api).not.toHaveBeenCalled();

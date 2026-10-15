@@ -26,7 +26,7 @@ function fixture() {
     improvement: 'Isolated fixture only.' };
 }
 function show(report, language = 'ar', manual) {
-  return render(<LanguageContext.Provider value={{ language }}><BikerQualitySection query={{ available: true,
+  return render(<LanguageContext.Provider value={{ language }}><BikerQualitySection bikerUID="demo-worker" periodKey="2026-10" today="2026-10-15" query={{ available: true,
     data: { reports: [report], manual }, refetch: () => {} }} /></LanguageContext.Provider>);
 }
 const row = label => screen.getByRole('rowheader', { name: label, exact: true }).closest('tr');

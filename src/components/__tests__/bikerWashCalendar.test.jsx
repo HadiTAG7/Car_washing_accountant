@@ -48,3 +48,9 @@ it('rejects an invalid period instead of rendering malformed dates', () => {
   render(<BikerWashCalendar {...props()} periodKey="2026-99" />);
   expect(screen.queryByRole('table')).toBeNull();
 });
+it.each(['ar', 'en'])('removes only the visible calendar note while preserving accessible day states (%s)', language => {
+  render(<BikerWashCalendar {...props()} language={language} />);
+  expect(document.querySelector('.sw-biker-calendar-wrap > p')).toBeNull();
+  expect(screen.getByLabelText(language === 'ar' ? '2026-10-13: 5 غسلات مسجلة' : '2026-10-13: 5 recorded washes').textContent).toBe('5');
+  expect(screen.getByLabelText(language === 'ar' ? '2026-10-15: يوم قادم' : '2026-10-15: Future day').textContent).toBe('—');
+});

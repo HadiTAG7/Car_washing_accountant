@@ -6,7 +6,7 @@ import BikerQualityEvidence from './BikerQualityEvidence';
 import BikerQualitySource from './BikerQualitySource';
 import BikerQualityManual from './BikerQualityManual';
 import BikerQualityOriginalValue from './BikerQualityOriginalValue';
-import { currentManualQualityReport } from '../lib/bikerQualitySummary';
+import { currentManualQualityReport, selectBikerQualityReport } from '../lib/bikerQualitySummary';
 
 const labels = { washQuality: ['جودة الغسيل', 'Wash quality'], behavior: ['السلوك', 'Behavior'],
   productivity: ['الإنتاجية', 'Productivity'], complaints: ['الشكاوى', 'Complaints'],
@@ -36,13 +36,14 @@ const reasons = {
   'manual-status-reviewed': ['من مراجعة يدوية مؤكدة؛ الموعد المتأثر يُحسب مرة واحدة', 'Explicitly confirmed manual review; each affected appointment counts once'],
 };
 
-export default function BikerQualitySection({ query, sectionRef }) {
+export default function BikerQualitySection({ query, sectionRef, bikerUID, periodKey, today }) {
   const { language } = useLanguage();
   const text = (ar, en) => language === 'en' ? en : ar;
   const [input, setInput] = useState('');
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState(null);
-  const reports = query.available ? query.data.reports : [];
+  const current = query.available ? selectBikerQualityReport(query.data.reports, bikerUID, periodKey, today) : null;
+  const reports = current ? [current] : [];
   const save = async event => {
     event.preventDefault();
     if (saving) return;
@@ -57,10 +58,7 @@ export default function BikerQualitySection({ query, sectionRef }) {
     } catch (error) { setFeedback({ success: false, message: error.message }); }
     finally { setSaving(false); }
   };
-  return <section ref={sectionRef} tabIndex={-1} className="sw-biker-quality">
-    <h3>{text('تقييم الجودة المركّب', 'Composite quality assessment')}</h3>
-    <p className="sw-biker-profile__note">{text('تقييم مستقل من 100، وليس نجوم العملاء من 5. لا تُرفع نقاط العينة إلى 100 ولا تُستنتج أيام الدوام من أيام الغسلات.',
-      'Separate assessment out of 100, not customer stars out of 5. Partial points are not rescaled to 100; wash days do not prove attendance.')}</p>
+  return <section ref={sectionRef} tabIndex={-1} className="sw-biker-quality" aria-label={text('تقييم الجودة المركّب', 'Composite quality assessment')}>
     {query.loading && <p role="status">{text('جارٍ تحميل تقرير الجودة…', 'Loading quality report…')}</p>}
     {query.error && <><p role="alert">{text('تعذّر قراءة تقرير الجودة؛ لا يمكن تأكيد التقييم.', 'Quality report could not be read; assessment is unconfirmed.')}</p>
       <button type="button" className="sw-button sw-button--secondary" onClick={query.refetch}>{text('إعادة المحاولة', 'Retry')}</button></>}
@@ -71,18 +69,13 @@ export default function BikerQualitySection({ query, sectionRef }) {
       const washScope = index === 0 && manual?.sourceAvailable && manual.bikerUID === report.bikerUID
         && manual.from === report.from && manual.to === report.to ? manual.eligible.length : report.coverage?.canonicalCompleted;
       return <details key={report.id} open={index === 0} className="sw-biker-quality__snapshot">
-      <summary>{index === 0 ? text('التقييم الحالي — سياسة المراجعة اليدوية', 'Current assessment — manual-review policy')
-        : text('لقطة تاريخية محفوظة — ليست درجة المراجعة اليدوية الحالية', 'Saved historical snapshot — not the current manual-review score')}</summary>
+      <summary>{text('التقييم الحالي — سياسة المراجعة اليدوية', 'Current assessment — manual-review policy')}</summary>
       <article className="sw-biker-quality__report">
       <div className="sw-biker-quality__heading"><strong>{report.status === 'complete' && Number.isFinite(report.finalScore)
         ? <>{text('التقييم النهائي', 'Final assessment')}: <bdi dir="ltr">{formatNumber(report.finalScore)} / 100</bdi></>
         : text('التقييم النهائي غير مكتمل', 'Final assessment incomplete')}</strong>
         <span>{formatDate(report.from)} — {formatDate(report.to)}</span></div>
       {report.status === 'outside-period' && <p>{text('العامل خارج فترة التقرير؛ لا توجد درجة.', 'Worker is outside the report period; no score.')}</p>}
-      <p className="sw-biker-profile__note">{text('نسخة القاعدة', 'Rule version')}: <bdi>{report.rulesVersion}</bdi> · {text('تاريخ قراءة المصدر', 'Source read date')}: {formatDate(report.sourceReadDate)}</p>
-      {report.snapshotAt && <p className="sw-biker-profile__note">{text('وقت اللقطة', 'Snapshot time')}: {new Intl.DateTimeFormat(language === 'en' ? 'en-GB' : 'ar-SA', {
-        dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Riyadh', calendar: 'gregory',
-      }).format(new Date(report.snapshotAt))}</p>}
       {index === 0 && saved.components.some(c => c.key === 'statusUpdates' && c.points !== null) && <details>
         <summary>{text('نقاط مؤشر التحديث في اللقطة التاريخية فقط', 'Status metric points in the historical snapshot only')}</summary>
         <p>{text('هذه النقاط محفوظة كدليل سابق وليست درجة عدم التحديث اليدوية الحالية.', 'These points remain saved as earlier evidence, not the current manual missing-update score.')}</p>
@@ -94,10 +87,6 @@ export default function BikerQualitySection({ query, sectionRef }) {
       <div className="sw-biker-quality__metrics"><div><span>{text('الغسلات المقاسة', 'Measured washes')}</span><strong><bdi dir="ltr">{formatNumber(report.duration.n)}{report.coverage?.canonicalCompleted !== null && report.coverage?.canonicalCompleted !== undefined ? ` / ${formatNumber(report.coverage.canonicalCompleted)}` : ''}</bdi></strong></div>
         <div><span>{text('متوسط المدة · دقيقة', 'Average duration · minutes')}</span><strong>{report.duration.averageMinutes === null ? text('غير متاح', 'Unavailable') : formatNumber(report.duration.averageMinutes)}</strong></div>
         <div><span>{text('أكثر من 50 دقيقة في العينة', 'Over 50 minutes in sample')}</span><strong>{report.duration.n ? formatNumber(report.duration.over50) : text('غير متاح', 'Unavailable')}</strong></div></div>
-      <p className="sw-biker-profile__note">{text('تغطية جزئية: المدة تخص الغسلات المقاسة فقط، ولا تثبت تغطية جميع غسلات الفترة أو الشهر.',
-        'Partial coverage: duration includes measured washes only, not all washes in the period or month.')}</p>
-      {report.coverage && <p className="sw-biker-profile__note">{text('غسلات لم تكتمل أدلة مدتها', 'Washes without complete duration evidence')}: {report.coverage.durationMissing === null ? text('غير متاح', 'Unavailable') : formatNumber(report.coverage.durationMissing)} · {text('سجلات مستبعدة تحتاج مراجعة', 'Excluded records requiring review')}: {report.coverage.excludedSourceRecords === null ? text('غير متاح', 'Unavailable') : formatNumber(report.coverage.excludedSourceRecords)}</p>}
-      {report.rulesVersion === 'cqo-20261015-v3' && <p className="sw-biker-profile__note">{text('طوابع سويتر دليل تاريخي فقط، ولا تثبت نسيان التحديث. نقاطها السابقة مستبعدة من التقييم الحالي؛ عدم التحديث يُسجّل يدويًا.', 'Sweater timestamps are historical evidence only, not proof of forgotten updates. Their old points are excluded from the current assessment; missing updates are recorded manually.')}</p>}
       <div className="sw-biker-quality__table-wrap"><table className="sw-biker-quality__criteria"><caption>{text('تفصيل المعايير والأوزان المعتمدة', 'Approved criteria and weights')}</caption>
         <thead><tr><th>{text('المعيار', 'Criterion')}</th><th>{text('القيمة الأصلية ثم نقاطنا', 'Original value, then our points')}</th><th>{text('العينة', 'Sample')}</th></tr></thead>
         <tbody>{report.components.map(c => <tr key={c.key}><th scope="row">{c.key === 'statusUpdates' ? (index === 0 ? text('عدم تحديث الحالة — مراجعة يدوية', 'Missing status updates — manual review')

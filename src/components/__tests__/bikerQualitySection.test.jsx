@@ -19,7 +19,7 @@ const partial = () => ({ id: 'private-report', bikerUID: 'dummy', from: '2026-10
 it('shows incomplete final assessment and sample-only points with evidence-based improvement', () => {
   state.reports = [partial()]; render(<BikerQualitySection {...props} />);
   expect(screen.getByText('التقييم النهائي غير مكتمل')).toBeTruthy();
-  expect(screen.getByText('8 / 10')).toBeTruthy();
+  expect(screen.getAllByText('8 / 10')).toHaveLength(2);
   expect(screen.queryByText('80 / 100')).toBeNull();
   expect(screen.getByText('Review 2 measured exceptions.')).toBeTruthy();
   expect(screen.getByText(/لا تُرفع نقاط العينة/)).toBeTruthy();
@@ -53,10 +53,10 @@ it('explains each missing criterion separately and renders saved partial v2 tota
       { key: 'complaints', weight: 10, points: null, n: 10, affected: 0, reason: 'awaiting-approved-rule' },
     ] }];
   render(<BikerQualitySection {...props} />);
-  expect(screen.getByText('39.33 / 60')).toBeTruthy();
+  expect(screen.getAllByText('18 / 30')).toHaveLength(2);
   expect(screen.getByText('عينة نجوم مدوّرة · نتيجة تقريبية')).toBeTruthy();
   expect(screen.getByText('ينقص دليل أيام العمل المثبتة')).toBeTruthy();
-  expect(screen.getByText('تنقص مراجعة صريحة لتحديثات الوصول والبدء والإنهاء')).toBeTruthy();
+  expect(screen.getByText('بانتظار المراجعة اليدوية؛ عدم الإدخال ليس مراجعة صفرية')).toBeTruthy();
   expect(screen.getByText('الأدلة محفوظة؛ بانتظار اعتماد قاعدة الخصم')).toBeTruthy();
   expect(screen.queryByText('39.33 / 100')).toBeNull(); expect(api).not.toHaveBeenCalled();
 });
@@ -67,12 +67,13 @@ it('never presents a partial 100-weight snapshot as a final /100 score', () => {
   state.reports=[report];
   render(<><BikerQualitySection {...props}/><BikerQualityMetric query={props.query} bikerUID="dummy" periodKey="2026-10" today="2026-10-15"/></>);
   expect(screen.queryByText('100 / 100')).toBeNull();
-  expect(screen.getAllByText('100 نقطة متاحة')).toHaveLength(2);
+  expect(screen.getAllByText('90 / 90')).toHaveLength(2);
+  expect(screen.queryByText('100 نقطة متاحة')).toBeNull();
 });
 it('keeps reports readable when canonical source is unavailable, not a verified zero', () => {
   state.reports=[partial()];
   render(<BikerQualitySection query={{...props.query,data:{reports:state.reports,source:{available:false,reason:'requires-pagination'}}}}/>);
-  expect(screen.getByText('8 / 10')).toBeTruthy();
+  expect(screen.getAllByText('8 / 10')).toHaveLength(2);
   expect(screen.getByText('تعذّر تأكيد مصدر الغسلات؛ ليس صفراً.')).toBeTruthy();
   expect(screen.queryByRole('table',{name:'دليل الغسلات للشهر المحدد'})).toBeNull(); expect(api).not.toHaveBeenCalled();
 });

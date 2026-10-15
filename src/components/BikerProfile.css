@@ -59,6 +59,15 @@
 .sw-biker-quality td small { display: block; font-size: .72rem; opacity: .8; margin-top: 4px; }
 .sw-biker-quality h4 { font-weight: 600; margin: 12px 0 8px; }
 .sw-biker-quality__publish textarea { display: block; width: 100%; margin: 12px 0; padding: 12px; border: 1px solid var(--sw-border-subtle); background: var(--sw-surface); color: var(--sw-text); border-radius: 12px; }
+.sw-biker-quality-manual { border: 1px solid var(--sw-border-subtle); border-radius: 14px; padding: 14px; }
+.sw-biker-quality-manual form { display: grid; gap: 12px; margin: 12px 0; }
+.sw-biker-quality-manual form > label { display: grid; gap: 8px; }
+.sw-biker-quality-manual select, .sw-biker-quality-manual textarea, .sw-biker-quality-manual input:not([type=checkbox]):not([type=radio]) { width: 100%; min-height: 44px; padding: 10px; border: 1px solid var(--sw-border-subtle); border-radius: 10px; background: var(--sw-surface); color: var(--sw-text); }
+.sw-biker-quality-manual fieldset { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--sw-border-subtle); border-radius: 10px; }
+.sw-biker-quality-manual fieldset label { display: flex; gap: 10px; align-items: center; min-height: 44px; }
+.sw-biker-quality-manual input[type=checkbox], .sw-biker-quality-manual input[type=radio] { accent-color: var(--sw-primary, #f97316); width: 20px; height: 20px; flex-shrink: 0; }
+.sw-biker-quality-manual small { display: block; margin-top: 6px; }
+.sw-biker-quality-manual button { white-space: normal; }
 .sw-biker-quality-card small { display: block; font-size: .72rem; margin-top: 6px; line-height: 1.5; }
 .sw-biker-quality-card__details { display: block; color: var(--sw-primary, #f97316); margin-top: 6px; padding: 6px 0; font-size: .8rem; text-decoration: underline; text-underline-offset: 3px; }
 .sw-biker-quality-card__details:focus-visible { outline: 2px solid var(--sw-primary, #f97316); outline-offset: 2px; border-radius: 4px; }

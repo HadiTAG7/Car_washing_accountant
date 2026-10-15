@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 import { bikerQualitySummary } from '../bikerQualitySummary.js';
+import { currentManualQualityReport } from '../bikerQualitySummary.js';
 const row = changes => ({ id: 'new', bikerUID: 'worker-a', periodKey: '2026-10', from: '2026-10-01', to: '2026-10-14',
   sourceReadDate: '2026-10-15', rulesVersion: 'cqo-20261014-v1', finalScore: null, status: 'incomplete',
   components: [{ key: 'duration', points: 9.3263, weight: 10, n: 19 }], ...changes });
@@ -9,6 +10,27 @@ it('selects the latest suitable window without combining overlapping snapshots o
     row({ id: 'future', to: '2026-10-16' }), row({ id: 'wrong-month', periodKey: '2026-09' }), row()]);
   expect(result.report.id).toBe('new'); expect(result.points).toBe(9.3263); expect(result.weight).toBe(10);
   expect(result.durationN).toBe(19); expect(result.incomplete).toBe(true);
+});
+it('excludes old timestamp points from the current total without rewriting the saved snapshot', () => {
+  const saved = row({ rulesVersion: 'cqo-20261015-v3', availablePoints: 78.41, availableWeight: 95, components: [
+    { key: 'washQuality', weight: 30, points: 23.28, n: 16 }, { key: 'behavior', weight: 20, points: 18, n: 16 },
+    { key: 'productivity', weight: 10, points: 10, n: 10 }, { key: 'complaints', weight: 10, points: 8.19, n: 58 },
+    { key: 'cancellations', weight: 5, points: 4.17, n: 59 }, { key: 'duration', weight: 10, points: 4.77, n: 58 },
+    { key: 'statusUpdates', weight: 10, points: 10, n: 59 },
+  ] });
+  const before = JSON.stringify(saved);
+  const current = currentManualQualityReport(saved, null);
+  expect(current).toMatchObject({ availablePoints: 68.41, availableWeight: 85, finalScore: null });
+  expect(current.components.find(c => c.key === 'statusUpdates').points).toBeNull();
+  expect(JSON.stringify(saved)).toBe(before);
+});
+it('accepts manual points only for the exact worker, month and reporting window', () => {
+  const saved = row({ components: [{ key: 'duration', weight: 10, points: 9, n: 4 }] });
+  const manual = { policy: 'manual-status-20261015-v1', bikerUID: saved.bikerUID, periodKey: saved.periodKey, from: saved.from, to: saved.to,
+    confirmed: true, component: { key: 'statusUpdates', weight: 10, points: 10, n: 10, coverageComplete: true } };
+  expect(currentManualQualityReport(saved, manual).availablePoints).toBe(19);
+  for (const change of [{ bikerUID: 'other' }, { periodKey: '2026-09' }, { to: '2026-10-13' }])
+    expect(currentManualQualityReport(saved, { ...manual, ...change }).availablePoints).toBe(9);
 });
 it('never falls back to an older measured snapshot when the latest one has no evidence', () => {
   const result = summarize([row({ id: 'old', to: '2026-10-13' }), row({ components: [{ key: 'duration', weight: 10, points: null, n: 0 }] })]);

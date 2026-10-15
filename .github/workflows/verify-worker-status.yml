@@ -7,6 +7,7 @@ on:
       - codex/biker-current-status-20261011
       - codex/admin-biker-profile-20261014
       - codex/biker-quality-reports-20261014
+      - codex/biker-manual-quality-20261015
   pull_request:
     paths:
       - src/components/AddBikerModal.jsx
@@ -21,6 +22,9 @@ on:
       - src/hooks/useBikerQualityReports.js
       - api/biker-quality-reports.js
       - server/bikerQualityReports.js
+      - server/bikerQualityManual.js
+      - src/components/BikerQualityManual.jsx
+      - src/lib/bikerQualitySummary.js
       - server/bikerQualityRuntime.js
       - .github/workflows/verify-worker-status.yml
 

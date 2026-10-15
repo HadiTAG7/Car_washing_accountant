@@ -4,6 +4,7 @@ import { AuthError, callerRole } from '../functions/src/handlers.js';
 import { completedCommissionWash } from '../functions/src/washCommission.js';
 import { QUALITY_V2, normalizeQualityV2, validateV2Worker, v2WashReferences } from './bikerQualityV2.js';
 import { QUALITY_V3, normalizeQualityV3, readCanonicalQualitySource, finalizeQualityV3 } from './bikerQualityV3.js';
+import { readManualReview } from './bikerQualityManual.js';
 
 export const QUALITY_COLLECTION = 'biker_quality_reports';
 export const QUALITY_RULES_VERSION = 'cqo-20261014-v1';
@@ -80,7 +81,16 @@ export async function readQualityReports(db, auth, input) {
   let source;
   try { source = await readCanonicalQualitySource(db, bikerUID, periodKey); }
   catch { source = { available: false, reason: 'read-failed' }; }
-  return { reports, source };
+  const currentDay = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Riyadh' }).format(new Date());
+  const monthEnd = new Date(Date.UTC(Number(periodKey.slice(0, 4)), Number(periodKey.slice(5, 7)), 0)).toISOString().slice(0, 10);
+  const from = reports[0]?.from || `${periodKey}-01`;
+  const to = reports[0]?.to || (monthEnd < currentDay ? monthEnd : currentDay);
+  let manual = null;
+  if (from <= to) {
+    try { manual = await readManualReview(db, auth, source, { bikerUID, periodKey, from, to }); }
+    catch { manual = { available: false, reason: 'manual-review-unavailable' }; }
+  }
+  return { reports, source, manual };
 }
 
 export async function saveQualityReports(db, auth, input) {

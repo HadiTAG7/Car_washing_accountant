@@ -6,7 +6,7 @@ export default function BikerQualityMetric({ query, bikerUID, periodKey, today, 
   const { language } = useLanguage();
   const text = (ar, en) => language === 'en' ? en : ar;
   const title = text('تقييم الجودة المركّب', 'Composite quality assessment');
-  const summary = bikerQualitySummary(query.available ? query.data?.reports : [], bikerUID, periodKey, today);
+  const summary = bikerQualitySummary(query.available ? query.data?.reports : [], bikerUID, periodKey, today, query.available ? query.data?.manual : null);
   const value = summary.points === null ? text('غير متاح', 'Unavailable')
     : summary.weight === 100 && summary.incomplete ? `${formatNumber(Math.round(summary.points * 100) / 100)} ${text('نقطة متاحة', 'available points')}`
     : `${formatNumber(Math.round(summary.points * 100) / 100)} / ${formatNumber(summary.weight)}`;

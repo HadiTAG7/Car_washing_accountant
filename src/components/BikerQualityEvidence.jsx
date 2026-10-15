@@ -23,6 +23,7 @@ export default function BikerQualityEvidence({ report, language }) {
       </tr>)}</tbody>
     </table></div>}
     {e.updates?.reviews?.some(r=>r.readStatus) && <details><summary tabIndex={0}>{text('مراجعات اكتمال الطوابع', 'Timestamp completeness reviews')}</summary>
+      <p>{text('دليل تاريخي من المصدر، وليس ملاحظات عدم تحديث يدوية أو نقاطها الحالية.', 'Historical source evidence, not manual missing-update notes or their current points.')}</p>
       <div className="sw-biker-quality__table-wrap"><table><thead><tr><th>{text('معرّف موعد سويتر', 'Sweater appointment ID')}</th><th>{text('الوصول', 'Arrival')}</th><th>{text('بدء الغسيل', 'Wash start')}</th><th>{text('انتهاء الغسيل', 'Wash end')}</th></tr></thead>
         <tbody>{e.updates.reviews.map(r=><tr key={r.washId}><td><bdi dir="ltr" translate="no">{r.appointmentId}</bdi></td>
           {r.readStatus === 'unreadable' ? <td colSpan={3}>{text('تعذّرت قراءة المصدر', 'Source could not be read')}: <span dir="auto">{r.reason}</span></td>

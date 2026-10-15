@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useLanguage } from '../i18n/useLanguage';
 import { callBikerQuality } from '../lib/bikerQualityApi';
 import { formatDate, formatNumber } from '../data/initialData';
-import BikerQualityEvidence from './BikerQualityEvidence';
 import BikerQualitySource from './BikerQualitySource';
 import BikerQualityManual from './BikerQualityManual';
 import BikerQualityOriginalValue from './BikerQualityOriginalValue';
@@ -106,11 +105,6 @@ export default function BikerQualitySection({ query, sectionRef, bikerUID, perio
           </> : c.n === null ? '—' : formatNumber(c.n)}{c.unit === 'work-days' && <small>{text('أيام عمل مثبتة', 'Verified working days')}</small>}
             {c.unit === 'wash-days' && <small>{text('أيام وجود غسلات', 'Days with washes')}</small>}
             {c.unit === 'reviewed-washes' && <small>{text('غسلات مراجعة صراحة', 'Explicitly reviewed washes')}</small>}</td></tr>)}</tbody></table></div>
-      <BikerQualityEvidence report={report} language={language} />
-      <details><summary tabIndex={0}>{text('طريقة حساب المدة', 'Duration calculation')}</summary>
-        <p>{text('تُحسب نقاط كل غسلة أولاً: 10 نقاط، وخصم 0.2 لكل دقيقة فوق 50، بحد أدنى صفر؛ ثم يؤخذ متوسط نقاط الغسلات المقاسة.',
-          'Score each wash first: 10 points less 0.2 per minute above 50, with a floor of zero; then average measured wash points.')}</p></details>
-      <h4>{text('خطوة التحسين', 'Improvement step')}</h4><p dir="auto" translate="no">{report.improvement}</p>
     </article></details>;
     })}
     <BikerQualityManual manual={query.available ? query.data.manual : null} language={language} onReload={query.refetch} />

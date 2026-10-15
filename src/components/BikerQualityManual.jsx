@@ -1,6 +1,5 @@
 import { useRef, useState } from 'react';
 import { callBikerQuality } from '../lib/bikerQualityApi';
-import { formatDate, formatNumber } from '../data/initialData';
 
 const stageNames = { arrival: ['الوصول', 'Arrival'], start: ['بدء الغسيل', 'Wash start'], end: ['إنهاء الغسيل', 'Wash end'] };
 export default function BikerQualityManual({ manual, language, onReload }) {
@@ -35,13 +34,8 @@ export default function BikerQualityManual({ manual, language, onReload }) {
     finally { setSaving(false); }
   };
   return <section className="sw-biker-quality-manual" aria-label={text('عدم تحديث الحالة — مراجعة يدوية', 'Missing status updates — manual review')}>
-    <h4>{text('عدم تحديث الحالة — مراجعة يدوية', 'Missing status updates — manual review')}</h4>
-    <p>{text('يسجل الأدمن الملاحظات فقط؛ نقص طوابع سويتر لا يُنشئ مخالفة تلقائية. كل موعد يُحسب مرة واحدة مهما تعددت المراحل.', 'Only admin-entered notes count; missing Sweater timestamps never create an automatic case. Each appointment counts once, regardless of stages.')}</p>
     {!available ? <p role="status">{text('تعذّر تحميل نطاق المراجعة اليدوية؛ لا توجد نقاط مؤكدة.', 'Manual review scope is unavailable; no points are confirmed.')}</p> : <>
-      <p>{formatDate(manual.from)} — {formatDate(manual.to)} · {text('نطاق الغسلات المؤهل', 'Eligible wash scope')}: {formatNumber(manual.eligible.length)}</p>
       {(manual.unlinkedWashes > 0 || manual.unresolvedNotes > 0) && <p role="alert">{text('توجد غسلات بلا معرّف موعد أو ملاحظات تغيّر ربطها؛ لا يمكن تأكيد التغطية قبل مراجعتها.', 'Some washes lack an appointment ID or notes no longer match their links. Coverage cannot be confirmed until reviewed.')}</p>}
-      <p role="status"><span>{manual.confirmed ? text('مراجعة الفترة مؤكدة يدويًا', 'Period review explicitly confirmed') : text('بانتظار المراجعة اليدوية', 'Awaiting manual review')}</span>
-        {' · '}{text('غسلات خارج التغطية المؤكدة تحتاج مراجعة', 'Washes outside confirmed coverage requiring review')}: {formatNumber(manual.pendingWashes)}</p>
       <details open={editorOpen} onToggle={event => setEditorOpen(event.currentTarget.open)}><summary>{text('تسجيل عدم تحديث', 'Record a missing status update')}</summary>
         <form onSubmit={event => { event.preventDefault(); submit(editing ? 'manual-correct' : 'manual-note', { washId, stages, note, ...(editing ? { correctionReason } : {}) }); }}>
           <label>{text('الغسلة المرتبطة بالعامل والفترة', 'Wash linked to this worker and period')}

@@ -28,7 +28,8 @@ it('does not turn empty notes into a zero-case confirmation without an explicit 
   api.mockResolvedValue({ revision: 1 }); render(<BikerQualityManual manual={manual()} language="ar" onReload={vi.fn()} />);
   const button = screen.getByRole('button', { name: 'تأكيد المراجعة اليدوية' });
   expect(button.disabled).toBe(true);
-  expect(screen.getByText('بانتظار المراجعة اليدوية')).toBeTruthy();
+  expect(screen.queryByText('بانتظار المراجعة اليدوية')).toBeNull();
+  expect(screen.getByText('لا توجد ملاحظات مدخلة؛ هذا لا يعني تأكيد عدم وجود حالات.')).toBeTruthy();
   fireEvent.click(screen.getByLabelText('راجعت النطاق وأؤكد عدم وجود حالات عدم تحديث')); fireEvent.click(button);
   await waitFor(() => expect(api).toHaveBeenCalledWith('manual-confirm', expect.objectContaining({ acknowledged: true, noCases: true, cohortHash: 'a'.repeat(64) })));
 });
@@ -67,7 +68,8 @@ it('separates 59 washes from 16 ratings, preserves points, and explains missing 
 });
 it('supports the manual form in English and does not render a form when the source is unavailable', () => {
   const view = render(<LanguageContext.Provider value={{ language: 'en' }}><BikerQualityManual manual={manual()} language="en" onReload={vi.fn()} /></LanguageContext.Provider>);
-  expect(screen.getByText('Awaiting manual review')).toBeTruthy();
+  expect(screen.getByRole('region', { name: 'Missing status updates — manual review' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Confirm manual review' }).disabled).toBe(true);
   view.rerender(<BikerQualityManual manual={{ available: false }} language="en" onReload={vi.fn()} />);
   expect(screen.queryByRole('button', { name: 'Confirm manual review' })).toBeNull(); expect(api).not.toHaveBeenCalled();
 });

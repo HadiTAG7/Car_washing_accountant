@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it } from 'vitest';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import { LanguageContext } from '../../i18n/LanguageContext';
 import BikerQualitySection from '../BikerQualitySection';
 
@@ -118,7 +118,8 @@ it('retains partial coverage and does not infer absent duration or productivity 
   expect(within(row('مدة الغسلة')).getByText('غير متاح')).toBeTruthy();
   expect(within(row('الإنتاجية')).getByText('غير متاح')).toBeTruthy();
   expect(within(row('مدة الغسلة')).getByText('تغطية الدليل جزئية لهذا المعيار')).toBeTruthy();
-  expect(screen.getByText(/غسلات لم تكتمل أدلة مدتها/).textContent).toContain('1');
+  expect(screen.queryByText(/غسلات لم تكتمل أدلة مدتها/)).toBeNull();
+  expect(report.coverage.durationMissing).toBe(1);
 });
 
 it('does not show manual zero from an unconfirmed or differently scoped review', () => {
@@ -128,8 +129,9 @@ it('does not show manual zero from an unconfirmed or differently scoped review',
   expect(within(row('عدم تحديث الحالة — مراجعة يدوية')).getByText('غير متاح')).toBeTruthy();
 });
 
-it.each(['ar', 'en'])('keeps the selected rows compact and moves their methodology into source details (%s)', language => {
+it.each(['ar', 'en'])('keeps the selected rows compact without the removed source-details UI (%s)', language => {
   const report = fixture(); report.coverage.criteria.productivity = false; report.coverage.criteria.complaints = false;
+  const before = JSON.stringify(report);
   show(report, language);
   const ar = language === 'ar';
   const wash = row(ar ? 'جودة الغسيل' : 'Wash quality');
@@ -156,15 +158,8 @@ it.each(['ar', 'en'])('keeps the selected rows compact and moves their methodolo
   expect(complaints.textContent).not.toContain(ar ? 'الحالات المؤهلة' : 'Eligible attributed');
   expect(complaints.textContent).not.toContain(ar ? 'نسبة مؤهلة' : 'Eligible attributed rate');
   expect(complaints.textContent).not.toContain(ar ? 'تغطية الدليل جزئية' : 'Evidence coverage');
-  const details = screen.getByText(ar ? 'تفاصيل مصدر التقييم' : 'Assessment source details').closest('details');
-  expect(details.open).toBe(false);
-  fireEvent.click(within(details).getByText(ar ? 'تفاصيل مصدر التقييم' : 'Assessment source details'));
-  expect(details.open).toBe(true);
-  expect(details.textContent).toContain(ar ? 'النطاق لا يعني فحص' : 'Scope does not mean');
-  expect(details.textContent).toContain(ar ? 'متوسط النجوم المحفوظ' : 'Saved source star mean');
-  expect(details.textContent).toContain(ar ? 'الغسلات ÷ أيام' : 'Washes ÷ days');
-  expect(details.textContent).toContain(ar ? 'نسبة مؤهلة' : 'Eligible attributed rate');
-  expect(details.textContent).toContain(ar ? 'تغطية الدليل جزئية' : 'Evidence coverage');
+  expect(screen.queryByText(ar ? 'تفاصيل مصدر التقييم' : 'Assessment source details')).toBeNull();
+  expect(JSON.stringify(report)).toBe(before);
   // Other rows and the general incomplete warning are deliberately outside this cleanup.
   expect(row(ar ? 'الإلغاء' : 'Cancellations').textContent).toContain(ar ? 'الحالات المؤهلة' : 'Eligible attributed');
   expect(row(ar ? 'التأخر' : 'Lateness').textContent).toContain(ar ? 'بيانات التأخر للفترة غير مكتملة' : 'Source lateness data for this period is incomplete');

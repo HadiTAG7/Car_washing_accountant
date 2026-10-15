@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { LanguageContext } from '../../i18n/LanguageContext';
 import BikerQualitySection from '../BikerQualitySection';
 import BikerQualityMetric from '../BikerQualityMetric';
+import BikerQualityEvidence from '../BikerQualityEvidence';
 
 const state = vi.hoisted(() => ({ available: true, loading: false, error: null, reports: [] }));
 const refetch = vi.hoisted(() => vi.fn());
@@ -16,12 +17,13 @@ const partial = () => ({ id: 'private-report', bikerUID: 'dummy', periodKey: '20
   rulesVersion: 'cqo-20261014-v1', status: 'incomplete', finalScore: null, duration: { n: 3, points: 8, averageMinutes: 60, over50: 2 },
   components: [{ key: 'duration', weight: 10, points: 8, n: 3, reason: 'partial-sample' },
     { key: 'productivity', weight: 10, points: null, n: null, reason: 'missing-evidence' }], improvement: 'Review 2 measured exceptions.' });
-it('shows incomplete final assessment and sample-only points with evidence-based improvement', () => {
+it('shows incomplete final assessment and sample-only points without rendering saved improvement', () => {
   state.reports = [partial()]; render(<BikerQualitySection {...props} />);
   expect(screen.getByText('التقييم النهائي غير مكتمل')).toBeTruthy();
   expect(screen.getAllByText('8 / 10')).toHaveLength(2);
   expect(screen.queryByText('80 / 100')).toBeNull();
-  expect(screen.getByText('Review 2 measured exceptions.')).toBeTruthy();
+  expect(screen.queryByText('Review 2 measured exceptions.')).toBeNull();
+  expect(state.reports[0].improvement).toBe('Review 2 measured exceptions.');
   expect(screen.queryByText(/لا تُرفع نقاط العينة/)).toBeNull();
   expect(api).not.toHaveBeenCalled();
 });
@@ -44,7 +46,7 @@ it('has an accessible English section name without a repeated visible heading or
   expect(screen.getByText('Final assessment incomplete')).toBeTruthy();
   expect(screen.queryByText(/not customer stars/)).toBeNull();
 });
-it('explains each missing criterion separately and renders saved partial v2 totals and dated snapshots', () => {
+it('explains each missing criterion separately and preserves saved partial v2 totals without source details', () => {
   state.reports = [{ ...partial(), rulesVersion: 'cqo-20261015-v2', snapshotAt: '2026-10-15T09:00:00.000Z',
     availablePoints: 39.33, availableWeight: 60, components: [
       { key: 'washQuality', weight: 30, points: 18, n: 4, approximate: true, reason: 'partial-rounded-rating-sample' },
@@ -54,7 +56,8 @@ it('explains each missing criterion separately and renders saved partial v2 tota
     ] }];
   render(<BikerQualitySection {...props} />);
   expect(screen.getAllByText('18 / 30')).toHaveLength(2);
-  expect(screen.getByText('عينة نجوم مدوّرة · نتيجة تقريبية')).toBeTruthy();
+  expect(screen.queryByText('عينة نجوم مدوّرة · نتيجة تقريبية')).toBeNull();
+  expect(state.reports[0].components[0].approximate).toBe(true);
   expect(screen.getByText('ينقص دليل أيام العمل المثبتة')).toBeTruthy();
   expect(screen.getByText('بانتظار المراجعة اليدوية؛ عدم الإدخال ليس مراجعة صفرية')).toBeTruthy();
   expect(screen.getByText('الأدلة محفوظة؛ بانتظار اعتماد قاعدة الخصم')).toBeTruthy();
@@ -82,7 +85,8 @@ it('renders unreadable SSP events as source gaps, never missing recorded timesta
     washId:'dummy-wash',appointmentId:'S-DEMO',serviceDate:'2026-10-12',readStatus:'unreadable',reason:'Isolated unavailable detail',
     source:{reference:'Fixture only',hash:'a'.repeat(64),readDate:'2026-10-14'},
   }]}}}];
-  render(<BikerQualitySection {...props}/>);
+  // The stored evidence renderer is retained, but no longer mounted in the profile UI.
+  render(<BikerQualityEvidence report={state.reports[0]} language="ar"/>);
   expect(screen.getByText('تعذّرت قراءة المصدر:')).toBeTruthy(); expect(screen.queryByText('غير مسجّل')).toBeNull();
   expect(api).not.toHaveBeenCalled();
 });

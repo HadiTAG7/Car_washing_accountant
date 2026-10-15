@@ -19,7 +19,8 @@ export function currentManualQualityReport(report, manual) {
   const availableWeight = known.reduce((sum, c) => sum + c.weight, 0);
   const availablePoints = known.length ? Math.round(known.reduce((sum, c) => sum + c.points, 0) * 100) / 100 : null;
   const complete = report.rulesVersion === 'cqo-20261015-v3' && matches && manual.confirmed && availableWeight === 100
-    && report.coverage?.sourceAvailable && !report.coverage?.excludedSourceRecords && !report.evidence?.gaps?.length
+    && report.coverage?.sourceAvailable && report.coverage?.cohortHash === manual.cohortHash
+    && !report.coverage?.excludedSourceRecords && !report.evidence?.gaps?.length
     && components.every(c => c.n > 0 && (c.key === 'statusUpdates' ? c.coverageComplete : report.coverage?.criteria?.[c.key]));
   return { ...report, components, availableWeight, availablePoints, finalScore: complete ? availablePoints : null,
     status: report.status === 'outside-period' ? report.status : complete ? 'complete' : 'incomplete', manualPolicyApplied: true };

@@ -64,6 +64,9 @@ export default function BikerQualitySection({ query, sectionRef }) {
     {query.available && reports.length === 0 && <p>{text('لا يوجد تقرير جودة محفوظ لهذا الشهر.', 'No quality report is saved for this month.')}</p>}
     {reports.map((saved, index) => {
       const report = index === 0 ? currentManualQualityReport(saved, query.data?.manual) : saved;
+      const manual = query.data?.manual;
+      const washScope = index === 0 && manual?.sourceAvailable && manual.bikerUID === report.bikerUID
+        && manual.from === report.from && manual.to === report.to ? manual.eligible.length : report.coverage?.canonicalCompleted;
       return <details key={report.id} open={index === 0} className="sw-biker-quality__snapshot">
       <summary>{index === 0 ? text('التقييم الحالي — سياسة المراجعة اليدوية', 'Current assessment — manual-review policy')
         : text('لقطة تاريخية محفوظة — ليست درجة المراجعة اليدوية الحالية', 'Saved historical snapshot — not the current manual-review score')}</summary>
@@ -104,7 +107,7 @@ export default function BikerQualitySection({ query, sectionRef }) {
             {c.unreadable > 0 && <small>{text('قراءات متعذرة مستبعدة', 'Excluded unreadable reviews')}: {formatNumber(c.unreadable)}</small>}
             {c.key !== 'statusUpdates' && report.coverage?.criteria?.[c.key] === false && c.points !== null && <small>{text('تغطية الدليل جزئية لهذا المعيار', 'Evidence coverage for this criterion is partial')}</small>}</td>
           <td>{['washQuality', 'behavior'].includes(c.key) ? <>
-            <small>{text('نطاق المراجعة', 'Review scope')}: {report.coverage?.canonicalCompleted == null ? text('غير متاح', 'Unavailable') : `${formatNumber(report.coverage.canonicalCompleted)} ${text('غسلة', 'washes')}`}</small>
+            <small>{text('نطاق المراجعة', 'Review scope')}: {washScope == null ? text('غير متاح', 'Unavailable') : `${formatNumber(washScope)} ${text('غسلة', 'washes')}`}</small>
             <small>{text('تقييمات العملاء الفعلية', 'Actual customer ratings')}: {c.n == null ? text('غير متاح', 'Unavailable') : formatNumber(c.n)}</small>
             <small>{text('النطاق لا يعني فحص كل خدمة أو اختلاق نجوم لغير المقيّم', 'Scope does not mean every service was inspected or unrated washes received invented stars')}</small>
           </> : c.n === null ? '—' : formatNumber(c.n)}{c.unit === 'work-days' && <small>{text('أيام عمل مثبتة', 'Verified working days')}</small>}

@@ -51,7 +51,8 @@ it('separates 59 washes from 16 ratings, preserves points, and explains missing 
       { key: 'washQuality', points: 23.28, weight: 30, n: 16 }, { key: 'behavior', points: 18, weight: 20, n: 16 },
       { key: 'lateness', points: null, weight: 5, n: null }, { key: 'statusUpdates', points: 10, weight: 10, n: 59 },
     ] };
-  render(<BikerQualitySection query={{ available: true, data: { reports: [report], manual: manual() }, refetch: vi.fn() }} />);
+  const review = { ...manual(), eligible: Array.from({ length: 59 }, (_, i) => ({ washId: `demo-${i}` })) };
+  render(<BikerQualitySection query={{ available: true, data: { reports: [report], manual: review }, refetch: vi.fn() }} />);
   const table = screen.getByRole('table', { name: 'تفصيل المعايير والأوزان المعتمدة' });
   for (const label of ['جودة الغسيل', 'السلوك']) {
     const row = within(table).getByRole('rowheader', { name: label }).closest('tr');

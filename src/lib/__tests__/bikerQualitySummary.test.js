@@ -32,6 +32,15 @@ it('accepts manual points only for the exact worker, month and reporting window'
   for (const change of [{ bikerUID: 'other' }, { periodKey: '2026-09' }, { to: '2026-10-13' }])
     expect(currentManualQualityReport(saved, { ...manual, ...change }).availablePoints).toBe(9);
 });
+it('does not call an old report final when the manually reviewed canonical cohort changes', () => {
+  const weights = { washQuality: 30, behavior: 20, productivity: 10, complaints: 10, cancellations: 5, lateness: 5, duration: 10, statusUpdates: 10 };
+  const saved = row({ rulesVersion: 'cqo-20261015-v3', components: Object.entries(weights).map(([key, weight]) => ({ key, weight, points: weight, n: 8 })),
+    coverage: { sourceAvailable: true, cohortHash: 'a'.repeat(64), criteria: Object.fromEntries(Object.keys(weights).map(k => [k, true])) } });
+  const manual = { policy: 'manual-status-20261015-v1', bikerUID: saved.bikerUID, periodKey: saved.periodKey, from: saved.from, to: saved.to,
+    cohortHash: 'a'.repeat(64), confirmed: true, component: { key: 'statusUpdates', weight: 10, points: 10, n: 8, coverageComplete: true } };
+  expect(currentManualQualityReport(saved, manual).finalScore).toBe(100);
+  expect(currentManualQualityReport(saved, { ...manual, cohortHash: 'b'.repeat(64) }).finalScore).toBeNull();
+});
 it('never falls back to an older measured snapshot when the latest one has no evidence', () => {
   const result = summarize([row({ id: 'old', to: '2026-10-13' }), row({ components: [{ key: 'duration', weight: 10, points: null, n: 0 }] })]);
   expect(result.points).toBeNull(); expect(result.weight).toBeNull(); expect(result.report.id).toBe('new');

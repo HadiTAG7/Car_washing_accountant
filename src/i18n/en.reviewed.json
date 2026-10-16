@@ -1,4 +1,11 @@
 {
+  "تشمل رواتب تقديرية حتى اعتماد المسير · قبل رسوم الإدارة والإشراف": "Includes estimated salaries until payroll approval · before management and supervision fees",
+  "متوسط غسلات البايكر": "Average washes per biker",
+  "توجد غسلات بلا ربط عامل مؤكّد": "Some washes lack a confirmed worker link",
+  "يوميًا · على أيام الغسيل الفعلية لكل بايكر": "Daily · based on each biker’s actual wash days",
+  "لا توجد تقييمات عملاء صالحة في حجوزات الشهر المستوردة": "No valid customer ratings in this month’s imported bookings",
+  "لم تصل مراجع تكتات في عينة الشهر؛ هذا لا يعني عدم وجود تكتات": "No ticket references in this month’s sample; this does not mean there are no tickets",
+  "المتوسط اليومي للبايكر = الغسلات ÷ مجموع أيام الغسيل لكل بايكر": "Daily biker average = washes ÷ the sum of each biker’s wash days",
 "حقول غير مسموحة.": "Unsupported fields.",
 "المبلغ يجب أن يكون موجباً وبدقة هللتين.": "The amount must be positive, with no more than two decimal places.",
 "تاريخ المصروف غير صالح؛ صحح التاريخ صراحةً.": "The expense date is invalid; explicitly correct the date.",

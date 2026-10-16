@@ -58,19 +58,18 @@ export function ManagementOverview({ onNavigate }) {
     finally { setBackupBusy(false); }
   }
   const action = (ar, en, tab) => <button type="button" className="sw-overview__link" onClick={() => navigate(tab)}>{text(ar, en)}<ArrowUpRight size={16} aria-hidden="true" /></button>;
-  const financeNote = finance.loading ? text('جارٍ تحميل القائمة والرواتب…', 'Loading statement and payroll…')
-    : !st ? text('تعذّر تأكيد الأرقام المالية؛ أعد المحاولة أو راجع قائمة الدخل.', 'Financial figures could not be confirmed. Retry or review the income statement.')
-      : text('نفس قائمة الدخل: تشمل الرواتب المستحقة، ولا تتكرر عند السداد. رأس المال ليس إيرادًا.', 'Matches the income statement: accrued salaries are included once, even after payment. Capital is not revenue.');
   const financialCards = [
     { key: 'netRevenue', label: text('صافي الإيرادات', 'Net revenue'), icon: TrendingUp, tone: 'green', note: text('بعد المرتجعات، دون ضريبة المخرجات', 'After returns, excluding output VAT') },
-    { key: 'totalCosts', label: text('المصروفات والتكاليف', 'Expenses and costs'), icon: Receipt, tone: 'orange', note: text('تشمل الرواتب المستحقة · قبل رسوم الإدارة والإشراف', 'Includes accrued salaries · before management and supervision fees') },
+    { key: 'totalCosts', label: text('المصروفات والتكاليف', 'Expenses and costs'), icon: Receipt, tone: 'orange', note: st?.salaryAccrual?.estimated
+      ? text('تشمل رواتب تقديرية حتى اعتماد المسير · قبل رسوم الإدارة والإشراف', 'Includes estimated salaries until payroll approval · before management and supervision fees')
+      : text('تشمل الرواتب المستحقة · قبل رسوم الإدارة والإشراف', 'Includes accrued salaries · before management and supervision fees') },
     { key: 'netProfit', label: text('صافي الربح', 'Net profit'), icon: Wallet, tone: st?.netProfit < 0 ? 'amber' : 'green', note: text('بعد التكاليف ورسوم الإدارة والإشراف', 'After costs, management and supervision fees') },
   ];
-  const detailRows = detail?.kind === 'day' ? detail.rows : detail?.kind === 'month' ? ops?.rows
+  const detailRows = detail?.kind === 'day' ? detail.rows : ['month', 'bikerAverage'].includes(detail?.kind) ? ops?.rows
     : detail?.kind === 'yesterday' ? ops?.yesterdayRows : detail?.kind === 'ratings' ? q?.rated
       : detail?.kind === 'low' ? q?.low : detail?.kind === 'tickets' ? q?.rows.filter(row => row.ticketRef?.trim())
         : detail?.kind === 'workers' ? workers.bikers.filter(isOverviewWorkingBiker) : [];
-  const isWashDetail = ['day', 'month', 'yesterday'].includes(detail?.kind);
+  const isWashDetail = ['day', 'month', 'yesterday', 'bikerAverage'].includes(detail?.kind);
   return <>
     <TopBar title={text('نظرة عامة', 'Overview')} subtitle={text('صورة المشروع: المال، التشغيل والجودة', 'Your business at a glance: finance, operations and quality')}
       actions={canMutate && isFirebaseConfigured ? <button type="button" onClick={backup} disabled={backupBusy}
@@ -90,17 +89,15 @@ export function ManagementOverview({ onNavigate }) {
           value={st ? formatCurrencyPrecise(st[key]) : finance.loading ? '…' : unavailable} note={note} disabled={!st}
           onClick={() => setDetail({ kind: 'financial', key })}
           comparison={st && finance.previous ? `${text('التغير عن الشهر السابق', 'Change from previous month')}: ${formatCurrencyPrecise(st[key] - finance.previous[key])}` : null} />)}</div>
-        <div className="sw-overview__source-note" role={finance.error ? 'alert' : undefined}><p>{financeNote}</p>
-          {st && <p>{text('الرسوم المحتسبة', 'Calculated fees')}: {formatCurrencyPrecise(st.totalFees)} · {text('الرواتب المحتسبة', 'Recognized salaries')}: {st.salaryAccrual ? formatCurrencyPrecise(st.salaryAccrual.amount) : unavailable}
-            {st.salaryAccrual?.estimated && ` · ${text('الرواتب تقديرية حتى اعتماد المسير', 'Salaries are estimated until payroll is approved')}`}</p>}
-          <p>{text('المقارنة المالية للشهور المكتملة فقط؛ لا نقارن شهرًا جاريًا بشهر كامل أو نوزّع الرواتب تقديريًا على الأيام.', 'Financial comparisons are shown only for completed months; current-month figures are not compared with a full month or daily-prorated salaries.')}</p>
+        {(!st || st.issues?.length > 0) && <div className="sw-overview__source-note" role={finance.error ? 'alert' : undefined}>
+          {!st && <p>{finance.loading ? text('جارٍ تحميل القائمة والرواتب…', 'Loading statement and payroll…') : text('تعذّر تأكيد الأرقام المالية؛ أعد المحاولة أو راجع قائمة الدخل.', 'Financial figures could not be confirmed. Retry or review the income statement.')}</p>}
           {st?.issues?.length > 0 && <p role="alert">{text('تنبيه: الأرقام تستبعد سجلات ببيانات ضريبية غير محسومة؛ افتح التفاصيل قبل الاعتماد عليها.', 'Warning: figures exclude records with unresolved tax data. Open the details before relying on them.')}</p>}
-          {finance.error && <button type="button" className="sw-overview__link" onClick={data.retry}>{text('إعادة المحاولة', 'Retry')}</button>}</div>
+          {finance.error && <button type="button" className="sw-overview__link" onClick={data.retry}>{text('إعادة المحاولة', 'Retry')}</button>}</div>}
       </section>
 
       <section aria-labelledby="overview-operations-title" className="sw-overview__section">
         <SectionHeader title={<span id="overview-operations-title">{text('حركة التشغيل', 'Operations')}</span>} subtitle={text('الغسلات المكتملة المسجلة، وليست الحجوزات الخام أو إثبات اكتمال الاستيراد.', 'Recorded completed washes, not raw bookings or proof of import completeness.')} action={action('فتح الغسلات', 'Open washes', 'washes')} />
-        <div className="sw-overview__metric-grid">
+        <div className="sw-overview__metric-grid sw-overview__operations-grid">
           <Metric icon={CalendarDays} label={text('غسلات أمس', 'Yesterday’s washes')} value={washReady ? number(ops.yesterdayQuantity) : unavailable}
             note={ops ? date(ops.yesterday) : ''} disabled={!washReady} onClick={() => setDetail({ kind: 'yesterday', title: text('غسلات أمس', 'Yesterday’s washes') })} />
           <Metric icon={CheckCircle2} label={text('غسلات الشهر', 'Monthly washes')} value={washReady ? number(ops.quantity) : unavailable} disabled={!washReady}
@@ -108,6 +105,10 @@ export function ManagementOverview({ onNavigate }) {
             comparison={washReady ? `${text('الفترة المقارنة', 'Comparison window')}: ${date(ops.previousFrom)} — ${date(ops.previousTo)} · ${number(ops.previousQuantity)}` : null} />
           <Metric icon={Activity} label={text('المتوسط', 'Average')} value={washReady ? number(ops.average) : unavailable} disabled={!washReady}
             note={text('غسلة لكل يوم فيه غسلات فعلًا', 'Washes per day with recorded washes')} onClick={() => setDetail({ kind: 'month', title: text('المتوسط وأيام الغسيل', 'Average and wash days') })} />
+          <Metric icon={Bike} label={text('متوسط غسلات البايكر', 'Average washes per biker')} value={washReady ? number(ops.averagePerBikerDay) : unavailable}
+            disabled={!washReady || ops?.averagePerBikerDay == null}
+            note={ops?.unlinkedBikerWashes ? text('توجد غسلات بلا ربط عامل مؤكّد', 'Some washes lack a confirmed worker link') : text('يوميًا · على أيام الغسيل الفعلية لكل بايكر', 'Daily · based on each biker’s actual wash days')}
+            onClick={() => setDetail({ kind: 'bikerAverage', title: text('متوسط غسلات البايكر', 'Average washes per biker') })} />
           <Metric icon={Bike} label={text('البايكر العاملون', 'Working bikers')} value={workerReady ? number(ops?.working) : unavailable} disabled={!workerReady}
             note={text('الحالة الحالية المسجلة، وليس حضور الشهر', 'Current recorded status, not monthly attendance')} onClick={() => setDetail({ kind: 'workers', title: text('البايكر العاملون حاليًا', 'Currently working bikers') })} />
         </div>
@@ -126,11 +127,11 @@ export function ManagementOverview({ onNavigate }) {
         <SectionHeader title={<span id="overview-quality-title">{text('الجودة وتجربة العميل', 'Quality and customer experience')}</span>} subtitle={text('عينة الحجوزات المستوردة للشهر المحدد؛ ليست سجل التكتات الكامل ولا تقييم الجودة المركّب للبايكر.', 'Imported bookings for the selected month; not the complete ticket register or the biker’s composite quality assessment.')} action={action('سجل البايكر', 'Biker registry', 'bikers')} />
         <div className="sw-overview__metric-grid">
           <Metric icon={Star} tone="amber" label={text('تقييم العملاء', 'Customer rating')} value={qualityReady && q.average !== null ? `${number(q.average)} / 5` : unavailable}
-            note={text('من تقييمات فعلية في العينة المقروءة', 'From actual ratings in the read sample')} disabled={!qualityReady || !q?.rated.length} onClick={() => setDetail({ kind: 'ratings', title: text('تقييمات العملاء', 'Customer ratings') })} />
+            note={qualityReady && !q.rated.length ? text('لا توجد تقييمات عملاء صالحة في حجوزات الشهر المستوردة', 'No valid customer ratings in this month’s imported bookings') : text('من تقييمات فعلية في العينة المقروءة', 'From actual ratings in the read sample')} disabled={!qualityReady || !q?.rated.length} onClick={() => setDetail({ kind: 'ratings', title: text('تقييمات العملاء', 'Customer ratings') })} />
           <Metric icon={Star} label={text('عدد التقييمات', 'Ratings count')} value={qualityReady ? number(q.rated.length) : unavailable}
             note={qualityReady ? `${text('الحجوزات المقروءة', 'Read bookings')}: ${number(q.rows.length)}` : ''} disabled={!qualityReady} onClick={() => setDetail({ kind: 'ratings', title: text('تقييمات العملاء', 'Customer ratings') })} />
           <Metric icon={Ticket} tone="orange" label={text('مراجع التكتات', 'Ticket references')} value={qualityReady && q.tickets.length ? number(q.tickets.length) : unavailable}
-            note={text('غياب المرجع لا يثبت عدم وجود تكت', 'No reference does not prove there are no tickets')} disabled={!qualityReady || !q?.tickets.length} onClick={() => setDetail({ kind: 'tickets', title: text('مراجع التكتات المتاحة', 'Available ticket references') })} />
+            note={qualityReady && !q.tickets.length ? text('لم تصل مراجع تكتات في عينة الشهر؛ هذا لا يعني عدم وجود تكتات', 'No ticket references in this month’s sample; this does not mean there are no tickets') : text('غياب المرجع لا يثبت عدم وجود تكت', 'No reference does not prove there are no tickets')} disabled={!qualityReady || !q?.tickets.length} onClick={() => setDetail({ kind: 'tickets', title: text('مراجع التكتات المتاحة', 'Available ticket references') })} />
           <Metric icon={Activity} tone="amber" label={text('تقييمات أقل من 4', 'Ratings below 4')} value={qualityReady ? number(q.low.length) : unavailable}
             note={text('للمراجعة، وليس حكمًا على العامل', 'For review, not a judgment on a worker')} disabled={!qualityReady} onClick={() => setDetail({ kind: 'low', title: text('تقييمات تحتاج مراجعة', 'Ratings to review') })} />
         </div>
@@ -169,6 +170,7 @@ export function ManagementOverview({ onNavigate }) {
       <header><h2>{detail.title}</h2><button type="button" aria-label={text('إغلاق التفاصيل', 'Close details')} onClick={() => setDetail(null)}><X size={20} /></button></header>
       <p><bdi dir="ltr">{detail.kind === 'yesterday' ? ops?.yesterday : periodKey}</bdi> · {text('سجلات مقروءة فقط', 'Read records only')}</p>
       {detail.kind === 'month' && <p>{text('المتوسط = الغسلات ÷ الأيام التي فيها غسلات', 'Average = washes ÷ days with washes')}: <bdi dir="ltr">{number(ops.quantity)} ÷ {number(ops.washDays)} = {number(ops.average)}</bdi></p>}
+      {detail.kind === 'bikerAverage' && <p>{text('المتوسط اليومي للبايكر = الغسلات ÷ مجموع أيام الغسيل لكل بايكر', 'Daily biker average = washes ÷ the sum of each biker’s wash days')}: <bdi dir="ltr">{number(ops.quantity)} ÷ {number(ops.bikerWashDays)} = {number(ops.averagePerBikerDay)}</bdi></p>}
       {!detailRows?.length ? <p>{text('لا توجد سجلات ضمن النطاق المقروء.', 'No records in the read scope.')}</p> : <ul>{detailRows.map((row, index) => <li key={row.id || row.sspBookingId || index}>
         {isWashDetail ? <><bdi>{row.sspBookingId || row.id}</bdi><span><bdi>{recordedBikerSweaterId(row, workers.bikers) || '—'}</bdi> · <span translate="no">{displayRecordedBikerName(row, workers.bikers, language)}</span></span><span>{date(row.washDate)} · {number(row.quantity)} {text('غسلة', 'washes')}</span></>
           : detail.kind === 'workers' ? <><bdi>{row.driverExternalId || '—'}</bdi><span translate="no">{displayBikerName(row, language)}</span></>

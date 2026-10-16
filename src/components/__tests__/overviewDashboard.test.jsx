@@ -27,6 +27,25 @@ beforeEach(() => {
     washes: { loading: false, error: null }, workers: { bikers: [biker], loading: false, error: null }, bookings: { loading: false, error: null }, retry: vi.fn() };
 });
 afterEach(cleanup);
+it('removes the routine financial prose but preserves load failures and tax issue warnings', () => {
+  const { unmount } = render(<OverviewPage />);
+  expect(screen.queryByText(/نفس قائمة الدخل:/)).toBeNull();
+  expect(screen.queryByText(/المقارنة المالية للشهور المكتملة فقط/)).toBeNull();
+  unmount(); state.data.finance.statement.issues = [{ reason: 'test' }];
+  render(<OverviewPage />);
+  expect(screen.getAllByRole('alert').some(node => node.textContent.includes('بيانات ضريبية'))).toBe(true);
+});
+it('shows the daily average per biker and opens its actual worker/day denominator', () => {
+  render(<OverviewPage />);
+  fireEvent.click(screen.getByRole('button', { name: 'متوسط غسلات البايكر', exact: true }));
+  expect(screen.getByRole('dialog').textContent).toContain('2 ÷ 1 = 2');
+  expect(screen.getByRole('dialog').textContent).toContain('wash-a');
+});
+it('explains missing customer ratings without disguising missing data as zero quality', () => {
+  render(<OverviewPage />);
+  expect(screen.getByRole('button', { name: 'تقييم العملاء', exact: true }).textContent).toContain('لا توجد تقييمات عملاء صالحة');
+  expect(screen.getByRole('button', { name: 'مراجع التكتات', exact: true }).textContent).toContain('لم تصل مراجع تكتات');
+});
 it('prioritizes finance, operations and quality; keeps capital collapsed without reading its sources', () => {
   render(<OverviewPage />);
   expect(screen.getAllByRole('heading', { level: 2 }).map(e => e.textContent).slice(1, 4)).toEqual(['النتيجة المالية', 'حركة التشغيل', 'الغسلات يومًا بيوم']);

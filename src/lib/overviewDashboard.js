@@ -38,10 +38,20 @@ export function overviewOperations({ washes = [], bikers = [], periodKey, today 
     daily.push({ date, quantity: sum(rows), rows });
   }
   const washDays = daily.filter(day => day.quantity > 0).length;
+  // One denominator unit per biker on a day with positive washes. Do not use
+  // today's status or calendar days as a proxy for historic work/attendance.
+  const bikerDays = new Set(); const washingBikers = new Set(); let unlinkedBikerWashes = 0;
+  for (const row of selected.filter(row => Number(row.quantity) > 0)) {
+    const bikerId = String(row.bikerId ?? row.biker_id ?? '').trim();
+    if (!bikerId) { unlinkedBikerWashes++; continue; }
+    washingBikers.add(bikerId); bikerDays.add(JSON.stringify([bikerId, row.washDate ?? row.wash_date]));
+  }
   return { ...window, rows: selected, daily, quantity: sum(selected), previousQuantity: sum(previous),
     yesterday, yesterdayRows: unique.filter(row => row.washDate === yesterday),
     yesterdayQuantity: sum(unique.filter(row => row.washDate === yesterday)),
     washDays, average: washDays ? round(sum(selected) / washDays) : null,
+    bikerWashDays: bikerDays.size, washingBikers: washingBikers.size, unlinkedBikerWashes,
+    averagePerBikerDay: bikerDays.size && !unlinkedBikerWashes ? round(sum(selected) / bikerDays.size) : null,
     working: bikers.filter(isOverviewWorkingBiker).length,
     unspecified: bikers.filter(biker => !String(biker.currentStatus || '').trim()).length,
     conflicts: [...new Set(conflicts)] };

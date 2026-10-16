@@ -5,6 +5,18 @@ const opts = { periodKey: '2026-10', today: '2026-10-16' };
 const wash = (id, washDate, quantity = 1, extra = {}) => ({ id, washDate, quantity, status: 'مكتملة', ...extra });
 const booking = (id, rating, extra = {}) => ({ record: { sspBookingId: id, serviceDate: '2026-10-15', rating, ...extra } });
 describe('management overview, descriptive operations only', () => {
+  it('averages biker wash days, not current working status or idle days, counting each worker/day once', () => {
+    const washes = [wash('a', '2026-10-14', 4, { bikerId: 'a' }), wash('b', '2026-10-14', 2, { bikerId: 'a' }),
+      wash('c', '2026-10-15', 2, { bikerId: 'a' }), wash('d', '2026-10-15', 4, { biker_id: 'b' }),
+      wash('e', '2026-10-16', 0, { bikerId: 'idle' })];
+    expect(overviewOperations({ ...opts, washes, bikers: [{ id: 'a', currentStatus: 'تدريب' }] }))
+      .toMatchObject({ bikerWashDays: 3, washingBikers: 2, averagePerBikerDay: 4 });
+    expect(overviewOperations({ ...opts }).averagePerBikerDay).toBeNull();
+  });
+  it('does not invent worker identities from names or silently exclude unlinked washes from the average', () => {
+    const washes = [wash('a', '2026-10-15', 3, { bikerId: 'a' }), wash('b', '2026-10-15', 2, { bikerName: 'Same' })];
+    expect(overviewOperations({ ...opts, washes })).toMatchObject({ quantity: 5, averagePerBikerDay: null, unlinkedBikerWashes: 1 });
+  });
   it('compares current months with elapsed days and handles short months and closed months', () => {
     expect(overviewWindow('2026-10', '2026-10-16')).toMatchObject({ to: '2026-10-16', previousTo: '2026-09-16', completeMonth: false });
     expect(overviewWindow('2024-03', '2024-03-31').previousTo).toBe('2024-02-29');

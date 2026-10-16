@@ -1,332 +1,187 @@
-import { getLocale } from '../i18n/locale';
+import { useState } from 'react';
+import { Activity, ArrowUpRight, Bike, CalendarDays, CheckCircle2, DatabaseBackup, Loader2, Receipt, Star, Ticket, TrendingUp, Wallet, X } from 'lucide-react';
 import { useLanguage } from '../i18n/useLanguage';
-import { useMemo, useState } from 'react';
-import {
-  Landmark, Wallet, Coins, Users, TrendingUp, PiggyBank, Receipt,
-  DatabaseBackup, Loader2,
-} from 'lucide-react';
-import { formatCurrencyPrecise, formatNumber, PER_WORKER_FEE } from '../data/initialData';
-import TopBar from './TopBar';
-import { Card, StatCard, ProgressBar, SectionHeader, EmptyState } from './UI';
-import LoadingState from './LoadingState';
-import { SetupRequiredCard } from './ErrorState';
-import { ColumnTrend } from './charts/TrendCharts';
-import Toast from './Toast';
-import { downloadFullBackup } from '../lib/backupZip';
-import { usePartners } from '../hooks/usePartners';
-import { usePartnerPayments } from '../hooks/usePartnerPayments';
-import { paidByPartner } from '../lib/accounting/partnerTotals';
-import { useStartupCosts } from '../hooks/useStartupCosts';
-import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
+import { useOverviewDashboard } from '../hooks/useOverviewDashboard';
+import { riyadhToday } from '../lib/bikerProfile';
+import { displayBikerName, displayRecordedBikerName, recordedBikerSweaterId } from '../lib/bikerNames';
+import { formatCurrencyPrecise, formatNumber } from '../data/initialData';
+import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
+import { downloadFullBackup } from '../lib/backupZip';
+import TopBar from './TopBar';
+import CapitalOverviewPage from './CapitalOverviewPage';
+import BikerProfileMonthPicker from './BikerProfileMonthPicker';
+import IncomeStatementDetailsModal from './IncomeStatementDetailsModal';
+import ModalSurface from './ModalSurface';
+import Toast from './Toast';
+import { Card, SectionHeader } from './UI';
+import { SetupRequiredCard } from './ErrorState';
+import './BikerProfile.css';
+import './OverviewPage.css';
 
-// Last N months ending at the current one, as { key:'YYYY-MM', label } —
-// Arabic month names, Latin digits (matches the rest of the dashboard).
-function lastMonths(n, language) {
-  const fmt = new Intl.DateTimeFormat(getLocale(language), { month: 'short', numberingSystem: 'latn' });
-  const out = [];
-  const d = new Date();
-  d.setDate(1);
-  for (let i = n - 1; i >= 0; i--) {
-    const m = new Date(d.getFullYear(), d.getMonth() - i, 1);
-    out.push({
-      key: `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, '0')}`,
-      label: fmt.format(m),
-    });
-  }
-  return out;
+export default function OverviewPage(props) {
+  const { role, isPartnerView } = usePartnerView();
+  // The admin dashboard never mounts its company data hooks in partner mode.
+  // Other existing roles retain their previous overview and navigation policy.
+  if (isPartnerView || role === 'partner' || role === 'supervisor') return null;
+  return ['admin', 'accountant'].includes(role) ? <ManagementOverview {...props} /> : <CapitalOverviewPage />;
 }
 
-/**
- * Landing overview — the "where do we stand" screen. Built for the
- * pre-launch reality of the business: the two things actually happening
- * are (1) raising partner capital and (2) spending it on startup costs.
- * Everything here reads existing hooks; no new tables.
- *
- * In partner view the money figures scale to the viewer's share, and the
- * capital section narrows to that partner's own contribution.
- */
-export default function OverviewPage() {
+export function ManagementOverview({ onNavigate }) {
   const { language } = useLanguage();
-  const { partners, loading: pLoading } = usePartners();
-  const { items: startupItems, loading: sLoading } = useStartupCosts();
-  const { payments } = usePartnerPayments();
-  // Paid-to-date is derived from the receipts themselves; the cached
-  // partners.paid_amount aggregate is never the source of truth.
-  const paidTotals = useMemo(() => paidByPartner(payments), [payments]);
-  const {
-    scalingFactor, isPartnerView, viewedPartner, canMutate,
-  } = usePartnerView();
-
-  // ── Monthly receipts trend (last 6 months) ───────────────────
-  // Partner view narrows to the viewer's own receipts, mirroring the
-  // capital section's scoping.
-  const receiptsTrend = useMemo(() => {
-    const months = lastMonths(6, language);
-    const scoped = isPartnerView && viewedPartner
-      ? payments.filter((p) => p.partnerId === viewedPartner.id)
-      : payments;
-    const byMonth = new Map(months.map((m) => [m.key, 0]));
-    scoped.forEach((p) => {
-      const key = String(p.paymentDate || '').slice(0, 7);
-      if (byMonth.has(key)) byMonth.set(key, byMonth.get(key) + (p.amount || 0));
-    });
-    const values = months.map((m) => byMonth.get(m.key));
-    return { months, values, total: values.reduce((s, v) => s + v, 0) };
-  }, [payments, isPartnerView, viewedPartner, language]);
-
-  // ── One-click full backup (admin only) ──────────────────────
+  const { canMutate, role } = usePartnerView();
+  const text = (ar, en) => language === 'en' ? en : ar;
+  const today = riyadhToday();
+  const [periodKey, setPeriodKey] = useState(today.slice(0, 7));
+  const [detail, setDetail] = useState(null);
   const [backupBusy, setBackupBusy] = useState(false);
+  const [capitalOpen, setCapitalOpen] = useState(false);
   const [toast, setToast] = useState({ open: false, message: '', tone: 'success' });
-  async function handleBackup() {
+  const data = useOverviewDashboard(periodKey, today);
+  const { finance, operations: ops, quality: q, washes, workers, bookings } = data;
+  const st = finance.statement;
+  const washReady = !washes.loading && !washes.error && ops && !ops.conflicts.length && isFirebaseConfigured;
+  const qualityReady = !bookings.loading && !bookings.error && q && !q.conflicts && isFirebaseConfigured;
+  const workerReady = !workers.loading && !workers.error && isFirebaseConfigured;
+  const unavailable = text('غير متاح', 'Unavailable');
+  const number = value => value == null ? unavailable : formatNumber(value);
+  const date = day => new Intl.DateTimeFormat(language === 'en' ? 'en-GB' : 'ar-SA-u-ca-gregory',
+    { day: 'numeric', month: 'short', timeZone: 'UTC', numberingSystem: 'latn' }).format(new Date(`${day}T00:00:00Z`));
+  const navigate = tab => onNavigate?.(tab);
+  function changeMonth(month) { setDetail(null); setPeriodKey(month); }
+  async function backup() {
     if (backupBusy) return;
     setBackupBusy(true);
-    try {
-      await downloadFullBackup();
-      setToast({ open: true, message: '✓ تم تنزيل النسخة الاحتياطية الكاملة (ZIP يضم كل الجداول).', tone: 'success' });
-    } catch (err) {
-      setToast({ open: true, message: err?.message || 'تعذّر إنشاء النسخة الاحتياطية.', tone: 'error' });
-    } finally {
-      setBackupBusy(false);
-    }
+    try { await downloadFullBackup(); setToast({ open: true, message: text('تم تنزيل النسخة الاحتياطية.', 'Backup downloaded.'), tone: 'success' }); }
+    catch { setToast({ open: true, message: text('تعذّر تنزيل النسخة الاحتياطية.', 'Backup could not be downloaded.'), tone: 'error' }); }
+    finally { setBackupBusy(false); }
   }
+  const action = (ar, en, tab) => <button type="button" className="sw-overview__link" onClick={() => navigate(tab)}>{text(ar, en)}<ArrowUpRight size={16} aria-hidden="true" /></button>;
+  const financeNote = finance.loading ? text('جارٍ تحميل القائمة والرواتب…', 'Loading statement and payroll…')
+    : !st ? text('تعذّر تأكيد الأرقام المالية؛ أعد المحاولة أو راجع قائمة الدخل.', 'Financial figures could not be confirmed. Retry or review the income statement.')
+      : text('نفس قائمة الدخل: تشمل الرواتب المستحقة، ولا تتكرر عند السداد. رأس المال ليس إيرادًا.', 'Matches the income statement: accrued salaries are included once, even after payment. Capital is not revenue.');
+  const financialCards = [
+    { key: 'netRevenue', label: text('صافي الإيرادات', 'Net revenue'), icon: TrendingUp, tone: 'green', note: text('بعد المرتجعات، دون ضريبة المخرجات', 'After returns, excluding output VAT') },
+    { key: 'totalCosts', label: text('المصروفات والتكاليف', 'Expenses and costs'), icon: Receipt, tone: 'orange', note: text('تشمل الرواتب المستحقة · قبل رسوم الإدارة والإشراف', 'Includes accrued salaries · before management and supervision fees') },
+    { key: 'netProfit', label: text('صافي الربح', 'Net profit'), icon: Wallet, tone: st?.netProfit < 0 ? 'amber' : 'green', note: text('بعد التكاليف ورسوم الإدارة والإشراف', 'After costs, management and supervision fees') },
+  ];
+  const detailRows = detail?.kind === 'day' ? detail.rows : detail?.kind === 'month' ? ops?.rows
+    : detail?.kind === 'yesterday' ? ops?.yesterdayRows : detail?.kind === 'ratings' ? q?.rated
+      : detail?.kind === 'low' ? q?.low : detail?.kind === 'tickets' ? q?.rows.filter(row => row.ticketRef?.trim())
+        : detail?.kind === 'workers' ? workers.bikers.filter(b => ['يشتغل', 'Working'].includes(b.currentStatus)) : [];
+  const isWashDetail = ['day', 'month', 'yesterday'].includes(detail?.kind);
+  return <>
+    <TopBar title={text('نظرة عامة', 'Overview')} subtitle={text('صورة المشروع: المال، التشغيل والجودة', 'Your business at a glance: finance, operations and quality')}
+      actions={canMutate && isFirebaseConfigured ? <button type="button" onClick={backup} disabled={backupBusy}
+        className="sw-button sw-button--sm sw-button--secondary" aria-label={text('نسخة احتياطية', 'Backup')}>
+        {backupBusy ? <Loader2 size={16} className="animate-spin" /> : <DatabaseBackup size={16} />}<span className="hidden sm:inline">{text('نسخة احتياطية', 'Backup')}</span></button> : null} />
+    <main className="sw-overview" dir={language === 'en' ? 'ltr' : 'rtl'}>
+      {!isFirebaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
+      <div className="sw-overview__intro">
+        <div><p className="sw-overview__eyebrow">{text('لوحة إدارة المشروع', 'BUSINESS DASHBOARD')}</p><h2>{text('كيف أداء سويتر؟', 'How is Sweater doing?')}</h2>
+          <p>{text('تابع النتيجة، حركة التشغيل وتجربة العميل في مكان واحد.', 'Track results, operations and customer experience in one place.')}</p></div>
+        <BikerProfileMonthPicker value={periodKey} max={today.slice(0, 7)} language={language} onChange={changeMonth} />
+      </div>
 
-  // ── Capital raise ────────────────────────────────────────────
-  const capital = useMemo(() => {
-    const scoped = isPartnerView && viewedPartner
-      ? partners.filter((p) => p.id === viewedPartner.id)
-      : partners;
-    const workers = scoped.reduce((s, p) => s + (p.workersCount || 0), 0);
-    const target  = workers * PER_WORKER_FEE;
-    // Summed from the receipts, not from the cached partners.paid_amount.
-    const paidOf = (id) => paidTotals.get(String(id)) || 0;
-    const paid     = scoped.reduce((s, p) => s + paidOf(p.id), 0);
-    const remaining = Math.max(0, target - paid);
-    const pct = target > 0 ? Math.min(100, (paid / target) * 100) : 0;
-    const settledCount = scoped.filter(
-      (p) => (p.workersCount || 0) * PER_WORKER_FEE > 0
-        && paidOf(p.id) >= (p.workersCount || 0) * PER_WORKER_FEE,
-    ).length;
-    return {
-      partnerCount: scoped.length, workers, target, paid, remaining, pct, settledCount,
-    };
-  }, [partners, isPartnerView, viewedPartner, paidTotals]);
+      <section aria-labelledby="overview-finance-title" className="sw-overview__section">
+        <SectionHeader title={<span id="overview-finance-title">{text('النتيجة المالية', 'Financial performance')}</span>} action={action('فتح قائمة الدخل', 'Open income statement', 'summary')} />
+        <div className="sw-overview__financial-grid">{financialCards.map(({ key, label, icon, tone, note }) => <Metric key={key} label={label} icon={icon} tone={tone}
+          value={st ? formatCurrencyPrecise(st[key]) : finance.loading ? '…' : unavailable} note={note} disabled={!st}
+          onClick={() => setDetail({ kind: 'financial', key })}
+          comparison={st && finance.previous ? `${text('التغير عن الشهر السابق', 'Change from previous month')}: ${formatCurrencyPrecise(st[key] - finance.previous[key])}` : null} />)}</div>
+        <div className="sw-overview__source-note" role={finance.error ? 'alert' : undefined}><p>{financeNote}</p>
+          {st && <p>{text('الرسوم المحتسبة', 'Calculated fees')}: {formatCurrencyPrecise(st.totalFees)} · {text('الرواتب المحتسبة', 'Recognized salaries')}: {st.salaryAccrual ? formatCurrencyPrecise(st.salaryAccrual.amount) : unavailable}
+            {st.salaryAccrual?.estimated && ` · ${text('الرواتب تقديرية حتى اعتماد المسير', 'Salaries are estimated until payroll is approved')}`}</p>}
+          <p>{text('المقارنة المالية للشهور المكتملة فقط؛ لا نقارن شهرًا جاريًا بشهر كامل أو نوزّع الرواتب تقديريًا على الأيام.', 'Financial comparisons are shown only for completed months; current-month figures are not compared with a full month or daily-prorated salaries.')}</p>
+          {st?.issues?.length > 0 && <p role="alert">{text('تنبيه: الأرقام تستبعد سجلات ببيانات ضريبية غير محسومة؛ افتح التفاصيل قبل الاعتماد عليها.', 'Warning: figures exclude records with unresolved tax data. Open the details before relying on them.')}</p>}
+          {finance.error && <button type="button" className="sw-overview__link" onClick={data.retry}>{text('إعادة المحاولة', 'Retry')}</button>}</div>
+      </section>
 
-  // ── Startup spend ────────────────────────────────────────────
-  const spend = useMemo(() => {
-    const planned = startupItems.reduce((s, i) => s + (i.plannedAmount || 0), 0) * scalingFactor;
-    const actual  = startupItems.reduce((s, i) => s + (i.actualAmount || 0), 0) * scalingFactor;
-    const remaining = Math.max(0, planned - actual);
-    const pct = planned > 0 ? Math.min(100, (actual / planned) * 100) : 0;
-    const completed = startupItems.filter((i) => i.status === 'completed').length;
-    return { planned, actual, remaining, pct, completed, itemCount: startupItems.length };
-  }, [startupItems, scalingFactor]);
+      <section aria-labelledby="overview-operations-title" className="sw-overview__section">
+        <SectionHeader title={<span id="overview-operations-title">{text('حركة التشغيل', 'Operations')}</span>} subtitle={text('الغسلات المكتملة المسجلة، وليست الحجوزات الخام أو إثبات اكتمال الاستيراد.', 'Recorded completed washes, not raw bookings or proof of import completeness.')} action={action('فتح الغسلات', 'Open washes', 'washes')} />
+        <div className="sw-overview__metric-grid">
+          <Metric icon={CalendarDays} label={text('غسلات أمس', 'Yesterday’s washes')} value={washReady ? number(ops.yesterdayQuantity) : unavailable}
+            note={ops ? date(ops.yesterday) : ''} disabled={!washReady} onClick={() => setDetail({ kind: 'yesterday', title: text('غسلات أمس', 'Yesterday’s washes') })} />
+          <Metric icon={CheckCircle2} label={text('غسلات الشهر', 'Monthly washes')} value={washReady ? number(ops.quantity) : unavailable} disabled={!washReady}
+            note={ops ? `${date(ops.from)} — ${date(ops.to)}` : ''} onClick={() => setDetail({ kind: 'month', title: text('غسلات الشهر', 'Monthly washes') })}
+            comparison={washReady ? `${text('الفترة المقارنة', 'Comparison window')}: ${date(ops.previousFrom)} — ${date(ops.previousTo)} · ${number(ops.previousQuantity)}` : null} />
+          <Metric icon={Activity} label={text('المتوسط', 'Average')} value={washReady ? number(ops.average) : unavailable} disabled={!washReady}
+            note={text('غسلة لكل يوم فيه غسلات فعلًا', 'Washes per day with recorded washes')} onClick={() => setDetail({ kind: 'month', title: text('المتوسط وأيام الغسيل', 'Average and wash days') })} />
+          <Metric icon={Bike} label={text('البايكر العاملون', 'Working bikers')} value={workerReady ? number(ops?.working) : unavailable} disabled={!workerReady}
+            note={text('الحالة الحالية المسجلة، وليس حضور الشهر', 'Current recorded status, not monthly attendance')} onClick={() => setDetail({ kind: 'workers', title: text('البايكر العاملون حاليًا', 'Currently working bikers') })} />
+        </div>
+        {(washes.error || ops?.conflicts.length > 0) && <p role="alert" className="sw-overview__notice">{text('تعذّر تأكيد إجمالي الغسلات؛ راجع المصدر أو تعارض التكرار.', 'Wash totals are unconfirmed. Review source availability or conflicting duplicates.')}</p>}
+        <Card className="sw-overview__panel sw-overview__daily"><SectionHeader title={text('الغسلات يومًا بيوم', 'Daily washes')} subtitle={text('اضغط على اليوم لعرض الغسلات المسجلة فيه.', 'Select a day to view its recorded washes.')} />
+          {washReady ? <><div className="sw-overview__bars" role="group" aria-label={text('رسم الغسلات اليومية', 'Daily washes chart')}>
+            {ops.daily.map(day => <button type="button" key={day.date} aria-label={`${date(day.date)}: ${number(day.quantity)} ${text('غسلة', 'washes')}`}
+              onClick={() => setDetail({ kind: 'day', title: date(day.date), rows: day.rows })}>
+              <span className="sw-overview__bar-count">{number(day.quantity)}</span><span className="sw-overview__bar-track"><span style={{ height: `${day.quantity / Math.max(1, ...ops.daily.map(d => d.quantity)) * 100}%` }} /></span><time dateTime={day.date}>{Number(day.date.slice(8))}</time></button>)}
+          </div><details className="sw-overview__disclosure"><summary>{text('عرض البيانات كجدول', 'View data as a table')}</summary><table><thead><tr><th>{text('التاريخ', 'Date')}</th><th>{text('الغسلات', 'Washes')}</th></tr></thead><tbody>{ops.daily.map(day => <tr key={day.date}><td>{date(day.date)}</td><td>{number(day.quantity)}</td></tr>)}</tbody></table></details></>
+            : <p role="status">{washes.loading ? text('جارٍ تحميل الغسلات…', 'Loading washes…') : unavailable}</p>}
+        </Card>
+      </section>
 
-  // Capital collected minus what's been spent on setup — the cash the
-  // franchise still has in hand from raised capital (rough, pre-launch).
-  const capitalOnHand = Math.max(0, capital.paid - spend.actual);
+      <section aria-labelledby="overview-quality-title" className="sw-overview__section">
+        <SectionHeader title={<span id="overview-quality-title">{text('الجودة وتجربة العميل', 'Quality and customer experience')}</span>} subtitle={text('عينة الحجوزات المستوردة للشهر المحدد؛ ليست سجل التكتات الكامل ولا تقييم الجودة المركّب للبايكر.', 'Imported bookings for the selected month; not the complete ticket register or the biker’s composite quality assessment.')} action={action('سجل البايكر', 'Biker registry', 'bikers')} />
+        <div className="sw-overview__metric-grid">
+          <Metric icon={Star} tone="amber" label={text('تقييم العملاء', 'Customer rating')} value={qualityReady && q.average !== null ? `${number(q.average)} / 5` : unavailable}
+            note={text('من تقييمات فعلية في العينة المقروءة', 'From actual ratings in the read sample')} disabled={!qualityReady || !q?.rated.length} onClick={() => setDetail({ kind: 'ratings', title: text('تقييمات العملاء', 'Customer ratings') })} />
+          <Metric icon={Star} label={text('عدد التقييمات', 'Ratings count')} value={qualityReady ? number(q.rated.length) : unavailable}
+            note={qualityReady ? `${text('الحجوزات المقروءة', 'Read bookings')}: ${number(q.rows.length)}` : ''} disabled={!qualityReady} onClick={() => setDetail({ kind: 'ratings', title: text('تقييمات العملاء', 'Customer ratings') })} />
+          <Metric icon={Ticket} tone="orange" label={text('مراجع التكتات', 'Ticket references')} value={qualityReady && q.tickets.length ? number(q.tickets.length) : unavailable}
+            note={text('غياب المرجع لا يثبت عدم وجود تكت', 'No reference does not prove there are no tickets')} disabled={!qualityReady || !q?.tickets.length} onClick={() => setDetail({ kind: 'tickets', title: text('مراجع التكتات المتاحة', 'Available ticket references') })} />
+          <Metric icon={Activity} tone="amber" label={text('تقييمات أقل من 4', 'Ratings below 4')} value={qualityReady ? number(q.low.length) : unavailable}
+            note={text('للمراجعة، وليس حكمًا على العامل', 'For review, not a judgment on a worker')} disabled={!qualityReady} onClick={() => setDetail({ kind: 'low', title: text('تقييمات تحتاج مراجعة', 'Ratings to review') })} />
+        </div>
+        {(bookings.error || q?.conflicts > 0) && <p role="alert" className="sw-overview__notice">{text('بيانات الجودة غير مؤكدة؛ المصدر متعذر أو يحوي تكرارًا متعارضًا.', 'Quality data is unconfirmed: the source is unavailable or has conflicting duplicates.')}</p>}
+      </section>
 
-  const loading = pLoading || sLoading;
+      <Card className="sw-overview__panel"><SectionHeader title={text('يحتاج انتباهك', 'Needs your attention')} subtitle={text('ملاحظات من المصادر المقروءة فقط، لا قائمة شاملة بكل التزامات المشروع.', 'Findings from the read sources only, not a complete list of business obligations.')} />
+        <div className="sw-overview__attention">
+          <div><h3>{text('المصاريف والبيانات', 'Expenses and data')}</h3>
+            {!st ? <p>{text('الأرقام المالية غير مؤكدة بعد.', 'Financial figures are not yet confirmed.')}</p> : <>
+              <p>{text('سندات مصروف غير مدفوعة ومستحقة في الشهر', 'Unpaid expense vouchers due in this month')}: <strong>{number(data.dueVouchers.length)}</strong></p>
+              {st.issues?.length > 0 && <p role="alert">{text('سجلات مستبعدة من القائمة لبيانات ضريبية غير محسومة', 'Records excluded from the statement due to unresolved tax data')}: <strong>{number(st.issues.length)}</strong></p>}
+            </>}
+            {workerReady && ops?.unspecified > 0 && <p>{text('بايكر بدون حالة مسجلة', 'Bikers without a recorded status')}: <strong>{number(ops.unspecified)}</strong></p>}
+            {action('مراجعة المصاريف الشهرية', 'Review monthly expenses', 'monthly')}
+          </div>
+          <div><h3>{text('متابعة الجودة', 'Quality follow-up')}</h3>
+            {!qualityReady || !workerReady ? <p>{unavailable}</p> : q.attention.length ? <ul>{q.attention.slice(0, 5).map(item => <li key={item.biker.id}>
+              <span><bdi dir="ltr">{item.biker.driverExternalId || '—'}</bdi> · <span translate="no">{displayBikerName(item.biker, language)}</span></span>
+              <small>{text('تقييمات منخفضة', 'Low ratings')}: {number(item.low)} · {text('مراجع تكتات', 'Ticket references')}: {number(item.tickets)}</small></li>)}</ul>
+              : <p>{text('لا توجد ملاحظات مرتبطة بالعامل في العينة المقروءة؛ لا يثبت ذلك خلو سجل الجودة الكامل.', 'No worker-linked findings in the read sample; this does not establish a clean complete quality record.')}</p>}
+            {role === 'admin' ? action('فتح سجل البايكر والتقييم المركّب', 'Open bikers and composite assessments', 'bikers') : action('سجل البايكر', 'Biker registry', 'bikers')}
+          </div>
+        </div>
+      </Card>
 
-  // Per-partner leaderboard (admin view only — partners see just their own).
-  const partnerRows = useMemo(() => {
-    const scoped = isPartnerView && viewedPartner
-      ? partners.filter((p) => p.id === viewedPartner.id)
-      : partners;
-    return scoped
-      .map((p) => {
-        const required = (p.workersCount || 0) * PER_WORKER_FEE;
-        const paid = paidTotals.get(String(p.id)) || 0;
-        const pct = required > 0 ? Math.min(100, (paid / required) * 100) : 0;
-        return { ...p, required, paid, remaining: Math.max(0, required - paid), pct };
-      })
-      .sort((a, b) => b.paid - a.paid);
-  }, [partners, isPartnerView, viewedPartner, paidTotals]);
+      <Card className="sw-overview__panel"><details className="sw-overview__capital" onToggle={event => setCapitalOpen(event.currentTarget.open)}>
+        <summary><span>{text('رأس المال والتأسيس', 'Capital and setup')}<small>{text('تحصيل الشركاء وصرف التأسيس · منفصل عن دخل التشغيل', 'Partner contributions and setup spending · separate from operating income')}</small></span></summary>
+        {capitalOpen && <CapitalOverviewPage embedded />}
+      </details></Card>
+    </main>
 
-  return (
-    <>
-      <TopBar
-        title="نظرة عامة"
-        subtitle="ملخص رأس المال المُجمّع وصرف التأسيس"
-        actions={canMutate && isFirebaseConfigured ? (
-          <button
-            type="button"
-            onClick={handleBackup}
-            disabled={backupBusy}
-            title="تنزيل نسخة احتياطية كاملة لكل الجداول (ZIP)"
-            className="sw-button sw-button--sm sw-button--secondary sw-tap shrink-0"
-          >
-            {backupBusy
-              ? <Loader2 size={14} className="animate-spin" />
-              : <DatabaseBackup size={14} />}
-            <span className="hidden sm:inline">نسخة احتياطية</span>
-          </button>
-        ) : null}
-      />
+    {detail?.kind === 'financial' && st && <IncomeStatementDetailsModal statement={st} detailKey={detail.key} onClose={() => setDetail(null)}
+      onSelect={key => setDetail({ kind: 'financial', key })} onPeriodSelect={(month, key) => { setPeriodKey(month); setDetail({ kind: 'financial', key }); }} />}
+    {detail && detail.kind !== 'financial' && <ModalSurface onClose={() => setDetail(null)}><section className="sw-overview-detail" dir={language === 'en' ? 'ltr' : 'rtl'}>
+      <header><h2>{detail.title}</h2><button type="button" aria-label={text('إغلاق التفاصيل', 'Close details')} onClick={() => setDetail(null)}><X size={20} /></button></header>
+      <p><bdi dir="ltr">{detail.kind === 'yesterday' ? ops?.yesterday : periodKey}</bdi> · {text('سجلات مقروءة فقط', 'Read records only')}</p>
+      {detail.kind === 'month' && <p>{text('المتوسط = الغسلات ÷ الأيام التي فيها غسلات', 'Average = washes ÷ days with washes')}: <bdi dir="ltr">{number(ops.quantity)} ÷ {number(ops.washDays)} = {number(ops.average)}</bdi></p>}
+      {!detailRows?.length ? <p>{text('لا توجد سجلات ضمن النطاق المقروء.', 'No records in the read scope.')}</p> : <ul>{detailRows.map((row, index) => <li key={row.id || row.sspBookingId || index}>
+        {isWashDetail ? <><bdi>{row.sspBookingId || row.id}</bdi><span><bdi>{recordedBikerSweaterId(row, workers.bikers) || '—'}</bdi> · <span translate="no">{displayRecordedBikerName(row, workers.bikers, language)}</span></span><span>{date(row.washDate)} · {number(row.quantity)} {text('غسلة', 'washes')}</span></>
+          : detail.kind === 'workers' ? <><bdi>{row.driverExternalId || '—'}</bdi><span translate="no">{displayBikerName(row, language)}</span></>
+            : <><bdi>{row.sspBookingId}</bdi><span>{date(row.serviceDate)}</span>{detail.kind === 'tickets' ? <bdi>{row.ticketRef}</bdi> : <bdi dir="ltr">{number(Number(row.rating))} / 5</bdi>}</>}
+      </li>)}</ul>}
+    </section></ModalSurface>}
+    <Toast {...toast} onClose={() => setToast(current => ({ ...current, open: false }))} />
+  </>;
+}
 
-      <main className="p-4 sm:p-6 lg:p-8 space-y-6">
-        {!isFirebaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
-
-        {loading && partners.length === 0 && startupItems.length === 0 ? (
-          <LoadingState message="جارٍ تحميل النظرة العامة..." />
-        ) : (
-          <>
-            {/* ── Capital raise hero ───────────────────────────── */}
-            <Card className="p-6">
-              <SectionHeader
-                title="جمع رأس المال"
-                subtitle={isPartnerView
-                  ? 'حصتك من رأس مال الامتياز'
-                  : `${formatNumber(capital.partnerCount)} شريك · ${formatNumber(capital.workers)} عامل · الرسم ${formatCurrencyPrecise(PER_WORKER_FEE)}/عامل`}
-              />
-              <div className="flex flex-wrap items-end justify-between gap-4 mb-3">
-                <div className="min-w-0 flex-1 basis-52">
-                  <p className="break-words text-2xl sm:text-4xl font-extrabold text-slate-900 dark:text-slate-100 tabular-nums">
-                    {formatCurrencyPrecise(capital.paid)}
-                  </p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                    من إجمالي <span className="font-bold tabular-nums">{formatCurrencyPrecise(capital.target)}</span> مستهدف
-                  </p>
-                </div>
-                <div className="text-left shrink-0 whitespace-nowrap">
-                  <p className="text-2xl font-extrabold text-emerald-600 dark:text-emerald-400 tabular-nums">
-                    {formatNumber(Number(capital.pct.toFixed(1)))}%
-                  </p>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">مكتمل</p>
-                </div>
-              </div>
-              <ProgressBar value={capital.paid} max={capital.target || 1} color="emerald" className="h-3" />
-              <div className="flex flex-wrap gap-2 items-center justify-between mt-2 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
-                <span>المتبقّي: <span className="font-bold text-amber-700 dark:text-amber-400">{formatCurrencyPrecise(capital.remaining)}</span></span>
-                {!isPartnerView && (
-                  <span>{formatNumber(capital.settledCount)} من {formatNumber(capital.partnerCount)} سدّدوا بالكامل</span>
-                )}
-              </div>
-            </Card>
-
-            {/* ── KPI row ──────────────────────────────────────── */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
-              <StatCard
-                icon={Coins}
-                tone="emerald"
-                label="رأس المال المُحصّل"
-                value={formatCurrencyPrecise(capital.paid)}
-                sub={`المتبقّي ${formatCurrencyPrecise(capital.remaining)}`}
-              />
-              <StatCard
-                icon={Landmark}
-                tone="primary"
-                label="إجمالي صرف التأسيس"
-                value={formatCurrencyPrecise(spend.actual)}
-                sub={`من ${formatCurrencyPrecise(spend.planned)} مخطط · ${formatNumber(Number(spend.pct.toFixed(0)))}%`}
-              />
-              <StatCard
-                icon={PiggyBank}
-                tone="indigo"
-                label="النقد المتبقّي بعد الصرف"
-                value={formatCurrencyPrecise(capitalOnHand)}
-                sub="المُحصّل ناقص صرف التأسيس"
-              />
-              <StatCard
-                icon={Receipt}
-                tone="amber"
-                label="بنود التأسيس المكتملة"
-                value={`${formatNumber(spend.completed)} من ${formatNumber(spend.itemCount)} بنود`}
-                sub="بنود أُنجز صرفها بالكامل"
-              />
-            </div>
-
-            {/* ── Monthly receipts trend ───────────────────────── */}
-            <Card className="p-6">
-              <SectionHeader
-                title="تحصيل رأس المال شهرياً"
-                subtitle={isPartnerView ? 'سنداتك خلال آخر ٦ أشهر' : 'مجموع سندات القبض خلال آخر ٦ أشهر'}
-              />
-              {receiptsTrend.total === 0 ? (
-                <EmptyState
-                  compact
-                  icon={Coins}
-                  title="لا توجد سندات قبض في آخر ٦ أشهر"
-                  hint="سجّل الدفعات من صفحة «مدفوعات الشركاء» وسيظهر الاتجاه الشهري هنا."
-                />
-              ) : (
-                <ColumnTrend
-                  months={receiptsTrend.months}
-                  values={receiptsTrend.values}
-                  formatValue={formatCurrencyPrecise}
-                  valueName="التحصيل"
-                />
-              )}
-            </Card>
-
-            {/* ── Startup spend progress ───────────────────────── */}
-            <Card className="p-6">
-              <SectionHeader title="تقدّم صرف التأسيس" subtitle="الفعلي مقابل المخطط" />
-              <div className="flex items-center justify-between mb-2 text-sm">
-                <span className="tabular-nums text-slate-700 dark:text-slate-300">
-                  {formatCurrencyPrecise(spend.actual)} <span className="text-slate-500 dark:text-slate-400">/</span> {formatCurrencyPrecise(spend.planned)}
-                </span>
-                <span className="tabular-nums font-bold text-slate-500 dark:text-slate-400">
-                  {formatNumber(Number(spend.pct.toFixed(0)))}%
-                </span>
-              </div>
-              <ProgressBar
-                value={spend.actual}
-                max={spend.planned || 1}
-                color={spend.pct >= 100 ? 'red' : 'primary'}
-                className="h-3"
-              />
-            </Card>
-
-            {/* ── Per-partner capital leaderboard ──────────────── */}
-            <Card className="p-6">
-              <SectionHeader
-                title={isPartnerView ? 'حصتك من رأس المال' : 'رأس المال حسب الشريك'}
-                subtitle={isPartnerView ? undefined : 'مرتّب حسب المُسدَّد'}
-              />
-              {partnerRows.length === 0 ? (
-                <EmptyState
-                  compact
-                  icon={Users}
-                  title="لا يوجد شركاء مسجّلون بعد"
-                  hint="أضف الشركاء من صفحة «إدارة الشركاء» لعرض توزيع رأس المال هنا."
-                />
-              ) : (
-                <div className="space-y-3">
-                  {partnerRows.map((p) => (
-                    <div key={p.id}>
-                      <div className="flex items-center justify-between gap-3 mb-1 text-sm">
-                        <span className="inline-flex items-center gap-2 font-semibold text-slate-800 dark:text-slate-200 min-w-0">
-                          <Users size={13} className="text-slate-500 dark:text-slate-400 shrink-0" />
-                          <span translate="no" className="truncate">{p.partnerName}</span>
-                          <span className="text-[10px] font-normal text-slate-500 dark:text-slate-400 tabular-nums shrink-0">
-                            {formatNumber(p.workersCount)} عامل
-                          </span>
-                        </span>
-                        <span className="tabular-nums text-slate-600 dark:text-slate-400 shrink-0">
-                          {formatCurrencyPrecise(p.paid)} <span className="text-slate-300 dark:text-slate-600">/</span> {formatCurrencyPrecise(p.required)}
-                        </span>
-                      </div>
-                      <ProgressBar
-                        value={p.paid}
-                        max={p.required || 1}
-                        color={p.pct >= 100 ? 'emerald' : 'primary'}
-                      />
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card>
-          </>
-        )}
-      </main>
-
-      <Toast
-        open={toast.open}
-        message={toast.message}
-        tone={toast.tone}
-        onClose={() => setToast((t) => ({ ...t, open: false }))}
-      />
-    </>
-  );
+function Metric({ label, value, icon: Icon, tone = 'orange', note, comparison, onClick, disabled }) {
+  return <button type="button" className="sw-overview-metric" disabled={disabled} onClick={onClick} aria-label={label}>
+    <span className={`sw-overview-metric__icon sw-overview-metric__icon--${tone}`}><Icon size={22} aria-hidden="true" /></span>
+    <span className="sw-overview-metric__label">{label}</span><strong className="tabular-nums"><bdi>{value}</bdi></strong>
+    <span className="sw-overview-metric__note">{note}</span>{comparison && <small>{comparison}</small>}
+  </button>;
 }

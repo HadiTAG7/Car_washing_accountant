@@ -205,7 +205,7 @@ function AppShell({ membership }) {
               prefers-reduced-motion). */}
           <div key={effectiveTab} className="animate-page-in flex-1 flex flex-col">
             {investorView && <InvestorPage view={investorView} />}
-            {effectiveTab === 'overview' && (membership.role === 'supervisor' ? <SupervisorPage /> : <OverviewPage />)}
+            {effectiveTab === 'overview' && (membership.role === 'supervisor' ? <SupervisorPage /> : <OverviewPage onNavigate={handleSelectTab} />)}
             {effectiveTab === 'supervisor_data' && membership.role === 'supervisor' && <SupervisorRecordsPage />}
             {effectiveTab === 'agent_command_center' && (
               <AgentCommandCenterPage

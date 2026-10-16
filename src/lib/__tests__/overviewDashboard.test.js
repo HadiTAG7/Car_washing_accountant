@@ -26,7 +26,7 @@ describe('management overview, descriptive operations only', () => {
   });
   it('does not infer current working status from wages, starts, washes or missing status', () => {
     expect(overviewOperations({ ...opts, bikers: [{ currentStatus: 'يشتغل' }, { currentStatus: 'Working' },
-      { currentStatus: 'تدريب' }, { salary: 900 }, { currentStatus: 'هرب' }] })).toMatchObject({ working: 2, unspecified: 1, average: null });
+      { currentStatus: 'شغال' }, { currentStatus: 'تدريب' }, { salary: 900 }, { currentStatus: 'هرب' }] })).toMatchObject({ working: 3, unspecified: 1, average: null });
   });
 });
 describe('quality sample, not a full quality assessment', () => {

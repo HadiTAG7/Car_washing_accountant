@@ -4,6 +4,7 @@ import { useLanguage } from '../i18n/useLanguage';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 import { useOverviewDashboard } from '../hooks/useOverviewDashboard';
 import { riyadhToday } from '../lib/bikerProfile';
+import { isOverviewWorkingBiker } from '../lib/overviewDashboard';
 import { displayBikerName, displayRecordedBikerName, recordedBikerSweaterId } from '../lib/bikerNames';
 import { formatCurrencyPrecise, formatNumber } from '../data/initialData';
 import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
@@ -68,7 +69,7 @@ export function ManagementOverview({ onNavigate }) {
   const detailRows = detail?.kind === 'day' ? detail.rows : detail?.kind === 'month' ? ops?.rows
     : detail?.kind === 'yesterday' ? ops?.yesterdayRows : detail?.kind === 'ratings' ? q?.rated
       : detail?.kind === 'low' ? q?.low : detail?.kind === 'tickets' ? q?.rows.filter(row => row.ticketRef?.trim())
-        : detail?.kind === 'workers' ? workers.bikers.filter(b => ['يشتغل', 'Working'].includes(b.currentStatus)) : [];
+        : detail?.kind === 'workers' ? workers.bikers.filter(isOverviewWorkingBiker) : [];
   const isWashDetail = ['day', 'month', 'yesterday'].includes(detail?.kind);
   return <>
     <TopBar title={text('نظرة عامة', 'Overview')} subtitle={text('صورة المشروع: المال، التشغيل والجودة', 'Your business at a glance: finance, operations and quality')}

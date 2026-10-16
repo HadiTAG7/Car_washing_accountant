@@ -2,6 +2,7 @@ import { uniqueCompletedCommissionWashes } from '../../functions/src/washCommiss
 import { monthRange } from './accounting/monthlyStatement.js';
 
 const round = n => Math.round(n * 100) / 100;
+export const isOverviewWorkingBiker = biker => ['يشتغل', 'شغال', 'working'].includes(String(biker.currentStatus || '').trim().toLowerCase());
 const realDay = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
   && Number.isFinite(Date.parse(`${value}T00:00:00Z`)) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
 export function overviewWindow(periodKey, today) {
@@ -41,7 +42,7 @@ export function overviewOperations({ washes = [], bikers = [], periodKey, today 
     yesterday, yesterdayRows: unique.filter(row => row.washDate === yesterday),
     yesterdayQuantity: sum(unique.filter(row => row.washDate === yesterday)),
     washDays, average: washDays ? round(sum(selected) / washDays) : null,
-    working: bikers.filter(biker => ['يشتغل', 'Working'].includes(biker.currentStatus)).length,
+    working: bikers.filter(isOverviewWorkingBiker).length,
     unspecified: bikers.filter(biker => !String(biker.currentStatus || '').trim()).length,
     conflicts: [...new Set(conflicts)] };
 }

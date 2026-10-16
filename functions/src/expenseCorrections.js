@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { isRealDate, isValidPeriodKey, postingLockId, round2 } from './invariants.js';
 import { legacyLockIdFor } from './posting.js';
 import { startupRollup, startupParentHasLegacySpend, unitIsListed } from './startupMigration.js';
+import { normalizeExpenseDate } from '../../src/lib/expenseDates.js';
 
 export class ExpenseCorrectionError extends Error {
   constructor(message, code = 'failed-precondition') { super(message); this.code = code; }
@@ -38,7 +39,7 @@ function money(value) {
   return value;
 }
 async function openPeriods(db, tx, dates) {
-  for (const date of [...new Set(dates.filter(Boolean))]) {
+  for (const date of [...new Set(dates.filter(Boolean).map(normalizeExpenseDate))]) {
     if (!isRealDate(date)) fail('تاريخ المصروف غير صالح؛ صحح التاريخ صراحةً.', 'invalid-argument');
     const snap = await tx.get(db.collection('accounting_periods').doc(date.slice(0, 7)));
     if (snap.exists && snap.data().status === 'closed') fail(`الفترة ${date.slice(0, 7)} مقفلة.`);
@@ -80,7 +81,7 @@ async function correctionPlan(db, tx, request) {
   const amount = money(patch.amount ?? Number(before[spec.amount]));
   if ((moving || before.is_tax_invoice) && amount !== Number(before[spec.amount])) fail('النقل يحافظ على إجمالي الفاتورة والضريبة؛ لا تغيّر المبلغ معه.');
   const description = requiredText(patch.description ?? before[spec.title] ?? before.description, 'الوصف');
-  const date = patch.date ?? before[spec.date] ?? before.paid_date;
+  const date = normalizeExpenseDate(patch.date ?? before[spec.date] ?? before.paid_date);
   const quantity = patch.quantity ?? Number(before.quantity || 1);
   if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > 1e6) fail('عدد الوحدات غير صالح.', 'invalid-argument');
   await openPeriods(db, tx, [before[spec.date], before.paid_date, before.invoice_date, date]);

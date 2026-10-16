@@ -95,6 +95,15 @@ describe('expense correction transaction', () => {
     await expect(previewExpenseCorrection(db, move)).rejects.toThrow(/قديم/);
     expect(db.writes).toEqual([]);
   });
+  it('accepts unambiguous legacy YYYY-M-D dates just like the app, without inventing dates or writing in preview', async () => {
+    const db = fixture(); db.rows.get('variable_expenses/e1').logged_date = '2026-9-12';
+    const plan = await previewExpenseCorrection(db, move);
+    expect(plan.after.spent_date).toBe('2026-09-12');
+    expect(plan.before.logged_date).toBe('2026-9-12'); expect(db.writes).toEqual([]);
+    db.rows.set('accounting_periods/2026-09', { status: 'closed' });
+    await expect(previewExpenseCorrection(db, move)).rejects.toThrow(/مقفلة/);
+    expect(db.writes).toEqual([]);
+  });
   it('refuses a matching invoice already copied into the target category', async () => {
     const db = fixture(); db.rows.set('startup_cost_entries/already', { startup_cost_id: 'bikes', amount: 665.05, invoice_number: 'T-1', supplier: 'Synthetic supplier' });
     await expect(previewExpenseCorrection(db, move)).rejects.toMatchObject({ code: 'already-exists' }); expect(db.writes).toEqual([]);

@@ -49,3 +49,28 @@ it('supports English display with the exact same score', () => {
   render(<LanguageContext.Provider value={{ language: 'en' }}><OverviewBikerQuality {...props} /></LanguageContext.Provider>);
   expect(screen.getByRole('button', { name: 'View assessment: 1984' }).textContent).toBe('8 / 10');
 });
+it('shows eight criterion means up top and moves profile counts into collapsed coverage details', () => {
+  render(<OverviewBikerQuality {...props} />);
+  const duration = screen.getByRole('group', { name: 'متوسط نقاط: مدة الغسلة' });
+  expect(duration.textContent).toContain('8 / 10');
+  expect(duration.textContent).toContain('بايكرز مشمولون: 1');
+  expect(screen.getAllByRole('group', { name: /^متوسط نقاط:/ })).toHaveLength(8);
+  expect(screen.getByRole('group', { name: 'متوسط نقاط: جودة الغسيل' }).textContent).toContain('غير متاح');
+  const coverage = screen.getByText('تغطية التقييمات').closest('details');
+  expect(coverage.open).toBe(false);
+  expect(coverage.textContent).toContain('تقييمات متاحة');
+  fireEvent.click(screen.getByText('تغطية التقييمات'));
+  expect(coverage.open).toBe(true);
+});
+it('does not display unconfirmed averages during loading or failure and supports English criterion labels', () => {
+  state.query.loading = true; state.query.available = false;
+  const view = render(<OverviewBikerQuality {...props} />);
+  expect(screen.getByRole('group', { name: 'متوسط نقاط: مدة الغسلة' }).textContent).toContain('…');
+  expect(screen.getByRole('group', { name: 'متوسط نقاط: مدة الغسلة' }).textContent).not.toContain('8 / 10');
+  state.query.loading = false; state.query.error = new Error('test failure');
+  view.rerender(<OverviewBikerQuality {...props} />);
+  expect(screen.getByRole('group', { name: 'متوسط نقاط: مدة الغسلة' }).textContent).toContain('غير متاح');
+  state.query.available = true; state.query.error = null;
+  view.rerender(<LanguageContext.Provider value={{ language: 'en' }}><OverviewBikerQuality {...props} /></LanguageContext.Provider>);
+  expect(screen.getByRole('group', { name: 'Average points: Wash duration' }).textContent).toContain('8 / 10');
+});

@@ -51,6 +51,9 @@
 .sw-overview-detail { width: min(760px, calc(100vw - 32px)); max-height: 88dvh; overflow-y: auto; padding: 24px; background: var(--sw-surface); color: var(--sw-text-primary); border-radius: 20px; }
 .sw-overview-detail header { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 20px; }
 .sw-overview-detail h2 { font-size: 1.1rem; font-weight: 700; }
+.sw-overview-quality__coverage { border: 1px solid var(--sw-border-subtle); border-radius: 16px; padding: 16px; }
+.sw-overview-quality__coverage > summary { cursor: pointer; font-size: .85rem; font-weight: 700; }
+.sw-overview-quality__coverage[open] > summary { margin-bottom: 14px; }
 .sw-overview-detail button { min-width: 44px; min-height: 44px; display: grid; place-items: center; }
 .sw-overview-detail p { margin-bottom: 16px; font-size: .8rem; line-height: 1.9; }
 .sw-overview-detail li { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 14px 0; border-bottom: 1px solid var(--sw-border-subtle); font-size: .85rem; overflow-wrap: anywhere; }

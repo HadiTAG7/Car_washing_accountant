@@ -38,14 +38,27 @@ function AdminQuality({ workers, periodKey, today, onNavigate }) {
     : row.summary.incomplete ? text('جزئي', 'Partial') : text('مكتمل', 'Complete');
   return <section className="sw-overview__section" aria-labelledby="overview-quality-title">
     <SectionHeader title={<span id="overview-quality-title">{text('الجودة وتقييمات البايكرز', 'Quality and biker assessments')}</span>}
-      subtitle={text('نفس التقييم الحالي في البروفايل، بالفترة والوزن المتاحين؛ ليست نجوم العملاء ولا نحول التقييم الجزئي إلى 100.', 'The current profile assessment, with its reporting window and available weight; not customer stars, and partial scores are not rescaled to 100.')}
+      subtitle={text('متوسط نقاط البايكرز لكل معيار، من درجات البروفايلات المتاحة؛ كل بايكر مرة واحدة، والناقص لا يُحسب صفرًا.', 'Mean biker points for each criterion from available profile scores; each biker counts once, and missing scores are not zero.')}
       action={<button type="button" className="sw-overview__link" onClick={() => onNavigate?.('bikers')}>{text('سجل البايكر', 'Biker registry')}</button>} />
+    <div className="sw-overview__metric-grid">{summary.criteria.map(criterion => {
+      const name = criterion.key === 'statusUpdates' ? text('تحديث الحالة', 'Status updates') : text(...labels[criterion.key]);
+      return <div className="sw-overview-metric" role="group" aria-label={`${text('متوسط نقاط', 'Average points')}: ${name}`} key={criterion.key}>
+        <span className="sw-overview-metric__label">{name}</span>
+        <strong>{!ready ? query.loading || workers.loading ? '…' : text('غير متاح', 'Unavailable') : criterion.average === null ? text('غير متاح', 'Unavailable')
+          : <bdi dir="ltr">{formatNumber(Math.round(criterion.average * 100) / 100)} / {formatNumber(criterion.weight)}</bdi>}</strong>
+        {ready && <small className="sw-overview__source-note">{text('بايكرز مشمولون', 'Bikers included')}: {formatNumber(criterion.count)}{criterion.approximate ? ` · ${text('تقريبي', 'Approximate')}` : ''}</small>}
+      </div>;
+    })}</div>
+    <details className="sw-overview-quality__coverage">
+      <summary>{text('تغطية التقييمات', 'Assessment coverage')}</summary>
+      <p className="sw-overview__source-note">{text('متوسط نقاط البايكرز، وليس متوسط نجوم العملاء أو تقييمًا نهائيًا من 100. الفترة الفعلية لكل درجة ظاهرة مع البروفايل؛ لا نجمع أوزان المعايير المختلفة.', 'Mean biker points, not mean customer stars or a final score out of 100. Each profile shows its actual reporting window; different criterion weights are not combined.')}</p>
     <div className="sw-overview__metric-grid">{[
       ['تقييمات متاحة', 'Available assessments', summary.available], ['تقييمات مكتملة', 'Complete assessments', summary.complete],
       ['تقييمات جزئية', 'Partial assessments', summary.partial], ['بدون درجة متاحة', 'No available score', summary.missing],
     ].map(([ar, en, value]) => <div className="sw-overview-metric" key={en}>
       <span className="sw-overview-metric__label">{text(ar, en)}</span><strong>{ready ? formatNumber(value) : query.loading || workers.loading ? '…' : text('غير متاح', 'Unavailable')}</strong>
     </div>)}</div>
+    </details>
     {(workers.error || query.error || summary.failed > 0 && query.available) && <p role="alert" className="sw-overview__notice">
       {text('تعذّر تحميل بعض تقييمات البروفايلات؛ لم تُحسب صفرًا أو تقييمًا مفقودًا.', 'Some profile assessments could not be read; they were not counted as zero or missing scores.')}
       <button type="button" className="sw-overview__link" onClick={() => { workers.refetch?.(); query.refetch(); }}>{text('إعادة المحاولة', 'Retry')}</button></p>}

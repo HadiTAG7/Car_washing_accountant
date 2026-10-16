@@ -1517,5 +1517,10 @@
   "الحالات المؤهلة والمنسوبة داخل العينة؛ ليست كل التذاكر الخام أو نسبة مباشرة من لوحة سويتر": "Eligible attributed cases within the sample; not all raw tickets or a direct Sweater dashboard rate",
   "القيمة الأصلية ثم نقاطنا": "Original value, then our points",
   "نقاطنا / الوزن": "Our points / weight",
-  "غسلة / يوم فيه غسلات": "washes / day with washes"
+  "غسلة / يوم فيه غسلات": "washes / day with washes",
+  "متوسط نقاط": "Average points",
+  "بايكرز مشمولون": "Bikers included",
+  "تغطية التقييمات": "Assessment coverage",
+  "متوسط نقاط البايكرز لكل معيار، من درجات البروفايلات المتاحة؛ كل بايكر مرة واحدة، والناقص لا يُحسب صفرًا.": "Mean biker points for each criterion from available profile scores; each biker counts once, and missing scores are not zero.",
+  "متوسط نقاط البايكرز، وليس متوسط نجوم العملاء أو تقييمًا نهائيًا من 100. الفترة الفعلية لكل درجة ظاهرة مع البروفايل؛ لا نجمع أوزان المعايير المختلفة.": "Mean biker points, not mean customer stars or a final score out of 100. Each profile shows its actual reporting window; different criterion weights are not combined."
 }

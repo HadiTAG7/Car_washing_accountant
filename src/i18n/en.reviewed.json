@@ -1,4 +1,9 @@
 {
+  "تعذّر عرض هذا الجزء من الصفحة": "This part of the page could not be displayed",
+  "لم نعد تحميل الصفحة تلقائيًا. انسخ أي بيانات متاحة وغير محفوظة قبل إعادة التحميل.": "We did not reload the page automatically. Copy any available unsaved entries before reloading.",
+  "خيارات الاسترجاع": "Recovery options",
+  "إعادة التحميل تفقد البيانات غير المحفوظة. هل تريد المتابعة؟": "Reloading loses unsaved entries. Do you want to continue?",
+  "نعم، أعد تحميل الصفحة": "Yes, reload the page",
   "توجد غسلات بلا معرّف موعد أو ملاحظات تغيّر ربطها؛ لا يمكن تأكيد التغطية قبل مراجعتها.": "Some washes lack an appointment ID or notes no longer match their links. Coverage cannot be confirmed until reviewed.",
   "دليل تاريخي من المصدر، وليس ملاحظات عدم تحديث يدوية أو نقاطها الحالية.": "Historical source evidence, not manual missing-update notes or their current points.",
   "إنهاء الغسيل": "Wash end",

@@ -41,7 +41,26 @@
     </script>
   </head>
   <body>
-    <div id="root"></div>
+    <style>
+      #sw-boot { min-height:100vh; display:grid; place-items:center; padding:24px; background:var(--sw-bg,#0b0b0b); color:var(--sw-text,#fff); font-family:system-ui,sans-serif; }
+      #sw-recovery { position:fixed; z-index:2147483647; bottom:12px; inset-inline:12px; max-width:540px; margin-inline:auto; max-height:calc(100dvh - 24px); overflow:auto; box-shadow:0 8px 32px #0006; }
+      .sw-recovery-card { box-sizing:border-box; padding:20px; margin:12px; border:1px solid var(--sw-border-subtle,#555); border-radius:16px; background:var(--sw-surface,#272727); color:var(--sw-text,#fff); font:16px/1.7 system-ui,sans-serif; overflow-wrap:anywhere; }
+      .sw-recovery-card h2 { font-size:18px; font-weight:700; margin:0 0 8px; }
+      .sw-recovery-card p { margin:8px 0; }
+      .sw-recovery-card button { cursor:pointer; min-height:44px; padding:8px 14px; margin:6px 4px; border:1px solid #a63c00; border-radius:10px; background:#c84a00; color:#fff; font:inherit; }
+      .sw-recovery-card button:focus-visible { outline:3px solid #ffad70; outline-offset:2px; }
+      #sw-recovery[hidden],#sw-recovery-confirm[hidden],#sw-boot[hidden] { display:none; }
+    </style>
+    <div id="root"><div id="sw-boot" role="status"><p id="sw-boot-message">جارٍ تحميل سويتر… / Loading Sweater…</p></div></div>
+    <aside id="sw-recovery" class="sw-recovery-card" role="alert" aria-labelledby="sw-recovery-title" hidden>
+      <h2 id="sw-recovery-title"></h2><p id="sw-recovery-message"></p>
+      <button id="sw-recovery-dismiss" type="button"></button><button id="sw-recovery-reload" type="button"></button>
+      <div id="sw-recovery-confirm" hidden><p id="sw-recovery-warning"></p>
+        <button id="sw-recovery-cancel" type="button"></button><button id="sw-recovery-confirm-reload" type="button"></button>
+      </div>
+    </aside>
+    <noscript>يلزم تفعيل JavaScript لعرض سويتر. / Enable JavaScript to use Sweater.</noscript>
+    <script src="/app-recovery.js"></script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

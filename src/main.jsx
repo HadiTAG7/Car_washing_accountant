@@ -2,6 +2,8 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import LanguageProvider from './i18n/LanguageProvider.jsx'
+import AppErrorBoundary from './components/AppErrorBoundary.jsx'
+import AppMounted from './components/AppMounted.jsx'
 
 async function boot() {
   // The diagnostic route loads no Auth or financial modules, even while signed out.
@@ -10,10 +12,13 @@ async function boot() {
     ? await import('./components/StorageDiagnostic.jsx')
     : await import('./App.jsx');
   createRoot(document.getElementById('root')).render(
-    <StrictMode><LanguageProvider><Root /></LanguageProvider></StrictMode>,
+    <StrictMode><AppErrorBoundary><AppMounted><LanguageProvider><Root /></LanguageProvider></AppMounted></AppErrorBoundary></StrictMode>,
   );
 }
-void boot();
+void boot().catch(() => {
+  console.error('[sweater-ui] boot-failed');
+  window.SweaterRecovery?.show('boot');
+});
 
 // PWA: register the (network-only) service worker so the dashboard is
 // installable. Production builds only — a SW on the dev server interferes

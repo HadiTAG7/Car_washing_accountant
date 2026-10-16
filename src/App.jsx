@@ -11,6 +11,7 @@ import MembershipBanner from './components/MembershipBanner';
 import UpdatePasswordScreen from './components/UpdatePasswordScreen';
 import { DemoBanner } from './components/ErrorState';
 import LoadingState from './components/LoadingState';
+import AppErrorBoundary from './components/AppErrorBoundary';
 import FinancialEntrySelector from './components/FinancialEntrySelector';
 
 // Route-level code-splitting: each tab's page is its own chunk, loaded on
@@ -198,7 +199,7 @@ function AppShell({ membership }) {
           />
         )}
 
-        <Suspense fallback={<LoadingState message="جارٍ تحميل الصفحة..." />}>
+        <AppErrorBoundary key={effectiveTab}><Suspense fallback={<LoadingState message="جارٍ تحميل الصفحة..." />}>
           {/* key={activeTab} remounts the wrapper per tab so the page-in
               entrance replays on every switch (no-op under
               prefers-reduced-motion). */}
@@ -239,7 +240,7 @@ function AppShell({ membership }) {
             {effectiveTab === 'assets'    && <FixedAssetsPage />}
             {effectiveTab === 'periods'   && <PeriodClosePage />}
           </div>
-        </Suspense>
+        </Suspense></AppErrorBoundary>
       </div>
 
       <FinancialEntrySelector

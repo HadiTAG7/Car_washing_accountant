@@ -1,7 +1,6 @@
 import { useMemo } from 'react';
 import { useWashes } from './useWashes';
 import { useBikers } from './useBikers';
-import { useSweaterBookings } from './useSweater';
 import { useLedger } from './useLedger';
 import { useIncomeStatementSources } from './useIncomeStatementSources';
 import { useIncomePayrollPreviews } from './useIncomePayrollPreviews';
@@ -9,12 +8,11 @@ import { useFeeRules } from './useFeeRules';
 import { useAccountingSettings } from './useAccountingSettings';
 import { liveIncomeStatement } from '../lib/accounting/liveIncomeStatement';
 import { taxPolicyAt } from '../lib/accounting/taxPolicy';
-import { overviewOperations, overviewQuality, overviewWindow } from '../lib/overviewDashboard';
+import { overviewOperations, overviewWindow } from '../lib/overviewDashboard';
 
 export function useOverviewDashboard(periodKey, today) {
   const washes = useWashes();
   const workers = useBikers();
-  const bookings = useSweaterBookings(periodKey);
   const ledger = useLedger();
   const live = useIncomeStatementSources();
   const fees = useFeeRules();
@@ -47,10 +45,8 @@ export function useOverviewDashboard(periodKey, today) {
   }, [periodKey, today, loading, error, payroll.data, ledger.accounts, entries, lines, fees.rules, sources, tax.settings]);
   const operations = useMemo(() => overviewOperations({ washes: washes.items, bikers: workers.bikers, periodKey, today }),
     [washes.items, workers.bikers, periodKey, today]);
-  const quality = useMemo(() => overviewQuality({ bookings: bookings.bookings, bikers: workers.bikers, periodKey, today }),
-    [bookings.bookings, workers.bikers, periodKey, today]);
   const dueVouchers = sources.vouchers.filter(v => v.status === 'unpaid' && String(v.dueDate || '').slice(0, 7) === periodKey && v.dueDate <= today);
-  return { finance: { ...finance, loading }, operations, quality, dueVouchers,
-    washes, workers, bookings,
-    retry: () => { washes.refetch(); workers.refetch(); bookings.refetch(); ledger.refetch(); live.refetch(); fees.refetch(); tax.refetch(); payroll.refetch(); } };
+  return { finance: { ...finance, loading }, operations, dueVouchers,
+    washes, workers,
+    retry: () => { washes.refetch(); workers.refetch(); ledger.refetch(); live.refetch(); fees.refetch(); tax.refetch(); payroll.refetch(); } };
 }

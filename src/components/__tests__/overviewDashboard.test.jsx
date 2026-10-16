@@ -8,6 +8,7 @@ import { overviewOperations, overviewQuality } from '../../lib/overviewDashboard
 const state = vi.hoisted(() => ({ data: null, role: 'admin', partner: false }));
 const read = vi.hoisted(() => vi.fn());
 vi.mock('../../hooks/useOverviewDashboard', () => ({ useOverviewDashboard: (...args) => { read(...args); return state.data; } }));
+vi.mock('../../hooks/useOverviewBikerQuality', () => ({ useOverviewBikerQuality: () => ({ available: true, data: [], loading: false, error: null, refetch: vi.fn() }) }));
 vi.mock('../../contexts/PartnerViewContext', () => ({ usePartnerView: () => ({ role: state.role, isPartnerView: state.partner, canMutate: false }) }));
 vi.mock('../../lib/firebaseClient', () => ({ isFirebaseConfigured: true, missingEnvNames: [] }));
 vi.mock('../TopBar', () => ({ default: ({ title }) => <h1>{title}</h1> }));
@@ -41,16 +42,16 @@ it('shows the daily average per biker and opens its actual worker/day denominato
   expect(screen.getByRole('dialog').textContent).toContain('2 ÷ 1 = 2');
   expect(screen.getByRole('dialog').textContent).toContain('wash-a');
 });
-it('explains missing customer ratings without disguising missing data as zero quality', () => {
+it('uses the profile-quality panel instead of the imported customer-rating cards', () => {
   render(<OverviewPage />);
-  expect(screen.getByRole('button', { name: 'تقييم العملاء', exact: true }).textContent).toContain('لا توجد تقييمات عملاء صالحة');
-  expect(screen.getByRole('button', { name: 'مراجع التكتات', exact: true }).textContent).toContain('لم تصل مراجع تكتات');
+  expect(screen.getByText('الجودة وتقييمات البايكرز')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'تقييم العملاء', exact: true })).toBeNull();
 });
 it('prioritizes finance, operations and quality; keeps capital collapsed without reading its sources', () => {
   render(<OverviewPage />);
   expect(screen.getAllByRole('heading', { level: 2 }).map(e => e.textContent).slice(1, 4)).toEqual(['النتيجة المالية', 'حركة التشغيل', 'الغسلات يومًا بيوم']);
   expect(screen.getByRole('button', { name: 'صافي الربح', exact: true }).textContent).toContain('-900');
-  expect(screen.getByText('الجودة وتجربة العميل')).toBeTruthy();
+  expect(screen.getByText('الجودة وتقييمات البايكرز')).toBeTruthy();
   expect(screen.queryByText('Isolated capital panel')).toBeNull();
 });
 it('opens exact P&L detail including unpaid salaries, preserving loss signs and no duplicate finance formula', () => {
@@ -67,18 +68,17 @@ it('opens a day by keyboard/click with wash IDs, worker ID, quantity and origina
   expect(within(dialog).getByText('wash-a')).toBeTruthy(); expect(within(dialog).getByText('1984')).toBeTruthy();
   fireEvent.click(within(dialog).getByRole('button', { name: 'إغلاق التفاصيل' })); expect(screen.queryByRole('dialog')).toBeNull();
 });
-it('never substitutes unavailable finance or quality with zero; independent operations remain visible', () => {
+it('never substitutes unavailable finance with zero; independent operations remain visible', () => {
   state.data.finance = { statement: null, loading: false, error: new Error('test') };
   state.data.bookings.error = new Error('test');
   render(<OverviewPage />);
   expect(screen.getByRole('button', { name: 'صافي الإيرادات', exact: true }).textContent).toContain('غير متاح');
-  expect(screen.getByRole('button', { name: 'تقييم العملاء', exact: true }).textContent).toContain('غير متاح');
   expect(screen.getByRole('button', { name: 'غسلات الشهر', exact: true }).textContent).toContain('2');
 });
-it('a missing ticket reference is unavailable, not a clean zero-ticket record or zero-star rating', () => {
+it('does not present imported ticket references as profile-quality findings', () => {
   render(<OverviewPage />);
-  expect(screen.getByRole('button', { name: 'مراجع التكتات', exact: true }).textContent).toContain('غير متاح');
-  expect(screen.getByRole('button', { name: 'تقييم العملاء', exact: true }).textContent).toContain('غير متاح');
+  expect(screen.queryByRole('button', { name: 'مراجع التكتات', exact: true })).toBeNull();
+  expect(screen.getByText('راجع نقاط البروفايلات وفترات تقاريرها في قسم تقييمات البايكرز.')).toBeTruthy();
 });
 it('changes the selected period through the branded picker, with no automatic navigation or reload', () => {
   render(<OverviewPage />);
@@ -100,5 +100,5 @@ it('renders English labels and LTR while preserving the same salary loss', () =>
   render(<LanguageContext.Provider value={{ language: 'en' }}><OverviewPage /></LanguageContext.Provider>);
   expect(screen.getByRole('main').getAttribute('dir')).toBe('ltr');
   expect(screen.getByRole('button', { name: 'Net profit', exact: true }).textContent).toContain('-900');
-  expect(screen.getByText('Quality and customer experience')).toBeTruthy();
+  expect(screen.getByText('Quality and biker assessments')).toBeTruthy();
 });

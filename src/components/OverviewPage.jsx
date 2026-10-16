@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Activity, ArrowUpRight, Bike, CalendarDays, CheckCircle2, DatabaseBackup, Loader2, Receipt, Star, Ticket, TrendingUp, Wallet, X } from 'lucide-react';
+import { Activity, ArrowUpRight, Bike, CalendarDays, CheckCircle2, DatabaseBackup, Loader2, Receipt, TrendingUp, Wallet, X } from 'lucide-react';
 import { useLanguage } from '../i18n/useLanguage';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 import { useOverviewDashboard } from '../hooks/useOverviewDashboard';
@@ -11,6 +11,7 @@ import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
 import { downloadFullBackup } from '../lib/backupZip';
 import TopBar from './TopBar';
 import CapitalOverviewPage from './CapitalOverviewPage';
+import OverviewBikerQuality from './OverviewBikerQuality';
 import BikerProfileMonthPicker from './BikerProfileMonthPicker';
 import IncomeStatementDetailsModal from './IncomeStatementDetailsModal';
 import ModalSurface from './ModalSurface';
@@ -39,10 +40,9 @@ export function ManagementOverview({ onNavigate }) {
   const [capitalOpen, setCapitalOpen] = useState(false);
   const [toast, setToast] = useState({ open: false, message: '', tone: 'success' });
   const data = useOverviewDashboard(periodKey, today);
-  const { finance, operations: ops, quality: q, washes, workers, bookings } = data;
+  const { finance, operations: ops, washes, workers } = data;
   const st = finance.statement;
   const washReady = !washes.loading && !washes.error && ops && !ops.conflicts.length && isFirebaseConfigured;
-  const qualityReady = !bookings.loading && !bookings.error && q && !q.conflicts && isFirebaseConfigured;
   const workerReady = !workers.loading && !workers.error && isFirebaseConfigured;
   const unavailable = text('غير متاح', 'Unavailable');
   const number = value => value == null ? unavailable : formatNumber(value);
@@ -66,9 +66,7 @@ export function ManagementOverview({ onNavigate }) {
     { key: 'netProfit', label: text('صافي الربح', 'Net profit'), icon: Wallet, tone: st?.netProfit < 0 ? 'amber' : 'green', note: text('بعد التكاليف ورسوم الإدارة والإشراف', 'After costs, management and supervision fees') },
   ];
   const detailRows = detail?.kind === 'day' ? detail.rows : ['month', 'bikerAverage'].includes(detail?.kind) ? ops?.rows
-    : detail?.kind === 'yesterday' ? ops?.yesterdayRows : detail?.kind === 'ratings' ? q?.rated
-      : detail?.kind === 'low' ? q?.low : detail?.kind === 'tickets' ? q?.rows.filter(row => row.ticketRef?.trim())
-        : detail?.kind === 'workers' ? workers.bikers.filter(isOverviewWorkingBiker) : [];
+    : detail?.kind === 'yesterday' ? ops?.yesterdayRows : detail?.kind === 'workers' ? workers.bikers.filter(isOverviewWorkingBiker) : [];
   const isWashDetail = ['day', 'month', 'yesterday', 'bikerAverage'].includes(detail?.kind);
   return <>
     <TopBar title={text('نظرة عامة', 'Overview')} subtitle={text('صورة المشروع: المال، التشغيل والجودة', 'Your business at a glance: finance, operations and quality')}
@@ -123,20 +121,7 @@ export function ManagementOverview({ onNavigate }) {
         </Card>
       </section>
 
-      <section aria-labelledby="overview-quality-title" className="sw-overview__section">
-        <SectionHeader title={<span id="overview-quality-title">{text('الجودة وتجربة العميل', 'Quality and customer experience')}</span>} subtitle={text('عينة الحجوزات المستوردة للشهر المحدد؛ ليست سجل التكتات الكامل ولا تقييم الجودة المركّب للبايكر.', 'Imported bookings for the selected month; not the complete ticket register or the biker’s composite quality assessment.')} action={action('سجل البايكر', 'Biker registry', 'bikers')} />
-        <div className="sw-overview__metric-grid">
-          <Metric icon={Star} tone="amber" label={text('تقييم العملاء', 'Customer rating')} value={qualityReady && q.average !== null ? `${number(q.average)} / 5` : unavailable}
-            note={qualityReady && !q.rated.length ? text('لا توجد تقييمات عملاء صالحة في حجوزات الشهر المستوردة', 'No valid customer ratings in this month’s imported bookings') : text('من تقييمات فعلية في العينة المقروءة', 'From actual ratings in the read sample')} disabled={!qualityReady || !q?.rated.length} onClick={() => setDetail({ kind: 'ratings', title: text('تقييمات العملاء', 'Customer ratings') })} />
-          <Metric icon={Star} label={text('عدد التقييمات', 'Ratings count')} value={qualityReady ? number(q.rated.length) : unavailable}
-            note={qualityReady ? `${text('الحجوزات المقروءة', 'Read bookings')}: ${number(q.rows.length)}` : ''} disabled={!qualityReady} onClick={() => setDetail({ kind: 'ratings', title: text('تقييمات العملاء', 'Customer ratings') })} />
-          <Metric icon={Ticket} tone="orange" label={text('مراجع التكتات', 'Ticket references')} value={qualityReady && q.tickets.length ? number(q.tickets.length) : unavailable}
-            note={qualityReady && !q.tickets.length ? text('لم تصل مراجع تكتات في عينة الشهر؛ هذا لا يعني عدم وجود تكتات', 'No ticket references in this month’s sample; this does not mean there are no tickets') : text('غياب المرجع لا يثبت عدم وجود تكت', 'No reference does not prove there are no tickets')} disabled={!qualityReady || !q?.tickets.length} onClick={() => setDetail({ kind: 'tickets', title: text('مراجع التكتات المتاحة', 'Available ticket references') })} />
-          <Metric icon={Activity} tone="amber" label={text('تقييمات أقل من 4', 'Ratings below 4')} value={qualityReady ? number(q.low.length) : unavailable}
-            note={text('للمراجعة، وليس حكمًا على العامل', 'For review, not a judgment on a worker')} disabled={!qualityReady} onClick={() => setDetail({ kind: 'low', title: text('تقييمات تحتاج مراجعة', 'Ratings to review') })} />
-        </div>
-        {(bookings.error || q?.conflicts > 0) && <p role="alert" className="sw-overview__notice">{text('بيانات الجودة غير مؤكدة؛ المصدر متعذر أو يحوي تكرارًا متعارضًا.', 'Quality data is unconfirmed: the source is unavailable or has conflicting duplicates.')}</p>}
-      </section>
+      <OverviewBikerQuality workers={workers} periodKey={periodKey} today={today} onNavigate={onNavigate} />
 
       <Card className="sw-overview__panel"><SectionHeader title={text('يحتاج انتباهك', 'Needs your attention')} subtitle={text('ملاحظات من المصادر المقروءة فقط، لا قائمة شاملة بكل التزامات المشروع.', 'Findings from the read sources only, not a complete list of business obligations.')} />
         <div className="sw-overview__attention">
@@ -149,11 +134,9 @@ export function ManagementOverview({ onNavigate }) {
             {action('مراجعة المصاريف الشهرية', 'Review monthly expenses', 'monthly')}
           </div>
           <div><h3>{text('متابعة الجودة', 'Quality follow-up')}</h3>
-            {!qualityReady || !workerReady ? <p>{unavailable}</p> : q.attention.length ? <ul>{q.attention.slice(0, 5).map(item => <li key={item.biker.id}>
-              <span><bdi dir="ltr">{item.biker.driverExternalId || '—'}</bdi> · <span translate="no">{displayBikerName(item.biker, language)}</span></span>
-              <small>{text('تقييمات منخفضة', 'Low ratings')}: {number(item.low)} · {text('مراجع تكتات', 'Ticket references')}: {number(item.tickets)}</small></li>)}</ul>
-              : <p>{text('لا توجد ملاحظات مرتبطة بالعامل في العينة المقروءة؛ لا يثبت ذلك خلو سجل الجودة الكامل.', 'No worker-linked findings in the read sample; this does not establish a clean complete quality record.')}</p>}
-            {role === 'admin' ? action('فتح سجل البايكر والتقييم المركّب', 'Open bikers and composite assessments', 'bikers') : action('سجل البايكر', 'Biker registry', 'bikers')}
+            <p>{role === 'admin' ? text('راجع نقاط البروفايلات وفترات تقاريرها في قسم تقييمات البايكرز.', 'Review profile points and reporting windows in the biker assessments section.')
+              : text('تقييمات البروفايلات المركّبة مقصورة على الأدمن.', 'Composite profile assessments are restricted to admins.')}</p>
+            {action('سجل البايكر', 'Biker registry', 'bikers')}
           </div>
         </div>
       </Card>

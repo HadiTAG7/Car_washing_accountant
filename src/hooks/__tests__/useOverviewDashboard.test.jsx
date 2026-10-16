@@ -35,7 +35,7 @@ it.each(['payroll', 'fees', 'tax', 'live'])('does not display unconfirmed financ
   state[source] = { ...state[source], error: new Error('synthetic') };
   const { result } = renderHook(() => useOverviewDashboard('2026-10', '2026-10-16'));
   expect(result.current.finance.statement).toBeNull(); expect(result.current.finance.error).toBeTruthy();
-  expect(result.current.operations.quantity).toBe(0); expect(result.current.quality.average).toBeNull();
+  expect(result.current.operations.quantity).toBe(0); expect(result.current.quality).toBeUndefined();
 });
 it('does not turn missing salary previews or legacy duplicate salaries into zero costs', () => {
   state.payroll.data = [];

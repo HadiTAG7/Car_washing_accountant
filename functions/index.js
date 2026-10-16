@@ -56,6 +56,13 @@ const callable = (name) => onCall(OPTS, async (req) => {
 export const supervisorOverview = callable('supervisorOverview');
 export const supervisorRecords = callable('supervisorRecords');
 
+// Existing shared workflow handlers: keep both transports on the same guards.
+export const expenseCorrectionOptions = callable('expenseCorrectionOptions');
+export const expensePreviewCorrection = callable('expensePreviewCorrection');
+export const expenseSaveCorrection = callable('expenseSaveCorrection');
+export const payrollReadStatus = callable('payrollReadStatus');
+export const workerRecordAdvance = callable('workerRecordAdvance');
+
 // ─── الترحيل ─────────────────────────────────────────────────────────────
 export const ledgerPostSource = callable('ledgerPostSource');
 export const ledgerPostManual = callable('ledgerPostManual');

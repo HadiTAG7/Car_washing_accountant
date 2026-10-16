@@ -44,4 +44,5 @@ mcp/node_modules/
 .env*
 !.env.example
 .vite-cache/
+.test-runtime/
 language-preview.local/

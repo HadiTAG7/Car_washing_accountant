@@ -1,4 +1,5 @@
 import { previewAdvanceMonth, saveAdvanceMonth } from './advanceMonth.js';
+import { ExpenseCorrectionError, previewExpenseCorrection, saveExpenseCorrection, recordWorkerAdvance, expenseCorrectionOptions, payrollReadStatus } from './expenseCorrections.js';
 // ═══════════════════════════════════════════════════════════════════════════
 // الطبقة المشتركة — مَن المتصل، وما الذي يُسمح له، وأين يُسلَّم
 // ═══════════════════════════════════════════════════════════════════════════
@@ -250,6 +251,11 @@ import { supervisorOverview, supervisorRecords } from './supervisorRead.js';
 import { SUPERVISOR_READ_HANDLERS } from '../../src/lib/supervisorAccess.js';
 
 export const HANDLERS = {
+  expenseCorrectionOptions: { guard: 'accountant', run: ({ db }) => expenseCorrectionOptions(db) },
+  payrollReadStatus: { guard: 'accountant', run: ({ db, data }) => payrollReadStatus(db, data || {}) },
+  expensePreviewCorrection: { guard: 'accountant', run: ({ db, data }) => previewExpenseCorrection(db, data || {}) },
+  expenseSaveCorrection: { guard: 'accountant', run: ({ db, FieldValue, data, uid }) => saveExpenseCorrection(db, FieldValue, data || {}, { userId: uid }) },
+  workerRecordAdvance: { guard: 'admin', run: ({ db, FieldValue, data, uid }) => recordWorkerAdvance(db, FieldValue, data || {}, { userId: uid }) },
   supervisorOverview: {
     guard: 'supervisorReader',
     run: ({ db, data }) => supervisorOverview(db, data),
@@ -659,6 +665,7 @@ export const HANDLER_NAMES = Object.keys(HANDLERS);
  * أخرى» for a problem retrying cannot fix.
  */
 export function normalizeError(e) {
+  if (e instanceof ExpenseCorrectionError) return { code: e.code, message: e.message, details: null };
   if (e instanceof SweaterIngestError) return { code: e.code, message: e.message, details: e.details };
   if (e instanceof AuthError) return { code: e.code, message: e.message, details: null };
   if (e instanceof InvoicingError) {

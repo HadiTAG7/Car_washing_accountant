@@ -18,7 +18,7 @@ import { SERVER_INSTRUCTIONS, PROMPTS } from './instructions.js';
  */
 export function buildSweaterServer({ writes = false } = {}) {
   const server = new McpServer(
-    { name: 'sweater', version: '1.1.0' },
+    { name: 'sweater', version: '1.2.0' },
     { instructions: SERVER_INSTRUCTIONS },
   );
   const tools = writes ? [...readTools, ...writeTools] : readTools;
@@ -26,7 +26,7 @@ export function buildSweaterServer({ writes = false } = {}) {
   for (const tool of tools) {
     server.registerTool(
       tool.name,
-      { title: tool.title, description: tool.description, inputSchema: tool.schema },
+      { title: tool.title, description: tool.description, inputSchema: tool.schema, ...(tool.annotations ? { annotations: tool.annotations } : {}) },
       async (args) => {
         try {
           return await tool.run(args ?? {});

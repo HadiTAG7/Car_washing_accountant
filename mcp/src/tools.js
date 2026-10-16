@@ -23,6 +23,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { z } from 'zod';
+import { workflowReadTools, workflowWriteTools } from './workflowTools.js';
 import { connect, callServer, readOnly, SweaterMcpError } from './client.js';
 import { collection, addDoc } from 'firebase/firestore';
 import { COL, OPERATIONAL, rows, row, ledgerBundle, lockId, feeRulesMapped } from './fetch.js';
@@ -79,6 +80,7 @@ const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 // ─── القراءة ─────────────────────────────────────────────────────────────
 
 export const readTools = [
+  ...workflowReadTools.map(tool => ({ ...tool, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } })),
   {
     name: 'sweater_whoami',
     title: 'من أنا في هذا النظام',
@@ -92,6 +94,8 @@ export const readTools = [
       return text({
         اليوم: t.today, الشهر_الحالي: t.currentMonth, التاريخ: t.label,
         email, uid, role,
+        mcpVersion: '1.2.0',
+        workflowTools: [...workflowReadTools, ...workflowWriteTools].map(tool => tool.name),
         mode: readOnly ? 'قراءة فقط' : 'قراءة وكتابة',
         canPostLedger: ['admin', 'accountant'].includes(role),
         canReopenPeriod: role === 'admin',
@@ -452,6 +456,7 @@ export const readTools = [
 // point: there is no logic here that could disagree with the app's.
 
 export const writeTools = [
+  ...workflowWriteTools.map(tool => ({ ...tool, annotations: { readOnlyHint: false, destructiveHint: tool.name === 'sweater_save_expense_correction', openWorldHint: false } })),
   {
     name: 'sweater_record_expense',
     title: 'تسجيل مصروف من فاتورة',

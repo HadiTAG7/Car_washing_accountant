@@ -152,3 +152,28 @@ export async function callServer(name, payload = {}) {
     throw err;
   }
 }
+
+/** New app workflows ship with Vercel, not a separately deployed callable.
+ * No arbitrary endpoint/tool argument: only the fixed application origin.
+ * Read previews are allowed in readonly mode; mutations still fail closed.
+ */
+export async function callAppServer(name, payload = {}, { write = true } = {}) {
+  if (write && readOnly) throw new SweaterMcpError('الخادم في وضع القراءة فقط.', { code: 'permission-denied' });
+  const { auth } = await connect();
+  if (!auth?.currentUser) throw new SweaterMcpError('تسجيل الدخول مطلوب.', { code: 'unauthenticated' });
+  const token = await auth.currentUser.getIdToken();
+  let response;
+  try {
+    response = await fetch('https://sweater-hadi-alghanim.vercel.app/api/ledger', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ name, data: payload }), redirect: 'error', signal: AbortSignal.timeout(55000),
+    });
+  } catch {
+    throw new SweaterMcpError('تعذر الوصول إلى خادم التطبيق؛ تحقق من النتيجة قبل إعادة الحفظ.', { code: 'unavailable' });
+  }
+  const body = await response.json().catch(() => null);
+  if (!response.ok || body?.error || !body || !Object.hasOwn(body, 'result')) {
+    throw new SweaterMcpError(body?.error?.message || 'استجابة غير صالحة من خادم التطبيق.', { code: body?.error?.code || 'internal' });
+  }
+  return body.result;
+}

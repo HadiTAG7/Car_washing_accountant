@@ -18,6 +18,8 @@ import {
   EMPTY_COMMAND_CENTER_SNAPSHOT,
   WORKFLOW_AGENT_IDS,
   assembleAgentOrganization,
+  agentWorkLabel,
+  commandCenterOverview,
   formatAgentDate,
   toIsoTimestamp,
 } from '../lib/agentCommandCenter';
@@ -40,6 +42,7 @@ const ICONS = Object.freeze({
   badge: BadgeCheck,
   trend: TrendingUp,
   workflow: Workflow,
+  crown: Crown,
 });
 
 const TEAM_ICONS = Object.freeze({
@@ -48,6 +51,7 @@ const TEAM_ICONS = Object.freeze({
   users: UsersRound,
   badge: BadgeCheck,
   trend: TrendingUp,
+  settings: Settings,
 });
 
 const STATUS_BADGE_KIND = Object.freeze({
@@ -60,9 +64,9 @@ const STATUS_BADGE_KIND = Object.freeze({
 const NOOP = () => {};
 const GRAPH_CENTER = 50;
 const TEAM_RADIUS = 29;
-const AGENT_RADIUS = 42;
+const AGENT_RADIUS = 46;
 const MOBILE_MAP_WIDTH = 920;
-const MOBILE_MAP_HEIGHT = 700;
+const MOBILE_MAP_HEIGHT = 920;
 const MAP_ZOOM_DEFAULT = 0.82;
 const MAP_ZOOM_MIN = 0.72;
 const MAP_ZOOM_MAX = 1.42;
@@ -82,6 +86,7 @@ const EXECUTIVE_TABS = Object.freeze([
   { id: 'sources', label: 'صحة المصادر', icon: Database },
   { id: 'alerts', label: 'التنبيهات', icon: BellRing },
   { id: 'tasks', label: 'القضايا والمهام', icon: FileClock },
+  { id: 'closed', label: 'السجلات المغلقة', icon: ClipboardCheck },
 ]);
 
 function pointAt(angle, radius) {
@@ -98,7 +103,7 @@ function organizationLayout(organization) {
     point: pointAt(team.layout.angle, TEAM_RADIUS),
     memberPoints: new Map(team.memberAgentIds.map((agentId, index) => [
       agentId,
-      pointAt(team.layout.memberArc[index] ?? team.layout.angle, AGENT_RADIUS),
+      pointAt(team.layout.memberArc[index] ?? team.layout.angle, team.id === 'quality' ? 43 : AGENT_RADIUS),
     ])),
   }));
 }
@@ -172,8 +177,8 @@ function AgentButton({ agent, onOpen, point, variant = 'orbit', dimmed = false }
       <span className="acc-agent-ring" aria-hidden="true" />
       <span className="acc-agent-icon"><Icon size={variant === 'leader' ? 18 : 21} /></span>
       <span className="acc-agent-name">{agent.shortName}</span>
-      <span className="acc-node-state">{agent.connection !== 'connected' ? CONNECTION_LABELS[agent.connection] : agent.currentTask && ['blocked', 'waiting-approval'].includes(agent.currentTask.state) ? TASK_STATE_LABELS[agent.currentTask.state] : agent.isRunning ? 'يعمل الآن' : 'متصل'}</span>
-      <span className="acc-node-work" title={agent.currentTask?.title || agent.latestReport?.summary || undefined}>{agent.currentTask?.title || agent.latestReport?.title || 'لم تصل مهمة أو نتيجة'}</span>
+      <span className="acc-node-state">{agent.isRunning ? 'يعمل الآن — وفق تحديث المركز' : agent.currentTask ? `آخر مهمة: ${TASK_STATE_LABELS[agent.currentTask.state] || 'غير موثق'}` : CONNECTION_LABELS[agent.connection]}</span>
+      <span className="acc-node-work" title={agentWorkLabel(agent)}>{agentWorkLabel(agent)}</span>
       <span className="acc-agent-indicator" aria-hidden="true" />
     </button>
   );
@@ -188,6 +193,7 @@ function TeamNode({ team, activeTeamId, onSelectTeam, onOpenAgent }) {
   return (
     <div
       className="acc-team-node"
+      data-team={team.id}
       style={style}
       data-status={status}
       data-active={active ? 'true' : 'false'}
@@ -393,12 +399,12 @@ function OrganizationMap({ organization, activeTeamId, onSelectTeam, onOpenAgent
         </svg>
 
         <div className="acc-layer-label acc-layer-label--agents">{activeTeamId ? 'وكلاء القسم المختار' : 'اختر قسمًا لعرض وكلائه'}</div>
-        <div className="acc-ceo-node" role="img" aria-label="CEO، مركز القيادة، عقدة تنظيمية لا تدخل ضمن عدد الوكلاء">
+        <button type="button" className="acc-ceo-node" aria-label="0: الرئيس التنفيذي — فتح ملخص اليوم والقرارات" onClick={event => onOpenAgent(organization.root.agent, event.currentTarget)}>
           <span className="acc-ceo-icon"><Crown size={24} /></span>
           <strong>CEO</strong>
-          <small>مركز القيادة</small>
-          <span>{approvals} موافقات · {alerts} تنبيهات</span>
-        </div>
+          <small>0: الرئيس التنفيذي</small>
+          <span>{approvals} طلبًا للمراجعة · {alerts} تنبيهًا مفتوحًا</span>
+        </button>
 
         {teams.map((team) => (
           <TeamNode key={team.id} team={team} activeTeamId={activeTeamId} onSelectTeam={onSelectTeam} onOpenAgent={onOpenAgent} />
@@ -412,10 +418,10 @@ function OrganizationMap({ organization, activeTeamId, onSelectTeam, onOpenAgent
             dimmed={Boolean(activeTeamId && activeTeamId !== team.id)}
           />
         )))}
-            <div className="acc-flow-label">{activeTeamId === 'finance' ? <><span>مسار المالية</span>تسجيل ← مراجعة ← مطابقة ← CFO ← CEO</> : <><span>مسار التقارير</span>الوكيل ← مدير القسم ← CEO</>}</div>
           </div>
         </div>
       </div>
+      <div className="acc-flow-label">{activeTeamId === 'finance' ? <><span>مسار المالية</span>تسجيل ← المدير المالي (مراجعة وترحيل ومطابقة) ← CEO</> : <><span>مسار التقارير</span>المتخصص ← مدير القسم ← CEO · ملخص واحد 23:30</>}</div>
     </div>
   );
 }
@@ -476,13 +482,50 @@ function EvidenceLinks({ links = [] }) {
   return safe.length ? <ul className="acc-evidence-links">{safe.map((link, index) => <li key={`${index}-${link}`}><a href={link} target="_blank" rel="noopener noreferrer">دليل {index + 1} <ExternalLink size={13} /></a></li>)}</ul> : <p className="acc-inline-empty">لم يصل رابط دليل.</p>;
 }
 
-function WorkSummary({ task, report }) {
+function WorkSummary({ task, report, agent }) {
   return <section className="acc-detail-section"><h3>العمل والنتيجة</h3><dl className="acc-work-summary">
     <div><dt>المهمة</dt><dd>{task ? `${task.title} — ${TASK_STATE_LABELS[task.state] || 'غير معروف'}` : 'لم تصل مهمة مرتبطة'}</dd></div>
-    <div><dt>آخر نتيجة</dt><dd>{task?.result || report?.summary || 'لم تصل نتيجة'}</dd></div>
+    <div><dt>آخر نتيجة مستلمة</dt><dd><AgentMessage text={task?.result || report?.summary || 'لم تصل نتيجة'} /></dd></div>
+    <div><dt>وقت النتيجة</dt><dd>{formatAgentDate(task?.occurredAt || report?.reportedAt)}</dd></div>
+    <div><dt>المسؤول</dt><dd>{agent?.name || task?.ownerName || 'غير موثق'}</dd></div>
     <div><dt>العائق</dt><dd>{task?.blocker || 'لم يُبلّغ عن عائق'}</dd></div>
     <div><dt>الخطوة التالية</dt><dd>{task?.nextStep || 'لم تُحدد'}</dd></div>
-  </dl>{task ? <EvidenceLinks links={task.evidence} /> : null}</section>;
+  </dl><EvidenceLinks links={task?.evidence || (report?.url ? [report.url] : [])} /><p className="acc-connection-note">النتيجة تصريح مستلم من الوكيل؛ وصول التقرير لا يثبت حفظ العملية أو التحقق المستقل منها.</p></section>;
+}
+
+function DecisionBrief({ snapshot, loading = false, error = null, onOpenAgent }) {
+  const overview = commandCenterOverview(snapshot);
+  const openOwner = (row, trigger) => {
+    const agent = snapshot.agents.find(item => item.id === row.ownerId);
+    if (agent && onOpenAgent) onOpenAgent(agent, trigger);
+  };
+  const entries = [
+    ...overview.critical.map(row => ({ ...row, label: 'تنبيه حرج مفتوح', detail: row.message })),
+    ...overview.blockers.map(row => ({ ...row, kind: 'task', label: 'مهمة متعثرة', detail: row.blocker })),
+    ...overview.decisions.map(row => ({ ...row, label: 'طلب يحتاج مراجعة', detail: row.summary })),
+  ].sort((a, b) => Number(a.old) - Number(b.old));
+  const rowView = row => <li key={`${row.kind}-${row.id}`}>
+    <div className="acc-decision-heading"><strong>{row.title}</strong><span>{row.label}</span></div>
+    <AgentMessage text={row.detail} />
+    <p className="acc-connection-note">{row.ownerName}{row.historical ? ' · سجل دور مدمج، لم يُنقل أو يُغلق' : ''}{row.old ? ' · سابق لليوم؛ يحتاج تحققًا من استمرار الحالة' : ''}</p>
+    {row.dueAt ? <p className="acc-decision-due">الموعد: {formatAgentDate(row.dueAt)}</p> : null}
+    {row.nextStep ? <AgentMessage text={`الخطوة التالية: ${row.nextStep}`} /> : null}
+    {row.records?.length > 1 ? <details><summary>{row.records.length} سجلات متطابقة للحالة نفسها</summary><ul>{row.records.map(record => <li key={record.id}>{record.id} · {formatAgentDate(record.createdAt)}</li>)}</ul></details> : null}
+    {row.ownerId && onOpenAgent ? <button type="button" className="acc-owner-link" onClick={event => openOwner(row, event.currentTarget)}>متابعة مع {row.ownerName}</button> : null}
+  </li>;
+  return <section className="acc-decision-brief" aria-label="متابعة اليوم والقرارات" aria-busy={loading}>
+    <header><div><p>مركز المتابعة والقرارات</p><h2>وش يحتاج انتباهك؟</h2></div><span>لقطة المركز: {formatAgentDate(snapshot.observedAt)} · الرياض</span></header>
+    {loading || error ? <p role={error ? 'alert' : 'status'}>{error ? 'القراءة غير مكتملة؛ لا يمكن تأكيد النتائج أو الطلبات.' : 'جارٍ استلام البيانات…'}</p> : <>
+      <div className="acc-outcome-grid">
+        <div><strong>{overview.results.length}</strong><span>وكلاء وصلت نتائجهم اليوم</span><small>وصول التقرير ليس إثبات حفظ</small></div>
+        <div><strong>{overview.blockers.length}</strong><span>مهام متعثرة معلنة</span><small>العائق ومسؤوله أدناه</small></div>
+        <div><strong>{overview.decisions.length}</strong><span>طلبات معلّقة للمراجعة</span><small>ليست كلها قرارات مطلوبة منك</small></div>
+      </div>
+      {entries.length ? <><ul className="acc-decision-list">{entries.slice(0, 3).map(rowView)}</ul>{entries.length > 3 ? <details className="acc-more-decisions"><summary>عرض بقية المتابعات ({entries.length - 3})</summary><ul className="acc-decision-list">{entries.slice(3).map(rowView)}</ul></details> : null}</> : <p className="acc-inline-empty">لم تصل طلبات أو عوائق مسجلة تستدعي العرض هنا؛ هذا لا يثبت اكتمال جميع أعمال الوكلاء.</p>}
+      {overview.results.length ? <details className="acc-today-results"><summary>نتائج اليوم المستلمة ({overview.results.length})</summary><ul className="acc-decision-list">{overview.results.map(agent => <li key={agent.id}><strong>{agent.name}</strong><AgentMessage text={agent.latestReport.summary} /><time>{formatAgentDate(agent.latestReport.reportedAt)}</time>{onOpenAgent ? <button type="button" className="acc-owner-link" onClick={event => onOpenAgent(agent, event.currentTarget)}>عرض النتيجة والأدلة</button> : null}</li>)}</ul></details> : <p className="acc-connection-note">لا توجد نتائج مستلمة بتاريخ اليوم في البيانات المحملة.</p>}
+    </>}
+    <p className="acc-connection-note">تأخر تحديث المركز لا يعني توقف الوكيل. التصنيف الحرج لا يثبت أن التنبيه جديد أو يستلزم تدخلك؛ الملخص اليومي من الرئيس التنفيذي 23:30، والعاجل المؤهل فقط فورًا.</p>
+  </section>;
 }
 
 function ManagerReview({ review }) {
@@ -553,7 +596,7 @@ function ApprovalsContent({ approvals }) {
   return (
     <ul className="acc-event-list">
       {approvals.map((approval) => (
-        <li key={approval.id}><span className="acc-event-marker" data-kind="warning" aria-hidden="true" /><div><strong>{approval.title}</strong><AgentMessage text={approval.summary} /><time dateTime={approval.createdAt || undefined}>{formatAgentDate(approval.createdAt)}</time><span className="acc-readonly-note">قرار CEO مطلوب — لا يُنفّذ هنا</span></div></li>
+        <li key={approval.id}><span className="acc-event-marker" data-kind="warning" aria-hidden="true" /><div><strong>{approval.title}</strong><AgentMessage text={approval.summary} /><time dateTime={approval.createdAt || undefined}>{formatAgentDate(approval.createdAt)}</time><span className="acc-readonly-note">طلب مستلم للمراجعة؛ الجهة المطلوبة غير مثبتة في السجل — لا يُنفّذ هنا</span></div></li>
       ))}
     </ul>
   );
@@ -582,6 +625,7 @@ function ExecutiveConsole({ snapshot, onLoadCaseHistory }) {
     sources: snapshot.sources.length,
     alerts: snapshot.alerts.length,
     tasks: snapshot.tasks.length,
+    closed: (snapshot.closedAlerts || []).length + snapshot.tasks.filter(task => task.state === 'completed').length,
   };
   return (
     <Card className="acc-executive-console">
@@ -592,12 +636,13 @@ function ExecutiveConsole({ snapshot, onLoadCaseHistory }) {
         {activeTab === 'sources' ? <SourcesContent sources={snapshot.sources} /> : null}
         {activeTab === 'alerts' ? <AlertsContent alerts={snapshot.alerts} /> : null}
         {activeTab === 'tasks' ? <TasksContent tasks={snapshot.tasks} onLoadCaseHistory={onLoadCaseHistory} /> : null}
+        {activeTab === 'closed' ? <><p className="acc-connection-note">المهام المكتملة والتنبيهات المغلقة المستلمة؛ التنبيهات عينة محدودة حتى 80 سجلًا، وليست الأرشيف الكامل أو الأحدث بالضرورة. لا يُغلق شيء تلقائيًا من الشاشة.</p><AlertsContent alerts={snapshot.closedAlerts || []} /><TasksContent tasks={snapshot.tasks.filter(task => task.state === 'completed')} onLoadCaseHistory={onLoadCaseHistory} /></> : null}
       </div>
     </Card>
   );
 }
 
-function AgentDetailsDrawer({ agent, observedAt, onClose, returnFocusRef }) {
+function AgentDetailsDrawer({ agent, observedAt, snapshot, loading, error, onClose, returnFocusRef }) {
   const closeButtonRef = useRef(null);
   const drawerRef = useRef(null);
   const [activeTab, setActiveTab] = useState('summary');
@@ -649,6 +694,7 @@ function AgentDetailsDrawer({ agent, observedAt, onClose, returnFocusRef }) {
     ...(agent.lastRunAt ? [{ id: `run-${agent.lastRunAt}`, kind: 'تشغيل', title: 'آخر تشغيل مسجّل', occurredAt: agent.lastRunAt }] : []),
     ...agent.reports.map((report) => ({ id: `report-${report.id}`, kind: 'تقرير', title: report.title, occurredAt: report.reportedAt })),
     ...agent.alerts.map((alert) => ({ id: `alert-${alert.id}`, kind: 'تنبيه', title: alert.title, occurredAt: alert.createdAt })),
+    ...(agent.closedAlerts || []).map(alert => ({ id: `closed-${alert.id}`, kind: 'تنبيه مغلق', title: alert.title, occurredAt: alert.updatedAt || alert.createdAt })),
     ...agent.teamReports.map((report) => ({ id: `team-report-${report.id}`, kind: 'تقرير فريق', title: `${report.sourceAgentName}: ${report.title}`, occurredAt: report.reportedAt })),
     ...agent.teamAlerts.map((alert) => ({ id: `team-alert-${alert.id}`, kind: 'تنبيه حرج', title: `${alert.sourceAgentName}: ${alert.title}`, occurredAt: alert.createdAt })),
   ].sort((a, b) => String(b.occurredAt || '').localeCompare(String(a.occurredAt || '')));
@@ -667,12 +713,16 @@ function AgentDetailsDrawer({ agent, observedAt, onClose, returnFocusRef }) {
           {activeTab === 'summary' ? (
             <>
               <div className="acc-detail-status-row"><StatusPill status={agent.status} />{agent.isRunning ? <span className="acc-live-chip"><span /> يعمل الآن</span> : null}</div>
-              <p className="acc-connection-note">{CONNECTION_LABELS[agent.connection]} · آخر اتصال: {formatAgentDate(agent.lastSeen)}{agent.connection === 'stale' ? ' — الحالة السابقة ليست تأكيدًا للصحة الآن.' : ''}</p>
-              <WorkSummary task={agent.currentTask} report={agent.latestReport} />
+              {agent.id === 'ceo' ? <DecisionBrief snapshot={snapshot} loading={loading} error={error} /> : null}
+              <p className="acc-connection-note">{CONNECTION_LABELS[agent.connection]} · آخر تحديث للمركز: {formatAgentDate(agent.lastSeen)} — ليست حالة اتصال جلسة الوكيل أو المتصفح.</p>
+              {!agent.ingressSupported ? <p className="acc-integration-gap">الدور معتمد في الهيكل، لكن ربط تقاريره المباشر غير مدعوم في مدخل المركز الحالي. لا تعني هذه الشاشة أنه متوقف.</p> : null}
+              <WorkSummary task={agent.currentTask} report={agent.latestReport} agent={agent} />
+              {agent.archivedReports?.length || agent.archivedAlerts?.length || agent.archivedApprovals?.length || agent.archivedTasks?.length ? <section className="acc-detail-section"><h3>سجلات الأدوار المدمجة</h3><p className="acc-connection-note">للمتابعة التاريخية فقط؛ ليست تشغيلًا أو نتيجة جديدة للمدير. الطلبات والتنبيهات لم تُغلق تلقائيًا.</p><ul className="acc-detail-list">{[...agent.archivedApprovals, ...agent.archivedAlerts, ...agent.archivedTasks, ...agent.archivedReports].map((row, index) => <li key={`${row.agentId}-${row.id}-${index}`}><strong>{row.title}</strong><small>{row.agentId} · {formatAgentDate(row.createdAt || row.occurredAt || row.reportedAt)}</small><AgentMessage text={row.summary || row.message || row.result} /></li>)}</ul></section> : null}
               {agent.isTeamLeader ? <ManagerReview review={agent.managerReview} /> : null}
               <dl className="acc-detail-times">
                 <div><dt>آخر تشغيل</dt><dd>{formatAgentDate(agent.lastRunAt)}</dd></div>
                 <div><dt>التشغيل القادم</dt><dd>{upcomingRun ? formatAgentDate(agent.nextRunAt) : 'غير متوفر'}</dd></div>
+                <div><dt>الجدول المعتمد</dt><dd>{agent.schedule}</dd></div>
                 {previousSchedule ? <div><dt>آخر موعد مُبلّغ (مضى)</dt><dd>{formatAgentDate(agent.nextRunAt)}</dd></div> : null}
               </dl>
               <section className="acc-detail-section"><h3>الدور</h3><p>{agent.role}</p></section>
@@ -701,7 +751,7 @@ function CommandCenterTopBar({ loading, onRefresh, preview = false }) {
   return (
     <TopBar
       title="مركز قيادة الوكلاء"
-      subtitle="CEO ← الفرق والإدارات ← الوكلاء"
+      subtitle="النتائج والعوائق والقرارات · الهيكل المعتمد"
       hidePartnerSelector={preview}
       actions={<SecondaryButton icon={RotateCw} onClick={onRefresh} disabled={loading} className="acc-refresh-button" title="تحديث بيانات الوكلاء"><span className="acc-visually-hidden">تحديث بيانات الوكلاء</span><span className="hidden sm:inline" aria-hidden="true">{loading ? 'جارٍ التحديث' : 'تحديث البيانات'}</span></SecondaryButton>}
     />
@@ -724,6 +774,7 @@ export function AgentCommandCenterView({
 }) {
   const reducedMotion = usePrefersReducedMotion();
   const organization = useMemo(() => assembleAgentOrganization(snapshot.agents), [snapshot.agents]);
+  const overview = useMemo(() => commandCenterOverview(snapshot), [snapshot]);
   const [selectedAgentId, setSelectedAgentId] = useState(null);
   const [activeTeamId, setActiveTeamId] = useState(null);
   const returnFocusRef = useRef(null);
@@ -741,16 +792,16 @@ export function AgentCommandCenterView({
       <CommandCenterTopBar loading={loading} onRefresh={onRefresh} preview={preview} />
       <main className="acc-page" dir="rtl" data-motion={reducedMotion ? 'reduced' : 'full'}>
         <Card className="acc-summary-strip" role="region" aria-label="الملخص التنفيذي للوكلاء" aria-busy={loading}>
-          <div className="acc-summary-item"><span className="acc-summary-icon" data-tone="primary"><Bot size={17} /></span><p>مسجّلون<strong className="tabular-nums">{snapshot.agents.length}</strong><small>لا يشمل CEO أو الفرق</small></p></div>
-          <div className="acc-summary-item"><span className="acc-summary-icon" data-tone="success"><Activity size={17} /></span><p>متصلون<strong className="tabular-nums">{loading || error ? '—' : snapshot.summary.connected}</strong><small>{loading || error ? 'القراءة غير مكتملة' : `${snapshot.summary.running} يعمل الآن`}</small></p></div>
-          <div className="acc-summary-item"><span className="acc-summary-icon" data-tone={snapshot.summary.stale ? 'warning' : 'neutral'}><AlertTriangle size={17} /></span><p>متأخرو التحديث<strong className="tabular-nums">{loading || error ? '—' : snapshot.summary.stale}</strong><small>{loading || error ? 'القراءة غير مكتملة' : `${snapshot.summary.critical} حرج · ${snapshot.summary.warning} يحتاج انتباهًا`}</small></p></div>
-          <div className="acc-summary-item"><span className="acc-summary-icon" data-tone={snapshot.approvals.length ? 'warning' : 'neutral'}><ClipboardCheck size={17} /></span><p>الموافقات<strong className="tabular-nums">{loading || error ? '—' : snapshot.approvals.length}</strong></p></div>
+          <div className="acc-summary-item"><span className="acc-summary-icon" data-tone="primary"><Bot size={17} /></span><p>الأدوار المعتمدة<strong className="tabular-nums">{snapshot.agents.length}</strong><small>شامل الرئيس التنفيذي · {organization.teams.length} أقسام</small></p></div>
+          <div className="acc-summary-item"><span className="acc-summary-icon" data-tone="success"><Activity size={17} /></span><p>تحديثات حديثة<strong className="tabular-nums">{loading || error ? '—' : snapshot.summary.connected}</strong><small>تقارير المركز، لا اتصال الجلسات</small></p></div>
+          <div className="acc-summary-item"><span className="acc-summary-icon" data-tone={snapshot.summary.stale ? 'warning' : 'neutral'}><AlertTriangle size={17} /></span><p>تحديثات قديمة<strong className="tabular-nums">{loading || error ? '—' : snapshot.summary.stale}</strong><small>لا تثبت توقف الوكلاء</small></p></div>
+          <div className="acc-summary-item"><span className="acc-summary-icon" data-tone={overview.critical.length ? 'warning' : 'neutral'}><ClipboardCheck size={17} /></span><p>تنبيهات حرجة مفتوحة<strong className="tabular-nums">{loading || error ? '—' : overview.critical.length}</strong><small>التفاصيل والوقت قبل الحكم</small></p></div>
         </Card>
-        <div className="acc-ceo-brief" role="region" aria-label="ما يحتاج قرار CEO"><Crown size={18} /><p><strong>أمام CEO</strong><span>{loading ? 'جارٍ التحقق من البيانات…' : error ? 'القراءة غير مكتملة؛ لا تعتمد الأعداد الحالية.' : `${snapshot.approvals.length} طلب موافقة · ${snapshot.alerts.filter((alert) => alert.severity === 'critical').length} تنبيه حرج · ${snapshot.agents.filter((agent) => agent.isTeamLeader && agent.managerReview).length} ملخص مدير موثق`}</span></p><small>متابعة فقط؛ لا تنفيذ تلقائي</small></div>
+        <DecisionBrief snapshot={snapshot} loading={loading} error={error} onOpenAgent={openAgent} />
 
         <Card className="acc-network-card">
           <header className="acc-network-header">
-            <div className="acc-network-title"><p>الهيكل التنظيمي</p><h2>CEO ← الفرق ومديروها ← {organization.agentCount} وكيلاً</h2><span>اضغط فريقًا لإبرازه، أو مديرًا/وكيلاً لفتح التفاصيل.</span></div>
+            <div className="acc-network-title"><p>الهيكل التنظيمي المعتمد</p><h2>{organization.agentCount} دورًا · {organization.teams.length} أقسام</h2><span>العدد شامل الرئيس التنفيذي. اضغط دائرة لفتح النتيجة والعائق والخطوة التالية.</span></div>
             <div className="acc-network-actions">
               {activeTeamId ? <button type="button" onClick={() => setActiveTeamId(null)}>عرض كل الفرق</button> : null}
               <div className="acc-legend" role="group" aria-label="دليل ألوان الحالة">{Object.keys(AGENT_STATUS).map((key) => <StatusPill key={key} status={key} compact />)}</div>
@@ -758,12 +809,12 @@ export function AgentCommandCenterView({
             {!snapshot.hasLiveData && !loading ? <div className="acc-network-notice" role="status"><FileClock size={15} /><span>لم تُستلم حالات تشغيل بعد؛ الوكلاء ظاهرون بالرمادي حتى تصل بيانات حقيقية.</span></div> : null}
             {error ? <div className="acc-network-notice" data-tone="error" role="alert"><BellRing size={15} /><span>تعذّر قراءة بيانات مركز القيادة، ولم تُعرض بيانات بديلة.</span></div> : null}
           </header>
-          <OrganizationMap organization={organization} activeTeamId={activeTeamId} onSelectTeam={selectTeam} onOpenAgent={openAgent} approvals={snapshot.approvals.length} alerts={snapshot.alerts.length} />
+          <OrganizationMap organization={organization} activeTeamId={activeTeamId} onSelectTeam={selectTeam} onOpenAgent={openAgent} approvals={loading || error ? '—' : overview.decisions.length} alerts={loading || error ? '—' : overview.alerts.length} />
         </Card>
 
         <ExecutiveConsole snapshot={snapshot} onLoadCaseHistory={onLoadCaseHistory} />
 
-        <AgentDetailsDrawer key={selectedAgent?.id || 'closed'} agent={selectedAgent} observedAt={snapshot.observedAt} onClose={closeAgent} returnFocusRef={returnFocusRef} />
+        <AgentDetailsDrawer key={selectedAgent?.id || 'closed'} agent={selectedAgent} observedAt={snapshot.observedAt} snapshot={snapshot} loading={loading} error={error} onClose={closeAgent} returnFocusRef={returnFocusRef} />
       </main>
     </>
   );

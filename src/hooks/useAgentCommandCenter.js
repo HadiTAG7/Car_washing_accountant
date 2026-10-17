@@ -22,6 +22,9 @@ export function commandCenterSubscriptions(database) {
     // Pending decisions cannot disappear behind a global history limit.
     approvals: query(ref('approvals'), where('status', '==', 'pending')),
     alerts: query(ref('alerts'), where('active', '==', true)),
+    // Bounded history must not cap the active queue. This is a sample, not a
+    // claim to have loaded every closed record or the most recent 80 records.
+    closedAlerts: query(ref('alerts'), where('active', '==', false), limit(80)),
     tasks: ref('tasks'),
     sources: ref('sources'),
     activity: query(ref('activity'), orderBy('occurredAt', 'desc'), limit(100)),

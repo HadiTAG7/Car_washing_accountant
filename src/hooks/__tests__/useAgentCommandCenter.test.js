@@ -21,13 +21,14 @@ describe('Real-time command center reads', () => {
     const subscriptions = commandCenterSubscriptions({});
     expect(subscriptions.approvals.constraints).toEqual([{ field: 'status', op: '==', value: 'pending' }]);
     expect(subscriptions.alerts.constraints).toEqual([{ field: 'active', op: '==', value: true }]);
+    expect(subscriptions.closedAlerts.constraints).toEqual([{ field: 'active', op: '==', value: false }, { limit: 80 }]);
   });
   it('subscribes, reflects new signed rows, ages running status and cleans up', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-10-02T09:00:00Z'));
     const hook = renderHook(() => useAgentCommandCenter('admin'));
     expect(hook.result.current.loading).toBe(false);
-    expect(mock.listeners).toHaveLength(7);
+    expect(mock.listeners).toHaveLength(8);
     const agents = mock.listeners.find(({ ref }) => ref.name === 'agent_command_agents');
     act(() => agents.callback({ docs: [{ id: 'cfo', data: () => ({ status: 'healthy', isRunning: true, lastEventAt: new Date().toISOString() }) }] }));
     expect(hook.result.current.summary).toMatchObject({ connected: 1, running: 1 });

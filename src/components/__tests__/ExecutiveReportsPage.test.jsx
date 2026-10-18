@@ -3,7 +3,13 @@ import { cleanup,fireEvent,render,screen,waitFor } from '@testing-library/react'
 import { afterEach,expect,it,vi } from 'vitest';
 import { ExecutiveReportView,ExecutiveReportsAdmin } from '../ExecutiveReportsPage';
 import { executiveFixture } from '../../../server/__tests__/executiveFixture';
+import { LanguageContext } from '../../i18n/LanguageContext';
 afterEach(cleanup);
+it('preserves reviewed Arabic report wording even when the surrounding application is English',()=>{
+  const report=executiveFixture({summary:'غير متاح'});
+  render(<LanguageContext.Provider value={{language:'en'}}><ExecutiveReportView report={report}/></LanguageContext.Provider>);
+  expect(screen.getByText('غير متاح')).toBeTruthy();expect(screen.getByRole('tab',{name:'ملخص اليوم'})).toBeTruthy();
+});
 it('keeps source limits and owner action visible across three tabs; no invented weekly or zeros',()=>{
   const report=executiveFixture();report.metrics[0].value=null;
   render(<ExecutiveReportView report={report}/>);

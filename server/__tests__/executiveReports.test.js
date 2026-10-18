@@ -61,3 +61,12 @@ it('checks tokens including revocation and sanitizes internal failures',async()=
   await createExecutiveHandler(()=>({auth:{verifyIdToken}}))({method:'POST',headers:{authorization:'Bearer fake'}},b);
   expect(b.code).toBe(401);expect(verifyIdToken).toHaveBeenCalledWith('fake',true);expect(JSON.stringify(b.body)).not.toContain('PRIVATE_SECRET');
 });
+it('preserves admin-only HTTP denial and reports quota without exposing internals or claiming a save',async()=>{
+  const response=()=>({setHeader:vi.fn(),status:vi.fn(function(n){this.code=n;return this;}),json:vi.fn(function(x){this.body=x;return this;})});
+  const authRuntime={verifyIdToken:async()=>({uid:'caller'})};
+  const denied=response();await createExecutiveHandler(()=>({auth:authRuntime,db:fakeDb('partner')}))({method:'POST',headers:{authorization:'Bearer synthetic'},body:{action:'list'}},denied);
+  expect(denied.code).toBe(403);expect(denied.body.result).toBeUndefined();
+  const db={collection:()=>({doc:()=>({get:async()=>{throw Object.assign(new Error('PRIVATE_QUOTA_DETAILS'),{code:8});}})})};
+  const quota=response();await createExecutiveHandler(()=>({auth:authRuntime,db}))({method:'POST',headers:{authorization:'Bearer synthetic'},body:{action:'list'}},quota);
+  expect(quota.code).toBe(503);expect(quota.body.error.code).toBe('resource-exhausted');expect(JSON.stringify(quota.body)).not.toContain('PRIVATE_QUOTA_DETAILS');expect(quota.body.result).toBeUndefined();
+});

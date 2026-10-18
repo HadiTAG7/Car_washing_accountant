@@ -20,6 +20,7 @@ export const TAB_GROUPS = [
     title: null,
     tabs: [
       { id: 'overview',  label: 'نظرة عامة',              icon: LayoutDashboard },
+      { id: 'growth_performance', label: 'النمو وأداء البايكرز', icon: TrendingUp, roles: ['admin'] },
       { id: 'agent_command_center', label: 'مركز قيادة الوكلاء', icon: Gauge, roles: ['admin', 'accountant'] },
     ],
   },

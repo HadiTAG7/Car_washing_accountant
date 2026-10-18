@@ -18,6 +18,7 @@ import FinancialEntrySelector from './components/FinancialEntrySelector';
 // first visit. Trims the initial bundle (recharts, the heavy P&L/budget
 // pages, etc. no longer ship in the first paint) — a real win on mobile.
 const OverviewPage         = lazy(() => import('./components/OverviewPage'));
+const GrowthPerformancePage = lazy(() => import('./components/GrowthPerformancePage'));
 const SupervisorPage       = lazy(() => import('./components/SupervisorPage'));
 const SupervisorRecordsPage = lazy(() => import('./components/SupervisorRecordsPage'));
 const InvestorPage         = lazy(() => import('./components/InvestorPage'));
@@ -206,6 +207,7 @@ function AppShell({ membership }) {
           <div key={effectiveTab} className="animate-page-in flex-1 flex flex-col">
             {investorView && <InvestorPage view={investorView} />}
             {effectiveTab === 'overview' && (membership.role === 'supervisor' ? <SupervisorPage /> : <OverviewPage onNavigate={handleSelectTab} />)}
+            {effectiveTab === 'growth_performance' && <GrowthPerformancePage />}
             {effectiveTab === 'supervisor_data' && membership.role === 'supervisor' && <SupervisorRecordsPage />}
             {effectiveTab === 'agent_command_center' && (
               <AgentCommandCenterPage

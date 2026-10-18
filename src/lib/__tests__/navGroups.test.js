@@ -6,6 +6,15 @@ import {
 const idsOf = (groups) => groups.flatMap((g) => g.tabs.map((t) => t.id));
 
 describe('من يرى أي تبويب', () => {
+  it('restricts growth performance to the existing admin view, including direct routes', () => {
+    expect(idsOf(visibleGroupsFor({ role: 'admin' }))).toContain('growth_performance');
+    for (const role of ['partner', 'accountant', 'operator', 'supervisor', null]) {
+      const ids = idsOf(visibleGroupsFor({ role }));
+      expect(ids).not.toContain('growth_performance');
+      expect(resolveTab('growth_performance', { allowedTabIds: ids })).toBe('overview');
+    }
+    expect(idsOf(visibleGroupsFor({ role: 'admin', isPartnerView: true }))).not.toContain('growth_performance');
+  });
   it('المستثمر يرى خياراته الخمسة لا اثنين وعشرين', () => {
     const ids = idsOf(visibleGroupsFor({ role: 'partner', isPartnerView: true }));
     expect(ids).toEqual([

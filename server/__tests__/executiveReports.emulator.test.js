@@ -2,14 +2,19 @@ import { readFileSync } from 'node:fs';
 import { afterAll,beforeAll,describe,expect,it } from 'vitest';
 import { initializeApp,deleteApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
+import { getAuth as getAdminAuth } from 'firebase-admin/auth';
+import { initializeApp as initializeClient,deleteApp as deleteClient } from 'firebase/app';
+import { getAuth,connectAuthEmulator,signInWithEmailAndPassword } from 'firebase/auth';
 import { initializeTestEnvironment,assertFails } from '@firebase/rules-unit-testing';
 import { collection,doc,getDoc,getDocs,setDoc } from 'firebase/firestore';
 import { executiveReports } from '../executiveReports.js';
 import { executiveFixture } from './executiveFixture.js';
+import { createExecutiveHandler } from '../../api/executive-reports.js';
 
 const local=/^(127\.0\.0\.1|localhost):\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST||'');
 describe.skipIf(!local)('executive administrative persistence — isolated demo only',()=>{
-  let app,db,environment;
+  let app,db,environment,client,adminAuth;
+  const tokens={};
   const projectId='demo-sweater-executive',paths=new Set(['users/executive-admin','users/executive-partner']);
   const auth={uid:'executive-admin'};
   const report=executiveFixture();
@@ -20,8 +25,18 @@ describe.skipIf(!local)('executive administrative persistence — isolated demo 
     const [host,port]=process.env.FIRESTORE_EMULATOR_HOST.split(':');
     environment=await initializeTestEnvironment({projectId,firestore:{host,port:Number(port),rules:readFileSync('firestore.rules','utf8')}});
     await db.doc('users/executive-admin').set({role:'admin'});await db.doc('users/executive-partner').set({role:'partner'});
+    const authHost=process.env.FIREBASE_AUTH_EMULATOR_HOST;
+    if(/^(127\.0\.0\.1|localhost):\d+$/.test(authHost||'')){
+      adminAuth=getAdminAuth(app);
+      client=initializeClient({projectId,apiKey:'demo-executive-key',authDomain:'localhost'},'executive-auth-client');
+      const clientAuth=getAuth(client);connectAuthEmulator(clientAuth,`http://${authHost}`,{disableWarnings:true});
+      for(const uid of ['executive-admin','executive-partner']){
+        const email=`${uid}@example.test`;await adminAuth.createUser({uid,email,password:'synthetic-test-only-123'});
+        tokens[uid]=await (await signInWithEmailAndPassword(clientAuth,email,'synthetic-test-only-123')).user.getIdToken();
+      }
+    }
   });
-  afterAll(async()=>{if(db){await Promise.all([...paths].map(p=>db.doc(p).delete()));await db.terminate();}if(environment)await environment.cleanup();if(app)await deleteApp(app);});
+  afterAll(async()=>{if(adminAuth)await Promise.all(['executive-admin','executive-partner'].map(uid=>adminAuth.deleteUser(uid)));if(client)await deleteClient(client);if(db){await Promise.all([...paths].map(p=>db.doc(p).delete()));await db.terminate();}if(environment)await environment.cleanup();if(app)await deleteApp(app);});
   it('saves, re-reads, replays idempotently and retains old corrected revisions on the real SDK',async()=>{
     for(const path of [head,`${head}/revisions/000001`,`${head}/revisions/000002`])paths.add(path);
     const save=(r,expectedRevision)=>executiveReports(db,auth,{action:'save',report:r,expectedRevision});
@@ -64,5 +79,21 @@ describe.skipIf(!local)('executive administrative persistence — isolated demo 
     await assertFails(getDocs(collection(client,'executive_reports')));
     await assertFails(setDoc(doc(client,'executive_reports','attack'),{summary:'not allowed'}));
     await assertFails(getDoc(doc(client,`${head}/revisions/000001`)));
+  });
+  it('authenticates a real demo token through the HTTP handler, saves and reads back an admin snapshot',async()=>{
+    expect(adminAuth,'Run test:executive with its local auth emulator').toBeTruthy();
+    const r=executiveFixture({reportId:'ceo-digest-2026-10-15',dateRiyadh:'2026-10-15',cutAtRiyadh:'2026-10-15T23:00:00+03:00',
+      provenance:{sourceRef:'SYNTHETIC-HTTP',reviewedByRole:0,sourceCutRiyadh:'2026-10-15T23:00:00+03:00'}});
+    paths.add(`executive_reports/${r.reportId}`);paths.add(`executive_reports/${r.reportId}/revisions/000001`);
+    const handler=createExecutiveHandler(()=>({db,auth:adminAuth}));
+    const invoke=async(body,uid='executive-admin')=>{
+      const res={setHeader(){},status(n){this.code=n;return this;},json(value){this.body=value;return this;}};
+      await handler({method:'POST',headers:{authorization:`Bearer ${tokens[uid]}`},body},res);return res;
+    };
+    const saved=await invoke({action:'save',report:r,expectedRevision:0});expect(saved.code).toBe(200);expect(saved.body.result).toMatchObject({revision:1,duplicate:false});
+    const readback=await invoke({action:'read',reportId:r.reportId});expect(readback.code).toBe(200);expect(readback.body.result.report).toEqual(r);
+    expect((await invoke({action:'save',report:r,expectedRevision:0})).body.result.duplicate).toBe(true);
+    const denied=await invoke({action:'read',reportId:r.reportId},'executive-partner');expect(denied.code).toBe(403);expect(denied.body.result).toBeUndefined();
+    const forged=await invoke({action:'list'},'missing-token');expect(forged.code).toBe(401);expect(forged.body.result).toBeUndefined();
   });
 });

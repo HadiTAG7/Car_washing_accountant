@@ -27,6 +27,7 @@ export function GrowthPerformanceView({ data, language = 'ar' }) {
   const selectedCodes = new Set(metrics.rows.map(r => r.code));
   const exclusions = data.exclusions.filter(x => selectedCodes.has(x.code));
   const gaps = data.gaps.filter(x => selectedCodes.has(x.code));
+  const unlinked = (data.unlinked || []).filter(x => selectedCodes.has(x.code));
   const maximum = Math.max(1, ...metrics.timeline.map(d => d.count || 0));
   const weeks = [];
   for (let start = data.from; start <= data.to; start = shiftGrowthDay(start, 1)) {
@@ -67,6 +68,7 @@ export function GrowthPerformanceView({ data, language = 'ar' }) {
       <section className="sw-growth__card"><h2>{t('المتوسط العام / يوم غسلات مسجل', 'General average / recorded wash day')}</h2>
         <strong>{number(metrics.generalAverage.mean)}</strong>
         <p>{number(metrics.generalAverage.total)} ÷ {metrics.generalAverage.dayCount} {t('أيام مميزة', 'distinct days')}</p>
+        {metrics.timeline.some(d => d.coverage !== 'complete') && <p className="sw-growth__notice">{t('تغطية الربط غير مكتملة؛ المتوسط وصفي للسجلات وليس تأكيدًا لاكتمال الاستيراد.', 'Detailed linking is incomplete; this average describes registered records, not complete import coverage.')}</p>}
         <small>{date(data.from)} — {date(data.to)} · {t('يشمل يوم القياس؛ إحصاء وصفي للسجلات وليس حضورًا أو خط أساس مستقلًا.', 'Includes the measurement day; descriptive records, not attendance or an independent baseline.')}</small>
         {metrics.generalAverage.dayCount === 1 && <p>{t('عينة يوم واحد فقط.', 'Only one recorded day.')}</p>}
       </section>
@@ -81,19 +83,23 @@ export function GrowthPerformanceView({ data, language = 'ar' }) {
         </button>)}
       </div>
       {detailDate && metrics.timeline.some(d => d.date === detailDate) && <div className="sw-growth__detail"><h3>{date(detailDate)}</h3>
-        {metrics.rows.map(worker => <p key={worker.id}><bdi>{worker.code}</bdi> — {worker.name}: {number(worker.days.find(d => d.date === detailDate)?.count)}</p>)}
+        {metrics.rows.map(worker => { const day = worker.days.find(d => d.date === detailDate); return <p key={worker.id}><bdi>{worker.code}</bdi> — {worker.name}: {number(day && Object.hasOwn(day,'recordedCount') ? day.recordedCount : day?.count)}</p>; })}
         <button type="button" onClick={() => { const trigger = dayButtons.current.get(detailDate); setDetailDate(null); trigger?.focus(); }}>{t('إغلاق التفاصيل', 'Close details')}</button></div>}
     </section>
     <section className="sw-growth__panel"><h2>{t('تفصيل البايكرز', 'Biker breakdown')}</h2>
-      <div className="sw-growth__scroll"><table><thead><tr>{['Sweater ID', t('الاسم', 'Name'), t('الموقع', 'Zone'), date(data.to), date(shiftGrowthDay(data.to, -1)), t('الفرق', 'Change'), t('التغير %', 'Change %'), t('متوسط 7 أيام', '7-day average'), t('المتوسط العام', 'General average')].map((label, i) => <th key={i}>{label}</th>)}</tr></thead>
+      <div className="sw-growth__scroll"><table><thead><tr>{['Sweater ID', t('الاسم', 'Name'), t('الموقع', 'Zone'), date(data.to), date(shiftGrowthDay(data.to, -1)), t('الفرق', 'Change'), t('التغير %', 'Change %'), t('متوسط 7 أيام', '7-day average'), t('إجمالي الغسلات المسجلة', 'Total registered washes'), t('أيام بها غسلات', 'Days with washes'), t('المتوسط العام', 'General average')].map((label, i) => <th key={i}>{label}</th>)}</tr></thead>
         <tbody>{metrics.rows.map(worker => <tr key={worker.id}><td><bdi>{worker.code}</bdi></td><td><button type="button" onClick={() => setWorkerId(worker.id)}>{worker.name}</button></td><td>{worker.region}</td>
           <td>{number(worker.current)}</td><td>{number(worker.previous)}</td><td>{number(worker.daily.delta)}</td><td>{percentage(worker.daily.percent, worker.current != null && worker.previous != null)}</td>
-          <td>{number(worker.baseline.mean)}{worker.baseline.provisional && ' *'}</td><td>{number(worker.generalAverage.mean)}<small>{worker.generalAverage.total} ÷ {worker.generalAverage.dayCount}</small></td></tr>)}</tbody></table></div>
+          <td>{number(worker.baseline.mean)}{worker.baseline.provisional && ' *'}</td><td>{number(worker.generalAverage.total)}</td><td>{worker.generalAverage.dayCount}</td><td>{number(worker.generalAverage.mean)}</td></tr>)}</tbody></table></div>
       {!metrics.rows.length && <p>{t('لا توجد بيانات ضمن الفلاتر المختارة.', 'No data for the selected filters.')}</p>}
     </section>
     <details className="sw-growth__panel"><summary>{t('التغطية والفروق والمقارنة الأسبوعية', 'Coverage, differences and weekly comparison')}</summary>
-      <p>{t('نطاق الأفراد فقط؛ الشركات جزئية ومنفصلة. انخفاض العدد ليس دليل تقصير أو سببًا مثبتًا.', 'Individual services only; corporate coverage is partial and separate. Lower counts do not prove underperformance or causation.')}</p>
-      <p>{t('المسجل المرتبط قبل التنقيح', 'Linked records before adjustment')}: {number(metrics.generalAverage.total + exclusions.length)} · {t('المؤهل المعروض', 'Eligible displayed')}: {number(metrics.generalAverage.total)}</p>
+      <p>{t('المقارنات الموثقة للأفراد؛ المتوسط العام من الغسلات المسجلة بعد استبعاد الشركات المثبتة. وجود السجل لا يثبت اكتمال الربط أو التغطية، وانخفاض العدد لا يثبت تقصيرًا.', 'Verified comparisons cover individual services; the general average uses registered washes excluding known corporate services. Registration does not establish complete linking or coverage; lower counts do not prove underperformance.')}</p>
+      <p>{t('المسجل قبل التنقيح', 'Registered before adjustment')}: {number(metrics.generalAverage.total + exclusions.length)} · {t('المؤهل المعروض', 'Eligible displayed')}: {number(metrics.generalAverage.total)}</p>
+      {unlinked.length > 0 && <details><summary>{t('سجلات لها ربط تفصيلي غير مكتمل', 'Records with incomplete detailed linking')} ({unlinked.length})</summary>
+        {unlinked.map(x => <p key={x.washId}><bdi>{x.washId}</bdi> · {x.code} · {date(x.date)} · {x.reason === 'historical-external-code-differs'
+          ? t('اختلاف معرف خارجي تاريخي', 'Historical external code differs') : t('تفاصيل الربط غير متاحة أو غير متحققة', 'Link details unavailable or unverified')}</p>)}
+      </details>}
       {exclusions.map((x, i) => <p key={i}><bdi>{x.reference}</bdi> · {x.code} · {date(x.date)} · {t('تعارض إتمام؛ مستبعد تحليليًا فقط، دون حذف الأصل.', 'Completion conflict; analytically excluded without deleting the original.')}</p>)}
       {gaps.length > 0 && <><h3>{t('فجوات الإتمام أو الربط', 'Completion or linking gaps')}</h3>{gaps.map((x, i) => <p key={i}><bdi>{x.reference}</bdi> · {x.code} · {date(x.date)}</p>)}</>}
       <p>{t('الإسناد والإلغاء من قوائم الأفراد ضمن الأيام المقروءة؛ ليست نسبة إكمال لجميع الطلبات.', 'Assignment and cancellation use the observed individual-day lists, not a completion rate for all requests.')}</p>

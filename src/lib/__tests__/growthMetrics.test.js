@@ -7,6 +7,22 @@ const worker = (id, counts, extra = {}) => ({ id, code: id, name: id, status: 'A
   days: dates.map((date, i) => ({ date, count: counts[i], coverage: 'complete', workEligible: true })), ...extra });
 
 describe('owner-approved growth metrics', () => {
+  it('uses recorded counts for the descriptive mean but retains verified gates for comparisons', () => {
+    const a = worker('1984', [5,4,5,4,6,7,4,7]);
+    a.days[0] = {...a.days[0],count:null,recordedCount:5,coverage:'partial',workEligible:null};
+    const result = growthMetrics({...period,workers:[a]});
+    expect(result.generalAverage).toMatchObject({total:42,dayCount:8,mean:5.25});
+    expect(result.timeline[0]).toMatchObject({count:5,coverage:'partial'});
+    expect(result.current).toBe(7); expect(result.previous).toBe(4);
+    expect(result.baseline.mean).toBeNull();
+  });
+  it('never labels an unavailable recorded value complete or borrows a verified value for it', () => {
+    const a=worker('1984',[5,4,5,4,6,7,4,7]); a.days.at(-1).recordedCount=null;
+    const result=growthMetrics({...period,workers:[a]});
+    expect(result.current).toBe(7);
+    expect(result.timeline.at(-1)).toMatchObject({count:null,coverage:'partial'});
+    expect(result.generalAverage).toMatchObject({total:35,dayCount:7,mean:5});
+  });
   it('keeps comparisons from documented lookback when the visible range starts on D', () => {
     const result = growthMetrics({ ...period, from: period.to, workers: [worker('1984', [5, 4, 5, 4, 6, 7, 4, 7])] });
     expect(result.previous).toBe(4);

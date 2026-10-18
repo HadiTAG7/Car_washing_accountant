@@ -36,10 +36,11 @@ export function verifiedWorkdayBaseline(days, measurementDay, requestedDays = 7)
 }
 
 function recordedAverage(days) {
-  const recorded = days.filter(d => Number.isFinite(d.count) && d.count > 0);
+  const recorded = days.map(d => ({...d,count:recordedValue(d)})).filter(d => Number.isFinite(d.count) && d.count > 0);
   const total = recorded.reduce((n, d) => n + d.count, 0);
   return { total, dayCount: recorded.length, dates: recorded.map(d => d.date), mean: recorded.length ? total / recorded.length : null };
 }
+const recordedValue = day => Object.hasOwn(day, 'recordedCount') ? day.recordedCount : day.count;
 
 // Input is already authoritatively scoped by the read adapter: explicit roster
 // state, stable identity, unique completed services, coverage and exact period.
@@ -70,9 +71,9 @@ export function growthMetrics({ workers = [], from, to, measurementDay, workerId
   });
   const timeline = dates.map(date => {
     const entries = rows.map(row => row.days.find(d => d.date === date));
-    const known = entries.filter(d => Number.isFinite(d.count));
-    const complete = entries.length > 0 && entries.every(d => d.coverage === 'complete' && Number.isFinite(d.count));
-    return { date, count: known.length ? known.reduce((n, d) => n + d.count, 0) : null, coverage: complete ? 'complete' : 'partial' };
+    const known = entries.filter(d => Number.isFinite(recordedValue(d)));
+    const complete = entries.length > 0 && entries.every(d => d.coverage === 'complete' && Number.isFinite(d.count) && Number.isFinite(recordedValue(d)));
+    return { date, count: known.length ? known.reduce((n, d) => n + recordedValue(d), 0) : null, coverage: complete ? 'complete' : 'partial' };
   });
   const completeSum = key => rows.length && rows.every(row => Number.isFinite(row[key])) ? rows.reduce((n, row) => n + row[key], 0) : null;
   const current = completeSum('current'), previous = completeSum('previous');

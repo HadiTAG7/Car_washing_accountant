@@ -19,6 +19,7 @@ export function projectGrowth({ workers, washes, bookings, runs, from, to, lookb
   const result = [];
   const exclusions = [];
   const missing = [];
+  const unlinked = [];
   const dates = [];
   for (let date = lookback; date <= to; date = shiftGrowthDay(date, 1)) dates.push(date);
   for (const ref of roster.rows) {
@@ -34,6 +35,7 @@ export function projectGrowth({ workers, washes, bookings, runs, from, to, lookb
         && observedRows.some(b => b.sspBookingId === 'S-5596423');
       const observed = observedRows.filter(b => !(resolved5596423 && b.sspBookingId === 'B-5596423'));
       const indexed = new Map();
+      const recorded = new Map();
       let partial = !worker || observed.some(b => String(b.record.driverExternalId || '') !== ref.code
         || (b.operationalWorkerId && b.operationalWorkerId !== id));
       let excluded = 0;
@@ -51,12 +53,27 @@ export function projectGrowth({ workers, washes, bookings, runs, from, to, lookb
         }
         // A known corporate row is outside this cohort, not a missing
         // individual completion. Unknown classifications still fail closed.
-        if (ownBookings.some(b => b.sspBookingId === bookingKey && b.serviceDate === date
+        if (bookings.some(b => b.sspBookingId === bookingKey && b.serviceDate === date
           && b.record?.bookingKind === 'corporate')) continue;
+        // The approved descriptive measure is canonical registered washes,
+        // not only those that can pass today's detailed source-link checks.
+        // Historical external codes can differ; the existing stable biker_id
+        // remains the registered worker. Do not promote this to verified work.
+        if (Number(wash.quantity) !== 1) { partial = true; continue; }
+        const registeredKey = key ? bookingKey : `wash:${wash.id}`;
+        if (recorded.has(registeredKey)) { partial = true; continue; }
+        recorded.set(registeredKey, wash);
         if (!key || candidates.length !== 1 || Number(wash.quantity) !== 1
           || (wash.driver_external_id && String(wash.driver_external_id).trim() !== ref.code)
           || String(candidates[0].record.driverExternalId || '') !== ref.code
-          || (candidates[0].operationalWorkerId && candidates[0].operationalWorkerId !== id)) { partial = true; continue; }
+          || (candidates[0].operationalWorkerId && candidates[0].operationalWorkerId !== id)) {
+          partial = true;
+          const exact = bookings.filter(b => b.sspBookingId === bookingKey && b.serviceDate === date);
+          unlinked.push({washId:wash.id,reference:key || wash.id,code:ref.code,date,
+            reason: exact.length === 0 ? 'detailed-booking-unavailable'
+              : String(exact[0].record?.driverExternalId || '') !== ref.code ? 'historical-external-code-differs' : 'detailed-identity-unverified'});
+          continue;
+        }
         if (indexed.has(bookingKey)) { partial = true; continue; }
         indexed.set(bookingKey, wash);
         const record = candidates[0].record;
@@ -76,7 +93,8 @@ export function projectGrowth({ workers, washes, bookings, runs, from, to, lookb
         && run.coverage.pageCount > 0 && run.coverage.pagesFetched === run.coverage.pageCount);
       const complete = Boolean(worker && completeRun && !partial);
       return { date, count: indexed.size || complete ? indexed.size : null,
-        registered: indexed.size + excluded, coverage: complete ? 'complete' : 'partial',
+        recordedCount: recorded.size || complete ? recorded.size : null,
+        registered: recorded.size + excluded, coverage: complete ? 'complete' : 'partial',
         // A complete source list + an evidenced execution establishes this
         // day only, not attendance on any zero/unknown date.
         workEligible: complete && indexed.size > 0 && proofCount === indexed.size ? true : null,
@@ -89,7 +107,9 @@ export function projectGrowth({ workers, washes, bookings, runs, from, to, lookb
   }
   return { workers: result, roster: { at: roster.at, source: roster.source },
     exclusions: exclusions.filter(x => x.date >= from), gaps: missing.filter(x => x.date >= from),
-    from, to, lookback, readAt: new Date().toISOString(), scope: 'individual', corporateCoverage: 'partial' };
+    unlinked: unlinked.filter(x => x.date >= from),
+    from, to, lookback, readAt: new Date().toISOString(), scope: 'registered-excluding-known-corporate',
+    comparisonScope: 'verified-individual', corporateCoverage: 'partial' };
 }
 
 export async function readGrowthPerformance(db, auth, input) {

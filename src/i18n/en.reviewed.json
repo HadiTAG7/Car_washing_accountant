@@ -1,4 +1,11 @@
 {
+  "تغطية الربط غير مكتملة؛ المتوسط وصفي للسجلات وليس تأكيدًا لاكتمال الاستيراد.": "Detailed linking is incomplete; this average describes registered records, not complete import coverage.",
+  "إجمالي الغسلات المسجلة": "Total registered washes",
+  "أيام بها غسلات": "Days with washes",
+  "المقارنات الموثقة للأفراد؛ المتوسط العام من الغسلات المسجلة بعد استبعاد الشركات المثبتة. وجود السجل لا يثبت اكتمال الربط أو التغطية، وانخفاض العدد لا يثبت تقصيرًا.": "Verified comparisons cover individual services; the general average uses registered washes excluding known corporate services. Registration does not establish complete linking or coverage; lower counts do not prove underperformance.",
+  "سجلات لها ربط تفصيلي غير مكتمل": "Records with incomplete detailed linking",
+  "اختلاف معرف خارجي تاريخي": "Historical external code differs",
+  "تفاصيل الربط غير متاحة أو غير متحققة": "Link details unavailable or unverified",
   "تعذر تحميل بيانات النمو.": "Growth data could not be loaded.",
   "Active بحسب لقطة SSP الموثقة": "Active according to the verified SSP snapshot",
   "الرياض — الحالة ليست حية": "Riyadh — not live status",

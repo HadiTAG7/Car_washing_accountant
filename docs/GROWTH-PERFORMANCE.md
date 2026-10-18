@@ -23,9 +23,14 @@ payroll/financial calculation, role policy, schema, rules or Firebase deployment
   period is 93 completed service dates; 30 prior dates provide comparison
   lookback. Query caps fail explicitly, never silently truncate. No all-history
   extraction, raw payloads, phones, payroll, customer fields or new credentials.
-- Counts require a unique completed registered wash linked to an individual
-  booking with consistent worker identity. CollectingPayment alone is not
-  completion. Corporate rows remain separate. Source coverage comes from
+- Verified comparisons require a unique completed registered wash linked to an individual
+  booking with consistent worker identity. The descriptive recorded average
+  instead retains canonical completed unit washes by their existing stable
+  biker_id even if detailed linking is unavailable or historical external
+  codes differ; this does not certify completion evidence or attendance.
+  Admin diagnostics enumerate these records and their link gaps. Known
+  corporate rows and the explicit completion conflict remain excluded.
+  CollectingPayment alone is not completion. Source coverage comes from
   persisted import-run coverage, including runs extending beyond the view.
 - Known C-5584720 completion conflict is excluded analytically, not deleted.
   Only the evidenced `ssp__B-5596423`/`S-5596423` singleton is treated as an

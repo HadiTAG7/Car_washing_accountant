@@ -6,6 +6,13 @@ import { growthFixture } from './growthFixture';
 
 afterEach(cleanup);
 describe('growth page interactions', () => {
+  it('labels numerator/days explicitly and warns beside a partially linked descriptive average', () => {
+    const data=growthFixture(); data.workers[1].days[0]={...data.workers[1].days[0],count:null,recordedCount:5,coverage:'partial',workEligible:null};
+    const {container}=render(<GrowthPerformanceView data={data} language="en" />);
+    expect(screen.getByRole('columnheader',{name:'Total registered washes'})).toBeTruthy();
+    expect(screen.getByRole('columnheader',{name:'Days with washes'})).toBeTruthy();
+    expect(container.querySelectorAll('.sw-growth__card')[2].textContent).toContain('Detailed linking is incomplete');
+  });
   it('returns keyboard focus to the selected day after closing inline details', () => {
     render(<GrowthPerformanceView data={growthFixture()} language="en" />);
     const day = screen.getByRole('button', { name: '2026-10-17: 42 · Complete' });

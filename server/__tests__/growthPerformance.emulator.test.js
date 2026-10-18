@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { initializeApp, deleteApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { readGrowthPerformance } from '../growthPerformance.js';
+import { growthMetrics } from '../../src/lib/growthMetrics.js';
 
 // Real query verification, isolated from both production and other test data.
 const enabled = /^(127\.0\.0\.1|localhost):\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST || '');
@@ -45,5 +46,20 @@ describe.skipIf(!enabled)('growth real Firestore queries (demo only)', () => {
       expect(result.workers.find(w => w.code === '1984')).toMatchObject({ id: 'growth-worker', name: 'Synthetic worker' });
       expect((await db.doc('bikers/growth-worker').get()).data().driver_external_id).toBeUndefined();
     } finally { await db.doc('bikers/growth-worker').update({ driver_external_id: '1984' }); }
+  });
+  it('keeps a registered historical wash in descriptive counts without certifying an external-code mismatch', async () => {
+    await db.doc('washes/growth-wash').update({driver_external_id:'historical-code'});
+    await db.doc('sweater_bookings/growth-booking').update({'record.driverExternalId':'historical-code'});
+    try {
+      const result=await readGrowthPerformance(db,{uid:'growth-admin'},{from:'2026-10-17',to:'2026-10-17'});
+      const w=result.workers.find(w=>w.code==='1984');
+      expect(w.days.at(-1)).toMatchObject({recordedCount:1,count:null,coverage:'partial',workEligible:null});
+      expect(result.unlinked).toEqual([expect.objectContaining({washId:'growth-wash',reason:'historical-external-code-differs'})]);
+      const metrics=growthMetrics({workers:result.workers,from:result.from,to:result.to,measurementDay:result.to,workerId:w.id});
+      expect(metrics.generalAverage.mean).toBe(1); expect(metrics.current).toBeNull();
+    } finally {
+      await db.doc('washes/growth-wash').update({driver_external_id:'1984'});
+      await db.doc('sweater_bookings/growth-booking').update({'record.driverExternalId':'1984'});
+    }
   });
 });

@@ -42,6 +42,11 @@ describe('read-only administrative growth adapter', () => {
   it('does not infer attendance on a zero day and retains a partial recorded positive', () => {
     expect(project({ runs: [] }).workers[0].days.at(-1)).toMatchObject({ count: 1, coverage: 'partial', workEligible: null });
   });
+  it('retains a canonical registered wash for the descriptive average when detailed linking is unavailable', () => {
+    const result = project({ bookings: [], runs: [] });
+    expect(result.workers[0].days.at(-1)).toMatchObject({ recordedCount:1,count:null,coverage:'partial',workEligible:null });
+    expect(result.unlinked).toEqual([expect.objectContaining({washId:'ssp__S-1',code:'1984',date:'2026-10-17'})]);
+  });
   it('excludes the known conflict analytically without modifying the original', () => {
     const washes = [wash('C-5584720')];
     const before = JSON.stringify(washes);

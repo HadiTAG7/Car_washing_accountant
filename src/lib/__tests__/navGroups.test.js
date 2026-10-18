@@ -6,6 +6,14 @@ import {
 const idsOf = (groups) => groups.flatMap((g) => g.tabs.map((t) => t.id));
 
 describe('من يرى أي تبويب', () => {
+  it('keeps executive reports admin-only and excludes partner simulation and direct routes',()=>{
+    expect(idsOf(visibleGroupsFor({role:'admin'}))).toContain('executive_reports');
+    for(const role of ['partner','accountant','operator','supervisor',null]){
+      const ids=idsOf(visibleGroupsFor({role}));expect(ids).not.toContain('executive_reports');
+      expect(resolveTab('executive_reports',{allowedTabIds:ids})).toBe('overview');
+    }
+    expect(idsOf(visibleGroupsFor({role:'admin',isPartnerView:true}))).not.toContain('executive_reports');
+  });
   it('restricts growth performance to the existing admin view, including direct routes', () => {
     expect(idsOf(visibleGroupsFor({ role: 'admin' }))).toContain('growth_performance');
     for (const role of ['partner', 'accountant', 'operator', 'supervisor', null]) {

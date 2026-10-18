@@ -4,6 +4,7 @@ import { useGrowthPerformance } from '../hooks/useGrowthPerformance';
 import { growthMetrics, growthDifference, growthDay, shiftGrowthDay } from '../lib/growthMetrics';
 import { riyadhToday } from '../lib/bikerProfile';
 import TopBar from './TopBar';
+import DateField from './DateField';
 import './GrowthPerformancePage.css';
 
 export function GrowthPerformanceView({ data, language = 'ar' }) {
@@ -125,8 +126,8 @@ export function GrowthPerformanceContent({ language = 'ar', source, period, onPe
         const valid = growthDay(draft.from) && growthDay(draft.to) && draft.from <= draft.to && draft.to <= yesterday
           && Date.parse(draft.to) - Date.parse(draft.from) <= 92 * 86400000;
         setValidation(!valid); if (valid) onPeriodChange({ ...draft }); }}>
-        <label>{t('من', 'From')}<input type="date" value={draft.from} max={yesterday} onChange={e => setDraft(d => ({ ...d, from: e.target.value }))} required /></label>
-        <label>{t('إلى / يوم القياس', 'To / measurement day')}<input type="date" value={draft.to} max={yesterday} onChange={e => setDraft(d => ({ ...d, to: e.target.value }))} required /></label>
+        <label>{t('من', 'From')}<DateField ariaLabel={t('من', 'From')} className="sw-growth__date-trigger" value={draft.from} onChange={e => setDraft(d => ({ ...d, from: e.target.value }))} required /></label>
+        <label>{t('إلى / يوم القياس', 'To / measurement day')}<DateField ariaLabel={t('إلى / يوم القياس', 'To / measurement day')} className="sw-growth__date-trigger" value={draft.to} onChange={e => setDraft(d => ({ ...d, to: e.target.value }))} required /></label>
         <button type="submit">{t('عرض الفترة', 'Show period')}</button>
       </form>
       {validation && <p role="alert">{t('اختر فترة مكتملة لا تتجاوز 93 يومًا.', 'Choose a completed period of up to 93 days.')}</p>}

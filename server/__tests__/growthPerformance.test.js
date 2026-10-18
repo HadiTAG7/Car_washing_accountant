@@ -14,6 +14,17 @@ const project = overrides => projectGrowth({ workers: [worker], washes: [wash('S
   runs: [run], from: '2026-10-17', to: '2026-10-17', lookback: '2026-10-16', roster, ...overrides });
 
 describe('read-only administrative growth adapter', () => {
+  it.each([8,'resource-exhausted','firestore/resource-exhausted'])('reports a read-quota outage distinctly and safely (%s)', async code => {
+    const log={warn:vi.fn()};
+    const runtime={auth:{verifyIdToken:vi.fn().mockResolvedValue({uid:'test-admin'})},
+      db:{collection:()=>({doc:()=>({get:async()=>{throw Object.assign(new Error('PRIVATE token customer details'),{code});}})})}};
+    const res={setHeader:vi.fn(),status:vi.fn(function(status){this.statusCode=status;return this;}),json:vi.fn(function(body){this.body=body;return this;})};
+    await createGrowthHandler(()=>runtime,log)({method:'POST',headers:{authorization:'Bearer synthetic'},body:{from:'2026-10-03',to:'2026-10-17'}},res);
+    expect(res.statusCode).toBe(503);
+    expect(res.body.error).toEqual({code:'resource-exhausted',message:'تعذّر تحميل بيانات النمو بسبب تجاوز حصة قراءة قاعدة البيانات. إعادة المحاولة المتكررة لن تعالج الحد.'});
+    expect(log.warn).toHaveBeenCalledWith('[growth-performance] read-failed',{code:'resource-exhausted'});
+    expect(JSON.stringify([res.body,log.warn.mock.calls])).not.toMatch(/PRIVATE|synthetic|test-admin/);
+  });
   it('uses linked completed services, source coverage, and a dated roster; strips private fields', () => {
     const result = project();
     expect(result.workers[0].days).toEqual([

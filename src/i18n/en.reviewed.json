@@ -1,4 +1,5 @@
 {
+  "تعذّر تحميل بيانات النمو بسبب تجاوز حصة قراءة قاعدة البيانات. إعادة المحاولة المتكررة لن تعالج الحد.": "Growth data could not be loaded because the database read quota was exceeded. Repeated retries will not resolve the limit.",
   "تغطية الربط غير مكتملة؛ المتوسط وصفي للسجلات وليس تأكيدًا لاكتمال الاستيراد.": "Detailed linking is incomplete; this average describes registered records, not complete import coverage.",
   "إجمالي الغسلات المسجلة": "Total registered washes",
   "أيام بها غسلات": "Days with washes",

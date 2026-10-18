@@ -6,6 +6,27 @@ import { growthFixture } from './growthFixture';
 
 afterEach(cleanup);
 describe('growth page interactions', () => {
+  it('uses the branded calendar and Latin digits even on the Arabic page, retaining explicit period submission', () => {
+    const changes=[];
+    render(<GrowthPerformanceContent source={{allowed:true,error:'اختبار معزول'}} period={{from:'2026-10-03',to:'2026-10-17'}} onPeriodChange={p=>changes.push(p)} />);
+    const from=screen.getByRole('button',{name:'من',exact:true});
+    expect(from.textContent).toBe('3 أكتوبر 2026');
+    expect(from.textContent).not.toMatch(/[٠-٩]/);
+    fireEvent.click(from);
+    const calendar=screen.getByRole('dialog');
+    expect(calendar.textContent).not.toMatch(/[٠-٩]/);
+    fireEvent.click(within(calendar).getByRole('button',{name:'4',exact:true}));
+    expect(changes).toEqual([]);
+    fireEvent.click(screen.getByRole('button',{name:'عرض الفترة'}));
+    expect(changes).toEqual([{from:'2026-10-04',to:'2026-10-17'}]);
+  });
+  it('still rejects future dates chosen through the branded calendar', () => {
+    const changes=[];
+    render(<GrowthPerformanceContent source={{allowed:true,error:'اختبار معزول'}} period={{from:'2099-10-03',to:'2099-10-17'}} onPeriodChange={p=>changes.push(p)} />);
+    fireEvent.click(screen.getByRole('button',{name:'عرض الفترة'}));
+    expect(changes).toEqual([]);
+    expect(screen.getAllByRole('alert').some(e=>e.textContent.includes('93'))).toBe(true);
+  });
   it('labels numerator/days explicitly and warns beside a partially linked descriptive average', () => {
     const data=growthFixture(); data.workers[1].days[0]={...data.workers[1].days[0],count:null,recordedCount:5,coverage:'partial',workEligible:null};
     const {container}=render(<GrowthPerformanceView data={data} language="en" />);
@@ -25,7 +46,8 @@ describe('growth page interactions', () => {
     const changed = [];
     const source = { allowed: true, loading: false, data: growthFixture(), error: null, retry: () => changed.push('retry') };
     const { rerender } = render(<GrowthPerformanceContent source={source} period={{from:'2026-10-10',to:'2026-10-17'}} onPeriodChange={p => changed.push(p)} language="en" />);
-    fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-10-17' } });
+    fireEvent.click(screen.getByRole('button',{name:'From'}));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button',{name:'17',exact:true}));
     expect(changed).toHaveLength(0);
     fireEvent.click(screen.getByRole('button', { name: 'Show period' }));
     expect(changed).toEqual([{from:'2026-10-17',to:'2026-10-17'}]);

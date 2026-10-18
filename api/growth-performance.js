@@ -1,7 +1,7 @@
 import { getBikerQualityRuntime } from '../server/bikerQualityRuntime.js';
 import { readGrowthPerformance } from '../server/growthPerformance.js';
 
-export function createGrowthHandler(getRuntime = getBikerQualityRuntime) {
+export function createGrowthHandler(getRuntime = getBikerQualityRuntime, logger = console) {
   return async (req, res) => {
     res.setHeader('Cache-Control', 'private, no-store');
     res.setHeader('Vary', 'Authorization');
@@ -19,6 +19,13 @@ export function createGrowthHandler(getRuntime = getBikerQualityRuntime) {
       const result = await readGrowthPerformance(runtime.db, { uid: caller.uid }, body);
       return res.status(200).json({ result });
     } catch (error) {
+      if ([8, 'resource-exhausted', 'firestore/resource-exhausted'].includes(error?.code)) {
+        // Allowlisted diagnostic only: never log the original exception,
+        // credentials, request body, caller identity or database document data.
+        logger.warn('[growth-performance] read-failed', { code: 'resource-exhausted' });
+        return res.status(503).json({ error: { code: 'resource-exhausted',
+          message: 'تعذّر تحميل بيانات النمو بسبب تجاوز حصة قراءة قاعدة البيانات. إعادة المحاولة المتكررة لن تعالج الحد.' } });
+      }
       const status = error instanceof SyntaxError ? 400 : ({ 'permission-denied': 403, 'unauthenticated': 401,
         'invalid-argument': 400, 'failed-precondition': 412 }[error.code] || 500);
       return res.status(status).json({ error: { code: status === 500 ? 'internal' : error.code || 'invalid-argument',

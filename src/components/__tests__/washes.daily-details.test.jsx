@@ -23,10 +23,11 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
-it('shows only yesterday completed washes, excluding older days, without changing other KPIs', () => {
+it('shows the latest completed wash day, independent of yesterday, without changing other KPIs', () => {
   const original = structuredClone(state.items);
   render(<WashesPage />);
-  expect(kpi('غسلات أمس').querySelector('.sw-stat-value').textContent).toBe('3');
+  expect(kpi('آخر يوم مسجّل').querySelector('.sw-stat-value').textContent).toBe('5');
+  expect(screen.queryByText('غسلات أمس')).toBeNull();
   expect(screen.queryByText('غسلات اليوم')).toBeNull();
   expect(kpi('إجمالي الغسلات المكتملة').querySelector('.sw-stat-value').textContent).toBe('14');
   expect(kpi('إجمالي الإيرادات').querySelector('.sw-stat-value').textContent).toMatch(/280/);
@@ -35,29 +36,27 @@ it('shows only yesterday completed washes, excluding older days, without changin
 it('preserves the existing partner scaling for the new count', () => {
   state.scalingFactor = 0.4;
   render(<WashesPage />);
-  expect(kpi('غسلات أمس').querySelector('.sw-stat-value').textContent).toBe('1');
+  expect(kpi('آخر يوم مسجّل').querySelector('.sw-stat-value').textContent).toBe('2');
 });
-it('updates the cutoff after Riyadh midnight while the page remains open', () => {
+it('keeps the last recorded date stable across midnight without refreshing the page', () => {
   vi.setSystemTime(new Date('2026-10-10T20:59:30Z'));
   render(<WashesPage />);
-  expect(kpi('غسلات أمس').querySelector('.sw-stat-value').textContent).toBe('0');
+  expect(kpi('آخر يوم مسجّل').querySelector('.sw-stat-value').textContent).toBe('5');
   act(() => { vi.advanceTimersByTime(60_000); });
-  expect(kpi('غسلات أمس').querySelector('.sw-stat-value').textContent).toBe('3');
+  expect(kpi('آخر يوم مسجّل').querySelector('.sw-stat-value').textContent).toBe('5');
 });
-it('shows zero when yesterday has no completed washes, even with earlier completed activity', () => {
+it('shows the actual latest completed day when yesterday has no completed activity', () => {
   state.items = [wash('2026-10-09', 9), wash('2026-10-11', 4), wash('2026-10-10', 7, 'قيد التنفيذ')];
   render(<WashesPage />);
-  expect(kpi('غسلات أمس').querySelector('.sw-stat-value').textContent).toBe('0');
+  expect(kpi('آخر يوم مسجّل').querySelector('.sw-stat-value').textContent).toBe('4');
 });
-it('refreshes on window focus and removes the timer when leaving the page', () => {
+it('updates the latest-day card when the loaded register changes', () => {
   vi.setSystemTime(new Date('2026-10-10T20:59:30Z'));
   const view = render(<WashesPage />);
-  const timers = vi.getTimerCount();
-  vi.setSystemTime(new Date('2026-10-10T21:00:01Z'));
-  act(() => { window.dispatchEvent(new Event('focus')); });
-  expect(kpi('غسلات أمس').querySelector('.sw-stat-value').textContent).toBe('3');
-  view.unmount();
-  expect(vi.getTimerCount()).toBeLessThan(timers);
+  expect(kpi('آخر يوم مسجّل').querySelector('.sw-stat-value').textContent).toBe('5');
+  state.items = [...state.items,wash('2026-10-13',7)];
+  view.rerender(<WashesPage />);
+  expect(kpi('آخر يوم مسجّل').querySelector('.sw-stat-value').textContent).toBe('7');
 });
 it('orders the requested columns with real booking/worker IDs and preserves each row total', () => {
   state.bikers = [{ id: 'worker-1', name: 'Worker 1', driverExternalId: '001986' }];
@@ -82,7 +81,7 @@ it('shows completed, exceptional and ticketed washes from persisted evidence wit
   expect(table.getByText('مكتملة')).toBeTruthy(); expect(table.getByText('استثنائية')).toBeTruthy();
   expect(table.getByText('عليها تكت')).toBeTruthy(); expect(table.getByText('T-7').dir).toBe('ltr');
   expect(table.getAllByRole('button', { name: /تغيير اكتمال دفعة/ })).toHaveLength(3);
-  expect(kpi('غسلات أمس').querySelector('.sw-stat-value').textContent).toBe('3');
+  expect(kpi('آخر يوم مسجّل').querySelector('.sw-stat-value').textContent).toBe('3');
   expect(kpi('إجمالي الإيرادات').querySelector('.sw-stat-value').textContent).toMatch(/60/);
   expect(state.items).toEqual(original);
 });

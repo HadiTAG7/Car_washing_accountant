@@ -1,14 +1,15 @@
 import { translate } from '../i18n/locale';
 import { getLocale } from '../i18n/locale';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
+import WashActivityCards from './WashActivityCards';
 import SweaterWashWorkerSummary from './SweaterWashWorkerSummary';
 import {
-  Plus, Trash2, Pencil, Wallet, CheckCircle2, CalendarClock, Car,
+  Plus, Trash2, Pencil, CalendarClock, Car,
 } from 'lucide-react';
 import { formatCurrency, formatNumber } from '../data/initialData';
 import TopBar from './TopBar';
 import {
-  Card, SectionHeader, StatCard, PrimaryButton,
+  Card, SectionHeader, PrimaryButton,
   EmptyState as UIEmptyState,
 } from './UI';
 import AddWashModal from './AddWashModal';
@@ -20,7 +21,6 @@ import { useBikers } from '../hooks/useBikers';
 import { useLanguage } from '../i18n/useLanguage';
 import { displayRecordedBikerName, recordedBikerSweaterId } from '../lib/bikerNames';
 import { formatDateOnly } from '../lib/dateOnly';
-import { completedWashesYesterday, riyadhTodayISO } from '../lib/washesYesterday';
 import { washDisplayStatus } from '../lib/sweater/washDisplayStatus';
 import { useSweaterWashDetails } from '../hooks/useSweaterWashDetails';
 import { useAccountingSettings } from '../hooks/useAccountingSettings';
@@ -93,14 +93,6 @@ export default function WashesPage() {
   const [editingItem, setEditingItem]     = useState(null);
   const [mutationError, setMutationError] = useState(null);
   const [toast, setToast] = useState({ open: false, message: '', tone: 'success', duration: 3000 });
-  const [today, setToday] = useState(() => riyadhTodayISO());
-  useEffect(() => {
-    // Keep an open page correct after midnight (also catches background-tab wakeup).
-    const refreshDay = () => setToday(riyadhTodayISO());
-    const timer = window.setInterval(refreshDay, 60_000);
-    window.addEventListener('focus', refreshDay);
-    return () => { window.clearInterval(timer); window.removeEventListener('focus', refreshDay); };
-  }, []);
 
   const showToast = useCallback((message, tone = 'success') => {
     setToast({ open: true, message, tone, duration: tone === 'error' ? 8000 : 3000 });
@@ -114,23 +106,6 @@ export default function WashesPage() {
   function openEditModal(item) { setLocalOpen(false); setEditingItem(item); }
   function closeModal()        { setLocalOpen(false); setEditingItem(null); }
 
-  const totals = useMemo(() => {
-    let completed = 0, revenue = 0;
-    items.forEach((w) => {
-      const q = w.quantity || 0;
-      if (w.status === 'مكتملة') {
-        completed += q;
-        revenue   += q * w.price;
-      }
-    });
-    // Pro-rata: revenue is a currency total (continuous), wash counts
-    // round to the nearest integer so the KPI doesn't read "3.7 غسلة".
-    return {
-      completed: Math.round(completed * scalingFactor),
-      revenue:   revenue * scalingFactor,
-      yesterday: Math.round(completedWashesYesterday(items, today) * scalingFactor),
-    };
-  }, [items, scalingFactor, today]);
 
   async function handleAddItem(item) {
     try { await addItem(item); showToast('تم إضافة الغسلة بنجاح'); }
@@ -203,34 +178,7 @@ export default function WashesPage() {
         )}
 
         {/* ── KPI summary ─────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 sm:gap-5">
-          <StatCard
-            className="col-span-2 md:col-span-1"
-            icon={CheckCircle2}
-            tone="emerald"
-            label="إجمالي الغسلات المكتملة"
-            value={formatNumber(totals.completed)}
-            sub={
-              items.length === 0
-                ? 'ابدأ بتسجيل أول دفعة'
-                : `${formatNumber(items.length)} ${items.length === 1 ? 'دفعة' : 'دفعات'} مسجّلة`
-            }
-          />
-          <StatCard
-            icon={Wallet}
-            tone="primary"
-            label="إجمالي الإيرادات"
-            value={formatCurrency(totals.revenue)}
-            sub="عدد الغسلات × سعر الغسلة (للدفعات المكتملة)"
-          />
-          <StatCard
-            icon={CalendarClock}
-            tone="amber"
-            label="غسلات أمس"
-            value={formatNumber(totals.yesterday)}
-            sub="الغسلات المكتملة المسجلة ليوم أمس فقط — بتوقيت الرياض"
-          />
-        </div>
+        <WashActivityCards items={items} scalingFactor={scalingFactor} loading={loading} error={error} />
 
         {/* ── Main table ─────────────────────────────────────────── */}
         <Card className="p-6">

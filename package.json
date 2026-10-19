@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "test:finance": "vitest run server/__tests__/financeReports.test.js server/__tests__/financeWorkbench.test.js server/__tests__/financeCarry.test.js src/components/__tests__/FinanceWorkspace.test.jsx src/components/__tests__/FinanceReportPublisher.test.jsx src/hooks/__tests__/useFinanceRead.test.jsx mcp/test/financeTools.test.js",
+    "test:finance": "vitest run server/__tests__/financeDeployment.test.js server/__tests__/financeReports.test.js server/__tests__/financeWorkbench.test.js server/__tests__/financeCarry.test.js src/components/__tests__/FinanceWorkspace.test.jsx src/components/__tests__/FinanceReportPublisher.test.jsx src/hooks/__tests__/useFinanceRead.test.jsx mcp/test/financeTools.test.js",
     "test:finance:emulator": "firebase emulators:exec --only firestore --project demo-sweater-finance --config firebase.finance-test.json \"vitest run server/__tests__/financeWorkflow.emulator.test.js --testTimeout=180000 --maxWorkers=1\"",
     "dev": "vite",
     "prebuild": "node scripts/assert-production-source.mjs",

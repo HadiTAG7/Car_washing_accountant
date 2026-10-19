@@ -2,8 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "vite",
   "functions": {
-    "api/finance-reports.js": { "maxDuration": 60 },
-    "api/finance-workbench.js": { "maxDuration": 60 },
+    "api/ledger.js": { "maxDuration": 60 },
     "api/integrations/sweater/operations.js": {
       "maxDuration": 60
     },
@@ -21,6 +20,14 @@
     }
   },
   "rewrites": [
+    {
+      "source": "/api/finance-reports",
+      "destination": "/api/ledger?financeEndpoint=reports"
+    },
+    {
+      "source": "/api/finance-workbench",
+      "destination": "/api/ledger?financeEndpoint=workbench"
+    },
     {
       "source": "/((?!api/).*)",
       "destination": "/index.html"

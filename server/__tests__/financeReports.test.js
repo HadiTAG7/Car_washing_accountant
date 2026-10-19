@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { financeReports } from '../financeReports.js';
 import { parseFinanceReport } from '../../src/lib/financeReportContract.js';
-import { createFinanceReportsHandler } from '../../api/finance-reports.js';
+import { createFinanceReportsHandler } from '../financeReportsHttp.js';
 import { financeFixture, memoryFinanceDb } from './financeFixtures';
 
 const now = new Date('2026-10-20T00:00:00Z'), auth = { uid: 'test-admin' };

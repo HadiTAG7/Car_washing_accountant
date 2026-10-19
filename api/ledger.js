@@ -31,6 +31,8 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 
 import { dispatch, HANDLER_NAMES } from '../functions/src/handlers.js';
+import financeReportsHandler from '../server/financeReportsHttp.js';
+import financeWorkbenchHandler from '../server/financeWorkbenchHttp.js';
 
 /**
  * A refusal the operator must be able to tell apart from a bug.
@@ -104,6 +106,10 @@ const STATUS = {
 };
 
 export default async function handler(req, res) {
+  // Public finance URLs are rewritten here to share one deployment function.
+  // Each service retains its own current-role, revoked-token and input gates.
+  if (req.query?.financeEndpoint === 'reports') return financeReportsHandler(req, res);
+  if (req.query?.financeEndpoint === 'workbench') return financeWorkbenchHandler(req, res);
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
     return res.status(405).json({ error: { code: 'invalid-argument', message: 'POST فقط.' } });

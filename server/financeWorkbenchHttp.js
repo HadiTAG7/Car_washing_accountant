@@ -1,5 +1,5 @@
-import { getBikerQualityRuntime } from '../server/bikerQualityRuntime.js';
-import { financeWorkbench } from '../server/financeWorkbench.js';
+import { getBikerQualityRuntime } from './bikerQualityRuntime.js';
+import { financeWorkbench } from './financeWorkbench.js';
 
 export function createFinanceWorkbenchHandler(getRuntime = getBikerQualityRuntime) {
   return async (req, res) => {

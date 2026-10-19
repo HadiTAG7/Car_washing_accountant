@@ -4,9 +4,9 @@ import { callerRole } from '../functions/src/handlers.js';
 import { ADAPTERS, legacyLockIdFor } from '../functions/src/posting.js';
 import { postSource } from '../functions/src/ledger.js';
 import { taxPolicyAt } from '../functions/src/taxPolicy.js';
-import { startupRollup } from '../functions/src/startupMigration.js';
+import { startupRollup, startupParentHasLegacyTaxFields } from '../functions/src/startupMigration.js';
 import { isRealDate, postingLockId, round2 } from '../functions/src/invariants.js';
-import { FINANCE_KINDS, financeHash, financeSourceHash, financeReviewId, financeProblems, journalMatchesFinanceSource, FinanceReviewError } from '../functions/src/financeReview.js';
+import { FINANCE_KINDS, financeHash, financeSourceHash, financeReviewId, financeProblems, journalMatchesFinanceSource, assertFinanceDocumentUniqueness, FinanceReviewError } from '../functions/src/financeReview.js';
 
 const kindSchema = z.enum(['variable', 'monthly', 'annual', 'startup']);
 const id = z.string().regex(/^[\p{L}\p{N}_.:-]{1,160}$/u);
@@ -37,7 +37,7 @@ const requestSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('save'), ...correction, previewHash: hash, reason: z.string().trim().min(3).max(1000), confirm: z.literal(true) }).strict(),
   z.object({ action: z.literal('previewCapture'), ...capture }).strict(),
   z.object({ action: z.literal('capture'), ...capture, previewHash: hash, reason: z.string().trim().min(3).max(1000), confirm: z.literal(true) }).strict(),
-  z.object({ action: z.literal('approve'), ...common, sourceHash: hash, reason: z.string().trim().min(3).max(1000), confirm: z.literal(true) }).strict(),
+  z.object({ action: z.literal('approve'), ...common, sourceHash: hash, postingHash: hash, reason: z.string().trim().min(3).max(1000), confirm: z.literal(true) }).strict(),
   z.object({ action: z.literal('post'), ...common, sourceHash: hash, confirm: z.literal(true) }).strict(),
 ]);
 const fail = (message, code) => { throw new FinanceReviewError(message, code); };
@@ -61,6 +61,9 @@ function applyPatch(kind, before, p) {
     || round2(row[spec.amount]) !== row[spec.amount])) fail('المبلغ يجب أن يكون موجبًا بالهللة.', 'invalid-argument');
   if (Number.isFinite(row.quantity) && Number.isFinite(row[spec.amount])) row.unit_cost = Number((row[spec.amount] / row.quantity).toFixed(8));
   row.finance_workflow_version = 1;
+  const previousRevision = before.finance_revision ?? 0;
+  if (!Number.isSafeInteger(previousRevision) || previousRevision < 0 || previousRevision >= Number.MAX_SAFE_INTEGER) fail('نسخة المصدر التقنية غير صالحة؛ لا تحفظ فوقها.');
+  row.finance_revision = previousRevision + 1;
   row.approval_status = 'pending';
   return row;
 }
@@ -86,7 +89,11 @@ async function validateClassification(db, tx, kind, row) {
     if (!snap.exists) fail('بند التصنيف غير موجود.', 'not-found');
     const siblings = await tx.get(db.collection(spec.collection).where(spec.fk, '==', row[spec.fk]));
     if (siblings.docs.some(d => !Number.isFinite(d.data().amount) || d.data().amount <= 0)) fail('مبالغ السجلات التابعة غير مكتملة؛ لا يعاد تجميعها افتراضيًا.');
-    if (siblings.empty && Number(snap.data().actual_amount) > 0) fail('البند يحمل مبلغًا تاريخيًا غير مفصل؛ لا تضاعفه.');
+    const parent = snap.data();
+    if (siblings.empty && (Number(parent.actual_amount) > 0 || startupParentHasLegacyTaxFields({
+      isTaxInvoice: parent.is_tax_invoice, invoiceNumber: parent.invoice_number, invoiceDate: parent.invoice_date,
+      supplier: parent.supplier, vatAmount: parent.vat_amount, vatRate: parent.vat_rate,
+    }))) fail('البند يحمل بيانات إنفاق أو فاتورة تاريخية غير مفصلة؛ لا تستبدلها.');
     return { ref, raw: snap.data(), rows: siblings.docs.map(d => ({ ...d.data(), id: d.id })) };
   }
   if (!spec.fk && row.category_id) {
@@ -95,17 +102,7 @@ async function validateClassification(db, tx, kind, row) {
   return null;
 }
 async function checkDuplicate(db, tx, kind, sourceId, row) {
-  for (const spec of Object.values(FINANCE_KINDS)) {
-    const queries = [];
-    if (row.invoice_url) queries.push(['invoice_url', row.invoice_url]);
-    if (row.invoice_number && row.supplier) queries.push(['invoice_number', row.invoice_number]);
-    for (const [key, value] of queries) {
-      const matches = await tx.get(db.collection(spec.collection).where(key, '==', value).limit(101));
-      if (matches.size > 100) fail('نتائج كشف التكرار محدودة؛ يلزم حسمها قبل الاعتماد.');
-      if (matches.docs.some(d => !(spec.collection === FINANCE_KINDS[kind].collection && d.id === sourceId)
-        && (key === 'invoice_url' || d.data().supplier === row.supplier))) fail('يوجد مستند مرتبط بمصروف آخر؛ راجع احتمال التكرار أو تجزئة المستند.');
-    }
-  }
+  return assertFinanceDocumentUniqueness(db, tx, kind, sourceId, row);
 }
 async function postingPreview(db, tx, kind, sourceId, row) {
   const issues = financeProblems(kind, row);
@@ -121,12 +118,14 @@ async function postingPreview(db, tx, kind, sourceId, row) {
     if ([...built.lines, ...(built.settlement?.lines || [])].some(l => !known.has(String(l.accountId)))) {
       return { ready: false, issues: ['حسابات القيد غير مكتملة في الدليل.'], entry: null, lines: [] };
     }
-    return { ready: true, issues: [], ...built };
+    return { ready: true, issues: [], ...built, postingHash: financeHash(built) };
   } catch (error) { return { ready: false, issues: [error.message], entry: null, lines: [] }; }
 }
 function publicRow(kind, sourceId, row, state, preview) {
-  return { kind, sourceId, row, ...state, issues: preview.issues, postingPreview: preview,
-    stage: state.protectedSource ? 'protected' : state.closed ? 'closed_period' : state.approved ? 'approved' : preview.ready ? 'review_ready' : 'incomplete' };
+  const approved = Boolean(state.approved && preview.ready && state.review?.postingHash === preview.postingHash);
+  return { kind, sourceId, row, ...state, approved,
+    issues: state.approved && !approved ? ['تغيرت معاينة الحسابات أو المعالجة الضريبية بعد الاعتماد؛ أعد المراجعة.', ...preview.issues] : preview.issues,
+    postingPreview: preview, stage: state.protectedSource ? 'protected' : state.closed ? 'closed_period' : approved ? 'approved' : preview.ready ? 'review_ready' : 'incomplete' };
 }
 export async function financeWorkbench(db, auth, input) {
   await adminOnly(db, auth);
@@ -172,11 +171,20 @@ export async function financeWorkbench(db, auth, input) {
     await adminOnly(authTx(db, tx), auth);
     const sourceRef = db.collection(spec.collection).doc(sourceId), snap = await tx.get(sourceRef);
     const isCapture = ['capture', 'previewCapture'].includes(r.action);
-    const receiptRef = db.collection('finance_workbench_receipts').doc(financeHash({ uid: auth.uid, kind: r.kind, action: r.action, key: r.previewHash || r.sourceHash || r.requestId || sourceId }));
+    const receiptRef = db.collection('finance_workbench_receipts').doc(financeHash({ uid: auth.uid, kind: r.kind, action: r.action,
+      key: r.action === 'approve' ? { sourceHash: r.sourceHash, postingHash: r.postingHash } : r.previewHash || r.sourceHash || r.requestId || sourceId }));
     const receipt = await tx.get(receiptRef);
     const requestHash = financeHash(r);
     if (receipt.exists && ['save', 'capture', 'approve'].includes(r.action)) {
       if (receipt.data().requestHash !== requestHash) fail('تغير الطلب بعد تنفيذه؛ لا تعاد ببصمة قديمة.');
+      if (r.action === 'approve') {
+        if (!snap.exists) fail('المصروف غير موجود.', 'not-found');
+        const current = await readState(db, tx, r.kind, sourceId, snap.data());
+        const preview = await postingPreview(db, tx, r.kind, sourceId, snap.data());
+        if (!current.approved || current.protectedSource || current.closed || current.sourceHash !== r.sourceHash
+          || !preview.ready || preview.postingHash !== r.postingHash) fail('تغيرت معاينة القيد؛ أعد القراءة قبل الاعتماد.');
+        await checkDuplicate(db, tx, r.kind, sourceId, snap.data());
+      }
       return { ...receipt.data().result, duplicate: true };
     }
     if (isCapture && snap.exists) fail('السجل لهذا الطلب موجود؛ اقرأ نتيجته ولا تكرره.', 'already-exists');
@@ -202,6 +210,7 @@ export async function financeWorkbench(db, auth, input) {
     if (['preview', 'previewCapture'].includes(r.action)) return { kind: r.kind, sourceId, sourceHash: state.sourceHash, previewHash, before, after,
       issues: preview.issues, postingPreview: preview, financialPosting: false };
     if (r.action === 'approve' && !preview.ready) fail(preview.issues.join(' '));
+    if (r.action === 'approve' && r.postingHash !== preview.postingHash) fail('تغيرت معاينة القيد؛ أعد القراءة قبل الاعتماد.');
     if (r.action !== 'approve' && r.previewHash !== previewHash) fail('تغيرت المعاينة أو بيانات البند؛ أعد المعاينة.');
     const auditRef = db.collection('audit_logs').doc(), reviewRef = db.collection('finance_reviews').doc(financeReviewId(r.kind, sourceId));
     if (r.action !== 'approve') {
@@ -216,7 +225,7 @@ export async function financeWorkbench(db, auth, input) {
       tx.update(sourceRef, { approval_status: 'approved' });
     }
     tx.set(reviewRef, { kind: r.kind, sourceId, sourceHash: financeSourceHash(after), status: r.action === 'approve' ? 'approved' : 'pending',
-      postingHash: r.action === 'approve' ? financeHash(Object.fromEntries(Object.entries(preview).filter(([key]) => !['ready', 'issues'].includes(key)))) : null,
+      postingHash: r.action === 'approve' ? preview.postingHash : null,
       reviewedByUid: auth.uid, reviewedAt: FieldValue.serverTimestamp(), reason: r.reason,
       evidenceRefs: after.finance_metadata?.evidenceRefs || [], verificationKind: 'self' });
     tx.set(auditRef, { action: `finance-${r.action}`, userId: auth.uid, kind: r.kind, sourceId, before, after,

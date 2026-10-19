@@ -13,6 +13,16 @@ async function capture(db, overrides = {}) {
   return { request, preview, result, read: await financeWorkbench(db, auth, { action: 'read', kind: 'variable', sourceId: result.sourceId }) };
 }
 describe('finance workbench version-bound review', () => {
+  it('a no-op correction or reverting values cannot resurrect an old approval receipt', async () => {
+    const db = database(), data = await capture(db), common = { kind: 'variable', sourceId: data.result.sourceId, sourceHash: data.read.sourceHash };
+    await financeWorkbench(db, auth, { action: 'approve', ...common, postingHash: data.read.postingPreview.postingHash, reason: 'اعتماد اختبار', confirm: true });
+    const preview = await financeWorkbench(db, auth, { action: 'preview', ...common, patch: {} });
+    await financeWorkbench(db, auth, { action: 'save', ...common, patch: {}, previewHash: preview.previewHash, reason: 'حفظ نسخة اختبار جديدة', confirm: true });
+    const after = await financeWorkbench(db, auth, { action: 'read', kind: 'variable', sourceId: common.sourceId });
+    expect(after.row.finance_revision).toBe(2); expect(after.sourceHash).not.toBe(common.sourceHash); expect(after.approved).toBe(false);
+    await financeWorkbench(db, auth, { action: 'approve', ...common, sourceHash: after.sourceHash, postingHash: after.postingPreview.postingHash, reason: 'اعتماد اختبار', confirm: true });
+    expect((await financeWorkbench(db, auth, { action: 'read', kind: 'variable', sourceId: common.sourceId })).approved).toBe(true);
+  });
   it('preview does not save; capture preserves invoice/quantity/funding and does not post or pay', async () => {
     const db = database(), patch = expensePatch(), request = { action: 'previewCapture', kind: 'variable', requestId: 'TEST', patch };
     const preview = await financeWorkbench(db, auth, request);
@@ -26,7 +36,7 @@ describe('finance workbench version-bound review', () => {
   });
   it('approves the exact read version and invalidates it after an evidenced same-record correction', async () => {
     const db = database(), data = await capture(db), common = { kind: 'variable', sourceId: data.result.sourceId, sourceHash: data.read.sourceHash };
-    await financeWorkbench(db, auth, { action: 'approve', ...common, reason: 'مطابقة مستند الاختبار', confirm: true });
+    await financeWorkbench(db, auth, { action: 'approve', ...common, postingHash: data.read.postingPreview.postingHash, reason: 'مطابقة مستند الاختبار', confirm: true });
     const approved = await financeWorkbench(db, auth, { action: 'read', kind: 'variable', sourceId: common.sourceId });
     expect(approved.approved).toBe(true);
     const patch = { description: 'وصف مصحح بمستند اختباري' }, preview = await financeWorkbench(db, auth, { action: 'preview', ...common, patch });
@@ -39,7 +49,7 @@ describe('finance workbench version-bound review', () => {
   it('does not infer cash, tax eligibility, supplier or funding from missing metadata', async () => {
     const db = database(), data = await capture(db, { supplier: null, paymentStatus: 'unknown', paymentMethod: 'unknown', fundingType: 'unknown', fundingReference: null });
     expect(data.read.issues.length).toBeGreaterThan(0);
-    await expect(financeWorkbench(db, auth, { action: 'approve', kind: 'variable', sourceId: data.result.sourceId, sourceHash: data.read.sourceHash, reason: 'محاولة اختبار', confirm: true })).rejects.toThrow();
+    await expect(financeWorkbench(db, auth, { action: 'approve', kind: 'variable', sourceId: data.result.sourceId, sourceHash: data.read.sourceHash, postingHash: 'a'.repeat(64), reason: 'محاولة اختبار', confirm: true })).rejects.toThrow();
     expect(data.read.row.payment_method).toBe('unknown'); expect(data.read.row.vat_amount).toBeNull();
   });
   it('requires tax evidence for deductible invoices and preserves high-precision unit prices', async () => {

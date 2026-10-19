@@ -40,7 +40,7 @@ describe.skipIf(!enabled)('finance real Firestore workflow — isolated demo onl
     const read = await call({ action: 'read', kind: 'variable', sourceId: result.sourceId });
     return { input, preview, result, read, common: { kind: 'variable', sourceId: result.sourceId, sourceHash: read.sourceHash } };
   }
-  const approve = data => call({ action: 'approve', ...data.common, reason: 'اعتماد مستند الاختبار', confirm: true });
+  const approve = data => call({ action: 'approve', ...data.common, postingHash: data.read.postingPreview.postingHash, reason: 'اعتماد مستند الاختبار', confirm: true });
 
   it('captures then approves then posts the canonical stored lines; duplicate post cannot create a second journal', async () => {
     const data = await captured();
@@ -55,6 +55,7 @@ describe.skipIf(!enabled)('finance real Firestore workflow — isolated demo onl
     ]));
     expect((await db.doc(`variable_expenses/${data.result.sourceId}`).get()).data().payment_status).toBe('unpaid');
     await expect(call({ action: 'post', ...data.common, confirm: true })).rejects.toThrow();
+    await expect(approve(data)).rejects.toThrow(/تغيرت/);
     expect((await db.collection('journal_entries').get()).size).toBe(1);
   }, 120000);
 
@@ -65,7 +66,7 @@ describe.skipIf(!enabled)('finance real Firestore workflow — isolated demo onl
     expect(requests.filter(r => r.duplicate)).toHaveLength(1);
     expect((await db.collection('variable_expenses').get()).size).toBe(1);
     const read = await call({ action: 'read', kind: 'variable', sourceId: requests[0].sourceId });
-    const data = { common: { kind: 'variable', sourceId: read.sourceId, sourceHash: read.sourceHash } };
+    const data = { read, common: { kind: 'variable', sourceId: read.sourceId, sourceHash: read.sourceHash } };
     await approve(data);
     const results = await Promise.allSettled([0, 1].map(() => call({ action: 'post', ...data.common, confirm: true })));
     expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(1);
@@ -81,6 +82,33 @@ describe.skipIf(!enabled)('finance real Firestore workflow — isolated demo onl
     expect((await db.collection('journal_entries').get()).size).toBe(0);
     expect((await db.collection('audit_logs').get()).size).toBeGreaterThanOrEqual(3);
     await expect(call({ action: 'preview', ...data.common, patch })).rejects.toThrow(/تغير/);
+  }, 120000);
+
+  it('different capture keys cannot create duplicate originals under simultaneous requests', async () => {
+    const inputs = ['DIFF-1', 'DIFF-2'].map(requestId => ({ kind: 'variable', requestId, patch: expensePatch() }));
+    const previews = await Promise.all(inputs.map(input => call({ action: 'previewCapture', ...input })));
+    const results = await Promise.allSettled(inputs.map((input, i) => call({ action: 'capture', ...input, previewHash: previews[i].previewHash, reason: 'اختبار تكرار المستند', confirm: true })));
+    expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(1);
+    expect((await db.collection('variable_expenses').get()).size).toBe(1);
+  }, 180000);
+
+  it('approval binds the viewed journal preview, not just the source; policy changes require reapproval', async () => {
+    const data = await captured({ amount: 115, isTaxInvoice: true, vatAmount: 15, vatRate: 0.15, vatDeductible: true, taxReviewRef: 'TEST-ELIGIBILITY' });
+    await approve(data);
+    await db.doc('app_settings/accounting').set({ value: { vatRegistered: true } });
+    const changed = await call({ action: 'read', kind: 'variable', sourceId: data.read.sourceId });
+    expect(changed.approved).toBe(false); expect(changed.postingPreview.postingHash).not.toBe(data.read.postingPreview.postingHash);
+    await expect(call({ action: 'post', ...data.common, confirm: true })).rejects.toThrow();
+    await expect(call({ action: 'approve', ...data.common, postingHash: data.read.postingPreview.postingHash, reason: 'اختبار طلب قديم', confirm: true })).rejects.toThrow();
+    await approve({ ...data, read: changed });
+    expect((await call({ action: 'post', ...data.common, confirm: true })).verification.linesMatched).toBe(true);
+  }, 120000);
+
+  it('a duplicate inserted after approval still blocks posting through the old server door', async () => {
+    const data = await captured(); await approve(data);
+    await db.doc('monthly_expenses/unreviewed-duplicate').set({ invoice_url: data.read.row.invoice_url });
+    await expect(postSource(db, FieldValue, { kind: 'variable', sourceId: data.read.sourceId }, { userId: auth.uid })).rejects.toThrow(/مرتبط/);
+    expect((await db.collection('journal_entries').get()).size).toBe(0);
   }, 120000);
 
   it('checks changed tax preview, removed classification and closed periods again at posting', async () => {

@@ -54,7 +54,11 @@ export default function FinanceReportsPage() {
           {read.loading && <LoadingState message="جارٍ قراءة نسخة التقرير..." />}
           {report && !error && <LanguageContext.Provider value={{ ...language, language: 'ar' }}>
             <header className="fw-panel fw-report-head"><div className="fw-eyebrow"><ShieldCheck size={16} /> تقرير مالي مراجع · {FINANCE_ROLES[report.sourceRole]}</div>
-              <h1>{report.title}</h1><p>{report.summary}</p>
+              <h1>{report.title}</h1><span className="fw-badge">النسخة المعروضة: {report.revision}</span><p>{report.summary}</p>
+              {report.revision < read.data.currentRevision && <div className="fw-warning" role="note"><div>
+                <p>نسخة تاريخية معروضة. أحدث نسخة محفوظة: {read.data.currentRevision} — لا تعتبر هذه آخر نتيجة.</p>
+                <button type="button" onClick={() => setRevision(undefined)}>عرض أحدث نسخة</button>
+              </div></div>}
               <div className="fw-meta"><span>الفترة {report.period.from} — {report.period.to}</span><span>القطع: {dateText(report.cutAtRiyadh)} — الرياض</span></div>
               <p className="fw-integrity">{report.historicalIntegrity}</p>
               <label>نسخة محفوظة <select aria-label="نسخة التقرير" value={revision || read.data.currentRevision} onChange={e => setRevision(Number(e.target.value))}>

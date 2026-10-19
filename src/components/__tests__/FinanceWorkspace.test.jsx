@@ -23,6 +23,17 @@ function reports(report = financeFixture()) {
     ? base({ items: [report] }) : base({ report, currentRevision: 1, history: [{ revision: 1, reason: 'الإصدار الأول' }] }));
 }
 describe('finance report UI and access boundaries', () => {
+  it('clearly labels an old revision and returns to the latest without restating historical content', () => {
+    const first = financeFixture(), latest = financeFixture({ revision: 2, summary: 'ملخص النسخة الثانية', correctionReason: 'تصحيح اختباري' });
+    mock.read.mockImplementation((_e, r) => r.action === 'list' ? base({ items: [latest] })
+      : base({ report: r.revision === 1 ? first : latest, currentRevision: 2, history: [{ revision: 2, reason: 'تصحيح' }, { revision: 1, reason: 'أول' }] }));
+    render(<FinanceReportsPage />); expect(screen.getByText('ملخص النسخة الثانية')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('نسخة التقرير'), { target: { value: '1' } });
+    expect(screen.getByText(/نسخة تاريخية معروضة/)).toBeTruthy(); expect(screen.getByText('النسخة المعروضة: 1')).toBeTruthy();
+    expect(screen.getByText(first.summary)).toBeTruthy(); fireEvent.click(screen.getByRole('button', { name: 'عرض أحدث نسخة' }));
+    expect(screen.queryByText(/نسخة تاريخية معروضة/)).toBeNull(); expect(screen.getByText('النسخة المعروضة: 2')).toBeTruthy();
+    expect(screen.getByText('ملخص النسخة الثانية')).toBeTruthy();
+  });
   it('shows a zero-match filter state without claiming cases were closed and restores all cases', () => {
     reports(); render(<FinanceReportsPage />); fireEvent.click(screen.getByRole('tab', { name: 'المتابعات' }));
     fireEvent.change(screen.getByLabelText('حالة المتابعة'), { target: { value: 'verified_closed' } });

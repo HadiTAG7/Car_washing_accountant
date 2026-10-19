@@ -2113,5 +2113,9 @@
   "نسخة المصدر التقنية غير صالحة؛ لا تحفظ فوقها.": "The technical source version is invalid; do not overwrite it.",
   "تغيرت معاينة القيد؛ أعد القراءة قبل الاعتماد.": "The journal preview changed; read it again before approval.",
   "البند يحمل بيانات إنفاق أو فاتورة تاريخية غير مفصلة؛ لا تستبدلها.": "The parent holds undetailed historical spend or invoice data; do not replace it.",
-  "تعرض القائمة حتى30 نسخة حديثة؛ تبقى النسخ الأقدم محفوظة ويمكن قراءتها برقم النسخة من أدوات المالية.": "The list shows up to 30 recent versions; older versions remain saved and can be read by version number through the finance tools."
+  "تعرض القائمة حتى30 نسخة حديثة؛ تبقى النسخ الأقدم محفوظة ويمكن قراءتها برقم النسخة من أدوات المالية.": "The list shows up to 30 recent versions; older versions remain saved and can be read by version number through the finance tools.",
+  "النسخة المعروضة:": "Displayed version:",
+  "نسخة تاريخية معروضة. أحدث نسخة محفوظة:": "A historical version is displayed. Latest saved version:",
+  "— لا تعتبر هذه آخر نتيجة.": "— do not treat this as the latest result.",
+  "عرض أحدث نسخة": "Show latest version"
 }

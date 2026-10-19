@@ -49,7 +49,8 @@ const HISTORY = [
 async function wipe() {
   for (const c of ['chart_of_accounts', 'journal_entries', 'journal_lines',
     'accounting_periods', 'audit_logs', 'counters', 'posting_locks',
-    'startup_costs', 'startup_cost_entries', 'app_settings', 'finance_reviews']) {
+    'startup_costs', 'startup_cost_entries', 'app_settings', 'finance_reviews',
+    'washes', 'monthly_expenses', 'variable_expenses', 'annual_expense_entries', 'expense_vouchers', 'partner_payments', 'temporary_expenses']) {
     const snap = await getDocs(collection(db, c));
     await Promise.all(snap.docs.map((s) => deleteDoc(s.ref)));
   }

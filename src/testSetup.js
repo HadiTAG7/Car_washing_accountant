@@ -1,4 +1,8 @@
 import { vi } from 'vitest';
+import process from 'node:process';
+if (process.env.FIRESTORE_EMULATOR_HOST && !/^(127\.0\.0\.1|localhost):\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST)) {
+  throw new Error('Financial emulator tests require a localhost-only endpoint.');
+}
 // SDK integration fixtures must use a demo namespace as well as localhost;
 // never reuse the production project identity for a local financial test.
 if (/^(127\.0\.0\.1|localhost):\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST || '')) {

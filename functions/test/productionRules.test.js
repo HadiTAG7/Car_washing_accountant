@@ -25,7 +25,12 @@ import { doc, setDoc, updateDoc, deleteDoc, getDoc, getDocs, collection, query, 
 import { initializeApp, deleteApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { issueDocument, voidDocument, DOC_COL } from '../src/invoicing.js';
-import { postSource, reverseEntry, seedChartOfAccounts, COL } from '../src/ledger.js';
+import { postSource as serverPostSource, reverseEntry, seedChartOfAccounts, COL } from '../src/ledger.js';
+import { reviewedFinanceFixture } from './financeApprovalFixture.js';
+async function postSource(db, fieldValue, payload, options) {
+  await reviewedFinanceFixture(db, payload.kind, payload.sourceId);
+  return serverPostSource(db, fieldValue, payload, options);
+}
 import { createPartnerMcpKey, KEYS_COL as MCP_KEYS, HASHES_COL as MCP_HASHES } from '../src/partnerMcpKeys.js';
 
 const EMU = process.env.FIRESTORE_EMULATOR_HOST;

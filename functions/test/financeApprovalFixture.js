@@ -13,7 +13,7 @@ export async function reviewedFinanceFixture(db, kind, sourceId) {
   const original = snap.data(), amount = original[spec.amount], quantity = original.quantity || 1;
   const unpaid = ['unpaid', 'pending'].includes(original.payment_status);
   const method = unpaid ? 'credit' : original.payment_method || 'cash';
-  const row = { supplier: 'SYNTHETIC-SUPPLIER', is_tax_invoice: false, price_mode: 'inclusive', ...original,
+  const row = { is_tax_invoice: false, price_mode: 'inclusive', ...original, supplier: original.supplier ?? 'SYNTHETIC-SUPPLIER',
     quantity, unit_cost: original.unit_cost ?? Number((amount / quantity).toFixed(8)),
     invoice_url: `https://example.org/test-only/${kind}/${sourceId}`, approval_status: 'approved',
     payment_status: unpaid ? 'unpaid' : 'paid', payment_method: method,

@@ -24,9 +24,8 @@
 
 import { z } from 'zod';
 import { workflowReadTools, workflowWriteTools } from './workflowTools.js';
-import { financeReadTools, financeWriteTools } from './financeTools.js';
-import { connect, callServer, readOnly, SweaterMcpError } from './client.js';
-import { collection, addDoc } from 'firebase/firestore';
+import { financeReadTools, financeWriteTools, callFinanceServer } from './financeTools.js';
+import { connect, callServer, callAppServer, readOnly, SweaterMcpError } from './client.js';
 import { COL, OPERATIONAL, rows, row, ledgerBundle, lockId, feeRulesMapped } from './fetch.js';
 import { resolvePeriod, previousPeriod, todayInfo, PERIOD_TOKENS } from './periods.js';
 import {
@@ -96,7 +95,7 @@ export const readTools = [
       return text({
         اليوم: t.today, الشهر_الحالي: t.currentMonth, التاريخ: t.label,
         email, uid, role,
-        mcpVersion: '1.2.0',
+        mcpVersion: '1.3.0',
         workflowTools: [...workflowReadTools, ...workflowWriteTools, ...financeReadTools, ...financeWriteTools].map(tool => tool.name),
         mode: readOnly ? 'قراءة فقط' : 'قراءة وكتابة',
         canPostLedger: ['admin', 'accountant'].includes(role),
@@ -488,8 +487,34 @@ export const writeTools = [
       vatAmount: z.number().optional(),
       vatRate: z.number().optional(),
       priceMode: z.enum(['inclusive', 'exclusive']).optional(),
+      quantity: z.number().positive().optional(), categoryId: z.string().optional(), parentId: z.string().optional(),
+      invoiceUrl: z.string().url().optional(), requestId: z.string().optional(), previewHash: z.string().optional(), reason: z.string().optional(),
+      paymentStatus: z.enum(['unknown', 'paid', 'unpaid']).optional(), paidDate: ISO.optional(), vatDeductible: z.boolean().optional(),
+      fundingType: z.enum(['unknown', 'company_cash', 'company_bank', 'vendor_liability', 'partner', 'employee']).optional(),
+      fundingReference: z.string().optional(), purpose: z.string().optional(), evidenceRefs: z.array(z.string()).optional(),
+      taxReviewRef: z.string().optional(), taxBasis: z.enum(['document', 'verified_historical_policy']).optional(),
     },
     async run(a) {
+      // Compatibility facade: all actual captures now share the UI service.
+      // Old, incomplete payloads retain an offline advisory preview only.
+      if (a.requestId && a.quantity && a.invoiceUrl) {
+        const patch = { description: a.description, amount: a.amount, date: a.date, quantity: a.quantity,
+          categoryId: a.categoryId, parentId: a.parentId, supplier: a.supplier, invoiceNumber: a.invoiceNumber,
+          invoiceDate: a.invoiceDate, invoiceUrl: a.invoiceUrl, isTaxInvoice: a.isTaxInvoice,
+          vatAmount: a.vatAmount, vatRate: a.vatRate, vatDeductible: a.vatDeductible, priceMode: a.priceMode,
+          paymentMethod: a.paymentMethod === 'bank' ? 'transfer' : a.paymentMethod,
+          paymentStatus: a.paymentStatus, paidDate: a.paidDate, fundingType: a.fundingType,
+          fundingReference: a.fundingReference, purpose: a.purpose, evidenceRefs: a.evidenceRefs,
+          taxReviewRef: a.taxReviewRef, taxBasis: a.taxBasis };
+        const common = { kind: a.kind, requestId: a.requestId, patch };
+        if (a.confirm !== true) return text(await callFinanceServer('finance-workbench', { ...common, action: 'previewCapture' }));
+        if (!a.previewHash || !a.reason) throw new SweaterMcpError('يلزم سبب وبصمة المعاينة الحالية قبل التسجيل.', { code: 'invalid-argument' });
+        const result = await callFinanceServer('finance-workbench', { ...common, action: 'capture', previewHash: a.previewHash, reason: a.reason, confirm: true }, { write: true });
+        const after = await callFinanceServer('finance-workbench', { action: 'read', kind: a.kind, sourceId: result.sourceId });
+        if (after.sourceHash !== result.sourceHash) throw new SweaterMcpError('لم تتطابق قراءة المصروف بعد الحفظ؛ لا تكرر التسجيل.');
+        return text({ ...result, readbackVerified: true, after });
+      }
+      if (a.confirm === true) throw new SweaterMcpError('التسجيل يحتاج الكمية ورابط المستند ومعرف طلب ثابت ومعاينة من صندوق العمل المالي؛ لم يُحفظ شيء.', { code: 'invalid-argument' });
       // لا `connect()` هنا: المعاينة لا تكتب شيئاً، فلا تحتاج قاعدة بيانات —
       // والاتصال يأتي عند الكتابة وحدها، أدناه.
       const coll = DIRECT_WRITE_COLLECTIONS[a.kind];
@@ -498,10 +523,11 @@ export const writeTools = [
       const row = {
         [amountField]: a.amount,
         description: a.description,
+        ...(a.kind !== 'annual' ? { expense_name: a.description } : { spent_date: a.date }),
         logged_date: a.date,
-        ...(a.kind === 'annual' ? { paid_date: a.date } : {}),
         ...(a.category ? { category: a.category } : {}),
-        payment_method: a.paymentMethod || 'cash',
+        payment_method: a.paymentMethod || 'unknown',
+        payment_status: 'unknown',
         is_tax_invoice: a.isTaxInvoice === true,
         supplier: a.supplier ?? null,
         invoice_number: a.invoiceNumber ?? null,
@@ -550,22 +576,14 @@ export const writeTools = [
 
       if (a.confirm !== true) {
         return text({
-          preview: true,
+          preview: true, advisoryOnly: true,
           سيُكتب_في: coll,
           البيانات: row,
           المعاملة_الضريبية: tax,
-          تنبيه: 'لم يُكتب شيء بعد. اعرض هذي الأرقام على المستخدم واطلب تأكيده، '
-            + 'ثم أعد النداء بـ confirm: true. لا تؤكّد نيابةً عنه.',
+          تنبيه: 'لم يُكتب شيء. هذه معاينة إرشادية فقط؛ للتسجيل يلزم صندوق العمل وحقول المستند والكمية وrequestId وبصمة معاينته. confirm لا يعوض الحقول أو الدليل.',
         });
       }
 
-      const { db } = await connect();
-      const ref = await addDoc(collection(db, coll), row);
-      return text({
-        created: true, id: ref.id, collection: coll,
-        المعاملة_الضريبية: tax,
-        التالي: `سجّل المصروف. لترحيله إلى الدفاتر: sweater_post_source بـ kind='${a.kind}' و sourceId='${ref.id}'.`,
-      });
     },
   },
   {
@@ -575,7 +593,8 @@ export const writeTools = [
       'يرحّل غسلة أو مصروفاً أو دفعة شريك إلى دفتر اليومية. الخادم يبني القيد من السجل نفسه — '
       + 'لا تُرسل مبالغ ولا حسابات، فهو لا يقبلها. مثال kind: wash · monthly_expense · variable_expense.',
     schema: { kind: z.string(), sourceId: z.string() },
-    run: ({ kind, sourceId }) => callServer('ledgerPostSource', { kind, sourceId }).then(text),
+    run: ({ kind, sourceId }) => (['variable', 'monthly', 'annual', 'startup'].includes(kind)
+      ? callAppServer('ledgerPostSource', { kind, sourceId }) : callServer('ledgerPostSource', { kind, sourceId })).then(text),
   },
   {
     name: 'sweater_reverse_entry',

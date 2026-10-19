@@ -40,8 +40,8 @@ function FinanceHomeContent({ onNavigate }) {
     <div className="fw-warning" role="note"><AlertTriangle size={18} />الأرقام أدناه من القيود المرحلة؛ ليست كشف بنك أو جرد صندوق أو تحصيلًا مثبتًا. نتيجة الفترة بتاريخ القيد لا تعني اكتمال نتيجتها الاقتصادية.</div>
     {ledger.error && <div className="fw-warning" role="alert">تعذر تحميل الدفاتر؛ لا تُعرض أرقام بديلة أو أصفار.</div>}
     {ledger.loading && <LoadingState message="جارٍ قراءة الدفاتر..." />}
-    <div className="fw-metrics">{metrics.map(([label, value]) => <article className="fw-panel fw-metric" key={label}><span>{label}</span><strong>{available ? value.toLocaleString('ar-SA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : 'غير متاح'} <small>{available ? 'ر.س' : ''}</small></strong><small>{label.includes('رصيد') ? 'تراكمي لكل الدفاتر عند القراءة' : `بتاريخ القيد — ${month}`}</small></article>)}</div>
-    <p className="fw-meta">بدء القراءة: {new Date(readStarted).toLocaleString('ar-SA', { timeZone: 'Asia/Riyadh' })} — الرياض. التحديث يدوي، ولا توجد أرقام تشغيلية مضافة إلى الأرصدة.</p>
+    <div className="fw-metrics">{metrics.map(([label, value]) => <article className="fw-panel fw-metric" key={label}><span>{label}</span><strong>{available ? value.toLocaleString('ar-SA', { numberingSystem: 'latn', minimumFractionDigits: 2, maximumFractionDigits: 2 }) : 'غير متاح'} <small>{available ? 'ر.س' : ''}</small></strong><small>{label.includes('رصيد') ? 'تراكمي لكل الدفاتر عند القراءة' : `بتاريخ القيد — ${month}`}</small></article>)}</div>
+    <p className="fw-meta">بدء القراءة: {new Date(readStarted).toLocaleString('ar-SA', { timeZone: 'Asia/Riyadh', calendar: 'gregory', numberingSystem: 'latn' })} — الرياض. التحديث يدوي، ولا توجد أرقام تشغيلية مضافة إلى الأرصدة.</p>
     <div className="fw-sections">{sections.map(s => <section className="fw-panel fw-section" key={s.title}><div className="fw-section-icon"><s.icon size={23} /></div><h2>{s.title}</h2><p>{s.text}</p><div className="fw-links">{s.links.map(([id, label]) => <button type="button" key={id} onClick={() => onNavigate(id)}>{label}<ArrowLeft size={14} /></button>)}</div></section>)}</div>
   </main></>;
 }

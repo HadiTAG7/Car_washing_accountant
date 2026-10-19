@@ -49,7 +49,7 @@ const HISTORY = [
 async function wipe() {
   for (const c of ['chart_of_accounts', 'journal_entries', 'journal_lines',
     'accounting_periods', 'audit_logs', 'counters', 'posting_locks',
-    'startup_costs', 'startup_cost_entries', 'app_settings']) {
+    'startup_costs', 'startup_cost_entries', 'app_settings', 'finance_reviews']) {
     const snap = await getDocs(collection(db, c));
     await Promise.all(snap.docs.map((s) => deleteDoc(s.ref)));
   }
@@ -160,6 +160,9 @@ d('تحويل مبلغ بند التأسيس إلى قيد', () => {
       is_tax_invoice: true, payment_method: 'cash',
     });
 
+    // Conversion is not approval. The synthetic document is reviewed before
+    // this ledger/VAT regression exercises the real posting engine.
+    await restoreTransport.reviewFinanceFixture('startup', rows[0].id);
     // …ويُرحَّل كأي مصروف: المحرك على الخادم يبني قيده.
     const posted = await ops.postUnposted({ userId: 'u1' });
     expect(posted.failed).toEqual([]);
@@ -265,6 +268,7 @@ d('تحويل مبلغ بند التأسيس إلى قيد', () => {
     await setDoc(doc(db, 'startup_costs', 'p1'), LEGACY());
     await migration.convertStartupParentSpend('p1', FORM(), { userId: 'u1' });
     const [row] = await entriesOf('p1');
+    await restoreTransport.reviewFinanceFixture('startup', row.id);
 
     // القفل: الترحيل مرتين لا يضاعف.
     const first = await ops.postUnposted({ userId: 'u1' });
@@ -279,6 +283,8 @@ d('تحويل مبلغ بند التأسيس إلى قيد', () => {
     await migration.convertStartupParentSpend('p2', FORM({
       spentDate: '2026-05-04', invoiceDate: '2026-05-02', invoiceNumber: 'S-78',
     }), { userId: 'u1' });
+    const [secondRow] = await entriesOf('p2');
+    await restoreTransport.reviewFinanceFixture('startup', secondRow.id);
     await setDoc(doc(db, 'accounting_periods', '2026-05'), { periodKey: '2026-05', status: 'closed' });
     const blocked = await ops.postUnposted({ userId: 'u1' });
     expect(blocked.posted).toHaveLength(0);

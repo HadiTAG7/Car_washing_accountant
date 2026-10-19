@@ -31,6 +31,7 @@ import {
 import { claimFirstAdmin, directoryIsEmpty } from '../../../../functions/src/bootstrapAdmin.js';
 import { __setLedgerTransport } from '../../ledgerTransport';
 import { app as clientApp } from '../../firebaseClient';
+import { reviewedFinanceFixture } from '../../../../functions/test/financeApprovalFixture.js';
 
 let adminApp = null;
 let seq = 0;
@@ -117,8 +118,11 @@ export function useServerTransport(projectId = clientApp?.options?.projectId || 
     }
   });
 
-  return async () => {
+  const restore = async () => {
     __setLedgerTransport(previous);
     if (adminApp) { await deleteApp(adminApp); adminApp = null; }
   };
+  // Explicit fixture review, never automatic approval in the transport.
+  restore.reviewFinanceFixture = (kind, id) => reviewedFinanceFixture(adb, kind, id);
+  return restore;
 }

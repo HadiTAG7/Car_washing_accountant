@@ -142,11 +142,18 @@ const EXPENSE_ACCOUNT = {
 const KINDS = Object.keys(SOURCES);
 
 let seq = 0;
+let invoiceSeq = 0;
 /** Writes the source record and posts it through the REAL server path. */
 async function post(kind, amount, o = {}) {
   seq += 1;
   const id = `${kind}-${seq}`;
   const [col, row] = SOURCES[kind](amount, o);
+  // Multiple independent purchases in one case must not share one original
+  // invoice identity now that posting rechecks duplicate documents.
+  if (invoiceSeq++ > 0) {
+    if (row.invoice_number) row.invoice_number += `-${id}`;
+    if (row.invoiceNumber) row.invoiceNumber += `-${id}`;
+  }
   await db.collection(col).doc(id).set(row);
   await reviewedFinanceFixture(db, kind, id);
   const res = await postSource(db, FieldValue, { kind, sourceId: id }, { userId: 'u1' });
@@ -188,6 +195,7 @@ d('محرك ضريبة المشتريات عبر postSource الحقيقي', () 
   afterAll(async () => { if (app) await deleteApp(app); });
   beforeEach(async () => {
     await wipe();
+    invoiceSeq = 0;
     await seedChartOfAccounts(db, FieldValue, CHART, { userId: 'u1' });
   }, 60_000);
 

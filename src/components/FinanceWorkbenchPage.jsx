@@ -84,12 +84,12 @@ function ExpenseForm({ kind, detail, requestId, options, onSaved, onMessage, onC
       const patch = toPatch(kind, form);
       const body = { ...common, action, ...(['approve', 'post'].includes(action) ? {} : { patch }),
         ...(!isPreview ? { confirm: true } : {}), ...(['save', 'capture'].includes(action) ? { previewHash: preview.previewHash, reason } : {}),
-        ...(action === 'approve' ? { reason } : {}) };
+        ...(action === 'approve' ? { reason, postingHash: detail.postingPreview.postingHash } : {}) };
       const result = await callFinanceApi('finance-workbench', body);
       if (isPreview) { setPreview(result); setConfirmed(false); return; }
       const sourceId = result.sourceId || result.verification?.sourceId;
       const after = await callFinanceApi('finance-workbench', { action: 'read', kind, sourceId });
-      if (action === 'approve' && !after.approved) throw new Error('لم يثبت حفظ الاعتماد؛ لا تتابع الترحيل.');
+      if (action === 'approve' && (!after.approved || after.sourceHash !== detail.sourceHash)) throw new Error('لم يثبت حفظ الاعتماد؛ لا تتابع الترحيل.');
       if (['save', 'capture'].includes(action) && after.sourceHash !== result.sourceHash) throw new Error('تغير المصدر بعد الحفظ؛ أعد القراءة قبل أي خطوة.');
       if (action === 'post' && (!after.protectedSource || !after.journalIds.length)) throw new Error('لم يثبت ربط القيد؛ لا تعِد الترحيل عميانيًا.');
       onMessage(action === 'post' ? `تحقق ربط المصدر بالقيد: ${after.journalIds.join('، ')}. هذا ترحيل لا صرف.`
@@ -124,8 +124,12 @@ function ExpenseForm({ kind, detail, requestId, options, onSaved, onMessage, onC
       <label className="fw-wide">مراجع الأدلة — مرجع واحد في كل سطر<textarea value={form.evidenceRefs} onChange={e => set('evidenceRefs', e.target.value)} disabled={protectedRow || busy} /></label>
     </div>
     {(preview?.issues || detail?.issues || []).length > 0 && <div className="fw-warning"><div><strong>نواقص تمنع الاعتماد:</strong><ul>{(preview?.issues || detail?.issues || []).map((issue, i) => <li key={i}>{issue}</li>)}</ul></div></div>}
-    {preview && <details className="fw-panel" open><summary>معاينة التغيير — لم يُحفظ</summary><pre>{JSON.stringify({ before: preview.before, after: preview.after }, null, 2)}</pre></details>}
-    {previewData?.lines?.length > 0 && <details className="fw-panel"><summary>معاينة القيد من المسار الخادمي</summary><pre>{JSON.stringify({ entry: previewData.entry, lines: previewData.lines, settlement: previewData.settlement }, null, 2)}</pre><small>معاينة فقط، ليست قيدًا محفوظًا أو تحصيلًا أو صرفًا.</small></details>}
+    {preview && <ChangePreview kind={kind} preview={preview} options={options.data?.items || []} />}
+    {previewData?.lines?.length > 0 && <details className="fw-panel"><summary>معاينة القيد من المسار الخادمي</summary>
+      {[previewData, ...(previewData.settlement ? [previewData.settlement] : [])].map((entry, i) => <div key={i}>
+        <p>{entry.entry.description} · {entry.entry.entryDate}</p><div className="fw-table-scroll"><table><thead><tr><th>الحساب</th><th>مدين</th><th>دائن</th></tr></thead><tbody>
+          {entry.lines.map((line, index) => <tr key={index}><td>{line.accountId} — {line.description}</td><td>{line.debit}</td><td>{line.credit}</td></tr>)}
+        </tbody></table></div></div>)}<small>معاينة فقط، ليست قيدًا محفوظًا أو تحصيلًا أو صرفًا.</small></details>}
     {!protectedRow && <><label className="fw-form">سبب الخطوة ودليلها<input value={reason} onChange={e => setReason(e.target.value)} disabled={busy} /></label>
       <label><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} disabled={busy} /> أؤكد تنفيذ الخطوة المحددة أدناه فقط بعد مراجعة المستند والنسخة الحالية.</label>
       <div className="fw-actions">
@@ -138,4 +142,24 @@ function ExpenseForm({ kind, detail, requestId, options, onSaved, onMessage, onC
       </div></>}
     <small>المراجعة والتحقق هنا ذاتيان موثقان، ولا يوصفان برقابة مستقلة. لا تغيّر حالة السداد دون مستند ولا تستخدم دفعة شخصية كدليل بنك المنشأة.</small>
   </>;
+}
+function ChangePreview({ kind, preview, options }) {
+  const labels = { description: 'وصف المصروف', amount: 'المبلغ المسجل بالريال', date: 'تاريخ المصروف الفعلي', quantity: 'الكمية المثبتة',
+    unitCost: 'تكلفة الوحدة', classification: 'التصنيف المثبت', supplier: 'المورد', invoiceNumber: 'رقم الفاتورة الحقيقي', invoiceDate: 'تاريخ الفاتورة',
+    invoiceUrl: 'رابط المستند الأصلي HTTPS', isTaxInvoice: 'نوع المستند', vatAmount: 'مبلغ الضريبة', vatRate: 'نسبة الضريبة',
+    vatDeductible: 'أهلية المدخلات بعد المراجعة', priceMode: 'وضع السعر المثبت', paymentMethod: 'طريقة الدفع أو الذمة', paymentStatus: 'حالة السداد',
+    paidDate: 'تاريخ السداد الفعلي إن ثبت', fundingType: 'مصدر التمويل المثبت', fundingReference: 'مرجع إثبات التمويل أو الذمة',
+    purpose: 'غرض المشروع المثبت', evidenceRefs: 'مراجع الأدلة — مرجع واحد في كل سطر', taxReviewRef: 'مرجع المراجعة الضريبية للأهلية', taxBasis: 'مصدر نسبة الضريبة بعد التحقق' };
+  const values = { true: 'نعم', false: 'لا', unknown: 'غير مثبت', paid: 'سداد وقع بالفعل بدليله', unpaid: 'ذمة مورد غير مسددة',
+    company_cash: 'صندوق المنشأة', company_bank: 'بنك المنشأة', vendor_liability: 'ذمة مورد', partner: 'دفع شريك — المقابل يحتاج حسمًا', employee: 'تمويل موظف — المقابل يحتاج حسمًا',
+    cash: 'نقد', transfer: 'تحويل', card: 'بطاقة', credit: 'ذمة مورد', inclusive: 'شامل الضريبة', exclusive: 'غير شامل الضريبة',
+    document: 'مبلغ أو نسبة صريحة من المستند', verified_historical_policy: 'سياسة تاريخية متحقق منها بمرجع مراجعة' };
+  const before = { ...fromRow(kind, preview.before), unitCost: preview.before.unit_cost ?? '' };
+  const after = { ...fromRow(kind, preview.after), unitCost: preview.after.unit_cost ?? '' };
+  const changed = Object.keys(labels).filter(key => String(before[key]) !== String(after[key]));
+  const show = (key, value) => key === 'classification' ? options.find(o => o.id === value)?.label || value || 'غير متاح'
+    : value === '' || value === null || value === undefined ? 'غير متاح' : values[value] || String(value);
+  return <details className="fw-panel" open><summary>معاينة التغيير — لم يُحفظ</summary>{changed.length ? <div className="fw-table-scroll"><table>
+    <thead><tr><th>الحقل</th><th>قبل</th><th>بعد</th></tr></thead><tbody>{changed.map(key => <tr key={key}><th scope="row">{labels[key]}</th><td>{show(key, before[key])}</td><td>{show(key, after[key])}</td></tr>)}</tbody>
+  </table></div> : <p>لا تغيير في الحقول المعروضة.</p>}</details>;
 }

@@ -1,3 +1,12 @@
+import { vi } from 'vitest';
+// SDK integration fixtures must use a demo namespace as well as localhost;
+// never reuse the production project identity for a local financial test.
+if (/^(127\.0\.0\.1|localhost):\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST || '')) {
+  vi.stubEnv('VITE_FIREBASE_PROJECT_ID', 'demo-sweater');
+  vi.stubEnv('VITE_FIREBASE_API_KEY', 'synthetic-emulator-key');
+  vi.stubEnv('VITE_FIREBASE_AUTH_DOMAIN', 'demo-sweater.firebaseapp.com');
+  vi.stubEnv('VITE_FIREBASE_STORAGE_BUCKET', 'demo-sweater.appspot.com');
+}
 // jsdom does not implement native dialogs or layout observation.
 if (typeof window !== 'undefined') {
   globalThis.ResizeObserver = class {

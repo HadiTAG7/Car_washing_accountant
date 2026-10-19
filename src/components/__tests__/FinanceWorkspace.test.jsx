@@ -23,6 +23,14 @@ function reports(report = financeFixture()) {
     ? base({ items: [report] }) : base({ report, currentRevision: 1, history: [{ revision: 1, reason: 'الإصدار الأول' }] }));
 }
 describe('finance report UI and access boundaries', () => {
+  it('shows a zero-match filter state without claiming cases were closed and restores all cases', () => {
+    reports(); render(<FinanceReportsPage />); fireEvent.click(screen.getByRole('tab', { name: 'المتابعات' }));
+    fireEvent.change(screen.getByLabelText('حالة المتابعة'), { target: { value: 'verified_closed' } });
+    expect(screen.getByRole('status').textContent).toContain('0 / 1');
+    expect(screen.getByText(/لا حالات تطابق التصفية الحالية/)).toBeTruthy(); expect(screen.queryByText('TEST-CASE')).toBeNull();
+    fireEvent.change(screen.getByLabelText('حالة المتابعة'), { target: { value: 'all' } });
+    expect(screen.getByText('TEST-CASE')).toBeTruthy(); expect(screen.getByRole('status').textContent).toContain('1 / 1');
+  });
   it('renders reviewed Arabic verbatim, missing metrics as unavailable, warnings outside tabs, with keyboard interaction', () => {
     reports(); render(<LanguageContext.Provider value={{ language: 'en' }}><FinanceReportsPage /></LanguageContext.Provider>);
     expect(screen.getByText(financeFixture().summary)).toBeTruthy();

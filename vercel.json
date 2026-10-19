@@ -2,6 +2,8 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "vite",
   "functions": {
+    "api/finance-reports.js": { "maxDuration": 60 },
+    "api/finance-workbench.js": { "maxDuration": 60 },
     "api/integrations/sweater/operations.js": {
       "maxDuration": 60
     },

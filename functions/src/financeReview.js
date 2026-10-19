@@ -56,6 +56,19 @@ export function financeProblems(kind, row) {
 export class FinanceReviewError extends Error {
   constructor(message, code = 'failed-precondition') { super(message); this.code = code; }
 }
+export async function assertFinanceDocumentUniqueness(db, tx, kind, sourceId, row) {
+  for (const spec of Object.values(FINANCE_KINDS)) {
+    const queries = [];
+    if (row.invoice_url) queries.push(['invoice_url', row.invoice_url]);
+    if (row.invoice_number && row.supplier) queries.push(['invoice_number', row.invoice_number]);
+    for (const [key, value] of queries) {
+      const matches = await tx.get(db.collection(spec.collection).where(key, '==', value).limit(101));
+      if (matches.size > 100) throw new FinanceReviewError('نتائج كشف التكرار محدودة؛ يلزم حسمها قبل الاعتماد.');
+      if (matches.docs.some(d => !(spec.collection === FINANCE_KINDS[kind].collection && d.id === sourceId)
+        && (key === 'invoice_url' || d.data().supplier === row.supplier))) throw new FinanceReviewError('يوجد مستند مرتبط بمصروف آخر؛ راجع احتمال التكرار أو تجزئة المستند.');
+    }
+  }
+}
 /** Called inside the SAME posting transaction, including the old MCP/callable
  * door. No source-date shortcut or client-side checkbox can substitute it. */
 export async function assertFinanceApproval(db, tx, kind, id, row, expectedHash = null) {
@@ -70,6 +83,7 @@ export async function assertFinanceApproval(db, tx, kind, id, row, expectedHash 
   const spec = FINANCE_KINDS[kind];
   const classification = await tx.get(db.collection(spec.parent || spec.category).doc(row[spec.fk || 'category_id']));
   if (!classification.exists) throw new FinanceReviewError('رابط تصنيف المصروف لم يعد موجودًا؛ أعد المراجعة.');
+  await assertFinanceDocumentUniqueness(db, tx, kind, id, row);
   const journals = await tx.get(db.collection('journal_entries').where('sourceId', '==', id));
   if (journals.docs.some(d => journalMatchesFinanceSource(kind, d.data()))) throw new FinanceReviewError('لهذا المصدر قيد سابق أو معكوس؛ لا يعاد ترحيله.');
   return review.data();

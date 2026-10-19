@@ -26,7 +26,7 @@ const RANGE = { from: '2026-01', through: '2026-03' };
 async function wipe() {
   for (const c of ['chart_of_accounts', 'journal_entries', 'journal_lines',
     'accounting_periods', 'audit_logs', 'counters', 'posting_locks',
-    'monthly_expenses', 'variable_expenses', 'expense_vouchers']) {
+    'monthly_expenses', 'variable_expenses', 'expense_vouchers', 'finance_reviews', 'monthly_expense_categories', 'variable_expense_categories']) {
     const snap = await getDocs(collection(db, c));
     await Promise.all(snap.docs.map((s) => deleteDoc(s.ref)));
   }
@@ -120,7 +120,8 @@ d('السندات الدورية على Firestore الحقيقي', () => {
     await rec.generateVouchers({ ...RANGE, userId: 'u1' });
     const scan = await ops.collectUnposted();
 
-    // Six vouchers plus the one-off row are ready; the two templates are not.
+    // Six vouchers are ready. The one-off row now requires explicit finance
+    // review; the two templates remain excluded for their original reason.
     expect(scan.ready.filter((r) => r.kind === 'voucher')).toHaveLength(6);
     const templateSkips = scan.skipped.filter((s) => /ولّد سنداً مؤرخاً/.test(s.reason));
     expect(templateSkips).toHaveLength(2);
@@ -246,6 +247,8 @@ d('السندات الدورية على Firestore الحقيقي', () => {
     await setDoc(doc(db, 'variable_expenses', 'same-id'), {
       expense_name: 'مواد', total_variable_cost: 230, logged_date: '2026-01-06',
     });
+    await restoreTransport.reviewFinanceFixture('monthly', 'same-id');
+    await restoreTransport.reviewFinanceFixture('variable', 'same-id');
 
     const before = await ops.collectUnposted();
     const ready = before.ready.filter((r) => r.sourceId === 'same-id');

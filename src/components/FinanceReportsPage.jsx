@@ -5,10 +5,11 @@ import LoadingState from './LoadingState';
 import { useFinanceRead } from '../hooks/useFinanceRead';
 import { FINANCE_ROLES, FINANCE_STATES, parseFinanceReport } from '../lib/financeReportContract';
 import { LanguageContext } from '../i18n/LanguageContext';
+import FinanceReportPublisher from './FinanceReportPublisher';
 import './FinanceWorkspace.css';
 
 const bases = { ledger: 'مرحّل دفتريًا', operational: 'قيمة تشغيلية', collected: 'تحصيل مثبت', estimate: 'تقديري', unavailable: 'غير متاح' };
-const dateText = value => new Date(value).toLocaleString('ar-SA', { timeZone: 'Asia/Riyadh', dateStyle: 'medium', timeStyle: 'short' });
+const dateText = value => new Date(value).toLocaleString('ar-SA', { timeZone: 'Asia/Riyadh', calendar: 'gregory', numberingSystem: 'latn', dateStyle: 'medium', timeStyle: 'short' });
 export default function FinanceReportsPage() {
   const [before, setBefore] = useState(undefined), [selected, setSelected] = useState(''), [revision, setRevision] = useState(undefined);
   const [role, setRole] = useState('all'), [tab, setTab] = useState('summary'), [state, setState] = useState('all');
@@ -24,6 +25,7 @@ export default function FinanceReportsPage() {
     catch { return { report: null, error: 'تعذر التحقق من صيغة التقرير؛ لم تُعرض بيانات بديلة.' }; }
   }, [read.data]);
   const report = parsed.report, error = archive.error || read.error || parsed.error;
+  const filteredCases = report?.cases.filter(c => state === 'all' || c.status === state) || [];
   if (!archive.allowed) return <div className="fw-page"><p role="alert">تقارير المالية التفصيلية للإدارة فقط.</p></div>;
   return <>
     <TopBar title="تقارير المالية" subtitle="تقارير موثقة لفريق المالية — لقطات مؤرخة، وليست أوامر صرف" />
@@ -36,6 +38,7 @@ export default function FinanceReportsPage() {
       </div>
       {error && <div role="alert" className="fw-warning"><AlertTriangle size={18} />{error}</div>}
       {archive.loading && <LoadingState message="جارٍ قراءة أرشيف المالية..." />}
+      <FinanceReportPublisher onPublished={id => { setBefore(undefined); setSelected(id); setRevision(undefined); archive.refresh(); read.refresh(); }} />
       <div className="fw-report-layout">
         <aside className="fw-panel fw-archive" aria-label="أرشيف تقارير المالية">
           <h2><Archive size={18} /> الأرشيف</h2><small>حتى30 تقريرًا في الصفحة؛ التصفية تخص الصفحة المعروضة.</small>
@@ -57,6 +60,7 @@ export default function FinanceReportsPage() {
               <label>نسخة محفوظة <select aria-label="نسخة التقرير" value={revision || read.data.currentRevision} onChange={e => setRevision(Number(e.target.value))}>
                 {(read.data.history || []).map(h => <option value={h.revision} key={h.revision}>{h.revision} — {h.reason}</option>)}
               </select></label>
+              {read.data.historyLimited && <small>تعرض القائمة حتى30 نسخة حديثة؛ تبقى النسخ الأقدم محفوظة ويمكن قراءتها برقم النسخة من أدوات المالية.</small>}
             </header>
             {report.visibleWarnings.map(w => <div role={w.severity === 'critical' ? 'alert' : 'note'} className="fw-warning" key={w.id}><AlertTriangle size={18} />{w.text}</div>)}
             <div className="fw-tabs" role="tablist" aria-label="أقسام تقرير المالية">
@@ -71,7 +75,7 @@ export default function FinanceReportsPage() {
             </div>
             {tab === 'summary' && <div role="tabpanel" id="finance-report-summary" aria-labelledby="finance-tab-summary">
               <div className="fw-metrics">{report.metrics.map(m => <article className="fw-panel fw-metric" key={m.id}><span>{m.label}</span>
-                <strong>{m.value === null ? 'غير متاح' : m.value.toLocaleString('ar-SA', { maximumFractionDigits: 2 })} <small>{m.value === null ? '' : m.unit}</small></strong>
+                <strong>{m.value === null ? 'غير متاح' : m.value.toLocaleString('ar-SA', { numberingSystem: 'latn', maximumFractionDigits: 2 })} <small>{m.value === null ? '' : m.unit}</small></strong>
                 <span className="fw-badge">{bases[m.basis]}</span><p>{m.coverage}</p><small>{dateText(m.asOf)}</small></article>)}</div>
               <div className="fw-panel"><h2>حالة المتابعة</h2><div className="fw-case-bars">{Object.entries(FINANCE_STATES).map(([id, label]) => {
                 const count = report.cases.filter(c => c.status === id).length;
@@ -80,11 +84,12 @@ export default function FinanceReportsPage() {
             </div>}
             {tab === 'cases' && <div role="tabpanel" id="finance-report-cases" aria-labelledby="finance-tab-cases"><div className="fw-toolbar"><label>حالة المتابعة <select value={state} onChange={e => setState(e.target.value)}>
               <option value="all">جميع الحالات</option>{Object.entries(FINANCE_STATES).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
-            </select></label></div>{report.cases.filter(c => state === 'all' || c.status === state).map(c => <article className="fw-panel fw-case" key={c.caseId}>
+            </select></label><p role="status">الحالات المطابقة: {filteredCases.length} / {report.cases.length}</p></div>{filteredCases.map(c => <article className="fw-panel fw-case" key={c.caseId}>
               <div className="fw-meta"><span className="fw-badge">{FINANCE_STATES[c.status]}</span><span>المسؤول: الدور {c.ownerRole}</span></div>
               <h2>{c.title}</h2><code>{c.caseId}</code><p>{c.evidence}</p><p><strong>التالي:</strong> {c.next}</p>
               {c.verification && <small>التحقق: {c.verification.kind === 'self' ? 'ذاتي موثق — ليس مستقلًا' : c.verification.kind === 'owner' ? 'قرار المالك' : 'مستقل'} · {dateText(c.verification.at)}</small>}
-            </article>)}{report.cases.length === 0 && <p>لم تُدرج حالات في هذا التقرير؛ لا يثبت ذلك اكتمال كل الملفات.</p>}</div>}
+            </article>)}{report.cases.length === 0 ? <p>لم تُدرج حالات في هذا التقرير؛ لا يثبت ذلك اكتمال كل الملفات.</p>
+              : filteredCases.length === 0 && <p>لا حالات تطابق التصفية الحالية. غيّر التصفية لعرض بقية الحالات؛ لم تُغلق أو تتغير أي حالة.</p>}</div>}
             {tab === 'evidence' && <div role="tabpanel" id="finance-report-evidence" aria-labelledby="finance-tab-evidence">
               <div className="fw-panel"><h2>المصادر وحدود التغطية</h2>{report.sources.map(s => <details key={s.id}><summary>{s.label} — {({ verified: 'متحقق ضمن نطاقه', partial: 'جزئي', unavailable: 'غير متاح' })[s.status]}</summary><p>{s.coverage}</p><p>{s.sourceRef}</p><small>{dateText(s.checkedAt)}</small></details>)}</div>
               {report.sections.map(s => <details className="fw-panel" key={s.id}><summary><FileText size={16} /> {s.title}</summary><p>{s.text}</p>

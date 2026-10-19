@@ -228,7 +228,31 @@ describe('تسجيل مصروف من فاتورة — المعاينة قبل ا
     expect(body.preview).toBe(true);
     expect(body['سيُكتب_في']).toBe('variable_expenses');
     expect(body['البيانات'].total_variable_cost).toBe(340);
+    expect(body['البيانات'].expense_name).toBe('زيت وفلاتر');
+    expect(body['البيانات'].payment_method).toBe('unknown');
+    expect(body.advisoryOnly).toBe(true);
     expect(body['تنبيه']).toMatch(/confirm/);
+  });
+  it('confirm alone cannot preserve the old direct-write shortcut or create an untitled duplicate', async () => {
+    const t = await tool();
+    await expect(t.run({ kind: 'variable', description: 'اختبار', amount: 100, date: '2026-10-19', confirm: true })).rejects.toThrow(/لم يُحفظ/);
+    expect(src('tools.js')).not.toMatch(/\baddDoc\b/);
+  });
+  it('complete capture previews and saves through the fixed UI service with read-back, not the Firebase client SDK', async () => {
+    const { tools, client } = await load();
+    client.__setConnection({ auth: { currentUser: { getIdToken: async () => 'SYNTHETIC-TOKEN' } } });
+    const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ result: { previewHash: 'HASH' } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ result: { sourceId: 'TEST', sourceHash: 'SOURCE' } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ result: { sourceId: 'TEST', sourceHash: 'SOURCE' } }) });
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const t = tools.writeTools.find(t => t.name === 'sweater_record_expense');
+      const input = { kind: 'variable', description: 'وثيقة اختبار', amount: 100, quantity: 2, date: '2026-10-19', requestId: 'TEST-REQUEST', invoiceUrl: 'https://example.org/test' };
+      await t.run(input); const saved = await t.run({ ...input, previewHash: 'HASH', reason: 'مستند اختبار', confirm: true });
+      expect(JSON.parse(saved.content[0].text).readbackVerified).toBe(true);
+      expect(fetchMock.mock.calls.map(c => JSON.parse(c[1].body).action)).toEqual(['previewCapture', 'capture', 'read']);
+      expect(fetchMock.mock.calls.every(c => c[0].endsWith('/api/finance-workbench'))).toBe(true);
+    } finally { vi.unstubAllGlobals(); }
   });
 
   it('والمعاينة تقول هل الضريبة قابلة للخصم ولماذا لا', async () => {

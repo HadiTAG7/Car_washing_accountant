@@ -56,7 +56,8 @@ function expenseAdapter({ collection, kind, toExpense, isApproved, notApprovedRe
     sourceId: (r) => r.id,
     dateOf: (r) => toExpense(r).date,
     isApproved: (r) => (collection === 'expense_vouchers' || r.approval_status === 'approved') && (!isApproved || isApproved(r)),
-    notApprovedReason: notApprovedReason || 'يلزم اعتماد موثق للنسخة الحالية من المصروف عبر المالية.',
+    notApprovedReason: r => isApproved && !isApproved(r) ? notApprovedReason
+      : notApprovedReason && collection === 'expense_vouchers' ? notApprovedReason : 'يلزم اعتماد موثق للنسخة الحالية من المصروف عبر المالية.',
     label,
     // `policyAt` carries the dated tax record through to the engine, so the
     // preview prices a 5%-era invoice at 5% exactly as the server will.

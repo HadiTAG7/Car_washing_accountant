@@ -51,6 +51,15 @@ it('requires explicit readback after an ambiguous failure and does not retry aut
   mock.api.mockResolvedValueOnce({ report: null, history: [] }); fireEvent.click(screen.getByRole('button', { name: 'قراءة النسخة قبل إعادة الحفظ' }));
   await waitFor(() => expect(publish().disabled).toBe(false)); expect(mock.api.mock.calls[1][1].action).toBe('read');
 });
+it('clears an earlier publication success when another file is selected or a later save fails', async () => {
+  const report = operationsFixture(), done = vi.fn(); render(<OperationsReportPublisher canPublish onPublished={done} />); file(report);
+  await screen.findByRole('button', { name: 'نشر التقرير المراجع والتحقق من حفظه' });
+  mock.api.mockResolvedValueOnce({ reportId: report.reportId, revision: 1, duplicate: false }).mockResolvedValueOnce({ report });
+  fireEvent.click(publish()); await screen.findByRole('status');
+  file({ ...report, summary: 'ملف متعارض' }); await screen.findByRole('button', { name: 'نشر التقرير المراجع والتحقق من حفظه' });
+  expect(screen.queryByRole('status')).toBeNull(); mock.api.mockRejectedValueOnce(new Error('تعارض النسخة'));
+  fireEvent.click(publish()); await screen.findByRole('alert'); expect(screen.queryByRole('status')).toBeNull(); expect(done).toHaveBeenCalledTimes(1);
+});
 it('blocks publishing before archive readiness and rejects malformed/unreviewed files', async () => {
   render(<OperationsReportPublisher onPublished={vi.fn()} />); file(operationsFixture());
   await screen.findByRole('button', { name: 'نشر التقرير المراجع والتحقق من حفظه' }); expect(publish().disabled).toBe(true);

@@ -52,6 +52,15 @@ describe.skipIf(!local)('operations reports real SDK/auth/rules — demo only', 
     expect(outcomes.filter(x => x.status === 'fulfilled')).toHaveLength(1); expect(outcomes.filter(x => x.status === 'rejected')).toHaveLength(1);
     expect((await db.doc(`operations_reports/${r.reportId}`).get()).data().revision).toBe(1);
   });
+  it('preserves unknown historical service dates and original authors without replacing them with archival time', async () => {
+    const r = operationsFixture({ archiveMode: 'historical_imported', sourceRole: 12, sourceLabel: 'مدير العمليات — الرقم التاريخي12',
+      round: 'historic-null', serviceDateRiyadh: null, period: { from: null, to: null }, cutAtRiyadh: null, issuedAtRiyadh: null,
+      historicalImported: { originalSourceRole: 12, originalSourceRef: 'OLD-THREAD-REPORT', originalReportDate: '2026-10-18', sourceSha256: 'b'.repeat(64),
+        evidenceThroughDate: '2026-10-18', cutPrecision: 'date_only', timeNote: 'نطاق الخدمة غير معروف والوقت مفقود؛ لا تاريخ بديل.' } });
+    await save(r); const after = await operationsReports(db, auth, { action: 'read', reportId: r.reportId });
+    expect(after.report).toEqual(r); expect(after.report.period.from).toBeNull(); expect(after.report.cutAtRiyadh).toBeNull();
+    expect(after.report.sourceRole).toBe(12); expect(after.savedAt).not.toBeNull();
+  });
   it.each(users.slice(1))('denies current %s on service list/read/save', async uid => {
     for (const input of [{ action: 'list' }, { action: 'read', reportId: report.reportId }, { action: 'save', report, expectedRevision: 0 }])
       await expect(operationsReports(db, { uid }, input)).rejects.toMatchObject({ code: 'permission-denied' });

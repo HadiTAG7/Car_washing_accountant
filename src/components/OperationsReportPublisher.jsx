@@ -9,7 +9,7 @@ export default function OperationsReportPublisher({ onPublished, canPublish = fa
   const selection = useRef(0), language = useContext(LanguageContext);
   async function load(event) {
     const version = ++selection.current;
-    setError(''); setReport(null); const file = event.target.files?.[0]; if (!file) return;
+    setError(''); setNotice(''); setReport(null); const file = event.target.files?.[0]; if (!file) return;
     if (file.size > 102400) { setError('ملف التقرير أكبر من الحد المسموح.'); return; }
     try {
       const content = file.text ? await file.text() : await new Promise((resolve, reject) => {
@@ -21,7 +21,7 @@ export default function OperationsReportPublisher({ onPublished, canPublish = fa
   }
   async function publish() {
     if (!report || !canPublish || uncertain || busy) return;
-    setBusy(true); setError('');
+    setBusy(true); setError(''); setNotice('');
     try {
       const result = await callOperationsApi('operations-reports', { action: 'save', report, expectedRevision: report.revision - 1 });
       if (result?.reportId !== report.reportId || result?.revision !== report.revision || typeof result?.duplicate !== 'boolean') throw new Error('إيصال الحفظ غير متحقق.');
@@ -34,7 +34,7 @@ export default function OperationsReportPublisher({ onPublished, canPublish = fa
   }
   async function resolveUncertain() {
     if (!report || busy) return;
-    setBusy(true); setError('');
+    setBusy(true); setError(''); setNotice('');
     try {
       const after = await callOperationsApi('operations-reports', { action: 'read', reportId: report.reportId });
       if (after?.report) {

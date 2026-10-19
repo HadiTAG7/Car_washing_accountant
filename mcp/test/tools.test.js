@@ -117,7 +117,7 @@ describe('الحدّ المعماري: هذا الخادم عميل، لا با�
         expect(String(t.run).includes('callServer'), 'تسجيل المصروف يجب ألا يرحّل تلقائياً').toBe(false);
         continue;
       }
-      expect(/callServer|callAppServer|callFinanceServer/.test(String(t.run)), `${t.name} لا يمرّ بالخادم`).toBe(true);
+      expect(/callServer|callAppServer|callFinanceServer|callOperationsReports/.test(String(t.run)), `${t.name} لا يمرّ بالخادم`).toBe(true);
     }
   });
 

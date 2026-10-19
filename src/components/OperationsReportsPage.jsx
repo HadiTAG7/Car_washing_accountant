@@ -97,7 +97,7 @@ export default function OperationsReportsPage() {
               <div className="fw-panel"><h2>حالة المتابعة</h2><div className="fw-case-bars">{Object.entries(OPERATIONS_STATES).map(([id, label]) => {
                 const count = report.cases.filter(c => c.status === id).length;
                 return <div key={id}><span>{label}</span><meter min="0" max={Math.max(1, report.cases.length)} value={count} aria-label={label} /><strong>{count}</strong></div>;
-              })}</div><small>حالات هذا التقرير فقط، وليست نسبة اكتمال مالية.</small></div>
+              })}</div><small>حالات هذا التقرير فقط؛ لا تثبت إغلاق جميع العمليات.</small></div>
             </div>}
             {tab === 'cases' && <div role="tabpanel" id="operations-report-cases" aria-labelledby="operations-tab-cases"><div className="fw-toolbar"><label>حالة المتابعة <select value={state} onChange={e => setState(e.target.value)}>
               <option value="all">جميع الحالات</option>{Object.entries(OPERATIONS_STATES).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
@@ -114,7 +114,7 @@ export default function OperationsReportsPage() {
               </details>)}
             </div>}
           </LanguageContext.Provider>}
-          {!report && !read.loading && !error && <div className="fw-panel"><FileText size={32} /><h2>تقارير موثقة، لا بيانات تجريبية</h2><p>تظهر التقارير بعد مراجعة الفريق وحفظها والتحقق من نسختها. يبدأ الأرشيف من التفعيل.</p></div>}
+          {!report && !read.loading && !error && <div className="fw-panel"><FileText size={32} /><h2>تقارير موثقة، لا بيانات تجريبية</h2><p>تظهر التقارير بعد مراجعتها وحفظها والتحقق من نسختها؛ التاريخي المنقول يحمل وسمًا واضحًا.</p></div>}
         </section>
       </div>
     </main>

@@ -101,6 +101,14 @@ function ExpenseForm({ kind, detail, requestId, options, onSaved, onMessage, onC
   return <>
     <div className="fw-meta"><span className="fw-badge">{requestId ? 'مستند جديد غير مرحّل' : stageLabels[detail.stage]}</span>{detail && <code>{detail.sourceId}</code>}</div>
     <h2><ShieldCheck size={19} /> {requestId ? 'تسجيل المستند' : 'المصدر والمراجعة'}</h2>
+    {detail && <dl className="fw-meta" aria-label="حالات المصروف المنفصلة">
+      <div><dt>الاعتماد</dt><dd>{detail.approved ? 'اعتماد النسخة الحالية' : 'غير معتمد'}</dd></div>
+      <div><dt>الترحيل</dt><dd>{detail.protectedSource ? 'أثر محاسبي سابق — السجل محمي' : 'لا قيد مرتبط في القراءة الحالية'}</dd></div>
+      <div><dt>السداد</dt><dd>{({ paid: 'مسجل مدفوع — يحتاج دليل', unpaid: 'غير مسدد' })[detail.row.payment_status] || 'غير مثبت'}</dd></div>
+      <div><dt>تكلفة الوحدة المحفوظة</dt><dd>{detail.row.unit_cost ?? 'غير متاح'}</dd></div>
+    </dl>}
+    {detail?.row.invoice_url && /^https:\/\//i.test(detail.row.invoice_url) && !/\/api\/mcp\//i.test(detail.row.invoice_url)
+      && <p><a href={detail.row.invoice_url} target="_blank" rel="noopener noreferrer">فتح المستند الأصلي في نافذة مستقلة</a></p>}
     {protectedRow && <div className="fw-warning">السجل محمي أو الفترة مقفلة؛ العرض فقط. لا حذف أو تعديل قيد قائم من هنا.</div>}
     {detail?.journalIds?.length > 0 && <p>القيود المرتبطة: {detail.journalIds.join('، ')}</p>}
     {error && <div className="fw-warning" role="alert">{error}</div>}

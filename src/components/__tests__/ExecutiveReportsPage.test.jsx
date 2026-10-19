@@ -46,6 +46,9 @@ it('moves focus to the decisions tab when a disappearing summary counter opens t
   expect(document.activeElement).toBe(tab);expect(tab.getAttribute('aria-selected')).toBe('true');
   expect(screen.getByRole('status').textContent).toContain('0 من 1');
   expect(screen.getByText('لا توجد حالات ضمن الفلاتر المختارة.')).toBeTruthy();
+  const restore=screen.getByRole('button',{name:'عرض كل الحالات'});restore.focus();fireEvent.click(restore);
+  expect(document.activeElement).toBe(screen.getByRole('button',{name:'مسح التصفية'}));
+  expect(tab.getAttribute('aria-selected')).toBe('true');expect(screen.getByRole('status').textContent).toContain('1 من 1');
 });
 const emptyQuery=input=>({data:input?.action==='list'?{items:[],nextBefore:null}:null,loading:false,error:null});
 it('keeps the chosen section when switching synthetic archived revisions and dates without writing',()=>{

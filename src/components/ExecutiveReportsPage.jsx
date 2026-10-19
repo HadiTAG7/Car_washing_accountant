@@ -20,7 +20,7 @@ const shortTitle = value => value.split(/[؛.!؟]/u)[0];
 export function ExecutiveReportView({report,currentRevision=report.revision,selectedTab,onTabChange}){
   const viewId=useId();
   const [localTab,setLocalTab]=useState('daily'),[status,setStatus]=useState('all'),[owner,setOwner]=useState('all'),[search,setSearch]=useState('');
-  const tab=selectedTab||localTab, tabRefs=useRef(new Map());
+  const tab=selectedTab||localTab, tabRefs=useRef(new Map()), resetRef=useRef(null);
   const selectTab=next=>{setLocalTab(next);onTabChange?.(next);};
   const openDecisions=()=>{selectTab('decisions');tabRefs.current.get('decisions')?.focus();};
   const counts=Object.fromEntries(Object.keys(EXECUTIVE_STATES).map(key=>[key,report.decisions.filter(d=>d.status===key).length]));
@@ -65,7 +65,7 @@ export function ExecutiveReportView({report,currentRevision=report.revision,sele
         <div className="sw-executive__filters"><label>الحالة<select value={status} onChange={e=>setStatus(e.target.value)}><option value="all">كل الحالات</option>{Object.entries(EXECUTIVE_STATES).map(([id,label])=><option key={id} value={id}>{label} ({number(counts[id])})</option>)}</select></label>
           <label>المدير<select value={owner} onChange={e=>setOwner(e.target.value)}><option value="all">كل المدراء</option>{[...new Set(report.decisions.map(d=>d.ownerRole))].sort((a,b)=>a-b).map(r=><option value={String(r)} key={r}>{roleName(r)}</option>)}</select></label>
           <label>البحث في القرارات<input type="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="ابحث في القرار أو المسؤول" /></label>
-          <button className="sw-executive__reset" type="button" onClick={reset}>مسح التصفية</button>
+          <button ref={resetRef} className="sw-executive__reset" type="button" onClick={reset}>مسح التصفية</button>
         </div>
         <p role="status" aria-live="polite" className="sw-executive__result-count">{number(decisions.length)} من {number(report.decisions.length)} حالة</p>
         <div className="sw-executive__decision-grid">{decisions.map(d=><details className="sw-executive__decision" key={d.caseId} data-priority={d.priority}>
@@ -83,7 +83,7 @@ export function ExecutiveReportView({report,currentRevision=report.revision,sele
             {!d.history.length&&<p>لم يُرفق سجل تغير لهذه اللقطة؛ لا يُفترض عدم وجود تاريخ سابق.</p>}
           </div>
         </details>)}</div>
-        {!decisions.length&&<div className="sw-executive__empty"><h3>لا توجد حالات ضمن الفلاتر المختارة.</h3><p>لم تتغير القرارات المحفوظة. جرّب إزالة التصفية.</p><button type="button" onClick={reset}>عرض كل الحالات</button></div>}
+        {!decisions.length&&<div className="sw-executive__empty"><h3>لا توجد حالات ضمن الفلاتر المختارة.</h3><p>لم تتغير القرارات المحفوظة. جرّب إزالة التصفية.</p><button type="button" onClick={()=>{reset();resetRef.current?.focus();}}>عرض كل الحالات</button></div>}
       </>}
       {tab==='weekly'&&<section className="sw-executive__weekly"><span className="sw-executive__pill">{report.weekly.status==='included'?'أسبوعية مرفقة':report.weekly.status==='unavailable'?'غير متاحة':'غير مستحقة'}</span>
         <h3>{report.weekly.status==='included'?'المراجعة الأسبوعية المرفقة':report.weekly.status==='unavailable'?'المراجعة الأسبوعية غير متاحة':'الأسبوعية غير مستحقة لهذا التاريخ'}</h3><p>{report.weekly.text}</p>

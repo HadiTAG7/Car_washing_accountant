@@ -7,16 +7,19 @@
   var lastKind = '';
   var timer;
   var previousFocus;
+  var failedPage;
+  function currentPage() { return new URLSearchParams(window.location.search || '').get('page') || 'overview'; }
   function english() {
     try { return window.localStorage.getItem('sweater:language') === 'en'; } catch { return document.documentElement.lang === 'en'; }
   }
   function label(id, ar, en) { document.getElementById(id).textContent = english() ? en : ar; }
   function show(kind) {
     if (!panel.hidden) {
-      if (kind !== 'slow-boot') lastKind = kind;
+      if (kind !== 'slow-boot') { lastKind = kind; failedPage = currentPage(); }
       return; // Never reset an open confirmation or steal form focus.
     }
     previousFocus = document.activeElement;
+    failedPage = currentPage();
     lastKind = kind;
     panel.dir = english() ? 'ltr' : 'rtl';
     label('sw-recovery-title', 'تعذّر إكمال عرض الصفحة', 'The page could not finish loading');
@@ -85,7 +88,9 @@
   window.addEventListener('error', error, true);
   window.addEventListener('unhandledrejection', rejection);
   timer = window.setTimeout(function () { show('slow-boot'); }, 15000);
-  window.SweaterRecovery = { show: show, ready: ready, dispose: function () {
+  window.SweaterRecovery = { show: show, ready: ready, routeReady: function (page) {
+    if (!panel.hidden && lastKind !== 'slow-boot' && failedPage && page !== failedPage) dismiss();
+  }, dispose: function () {
     window.clearTimeout(timer);
     window.removeEventListener('vite:preloadError', preload);
     window.removeEventListener('error', error, true);

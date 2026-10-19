@@ -82,3 +82,10 @@ it('uses a visible root fallback if the original trigger was removed and never s
   const input = document.createElement('input'); input.value = 'draft'; document.querySelector('#root').append(input); input.focus();
   host.SweaterRecovery.ready(); expect(document.activeElement).toBe(input); expect(input.value).toBe('draft'); expect(reload).not.toHaveBeenCalled();
 });
+it('clears only a stale notice when a different page successfully mounts, without reloading or touching a draft', () => {
+  host.location.search = '?page=finance_workbench'; host.SweaterRecovery.show('module-load');
+  const input = document.createElement('input'); input.value = 'keep report draft'; document.querySelector('#root').append(input); input.focus();
+  host.SweaterRecovery.routeReady('finance_workbench'); expect(document.querySelector('#sw-recovery').hidden).toBe(false);
+  host.SweaterRecovery.routeReady('finance_reports'); expect(document.querySelector('#sw-recovery').hidden).toBe(true);
+  expect(document.activeElement).toBe(input); expect(input.value).toBe('keep report draft'); expect(reload).not.toHaveBeenCalled();
+});

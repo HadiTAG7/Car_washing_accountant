@@ -15,17 +15,17 @@ async function boot() {
     <StrictMode><AppErrorBoundary><AppMounted><LanguageProvider><Root /></LanguageProvider></AppMounted></AppErrorBoundary></StrictMode>,
   );
 }
-void boot().catch(() => {
+void boot().catch((error) => {
   console.error('[sweater-ui] boot-failed');
+  try { window.SweaterDiagnostics?.record('boot', error); } catch { /* Keep the independent recovery available. */ }
   window.SweaterRecovery?.show('boot');
 });
 
-// PWA: register the (network-only) service worker so the dashboard is
-// installable. Production builds only — a SW on the dev server interferes
-// with Vite's module reloading.
+// Cache hashed UI code only to keep an already-open release usable after a
+// deployment. HTML, API/auth responses and business data remain network-only.
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch((err) => {
+    navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).catch((err) => {
       console.warn('Service worker registration failed:', err);
     });
   });

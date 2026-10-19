@@ -12,6 +12,7 @@ import UpdatePasswordScreen from './components/UpdatePasswordScreen';
 import { DemoBanner } from './components/ErrorState';
 import LoadingState from './components/LoadingState';
 import AppErrorBoundary from './components/AppErrorBoundary';
+import RouteMounted from './components/RouteMounted';
 import FinancialEntrySelector from './components/FinancialEntrySelector';
 
 // Route-level code-splitting: each tab's page is its own chunk, loaded on
@@ -210,6 +211,7 @@ function AppShell({ membership }) {
               entrance replays on every switch (no-op under
               prefers-reduced-motion). */}
           <div key={effectiveTab} className="animate-page-in flex-1 flex flex-col">
+            <RouteMounted page={effectiveTab} />
             {investorView && <InvestorPage view={investorView} />}
             {effectiveTab === 'overview' && (membership.role === 'supervisor' ? <SupervisorPage /> : <OverviewPage onNavigate={handleSelectTab} />)}
             {effectiveTab === 'growth_performance' && <GrowthPerformancePage />}

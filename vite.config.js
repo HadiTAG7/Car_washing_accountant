@@ -2,10 +2,21 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { fileURLToPath } from 'node:url'
+import { execFileSync } from 'node:child_process'
+import process from 'node:process'
+import { staticAssetsPlugin } from './scripts/static-assets-plugin.mjs'
+
+// Public release identifier only, not environment contents or a credential.
+function releaseId() {
+  const deployed = process.env.VERCEL_GIT_COMMIT_SHA || '';
+  if (/^[a-f0-9]{40}$/i.test(deployed)) return deployed.toLowerCase();
+  try { return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: fileURLToPath(new URL('.', import.meta.url)), encoding: 'utf8' }).trim(); }
+  catch { return 'unknown'; }
+}
 
 export default defineConfig({
   cacheDir: '.vite-cache',
-  plugins: [react({ jsxImportSource: '@sweater/i18n' }), tailwindcss(), {
+  plugins: [staticAssetsPlugin(releaseId()), { name: 'sweater-diagnostic-release', transformIndexHtml() { return [{ tag: 'meta', attrs: { name: 'sw-build', content: releaseId() }, injectTo: 'head' }]; } }, react({ jsxImportSource: '@sweater/i18n' }), tailwindcss(), {
     name: 'sweater-local-jsx-runtime',
     configResolved(config) {
       // The React plugin explicitly includes its JSX runtime in dependency

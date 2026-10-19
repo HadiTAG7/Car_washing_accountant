@@ -2,9 +2,15 @@ import { Component, createElement } from 'react';
 
 // Native React elements deliberately avoid translation/runtime dependencies here.
 export default class AppErrorBoundary extends Component {
-  state = { failed: false, confirmReload: false };
+  state = { failed: false, confirmReload: false, diagnosticId: null };
   static getDerivedStateFromError() { return { failed: true }; }
-  componentDidCatch() { console.error('[sweater-ui] render-boundary'); }
+  componentDidCatch(error, info) {
+    console.error('[sweater-ui] render-boundary');
+    try {
+      const diagnosticId = window.SweaterDiagnostics?.record('render', error, info);
+      if (diagnosticId) this.setState({ diagnosticId });
+    } catch { /* Logging must not break recovery or reload the page. */ }
+  }
   render() {
     if (!this.state.failed) return this.props.children;
     const en = document.documentElement.lang === 'en';
@@ -12,6 +18,7 @@ export default class AppErrorBoundary extends Component {
     return createElement('section', { role: 'alert', className: 'sw-recovery-card', dir: en ? 'ltr' : 'rtl' },
       createElement('h2', null, text('تعذّر عرض هذا الجزء من الصفحة', 'This part of the page could not be displayed')),
       createElement('p', null, text('لم نعد تحميل الصفحة تلقائيًا. انسخ أي بيانات متاحة وغير محفوظة قبل إعادة التحميل.', 'We did not reload the page automatically. Copy any available unsaved entries before reloading.')),
+      this.state.diagnosticId && createElement('p', null, text('رقم الخطأ: ', 'Error reference: '), createElement('bdi', null, this.state.diagnosticId)),
       createElement('button', { type: 'button', onClick: () => {
         if (window.SweaterRecovery) window.SweaterRecovery.show('render');
         else this.setState({ confirmReload: true });

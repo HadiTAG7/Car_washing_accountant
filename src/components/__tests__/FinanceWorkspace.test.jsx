@@ -107,6 +107,24 @@ describe('finance report UI and access boundaries', () => {
     expect(trigger.textContent).toContain('September 2026'); expect(document.activeElement).toBe(trigger);
     expect(refetch).not.toHaveBeenCalled(); expect(mock.api).not.toHaveBeenCalled(); expect(JSON.stringify(ledger)).toBe(original);
   });
+  it('keeps long record titles and metadata separate and selects a record without a write', () => {
+    const title = `مصروف طويل — مستند Q4 — ${'REFERENCE'.repeat(20)}`;
+    const items = Array.from({ length: 20 }, (_, i) => ({ sourceId: `TEST-${i}`, title: `${title} ${i}`, amount: 57.34, date: '2026-10-19', paymentStatus: 'unpaid' }));
+    mock.read.mockImplementation((_e, r) => base(r.action === 'list' ? { items } : r.action === 'options' ? { items: [] } : null));
+    render(<FinanceWorkbenchPage />);
+    const list = screen.getByLabelText('سجلات المصروفات');
+    expect(list.querySelectorAll('button')).toHaveLength(20);
+    const last = list.querySelectorAll('button')[19];
+    expect(last.querySelector('strong').textContent).toBe(`${title} 19`);
+    expect(last.querySelector('span').textContent).toBe('57.34 ر.س · 2026-10-19');
+    expect(last.querySelector('small').textContent).toContain('غير مسدد');
+    last.focus(); fireEvent.click(last);
+    expect(document.activeElement).toBe(last);
+    expect(last.className).toBe('fw-selected');
+    expect(mock.read).toHaveBeenLastCalledWith('finance-workbench', { action: 'options', kind: 'variable' });
+    expect(mock.read).toHaveBeenCalledWith('finance-workbench', { action: 'read', kind: 'variable', sourceId: 'TEST-19' }, true);
+    expect(mock.api).not.toHaveBeenCalled();
+  });
   it('requires separate confirmation for approval and disables posting after a form edit', async () => {
     const detail = { sourceId: 'SYNTHETIC', sourceHash: 'a'.repeat(64), stage: 'approved', approved: true,
       row: { expense_name: 'مصروف اختبار', total_variable_cost: 100, quantity: 2, logged_date: '2026-10-19' },

@@ -1,0 +1,3 @@
+.fw-period { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; max-width: 100%; }
+.fw-page .sw-profile-month-picker__trigger { border-color: var(--sw-primary, #f97316); background: #f9731615; }
+.fw-page .sw-profile-month-picker__months button[aria-pressed="true"] { background: var(--sw-primary, #f97316); color: #fff; border-color: transparent; }

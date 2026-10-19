@@ -13,7 +13,7 @@ vi.mock('../../lib/financeApi', () => ({ callFinanceApi: (...args) => mock.api(.
 vi.mock('../../hooks/useLedger', () => ({ useLedger: () => mock.ledger() }));
 vi.mock('../../contexts/PartnerViewContext', () => ({ usePartnerView: () => mock.role }));
 vi.mock('../TopBar', () => ({ default: ({ title }) => <h1>{title}</h1> }));
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.useRealTimers(); });
 beforeEach(() => {
   mock.role.role = 'admin'; mock.role.isPartnerView = false; mock.read.mockReset(); mock.api.mockReset(); mock.ledger.mockReset();
 });
@@ -80,6 +80,32 @@ describe('finance report UI and access boundaries', () => {
     fireEvent.click(screen.getByRole('button', { name: 'المتغيرة' })); expect(navigate).toHaveBeenCalledWith('variable');
     fireEvent.click(screen.getByRole('button', { name: 'عرض التقارير والأرشيف' })); expect(navigate).toHaveBeenCalledWith('finance_reports');
     expect(screen.getByRole('heading', { name: 'الرواتب ماليًا' })).toBeTruthy();
+  });
+  it('uses the branded English calendar and filters posted revenue without refetching or writing', () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date('2026-10-19T07:00:00Z'));
+    const refetch = vi.fn();
+    const ledger = { accounts: [{ code: '4000', name: 'Revenue', accountType: 'revenue', normalBalance: 'credit' }],
+      entries: [{ id: 'OCT', status: 'posted', entryDate: '2026-10-03' }, { id: 'SEP', status: 'posted', entryDate: '2026-09-03' }],
+      lines: [{ entryId: 'OCT', accountId: '4000', credit: 120, debit: 0 }, { entryId: 'SEP', accountId: '4000', credit: 80, debit: 0 }],
+      loading: false, needsSeeding: false, error: null, refetch };
+    const original = JSON.stringify(ledger); mock.ledger.mockReturnValue(ledger);
+    render(<LanguageContext.Provider value={{ language: 'ar' }}><FinanceHomePage onNavigate={vi.fn()} /></LanguageContext.Provider>);
+    const trigger = screen.getByRole('button', { name: 'Month' });
+    const revenue = () => screen.getByText('الإيرادات المرحلة').closest('article').querySelector('strong').textContent;
+    expect(trigger.textContent).toContain('October 2026'); expect(revenue()).toContain('120.00');
+    expect(document.querySelector('input[type="month"]')).toBeNull();
+    fireEvent.click(trigger);
+    const dialog = screen.getByRole('dialog', { name: 'Choose month' });
+    expect(dialog.parentElement.dir).toBe('ltr'); expect(dialog.textContent).not.toMatch(/[٠-٩]/);
+    expect(screen.getByRole('button', { name: 'November 2026' }).disabled).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'September 2026' }));
+    expect(trigger.textContent).toContain('September 2026'); expect(revenue()).toContain('80.00');
+    expect(screen.queryByRole('dialog')).toBeNull(); expect(document.activeElement).toBe(trigger);
+    expect(screen.getAllByText('بتاريخ القيد — 2026-09')).toHaveLength(2);
+    fireEvent.click(trigger); fireEvent.click(screen.getByRole('button', { name: 'Next year' }));
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    expect(trigger.textContent).toContain('September 2026'); expect(document.activeElement).toBe(trigger);
+    expect(refetch).not.toHaveBeenCalled(); expect(mock.api).not.toHaveBeenCalled(); expect(JSON.stringify(ledger)).toBe(original);
   });
   it('requires separate confirmation for approval and disables posting after a form edit', async () => {
     const detail = { sourceId: 'SYNTHETIC', sourceHash: 'a'.repeat(64), stage: 'approved', approved: true,

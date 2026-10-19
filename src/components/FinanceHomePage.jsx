@@ -2,10 +2,13 @@ import { useMemo, useState } from 'react';
 import { Landmark, Inbox, Receipt, Handshake, BookOpen, FileText, ArrowLeft, RefreshCw, AlertTriangle, Wallet } from 'lucide-react';
 import TopBar from './TopBar';
 import LoadingState from './LoadingState';
+import BikerProfileMonthPicker from './BikerProfileMonthPicker';
 import { useLedger } from '../hooks/useLedger';
 import { incomeStatement, generalLedger } from '../lib/accounting/reports';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 import './FinanceWorkspace.css';
+import './BikerProfile.css';
+import './FinanceHomePage.css';
 
 const sections = [
   { title: 'صندوق العمل', icon: Inbox, text: 'المستند، النقص، المراجعة والاعتماد والترحيل — خطوات مستقلة.', links: [['finance_workbench', 'فتح صندوق العمل']] },
@@ -35,7 +38,8 @@ function FinanceHomeContent({ onNavigate }) {
     ['رصيد الصندوق الدفتري', data.cash], ['رصيد البنك الدفتري', data.bank] ];
   return <><TopBar title="المالية" subtitle="من المستند إلى القرار — مركز عمل فريق المالية" /><main className="fw-page" dir="rtl">
     <section className="fw-hero"><div><div className="fw-eyebrow"><Landmark size={18} /> مالية سويتر</div><h1>صورة واضحة. خطوة موثقة.</h1><p>الأرقام والمستندات والمتابعة في مكان واحد، مع بقاء الفرق بين التسجيل والاعتماد والترحيل والسداد ظاهرًا.</p></div><button type="button" onClick={() => onNavigate('finance_workbench')}>ابدأ من صندوق العمل <ArrowLeft size={17} /></button></section>
-    <div className="fw-toolbar"><label>فترة القيود <input type="month" value={month} onChange={e => { if (e.target.value) setMonth(e.target.value); }} /></label>
+    <div className="fw-toolbar"><div className="fw-period" role="group" aria-label="فترة القيود"><span>فترة القيود</span>
+      <BikerProfileMonthPicker value={month} max="9999-12" language="en" onChange={setMonth} /></div>
       <button type="button" disabled={ledger.loading} onClick={() => { setReadStarted(new Date().toISOString()); ledger.refetch(); }}><RefreshCw size={16} /> تحديث البيانات</button></div>
     <div className="fw-warning" role="note"><AlertTriangle size={18} />الأرقام أدناه من القيود المرحلة؛ ليست كشف بنك أو جرد صندوق أو تحصيلًا مثبتًا. نتيجة الفترة بتاريخ القيد لا تعني اكتمال نتيجتها الاقتصادية.</div>
     {ledger.error && <div className="fw-warning" role="alert">تعذر تحميل الدفاتر؛ لا تُعرض أرقام بديلة أو أصفار.</div>}

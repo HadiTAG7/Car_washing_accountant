@@ -2125,5 +2125,7 @@
   "فتح المستند الأصلي في نافذة مستقلة": "Open original document in a separate window",
   "غير معتمد": "Not approved",
   "الترحيل": "Posting",
-  "السداد": "Payment"
+  "السداد": "Payment",
+  "تعذر إتمام طلب تقرير المالية؛ اقرأ النتيجة قبل إعادة الحفظ.": "The finance report request could not be completed; read the saved result before trying to save again.",
+  "تعذر إتمام المسار؛ تحقق من المصدر والقيود قبل الإعادة.": "The workflow could not be completed; check the source and journal entries before retrying."
 }

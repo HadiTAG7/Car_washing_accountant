@@ -103,7 +103,7 @@ function SortableTh({ id, sort, onSort, className = '' }) {
   );
 }
 
-export default function BikersPage({ role, payrollPreview = false }) {
+export default function BikersPage({ role, payrollPreview = false, initialSection = 'registry' }) {
   const { language } = useLanguage();
   const { bikers, loading, error, addBiker, updateBiker, deleteBiker, refetch } = useBikers();
   const { items: washes, loading: washesLoading, error: washesError } = useWashes();
@@ -115,7 +115,7 @@ export default function BikersPage({ role, payrollPreview = false }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [editingBiker, setEditingBiker] = useState(null);
   const [advanceBiker, setAdvanceBiker] = useState(null);
-  const [activeSection, setActiveSection] = useState(payrollPreview ? 'payroll' : 'registry');
+  const [activeSection, setActiveSection] = useState(payrollPreview ? 'payroll' : initialSection);
   const [importing, setImporting] = useState(false);
   const [mutationError, setMutationError] = useState(null);
   const [toast, setToast] = useState({ open: false, message: '', tone: 'success', duration: 3000 });

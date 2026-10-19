@@ -15,6 +15,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { taxPolicyAt } from '../src/taxPolicy.js';
 import { setTaxPolicy } from '../src/accountingSettings.js';
+import { reviewedFinanceFixture } from './financeApprovalFixture.js';
 import { initializeApp as initAdmin, deleteApp as deleteAdmin } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getAuth as getAdminAuth } from 'firebase-admin/auth';
@@ -103,7 +104,7 @@ d('الاستدعاءات الحقيقية عبر محاكي الدوال', () =
       'posting_locks', 'counters', 'audit_logs', 'accounting_periods',
       'sales_documents', 'sales_document_sources', 'app_settings',
       'washes', 'monthly_expenses', 'startup_costs', 'startup_cost_entries',
-      'bikers', 'temporary_expenses', 'payroll_runs', 'payroll_periods', 'payroll_payment_locks']) {
+      'bikers', 'temporary_expenses', 'payroll_runs', 'payroll_periods', 'payroll_payment_locks', 'finance_reviews', 'monthly_expense_categories']) {
       const snap = await adb.collection(c).get();
       await Promise.all(snap.docs.map((s) => s.ref.delete()));
     }
@@ -234,6 +235,7 @@ d('الاستدعاءات الحقيقية عبر محاكي الدوال', () =
 
     it('ويرحّل المصروف والقيد اليدوي', async () => {
       const call = await as('accountant');
+      await reviewedFinanceFixture(adb, 'monthly', 'm1');
       const expense = await call('ledgerPostSource')({ kind: 'monthly', sourceId: 'm1' });
       expect(expense.data.kind).toBe('monthly');
       const manual = await call('ledgerPostManual')({
@@ -749,6 +751,7 @@ d('الاستدعاءات الحقيقية عبر محاكي الدوال', () =
           invoiceDate: '2026-08-03', supplier: 'مورّد', vatAmount: 150,
         },
       });
+      await reviewedFinanceFixture(adb, 'startup', added.data.id);
       await acct('ledgerPostSource')({ kind: 'startup', sourceId: added.data.id });
       await expect(acct('startupDeleteEntry')({ entryId: added.data.id }))
         .rejects.toThrow(/مُرحّل بالقيد رقم/);

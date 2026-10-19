@@ -28,7 +28,12 @@ import {
   convertLegacyStartupSpend,
   updateStartupPlan, deleteStartupPlan, StartupCostError,
 } from '../src/startupCosts.js';
-import { postSource, seedChartOfAccounts, COL } from '../src/ledger.js';
+import { postSource as serverPostSource, seedChartOfAccounts, COL } from '../src/ledger.js';
+import { reviewedFinanceFixture } from './financeApprovalFixture.js';
+async function postSource(db, fieldValue, payload, options) {
+  await reviewedFinanceFixture(db, payload.kind, payload.sourceId);
+  return serverPostSource(db, fieldValue, payload, options);
+}
 import {
   startupEntryProblems as serverEntryProblems,
   startupConversionProblems as serverConversionProblems,
@@ -60,7 +65,7 @@ const HISTORY = [
   { effectiveFrom: '2020-07-01', vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15 },
 ];
 
-const WIPE = [...Object.values(COL), 'startup_costs', 'startup_cost_entries', 'app_settings'];
+const WIPE = [...Object.values(COL), 'startup_costs', 'startup_cost_entries', 'app_settings', 'finance_reviews'];
 async function wipe() {
   for (const c of WIPE) {
     const snap = await db.collection(c).get();

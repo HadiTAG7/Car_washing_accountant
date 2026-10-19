@@ -6,6 +6,16 @@ import {
 const idsOf = (groups) => groups.flatMap((g) => g.tabs.map((t) => t.id));
 
 describe('من يرى أي تبويب', () => {
+  it('consolidates finance without duplicating or renaming old route ids and keeps new pages admin-only', () => {
+    const finance = TAB_GROUPS.find(g => g.id === 'finance'), ids = idsOf(TAB_GROUPS);
+    expect(finance.homeTab).toBe('finance'); expect(ids.length).toBe(new Set(ids).size);
+    for (const old of ['startup', 'annual', 'monthly', 'variable', 'temporary_expenses', 'partners', 'payments', 'ledger', 'vat', 'assets']) {
+      expect(finance.tabs.some(t => t.id === old)).toBe(true); expect(resolveTab(old, { allowedTabIds: ids })).toBe(old);
+    }
+    for (const role of ['partner', 'accountant', 'operator', 'supervisor']) for (const page of ['finance', 'finance_reports', 'finance_workbench', 'finance_payroll']) {
+      const allowed = idsOf(visibleGroupsFor({ role })); expect(allowed).not.toContain(page); expect(resolveTab(page, { allowedTabIds: allowed })).toBe('overview');
+    }
+  });
   it('restricts growth performance to the existing admin view, including direct routes', () => {
     expect(idsOf(visibleGroupsFor({ role: 'admin' }))).toContain('growth_performance');
     for (const role of ['partner', 'accountant', 'operator', 'supervisor', null]) {

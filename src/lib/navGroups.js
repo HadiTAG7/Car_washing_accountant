@@ -14,7 +14,7 @@ import {
 
 // Tab ids are untouched: the render chain below keys off them, so regrouping
 // is a presentation change that cannot break a route.
-export const TAB_GROUPS = [
+const LEGACY_TAB_GROUPS = [
   {
     id: 'top',
     title: null,
@@ -81,6 +81,21 @@ export const TAB_GROUPS = [
       { id: 'periods',   label: 'إقفال الفترة',            icon: Lock        },
     ],
   },
+];
+
+export const FINANCE_TAB_IDS = ['startup', 'annual', 'monthly', 'variable', 'temporary_expenses', 'partners', 'payments',
+  'summary', 'vat', 'budgets', 'ledger', 'trial', 'balance', 'documents', 'assets', 'periods'];
+const oldFinanceTabs = LEGACY_TAB_GROUPS.flatMap(group => group.tabs).filter(tab => FINANCE_TAB_IDS.includes(tab.id));
+export const TAB_GROUPS = [
+  ...LEGACY_TAB_GROUPS.filter(group => ['top', 'ops', 'sweater'].includes(group.id))
+    .map(group => ({ ...group, tabs: group.tabs.filter(tab => !FINANCE_TAB_IDS.includes(tab.id)) })),
+  { id: 'finance', title: 'المالية', homeTab: 'finance', tabs: [
+    { id: 'finance', label: 'ملخص المالية', icon: Landmark, roles: ['admin'] },
+    { id: 'finance_workbench', label: 'صندوق العمل المالي', icon: Receipt, roles: ['admin'] },
+    { id: 'finance_reports', label: 'تقارير المالية والأرشيف', icon: FileText, roles: ['admin'] },
+    ...oldFinanceTabs,
+    { id: 'finance_payroll', label: 'الرواتب ماليًا', icon: HandCoins, roles: ['admin'] },
+  ] },
 ];
 
 // ── ما يراه المستثمر ──────────────────────────────────────────────────────

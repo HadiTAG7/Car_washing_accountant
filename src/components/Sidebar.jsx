@@ -176,7 +176,10 @@ export default function Sidebar({
                 {group.title && (
                   <button
                     type="button"
-                    onClick={() => toggleGroup(group.id)}
+                    onClick={() => {
+                      if (group.homeTab && group.tabs.some(tab => tab.id === group.homeTab) && !holdsActive) onSelectTab(group.homeTab);
+                      else toggleGroup(group.id);
+                    }}
                     aria-expanded={isOpen}
                     className="w-full flex items-center gap-2 px-3 py-2 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
                   >

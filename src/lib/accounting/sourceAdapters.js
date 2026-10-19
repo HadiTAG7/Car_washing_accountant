@@ -55,8 +55,8 @@ function expenseAdapter({ collection, kind, toExpense, isApproved, notApprovedRe
     sourceType: 'expense',
     sourceId: (r) => r.id,
     dateOf: (r) => toExpense(r).date,
-    isApproved: isApproved || (() => true),
-    notApprovedReason,
+    isApproved: (r) => (collection === 'expense_vouchers' || r.approval_status === 'approved') && (!isApproved || isApproved(r)),
+    notApprovedReason: notApprovedReason || 'يلزم اعتماد موثق للنسخة الحالية من المصروف عبر المالية.',
     label,
     // `policyAt` carries the dated tax record through to the engine, so the
     // preview prices a 5%-era invoice at 5% exactly as the server will.
@@ -68,7 +68,7 @@ function expenseAdapter({ collection, kind, toExpense, isApproved, notApprovedRe
 
 const monthlyExpense = (r) => ({
   id: r.id, description: r.expense_name, amount: r.total_monthly_cost,
-  date: r.logged_date,
+  date: (r.payment_status === 'paid' && r.paid_date) || r.logged_date,
   paymentMethod: r.payment_method, paymentStatus: r.payment_status === 'paid' ? 'paid' : 'unpaid',
   ...taxFieldsOf(r),
 });
@@ -111,8 +111,8 @@ export const ADAPTERS = {
     kind: 'variable',
     toExpense: (r) => ({
       id: r.id, description: r.expense_name, amount: r.total_variable_cost,
-      date: r.logged_date,
-      paymentMethod: r.payment_method, paymentStatus: 'paid',
+      date: (r.payment_status === 'paid' && r.paid_date) || r.logged_date,
+      paymentMethod: r.payment_method, paymentStatus: r.payment_status === 'unpaid' ? 'unpaid' : 'paid',
       ...taxFieldsOf(r),
     }),
     label: (r) => [r.expense_name || 'مصروف', r.logged_date].filter(Boolean).join(' — '),
@@ -124,7 +124,7 @@ export const ADAPTERS = {
     toExpense: (r) => ({
       id: r.id, description: r.description, amount: r.amount,
       date: r.paid_date || r.spent_date,
-      paymentMethod: r.payment_method || 'cash', paymentStatus: 'paid',
+      paymentMethod: r.payment_method || 'cash', paymentStatus: r.payment_status === 'unpaid' ? 'unpaid' : 'paid',
       ...taxFieldsOf(r),
     }),
     label: (r) => [r.description || 'مصروف', r.spent_date].filter(Boolean).join(' — '),
@@ -136,7 +136,7 @@ export const ADAPTERS = {
     toExpense: (r) => ({
       id: r.id, description: r.description, amount: r.amount,
       date: r.paid_date || r.spent_date,
-      paymentMethod: r.payment_method || 'cash', paymentStatus: 'paid',
+      paymentMethod: r.payment_method || 'cash', paymentStatus: r.payment_status === 'unpaid' ? 'unpaid' : 'paid',
       ...taxFieldsOf(r),
     }),
     label: (r) => [r.description || 'مصروف', r.spent_date].filter(Boolean).join(' — '),

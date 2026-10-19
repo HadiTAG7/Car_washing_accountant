@@ -18,9 +18,14 @@ describe('لحظة الاعتماد', () => {
     expect(transitionedToApproved('wash', null, { status: 'قيد التنفيذ' })).toBe(false);
   });
 
-  it('المصروف الشهري يُعتمد عندما يحمل تاريخاً', () => {
-    expect(transitionedToApproved('monthly', { logged_date: null }, { logged_date: '2026-08-05' })).toBe(true);
+  it('تاريخ المصروف أو اعتماد المالية لا يرحله كأثر جانبي', () => {
+    expect(transitionedToApproved('monthly', { logged_date: null }, { logged_date: '2026-08-05' })).toBe(false);
     expect(transitionedToApproved('monthly', { logged_date: null }, { logged_date: null })).toBe(false);
+    for (const kind of ['monthly', 'variable', 'annual', 'startup']) {
+      expect(transitionedToApproved(kind, {}, { logged_date: '2026-08-05', approval_status: 'approved' })).toBe(false);
+    }
+    expect(ADAPTERS.monthly.isApproved({ logged_date: '2026-08-05' })).toBe(false);
+    expect(ADAPTERS.monthly.isApproved({ logged_date: '2026-08-05', approval_status: 'approved' })).toBe(true);
   });
 
   it('نوع غير معروف لا ينفجر — يعيد false', () => {

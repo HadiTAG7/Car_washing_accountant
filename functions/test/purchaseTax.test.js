@@ -33,6 +33,7 @@ import { validateTaxInvoiceFields as serverValidate } from '../src/vatFields.js'
 import { resolvePurchaseTax as clientResolve } from '../../src/lib/accounting/purchaseTax.js';
 import { validateTaxInvoiceFields as clientValidate } from '../../src/lib/vatFields.js';
 import { buildExpenseEntry } from '../../src/lib/accounting/postingRules.js';
+import { reviewedFinanceFixture } from './financeApprovalFixture.js';
 
 const EMU = process.env.FIRESTORE_EMULATOR_HOST;
 const d = EMU ? describe : describe.skip;
@@ -51,7 +52,7 @@ const CHART = [
 ];
 
 const WIPE = [...Object.values(COL), 'monthly_expenses', 'variable_expenses',
-  'annual_expense_entries', 'startup_cost_entries', 'expense_vouchers', 'app_settings'];
+  'annual_expense_entries', 'startup_cost_entries', 'expense_vouchers', 'app_settings', 'finance_reviews'];
 
 async function wipe() {
   for (const c of WIPE) {
@@ -147,6 +148,7 @@ async function post(kind, amount, o = {}) {
   const id = `${kind}-${seq}`;
   const [col, row] = SOURCES[kind](amount, o);
   await db.collection(col).doc(id).set(row);
+  await reviewedFinanceFixture(db, kind, id);
   const res = await postSource(db, FieldValue, { kind, sourceId: id }, { userId: 'u1' });
   const snap = await db.collection(COL.ENTRIES).doc(res.entryId).get();
   const entry = snap.data();
@@ -261,13 +263,10 @@ d('محرك ضريبة المشتريات عبر postSource الحقيقي', () 
     ['بلا تاريخ فاتورة', { invoiceDate: '' }],
     ['بلا مورّد', { supplier: '' }],
   ])('(هـ) فاتورة %s', (_name, gap) => {
-    it('لا تُنشئ أصل ضريبة مدخلات، والمبلغ كاملاً على المصروف', async () => {
+    it('تمنع مراجعة مصروف يدوي ناقص الهوية فلا ينشأ قيد أو ضريبة مدخلات', async () => {
       await policy(KSA_HISTORY);
-      const r = await post('variable', 115, { ...gap, vatAmount: 15 });
-      expect(r.lines.some((l) => String(l.accountId) === '1200')).toBe(false);
-      expect(r.expense).toBe(115);
-      expect(r.settlement).toBe(115);
-      expect(r.snapshot.noInputVatReason).toBe(NO_INPUT_VAT.INCOMPLETE_INVOICE);
+      await expect(post('variable', 115, { ...gap, vatAmount: 15 })).rejects.toThrow();
+      expect((await db.collection(COL.ENTRIES).get()).size).toBe(0);
     });
   });
 
@@ -322,7 +321,8 @@ d('محرك ضريبة المشتريات عبر postSource الحقيقي', () 
       await post('annual', 230, {}),
       await post('startup', 1150, { invoiceDate: '2019-05-01' }),
       await post('voucher', 500, { vatDeductible: false }),
-      await post('variable', 300, { invoiceNumber: '' }),   // هوية ناقصة
+      // Incomplete manual invoice identity is now rejected by finance review,
+      // rather than posted as a non-deductible expense (tested above).
     ];
     const ledger1200 = Math.round(posted.reduce((s, r) => s + r.inputVat, 0) * 100) / 100;
 
@@ -336,7 +336,6 @@ d('محرك ضريبة المشتريات عبر postSource الحقيقي', () 
       { id: 'r3', isTaxInvoice: true, amount: 230, invoiceNumber: 'INV-100', invoiceDate: '2026-03-10', supplier: 'م', vatAmount: null, vatRate: null, priceMode: 'inclusive', vatDeductible: true },
       { id: 'r4', isTaxInvoice: true, amount: 1150, invoiceNumber: 'INV-100', invoiceDate: '2019-05-01', supplier: 'م', vatAmount: null, vatRate: null, priceMode: 'inclusive', vatDeductible: true },
       { id: 'r5', isTaxInvoice: true, amount: 500, invoiceNumber: 'INV-100', invoiceDate: '2026-03-10', supplier: 'م', vatAmount: null, vatRate: null, priceMode: 'inclusive', vatDeductible: false },
-      { id: 'r6', isTaxInvoice: true, amount: 300, invoiceNumber: '', invoiceDate: '2026-03-10', supplier: 'م', vatAmount: null, vatRate: null, priceMode: 'inclusive', vatDeductible: true },
     ];
     const report = buildVatReport({
       inputs: rows, period: '', policyAt: (date) => taxPolicyAt(date, settings),
@@ -409,7 +408,7 @@ d('محرك ضريبة المشتريات عبر postSource الحقيقي', () 
   it('تاريخ فاتورة غير موجود في التقويم يُرفض', async () => {
     await policy(KSA_HISTORY);
     await expect(post('variable', 115, { invoiceDate: '2026-02-30' }))
-      .rejects.toThrow(/التقويم/);
+      .rejects.toThrow(/التقويم|حقول الفاتورة/);
   });
 
   // ═══ اللقطة تُحفظ على القيد ══════════════════════════════════════════

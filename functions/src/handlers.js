@@ -1,5 +1,6 @@
 import { previewAdvanceMonth, saveAdvanceMonth } from './advanceMonth.js';
 import { ExpenseCorrectionError, previewExpenseCorrection, saveExpenseCorrection, recordWorkerAdvance, expenseCorrectionOptions, payrollReadStatus } from './expenseCorrections.js';
+import { FinanceReviewError } from './financeReview.js';
 // ═══════════════════════════════════════════════════════════════════════════
 // الطبقة المشتركة — مَن المتصل، وما الذي يُسمح له، وأين يُسلَّم
 // ═══════════════════════════════════════════════════════════════════════════
@@ -665,7 +666,7 @@ export const HANDLER_NAMES = Object.keys(HANDLERS);
  * أخرى» for a problem retrying cannot fix.
  */
 export function normalizeError(e) {
-  if (e instanceof ExpenseCorrectionError) return { code: e.code, message: e.message, details: null };
+  if (e instanceof ExpenseCorrectionError || e instanceof FinanceReviewError) return { code: e.code, message: e.message, details: null };
   if (e instanceof SweaterIngestError) return { code: e.code, message: e.message, details: e.details };
   if (e instanceof AuthError) return { code: e.code, message: e.message, details: null };
   if (e instanceof InvoicingError) {

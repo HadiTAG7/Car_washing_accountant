@@ -18,7 +18,7 @@ import { SERVER_INSTRUCTIONS, PROMPTS } from './instructions.js';
  */
 export function buildSweaterServer({ writes = false } = {}) {
   const server = new McpServer(
-    { name: 'sweater', version: '1.2.0' },
+    { name: 'sweater', version: '1.3.0' },
     { instructions: SERVER_INSTRUCTIONS },
   );
   const tools = writes ? [...readTools, ...writeTools] : readTools;

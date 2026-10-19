@@ -33,6 +33,7 @@ import {
 } from './invariants.js';
 import { ADAPTERS, legacyLockIdFor } from './posting.js';
 import { taxPolicyAt } from './taxPolicy.js';
+import { assertFinanceApproval, financeHash } from './financeReview.js';
 
 export const COL = {
   ACCOUNTS: 'chart_of_accounts',
@@ -196,7 +197,7 @@ export async function postEntry(db, FieldValue, { entry, lines }, {
  * first write, which a Firestore transaction requires and which also means the
  * whole decision is made on one consistent snapshot.
  */
-export async function postSource(db, FieldValue, { kind, sourceId }, { userId = null } = {}) {
+export async function postSource(db, FieldValue, { kind, sourceId }, { userId = null, expectedFinanceSourceHash = null, financeAuthorizer = null } = {}) {
   const adapter = ADAPTERS[String(kind)];
   if (!adapter) throw new LedgerError(`نوع سجل غير معروف: ${kind}`, { code: 'invalid-argument' });
   const id = String(sourceId ?? '').trim();
@@ -231,6 +232,7 @@ export async function postSource(db, FieldValue, { kind, sourceId }, { userId = 
       throw new LedgerError('السجل المصدر غير موجود.', { code: 'not-found' });
     }
     const row = sourceSnap.data();
+    if (financeAuthorizer) await financeAuthorizer(tx);
     if (adapter.approved && !adapter.approved(row)) {
       // نصٌّ أو دالة: معظم المُحوِّلات لها سببٌ واحد ثابت، وغسلةُ سويتر لها
       // سببان مختلفان (غير مكتملة / مصدرها المنصة) فتحتاج أن تنظر في الصف.
@@ -246,6 +248,8 @@ export async function postSource(db, FieldValue, { kind, sourceId }, { userId = 
         { code: 'already-exists' },
       );
     }
+
+    const financeApproval = await assertFinanceApproval(db, tx, kind, id, row, expectedFinanceSourceHash);
 
     const settings = { ...DEFAULT_SETTINGS, ...(settingsSnap.exists ? (settingsSnap.data().value || {}) : {}) };
     // ── the rules of the record's OWN day ──
@@ -276,6 +280,9 @@ export async function postSource(db, FieldValue, { kind, sourceId }, { userId = 
     });
 
     const normEntry = normalizeEntry(built.entry);
+    if (financeApproval && financeApproval.postingHash !== financeHash(built)) {
+      throw new LedgerError('تغيرت معاينة الحسابات أو المعالجة الضريبية بعد الاعتماد؛ أعد المراجعة.');
+    }
     const normLines = normalizeLines(built.lines);
     const problems = validateEntry(normEntry, normLines, { knownAccountCodes });
     if (problems.length) {

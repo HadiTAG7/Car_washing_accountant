@@ -176,7 +176,7 @@ function buildExpense(kind, row, id, { policyAt = null, recordDate = null } = {}
     ? (row.paymentStatus === 'paid' ? 'paid' : 'unpaid')
     : kind === 'monthly'
       ? (row.payment_status === 'paid' ? 'paid' : 'unpaid')
-      : 'paid';
+      : (row.payment_status === 'unpaid' ? 'unpaid' : 'paid');
 
   const fields = purchaseFieldsOf(kind, row);
   const tax = resolvePurchaseTax({ ...fields, recordDate: settlementDate }, { policyAt });
@@ -319,7 +319,7 @@ export const ADAPTERS = {
   monthly: {
     collection: 'monthly_expenses',
     lockKind: 'monthly',
-    dateOf: (r) => String(r.logged_date || '').slice(0, 10),
+    dateOf: (r) => String((r.payment_status === 'paid' && r.paid_date) || r.logged_date || '').slice(0, 10),
     // A recurring template has no date: it is not a document, and its dated
     // vouchers are what get posted.
     approved: (r) => Boolean(r.logged_date),
@@ -329,7 +329,7 @@ export const ADAPTERS = {
   variable: {
     collection: 'variable_expenses',
     lockKind: 'variable',
-    dateOf: (r) => String(r.logged_date || '').slice(0, 10),
+    dateOf: (r) => String((r.payment_status === 'paid' && r.paid_date) || r.logged_date || '').slice(0, 10),
     approved: () => true,
     build: (row, id, opts) => buildExpense('variable', row, id, opts),
   },

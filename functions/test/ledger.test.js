@@ -12,9 +12,14 @@ import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { initializeApp, deleteApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import {
-  postEntry, postSource, reverseEntry, closePeriod, reopenPeriod,
+  postEntry, postSource as serverPostSource, reverseEntry, closePeriod, reopenPeriod,
   seedChartOfAccounts, COL,
 } from '../src/ledger.js';
+import { reviewedFinanceFixture } from './financeApprovalFixture.js';
+async function postSource(db, fieldValue, payload, options) {
+  await reviewedFinanceFixture(db, payload.kind, payload.sourceId);
+  return serverPostSource(db, fieldValue, payload, options);
+}
 
 const EMU = process.env.FIRESTORE_EMULATOR_HOST;
 const d = EMU ? describe : describe.skip;
@@ -53,7 +58,7 @@ const post = (payload, opts) => postEntry(db, FieldValue, payload, {
 // The operational collections and app_settings are written by the postSource
 // cases; leaving them behind would leak state into the next test.
 const WIPE = [...Object.values(COL), 'washes', 'monthly_expenses',
-  'variable_expenses', 'app_settings'];
+  'variable_expenses', 'app_settings', 'finance_reviews', 'monthly_expense_categories', 'variable_expense_categories'];
 
 async function wipe() {
   for (const c of WIPE) {

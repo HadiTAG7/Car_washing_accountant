@@ -19,6 +19,9 @@ import FinancialEntrySelector from './components/FinancialEntrySelector';
 // pages, etc. no longer ship in the first paint) — a real win on mobile.
 const OverviewPage         = lazy(() => import('./components/OverviewPage'));
 const GrowthPerformancePage = lazy(() => import('./components/GrowthPerformancePage'));
+const FinanceHomePage = lazy(() => import('./components/FinanceHomePage'));
+const FinanceReportsPage = lazy(() => import('./components/FinanceReportsPage'));
+const FinanceWorkbenchPage = lazy(() => import('./components/FinanceWorkbenchPage'));
 const SupervisorPage       = lazy(() => import('./components/SupervisorPage'));
 const SupervisorRecordsPage = lazy(() => import('./components/SupervisorRecordsPage'));
 const InvestorPage         = lazy(() => import('./components/InvestorPage'));
@@ -208,6 +211,10 @@ function AppShell({ membership }) {
             {investorView && <InvestorPage view={investorView} />}
             {effectiveTab === 'overview' && (membership.role === 'supervisor' ? <SupervisorPage /> : <OverviewPage onNavigate={handleSelectTab} />)}
             {effectiveTab === 'growth_performance' && <GrowthPerformancePage />}
+            {effectiveTab === 'finance' && <FinanceHomePage onNavigate={handleSelectTab} />}
+            {effectiveTab === 'finance_reports' && <FinanceReportsPage />}
+            {effectiveTab === 'finance_workbench' && <FinanceWorkbenchPage />}
+            {effectiveTab === 'finance_payroll' && <BikersPage role={visibleRole} initialSection="payroll" />}
             {effectiveTab === 'supervisor_data' && membership.role === 'supervisor' && <SupervisorRecordsPage />}
             {effectiveTab === 'agent_command_center' && (
               <AgentCommandCenterPage

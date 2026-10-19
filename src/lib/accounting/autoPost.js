@@ -41,6 +41,9 @@ export const AUTO_POST_RESULTS = ['posted', 'skipped', 'failed'];
  * transition, so re-saving a completed wash does nothing.
  */
 export function transitionedToApproved(kind, before, after) {
+  // Finance review is not a posting instruction. Manual expense posting is
+  // a separate, explicit server operation, never an effect of saving approval.
+  if (['monthly', 'variable', 'annual', 'startup'].includes(kind)) return false;
   const a = ADAPTERS[kind];
   if (!a) return false;
   const was = before ? Boolean(a.isApproved(before)) : false;

@@ -90,7 +90,9 @@ const oldFinanceTabs = LEGACY_TAB_GROUPS.flatMap(group => group.tabs).filter(tab
 export const TAB_GROUPS = [
   ...LEGACY_TAB_GROUPS.filter(group => ['top', 'ops', 'sweater'].includes(group.id))
     .map(group => ({ ...group, tabs: group.tabs.filter(tab => !FINANCE_TAB_IDS.includes(tab.id)) })),
-  { id: 'finance', title: 'المالية', homeTab: 'finance', tabs: [
+  { id: 'finance', title: 'المالية', homeTab: 'finance',
+    sections: [{ id: 'expenses', title: 'المصاريف', tabIds: ['startup', 'annual', 'monthly', 'variable', 'temporary_expenses'] }],
+    tabs: [
     { id: 'finance', label: 'ملخص المالية', icon: Landmark, roles: ['admin'] },
     { id: 'finance_workbench', label: 'صندوق العمل المالي', icon: Receipt, roles: ['admin'] },
     { id: 'finance_reports', label: 'تقارير المالية والأرشيف', icon: FileText, roles: ['admin'] },

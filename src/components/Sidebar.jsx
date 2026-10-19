@@ -19,6 +19,32 @@ function readCollapsed() {
   } catch { return new Set(); }
 }
 
+// Presentation only: section children must come from the already role-filtered
+// tabs, never from an unfiltered navigation catalogue.
+function sidebarItems(group) {
+  const seen = new Set();
+  return group.tabs.flatMap(tab => {
+    const section = group.sections?.find(item => item.tabIds.includes(tab.id));
+    if (!section) return [{ tab }];
+    if (seen.has(section.id)) return [];
+    seen.add(section.id);
+    return [{ section, tabs: section.tabIds.map(id => group.tabs.find(item => item.id === id)).filter(Boolean) }];
+  });
+}
+
+function SidebarTab({ tab: { id, label, icon: Icon }, activeTab, onSelectTab }) {
+  const isActive = activeTab === id;
+  return <li><button type="button" onClick={() => onSelectTab(id)}
+    aria-current={isActive ? 'page' : undefined}
+    className={`relative w-full flex items-center gap-3 px-3.5 py-3 md:py-2.5 text-sm font-semibold transition-colors duration-200
+      ${isActive ? 'bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300'
+        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+    style={{ borderRadius: 'var(--sw-radius-control)', minHeight: 'var(--sw-tap-min)' }}>
+    {isActive && <span className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-primary-500" style={{ borderRadius: 'var(--sw-radius-round)' }} />}
+    <Icon size={18} strokeWidth={isActive ? 2.4 : 2} /><span className="flex-1 text-right">{label}</span>
+  </button></li>;
+}
+
 export default function Sidebar({
   groups = [],
   activeTab,
@@ -172,7 +198,8 @@ export default function Sidebar({
             // where the user is.
             const isOpen = !collapsed.has(group.id) || holdsActive;
             return (
-              <div key={group.id}>
+              <div key={group.id} role={group.title ? 'group' : undefined} aria-label={group.title || undefined}
+                className={group.sections ? 'mt-3 border-t border-slate-200 dark:border-slate-700 pt-2' : undefined}>
                 {group.title && (
                   <button
                     type="button"
@@ -181,7 +208,9 @@ export default function Sidebar({
                       else toggleGroup(group.id);
                     }}
                     aria-expanded={isOpen}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
+                    className={`w-full flex items-center gap-2 px-3 py-2 font-bold hover:text-slate-700 dark:hover:text-slate-200 transition-colors ${group.sections
+                      ? 'text-sm text-slate-800 dark:text-slate-100'
+                      : 'text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-widest'}`}
                   >
                     <ChevronDown
                       size={13}
@@ -192,32 +221,23 @@ export default function Sidebar({
                 )}
                 {isOpen && (
                   <ul className="space-y-0.5">
-                    {group.tabs.map(({ id, label, icon: Icon }) => {
-                      const isActive = activeTab === id;
-                      return (
-                        <li key={id}>
-                          <button
-                            type="button"
-                            onClick={() => onSelectTab(id)}
-                            aria-current={isActive ? 'page' : undefined}
-                            className={`relative w-full flex items-center gap-3 px-3.5 py-3 md:py-2.5 text-sm font-semibold transition-colors duration-200
-                              ${isActive
-                                ? 'bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300'
-                                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
-                            style={{ borderRadius: 'var(--sw-radius-control)', minHeight: 'var(--sw-tap-min)' }}
-                          >
-                            {/* Brand bar marks the active route (RTL: right edge). */}
-                            {isActive && (
-                              <span
-                                className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-primary-500"
-                                style={{ borderRadius: 'var(--sw-radius-round)' }}
-                              />
-                            )}
-                            <Icon size={18} strokeWidth={isActive ? 2.4 : 2} />
-                            <span className="flex-1 text-right">{label}</span>
+                    {sidebarItems(group).map(item => {
+                      if (item.tab) return <SidebarTab key={item.tab.id} tab={item.tab} activeTab={activeTab} onSelectTab={onSelectTab} />;
+                      const key = `${group.id}:${item.section.id}`;
+                      const open = !collapsed.has(key) || item.tabs.some(tab => tab.id === activeTab);
+                      const listId = `nav-${group.id}-${item.section.id}`;
+                      return <li key={key} className="my-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/40">
+                        <div role="group" aria-label={item.section.title}>
+                          <button type="button" onClick={() => toggleGroup(key)} aria-expanded={open} aria-controls={listId}
+                            className="w-full min-h-11 flex items-center gap-2 px-3 py-2 text-sm font-bold text-slate-700 dark:text-slate-200">
+                            <ChevronDown size={15} className={`transition-transform ${open ? '' : '-rotate-90'}`} />
+                            <span className="flex-1 text-right">{item.section.title}</span>
                           </button>
-                        </li>
-                      );
+                          {open && <ul id={listId} className="mr-3 ml-1 mb-1 border-r-2 border-primary-500/40 pr-1 space-y-0.5">
+                            {item.tabs.map(tab => <SidebarTab key={tab.id} tab={tab} activeTab={activeTab} onSelectTab={onSelectTab} />)}
+                          </ul>}
+                        </div>
+                      </li>;
                     })}
                   </ul>
                 )}

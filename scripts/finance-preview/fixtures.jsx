@@ -8,6 +8,8 @@ const detail = { kind: 'variable', sourceId: 'TEST-ONLY', sourceHash: 'a'.repeat
   row: { expense_name: 'مستند اختبار — غير حقيقي', total_variable_cost: 100, logged_date: '2026-10-19', quantity: 2, supplier: 'مورد اختبار', category_id: 'TEST', invoice_url: 'https://example.org/synthetic-invoice' },
   issues: ['نموذج بصري فقط؛ لا يمكن الحفظ أو الترحيل من هذه الصفحة.'], postingPreview: { ready: false, lines: [] } };
 export const usePartnerView = () => ({ role: 'admin', isPartnerView: false });
+export const auth = null;
+export const isFirebaseConfigured = false;
 export const useLedger = () => ({ accounts: [], entries: [], lines: [], periods: [], loading: false, error: 'بيانات الدفاتر غير متاحة في الاختبار البصري', needsSeeding: true, refetch: () => {} });
 export const useFinanceRead = (endpoint, request) => ({ allowed: true, loading: false, error: null, refresh: () => {},
   data: endpoint === 'finance-reports' ? request.action === 'list' ? { items: [corrected, intake] }
@@ -16,4 +18,7 @@ export const useFinanceRead = (endpoint, request) => ({ allowed: true, loading: 
     : request.action === 'list' ? { items: [{ sourceId: detail.sourceId, title: detail.row.expense_name, date: detail.row.logged_date, amount: 100 }], coverage: 'سجل اصطناعي معزول فقط' }
       : request.action === 'options' ? { items: [{ id: 'TEST', label: 'تصنيف اختبار' }] } : detail });
 export const callFinanceApi = async () => { throw new Error('لا حفظ في الاختبار البصري؛ استخدم اختبارات المحاكي.'); };
-export default function PreviewTopBar({ title, subtitle }) { return <header style={{ padding: '18px 24px' }}><h1 style={{ fontSize: 24, fontWeight: 800 }}>{title}</h1><p>{subtitle}</p></header>; }
+export default function PreviewTopBar({ title, subtitle, isOpen }) {
+  if (isOpen !== undefined) return null;
+  return <header style={{ padding: '18px 24px' }}><h1 style={{ fontSize: 24, fontWeight: 800 }}>{title}</h1><p>{subtitle}</p></header>;
+}

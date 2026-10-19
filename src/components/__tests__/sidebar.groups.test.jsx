@@ -13,8 +13,9 @@
  * Run: npm test
  */
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
 import Sidebar from '../Sidebar';
+import { visibleGroupsFor } from '../../lib/navGroups';
 
 afterEach(cleanup);
 beforeEach(() => { window.localStorage.clear(); });
@@ -41,10 +42,10 @@ const GROUPS = [
   },
 ];
 
-function renderSidebar({ activeTab = 'overview', onSelectTab = vi.fn() } = {}) {
+function renderSidebar({ activeTab = 'overview', onSelectTab = vi.fn(), groups = GROUPS } = {}) {
   render(
     <Sidebar
-      groups={GROUPS}
+      groups={groups}
       activeTab={activeTab}
       onSelectTab={onSelectTab}
       user={{ email: 'a@b.com' }}
@@ -58,6 +59,48 @@ const tabButton = (label) => screen.queryByRole('button', { name: label });
 const groupHeader = (title) => screen.getByRole('button', { name: title });
 
 describe('Sidebar — المجموعات', () => {
+  it('nests all five expense pages inside finance/expenses, not under settlements', () => {
+    const select = renderSidebar({ groups: visibleGroupsFor({ role: 'admin' }) });
+    const finance = screen.getByRole('group', { name: 'المالية', exact: true });
+    const expenses = within(finance).getByRole('group', { name: 'المصاريف', exact: true });
+    for (const label of ['رسوم التأسيس', 'المصاريف السنوية', 'المصاريف الشهرية', 'المصاريف المتغيرة', 'المصروفات المؤقتة']) {
+      expect(within(expenses).getByRole('button', { name: label, exact: true })).toBeTruthy();
+      expect(screen.getAllByRole('button', { name: label, exact: true })).toHaveLength(1);
+    }
+    expect(within(expenses).queryByRole('button', { name: 'تسويات سويتر' })).toBeNull();
+    expect(within(finance).getByRole('button', { name: 'تسويات سويتر' })).toBeTruthy();
+    fireEvent.click(within(expenses).getByRole('button', { name: 'المصاريف الشهرية', exact: true }));
+    expect(select).toHaveBeenCalledWith('monthly');
+    fireEvent.click(within(expenses).getByRole('button', { name: 'المصاريف', exact: true }));
+    expect(within(expenses).queryByRole('button', { name: 'رسوم التأسيس' })).toBeNull();
+    expect(within(finance).getByRole('button', { name: 'تسويات سويتر' })).toBeTruthy();
+    expect(JSON.parse(localStorage.getItem('mw:navCollapsed'))).toEqual(['finance:expenses']);
+  });
+
+  it('keeps both finance and expenses expanded for an active legacy expense URL without erasing preferences', () => {
+    localStorage.setItem('mw:navCollapsed', JSON.stringify(['finance', 'finance:expenses']));
+    renderSidebar({ activeTab: 'annual', groups: visibleGroupsFor({ role: 'admin' }) });
+    expect(groupHeader('المالية').getAttribute('aria-expanded')).toBe('true');
+    expect(groupHeader('المصاريف').getAttribute('aria-expanded')).toBe('true');
+    expect(tabButton('المصاريف السنوية').getAttribute('aria-current')).toBe('page');
+    expect(JSON.parse(localStorage.getItem('mw:navCollapsed'))).toEqual(['finance', 'finance:expenses']);
+  });
+
+  it('never restores section children removed by the caller role filter', () => {
+    const finance = visibleGroupsFor({ role: 'admin' }).find(group => group.id === 'finance');
+    renderSidebar({ groups: [{ ...finance, tabs: finance.tabs.filter(tab => ['finance', 'monthly'].includes(tab.id)) }] });
+    expect(tabButton('المصاريف الشهرية')).toBeTruthy();
+    expect(tabButton('رسوم التأسيس')).toBeNull();
+    expect(tabButton('المصاريف السنوية')).toBeNull();
+    expect(tabButton('المصاريف المتغيرة')).toBeNull();
+  });
+
+  it.each(['partner', 'supervisor'])('does not expose finance nesting in the restricted %s view', role => {
+    renderSidebar({ groups: visibleGroupsFor({ role, isPartnerView: role === 'partner' }) });
+    expect(screen.queryByRole('group', { name: 'المالية', exact: true })).toBeNull();
+    expect(tabButton('رسوم التأسيس')).toBeNull();
+  });
+
   it('بلا تفضيلٍ محفوظ: كل التبويبات ظاهرة، والعناوين معها', () => {
     renderSidebar();
     for (const label of ['نظرة عامة', 'الغسلات', 'البايكر', 'دفتر الأستاذ', 'إقفال الفترة']) {

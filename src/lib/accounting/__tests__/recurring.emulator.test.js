@@ -26,7 +26,8 @@ const RANGE = { from: '2026-01', through: '2026-03' };
 async function wipe() {
   for (const c of ['chart_of_accounts', 'journal_entries', 'journal_lines',
     'accounting_periods', 'audit_logs', 'counters', 'posting_locks',
-    'monthly_expenses', 'variable_expenses', 'expense_vouchers', 'finance_reviews', 'monthly_expense_categories', 'variable_expense_categories']) {
+    'monthly_expenses', 'variable_expenses', 'expense_vouchers', 'finance_reviews', 'monthly_expense_categories', 'variable_expense_categories',
+    'startup_costs', 'startup_cost_entries', 'annual_expense_entries', 'partner_payments', 'temporary_expenses', 'washes', 'app_settings']) {
     const snap = await getDocs(collection(db, c));
     await Promise.all(snap.docs.map((s) => deleteDoc(s.ref)));
   }

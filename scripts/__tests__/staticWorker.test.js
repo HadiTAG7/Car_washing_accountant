@@ -52,6 +52,40 @@ it('keeps navigation possible when CacheStorage is blocked and never caches the 
   cacheStorage.keys = async () => { throw new Error('quota'); };
   const sw = worker('a'.repeat(40), []); expect(await (await sw.fetch('/assets/main-oldAAAAA.js')).text()).toContain('module:'); expect(network).toHaveBeenCalledOnce();
 });
+it.each(['open-quota', 'put-quota', 'offline'])('preserves every completed old cache and skips pruning if warming fails: %s', async failure => {
+  const oldPath = '/assets/FinanceWorkbenchPage-oldAAAAA.js';
+  await worker('a'.repeat(40), [oldPath]).install();
+  for (let i = 0; i < 4; i++) await worker(String(i).repeat(40), ['/assets/module-buildAAA' + i + '.js']).install();
+  const priorNames = await cacheStorage.keys(); expect(priorNames).toHaveLength(5);
+  const originalOpen = cacheStorage.open;
+  cacheStorage.open = async name => {
+    if (name.endsWith('b'.repeat(40)) && failure === 'open-quota') throw new Error('quota');
+    const cache = await originalOpen(name);
+    if (name.endsWith('b'.repeat(40)) && failure === 'put-quota') cache.put = async () => { throw new Error('quota'); };
+    return cache;
+  };
+  if (failure === 'offline') network.mockRejectedValue(new TypeError('offline'));
+  const next = worker('b'.repeat(40), ['/assets/next-newBBBBB.js']); await next.install();
+  expect(next.scope.skipWaiting).toHaveBeenCalledOnce();
+  for (const name of priorNames) expect(stores.has(name)).toBe(true);
+  expect(await (await next.fetch(oldPath)).text()).toBe('module:' + oldPath);
+  const partial = stores.get('sweater-ui-static-v1-' + 'b'.repeat(40));
+  expect(partial?.has(origin + '/__sweater_static_meta__') || false).toBe(false);
+});
+it('rejects a real redirected response while warming and leaves the previous release usable', async () => {
+  const oldPath = '/assets/FinanceWorkbenchPage-oldAAAAA.js'; await worker('a'.repeat(40), [oldPath]).install();
+  const response = new Response('some other script', { headers: { 'content-type': 'text/javascript' } });
+  Object.defineProperty(response, 'redirected', { value: true }); network.mockResolvedValue(response);
+  const next = worker('b'.repeat(40), ['/assets/next-newBBBBB.js']); await next.install();
+  expect(stores.get('sweater-ui-static-v1-' + 'b'.repeat(40)).size).toBe(0);
+  expect(await (await next.fetch(oldPath)).text()).toBe('module:' + oldPath);
+});
+it('does not start an over-budget warm, or prune any existing cache', async () => {
+  await worker('a'.repeat(40), ['/assets/old-oldAAAAA.js']).install();
+  const before = await cacheStorage.keys(); network.mockClear();
+  const next = worker('b'.repeat(40), Array.from({ length: 601 }, (_, i) => '/assets/module-buildAAA' + i + '.js')); await next.install();
+  expect(network).not.toHaveBeenCalled(); expect(await cacheStorage.keys()).toEqual(before); expect(next.scope.skipWaiting).toHaveBeenCalledOnce();
+});
 it('does not delete unrelated caches and retains at most five completed releases', async () => {
   stores.set('private-business-cache-not-ours', new Map([['private', new Response('private')]]));
   let clock = Date.now(); const time = vi.spyOn(Date, 'now').mockImplementation(() => clock);
@@ -70,4 +104,5 @@ it('emits a versioned worker from actual generated JS/CSS only and rejects an un
   plugin.generateBundle.call({ emitFile, error }, {}, { 'assets/main-oldAAAAA.js': { code: 'source' }, 'assets/page-oldAAAAA.css': { source: 'style' }, 'index.html': { source: 'private' }, 'assets/main-oldAAAAA.js.map': { source: 'map' } });
   const emitted = emitFile.mock.calls[0][0]; expect(emitted.fileName).toBe('sw.js'); expect(emitted.source).toContain('a'.repeat(40)); expect(emitted.source).toContain('/assets/main-oldAAAAA.js'); expect(emitted.source).not.toContain('"index.html"'); expect(emitted.source).not.toContain('.js.map');
   expect(() => plugin.generateBundle.call({ emitFile, error }, {}, { 'assets/main-oldAAAAA.js': { code: 'x'.repeat(32 * 1024 * 1024 + 1) } })).toThrow(/budget/);
+  expect(() => plugin.generateBundle.call({ emitFile, error }, {}, Object.fromEntries(Array.from({ length: 601 }, (_, i) => ['assets/module' + i + '-buildAAA.js', { code: '' }])))).toThrow(/budget/);
 });

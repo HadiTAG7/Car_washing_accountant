@@ -65,3 +65,20 @@ it('uses English recovery text without fetching a translation bundle', () => {
   expect(document.querySelector('#sw-recovery')?.getAttribute('dir')).toBe('ltr');
   expect(reload).not.toHaveBeenCalled();
 });
+it('returns keyboard focus after cancel and dismissal without changing an unsaved draft', () => {
+  const trigger = document.createElement('button'); trigger.textContent = 'Recovery trigger'; document.querySelector('#root').append(trigger);
+  const input = document.createElement('input'); input.value = 'Synthetic unsaved draft'; document.querySelector('#root').append(input);
+  trigger.focus(); host.SweaterRecovery.show('render');
+  const options = document.querySelector('#sw-recovery-reload'); options.focus(); options.click();
+  const cancel = document.querySelector('#sw-recovery-cancel'); cancel.focus(); cancel.click();
+  expect(document.activeElement).toBe(options); expect(document.querySelector('#sw-recovery-confirm').hidden).toBe(true);
+  const dismiss = document.querySelector('#sw-recovery-dismiss'); dismiss.focus(); dismiss.click();
+  expect(document.activeElement).toBe(trigger); expect(input.value).toBe('Synthetic unsaved draft'); expect(reload).not.toHaveBeenCalled();
+});
+it('uses a visible root fallback if the original trigger was removed and never steals another form focus', () => {
+  const trigger = document.createElement('button'); document.querySelector('#root').append(trigger); trigger.focus(); host.SweaterRecovery.show('render'); trigger.remove();
+  const dismiss = document.querySelector('#sw-recovery-dismiss'); dismiss.focus(); dismiss.click(); expect(document.activeElement).toBe(document.querySelector('#root'));
+  host.SweaterRecovery.show('slow-boot');
+  const input = document.createElement('input'); input.value = 'draft'; document.querySelector('#root').append(input); input.focus();
+  host.SweaterRecovery.ready(); expect(document.activeElement).toBe(input); expect(input.value).toBe('draft'); expect(reload).not.toHaveBeenCalled();
+});

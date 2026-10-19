@@ -6,6 +6,7 @@
   if (!panel || !confirmation) return;
   var lastKind = '';
   var timer;
+  var previousFocus;
   function english() {
     try { return window.localStorage.getItem('sweater:language') === 'en'; } catch { return document.documentElement.lang === 'en'; }
   }
@@ -15,6 +16,7 @@
       if (kind !== 'slow-boot') lastKind = kind;
       return; // Never reset an open confirmation or steal form focus.
     }
+    previousFocus = document.activeElement;
     lastKind = kind;
     panel.dir = english() ? 'ltr' : 'rtl';
     label('sw-recovery-title', 'تعذّر إكمال عرض الصفحة', 'The page could not finish loading');
@@ -33,7 +35,16 @@
     // Only a fixed category, never raw errors, URLs, form values or identity data.
     window.console.error('[sweater-ui] recovery', { kind: kind });
   }
-  function dismiss() { panel.hidden = true; confirmation.hidden = true; }
+  function dismiss() {
+    var restoreFocus = panel.contains(document.activeElement);
+    panel.hidden = true; confirmation.hidden = true;
+    if (!restoreFocus) return; // A late boot must not steal focus from a form.
+    if (previousFocus && previousFocus !== document.body && previousFocus.isConnected && !previousFocus.closest('[hidden]')) previousFocus.focus();
+    else {
+      var root = document.getElementById('root');
+      if (root) { root.setAttribute('tabindex', '-1'); root.focus(); }
+    }
+  }
   function ready() {
     window.clearTimeout(timer);
     var boot = document.getElementById('sw-boot');
@@ -50,7 +61,10 @@
   }
   document.getElementById('sw-recovery-dismiss').onclick = dismiss;
   document.getElementById('sw-recovery-reload').onclick = function () { confirmation.hidden = false; };
-  document.getElementById('sw-recovery-cancel').onclick = function () { confirmation.hidden = true; };
+  document.getElementById('sw-recovery-cancel').onclick = function () {
+    confirmation.hidden = true;
+    document.getElementById('sw-recovery-reload').focus();
+  };
   document.getElementById('sw-recovery-copy').onclick = async function () {
     var output = document.getElementById('sw-recovery-diagnostic-text');
     var details = document.getElementById('sw-recovery-diagnostic');

@@ -26,8 +26,11 @@ describe.skipIf(!enabled)('finance real Firestore workflow — isolated demo onl
       db.doc(`users/${auth.uid}`).set({ role: 'admin' }),
       ...['partner', 'supervisor', 'operator', 'accountant'].map(role => db.doc(`users/${role}`).set({ role })),
       db.doc('variable_expense_categories/test-category').set({ name: 'اختبار معزول' }),
+      db.doc('monthly_expense_categories/test-category').set({ label: 'تصنيف شهري اختباري' }),
+      db.doc('annual_expenses/test-parent').set({ expense_name: 'خطة سنوية اختبارية', annual_cost: 1000, actual_amount: 0, payment_status: 'pending' }),
+      db.doc('startup_costs/test-parent').set({ item_name: 'خطة تأسيس اختبارية', budgeted_amount: 1000, actual_amount: 0, status: 'in_progress' }),
       db.doc('app_settings/accounting').set({ value: { vatRegistered: false } }),
-      ...['5100', '2000', '1020', '1010', '1200'].map(code => db.doc(`chart_of_accounts/${code}`).set({
+      ...['5100', '5200', '5300', '1500', '2000', '1020', '1010', '1200'].map(code => db.doc(`chart_of_accounts/${code}`).set({
         code, nameArabic: 'حساب اختبار', accountType: code === '5100' ? 'expense' : code === '2000' ? 'liability' : 'asset', active: true })),
     ]);
   }, 120000);
@@ -57,6 +60,25 @@ describe.skipIf(!enabled)('finance real Firestore workflow — isolated demo onl
     await expect(call({ action: 'post', ...data.common, confirm: true })).rejects.toThrow();
     await expect(approve(data)).rejects.toThrow(/تغيرت/);
     expect((await db.collection('journal_entries').get()).size).toBe(1);
+  }, 120000);
+
+  it.each([['monthly', '5200'], ['annual', '5300'], ['startup', '1500']])('%s uses its original classification and canonical account without marking a parent paid', async (kind, accountId) => {
+    const patch = expensePatch();
+    if (kind !== 'monthly') { delete patch.categoryId; patch.parentId = 'test-parent'; }
+    const input = { kind, patch, requestId: `TEST-${kind}` };
+    const preview = await call({ action: 'previewCapture', ...input });
+    const saved = await call({ action: 'capture', ...input, previewHash: preview.previewHash, reason: 'مستند اختبار نوع المصروف', confirm: true });
+    const read = await call({ action: 'read', kind, sourceId: saved.sourceId });
+    expect(read.postingPreview.ready).toBe(true);
+    await call({ action: 'approve', kind, sourceId: saved.sourceId, sourceHash: read.sourceHash, postingHash: read.postingPreview.postingHash, reason: 'اعتماد اختبار النوع', confirm: true });
+    const posted = await call({ action: 'post', kind, sourceId: saved.sourceId, sourceHash: read.sourceHash, confirm: true });
+    expect(posted.verification.linesMatched).toBe(true);
+    const entry = (await db.doc(`journal_entries/${posted.verification.journalIds[0]}`).get()).data();
+    expect(entry.lines.find(line => line.accountId === accountId).debit).toBe(100);
+    if (kind !== 'monthly') {
+      const parent = (await db.doc(`${kind === 'annual' ? 'annual_expenses' : 'startup_costs'}/test-parent`).get()).data();
+      expect(parent.actual_amount).toBe(100); expect(parent.payment_status).not.toBe('paid');
+    }
   }, 120000);
 
   it('two simultaneous capture requests and two posts commit only once', async () => {

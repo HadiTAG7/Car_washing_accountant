@@ -22,6 +22,7 @@ const GrowthPerformancePage = lazy(() => import('./components/GrowthPerformanceP
 const FinanceHomePage = lazy(() => import('./components/FinanceHomePage'));
 const FinanceReportsPage = lazy(() => import('./components/FinanceReportsPage'));
 const FinanceWorkbenchPage = lazy(() => import('./components/FinanceWorkbenchPage'));
+const ExecutiveReportsPage = lazy(() => import('./components/ExecutiveReportsPage'));
 const SupervisorPage       = lazy(() => import('./components/SupervisorPage'));
 const SupervisorRecordsPage = lazy(() => import('./components/SupervisorRecordsPage'));
 const InvestorPage         = lazy(() => import('./components/InvestorPage'));
@@ -215,6 +216,7 @@ function AppShell({ membership }) {
             {effectiveTab === 'finance_reports' && <FinanceReportsPage />}
             {effectiveTab === 'finance_workbench' && <FinanceWorkbenchPage />}
             {effectiveTab === 'finance_payroll' && <BikersPage role={visibleRole} initialSection="payroll" />}
+            {effectiveTab === 'executive_reports' && <ExecutiveReportsPage />}
             {effectiveTab === 'supervisor_data' && membership.role === 'supervisor' && <SupervisorRecordsPage />}
             {effectiveTab === 'agent_command_center' && (
               <AgentCommandCenterPage

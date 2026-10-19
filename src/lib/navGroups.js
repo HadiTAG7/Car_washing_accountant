@@ -21,6 +21,7 @@ const LEGACY_TAB_GROUPS = [
     tabs: [
       { id: 'overview',  label: 'نظرة عامة',              icon: LayoutDashboard },
       { id: 'growth_performance', label: 'النمو وأداء البايكرز', icon: TrendingUp, roles: ['admin'] },
+      { id: 'executive_reports', label: 'التقارير التنفيذية', icon: FileText, roles: ['admin'] },
       { id: 'agent_command_center', label: 'مركز قيادة الوكلاء', icon: Gauge, roles: ['admin', 'accountant'] },
     ],
   },

@@ -31,7 +31,7 @@ describe.skipIf(!enabled)('finance real Firestore workflow — isolated demo onl
       db.doc('startup_costs/test-parent').set({ item_name: 'خطة تأسيس اختبارية', budgeted_amount: 1000, actual_amount: 0, status: 'in_progress' }),
       db.doc('app_settings/accounting').set({ value: { vatRegistered: false } }),
       ...['5100', '5200', '5300', '1500', '2000', '1020', '1010', '1200'].map(code => db.doc(`chart_of_accounts/${code}`).set({
-        code, nameArabic: 'حساب اختبار', accountType: code === '5100' ? 'expense' : code === '2000' ? 'liability' : 'asset', active: true })),
+        code, nameArabic: 'حساب اختبار', accountType: ['5100', '5200', '5300'].includes(code) ? 'expense' : code === '2000' ? 'liability' : 'asset', active: true })),
     ]);
   }, 120000);
   afterAll(async () => { if (rules) await rules.cleanup(); if (db) await db.terminate(); if (app) await deleteApp(app); });

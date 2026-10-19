@@ -84,7 +84,7 @@ const LEGACY_TAB_GROUPS = [
   },
 ];
 
-export const FINANCE_TAB_IDS = ['startup', 'annual', 'monthly', 'variable', 'temporary_expenses', 'partners', 'payments',
+export const FINANCE_TAB_IDS = ['sweater_settlements', 'startup', 'annual', 'monthly', 'variable', 'temporary_expenses', 'partners', 'payments',
   'summary', 'vat', 'budgets', 'ledger', 'trial', 'balance', 'documents', 'assets', 'periods'];
 const oldFinanceTabs = LEGACY_TAB_GROUPS.flatMap(group => group.tabs).filter(tab => FINANCE_TAB_IDS.includes(tab.id));
 export const TAB_GROUPS = [

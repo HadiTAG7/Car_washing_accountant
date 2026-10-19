@@ -74,6 +74,18 @@ it('survives blocked storage with a truthful in-memory report and no reload', ()
   const report = JSON.parse(host.SweaterDiagnostics.report()); expect(report.storage).toBe('memory-only'); expect(report.events).toHaveLength(1);
   expect(reload).not.toHaveBeenCalled();
 });
+it.each(['empty', 'older'])('retains newer memory-only events when reads work but writes fail (%s storage)', mode => {
+  if (mode === 'older') host.SweaterDiagnostics.record('runtime', new ReferenceError('PRIVATE is not defined'));
+  const old = localStorage.getItem(KEY);
+  storage.setItem.mockImplementation(() => { throw new Error('quota'); });
+  const first = host.SweaterDiagnostics.record('render', new TypeError('Cannot read properties of null'));
+  expect(host.SweaterDiagnostics.latest()).toBe(first);
+  host.SweaterDiagnostics.record('boot', new TypeError('PRIVATE is not iterable'));
+  const report = JSON.parse(host.SweaterDiagnostics.report());
+  expect(report.storage).toBe('memory-only'); expect(report.events).toHaveLength(mode === 'older' ? 3 : 2);
+  expect(report.events.some(e => e.id === first)).toBe(true);
+  expect(localStorage.getItem(KEY)).toBe(old); expect(reload).not.toHaveBeenCalled();
+});
 it('drops corrupt, oversized, expired storage and revalidates unknown fields before export', () => {
   const record = { id: 'sw-' + Date.now() + '-1', at: Date.now(), kind: 'PRIVATE', page: 'PRIVATE', build: 'PRIVATE', name: 'PRIVATE', code: 'PRIVATE', secret: 'PRIVATE', components: ['PRIVATE account'], frames: ['https://PRIVATE.test/SECRET?token=PRIVATE'] };
   localStorage.setItem(KEY, JSON.stringify([record])); expect(host.SweaterDiagnostics.report()).not.toMatch(/PRIVATE|SECRET|token/);

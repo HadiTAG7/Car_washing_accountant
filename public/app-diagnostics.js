@@ -56,6 +56,9 @@
       count: Math.min(999, Math.max(1, Number.isInteger(entry.count) ? entry.count : 1)), online: typeof entry.online === 'boolean' ? entry.online : null };
   }
   function read() {
+    // A write-only quota failure leaves storage stale. Never overwrite the
+    // newer in-memory events with that old snapshot while in fallback mode.
+    if (!persistent) return memory.map(clean).filter(Boolean);
     try {
       var raw = window.localStorage.getItem(KEY);
       var data = raw && raw.length <= 60000 ? JSON.parse(raw) : [];

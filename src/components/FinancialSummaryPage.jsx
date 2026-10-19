@@ -16,10 +16,6 @@ import ErrorState, { SetupRequiredCard } from './ErrorState';
 import FinancialDetailsModal from './FinancialDetailsModal';
 import IncomeStatementDetailsModal from './IncomeStatementDetailsModal';
 import { LineTrend } from './charts/TrendCharts';
-import { useWashes } from '../hooks/useWashes';
-import { useVariableExpenses } from '../hooks/useVariableExpenses';
-import { useMonthlyExpenses } from '../hooks/useMonthlyExpenses';
-import { useAnnualExpenses } from '../hooks/useAnnualExpenses';
 import { useLedger } from '../hooks/useLedger';
 import { useFeeRules } from '../hooks/useFeeRules';
 import { useAccountingSettings } from '../hooks/useAccountingSettings';
@@ -37,26 +33,29 @@ import {
 import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
 import { liveIncomeStatement } from '../lib/accounting/liveIncomeStatement';
 import { useIncomeStatementSources } from '../hooks/useIncomeStatementSources';
-import { mapWash } from '../lib/mappers';
+import { mapWash, mapBiker, mapVariableExpense } from '../lib/mappers';
 import { payrollExpensePeriod } from '../lib/accounting/payrollExpensePeriod';
 import { useIncomePayrollPreviews } from '../hooks/useIncomePayrollPreviews';
 
 export default function FinancialSummaryPage() {
   const { language } = useLanguage();
-  const { bikers } = useBikers();
-  const { items: initialWashes, loading: washesLoading, error: washesError, refetch: refetchWashes } = useWashes();
-  const { items: variables, loading: varLoading,      error: varError,      refetch: refetchVariables } = useVariableExpenses();
-  const { loading: monthlyLoading,  error: monthlyError,  refetch: refetchMonthly }  = useMonthlyExpenses();
-  const { loading: annualLoading,   error: annualError,   refetch: refetchAnnual }   = useAnnualExpenses();
+  const { scalingFactor, isPartnerView, role } = usePartnerView();
+  const canReadPayroll = ['admin', 'accountant'].includes(role);
+  const { bikers: fallbackBikers } = useBikers({ enabled: !canReadPayroll });
   // ── the statement's actual source ──
   // The chart classifies posted and registered operational contributions.
+  const live = useIncomeStatementSources();
   const {
     accounts,
     loading: ledgerLoading, error: ledgerError, refetch: refetchLedger,
-  } = useLedger();
-  const live = useIncomeStatementSources();
+  } = useLedger({ liveSources: live });
   const { sources, entries, lines } = live;
-  const washes = useMemo(() => isFirebaseConfigured ? sources.washes.map(mapWash) : initialWashes, [sources.washes, initialWashes]);
+  // The live statement bundle already contains these registers. Reading them
+  // again adds cost without improving freshness or authoritative coverage.
+  const washes = useMemo(() => sources.washes.map(mapWash), [sources.washes]);
+  const variables = useMemo(() => sources.variables.map(mapVariableExpense), [sources.variables]);
+  const bikers = useMemo(() => canReadPayroll ? (sources.bikers || []).map(mapBiker) : fallbackBikers,
+    [canReadPayroll, sources.bikers, fallbackBikers]);
   const { rules: feeRules } = useFeeRules();
   // The same two switches the wash poster reads. Without them the operational
   // side would be compared gross against a net statement, and VAT alone would
@@ -67,7 +66,6 @@ export default function FinancialSummaryPage() {
   // honestly display as 72 ر.س), so opening it under a scaled headline
   // would both contradict the statement and leak full-company figures to
   // a partner. Partners get the scaled statement only.
-  const { scalingFactor, isPartnerView, role } = usePartnerView();
   const canReadDetails = !isPartnerView && role !== 'supervisor';
 
   const [selectedMonth, setSelectedMonth] = useState(todayMonth());
@@ -187,17 +185,12 @@ export default function FinancialSummaryPage() {
     };
   }, [selectedMonth, accounts, entries, lines, feeRules, scalingFactor, language, sources, settings, payroll.data, payroll.loading, payroll.error, statement.payrollError]);
 
-  const anyError    = payroll.error || statement.payrollError || live.error || ledgerError || washesError || varError || monthlyError || annualError;
-  const anyLoading  = payroll.loading || live.loading || ledgerLoading || washesLoading || varLoading || monthlyLoading || annualLoading;
+  const anyError = payroll.error || statement.payrollError || live.error || ledgerError;
+  const anyLoading = payroll.loading || live.loading || ledgerLoading;
 
   function retryAll() {
     payroll.refetch();
-    live.refetch();
     refetchLedger?.();
-    refetchWashes?.();
-    refetchVariables?.();
-    refetchMonthly?.();
-    refetchAnnual?.();
   }
 
   // Recorded expense detail uses the same source contribution as the statement.

@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
-import { useWashes } from './useWashes';
-import { useBikers } from './useBikers';
+import { mapWash, mapBiker } from '../lib/mappers';
+import { sortBy } from '../lib/firestoreCrud';
 import { useLedger } from './useLedger';
 import { useIncomeStatementSources } from './useIncomeStatementSources';
 import { useIncomePayrollPreviews } from './useIncomePayrollPreviews';
@@ -11,13 +11,18 @@ import { taxPolicyAt } from '../lib/accounting/taxPolicy';
 import { overviewOperations, overviewWindow } from '../lib/overviewDashboard';
 
 export function useOverviewDashboard(periodKey, today) {
-  const washes = useWashes();
-  const workers = useBikers();
-  const ledger = useLedger();
   const live = useIncomeStatementSources();
+  const ledger = useLedger({ liveSources: live });
   const fees = useFeeRules();
   const tax = useAccountingSettings();
   const { sources, entries, lines } = live;
+  // The overview already has live washes and workers for its statement.
+  // Reuse those snapshots, retaining each source's loading/error state, so a
+  // failed salary query cannot hide otherwise verified operational results.
+  const washes = { items: useMemo(() => sortBy(sources.washes, [{ key: 'wash_date', dir: 'desc' }]).map(mapWash), [sources.washes]),
+    ...(live.sourceStatus?.washes || { loading: live.loading, error: live.error }), refetch: live.refetch };
+  const workers = { bikers: useMemo(() => sortBy(sources.bikers || [], [{ key: 'name' }]).map(mapBiker), [sources.bikers]),
+    ...(live.sourceStatus?.bikers || { loading: live.loading, error: live.error }), refetch: live.refetch };
   const payroll = useIncomePayrollPreviews(periodKey, { enabled: !live.loading && !live.error,
     revision: JSON.stringify([sources.payrollRuns,
       (sources.bikers || []).map(b => [b.id, b.salary, b.name, b.start_date || b.startDate, b.end_date || b.endDate]),
@@ -48,5 +53,5 @@ export function useOverviewDashboard(periodKey, today) {
   const dueVouchers = sources.vouchers.filter(v => v.status === 'unpaid' && String(v.dueDate || '').slice(0, 7) === periodKey && v.dueDate <= today);
   return { finance: { ...finance, loading }, operations, dueVouchers,
     washes, workers,
-    retry: () => { washes.refetch(); workers.refetch(); ledger.refetch(); live.refetch(); fees.refetch(); tax.refetch(); payroll.refetch(); } };
+    retry: () => { ledger.refetch(); fees.refetch(); tax.refetch(); payroll.refetch(); } };
 }

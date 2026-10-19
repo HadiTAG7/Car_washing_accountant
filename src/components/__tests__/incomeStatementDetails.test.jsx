@@ -2,13 +2,14 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({ sources: {}, entries: [], accounts: [], partner: false, role: 'admin', loading: false,
-  payroll: [], payrollLoading: false, payrollError: null }));
+  payroll: [], payrollLoading: false, payrollError: null,
+  reads: { washes: vi.fn(), variables: vi.fn(), monthly: vi.fn(), annual: vi.fn(), bikers: vi.fn() } }));
 vi.mock('../../hooks/useIncomePayrollPreviews', () => ({ useIncomePayrollPreviews: () => ({ data: state.payroll, loading: state.payrollLoading, error: state.payrollError, refetch: vi.fn() }) }));
-vi.mock('../../hooks/useBikers', () => ({ useBikers: () => ({ bikers: [] }) }));
-vi.mock('../../hooks/useWashes', () => ({ useWashes: () => ({ items: [], loading: false }) }));
-vi.mock('../../hooks/useVariableExpenses', () => ({ useVariableExpenses: () => ({ items: [], loading: false }) }));
-vi.mock('../../hooks/useMonthlyExpenses', () => ({ useMonthlyExpenses: () => ({ items: [], loading: false }) }));
-vi.mock('../../hooks/useAnnualExpenses', () => ({ useAnnualExpenses: () => ({ items: [], loading: false }) }));
+vi.mock('../../hooks/useBikers', () => ({ useBikers: options => { state.reads.bikers(options); return { bikers: [] }; } }));
+vi.mock('../../hooks/useWashes', () => ({ useWashes: () => { state.reads.washes(); return { items: [], loading: false }; } }));
+vi.mock('../../hooks/useVariableExpenses', () => ({ useVariableExpenses: () => { state.reads.variables(); return { items: [], loading: false }; } }));
+vi.mock('../../hooks/useMonthlyExpenses', () => ({ useMonthlyExpenses: () => { state.reads.monthly(); return { items: [], loading: false }; } }));
+vi.mock('../../hooks/useAnnualExpenses', () => ({ useAnnualExpenses: () => { state.reads.annual(); return { items: [], loading: false }; } }));
 vi.mock('../../hooks/useLedger', () => ({ useLedger: () => ({ accounts: state.accounts, loading: false }) }));
 vi.mock('../../hooks/useFeeRules', () => ({ useFeeRules: () => ({ rules: [] }) }));
 vi.mock('../../hooks/useAccountingSettings', () => ({ useAccountingSettings: () => ({ settings: { vatRegistered: true, vatRate: 0.15 } }) }));
@@ -29,6 +30,7 @@ import { formatCurrency } from '../../data/initialData';
 import { liveIncomeStatement } from '../../lib/accounting/liveIncomeStatement';
 
 beforeEach(() => {
+  vi.clearAllMocks();
   setLanguage('ar'); state.partner = false; state.role = 'admin'; state.loading = false; state.accounts = DEFAULT_CHART_OF_ACCOUNTS;
   state.payroll = []; state.payrollLoading = false; state.payrollError = null;
   state.sources = { washes: [], variables: [{ id: 'synthetic-expense', expense_name: 'مصروف تجريبي', total_variable_cost: 115,
@@ -41,6 +43,11 @@ afterEach(() => { cleanup(); setLanguage('ar'); });
 const openCosts = () => fireEvent.click(screen.getByRole('button', { name: 'عرض تفاصيل: يُخصم منه: التكاليف المباشرة والعمولات' }));
 
 describe('statement drilldown UI', () => {
+  it('reuses statement snapshots instead of reading the expense and wash registers again', () => {
+    render(<FinancialSummaryPage />);
+    for (const name of ['washes', 'variables', 'monthly', 'annual']) expect(state.reads[name]).not.toHaveBeenCalled();
+    expect(state.reads.bikers).toHaveBeenCalledWith({ enabled: false });
+  });
   it('a historical payroll gap blocks the chart, not the verified selected-month income or its details', () => {
     state.payroll = [{ periodKey: '2026-09', unavailable: true }, { periodKey: '2026-10', lines: [{ basicDue: 900 }] }];
     render(<FinancialSummaryPage />); openCosts();

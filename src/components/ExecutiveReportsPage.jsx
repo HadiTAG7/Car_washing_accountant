@@ -22,6 +22,7 @@ export function ExecutiveReportView({report,currentRevision=report.revision,sele
   const [localTab,setLocalTab]=useState('daily'),[status,setStatus]=useState('all'),[owner,setOwner]=useState('all'),[search,setSearch]=useState('');
   const tab=selectedTab||localTab, tabRefs=useRef(new Map());
   const selectTab=next=>{setLocalTab(next);onTabChange?.(next);};
+  const openDecisions=()=>{selectTab('decisions');tabRefs.current.get('decisions')?.focus();};
   const counts=Object.fromEntries(Object.keys(EXECUTIVE_STATES).map(key=>[key,report.decisions.filter(d=>d.status===key).length]));
   const query=search.trim().toLocaleLowerCase('ar-SA');
   const decisions=report.decisions.filter(d=>(status==='all'||d.status===status)&&(owner==='all'||String(d.ownerRole)===owner)
@@ -54,8 +55,8 @@ export function ExecutiveReportView({report,currentRevision=report.revision,sele
     <section role="tabpanel" id={`${viewId}-panel-${tab}`} aria-labelledby={`${viewId}-tab-${tab}`} tabIndex={0} className="sw-executive__content">
       {tab==='daily'&&<>
         <section className="sw-executive__queue" aria-label="حالات التقرير عند القطع"><div><h3>أين وصلت المتابعة؟</h3><p>حالات التقرير المختار فقط، لا نسب إنجاز.</p></div>
-          <div className="sw-executive__counts"><button type="button" onClick={()=>{reset();selectTab('decisions');}}><strong>{number(report.decisions.length)}</strong><span>كل الحالات</span></button>
-            {Object.entries(EXECUTIVE_STATES).map(([key,label])=><button type="button" key={key} onClick={()=>{setStatus(key);setOwner('all');setSearch('');selectTab('decisions');}}><strong>{number(counts[key])}</strong><span>{label}</span></button>)}</div>
+          <div className="sw-executive__counts"><button type="button" onClick={()=>{reset();openDecisions();}}><strong>{number(report.decisions.length)}</strong><span>كل الحالات</span></button>
+            {Object.entries(EXECUTIVE_STATES).map(([key,label])=><button type="button" key={key} onClick={()=>{setStatus(key);setOwner('all');setSearch('');openDecisions();}}><strong>{number(counts[key])}</strong><span>{label}</span></button>)}</div>
         </section>
         <section className="sw-executive__detail-list" aria-label="تفاصيل الملخص">{report.details.map((d,i)=><details key={i}><summary>{d.title}</summary><p>{d.text}</p>{d.sourceRef&&<p>مرجع المصدر: <bdi>{d.sourceRef}</bdi></p>}</details>)}</section>
       </>}

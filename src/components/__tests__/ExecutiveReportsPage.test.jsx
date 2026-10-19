@@ -39,6 +39,14 @@ it('does not render report text as HTML and explicitly labels older revisions',(
   expect(container.querySelector('img')).toBeNull();expect(screen.getByText(/تعرض نسخة قديمة/)).toBeTruthy();
   expect(container.textContent).not.toMatch(/[٠-٩]/);
 });
+it('moves focus to the decisions tab when a disappearing summary counter opens the filtered view',()=>{
+  render(<ExecutiveReportView report={executiveFixture()}/>);
+  const counter=screen.getByRole('button',{name:'0 مغلق بدليل'});counter.focus();fireEvent.click(counter);
+  const tab=screen.getByRole('tab',{name:'متابعة القرارات'});
+  expect(document.activeElement).toBe(tab);expect(tab.getAttribute('aria-selected')).toBe('true');
+  expect(screen.getByRole('status').textContent).toContain('0 من 1');
+  expect(screen.getByText('لا توجد حالات ضمن الفلاتر المختارة.')).toBeTruthy();
+});
 const emptyQuery=input=>({data:input?.action==='list'?{items:[],nextBefore:null}:null,loading:false,error:null});
 it('previews an uploaded validated file without saving, then saves only on explicit action',async()=>{
   const request=vi.fn().mockResolvedValue({reportId:'ceo-digest-2026-10-18',revision:1,duplicate:false});

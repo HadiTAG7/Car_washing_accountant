@@ -7,5 +7,5 @@ const fixture = fileURLToPath(new URL('./finance-preview/fixtures.jsx', import.m
 const server = await createServer({ ...config, configFile: false,
   resolve: { alias: [{ find: /^\.\.\/(hooks\/useFinanceRead|hooks\/useLedger|contexts\/PartnerViewContext|lib\/financeApi|lib\/firebaseClient)$/, replacement: fixture },
     { find: /^\.\/(TopBar|ChangePasswordModal)$/, replacement: fixture }, ...Object.entries(config.resolve.alias).map(([find, replacement]) => ({ find, replacement }))] },
-  server: { host: '127.0.0.1', port: 5199, strictPort: true } });
+  server: { host: '127.0.0.1', port: Number(process.argv[2] || 5199), strictPort: true } });
 await server.listen(); server.printUrls();

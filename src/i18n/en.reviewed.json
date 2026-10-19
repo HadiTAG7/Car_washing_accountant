@@ -2122,5 +2122,8 @@
   "أثر محاسبي سابق — السجل محمي": "Prior accounting history — record protected",
   "لا قيد مرتبط في القراءة الحالية": "No linked journal in the current reading",
   "تكلفة الوحدة المحفوظة": "Saved unit cost",
-  "فتح المستند الأصلي في نافذة مستقلة": "Open original document in a separate window"
+  "فتح المستند الأصلي في نافذة مستقلة": "Open original document in a separate window",
+  "غير معتمد": "Not approved",
+  "الترحيل": "Posting",
+  "السداد": "Payment"
 }

@@ -1844,5 +1844,6 @@
   "لا يُحفظ تقرير بوقت قطع مستقبلي.": "Reports cannot be saved with a future cutoff time.",
   "النسخة المتوقعة لا تطابق نسخة التصحيح.": "The expected revision does not match the correction revision.",
   "هذه النسخة محفوظة بمحتوى مختلف؛ لا تستبدل التاريخ.": "This revision already exists with different content; history cannot be overwritten.",
-  "وصلت نسخة أحدث؛ أعد قراءة التقرير قبل التصحيح.": "A newer revision is available; read the report again before correcting it."
+  "وصلت نسخة أحدث؛ أعد قراءة التقرير قبل التصحيح.": "A newer revision is available; read the report again before correcting it.",
+  "ملف JSON غير صالح. اختر ملف تقرير صحيحًا.": "Invalid JSON file. Choose a valid report file."
 }

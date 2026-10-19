@@ -56,7 +56,7 @@ it('invalid or oversized file never writes or replaces the existing report',asyn
   const query=input=>({data:input?.action==='list'?{items:[report]}:input?{report,currentRevision:1,history:[{revision:1,reason:'الأولى'}]}:null});
   render(<ExecutiveReportsAdmin useQuery={query} request={request}/>);
   fireEvent.change(screen.getByLabelText('ملف التقرير'),{target:{files:[{size:5,text:async()=>'{bad'}]}});
-  await screen.findByRole('alert');expect(screen.getByText(report.title)).toBeTruthy();expect(request).not.toHaveBeenCalled();
+  expect((await screen.findByRole('alert')).textContent).toBe('ملف JSON غير صالح. اختر ملف تقرير صحيحًا.');expect(screen.getByText(report.title)).toBeTruthy();expect(request).not.toHaveBeenCalled();
   expect(screen.queryByRole('button',{name:'حفظ التقرير الإداري'})).toBeNull();
   const text=vi.fn();fireEvent.change(screen.getByLabelText('ملف التقرير'),{target:{files:[{size:64001,text}]}});
   await screen.findByText('الملف يتجاوز 64KB.');expect(text).not.toHaveBeenCalled();expect(request).not.toHaveBeenCalled();

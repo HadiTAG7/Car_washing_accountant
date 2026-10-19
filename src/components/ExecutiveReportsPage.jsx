@@ -79,7 +79,7 @@ export function ExecutiveReportsAdmin({useQuery=useExecutiveReportQuery,request=
     if(!file)return;
     try{if(file.size>64000)throw new Error('الملف يتجاوز 64KB.');const value=parseExecutiveReport(JSON.parse(await file.text()));
       if(sequence===fileSequence.current&&mounted.current)setDraft(value);
-    }catch(error){if(sequence===fileSequence.current&&mounted.current)setIssue(error.message);}
+    }catch(error){if(sequence===fileSequence.current&&mounted.current)setIssue(error instanceof SyntaxError?'ملف JSON غير صالح. اختر ملف تقرير صحيحًا.':error.message);}
   }
   async function save(){if(!draft||saving||uncertain)return;setSaving(true);setIssue(null);setReceipt(null);
     const controller=new AbortController();saveController.current=controller;

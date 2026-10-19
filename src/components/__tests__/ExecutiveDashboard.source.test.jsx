@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 // Explicit local acceptance file only; never fetch or commit the CEO's report.
 import { readFileSync } from 'node:fs';
+import process from 'node:process';
 import { createHash } from 'node:crypto';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';

@@ -5,7 +5,7 @@ import { visibleGroupsFor } from '../../src/lib/navGroups';
 import { MobileMenuProvider, useMobileMenu } from '../../src/contexts/MobileMenuContext';
 import LanguageProvider from '../../src/i18n/LanguageProvider';
 import '../../src/index.css';
-function Preview() {
+export default function Preview() {
   const menu = useMobileMenu();
   return <div className="min-h-screen flex"><Sidebar groups={visibleGroupsFor({role:'admin'})} activeTab="executive_reports" onSelectTab={()=>{}}
     mobileOpen={menu.open} onCloseMobile={()=>menu.setOpen(false)} desktopHidden={menu.desktopHidden} user={{email:'local-preview@example.test'}} />

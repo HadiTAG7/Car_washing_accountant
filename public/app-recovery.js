@@ -24,6 +24,10 @@
     label('sw-recovery-warning', 'إعادة التحميل تفقد البيانات غير المحفوظة. هل تريد المتابعة؟', 'Reloading loses unsaved entries. Do you want to continue?');
     label('sw-recovery-cancel', 'إلغاء والبقاء في الصفحة', 'Cancel and stay on this page');
     label('sw-recovery-confirm-reload', 'نعم، أعد تحميل الصفحة', 'Yes, reload the page');
+    label('sw-recovery-copy', 'نسخ تقرير الخطأ', 'Copy error report');
+    label('sw-recovery-diagnostic-label', 'تقرير تشخيصي محلي — لا يتضمن محتوى النماذج أو بيانات الحساب', 'Local diagnostic report — excludes form contents and account data');
+    var reference = window.SweaterDiagnostics?.latest() || '';
+    document.getElementById('sw-recovery-reference').textContent = reference;
     confirmation.hidden = true;
     panel.hidden = false;
     // Only a fixed category, never raw errors, URLs, form values or identity data.
@@ -47,6 +51,20 @@
   document.getElementById('sw-recovery-dismiss').onclick = dismiss;
   document.getElementById('sw-recovery-reload').onclick = function () { confirmation.hidden = false; };
   document.getElementById('sw-recovery-cancel').onclick = function () { confirmation.hidden = true; };
+  document.getElementById('sw-recovery-copy').onclick = async function () {
+    var output = document.getElementById('sw-recovery-diagnostic-text');
+    var details = document.getElementById('sw-recovery-diagnostic');
+    try {
+      output.value = window.SweaterDiagnostics?.report() || '';
+      details.hidden = false;
+      if (!output.value) { label('sw-recovery-copy-status', 'التسجيل التشخيصي غير متاح في هذه الجلسة.', 'Diagnostics are unavailable in this session.'); return; }
+      label('sw-recovery-copy-status', 'إذا تعذر النسخ، انسخ التقرير من الحقل أدناه وأرسله في المحادثة.', 'If copying is unavailable, copy the report from this field and send it in the chat.');
+      if (window.navigator?.clipboard?.writeText) {
+        await window.navigator.clipboard.writeText(output.value);
+        label('sw-recovery-copy-status', 'تم نسخ تقرير الخطأ. أرسله هنا لفحص السبب. لم تُعد تحميل الصفحة.', 'Error report copied. Send it in the chat for diagnosis. The page was not reloaded.');
+      }
+    } catch { label('sw-recovery-copy-status', 'انسخ التقرير يدويًا من الحقل؛ لم تُعد تحميل الصفحة.', 'Copy the report manually from this field; the page was not reloaded.'); }
+  };
   // The only reload path: a second, explicit user click. No automatic retry/reload.
   document.getElementById('sw-recovery-confirm-reload').onclick = function () { window.location.reload(); };
   window.addEventListener('vite:preloadError', preload);

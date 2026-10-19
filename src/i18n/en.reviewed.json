@@ -1,4 +1,5 @@
 {
+  "رقم الخطأ:": "Error reference:",
   "تعذّر تحميل بيانات النمو بسبب تجاوز حصة قراءة قاعدة البيانات. إعادة المحاولة المتكررة لن تعالج الحد.": "Growth data could not be loaded because the database read quota was exceeded. Repeated retries will not resolve the limit.",
   "آخر يوم مسجّل": "Latest recorded day",
   "عرض الإيرادات اليومية": "Show daily revenue",

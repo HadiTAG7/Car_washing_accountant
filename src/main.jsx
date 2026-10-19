@@ -15,8 +15,9 @@ async function boot() {
     <StrictMode><AppErrorBoundary><AppMounted><LanguageProvider><Root /></LanguageProvider></AppMounted></AppErrorBoundary></StrictMode>,
   );
 }
-void boot().catch(() => {
+void boot().catch((error) => {
   console.error('[sweater-ui] boot-failed');
+  try { window.SweaterDiagnostics?.record('boot', error); } catch { /* Keep the independent recovery available. */ }
   window.SweaterRecovery?.show('boot');
 });
 

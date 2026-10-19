@@ -161,6 +161,6 @@ export function ExecutiveReportsAdmin({useQuery=useExecutiveReportQuery,request=
 export default function ExecutiveReportsPage(){
   const {session}=useAuth(),{role,isPartnerView}=usePartnerView();
   const allowed=role==='admin'&&!isPartnerView&&Boolean(session?.user?.id);
-  return <><TopBar title="الداش بورد التنفيذي" subtitle="ملخص محفوظ · قرارات ومتابعة · مراجعة أسبوعية"/>
+  return <><TopBar wrapTitle title="الداش بورد التنفيذي" subtitle="ملخص محفوظ · قرارات ومتابعة · مراجعة أسبوعية"/>
     {allowed?<ExecutiveReportsAdmin key={`${session.user.id}|${role}|${isPartnerView}`} request={(input,signal)=>requestExecutiveReport(input,signal,session.user.id)}/>:<p>هذه الصفحة للأدمن فقط.</p>}</>;
 }

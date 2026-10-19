@@ -14,7 +14,7 @@ import { getLocale } from '../i18n/locale';
  *   subtitle     small grey line below title
  *   actions      optional ReactNode (e.g. button) rendered next to search
  */
-export default function TopBar({ title, subtitle, actions, hidePartnerSelector = false }) {
+export default function TopBar({ title, subtitle, actions, hidePartnerSelector = false, wrapTitle = false }) {
   const today = new Date();
   const formatted = new Intl.DateTimeFormat(getLocale(), {
     weekday: 'long',
@@ -33,7 +33,7 @@ export default function TopBar({ title, subtitle, actions, hidePartnerSelector =
       <div className="px-4 sm:px-6 lg:px-8 py-3 sm:py-4 flex items-center justify-between gap-3 sm:gap-6">
         {/* Title */}
         <div className="min-w-0 flex-1">
-          <h1 className="text-lg sm:text-xl font-extrabold text-slate-900 dark:text-slate-100 tracking-tight truncate">{title}</h1>
+          <h1 className={`text-lg sm:text-xl font-extrabold text-slate-900 dark:text-slate-100 tracking-tight ${wrapTitle ? 'whitespace-normal break-words' : 'truncate'}`}>{title}</h1>
           {subtitle && <p className="hidden sm:block text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">{subtitle}</p>}
         </div>
 

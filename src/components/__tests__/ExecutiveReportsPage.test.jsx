@@ -48,6 +48,21 @@ it('moves focus to the decisions tab when a disappearing summary counter opens t
   expect(screen.getByText('لا توجد حالات ضمن الفلاتر المختارة.')).toBeTruthy();
 });
 const emptyQuery=input=>({data:input?.action==='list'?{items:[],nextBefore:null}:null,loading:false,error:null});
+it('keeps the chosen section when switching synthetic archived revisions and dates without writing',()=>{
+  const first=executiveFixture(),second=executiveFixture({revision:2,correctionReason:'تصحيح اختباري'});
+  const older=executiveFixture({reportId:'ceo-digest-2026-10-16',dateRiyadh:'2026-10-16',cutAtRiyadh:'2026-10-16T23:00:00+03:00'});
+  const request=vi.fn(),query=input=>({loading:false,error:null,data:input?.action==='list'?{items:[first,older]}:input?{
+    report:input.reportId===older.reportId?older:input.revision===2?second:first,currentRevision:2,
+    history:[{revision:1,reason:'أولى اصطناعية'},{revision:2,reason:'ثانية اصطناعية'}]}:null});
+  render(<ExecutiveReportsAdmin useQuery={query} request={request}/>);
+  fireEvent.click(screen.getByRole('tab',{name:'المراجعة الأسبوعية'}));
+  fireEvent.change(screen.getByLabelText('نسخة التقرير'),{target:{value:'2'}});
+  expect(screen.getByRole('tab',{name:'المراجعة الأسبوعية'}).getAttribute('aria-selected')).toBe('true');
+  expect(screen.getByLabelText('نسخة التقرير').value).toBe('2');
+  fireEvent.change(screen.getByLabelText('أرشيف التقارير'),{target:{value:older.reportId}});
+  expect(screen.getByRole('tab',{name:'المراجعة الأسبوعية'}).getAttribute('aria-selected')).toBe('true');
+  expect(screen.getByLabelText('أرشيف التقارير').value).toBe(older.reportId);expect(request).not.toHaveBeenCalled();
+});
 it('previews an uploaded validated file without saving, then saves only on explicit action',async()=>{
   const request=vi.fn().mockResolvedValue({reportId:'ceo-digest-2026-10-18',revision:1,duplicate:false});
   render(<ExecutiveReportsAdmin useQuery={emptyQuery} request={request}/>);

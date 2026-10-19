@@ -21,6 +21,7 @@ const OverviewPage         = lazy(() => import('./components/OverviewPage'));
 const GrowthPerformancePage = lazy(() => import('./components/GrowthPerformancePage'));
 const FinanceHomePage = lazy(() => import('./components/FinanceHomePage'));
 const FinanceReportsPage = lazy(() => import('./components/FinanceReportsPage'));
+const OperationsReportsPage = lazy(() => import('./components/OperationsReportsPage'));
 const FinanceWorkbenchPage = lazy(() => import('./components/FinanceWorkbenchPage'));
 const ExecutiveReportsPage = lazy(() => import('./components/ExecutiveReportsPage'));
 const SupervisorPage       = lazy(() => import('./components/SupervisorPage'));
@@ -214,6 +215,7 @@ function AppShell({ membership }) {
             {effectiveTab === 'growth_performance' && <GrowthPerformancePage />}
             {effectiveTab === 'finance' && <FinanceHomePage onNavigate={handleSelectTab} />}
             {effectiveTab === 'finance_reports' && <FinanceReportsPage />}
+            {effectiveTab === 'operations_reports' && <OperationsReportsPage />}
             {effectiveTab === 'finance_workbench' && <FinanceWorkbenchPage />}
             {effectiveTab === 'finance_payroll' && <BikersPage role={visibleRole} initialSection="payroll" />}
             {effectiveTab === 'executive_reports' && <ExecutiveReportsPage />}

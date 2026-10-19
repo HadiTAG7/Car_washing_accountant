@@ -25,6 +25,7 @@
 import { z } from 'zod';
 import { workflowReadTools, workflowWriteTools } from './workflowTools.js';
 import { financeReadTools, financeWriteTools, callFinanceServer } from './financeTools.js';
+import { operationsReportReadTools, operationsReportWriteTools } from './operationsReportTools.js';
 import { connect, callServer, callAppServer, readOnly, SweaterMcpError } from './client.js';
 import { COL, OPERATIONAL, rows, row, ledgerBundle, lockId, feeRulesMapped } from './fetch.js';
 import { resolvePeriod, previousPeriod, todayInfo, PERIOD_TOKENS } from './periods.js';
@@ -81,6 +82,7 @@ const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
 export const readTools = [
   ...financeReadTools,
+  ...operationsReportReadTools,
   ...workflowReadTools.map(tool => ({ ...tool, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } })),
   {
     name: 'sweater_whoami',
@@ -96,7 +98,7 @@ export const readTools = [
         اليوم: t.today, الشهر_الحالي: t.currentMonth, التاريخ: t.label,
         email, uid, role,
         mcpVersion: '1.3.0',
-        workflowTools: [...workflowReadTools, ...workflowWriteTools, ...financeReadTools, ...financeWriteTools].map(tool => tool.name),
+        workflowTools: [...workflowReadTools, ...workflowWriteTools, ...financeReadTools, ...financeWriteTools, ...operationsReportReadTools, ...operationsReportWriteTools].map(tool => tool.name),
         mode: readOnly ? 'قراءة فقط' : 'قراءة وكتابة',
         canPostLedger: ['admin', 'accountant'].includes(role),
         canReopenPeriod: role === 'admin',
@@ -458,6 +460,7 @@ export const readTools = [
 
 export const writeTools = [
   ...financeWriteTools,
+  ...operationsReportWriteTools,
   ...workflowWriteTools.map(tool => ({ ...tool, annotations: { readOnlyHint: false, destructiveHint: tool.name === 'sweater_save_expense_correction', openWorldHint: false } })),
   {
     name: 'sweater_record_expense',

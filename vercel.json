@@ -21,6 +21,10 @@
   },
   "rewrites": [
     {
+      "source": "/api/operations-reports",
+      "destination": "/api/ledger?operationsEndpoint=reports"
+    },
+    {
       "source": "/api/finance-reports",
       "destination": "/api/ledger?financeEndpoint=reports"
     },

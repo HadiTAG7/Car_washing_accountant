@@ -33,6 +33,7 @@ import { getAuth } from 'firebase-admin/auth';
 import { dispatch, HANDLER_NAMES } from '../functions/src/handlers.js';
 import financeReportsHandler from '../server/financeReportsHttp.js';
 import financeWorkbenchHandler from '../server/financeWorkbenchHttp.js';
+import operationsReportsHandler from '../server/operationsReportsHttp.js';
 
 /**
  * A refusal the operator must be able to tell apart from a bug.
@@ -109,6 +110,7 @@ export default async function handler(req, res) {
   // Public finance URLs are rewritten here to share one deployment function.
   // Each service retains its own current-role, revoked-token and input gates.
   if (req.query?.financeEndpoint === 'reports') return financeReportsHandler(req, res);
+  if (req.query?.operationsEndpoint === 'reports') return operationsReportsHandler(req, res);
   if (req.query?.financeEndpoint === 'workbench') return financeWorkbenchHandler(req, res);
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');

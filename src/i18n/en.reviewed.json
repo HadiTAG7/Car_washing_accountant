@@ -2234,5 +2234,7 @@
   "تاريخ التقرير": "Report date",
   "النسخ وإدارة الأرشيف": "Revisions and archive management",
   "الداش بورد التنفيذي": "Executive dashboard",
-  "ملخص محفوظ · قرارات ومتابعة · مراجعة أسبوعية": "Saved summary · Decision follow-up · Weekly review"
+  "ملخص محفوظ · قرارات ومتابعة · مراجعة أسبوعية": "Saved summary · Decision follow-up · Weekly review",
+  "ملخص رأس المال غير متاح من الخادم بعد؛ لا يمكن عرض المدفوع.": "The capital summary is not available from the server yet; the amount paid cannot be shown.",
+  "إضافة الشركاء وتعديلهم للمدير فقط — المدفوعات تُسجَّل من صفحة مدفوعات الشركاء": "Only the administrator can add or edit partners — payments are recorded from the partner payments page"
 }

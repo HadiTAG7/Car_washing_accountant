@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { partnerCapitalSummary } from '../../lib/accounting/partnerTotals';
 
 const partnerView = {
   viewedPartner: { id: 'p1', partnerName: 'أحمد الغانم', workersCount: 3, userId: 'uid1' },
@@ -8,17 +10,23 @@ const partnerView = {
   scalingFactor: 0.3,
   totalWorkers: 10,
 };
+// What the SERVER reads to build the report. The page itself no longer reads
+// receipts or the journal: it gets `statements` and the `capital` block.
 const paymentsState = { payments: [], loading: false, error: null };
 const ledgerState = { accounts: [], entries: [], lines: [], periods: [], loading: false, error: null };
 const insightsState = { insights: null, washMonths: [], loading: false, error: null };
 let statementError = null;
 let statementOverrides = {};
+let capitalMissing = false;
 vi.mock('../../hooks/usePartnerStatement', () => ({ usePartnerStatement: () => {
   const keys = [...new Set(ledgerState.entries.map(e => e.periodKey))];
   if (!keys.length) keys.push(new Date().toISOString().slice(0, 7));
   const factor = partnerView.scalingFactor;
   return { loading: false, error: statementError, report: {
+    partnerId: partnerView.viewedPartner.id,
     asOf: '2026-10-03T18:00:00Z', from: '2026-05-01', through: '2026-09-30',
+    capital: capitalMissing ? undefined : partnerCapitalSummary(partnerView.viewedPartner.id,
+      { receipts: paymentsState.payments, entries: ledgerState.entries, lines: ledgerState.lines }),
     statements: keys.map(periodKey => ({
       ...monthlyStatement({ scalingFactor: factor }), periodKey,
       annualReserve: 10000 * factor, totalAllocation: 150000 * factor,
@@ -31,8 +39,6 @@ vi.mock('../../hooks/usePartnerStatement', () => ({ usePartnerStatement: () => {
 } }));
 
 vi.mock('../../contexts/PartnerViewContext', () => ({ usePartnerView: () => partnerView }));
-vi.mock('../../hooks/usePartnerPayments', () => ({ usePartnerPayments: () => paymentsState }));
-vi.mock('../../hooks/useLedger', () => ({ useLedger: () => ledgerState }));
 vi.mock('../../hooks/useFeeRules', () => ({ useFeeRules: () => ({ rules: [] }) }));
 vi.mock('../../hooks/usePartnerInsights', () => ({ usePartnerInsights: () => insightsState }));
 
@@ -90,6 +96,7 @@ afterEach(() => {
   COMPANY_NET = 50000;
   statementError = null;
   statementOverrides = {};
+  capitalMissing = false;
   partnerView.investorLinkMissing = false;
   partnerView.partnerLinkLoading = false;
   partnerView.partnerLinkError = null;
@@ -779,5 +786,20 @@ describe('صفحة المستثمر — المؤشرات الجديدة', () => 
     paymentsState.payments = [{ id: 'r1', partnerId: 'p1', amount: 20000, paymentDate: '2026-07-01', paymentMethod: 'cash' }];
     render(<InvestorPage view="overview" />);
     expect(screen.queryByText('رصيدك في الدفاتر')).toBeNull();
+  });
+});
+
+describe('صفحة المستثمر — ما يقرؤه متصفح الشريك', () => {
+  it('لا تقرأ سندات الجميع ولا الدفتر كاملاً: رأس المال من الخادم', () => {
+    const source = readFileSync('src/components/InvestorPage.jsx', 'utf8');
+    expect(source).not.toMatch(/from '\.\.\/hooks\/usePartnerPayments'/);
+    expect(source).not.toMatch(/from '\.\.\/hooks\/useLedger'/);
+  });
+
+  it('خادمٌ بلا كتلة رأس المال يُظهر خطأً لا «٠ مدفوع»', () => {
+    capitalMissing = true;
+    paymentsState.payments = [{ id: 'r1', partnerId: 'p1', amount: 30000, paymentDate: '2026-07-01' }];
+    render(<InvestorPage view="overview" />);
+    expect(screen.getByText('ملخص رأس المال غير متاح من الخادم بعد؛ لا يمكن عرض المدفوع.', { exact: false })).toBeTruthy();
   });
 });

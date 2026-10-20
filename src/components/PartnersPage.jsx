@@ -36,7 +36,12 @@ export default function PartnersPage() {
   } = usePartners();
   const { isPartnerView, viewedPartner, canMutate, role, isAdmin, setActingAsPartnerId } = usePartnerView();
   const canPreviewPartner = role === 'admin' && isAdmin && !isPartnerView;
-  const canManageEligibility = canMutate && role === 'admin';
+  // Adding, editing (headcount re-weights every partner's share), linking an
+  // account, deleting and eligibility are the admin's alone — the rules and
+  // the server refuse anyone else. Staff still record receipts from the
+  // partner payments page.
+  const canManagePartners = canMutate && role === 'admin';
+  const canManageEligibility = canManagePartners;
   const [eligibilityPartner, setEligibilityPartner] = useState(null);
   // Paid-to-date is DERIVED from the receipts, not read off the cached
   // `partners.paid_amount` aggregate — that field is maintained by a
@@ -47,7 +52,7 @@ export default function PartnersPage() {
   // ── روابط المساعد الذكي ──
   // المدير يرى الحالة ويُلغي، ولا يرى الرمز — المستند لا يحمله أصلاً. تُقرأ
   // للمدير وحده: الشريك في عرض القراءة يرى رابطه من صفحته هو.
-  const mcp = usePartnerMcpKeys({ scope: 'all', enabled: canMutate });
+  const mcp = usePartnerMcpKeys({ scope: 'all', enabled: canManagePartners });
   const [revokeTarget, setRevokeTarget] = useState(null);   // { partner, key }
   const [revokeBusy, setRevokeBusy] = useState(false);
   const [revokeError, setRevokeError] = useState(null);
@@ -204,10 +209,12 @@ export default function PartnersPage() {
         <Card className="p-6">
           <SectionHeader
             title="قائمة الشركاء"
-            subtitle={canMutate
+            subtitle={canManagePartners
               ? 'زر القلم لتعديل بيانات الشريك، وزر الكشف لطباعة كشف حسابه — المدفوعات تُدار من صفحة مدفوعات الشركاء'
-              : 'بياناتك كشريك (للقراءة فقط)'}
-            action={canMutate ? (
+              : canMutate
+                ? 'إضافة الشركاء وتعديلهم للمدير فقط — المدفوعات تُسجَّل من صفحة مدفوعات الشركاء'
+                : 'بياناتك كشريك (للقراءة فقط)'}
+            action={canManagePartners ? (
               <PrimaryButton icon={Plus} onClick={() => setIsModalOpen(true)}>
                 إضافة شريك جديد
               </PrimaryButton>
@@ -224,7 +231,7 @@ export default function PartnersPage() {
                   <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">الرسوم المطلوبة</th>
                   <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">المبلغ المدفوع</th>
                   <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">المبلغ المتبقي</th>
-                  {canMutate && <th className="py-3 px-4 whitespace-nowrap text-center">المساعد الذكي</th>}
+                  {canManagePartners && <th className="py-3 px-4 whitespace-nowrap text-center">المساعد الذكي</th>}
                   <th className="py-3 px-4 whitespace-nowrap text-left w-24">إجراءات</th>
                 </tr>
               </thead>
@@ -233,14 +240,14 @@ export default function PartnersPage() {
               <tbody>
                 {loading && partners.length === 0 && (
                   <tr>
-                    <td colSpan={canMutate ? 8 : 7} className="py-10">
+                    <td colSpan={canManagePartners ? 8 : 7} className="py-10">
                       <LoadingState message="جارٍ تحميل بيانات الشركاء..." />
                     </td>
                   </tr>
                 )}
                 {!loading && partners.length === 0 && !error && (
                   <tr>
-                    <td colSpan={canMutate ? 8 : 7}>
+                    <td colSpan={canManagePartners ? 8 : 7}>
                       <EmptyState
                         compact
                         icon={Briefcase}
@@ -262,7 +269,7 @@ export default function PartnersPage() {
                   const paid     = paidTotals.get(String(p.id)) || 0;
                   const balance  = Math.max(0, required - paid);
                   const settled  = balance === 0;
-                  const mcpKey   = canMutate ? activeKeyFor(mcp.keys, p.id) : null;
+                  const mcpKey   = canManagePartners ? activeKeyFor(mcp.keys, p.id) : null;
 
                   return (
                     <tr
@@ -324,7 +331,7 @@ export default function PartnersPage() {
                       </td>
 
                       {/* 7. المساعد الذكي — حالةٌ وإيقاف، بلا رمز */}
-                      {canMutate && (
+                      {canManagePartners && (
                         <td className="py-3 px-4 whitespace-nowrap text-center">
                           {mcpKey ? (
                             <span className="inline-flex items-center gap-1.5">
@@ -369,7 +376,7 @@ export default function PartnersPage() {
                           >
                             <FileText size={15} />
                           </button>
-                          {canMutate && (
+                          {canManagePartners && (
                             <>
                               <button
                                 type="button"
@@ -403,20 +410,25 @@ export default function PartnersPage() {
         </Card>
       </main>
 
-      <AddPartnerModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onAdd={handleAdd}
-        showToast={showToast}
-      />
+      {canManagePartners && (
+        <>
+          <AddPartnerModal
+            isOpen={isModalOpen}
+            onClose={() => setIsModalOpen(false)}
+            onAdd={handleAdd}
+            showToast={showToast}
+          />
 
-      <EditPartnerModal
-        isOpen={Boolean(editingPartner)}
-        partner={editingPartner}
-        onClose={() => setEditingPartner(null)}
-        onSave={handleSaveEdit}
-        showToast={showToast}
-      />
+          {/* Paid-to-date summed from the receipts, never the stored cache. */}
+          <EditPartnerModal
+            isOpen={Boolean(editingPartner)}
+            partner={editingPartner && { ...editingPartner, paidAmount: paidTotals.get(String(editingPartner.id)) || 0 }}
+            onClose={() => setEditingPartner(null)}
+            onSave={handleSaveEdit}
+            showToast={showToast}
+          />
+        </>
+      )}
 
       <PartnerStatementModal
         isOpen={Boolean(statementPartner)}

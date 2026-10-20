@@ -469,10 +469,11 @@ d('رحلة الإنتاج تحت firestore.rules الفعلية', () => {
     }, 120_000);
 
     // ═══ سجل البايكرات ═════════════════════════════════════════════════
-    // Plain operational collection: members read, operators and above write,
-    // a partner reads and touches nothing, an account with no membership
+    // Plain operational collection: staff read, operators and above write,
+    // a partner neither reads nor touches it (salaries, iqama numbers and
+    // phones are not a partner's business), an account with no membership
     // document sees nothing at all.
-    it('بايكرات: العضو يقرأ، المشغّل يكتب، الشريك والغريب لا', async () => {
+    it('بايكرات: الموظف يقرأ، المشغّل يكتب، الشريك والغريب لا', async () => {
       await env.withSecurityRulesDisabled(async (c) => {
         await setDoc(doc(c.firestore(), 'users', 'partner1'), { email: 'p@x.com', role: 'partner' });
       });
@@ -488,8 +489,9 @@ d('رحلة الإنتاج تحت firestore.rules الفعلية', () => {
       await assertSucceeds(updateDoc(doc(ctx.op, 'bikers', 'b1'), { salary: 2200 }));
       await assertSucceeds(getDoc(doc(ctx.acct, 'bikers', 'b1')));
 
-      // الشريك للاطلاع فقط — يقرأ ولا يكتب ولا يحذف.
-      await assertSucceeds(getDoc(doc(partner, 'bikers', 'b1')));
+      // الشريك لا يقرأ سجل البايكر أصلاً — أرقامه تأتيه من الخادم مقسومة.
+      await assertFails(getDoc(doc(partner, 'bikers', 'b1')));
+      await assertFails(getDocs(collection(partner, 'bikers')));
       await assertFails(setDoc(doc(partner, 'bikers', 'b2'), biker));
       await assertFails(updateDoc(doc(partner, 'bikers', 'b1'), { salary: 1 }));
       await assertFails(deleteDoc(doc(partner, 'bikers', 'b1')));
@@ -502,9 +504,9 @@ d('رحلة الإنتاج تحت firestore.rules الفعلية', () => {
 
     // ═══ ميتا السكنات ══════════════════════════════════════════════════
     // Same operational semantics as bikers: the tab stores per-unit capacity
-    // and notes here, so an operator writes, a partner only reads, and an
-    // account with no membership document sees nothing.
-    it('سكنات: العضو يقرأ، المشغّل يكتب، الشريك والغريب لا', async () => {
+    // and notes here, so an operator writes, staff read, and neither a
+    // partner nor an account with no membership document sees anything.
+    it('سكنات: الموظف يقرأ، المشغّل يكتب، الشريك والغريب لا', async () => {
       await env.withSecurityRulesDisabled(async (c) => {
         await setDoc(doc(c.firestore(), 'users', 'partner2'), { email: 'p2@x.com', role: 'partner' });
       });
@@ -516,7 +518,7 @@ d('رحلة الإنتاج تحت firestore.rules الفعلية', () => {
       await assertSucceeds(updateDoc(doc(ctx.op, 'housing_units', 'u1'), { capacity: 16 }));
       await assertSucceeds(getDoc(doc(ctx.acct, 'housing_units', 'u1')));
 
-      await assertSucceeds(getDoc(doc(partner, 'housing_units', 'u1')));
+      await assertFails(getDoc(doc(partner, 'housing_units', 'u1')));
       await assertFails(setDoc(doc(partner, 'housing_units', 'u2'), unit));
       await assertFails(updateDoc(doc(partner, 'housing_units', 'u1'), { capacity: 1 }));
       await assertFails(deleteDoc(doc(partner, 'housing_units', 'u1')));

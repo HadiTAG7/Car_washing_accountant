@@ -124,8 +124,11 @@ d('روابط المساعد الذكي عبر HTTP', () => {
     const mine = await post('partnerInsights', { partnerId: 'po', months: 1 }, tokens.linked);
     expect(mine.statusCode).toBe(200);
     expect(mine.body.result.partnerId).toBe('pl');
-    expect(mine.body.result.sharePercent).toBe(40);
-    expect(mine.body.result.months[0].shareCount).toBe(40);
+    // 40% of 100 washes — but neither the 40% nor the 100 reaches the partner.
+    expect(mine.body.result.months[0]).toEqual({ month: mine.body.result.months[0].month, shareCount: 40 });
+    for (const key of ['sharePercent', 'factor', 'totalWorkers', 'companyCount']) {
+      expect(JSON.stringify(mine.body)).not.toContain(`"${key}"`);
+    }
     expect(JSON.stringify(mine.body)).not.toContain('خالد');
 
     const asAdmin = await post('partnerInsights', { partnerId: 'po', months: 1 }, tokens.admin);
@@ -137,6 +140,28 @@ d('روابط المساعد الذكي عبر HTTP', () => {
     expect((await post('partnerInsights', {}, tokens.unlinked)).statusCode).toBe(412);
     const snap = await db.collection('washes').get();
     await Promise.all(snap.docs.map((x) => x.ref.delete()));
+  }, 60_000);
+
+  it('ملف الشريك: صفّه هو وحده ولو سمّى غيره، بلا ربطٍ ولا جوال، وغير المربوط 412', async () => {
+    await db.collection('partners').doc('pl').update({ contact_number: '0500000000', paid_amount: 999 });
+    const mine = await post('partnerProfile', { partnerId: 'po' }, tokens.linked);
+    expect(mine.statusCode).toBe(200);
+    expect(mine.body.result).toEqual({ id: 'pl', partnerName: 'مربوط', workersCount: 2, status: 'active' });
+    expect((await post('partnerProfile', {}, tokens.unlinked)).statusCode).toBe(412);
+    expect((await post('partnerProfile', {}, null)).statusCode).toBe(401);
+  }, 60_000);
+
+  it('جلسةٌ أُلغيت: 401 فوراً لا بعد انتهاء التوكن', async () => {
+    const email = 'pmcp-revoked@sweater.test';
+    const rec = await adminAuth.createUser({ email, password: PASSWORD }).catch(() => adminAuth.getUserByEmail(email));
+    await db.collection('users').doc(rec.uid).set({ email, role: 'partner' });
+    await db.collection('partners').doc('pr').set({ partner_name: 'ملغى', workers_count: 1, user_id: rec.uid });
+    const token = await (await signInWithEmailAndPassword(clientAuth, email, PASSWORD)).user.getIdToken();
+    expect((await post('partnerProfile', {}, token)).statusCode).toBe(200);
+    // Revocation is recorded to the second; the token above must predate it.
+    await new Promise((r) => setTimeout(r, 1100));
+    await adminAuth.revokeRefreshTokens(rec.uid);
+    expect((await post('partnerProfile', {}, token)).statusCode).toBe(401);
   }, 60_000);
 
   it('ومعرّفٌ لا وجود له: 404، وبلا توكن: 401', async () => {

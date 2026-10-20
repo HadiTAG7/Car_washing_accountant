@@ -243,6 +243,7 @@ import {
 } from './partnerMcpKeys.js';
 import { partnerWashShare } from './partnerInsights.js';
 import { partnerAllocationReport } from './partnerAllocationReport.js';
+import { projectAllocationReport, projectWashShare, projectPartnerProfile } from './partnerProjection.js';
 import { previewSweaterHandoff } from './sweater/preview.js';
 import { saveOwnerHandoff } from './sweater/staffHandoff.js';
 import { previewOwnerWashTax, saveOwnerWashTax } from './sweater/ownerWashTax.js';
@@ -641,14 +642,24 @@ export const HANDLERS = {
   },
   // عدّ الغسلات بحصّة الشريك — من الخادم كي لا يصل صفُّ غسلةٍ (باسم عامله)
   // إلى متصفح الشريك. الشريك عن نفسه، والمدير عن من يسمّيه.
+  // ولغير المدير يمرّ الردّ بالإسقاط: النسبة وعمالة الشركة لا تغادران الخادم.
   partnerInsights: {
     guard: 'partnerView',
-    run: ({ db, data, partner }) => data?.includeStatements === true
-      ? partnerAllocationReport(db, { partnerId: partner.id, periodKey: data?.periodKey,
-        includeCapitalJourney: data?.includeCapitalJourney === true })
-      : partnerWashShare(db, {
-      partnerId: partner.id, months: data?.months ?? 12,
-    }),
+    run: async ({ db, data, partner, role }) => {
+      if (data?.includeStatements === true) {
+        const report = await partnerAllocationReport(db, { partnerId: partner.id, periodKey: data?.periodKey,
+          includeCapitalJourney: data?.includeCapitalJourney === true });
+        return role === 'admin' ? report : projectAllocationReport(report);
+      }
+      const share = await partnerWashShare(db, { partnerId: partner.id, months: data?.months ?? 12 });
+      return role === 'admin' ? share : projectWashShare(share);
+    },
+  },
+  // صفّ الشريك المربوط بالمتصل — بدل قراءة `partners` كاملةً من المتصفح.
+  // `partnerId` في الحمولة لا معنى له هنا: الحارس يحلّ الربط من الحساب.
+  partnerProfile: {
+    guard: 'partnerSelf',
+    run: ({ partner }) => projectPartnerProfile(partner),
   },
 
 };

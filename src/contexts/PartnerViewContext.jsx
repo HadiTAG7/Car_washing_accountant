@@ -3,6 +3,7 @@ import {
 } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { usePartners } from '../hooks/usePartners';
+import { usePartnerProfile } from '../hooks/usePartnerProfile';
 
 /**
  * PartnerViewContext — single source of truth for the Pro-Rata Partner
@@ -35,15 +36,22 @@ import { usePartners } from '../hooks/usePartners';
  *   isPartnerView      true when viewedPartner !== null (partner OR
  *                      simulating admin).
  *   scalingFactor      viewedPartner.workersCount / totalWorkers when
- *                      isPartnerView, else 1. Guarded against
- *                      totalWorkers=0.
- *   canMutate          isAdmin && !actingAsPartnerId. Simulating
- *                      admins drop write access so the simulation
- *                      faithfully reproduces a partner's read-only UX.
+ *                      staff view a partner, else 1. Guarded against
+ *                      totalWorkers=0. Always 0 on an investor account:
+ *                      its share is a server figure it never receives.
+ *   canMutate          isAdmin && not simulating. Simulating admins drop
+ *                      write access so the simulation faithfully
+ *                      reproduces a partner's read-only UX.
  *   actingAsPartnerId  admin override; persisted in localStorage so
  *                      a reload doesn't unintentionally drop the view.
- *   totalWorkers       fleet-wide headcount, used by the banner to
- *                      render the partner's percentage share.
+ *                      Honoured for role `admin` only — the server
+ *                      refuses anyone else naming a partner.
+ *
+ * ── مَن يقرأ `partners` ──
+ * الموظفون وحدهم (المدير والمحاسب والمشغّل)، وبعد معرفة الدور لا قبلها.
+ * حساب الشريك لا يقرأ المجموعة أصلاً — القواعد ترفضه — وصفّه يأتيه من
+ * الخادم مقصوصاً (`usePartnerProfile`): اسمه وعمالته، بلا جوالات الآخرين ولا
+ * عمالتهم، فلا نسبة تُشتق في متصفحه.
  */
 
 const DEFAULT_VALUE = {
@@ -61,15 +69,19 @@ const DEFAULT_VALUE = {
   scalingFactor:      1,
   isPartnerView:      false,
   canMutate:          true,
-  totalWorkers:       0,
 };
 const PartnerViewContext = createContext(DEFAULT_VALUE);
 
 const STORAGE_KEY = 'sweater:actingAsPartnerId';
+const STAFF_ROLES = ['admin', 'accountant', 'operator'];
 
 export function PartnerViewProvider({ children, role = null }) {
   const { user } = useAuth();
-  const { partners, loading: partnersLoading, error: partnersError, refetch } = usePartners({ enabled: role !== 'supervisor' });
+  const isSupervisor = role === 'supervisor';
+  const isInvestorAccount = role === 'partner';
+  const isStaffRole = STAFF_ROLES.includes(role);
+  const { partners, refetch } = usePartners({ enabled: isStaffRole });
+  const profile = usePartnerProfile({ enabled: isInvestorAccount });
 
   // Admin's "simulate as X" pick survives reload via localStorage.
   // SSR-safe access guard mirrors useDarkMode's pattern.
@@ -89,20 +101,23 @@ export function PartnerViewProvider({ children, role = null }) {
     } catch { /* private mode etc. — silently drop */ }
   }, [actingAsPartnerId]);
 
-  // Find the partner row owned by the current user.
-  const isSupervisor = role === 'supervisor';
+  // Find the partner row owned by the current user: the server's projection
+  // for an investor, the staff list for a staff account linked to a row.
   const myPartner = useMemo(() => {
-    if (isSupervisor) return null;
     if (!user?.id) return null;
+    if (isInvestorAccount) return profile.partner ? { ...profile.partner, userId: user.id } : null;
+    if (!isStaffRole) return null;
     return partners.find((p) => p.userId && p.userId === user.id) || null;
-  }, [partners, user, isSupervisor]);
+  }, [partners, user, isInvestorAccount, isStaffRole, profile.partner]);
 
-  const isInvestorAccount = role === 'partner';
   // الحالة التي كانت تُسلّم الواجهة كاملةً: دورٌ مستثمر بلا صفٍّ مربوط.
-  const partnerLinkLoading = isInvestorAccount && Boolean(partnersLoading);
-  const partnerLinkError = isInvestorAccount ? (partnersError || null) : null;
+  const partnerLinkLoading = isInvestorAccount && Boolean(profile.loading);
+  const partnerLinkError = isInvestorAccount ? (profile.error || null) : null;
   const investorLinkMissing = isInvestorAccount && !partnerLinkLoading && !partnerLinkError && !myPartner;
   const isAdmin = !isSupervisor && !isInvestorAccount && !myPartner;
+  // An old localStorage pick must not put an accountant into a simulation the
+  // server refuses (it ignores `partnerId` from anyone but an admin).
+  const simulatingId = isAdmin && role === 'admin' ? actingAsPartnerId : null;
 
   // Admin override wins for admins; partners always see themselves.
   // If the simulated id no longer matches a row (admin deleted that
@@ -111,20 +126,21 @@ export function PartnerViewProvider({ children, role = null }) {
   // its placeholder. The orphan localStorage id is harmless until the
   // admin makes their next selection, which overwrites it.
   const viewedPartner = useMemo(() => {
-    if (isAdmin && actingAsPartnerId) {
-      return partners.find((p) => p.id === actingAsPartnerId) || null;
+    if (simulatingId) {
+      return partners.find((p) => p.id === simulatingId) || null;
     }
     return myPartner;
-  }, [isAdmin, actingAsPartnerId, myPartner, partners]);
+  }, [simulatingId, myPartner, partners]);
 
   const totalWorkers = useMemo(
     () => partners.reduce((s, p) => s + (p.workersCount || 0), 0),
     [partners],
   );
 
-  // بلا ربط لا نعرف الحصّة، والواحد الصحيح يعني «أرقام الشركة كاملة» — وهو
-  // آخر ما يُعرض على حسابٍ لم نتحقّق من هويته بعد. الصفر يفشل مغلقاً.
-  const scalingFactor = isInvestorAccount && !myPartner
+  // المستثمر لا يملك عمالة الشركة ولا يحتاجها: كل رقمٍ في صفحته مقسومٌ في
+  // الخادم. والواحد الصحيح يعني «أرقام الشركة كاملة» — آخر ما يُعرض عليه.
+  // الصفر يفشل مغلقاً لو وصلته صفحةٌ تضرب بالحصّة.
+  const scalingFactor = isInvestorAccount
     ? 0
     : (viewedPartner && totalWorkers > 0
       ? (viewedPartner.workersCount || 0) / totalWorkers
@@ -133,7 +149,7 @@ export function PartnerViewProvider({ children, role = null }) {
   // المستثمر المنتظر أو المسدود في عرض الشريك أيضاً: كل قمع مشروط بـ `isPartnerView`
   // يجب أن ينطبق عليه، لا أن يُفلته النقصُ إلى المسار الإداري.
   const isPartnerView = viewedPartner !== null || isInvestorAccount;
-  const canMutate     = !isSupervisor && isAdmin && actingAsPartnerId === null;
+  const canMutate     = !isSupervisor && isAdmin && !simulatingId;
 
   const value = useMemo(() => ({
     isAdmin,
@@ -141,20 +157,19 @@ export function PartnerViewProvider({ children, role = null }) {
     investorLinkMissing,
     partnerLinkLoading,
     partnerLinkError,
-    recheckPartnerLink: refetch,
+    recheckPartnerLink: isInvestorAccount ? profile.refetch : refetch,
     role,
     myPartner,
     viewedPartner,
-    actingAsPartnerId,
+    actingAsPartnerId: simulatingId,
     setActingAsPartnerId,
     scalingFactor,
     isPartnerView,
     canMutate,
-    totalWorkers,
   }), [
-    isAdmin, isInvestorAccount, investorLinkMissing, partnerLinkLoading, partnerLinkError, refetch, role,
-    myPartner, viewedPartner, actingAsPartnerId, setActingAsPartnerId,
-    scalingFactor, isPartnerView, canMutate, totalWorkers,
+    isAdmin, isInvestorAccount, investorLinkMissing, partnerLinkLoading, partnerLinkError, refetch, profile.refetch, role,
+    myPartner, viewedPartner, simulatingId, setActingAsPartnerId,
+    scalingFactor, isPartnerView, canMutate,
   ]);
 
   return (

@@ -102,9 +102,7 @@ export async function deleteRow(path, id) {
 
 /**
  * Run a set of writes atomically (Firestore batched write). Each op is
- * { type: 'set'|'update'|'delete', path, id, data? }. Used to keep the
- * partners.paid_amount aggregate in lock-step with partner_payments —
- * the invariant the Supabase trigger used to enforce server-side.
+ * { type: 'set'|'update'|'delete', path, id, data? }.
  */
 export async function runBatch(ops) {
   const checked = [];

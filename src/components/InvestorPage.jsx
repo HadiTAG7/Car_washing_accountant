@@ -19,9 +19,10 @@ import { useLanguage } from '../i18n/useLanguage';
 //
 // التقسيم عرضٌ لا صلاحية: الأربعة تقرأ ما كانت الورقة الواحدة تقرؤه بالضبط،
 // لا مجموعةً أكثر. والخطّافات هنا مقصودة بحصرها: لا `useWashes` ولا
-// `useBikers` ولا `useMonthlyExpenses` ولا `useHousingUnits`. ليس تخفيفاً
-// للحزمة وحده — بل لأن ما لا يُطلب لا يُسرَّب، ولأن المرحلة القادمة تمنع هذه
-// المجموعات في القواعد، فصفحةٌ تطلبها ستسقط بخطأ صلاحيات بدل أن تعمل.
+// `useBikers` ولا `useMonthlyExpenses` ولا `useHousingUnits`، ولا
+// `usePartnerPayments` ولا `useLedger` — رأس المال يأتي من الخادم في كتلة
+// `capital`. ليس تخفيفاً للحزمة وحده — بل لأن ما لا يُطلب لا يُسرَّب، ولأن
+// القواعد تمنع هذه المجموعات عن الشريك، فصفحةٌ تطلبها تسقط بخطأ صلاحيات.
 //
 // وهي تُركَّب مرةً واحدة فوق العروض الأربعة: القراءة والانتظار والخطأ وبطاقة
 // «لم يُربط حسابك» في غلافٍ واحد، فلا يختلف عرضٌ عن عرضٍ في معاملة الحالات
@@ -50,11 +51,8 @@ import PartnerCapitalJourneyPage from './PartnerCapitalJourneyPage';
 import { ColumnTrend, LineTrend } from './charts/TrendCharts';
 
 import { usePartnerView } from '../contexts/PartnerViewContext';
-import { usePartnerPayments } from '../hooks/usePartnerPayments';
-import { useLedger } from '../hooks/useLedger';
 import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
 import { usePartnerStatement } from '../hooks/usePartnerStatement';
-import { partnerPaidSummary } from '../lib/accounting/partnerTotals';
 import { ytdAfterFoundingTotal } from '../lib/accounting/partnerInsights';
 import { comparePartnerReports, COMPARISON_FIELDS, validReportMonth } from '../lib/accounting/partnerReportComparison';
 import { usePartnerInsights } from '../hooks/usePartnerInsights';
@@ -639,10 +637,6 @@ function TrendsView({ hasShare, profitTrend, washTrend = null }) {
  */
 function InvestorPortal({ partner, view }) {
   const { language } = useLanguage();
-  const { payments, loading: paymentsLoading, error: paymentsError } = usePartnerPayments();
-  const {
-    entries, lines, loading: ledgerLoading, error: ledgerError,
-  } = useLedger();
   const { report: allocationReport, loading: allocationLoading, error: allocationError } = usePartnerStatement({
     partnerId: partner.id, enabled: ['overview', 'income', 'trends'].includes(view),
   });
@@ -653,36 +647,22 @@ function InvestorPortal({ partner, view }) {
 
   const [selectedMonth, setSelectedMonth] = useState(todayMonth());
 
-  // ── سندات قبضه وحده ──
-  const myReceipts = useMemo(
-    () => payments.filter((p) => p.partnerId === partner.id),
-    [payments, partner.id],
-  );
-
+  // ── رأس ماله ──
+  // من الخادم لا من المتصفح: المجموع من سنداته هو وحده (لا المخزَّن الذي قد
+  // ينحرف) ورصيد حسابه في الدفاتر، محسوبان حيث السندات والقيود. متصفح
+  // الشريك لم يعد يقرأ سندات الجميع ولا الدفتر كاملاً ليعرض رقمه.
+  const capital = allocationReport?.capital ?? null;
+  const capitalMissing = Boolean(allocationReport) && !capital;
   const required = (partner.workersCount || 0) * PER_WORKER_FEE;
-  // يُجمع من السندات المعروضة أدناه لا من المجموع المخزَّن: رقمٌ وبنودُه
-  // معروضان معاً لا يجوز أن يختلفا، والمخزَّن قد ينحرف. نفس اختيار
-  // `PartnerStatementModal`.
-  const paid = useMemo(
-    () => myReceipts.reduce((s, p) => s + (Number(p.amount) || 0), 0),
-    [myReceipts],
-  );
+  const paid = capital?.paid ?? 0;
   const remaining = Math.max(0, required - paid);
   const settled = required > 0 && remaining === 0;
 
-  // ── الأشهر التي للدفاتر فيها قول ──
-  // من القيود وحدها، لا من السجلّات التشغيلية: شهرٌ يظهر في القائمة بسبب
-  // نشاطٍ لم يُرحَّل بعد يَعِد المستثمر بأرقامٍ لا يستطيع أحد تفسيرها له.
+  // ── الأشهر التي للتقرير فيها قول ──
   const availableMonths = useMemo(() => {
-    if (allocationReport) return allocationReport.statements.map(s => s.periodKey).sort().reverse();
-    const set = new Set();
-    for (const e of entries) {
-      const key = String(e.periodKey || String(e.entryDate || '').slice(0, 7));
-      if (/^\d{4}-\d{2}$/.test(key)) set.add(key);
-    }
-    const months = [...set].sort().reverse();
+    const months = (allocationReport?.statements || []).map(s => s.periodKey).sort().reverse();
     return months.length ? months : [todayMonth()];
-  }, [entries, allocationReport]);
+  }, [allocationReport]);
 
   const activeMonth = availableMonths.includes(selectedMonth)
     ? selectedMonth
@@ -745,13 +725,14 @@ function InvestorPortal({ partner, view }) {
   }, [view, insights, washMonths, language]);
 
   // اختلاف رصيد الدفاتر عن السندات يبقى بجانب ملخص رأس المال.
-  const paidSummary = useMemo(
-    () => (view === 'overview' ? partnerPaidSummary(partner.id, { payments: myReceipts, entries, lines }) : null),
-    [view, partner.id, myReceipts, entries, lines],
-  );
+  const paidSummary = view === 'overview' ? capital : null;
 
-  const anyError = paymentsError || ledgerError || allocationError;
-  const loading = paymentsLoading || ledgerLoading || allocationLoading;
+  // خادمٌ أقدم بلا كتلة رأس المال: خطأٌ يُرى، لا «٠ مدفوع» يبدو حقيقياً.
+  const capitalError = capitalMissing
+    ? new Error('ملخص رأس المال غير متاح من الخادم بعد؛ لا يمكن عرض المدفوع.')
+    : null;
+  const anyError = allocationError || capitalError;
+  const loading = allocationLoading;
   const hasShare = (partner.workersCount || 0) > 0;
   const meta = metaFor(view);
 
@@ -786,7 +767,7 @@ function InvestorPortal({ partner, view }) {
             paid={paid}
             remaining={remaining}
             settled={settled}
-            receiptsCount={myReceipts.length}
+            receiptsCount={capital?.receiptsCount ?? 0}
             hasShare={hasShare}
             latestMonth={statementMonth}
             availableMonths={availableMonths}

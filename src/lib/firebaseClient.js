@@ -185,6 +185,11 @@ export function callPartnerEligibilitySet(payload = {}) {
 export function callPartnerWashInsights(payload = {}) {
   return callLedgerApi('partnerInsights', { ...payload, includeStatements: false }, '/api/ledger');
 }
+// The signed-in partner's own row, projected on the server. A partner's
+// browser no longer reads `partners` (every row, with contact numbers).
+export function callPartnerProfile() {
+  return callLedgerApi('partnerProfile', {}, '/api/ledger');
+}
 
 export function maskedProjectRef() {
   return firebaseConfig.projectId || '';

@@ -34,3 +34,16 @@ describe('فتح عرض حساب الشريك من إدارة الشركاء', (
     if (button) { fireEvent.click(button); expect(view.setActingAsPartnerId).toHaveBeenCalledWith('p1'); }
   });
 });
+describe('إدارة الشركاء للمدير فقط', () => {
+  it.each(['admin', 'operator', 'accountant'])('الإضافة والتعديل والحذف وعمود المساعد: %s', role => {
+    Object.assign(view, { role, isAdmin: true, canMutate: true, isPartnerView: false });
+    render(<PartnersPage />);
+    const admin = role === 'admin';
+    expect(Boolean(screen.queryByRole('button', { name: 'إضافة شريك جديد' }))).toBe(admin);
+    expect(Boolean(screen.queryByRole('button', { name: 'تعديل هادي' }))).toBe(admin);
+    expect(Boolean(screen.queryByRole('button', { name: 'حذف هادي' }))).toBe(admin);
+    expect(Boolean(screen.queryByRole('columnheader', { name: 'المساعد الذكي' }))).toBe(admin);
+    // Printing a partner's statement stays available to staff.
+    expect(screen.getByRole('button', { name: 'كشف حساب هادي' })).toBeTruthy();
+  });
+});

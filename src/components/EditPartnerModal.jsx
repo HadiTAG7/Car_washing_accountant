@@ -52,9 +52,9 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave, sho
   }
 
   const workersCount  = Math.max(0, parseInt(form.workersCount, 10) || 0);
-  // paid_amount is owned by the partner_payments receipts ledger (a DB
-  // trigger keeps it = SUM of receipts) — shown here read-only so the
-  // admin can't write a figure that drifts from the receipts.
+  // Paid-to-date is summed from the receipts by the caller (PartnersPage),
+  // never the stored `paid_amount` cache — shown read-only so the admin
+  // can't write a figure that drifts from the receipts.
   const paidAmount    = Math.max(0, Number(partner?.paidAmount) || 0);
   const requiredTotal = workersCount * PER_WORKER_FEE;
   const remaining     = Math.max(0, requiredTotal - paidAmount);

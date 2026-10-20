@@ -15,7 +15,9 @@
 //   • Identity comes from a Firebase ID token verified with the Admin SDK.
 //     `verifyIdToken` checks the signature, the issuer, the audience and the
 //     expiry — the same verification Cloud Functions performs before `onCall`
-//     ever runs. A forged or expired token cannot pass it.
+//     ever runs. A forged or expired token cannot pass it. `checkRevoked`
+//     also rejects a disabled account or revoked sessions at once, rather
+//     than honouring the token for up to its remaining hour.
 //   • The ROLE is then re-read from `users/{uid}` server-side by `dispatch`,
 //     never taken from the token. Unchanged from the callable path.
 //   • The Admin SDK bypasses Firestore rules, which is exactly why this file
@@ -139,7 +141,7 @@ export default async function handler(req, res) {
 
   let decoded;
   try {
-    decoded = await auth.verifyIdToken(token);
+    decoded = await auth.verifyIdToken(token, true);
   } catch {
     return res.status(401).json({
       error: { code: 'unauthenticated', message: 'انتهت الجلسة أو التوكن غير صالح — سجّل الدخول من جديد.' },

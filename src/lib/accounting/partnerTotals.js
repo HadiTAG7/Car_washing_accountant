@@ -62,3 +62,13 @@ export function partnerPaidSummary(partnerId, { payments, entries, lines }) {
     unposted: ledger.available ? round2(paid - ledger.balance) : 0,
   };
 }
+
+/**
+ * One partner's capital block, computed where the receipts and the journal
+ * already are — the trusted server — so the partner's browser never has to
+ * read every receipt and the whole ledger to show its own total.
+ */
+export function partnerCapitalSummary(partnerId, { receipts, entries, lines }) {
+  const own = (receipts || []).filter((p) => String(p.partnerId ?? p.partner_id ?? '') === String(partnerId));
+  return { ...partnerPaidSummary(partnerId, { payments: own, entries, lines }), receiptsCount: own.length };
+}

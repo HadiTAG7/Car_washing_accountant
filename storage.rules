@@ -4,11 +4,17 @@ rules_version = '2';
 // Sweater (سويتر) — Firebase Storage security rules
 // ═══════════════════════════════════════════════════════════════════════════
 // Invoice/receipt files under invoices/**:
-//   • public READ — the download URLs are pasted into ledgers and CSV
-//     exports and must open without a session; object keys carry a random
-//     UUID slice so they are unguessable.
+//   • staff READ of a known object (get), never a LISTING. The download URLs
+//     pasted into ledgers and CSV exports carry a Firebase download token,
+//     and a tokenised URL is served without consulting these rules — so
+//     those links keep opening without a session. What closes is browsing
+//     or fetching the bucket by path: that used to be open to the whole
+//     internet (`allow read: if true`), invoices included.
 //   • admin-only WRITE — mirrors the Firestore admin-write posture, checked
 //     against the /app_admins/{uid} directory.
+//
+// `isStaff` mirrors firestore.rules: admin, accountant or operator — or a
+// partner account also marked admin. Supervisors and partners are not staff.
 //
 // Requires Cloud Storage for Firebase to be enabled on the project
 // (Firebase Console → Build → Storage → Get started; may require the
@@ -18,10 +24,23 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
+    function isAdminDoc() {
+      return firestore.exists(/databases/(default)/documents/app_admins/$(request.auth.uid));
+    }
+    function role() {
+      return firestore.exists(/databases/(default)/documents/users/$(request.auth.uid))
+        ? firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.get('role', 'unknown')
+        : (isAdminDoc() ? 'admin' : 'unknown');
+    }
+    function isStaff() {
+      return request.auth != null
+        && (role() in ['admin', 'accountant', 'operator'] || (role() == 'partner' && isAdminDoc()));
+    }
+
     match /invoices/{allPaths=**} {
-      allow read: if true;
-      allow write: if request.auth != null
-        && firestore.exists(/databases/(default)/documents/app_admins/$(request.auth.uid));
+      allow get: if isStaff();
+      allow list: if false;
+      allow write: if request.auth != null && isAdminDoc();
     }
   }
 }

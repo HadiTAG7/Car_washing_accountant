@@ -108,9 +108,8 @@ export default function PartnerPaymentsPage() {
     [payments, selectedPartnerId],
   );
 
-  // Capital tracking derived from the ledger, not from partners.paid_amount.
-  // The trigger keeps the two in sync but this page treats the ledger as
-  // the source of truth.
+  // Capital tracking summed from the receipts, never partners.paid_amount
+  // (a stale cache nothing writes any more).
   const required = (selectedPartner?.workersCount || 0) * PER_WORKER_FEE;
   const paid     = partnerPayments.reduce((s, p) => s + (p.amount || 0), 0);
   const balance  = Math.max(0, required - paid);
@@ -127,9 +126,6 @@ export default function PartnerPaymentsPage() {
     try {
       setMutationError(null);
       await addPayment(payment);
-      // partners.paid_amount is updated by the DB trigger, but the
-      // Partners page's cached snapshot won't notice without a refetch.
-      refetchPartners?.();
       showToast('تم تسجيل الدفعة بنجاح');
     } catch (e) {
       console.error('🔥 Firestore Error (PartnerPaymentsPage.handleAddPayment):', e);
@@ -147,7 +143,6 @@ export default function PartnerPaymentsPage() {
     try {
       setMutationError(null);
       await deletePayment(payment.id);
-      refetchPartners?.();
       showToast('تم حذف الدفعة من السجل');
     } catch (e) {
       console.error('🔥 Firestore Error (PartnerPaymentsPage.handleDelete):', e, { id: payment.id });

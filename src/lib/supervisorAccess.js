@@ -13,7 +13,7 @@ const specs = [
   ['startup_costs', 'خطط التأسيس', 'item_name category quantity budgeted_amount actual_amount status'],
   ['startup_cost_entries', 'مصروفات التأسيس', 'startup_cost_id amount spent_date spend_date payment_method unit invoice_number invoice_date vat_amount'],
   ['temporary_expenses', 'السلف والمصاريف المؤقتة', 'biker_id amount recovered_amount status spent_date recovered_date recovery_method'],
-  ['partners', 'بيانات عمل الشركاء', 'partner_name workers_count paid_amount status'],
+  ['partners', 'بيانات عمل الشركاء', 'partner_name workers_count status'],
   ['partner_payments', 'مدفوعات الشركاء', 'partner_id amount payment_date payment_method'],
   ['transactions', 'المعاملات', 'type amount date status'],
   ['categories', 'التصنيفات', 'name name_ar category_name type'],

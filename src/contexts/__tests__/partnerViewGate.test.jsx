@@ -4,9 +4,19 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const authState = { user: null };
 const partnersState = { partners: [] };
+// The server resolves an investor's own row; the browser never lists them.
+const profileState = { partner: null, loading: false, error: null };
+const enabledWith = { partners: null, profile: null };
 
 vi.mock('../../hooks/useAuth', () => ({ useAuth: () => authState }));
-vi.mock('../../hooks/usePartners', () => ({ usePartners: () => partnersState }));
+vi.mock('../../hooks/usePartners', () => ({ usePartners: ({ enabled } = {}) => {
+  enabledWith.partners = enabled;
+  return enabled ? partnersState : { partners: [], loading: false, error: null };
+} }));
+vi.mock('../../hooks/usePartnerProfile', () => ({ usePartnerProfile: ({ enabled } = {}) => {
+  enabledWith.profile = enabled;
+  return enabled ? profileState : { partner: null, loading: false, error: null };
+} }));
 
 const { PartnerViewProvider, usePartnerView } = await import('../PartnerViewContext');
 
@@ -33,6 +43,11 @@ function mount({ user = null, partners = [], role = null } = {}) {
   partnersState.partners = partners;
   partnersState.loading = false;
   partnersState.error = null;
+  // What `partnerProfile` would return for this account: its own row only.
+  const own = partners.find((p) => p.userId === user?.id);
+  profileState.partner = own ? { id: own.id, partnerName: own.partnerName, workersCount: own.workersCount, status: 'active' } : null;
+  profileState.loading = false;
+  profileState.error = null;
   return render(
     <PartnerViewProvider role={role}><Probe /></PartnerViewProvider>,
   );
@@ -57,7 +72,7 @@ describe('بوابة عرض الشريك', () => {
   });
   it('انتظار قراءة الربط ليس عدم ربط ولا يفتح وضع المدير', () => {
     const { rerender } = mount({ user: { id: 'uidAhmed' }, role: 'partner' });
-    partnersState.loading = true;
+    profileState.loading = true;
     rerender(<PartnerViewProvider role="partner"><Probe /></PartnerViewProvider>);
     expect(read('linkMissing')).toBe('false');
     expect(read('isAdmin')).toBe('false');
@@ -68,7 +83,7 @@ describe('بوابة عرض الشريك', () => {
 
   it('فشل قراءة الربط ليس عدم ربط ولا يفتح وضع المدير', () => {
     const { rerender } = mount({ user: { id: 'uidAhmed' }, role: 'partner' });
-    partnersState.error = new Error('unavailable');
+    profileState.error = new Error('unavailable');
     rerender(<PartnerViewProvider role="partner"><Probe /></PartnerViewProvider>);
     expect(read('linkMissing')).toBe('false');
     expect(read('isPartnerView')).toBe('true');
@@ -84,13 +99,37 @@ describe('بوابة عرض الشريك', () => {
     expect(read('scale')).toBe('1');
   });
 
-  it('مستثمر مربوط: لا يكتب، وأرقامه بحصّته', () => {
+  it('مستثمر مربوط: لا يكتب، ولا يقرأ قائمة الشركاء ولا يشتق نسبته', () => {
     mount({ user: { id: 'uidAhmed' }, partners: [P1, P2], role: 'partner' });
     expect(read('isAdmin')).toBe('false');
     expect(read('canMutate')).toBe('false');
     expect(read('isPartnerView')).toBe('true');
     expect(read('viewed')).toBe('p1');
-    expect(read('scale')).toBe(String(3 / 10));
+    // أرقامه مقسومة في الخادم؛ لا عمالة شركة في متصفحه ليقسم عليها.
+    expect(read('scale')).toBe('0');
+    expect(enabledWith.partners).toBe(false);
+    expect(enabledWith.profile).toBe(true);
+  });
+
+  it('الموظفون يقرؤون قائمة الشركاء، والمستثمر لا يستدعي ملفه', () => {
+    mount({ user: { id: 'uidBoss' }, partners: [P1, P2], role: 'accountant' });
+    expect(enabledWith.partners).toBe(true);
+    expect(enabledWith.profile).toBe(false);
+  });
+
+  it('لا قراءة قبل معرفة الدور', () => {
+    mount({ user: { id: 'uidBoss' }, partners: [P1, P2], role: null });
+    expect(enabledWith.partners).toBe(false);
+    expect(enabledWith.profile).toBe(false);
+  });
+
+  it('اختيار محاكاة قديم لا يُدخل المحاسب في محاكاةٍ يرفضها الخادم', () => {
+    window.localStorage.setItem('sweater:actingAsPartnerId', 'p2');
+    mount({ user: { id: 'uidAccountant' }, partners: [P1, P2], role: 'accountant' });
+    expect(read('isPartnerView')).toBe('false');
+    expect(read('viewed')).toBe('none');
+    expect(read('canMutate')).toBe('true');
+    expect(read('scale')).toBe('1');
   });
 
   it('مستثمر بلا ربط: مسدود لا مدير — وهذا هو العطل الذي كان', () => {
@@ -140,7 +179,8 @@ describe('بوابة عرض الشريك', () => {
 
   it('عمالة صفر لا تقسم على صفر', () => {
     const zero = { id: 'p9', partnerName: 'سالم', workersCount: 0, userId: 'uidSalem' };
-    mount({ user: { id: 'uidSalem' }, partners: [zero], role: 'partner' });
+    window.localStorage.setItem('sweater:actingAsPartnerId', 'p9');
+    mount({ user: { id: 'uidBoss' }, partners: [zero], role: 'admin' });
     expect(read('scale')).toBe('1');   // totalWorkers = 0 → الحارس القائم
     expect(read('canMutate')).toBe('false');
   });

@@ -1,13 +1,8 @@
 import { useCallback } from 'react';
 import { isFirebaseConfigured } from '../lib/firebaseClient';
-import {
-  fetchRows, getRow, runBatch, sortBy, where,
-} from '../lib/firestoreCrud';
+import { fetchRows, runBatch, sortBy } from '../lib/firestoreCrud';
 import { mapPartnerPayment, toPartnerPaymentInsert } from '../lib/mappers';
 import { useFirestoreQuery } from './useFirestoreQuery';
-
-// Recompute a partner's total from a set of payment rows.
-const sumAmounts = (rows) => rows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
 
 export function usePartnerPayments() {
   const { data, loading, error, refetch } = useFirestoreQuery(
@@ -22,36 +17,23 @@ export function usePartnerPayments() {
     },
   );
 
-  // Firestore has no server-side trigger, so we keep the Supabase invariant
-  // (partners.paid_amount == SUM of that partner's receipts) with an ATOMIC
-  // batched write: the receipt and the partner aggregate commit together or
-  // not at all — no drift window.
+  // A receipt touches `partner_payments` alone. The old read-then-sum into
+  // `partners.paid_amount` raced (two devices could both write a stale total)
+  // and needed write access to `partners`, which is now the admin's only.
+  // Every paid-to-date figure is summed from the receipts themselves
+  // (`lib/accounting/partnerTotals.js`), so nothing reads the cache.
   const addPayment = useCallback(async (payment) => {
     if (!isFirebaseConfigured) return null;
     const body = toPartnerPaymentInsert(payment);
-    const partnerId = body.partner_id;
     body.created_at = new Date().toISOString();
-    const existing = await fetchRows('partner_payments', [where('partner_id', '==', partnerId)]);
-    const newTotal = sumAmounts(existing) + (Number(body.amount) || 0);
     const paymentId = (globalThis.crypto || window.crypto).randomUUID();
-    await runBatch([
-      { type: 'set',    path: 'partner_payments', id: paymentId, data: body },
-      { type: 'update', path: 'partners',         id: partnerId, data: { paid_amount: newTotal } },
-    ]);
+    await runBatch([{ type: 'set', path: 'partner_payments', id: paymentId, data: body }]);
     await refetch();
   }, [refetch]);
 
   const deletePayment = useCallback(async (id) => {
     if (!isFirebaseConfigured) return null;
-    const row = await getRow('partner_payments', id);
-    if (!row) { await refetch(); return; }
-    const partnerId = row.partner_id;
-    const remaining = (await fetchRows('partner_payments', [where('partner_id', '==', partnerId)]))
-      .filter((r) => r.id !== id);
-    await runBatch([
-      { type: 'delete', path: 'partner_payments', id },
-      { type: 'update', path: 'partners', id: partnerId, data: { paid_amount: sumAmounts(remaining) } },
-    ]);
+    await runBatch([{ type: 'delete', path: 'partner_payments', id }]);
     await refetch();
   }, [refetch]);
 

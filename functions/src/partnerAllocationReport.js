@@ -14,6 +14,7 @@ import { isRealCalendarDate } from '../../src/lib/vatFields.js';
 import { partnerCapitalJourney } from './partnerCapitalJourney.js';
 import { operatingParticipation, readEligibilityStates, currentEligibilityMonth } from './partnerWorkerEligibility.js';
 import { previewPayrollPeriods } from './payroll.js';
+import { partnerCapitalSummary } from '../../src/lib/accounting/partnerTotals.js';
 
 const readRows = async (db, name) => {
   const snap = await db.collection(name).get();
@@ -211,6 +212,9 @@ export async function partnerAllocationReport(db, { partnerId, periodKey, today 
       startupEntries: data.startup_cost_entries,
       receipts: data.partner_payments.filter(p => p.partner_id === selected.id),
     }) } : {}),
+    // Every receipt (not only those through the report date) and the posted
+    // capital balance — the same figures the page used to sum in the browser.
+    capital: partnerCapitalSummary(selected.id, { receipts: data.partner_payments, entries, lines }),
     asOf: today.toISOString(), fundingAsOf, fundingBasis: 'paid-through-report-date',
     from: `${first}-01`, through: monthRange(through).to,
     basis: 'partner-allocation', statements: results };

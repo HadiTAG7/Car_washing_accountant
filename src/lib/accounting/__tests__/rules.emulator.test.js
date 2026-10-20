@@ -216,8 +216,9 @@ d('قواعد أمان Firestore', () => {
       await assertFails(deleteDoc(doc(ctx.admin, 'journal_lines', 'l1')));
     });
 
-    it('الأعضاء يقرأون الدفاتر — القراءة وحدها متاحة', async () => {
-      await assertSucceeds(getDoc(doc(ctx.partner, 'journal_entries', 'e1')));
+    it('الموظفون يقرأون الدفاتر — القراءة وحدها متاحة، والشريك لا', async () => {
+      await assertFails(getDoc(doc(ctx.partner, 'journal_entries', 'e1')));
+      await assertSucceeds(getDoc(doc(ctx.acct, 'journal_entries', 'e1')));
       await assertSucceeds(getDocs(collection(ctx.op, 'journal_entries')));
       await assertFails(getDocs(collection(ctx.anon, 'journal_entries')));
     });
@@ -254,8 +255,9 @@ d('قواعد أمان Firestore', () => {
       await assertFails(deleteDoc(doc(ctx.admin, 'accounting_periods', '2026-08')));
     });
 
-    it('والأعضاء يقرأونها', async () => {
-      await assertSucceeds(getDoc(doc(ctx.partner, 'accounting_periods', '2026-07')));
+    it('والموظفون يقرأونها، والشريك لا', async () => {
+      await assertSucceeds(getDoc(doc(ctx.op, 'accounting_periods', '2026-07')));
+      await assertFails(getDoc(doc(ctx.partner, 'accounting_periods', '2026-07')));
     });
   });
 
@@ -298,8 +300,9 @@ d('قواعد أمان Firestore', () => {
 
   // ── الأدوار ────────────────────────────────────────────────────────
   describe('فصل الصلاحيات بين الأدوار', () => {
-    it('الشريك للقراءة فقط: يقرأ العمليات ولا يكتبها', async () => {
-      await assertSucceeds(getDocs(collection(ctx.partner, 'washes')));
+    it('الشريك لا يقرأ العمليات ولا يكتبها — أرقامه من الخادم', async () => {
+      await assertFails(getDocs(collection(ctx.partner, 'washes')));
+      await assertSucceeds(getDocs(collection(ctx.op, 'washes')));
       await assertFails(setDoc(doc(ctx.partner, 'washes', 'w1'), { quantity: 1 }));
     });
 
@@ -465,8 +468,9 @@ d('قواعد أمان Firestore', () => {
       }));
     });
 
-    it('الأعضاء يقرأون، والزائر لا', async () => {
-      await assertSucceeds(getDoc(doc(ctx.partner, 'expense_vouchers', 't1__2026-08')));
+    it('الموظفون يقرأون، والشريك والزائر لا', async () => {
+      await assertSucceeds(getDoc(doc(ctx.op, 'expense_vouchers', 't1__2026-08')));
+      await assertFails(getDoc(doc(ctx.partner, 'expense_vouchers', 't1__2026-08')));
       await assertFails(getDoc(doc(ctx.anon, 'expense_vouchers', 't1__2026-08')));
     });
   });
@@ -488,8 +492,9 @@ d('قواعد أمان Firestore', () => {
       await assertFails(setDoc(doc(ctx.op, 'fixed_assets', 'as3'), { name: 'x', cost: 1 }));
     });
 
-    it('الأعضاء يقرأون السجل', async () => {
-      await assertSucceeds(getDoc(doc(ctx.partner, 'fixed_assets', 'as1')));
+    it('الموظفون يقرأون السجل، والشريك لا', async () => {
+      await assertSucceeds(getDoc(doc(ctx.op, 'fixed_assets', 'as1')));
+      await assertFails(getDoc(doc(ctx.partner, 'fixed_assets', 'as1')));
       await assertFails(getDoc(doc(ctx.anon, 'fixed_assets', 'as1')));
     });
 
@@ -538,8 +543,9 @@ d('قواعد أمان Firestore', () => {
 
   // ── دليل الحسابات ──────────────────────────────────────────────────
   describe('دليل الحسابات', () => {
-    it('الأعضاء يقرأون، والمحاسب يُنشئ', async () => {
-      await assertSucceeds(getDoc(doc(ctx.partner, 'chart_of_accounts', '1010')));
+    it('الموظفون يقرأون، والمحاسب يُنشئ، والشريك لا يقرأ', async () => {
+      await assertFails(getDoc(doc(ctx.partner, 'chart_of_accounts', '1010')));
+      await assertSucceeds(getDoc(doc(ctx.op, 'chart_of_accounts', '1010')));
       await assertSucceeds(setDoc(doc(ctx.acct, 'chart_of_accounts', '1010'), {
         code: '1010', nameArabic: 'الصندوق', accountType: 'asset', normalBalance: 'debit',
       }));
@@ -632,9 +638,11 @@ d('قواعد أمان Firestore', () => {
       await assertFails(updateDoc(doc(ctx.admin, 'startup_costs', 's1'), { budgeted_amount: 1200 }));
       await assertFails(deleteDoc(doc(ctx.op, 'startup_costs', 's1')));
       await assertFails(deleteDoc(doc(ctx.admin, 'startup_costs', 's1')));
-      // …والقراءة سليمة لكل عضو، بما فيهم الشريك.
-      await assertSucceeds(getDoc(doc(ctx.partner, 'startup_costs', 's1')));
-      await assertSucceeds(getDoc(doc(ctx.partner, 'startup_cost_entries', 'se1')));
+      // …والقراءة سليمة للموظفين، والشريك لا يقرأ (رحلته من الخادم).
+      await assertSucceeds(getDoc(doc(ctx.op, 'startup_costs', 's1')));
+      await assertSucceeds(getDoc(doc(ctx.op, 'startup_cost_entries', 'se1')));
+      await assertFails(getDoc(doc(ctx.partner, 'startup_costs', 's1')));
+      await assertFails(getDoc(doc(ctx.partner, 'startup_cost_entries', 'se1')));
       // والشريك لا يُنشئ أصلاً.
       await assertFails(setDoc(doc(ctx.partner, 'startup_costs', 's5'), {
         category: 'equipment', item_name: 'x', quantity: 1,

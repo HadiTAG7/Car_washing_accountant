@@ -4,6 +4,11 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({ user: { id: 'admin-user' }, partners: [], loading: false, error: null, refetch: vi.fn() }));
 vi.mock('../../hooks/useAuth', () => ({ useAuth: () => ({ user: state.user }) }));
 vi.mock('../../hooks/usePartners', () => ({ usePartners: () => state }));
+// An investor's own row comes from the server projection, not the list.
+vi.mock('../../hooks/usePartnerProfile', () => ({ usePartnerProfile: ({ enabled } = {}) => ({
+  partner: enabled && state.user?.id === 'partner-user' ? { id: 'p1', partnerName: 'شريك أول', workersCount: 3, status: 'active' } : null,
+  loading: false, error: null, refetch: vi.fn(),
+}) }));
 import { PartnerViewProvider, usePartnerView } from '../../contexts/PartnerViewContext';
 import AdminPartnerSelector from '../AdminPartnerSelector';
 import PartnerViewBanner from '../PartnerViewBanner';

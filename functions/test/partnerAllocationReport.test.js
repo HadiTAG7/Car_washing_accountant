@@ -380,8 +380,23 @@ describe('تقرير مصروفات الشريك الخادمي', () => {
   it('المتصل لا يستطيع اختيار شريك آخر ولا تزوير نسبته', async () => {
     const r = await dispatch(database(), null, 'partnerInsights', { partnerId: 'p2', factor: 1, includeStatements: true, periodKey: '2026-09' }, { uid: 'u1' });
     expect(r.partnerId).toBe('p1');
-    expect(r.factor).toBe(0.1);
+    // Still scaled by the server's 1/10, but the ratio itself never leaves it.
+    expect(r.statements[0].totalAllocation).toBe(80);
     await expect(dispatch(database(), null, 'partnerInsights', { includeStatements: true }, null)).rejects.toMatchObject({ code: 'unauthenticated' });
+  });
+  it('الشريك لا يستلم نسبته ولا عمالة الشركة في أي موضع من الرد', async () => {
+    const r = await dispatch(database(), null, 'partnerInsights', { includeStatements: true, includeCapitalJourney: true, periodKey: '2026-09' }, { uid: 'u1' });
+    const json = JSON.stringify(r);
+    for (const key of ['factor', 'scalingFactor', 'sharePercent', 'totalWorkers', 'companyCount', 'totalEligibleWorkers', 'rawAmount']) {
+      expect(json).not.toContain(`"${key}"`);
+    }
+    expect(r.statements[0].eligibility).toEqual({ originalWorkers: 1, eligibleWorkers: 1, suspendedWorkers: 0, effectiveFrom: null });
+    expect(r.capitalJourney.version).toBe(1);
+  });
+  it('كتلة رأس المال: سنداته هو وحده، بلا سندات الشريك الآخر', async () => {
+    const r = await dispatch(database(), null, 'partnerInsights', { includeStatements: true, periodKey: '2026-09' }, { uid: 'u1' });
+    expect(r.capital).toEqual({ paid: 20000, receiptsCount: 1, ledgerBalance: 0, ledgerAvailable: false, unposted: 0 });
+    expect(JSON.stringify(r)).not.toContain('777777');
   });
   it('صرف التأسيس المرحّل يخصم من رصيده مرة واحدة ولا يتكرر كمصروف تشغيل', async () => {
     const r = await partnerAllocationReport(database({
@@ -394,6 +409,9 @@ describe('تقرير مصروفات الشريك الخادمي', () => {
   it('المدير يحاكي الشريك بنفس الحسبة دون تعديل حالته', async () => {
     const r = await dispatch(database(), null, 'partnerInsights', { partnerId: 'p1', includeStatements: true, periodKey: '2026-09' }, { uid: 'admin' });
     expect(r.statements[0].totalAllocation).toBe(80);
+    // The admin's preview keeps the full report for auditing.
+    expect(r).toMatchObject({ factor: 0.1, totalWorkers: 10 });
+    expect(r.capital.paid).toBe(20000);
   });
   it('تجديد العام الثاني يستخدم الاحتياطي ولا يخصم دفعة تأسيس أولى ثانية', async () => {
     const r = await partnerAllocationReport(database({ annual_expense_entries: [

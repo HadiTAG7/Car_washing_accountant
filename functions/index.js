@@ -128,6 +128,7 @@ export const sweaterListIntegrationKeys = callable('sweaterListIntegrationKeys')
 export const partnerMcpCreateKey = callable('partnerMcpCreateKey');
 export const partnerMcpRevokeKey = callable('partnerMcpRevokeKey');
 export const partnerInsights = callable('partnerInsights');
+export const partnerProfile = callable('partnerProfile');
 export const partnerEligibilityGet = callable('partnerEligibilityGet');
 export const partnerEligibilitySet = callable('partnerEligibilitySet');
 

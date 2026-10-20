@@ -2,9 +2,9 @@
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ auth: { user: null, loading: true }, fetchRows: vi.fn() }));
+const mocks = vi.hoisted(() => ({ auth: { user: null, loading: true }, fetchRows: vi.fn(), callPartnerProfile: vi.fn() }));
 vi.mock('../useAuth', () => ({ useAuth: () => mocks.auth }));
-vi.mock('../../lib/firebaseClient', () => ({ isFirebaseConfigured: true }));
+vi.mock('../../lib/firebaseClient', () => ({ isFirebaseConfigured: true, callPartnerProfile: mocks.callPartnerProfile }));
 vi.mock('../../lib/firestoreCrud', () => ({
   fetchRows: mocks.fetchRows, sortBy: rows => rows,
   insertRow: vi.fn(), updateRow: vi.fn(), deleteRow: vi.fn(),
@@ -15,12 +15,18 @@ import { PartnerViewProvider, usePartnerView } from '../../contexts/PartnerViewC
 const wrapper = ({ children }) => <PartnerViewProvider role="partner">{children}</PartnerViewProvider>;
 
 const row = uid => ({ id: `p-${uid}`, user_id: uid, partner_name: uid, workers_count: 1 });
+// The server's projection of the caller's own row: no user_id, no ratio.
+const profile = uid => ({ id: `p-${uid}`, partnerName: uid, workersCount: 1, status: 'active' });
+const unlinked = () => Object.assign(new Error('حسابك غير مربوط بسجل شريك بعد'), { code: 'failed-precondition' });
 const deferred = () => {
   let resolve, reject;
   const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
   return { promise, resolve, reject };
 };
-beforeEach(() => { mocks.auth.user = null; mocks.auth.loading = true; mocks.fetchRows.mockReset(); });
+beforeEach(() => {
+  mocks.auth.user = null; mocks.auth.loading = true;
+  mocks.fetchRows.mockReset(); mocks.callPartnerProfile.mockReset();
+});
 afterEach(cleanup);
 
 describe('partner link reads follow the signed-in session', () => {
@@ -83,7 +89,7 @@ describe('partner link reads follow the signed-in session', () => {
   });
 
   it('restores the partner portal after auth restoration, even for an inactive linked partner', async () => {
-    mocks.fetchRows.mockResolvedValue([{ ...row('a'), status: 'inactive' }]);
+    mocks.callPartnerProfile.mockResolvedValue({ ...profile('a'), status: 'inactive' });
     const { result, rerender } = renderHook(() => usePartnerView(), { wrapper });
     expect(result.current.partnerLinkLoading).toBe(true);
     expect(result.current.investorLinkMissing).toBe(false);
@@ -94,13 +100,34 @@ describe('partner link reads follow the signed-in session', () => {
     expect(result.current.investorLinkMissing).toBe(false);
     expect(result.current.partnerLinkLoading).toBe(false);
     expect(result.current.canMutate).toBe(false);
-    expect(result.current.scalingFactor).toBe(1);
+    // The share is a server figure; the investor's browser never derives it.
+    expect(result.current.scalingFactor).toBe(0);
+  });
+
+  it('an investor account never reads the partners collection', async () => {
+    mocks.auth.user = { id: 'a' }; mocks.auth.loading = false;
+    mocks.callPartnerProfile.mockResolvedValue(profile('a'));
+    mocks.fetchRows.mockResolvedValue([row('a'), row('b')]);
+    const { result } = renderHook(() => usePartnerView(), { wrapper });
+    await waitFor(() => expect(result.current.myPartner?.id).toBe('p-a'));
+    expect(mocks.fetchRows).not.toHaveBeenCalled();
+    expect(result.current.myPartner.userId).toBe('a');
+  });
+
+  it('reads nothing before the role is known', async () => {
+    mocks.auth.user = { id: 'a' }; mocks.auth.loading = false;
+    renderHook(() => usePartnerView(), {
+      wrapper: ({ children }) => <PartnerViewProvider role={null}>{children}</PartnerViewProvider>,
+    });
+    await act(async () => {});
+    expect(mocks.fetchRows).not.toHaveBeenCalled();
+    expect(mocks.callPartnerProfile).not.toHaveBeenCalled();
   });
 
   it('keeps a read error separate from an absent link, and recovers by rereading only', async () => {
     mocks.auth.user = { id: 'a' }; mocks.auth.loading = false;
-    const error = new Error('permission-denied');
-    mocks.fetchRows.mockRejectedValueOnce(error).mockResolvedValueOnce([row('a')]);
+    const error = new Error('unavailable');
+    mocks.callPartnerProfile.mockRejectedValueOnce(error).mockResolvedValueOnce(profile('a'));
     const { result } = renderHook(() => usePartnerView(), { wrapper });
     await waitFor(() => expect(result.current.partnerLinkError).toBe(error));
     expect(result.current.investorLinkMissing).toBe(false);
@@ -114,7 +141,7 @@ describe('partner link reads follow the signed-in session', () => {
 
   it('still fails closed when a successful read confirms there really is no link', async () => {
     mocks.auth.user = { id: 'a' }; mocks.auth.loading = false;
-    mocks.fetchRows.mockResolvedValue([row('b')]);
+    mocks.callPartnerProfile.mockRejectedValue(unlinked());
     const { result } = renderHook(() => usePartnerView(), { wrapper });
     await waitFor(() => expect(result.current.investorLinkMissing).toBe(true));
     expect(result.current.myPartner).toBeNull();

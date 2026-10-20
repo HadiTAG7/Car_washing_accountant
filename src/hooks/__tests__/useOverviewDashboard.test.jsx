@@ -2,9 +2,9 @@
 import { afterEach, beforeEach, it, expect, vi } from 'vitest';
 import { cleanup, renderHook } from '@testing-library/react';
 import { DEFAULT_CHART_OF_ACCOUNTS } from '../../lib/accounting/chartOfAccounts';
-const state = vi.hoisted(() => ({ live: null, payroll: null, fees: null, tax: null }));
-vi.mock('../useWashes', () => ({ useWashes: () => ({ items: [], loading: false, error: null, refetch: vi.fn() }) }));
-vi.mock('../useBikers', () => ({ useBikers: () => ({ bikers: [], loading: false, error: null, refetch: vi.fn() }) }));
+const state = vi.hoisted(() => ({ live: null, payroll: null, fees: null, tax: null, washRead: vi.fn(), bikerRead: vi.fn() }));
+vi.mock('../useWashes', () => ({ useWashes: state.washRead }));
+vi.mock('../useBikers', () => ({ useBikers: state.bikerRead }));
 vi.mock('../useSweater', () => ({ useSweaterBookings: () => ({ bookings: [], loading: false, error: null, refetch: vi.fn() }) }));
 vi.mock('../useLedger', () => ({ useLedger: () => ({ accounts: DEFAULT_CHART_OF_ACCOUNTS, loading: false, error: null, refetch: vi.fn() }) }));
 vi.mock('../useIncomeStatementSources', () => ({ useIncomeStatementSources: () => state.live }));
@@ -13,12 +13,30 @@ vi.mock('../useFeeRules', () => ({ useFeeRules: () => state.fees }));
 vi.mock('../useAccountingSettings', () => ({ useAccountingSettings: () => state.tax }));
 const { useOverviewDashboard } = await import('../useOverviewDashboard');
 beforeEach(() => {
+  vi.clearAllMocks();
   state.live = { sources: { washes: [], vouchers: [], monthlies: [], bikers: [] }, entries: [], lines: [], loading: false, error: null };
   state.payroll = { data: [{ periodKey: '2026-10', lines: [{ basicDue: 900 }] }, { periodKey: '2026-09', lines: [{ basicDue: 800 }] }], loading: false, error: null };
   state.fees = { rules: [{ key: 'none', rate: 0 }], loading: false, error: null };
   state.tax = { settings: {}, loading: false, error: null };
 });
 afterEach(cleanup);
+it('maps live operational rows without fetching washes or bikers again', () => {
+  state.live = { ...state.live,
+    sources: { ...state.live.sources, washes: [{ id: 'w1', quantity: 1, wash_date: '2026-10-16', price: 20, biker_id: 'b1', status: 'مكتملة' }],
+      bikers: [{ id: 'b1', name: 'Test biker' }] },
+    sourceStatus: { washes: { loading: false, error: null }, bikers: { loading: false, error: null } } };
+  const { result, rerender } = renderHook(() => useOverviewDashboard('2026-10', '2026-10-16'));
+  expect(result.current.washes.items[0]).toMatchObject({ id: 'w1', washDate: '2026-10-16' });
+  expect(result.current.workers.bikers[0]).toMatchObject({ id: 'b1', name: 'Test biker' });
+  expect(state.washRead).not.toHaveBeenCalled(); expect(state.bikerRead).not.toHaveBeenCalled();
+  expect(result.current.washes.loading).toBe(false);
+  expect(result.current.operations.quantity).toBe(1);
+  state.live = { ...state.live, error: new Error('payroll source unavailable') };
+  rerender();
+  expect(result.current.finance.statement).toBeNull();
+  expect(result.current.operations.quantity).toBe(1);
+  expect(result.current.washes.error).toBeNull();
+});
 it('uses authoritative unpaid salary once and replaces it with its posting after payment', () => {
   const { result, rerender } = renderHook(() => useOverviewDashboard('2026-10', '2026-10-16'));
   expect(result.current.finance.statement.totalCosts).toBe(900);

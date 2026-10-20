@@ -26,6 +26,15 @@ it('reflects saved changes and journal lines immediately without a refresh', () 
   emit(mocks.listeners.find(row => row.name === 'journal_entries'), [{ id: 'j', lines: [{ accountId: '4000', credit: 20 }] }]);
   expect(result.current.lines[0]).toMatchObject({ entryId: 'j', credit: 20 });
 });
+it('keeps source errors separate so verified washes remain usable when payroll fails', () => {
+  const { result } = renderHook(useIncomeStatementSources);
+  for (const listener of mocks.listeners) if (listener.name !== 'payroll_runs') emit(listener, []);
+  const failure = new Error('payroll unavailable');
+  act(() => mocks.listeners.find(l => l.name === 'payroll_runs').error(failure));
+  expect(result.current.error).toBe(failure);
+  expect(result.current.sourceStatus.washes).toEqual({ loading: false, error: null });
+  expect(result.current.sourceStatus.payrollRuns).toEqual({ loading: false, error: failure });
+});
 it('clears previous-account records and ignores late callbacks after changing identity', () => {
   const { result, rerender } = renderHook(useIncomeStatementSources);
   const previous = [...mocks.listeners]; emit(previous[0], [{ id: 'private-a' }]);

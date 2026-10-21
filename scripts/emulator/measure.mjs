@@ -147,7 +147,7 @@ async function session(browser, state, pages) {
 }
 
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
-const report = { at: new Date().toISOString(), pages: [], partner: [], session: [] };
+const report = { at: new Date().toISOString(), pages: [], partner: [], session: [], partnerSession: [] };
 try {
   const admin = await login(browser, ACCOUNTS.admin);
   for (const [label, tab] of PAGES) {
@@ -164,6 +164,7 @@ try {
       collections: merge(r.browser.byCollection, r.server.byCollection), errors: r.errors });
     console.log(`${label.padEnd(16)} browser ${String(r.browser.reads).padStart(6)}  server ${String(r.server.reads).padStart(6)}`);
   }
+  report.partnerSession = await session(browser, partner, PARTNER_PAGES);
 } finally {
   await browser.close();
   stop();

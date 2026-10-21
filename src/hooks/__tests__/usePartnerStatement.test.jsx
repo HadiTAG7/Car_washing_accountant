@@ -6,14 +6,15 @@ const call = vi.hoisted(() => vi.fn());
 vi.mock('../../lib/firebaseClient', () => ({ isFirebaseConfigured: true, callPartnerAllocationReport: call }));
 afterEach(() => { cleanup(); call.mockReset(); });
 describe('تقرير الشريك لا يتسرب عند تبديل المحاكاة', () => {
-  it('صفحة الرحلة تطلب التفاصيل بينما قائمة الدخل لا تحمل مصادر إضافية', async () => {
+  it('تقرير واحد للجلسة يخدم كل التبويبات ورحلة رأس المال بلا طلب ثانٍ', async () => {
     call.mockResolvedValue({ partnerId: 'a', statements: [], capitalJourney: { version: 1 } });
-    const { result, rerender } = renderHook(({ includeCapitalJourney }) => usePartnerStatement({ partnerId: 'a', includeCapitalJourney }),
-      { initialProps: { includeCapitalJourney: false } });
-    await waitFor(() => expect(result.current.report).toBeTruthy());
-    expect(call).toHaveBeenLastCalledWith({ partnerId: 'a' });
-    rerender({ includeCapitalJourney: true });
-    await waitFor(() => expect(call).toHaveBeenLastCalledWith({ partnerId: 'a', includeCapitalJourney: true }));
+    const overview = renderHook(() => usePartnerStatement({ partnerId: 'a' }));
+    await waitFor(() => expect(overview.result.current.report).toBeTruthy());
+    expect(call).toHaveBeenCalledWith({ partnerId: 'a', includeCapitalJourney: true });
+    overview.unmount();
+    const journey = renderHook(() => usePartnerStatement({ partnerId: 'a', includeCapitalJourney: true }));
+    expect(journey.result.current.report).toBeTruthy();
+    expect(call).toHaveBeenCalledTimes(1);
   });
   it('رحلة ناقصة من خادم قديم تظهر خطأ لا رصيداً مؤكداً', async () => {
     call.mockResolvedValue({ partnerId: 'a', statements: [] });

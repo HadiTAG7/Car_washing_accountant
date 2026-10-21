@@ -103,10 +103,18 @@ function SortableTh({ id, sort, onSort, className = '' }) {
   );
 }
 
+function BikerProfileWithHistory(props) {
+  const { items, loading, error } = useWashes();
+  return <BikerProfile {...props} washes={items} washesLoading={loading} washesError={error} />;
+}
+
 export default function BikersPage({ role, payrollPreview = false, initialSection = 'registry' }) {
   const { language } = useLanguage();
   const { bikers, loading, error, addBiker, updateBiker, deleteBiker, refetch } = useBikers();
-  const { items: washes, loading: washesLoading, error: washesError } = useWashes();
+  // This month's washes only (shared with the overview and the washes page);
+  // the full register is read only when a profile — which shows lifetime
+  // totals — is opened.
+  const { items: washes } = useWashes({ months: [todayMonth()] });
   const { expenses: temps, addTemporaryExpense, loading: advancesLoading, error: advancesError } = useTemporaryExpenses();
   const { canMutate, isPartnerView } = usePartnerView();
   const canViewProfile = role === 'admin' && !isPartnerView;
@@ -457,8 +465,8 @@ export default function BikersPage({ role, payrollPreview = false, initialSectio
         )}
       </main>
 
-      {canViewProfile && profileBikerId && <BikerProfile key={profileBikerId} role={role} isPartnerView={isPartnerView}
-        biker={bikers.find(b => b.id === profileBikerId)} washes={washes} washesLoading={washesLoading} washesError={washesError}
+      {canViewProfile && profileBikerId && <BikerProfileWithHistory key={profileBikerId} role={role} isPartnerView={isPartnerView}
+        biker={bikers.find(b => b.id === profileBikerId)}
         advances={temps} advancesLoading={advancesLoading} advancesError={advancesError} onClose={() => setProfileBikerId(null)} />}
       <AddBikerModal
         isOpen={isAddOpen}

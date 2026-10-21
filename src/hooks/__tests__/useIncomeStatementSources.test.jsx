@@ -25,6 +25,7 @@ vi.mock('../../lib/accounting/firestoreScopeExecutor', () => {
   } };
 });
 import { useIncomeStatementSources } from '../useIncomeStatementSources';
+import { useWashes } from '../useWashes';
 beforeEach(() => {
   mocks.user = { id: 'a' }; mocks.role = 'admin'; mocks.calls = []; mocks.fail = null;
   mocks.data = {
@@ -97,4 +98,18 @@ it('reads nothing as a supervisor or without months, and no workers for a partne
   await waitFor(() => expect(partner.result.current.loading).toBe(false));
   expect(mocks.calls).not.toContain('all:bikers');
   expect(partner.result.current.sources.bikers).toBeUndefined();
+});
+
+it('the washes and bikers pages reuse the month the overview already read', async () => {
+  const overview = renderHook(() => useIncomeStatementSources(october));
+  await waitFor(() => expect(overview.result.current.loading).toBe(false));
+  const reads = mocks.calls.length;
+  const page = renderHook(() => useWashes({ months: ['2026-10'] }));
+  await waitFor(() => expect(page.result.current.loading).toBe(false));
+  expect(page.result.current.items.map(w => w.id)).toEqual(['w10']);
+  expect(mocks.calls).toHaveLength(reads);
+  // A month nobody read yet costs one range query, never the whole register.
+  const november = renderHook(() => useWashes({ months: ['2026-11'] }));
+  await waitFor(() => expect(november.result.current.items.map(w => w.id)).toEqual(['w11']));
+  expect(mocks.calls.slice(reads)).toEqual(['range:washes']);
 });

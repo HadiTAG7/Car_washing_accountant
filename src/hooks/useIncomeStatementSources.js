@@ -4,7 +4,8 @@ import { useAuth } from './useAuth';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 import { useFirestoreQuery } from './useFirestoreQuery';
 import { cachedRead } from '../lib/readCache';
-import { loadScopedIncomeSources, nextMonthKey, compareIds } from '../lib/accounting/incomeStatementScope';
+import { loadScopedIncomeSources } from '../lib/accounting/incomeStatementScope';
+import { readWashMonths } from '../lib/washMonths';
 import { firestoreScopeExecutor } from '../lib/accounting/firestoreScopeExecutor';
 
 const SOURCE_NAMES = ['washes', 'variables', 'monthlies', 'annualEntries', 'vouchers', 'bookings', 'settlements', 'journalEntries', 'legacyLines'];
@@ -36,10 +37,7 @@ export function useIncomeStatementSources({ statementMonths = [], washMonths = s
   // Month units are shared between pages, never between accounts.
   const sharedUnits = (key, tags, fn) => cachedRead(`${identity}|${key}`, fn, { tags });
 
-  const washesQ = useFirestoreQuery(() => Promise.all(mw.split(',').filter(Boolean).map(month =>
-    sharedUnits(`washes:wash_date:${month}`, ['washes'], () => exec.range('washes', 'wash_date', month, nextMonthKey(month)))))
-    // Document-id order, as a whole-collection read returns: duplicates keep the first.
-    .then(lists => lists.flat().sort((a, b) => compareIds(a.id, b.id))),
+  const washesQ = useFirestoreQuery(() => readWashMonths(identity, mw.split(',').filter(Boolean)),
   { enabled, preserveResult: true, cacheKey: `incomeWashes:${mw}`, cacheTags: ['washes'], queryKey, deps: [mw], fallback: [] });
   const bikersQ = useFirestoreQuery(() => sharedUnits('bikers', ['bikers'], () => exec.all('bikers')),
     { enabled: enabled && canReadPayroll, preserveResult: true, cacheKey: 'incomeBikers', cacheTags: ['bikers'], queryKey, fallback: [] });

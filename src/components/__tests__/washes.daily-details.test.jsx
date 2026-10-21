@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({ items: [], bikers: [], bookings: [], loading: false, error: null, scalingFactor: 1, canMutate: false }));
-vi.mock('../../hooks/useWashes', () => ({ useWashes: () => ({ items: state.items, loading: false }) }));
+vi.mock('../../hooks/useWashes', () => ({ useWashes: (options) => { state.washOptions = options; return { items: state.items, loading: false }; } }));
 vi.mock('../../hooks/useBikers', () => ({ useBikers: () => ({ bikers: state.bikers }) }));
 vi.mock('../../hooks/useSweaterWashDetails', () => ({ useSweaterWashDetails: () => ({ bookings: state.bookings, loading: state.loading, error: state.error }) }));
 vi.mock('../../hooks/useAccountingSettings', () => ({ useAccountingSettings: () => ({ settings: {} }) }));
 vi.mock('../../contexts/PartnerViewContext', () => ({ usePartnerView: () => ({ scalingFactor: state.scalingFactor, canMutate: state.canMutate }) }));
+vi.mock('../../hooks/useStatementMonths', () => ({ useStatementMonths: () => ['2026-10', '2026-09'] }));
 vi.mock('../TopBar', () => ({ default: () => null }));
 vi.mock('../SweaterWashWorkerSummary', () => ({ default: () => null }));
 vi.mock('../AddWashModal', () => ({ default: () => null }));
@@ -92,4 +93,18 @@ it('reports unavailable ticket verification instead of claiming no tickets or hi
   state.error = new Error('source unavailable'); view.rerender(<WashesPage />);
   expect(screen.getByRole('alert').textContent).toContain('تعذّر التحقق من التكت');
   expect(within(screen.getByRole('table', { name: 'سجل الغسلات' })).getByText('C-missing')).toBeTruthy();
+});
+it('reads one month at a time and shows fifty rows until asked for more', () => {
+  state.items = Array.from({ length: 120 }, (_, i) => wash(`2026-10-${String(1 + (i % 28)).padStart(2, '0')}`, i + 1));
+  const { container } = render(<WashesPage />);
+  expect(state.washOptions).toEqual({ months: ['2026-10'] });
+  expect(container.querySelectorAll('tbody tr')).toHaveLength(50);
+  fireEvent.click(screen.getByRole('button', { name: 'عرض المزيد' }));
+  expect(container.querySelectorAll('tbody tr')).toHaveLength(100);
+  fireEvent.click(screen.getByRole('button', { name: 'عرض المزيد' }));
+  expect(container.querySelectorAll('tbody tr')).toHaveLength(120);
+  expect(screen.queryByRole('button', { name: 'عرض المزيد' })).toBeNull();
+  fireEvent.change(screen.getByLabelText('الشهر'), { target: { value: '2026-09' } });
+  expect(state.washOptions).toEqual({ months: ['2026-09'] });
+  expect(container.querySelectorAll('tbody tr')).toHaveLength(50);
 });

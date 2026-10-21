@@ -13,7 +13,9 @@ export function usePartnerInsights({ partnerId, months = 12, enabled = true } = 
   const on = enabled && isFirebaseConfigured && Boolean(partnerId);
   const { data, loading, error, refetch } = useFirestoreQuery(
     () => callPartnerWashInsights({ partnerId, months }),
-    { enabled: on, fallback: null, preserveResult: true, deps: [partnerId, months] },
+    // Cached for the session: the overview and trends tabs share one count.
+    { enabled: on, fallback: null, preserveResult: true, cacheKey: 'partnerInsights', cacheTags: ['*'],
+      queryKey: `${partnerId || ''}:${months}` },
   );
   const ownData = data?.partnerId === partnerId ? data : null;
   return {

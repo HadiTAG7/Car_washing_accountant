@@ -2243,5 +2243,7 @@
   "اختر من شهر إلى ١٢ شهراً.": "Choose between one and 12 months.",
   "الفترة أو قائمة العمال غير صالحة.": "The period or the worker list is invalid.",
   "يقرأ بيانات ستة أشهر، فلا يُحمَّل إلا عند طلبه.": "This reads six months of records, so it loads only when you ask.",
-  "عرض الاتجاه": "Show trend"
+  "عرض الاتجاه": "Show trend",
+  "البطاقات والجدول لغسلات هذا الشهر.": "The cards and the table show this month’s washes.",
+  "عرض المزيد": "Show more"
 }

@@ -9,6 +9,9 @@ import { loadScopedIncomeSources, monthsBetween } from '../incomeStatementScope.
 import { overviewWindow } from '../../overviewDashboard.js';
 import { dataset, MONTHS, memoryFirestore, outputs, fullSources } from './fixtures/incomeStatementData.js';
 
+// Hundreds of generated datasets per test: seconds alone, longer on a busy runner.
+const HEAVY = 120_000;
+
 const scenarios = [
   { name: 'النظرة العامة — الشهر الحالي', periodKey: '2026-10', today: '2026-10-21' },
   { name: 'النظرة العامة — شهر ماضٍ', periodKey: '2026-08', today: '2026-10-21' },
@@ -31,7 +34,7 @@ describe('مصادر قائمة الدخل بالأشهر تطابق المجم�
         const args = { statementMonths, periodKey: scenario.periodKey, today: scenario.today };
         expect(outputs({ ...args, sources: scoped }), `seed ${seed}`).toStrictEqual(outputs({ ...args, sources: full }));
       }
-    });
+    }, HEAVY);
   }
 
   it('قائمة الدخل لستة أشهر (الاتجاه) تطابق أيضاً', async () => {
@@ -45,7 +48,7 @@ describe('مصادر قائمة الدخل بالأشهر تطابق المجم�
       const strip = o => ({ statements: o.statements, payroll: o.payroll, reconciliation: o.reconciliation });
       expect(strip(outputs({ ...args, sources: scoped })), `seed ${seed}`).toStrictEqual(strip(outputs({ ...args, sources: full })));
     }
-  });
+  }, HEAVY);
 
   it('يقرأ أقل بكثير من المجموعات كاملة على بيانات بحجم حقيقي', async () => {
     const data = dataset(42);
@@ -57,5 +60,5 @@ describe('مصادر قائمة الدخل بالأشهر تطابق المجم�
     await loadScopedIncomeSources(scopedFs.exec, { statementMonths: ['2026-10'], washMonths: ['2026-09', '2026-10'], withBikers: true });
     await fullSources(fullFs.exec);
     expect(scopedFs.reads.docs).toBeLessThan(fullFs.reads.docs / 2);
-  });
+  }, HEAVY);
 });

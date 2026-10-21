@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { cleanup, renderHook, waitFor, act } from '@testing-library/react';
+import { cleanup, renderHook, waitFor } from '@testing-library/react';
 const state = vi.hoisted(() => ({ role: 'admin', partner: false, user: { id: 'admin-a' } }));
 const read = vi.hoisted(() => vi.fn());
 vi.mock('../useAuth', () => ({ useAuth: () => ({ user: state.user }) }));

@@ -29,16 +29,16 @@ describe('management overview, descriptive operations only', () => {
       wash('copy', '2026-10-16', 1, { sspBookingId: 'SSP' }), wash('raw', '2026-10-16', 99, { status: 'pending' }),
       wash('future', '2026-10-17', 50), wash('prior', '2026-09-16', 2), wash('outside', '2026-09-17', 20)];
     const before = structuredClone(washes);
-    expect(overviewOperations({ ...opts, washes })).toMatchObject({ quantity: 4, previousQuantity: 2, yesterdayQuantity: 3, average: 2, washDays: 2 });
+    expect(overviewOperations({ ...opts, washes })).toMatchObject({ quantity: 4, previousQuantity: 2, yesterdayQuantity: 3, average: 3, washDays: 1 });
     expect(washes).toEqual(before);
   });
   it('reports conflicting execution IDs rather than allowing an unqualified metric', () => {
     expect(overviewOperations({ ...opts, washes: [wash('a', '2026-10-15', 1, { sspBookingId: 'same' }),
       wash('b', '2026-10-16', 1, { sspBookingId: 'same' })] }).conflicts).toHaveLength(1);
   });
-  it('does not infer current working status from wages, starts, washes or missing status', () => {
+  it('does not count a current working status without actual washes in the period', () => {
     expect(overviewOperations({ ...opts, bikers: [{ currentStatus: 'يشتغل' }, { currentStatus: 'Working' },
-      { currentStatus: 'شغال' }, { currentStatus: 'تدريب' }, { salary: 900 }, { currentStatus: 'هرب' }] })).toMatchObject({ working: 3, unspecified: 1, average: null });
+      { currentStatus: 'شغال' }, { currentStatus: 'تدريب' }, { salary: 900 }, { currentStatus: 'هرب' }] })).toMatchObject({ working: 0, unspecified: 1, average: null });
   });
 });
 describe('quality sample, not a full quality assessment', () => {

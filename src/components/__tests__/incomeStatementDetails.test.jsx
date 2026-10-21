@@ -4,13 +4,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({ sources: {}, entries: [], accounts: [], partner: false, role: 'admin', loading: false,
   payroll: [], payrollLoading: false, payrollError: null,
   reads: { washes: vi.fn(), variables: vi.fn(), monthly: vi.fn(), annual: vi.fn(), bikers: vi.fn() } }));
-vi.mock('../../hooks/useIncomePayrollPreviews', () => ({ useIncomePayrollPreviews: () => ({ data: state.payroll, loading: state.payrollLoading, error: state.payrollError, refetch: vi.fn() }) }));
+vi.mock('../../hooks/useIncomePayrollPreviews', async original => ({ ...await original(), useIncomePayrollPreviews: () => ({ data: state.payroll, loading: state.payrollLoading, error: state.payrollError, refetch: vi.fn() }) }));
 vi.mock('../../hooks/useBikers', () => ({ useBikers: options => { state.reads.bikers(options); return { bikers: [] }; } }));
 vi.mock('../../hooks/useWashes', () => ({ useWashes: () => { state.reads.washes(); return { items: [], loading: false }; } }));
 vi.mock('../../hooks/useVariableExpenses', () => ({ useVariableExpenses: () => { state.reads.variables(); return { items: [], loading: false }; } }));
 vi.mock('../../hooks/useMonthlyExpenses', () => ({ useMonthlyExpenses: () => { state.reads.monthly(); return { items: [], loading: false }; } }));
 vi.mock('../../hooks/useAnnualExpenses', () => ({ useAnnualExpenses: () => { state.reads.annual(); return { items: [], loading: false }; } }));
 vi.mock('../../hooks/useLedger', () => ({ useLedger: () => ({ accounts: state.accounts, loading: false }) }));
+// The month list now comes from date bounds (useStatementMonths has its own test).
+vi.mock('../../hooks/useStatementMonths', () => ({ useStatementMonths: () => ['2026-10', '2026-09', '2026-08'] }));
+vi.mock('../../hooks/usePayroll', () => ({ usePayrollRuns: () => ({ runs: [] }) }));
 vi.mock('../../hooks/useFeeRules', () => ({ useFeeRules: () => ({ rules: [] }) }));
 vi.mock('../../hooks/useAccountingSettings', () => ({ useAccountingSettings: () => ({ settings: { vatRegistered: true, vatRate: 0.15 } }) }));
 vi.mock('../../hooks/useIncomeStatementSources', () => ({ useIncomeStatementSources: () => ({ sources: state.sources,
@@ -52,6 +55,9 @@ describe('statement drilldown UI', () => {
     state.payroll = [{ periodKey: '2026-09', unavailable: true }, { periodKey: '2026-10', lines: [{ basicDue: 900 }] }];
     render(<FinancialSummaryPage />); openCosts();
     expect(screen.getByTestId('statement-detail-amount').textContent).toBe(formatCurrency(1000));
+    // The six-month trend reads six months, so it loads only when asked for.
+    expect(screen.queryByText('تعذّر تأكيد اتجاه الأشهر السابقة')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'عرض الاتجاه' }));
     expect(screen.getByText('تعذّر تأكيد اتجاه الأشهر السابقة')).toBeTruthy();
   });
   it('shows unpaid salaries in the exact statement and drilldown, never an incomplete subtotal while loading or failed', () => {

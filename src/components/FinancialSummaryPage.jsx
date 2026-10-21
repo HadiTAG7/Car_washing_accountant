@@ -28,25 +28,31 @@ import { usePartnerView } from '../contexts/PartnerViewContext';
 import {
   todayMonth, monthOf,
   formatMonthLabel,
-  listAvailableMonths,
 } from '../lib/variableExpenseTotals';
 import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
 import { liveIncomeStatement } from '../lib/accounting/liveIncomeStatement';
 import { useIncomeStatementSources } from '../hooks/useIncomeStatementSources';
 import { mapWash, mapBiker, mapVariableExpense } from '../lib/mappers';
-import { payrollExpensePeriod } from '../lib/accounting/payrollExpensePeriod';
-import { useIncomePayrollPreviews } from '../hooks/useIncomePayrollPreviews';
+import { useIncomePayrollPreviews, incomePayrollMonths } from '../hooks/useIncomePayrollPreviews';
+import { useStatementMonths } from '../hooks/useStatementMonths';
+import { usePayrollRuns } from '../hooks/usePayroll';
 
 export default function FinancialSummaryPage() {
   const { language } = useLanguage();
   const { scalingFactor, isPartnerView, role } = usePartnerView();
   const canReadPayroll = ['admin', 'accountant'].includes(role);
   const { bikers: fallbackBikers } = useBikers({ enabled: !canReadPayroll });
+  const [selectedMonth, setSelectedMonth] = useState(todayMonth());
+  // The six-month trend reads six months of records; it loads when asked for.
+  const [showTrend, setShowTrend] = useState(false);
+  const statementMonths = useMemo(() => (showTrend ? incomePayrollMonths(selectedMonth) : [selectedMonth]),
+    [showTrend, selectedMonth]);
   // ── the statement's actual source ──
   // The chart classifies posted and registered operational contributions.
-  const live = useIncomeStatementSources();
+  // Only the months shown are read (lib/accounting/incomeStatementScope.js).
+  const live = useIncomeStatementSources({ statementMonths });
   const {
-    accounts,
+    accounts, periods,
     loading: ledgerLoading, error: ledgerError, refetch: refetchLedger,
   } = useLedger({ liveSources: live });
   const { sources, entries, lines } = live;
@@ -68,14 +74,10 @@ export default function FinancialSummaryPage() {
   // a partner. Partners get the scaled statement only.
   const canReadDetails = !isPartnerView && role !== 'supervisor';
 
-  const [selectedMonth, setSelectedMonth] = useState(todayMonth());
   const payroll = useIncomePayrollPreviews(selectedMonth, {
-    enabled: !live.loading && !isPartnerView && ['admin', 'accountant'].includes(role),
-    revision: JSON.stringify([sources.payrollRuns,
-      (sources.bikers || []).map(b => [b.id, b.salary, b.name, b.start_date || b.startDate, b.end_date || b.endDate]),
-      entries.map(e => [e.id, e.status]),
-      sources.washes.map(w => [w.id, w.quantity, w.wash_date, w.status, w.biker_id, w.biker_name, w.ssp_booking_id])]),
+    enabled: !live.loading && !isPartnerView && ['admin', 'accountant'].includes(role), months: statementMonths,
   });
+  const { runs: payrollRuns } = usePayrollRuns({ enabled: canReadPayroll });
   const [detailCategory, setDetailCategory] = useState(null);
   const [statementDetail, setStatementDetail] = useState(null);
   const openStatementDetail = key => canReadDetails ? () => setStatementDetail({ key, month: selectedMonth }) : undefined;
@@ -84,22 +86,9 @@ export default function FinancialSummaryPage() {
   // included alongside the operational registers: a standalone sales invoice
   // posts into a month that may hold no wash at all, and a month you cannot
   // select is a month whose figures nobody can read.
-  const availableMonths = useMemo(() => {
-    const set = new Set(listAvailableMonths(washes, variables).filter((key) => key !== '__invalid__'));
-    for (const run of sources.payrollRuns || []) if (/^\d{4}-(0[1-9]|1[0-2])$/.test(run.periodKey)) set.add(run.periodKey);
-    const byEntry = new Map(entries.map(entry => [entry.id, entry]));
-    for (const e of entries) {
-      const key = String(e.periodKey || String(e.entryDate || '').slice(0, 7));
-      if (/^\d{4}-\d{2}$/.test(key)) set.add(key);
-      const payrollPeriod = payrollExpensePeriod(e, byEntry);
-      if (payrollPeriod) set.add(payrollPeriod.periodKey);
-    }
-    for (const row of [...sources.variables, ...sources.monthlies, ...sources.annualEntries, ...sources.vouchers]) {
-      const month = monthOf(row.invoice_date || row.invoiceDate || row.logged_date || row.spent_date || row.dueDate);
-      if (month) set.add(month);
-    }
-    return [...set].sort().reverse();
-  }, [washes, variables, entries, sources]);
+  const periodKeys = useMemo(() => (periods || []).map(p => p.periodKey || p.id), [periods]);
+  const payrollMonths = useMemo(() => (payrollRuns || []).map(run => run.periodKey), [payrollRuns]);
+  const availableMonths = useStatementMonths({ periods: periodKeys, payrollMonths });
 
   // ── the statement itself ──────────────────────────────────────────────
   // One pure function over the live sources. Pro-rata for the partner view is
@@ -159,7 +148,7 @@ export default function FinancialSummaryPage() {
   // The SAME function, run six times, so the chart cannot disagree with the
   // statement above it.
   const trend = useMemo(() => {
-    if (payroll.loading || payroll.error || statement.payrollError) return null;
+    if (!showTrend || payroll.loading || payroll.error || statement.payrollError) return null;
     const [yy, mm] = selectedMonth.split('-').map(Number);
     if (!yy || !mm) return null;
     const fmt = new Intl.DateTimeFormat(getLocale(language), { month: 'short', numberingSystem: 'latn' });
@@ -183,12 +172,13 @@ export default function FinancialSummaryPage() {
       net:     rows.map((r) => r.netProfit),
       any:     rows.some((r) => r.netRevenue !== 0 || r.totalCosts !== 0),
     };
-  }, [selectedMonth, accounts, entries, lines, feeRules, scalingFactor, language, sources, settings, payroll.data, payroll.loading, payroll.error, statement.payrollError]);
+  }, [showTrend, selectedMonth, accounts, entries, lines, feeRules, scalingFactor, language, sources, settings, payroll.data, payroll.loading, payroll.error, statement.payrollError]);
 
   const anyError = payroll.error || statement.payrollError || live.error || ledgerError;
   const anyLoading = payroll.loading || live.loading || ledgerLoading;
 
   function retryAll() {
+    live.refetch();
     payroll.refetch();
     refetchLedger?.();
   }
@@ -549,7 +539,12 @@ export default function FinancialSummaryPage() {
                 title="اتجاه ٦ أشهر"
                 subtitle={`الإيرادات مقابل التكاليف وصافي الربح حتى ${monthLabel}`}
               />
-              {trend?.error ? <ErrorState title="تعذّر تأكيد اتجاه الأشهر السابقة" error={trend.error} onRetry={retryAll} /> : trend?.any ? (
+              {!showTrend ? (
+                <div className="flex flex-col items-start gap-2">
+                  <p className="text-sm text-slate-500 dark:text-slate-400">يقرأ بيانات ستة أشهر، فلا يُحمَّل إلا عند طلبه.</p>
+                  <SecondaryButton icon={TrendingUp} onClick={() => setShowTrend(true)}>عرض الاتجاه</SecondaryButton>
+                </div>
+              ) : trend?.error ? <ErrorState title="تعذّر تأكيد اتجاه الأشهر السابقة" error={trend.error} onRetry={retryAll} /> : trend?.any ? (
                 <LineTrend
                   months={trend.months}
                   formatValue={formatCurrency}

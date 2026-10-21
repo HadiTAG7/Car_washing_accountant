@@ -13,7 +13,7 @@
     "preview": "vite preview",
     "test": "vitest run --exclude \"**/*.emulator.test.js\" --exclude \"work/**\"",
     "test:watch": "vitest",
-    "test:emulator": "firebase emulators:exec --only firestore --project demo-sweater --config firebase.test.json \"vitest run --testTimeout=120000 --no-file-parallelism --exclude work/** ledger.emulator invoicing.emulator assets.emulator recurring.emulator autoPost.emulator startupMigration.emulator\"",
+    "test:emulator": "firebase emulators:exec --only firestore --project demo-sweater --config firebase.test.json \"vitest run --testTimeout=120000 --no-file-parallelism --exclude work/** ledger.emulator invoicing.emulator assets.emulator recurring.emulator autoPost.emulator startupMigration.emulator incomeStatementScope.emulator\"",
     "test:rules": "firebase emulators:exec --only firestore --project demo-sweater --config firebase.test.json \"vitest run --testTimeout=120000 --exclude work/** rules.emulator\"",
     "test:growth": "firebase emulators:exec --only firestore --project demo-sweater --config firebase.test.json \"vitest run --testTimeout=30000 server/__tests__/growthPerformance.emulator.test.js\"",
     "test:executive": "firebase emulators:exec --only firestore,auth --project demo-sweater-executive --config firebase.test.json \"vitest run --testTimeout=30000 server/__tests__/executiveReports.emulator.test.js\"",

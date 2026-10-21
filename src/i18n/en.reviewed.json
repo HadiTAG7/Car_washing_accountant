@@ -2241,5 +2241,7 @@
   "آخر تحديث:": "Last refreshed:",
   "آخر تحديث: [VAR0]": "Last refreshed: [VAR0]",
   "اختر من شهر إلى ١٢ شهراً.": "Choose between one and 12 months.",
-  "الفترة أو قائمة العمال غير صالحة.": "The period or the worker list is invalid."
+  "الفترة أو قائمة العمال غير صالحة.": "The period or the worker list is invalid.",
+  "يقرأ بيانات ستة أشهر، فلا يُحمَّل إلا عند طلبه.": "This reads six months of records, so it loads only when you ask.",
+  "عرض الاتجاه": "Show trend"
 }

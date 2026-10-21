@@ -9,9 +9,26 @@ import { useAccountingSettings } from './useAccountingSettings';
 import { liveIncomeStatement } from '../lib/accounting/liveIncomeStatement';
 import { taxPolicyAt } from '../lib/accounting/taxPolicy';
 import { overviewOperations, overviewWindow } from '../lib/overviewDashboard';
+import { monthsBetween } from '../lib/accounting/incomeStatementScope';
+
+/**
+ * The months this page needs: the statement for the month (and the previous
+ * one once the month is complete — the comparison), and washes from the
+ * previous month through today, because duplicates and conflicts are judged
+ * over that span. Nothing older is read.
+ */
+export function overviewMonths(periodKey, today) {
+  const window = overviewWindow(periodKey, today);
+  const previous = window?.previousKey || periodKey;
+  const statementMonths = window?.completeMonth ? [previous, periodKey] : [periodKey];
+  const todayMonth = String(today || '').slice(0, 7);
+  const last = todayMonth > periodKey ? todayMonth : periodKey;
+  return { statementMonths, washMonths: monthsBetween(previous, last) };
+}
 
 export function useOverviewDashboard(periodKey, today) {
-  const live = useIncomeStatementSources();
+  const months = useMemo(() => overviewMonths(periodKey, today), [periodKey, today]);
+  const live = useIncomeStatementSources(months);
   const ledger = useLedger({ liveSources: live });
   const fees = useFeeRules();
   const tax = useAccountingSettings();
@@ -23,11 +40,9 @@ export function useOverviewDashboard(periodKey, today) {
     ...(live.sourceStatus?.washes || { loading: live.loading, error: live.error }), refetch: live.refetch };
   const workers = { bikers: useMemo(() => sortBy(sources.bikers || [], [{ key: 'name' }]).map(mapBiker), [sources.bikers]),
     ...(live.sourceStatus?.bikers || { loading: live.loading, error: live.error }), refetch: live.refetch };
-  const payroll = useIncomePayrollPreviews(periodKey, { enabled: !live.loading && !live.error,
-    revision: JSON.stringify([sources.payrollRuns,
-      (sources.bikers || []).map(b => [b.id, b.salary, b.name, b.start_date || b.startDate, b.end_date || b.endDate]),
-      entries.map(e => [e.id, e.status]),
-      sources.washes.map(w => [w.id, w.quantity, w.wash_date, w.status, w.biker_id, w.biker_name, w.ssp_booking_id])]) });
+  // The salary previews for exactly the statement months, read once and kept
+  // for the session; a payroll or wash write drops them, «تحديث» re-reads.
+  const payroll = useIncomePayrollPreviews(periodKey, { enabled: !live.loading && !live.error, months: months.statementMonths });
   const loading = live.loading || ledger.loading || fees.loading || tax.loading || payroll.loading;
   const error = live.error || ledger.error || fees.error || tax.error || payroll.error;
   const finance = useMemo(() => {
@@ -53,5 +68,5 @@ export function useOverviewDashboard(periodKey, today) {
   const dueVouchers = sources.vouchers.filter(v => v.status === 'unpaid' && String(v.dueDate || '').slice(0, 7) === periodKey && v.dueDate <= today);
   return { finance: { ...finance, loading }, operations, dueVouchers,
     washes, workers,
-    retry: () => { ledger.refetch(); fees.refetch(); tax.refetch(); payroll.refetch(); } };
+    retry: () => { live.refetch(); ledger.refetch(); fees.refetch(); tax.refetch(); payroll.refetch(); } };
 }

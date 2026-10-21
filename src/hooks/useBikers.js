@@ -8,6 +8,7 @@ export function useBikers({ enabled = true } = {}) {
   const { data, loading, error, refetch } = useFirestoreQuery(
     async () => sortBy(await fetchRows('bikers'), [{ key: 'name' }]),
     {
+      cacheKey: 'bikers',
       enabled: enabled && isFirebaseConfigured,
       map:     mapBiker,
       fallback: [],

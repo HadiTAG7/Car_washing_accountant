@@ -16,6 +16,7 @@
 import {
   doc, getDoc, writeBatch, serverTimestamp, updateDoc,
 } from 'firebase/firestore';
+import { invalidateCollections } from '../readCache';
 import { db, isFirebaseConfigured } from '../firebaseClient.js';
 import { fetchRows } from '../firestoreCrud.js';
 import { mapMonthlyExpense } from '../mappers.js';
@@ -95,6 +96,7 @@ export async function generateVouchers({ from, through, userId = null }) {
       });
     }
     await batch.commit();
+    invalidateCollections([VOUCHERS_COL]);
   }
   return {
     created: toCreate.length,
@@ -126,6 +128,7 @@ export async function setVoucherPayment(id, { paymentStatus, paidDate = null, us
     updatedBy: userId,
     updatedAt: serverTimestamp(),
   });
+  invalidateCollections([VOUCHERS_COL]);
   return { id };
 }
 
@@ -174,6 +177,7 @@ export async function setVoucherInvoice(id, {
     updatedBy: userId,
     updatedAt: serverTimestamp(),
   });
+  invalidateCollections([VOUCHERS_COL]);
   return { id };
 }
 
@@ -195,6 +199,7 @@ export async function cancelVoucher(id, { reason, userId = null } = {}) {
     cancelledBy: userId,
     cancelledAt: serverTimestamp(),
   });
+  invalidateCollections([VOUCHERS_COL]);
   return { id };
 }
 
@@ -204,6 +209,7 @@ export async function restoreVoucher(id, { userId = null } = {}) {
   await updateDoc(doc(db, VOUCHERS_COL, id), {
     status: 'active', cancelReason: null, updatedBy: userId, updatedAt: serverTimestamp(),
   });
+  invalidateCollections([VOUCHERS_COL]);
   return { id };
 }
 

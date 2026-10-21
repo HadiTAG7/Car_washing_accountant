@@ -11,6 +11,7 @@ export function usePartnerPayments() {
       { key: 'created_at',   dir: 'desc' },
     ]),
     {
+      cacheKey: 'partner_payments',
       enabled: isFirebaseConfigured,
       map:     mapPartnerPayment,
       fallback: [],

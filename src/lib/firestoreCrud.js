@@ -11,6 +11,7 @@ import {
   addDoc, setDoc, updateDoc as fbUpdateDoc, deleteDoc as fbDeleteDoc,
   where, orderBy, limit, writeBatch,
 } from 'firebase/firestore';
+import { invalidateCollections } from './readCache';
 import { db } from './firebaseClient';
 import { checkedVariableExpenseDates, normalizeExpenseDate } from './expenseDates';
 
@@ -73,9 +74,11 @@ export async function insertRow(path, data) {
   if (body.created_at === undefined) body.created_at = new Date().toISOString();
   if (id != null && id !== '') {
     await setDoc(doc(db, path, String(id)), body);
+    invalidateCollections([path]);
     return String(id);
   }
   const ref = await addDoc(collection(db, path), body);
+  invalidateCollections([path]);
   return ref.id;
 }
 
@@ -83,6 +86,7 @@ export async function insertRow(path, data) {
 export async function updateRow(path, id, patch) {
   if (path === 'variable_expenses') patch = await checkedVariablePatch(id, patch);
   await fbUpdateDoc(doc(db, path, id), patch);
+  invalidateCollections([path]);
 }
 
 async function checkedVariablePatch(id, patch, current = undefined) {
@@ -98,6 +102,7 @@ async function checkedVariablePatch(id, patch, current = undefined) {
 /** Delete a document by id. */
 export async function deleteRow(path, id) {
   await fbDeleteDoc(doc(db, path, id));
+  invalidateCollections([path]);
 }
 
 /**
@@ -128,4 +133,5 @@ export async function runBatch(ops) {
     else if (op.type === 'delete') batch.delete(ref);
   }
   await batch.commit();
+  invalidateCollections([...new Set(checked.map(op => op.path))]);
 }

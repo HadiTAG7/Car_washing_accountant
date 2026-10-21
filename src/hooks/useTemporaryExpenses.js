@@ -15,6 +15,7 @@ export function useTemporaryExpenses() {
       { key: 'spent_date', dir: 'desc' }, { key: 'created_at', dir: 'desc' },
     ]),
     {
+      cacheKey: 'temporary_expenses',
       enabled: isFirebaseConfigured,
       map:     mapTemporaryExpense,
       fallback: [],

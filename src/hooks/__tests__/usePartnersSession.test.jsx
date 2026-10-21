@@ -10,6 +10,7 @@ vi.mock('../../lib/firestoreCrud', () => ({
   insertRow: vi.fn(), updateRow: vi.fn(), deleteRow: vi.fn(),
 }));
 import { usePartners } from '../usePartners';
+import { setReadCacheOwner } from '../../lib/readCache';
 import { PartnerViewProvider, usePartnerView } from '../../contexts/PartnerViewContext';
 
 const wrapper = ({ children }) => <PartnerViewProvider role="partner">{children}</PartnerViewProvider>;
@@ -46,10 +47,11 @@ describe('partner link reads follow the signed-in session', () => {
     mocks.fetchRows.mockResolvedValue([row('a')]);
     const { result, rerender } = renderHook(() => usePartners());
     await waitFor(() => expect(result.current.partners).toHaveLength(1));
-    mocks.auth.user = null; rerender();
+    // useAuth's listener forgets the session cache on sign-out, as here.
+    mocks.auth.user = null; setReadCacheOwner(null); rerender();
     expect(result.current.partners).toEqual([]);
     expect(mocks.fetchRows).toHaveBeenCalledTimes(1);
-    mocks.auth.user = { id: 'a' }; rerender();
+    mocks.auth.user = { id: 'a' }; setReadCacheOwner('a'); rerender();
     await waitFor(() => expect(mocks.fetchRows).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(result.current.partners[0]?.userId).toBe('a'));
   });

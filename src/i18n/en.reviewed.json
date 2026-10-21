@@ -2236,5 +2236,10 @@
   "الداش بورد التنفيذي": "Executive dashboard",
   "ملخص محفوظ · قرارات ومتابعة · مراجعة أسبوعية": "Saved summary · Decision follow-up · Weekly review",
   "ملخص رأس المال غير متاح من الخادم بعد؛ لا يمكن عرض المدفوع.": "The capital summary is not available from the server yet; the amount paid cannot be shown.",
-  "إضافة الشركاء وتعديلهم للمدير فقط — المدفوعات تُسجَّل من صفحة مدفوعات الشركاء": "Only the administrator can add or edit partners — payments are recorded from the partner payments page"
+  "إضافة الشركاء وتعديلهم للمدير فقط — المدفوعات تُسجَّل من صفحة مدفوعات الشركاء": "Only the administrator can add or edit partners — payments are recorded from the partner payments page",
+  "تحديث البيانات": "Refresh data",
+  "آخر تحديث:": "Last refreshed:",
+  "آخر تحديث: [VAR0]": "Last refreshed: [VAR0]",
+  "اختر من شهر إلى ١٢ شهراً.": "Choose between one and 12 months.",
+  "الفترة أو قائمة العمال غير صالحة.": "The period or the worker list is invalid."
 }

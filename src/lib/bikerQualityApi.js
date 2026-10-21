@@ -1,4 +1,5 @@
 import { auth } from './firebaseClient';
+import { invalidateCollections } from './readCache';
 
 export async function callBikerQuality(operation, data) {
   if (!auth?.currentUser) throw new Error('تسجيل الدخول مطلوب.');
@@ -12,5 +13,7 @@ export async function callBikerQuality(operation, data) {
     error.code = body.error?.code;
     throw error;
   }
+  // Reads leave the cache alone; a save or review changes the quality data.
+  if (!['read', 'readMonth'].includes(operation)) invalidateCollections(['biker_quality_reports']);
   return body.result;
 }

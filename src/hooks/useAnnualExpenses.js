@@ -14,6 +14,7 @@ export function useAnnualExpenses() {
       { key: 'payment_month' }, { key: 'payment_day' },
     ]),
     {
+      cacheKey: 'annual_expenses',
       enabled: isFirebaseConfigured,
       map:     mapAnnualExpense,
     },

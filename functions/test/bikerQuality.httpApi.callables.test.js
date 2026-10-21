@@ -167,6 +167,17 @@ suite('Admin private quality HTTP: verified Firebase identity and unchanged memb
     expect((await db.collection(QUALITY_COLLECTION).doc(qualityReportId(v3())).get()).data()).toEqual(old);
     expect((await db.collection('washes').doc('quality-demo-wash').get()).data().status).toBe('completed');
   });
+  it('readMonth returns, per worker, exactly what read returns (one request instead of one per worker)', async () => {
+    const drop = value => JSON.parse(JSON.stringify(value, (key, v) => (key === 'readAt' ? undefined : v)));
+    const month = await request('readMonth', { periodKey: read.periodKey, bikerUIDs: [read.bikerUID, 'other-worker'] }, tokens.admin);
+    expect(month.statusCode).toBe(200);
+    for (const bikerUID of [read.bikerUID, 'other-worker']) {
+      const single = await request('read', { bikerUID, periodKey: read.periodKey, rulesVersion: 'all-approved', includeSource: true }, tokens.admin);
+      expect(drop(month.body.result.results.find(r => r.bikerUID === bikerUID).data)).toEqual(drop(single.body.result));
+    }
+    expect((await request('readMonth', { periodKey: read.periodKey, bikerUIDs: [read.bikerUID] }, tokens.accountant)).statusCode).toBe(403);
+    expect((await request('readMonth', { periodKey: '2026-13', bikerUIDs: [read.bikerUID] }, tokens.admin)).statusCode).toBe(400);
+  });
   it('re-reads revoked role even with the same previously valid admin token', async () => {
     await db.collection('users').doc(users.admin).update({ role: 'partner' });
     expect((await request('read', read, tokens.admin)).statusCode).toBe(403);

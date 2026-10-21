@@ -5,6 +5,7 @@ import {
   signOut as fbSignOut,
 } from 'firebase/auth';
 import { auth, isFirebaseConfigured } from '../lib/firebaseClient';
+import { setReadCacheOwner } from '../lib/readCache';
 
 const DEMO_SESSION = { user: { email: 'demo@sweater.app', id: 'demo-user' } };
 
@@ -26,6 +27,8 @@ export function useAuth() {
   useEffect(() => {
     if (!isFirebaseConfigured) return undefined;
     const unsub = onAuthStateChanged(auth, (fbUser) => {
+      // Before any reader re-renders: another account never sees this one's cache.
+      setReadCacheOwner(fbUser?.uid);
       setSession(toSession(fbUser));
       setLoading(false);
     });

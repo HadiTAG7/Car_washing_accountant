@@ -12,6 +12,7 @@ export function useMonthlyExpenses() {
   const { data, loading, error, refetch } = useFirestoreQuery(
     async () => sortBy(await fetchRows('monthly_expenses'), [{ key: 'payment_day' }]),
     {
+      cacheKey: 'monthly_expenses',
       enabled: isFirebaseConfigured,
       map:     mapMonthlyExpense,
     },

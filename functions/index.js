@@ -134,6 +134,7 @@ export const partnerEligibilitySet = callable('partnerEligibilitySet');
 
 // ─── مسير رواتب البايكر ────────────────────────────────────────────────
 export const payrollPreview = callable('payrollPreview');
+export const payrollPreviews = callable('payrollPreviews');
 export const payrollSaveDraft = callable('payrollSaveDraft');
 export const payrollApprove = callable('payrollApprove');
 export const payrollUnapprove = callable('payrollUnapprove');

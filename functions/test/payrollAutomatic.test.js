@@ -16,7 +16,11 @@ function fixture(status = 'draft') {
   ]); const writes = [];
   const snapshot = path => ({ id: path.split('/').at(-1), exists: rows.has(path), ref: doc(path), data: () => structuredClone(rows.get(path)) });
   const doc = path => ({ id: path.split('/').at(-1), path, get: async () => snapshot(path), collection: name => coll(`${path}/${name}`) });
-  const coll = path => ({ doc: id => doc(`${path}/${id}`), get: async () => ({ docs: [...rows.keys()].filter(key => key.startsWith(`${path}/`) && !key.slice(path.length + 1).includes('/')).map(snapshot) }) });
+  // String range filters, as the payroll preview's month-scoped wash read uses.
+  const passes = (row, [field, op, value]) => typeof row?.[field] === 'string' && (op === '>=' ? row[field] >= value : row[field] < value);
+  const coll = (path, filters = []) => ({ doc: id => doc(`${path}/${id}`), where: (...filter) => coll(path, [...filters, filter]),
+    get: async () => ({ docs: [...rows.keys()].filter(key => key.startsWith(`${path}/`) && !key.slice(path.length + 1).includes('/')
+      && filters.every(filter => passes(rows.get(key), filter))).map(snapshot) }) });
   return { rows, writes, collection: coll, runTransaction: async callback => {
     const pending = []; const result = await callback({ get: ref => ref.get(), set: (ref, value, options) => pending.push([ref.path, value, options]), delete: ref => pending.push([ref.path, null]) });
     for (const [path, value, options] of pending) { if (value === null) rows.delete(path); else rows.set(path, options?.merge ? { ...rows.get(path), ...structuredClone(value) } : structuredClone(value)); writes.push(path); } return result;

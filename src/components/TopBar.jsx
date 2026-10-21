@@ -1,10 +1,38 @@
-import { Calendar, Sun, Moon, Menu, PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Calendar, Sun, Moon, Menu, PanelRightClose, PanelRightOpen, RefreshCw } from 'lucide-react';
 import { useDarkMode } from '../hooks/useDarkMode';
 import { useAuth } from '../hooks/useAuth';
 import { useMobileMenu } from '../contexts/MobileMenuContext';
 import AdminPartnerSelector from './AdminPartnerSelector';
 import LanguageSwitcher from './LanguageSwitcher';
 import { getLocale } from '../i18n/locale';
+import { refreshAllReads, readsRefreshedAt } from '../lib/readCache';
+
+/**
+ * «تحديث»: pages keep what they read for the session (free tier — every read
+ * counts), so data entered on another device appears after this, not on its
+ * own. The time shown is when the data was last read in full.
+ */
+function RefreshDataButton() {
+  const [at, setAt] = useState(readsRefreshedAt);
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => { setAt(readsRefreshedAt()); tick(n => n + 1); }, 30000);
+    return () => clearInterval(id);
+  }, []);
+  const time = new Intl.DateTimeFormat(getLocale(), { hour: 'numeric', minute: '2-digit', numberingSystem: 'latn' }).format(at);
+  return (
+    <button
+      type="button"
+      onClick={() => { refreshAllReads(); setAt(readsRefreshedAt()); }}
+      aria-label="تحديث البيانات"
+      title={`آخر تحديث: ${time}`}
+      className="sw-tap w-10 h-10 rounded-lg bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-100 dark:border-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 transition-colors duration-200 shrink-0"
+    >
+      <RefreshCw size={18} strokeWidth={2.2} />
+    </button>
+  );
+}
 
 /**
  * Top bar with page title, search, dark-mode toggle, notifications, and date.
@@ -43,6 +71,7 @@ export default function TopBar({ title, subtitle, actions, hidePartnerSelector =
             ones that work. */}
         <div className="flex items-center gap-2 sm:gap-3">
           {actions}
+          <RefreshDataButton />
           <LanguageSwitcher />
 
           {/* Dark mode toggle */}

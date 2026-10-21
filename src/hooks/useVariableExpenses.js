@@ -12,6 +12,7 @@ export function useVariableExpenses() {
   const { data, loading, error, refetch } = useFirestoreQuery(
     async () => sortBy(await fetchRows('variable_expenses'), [{ key: 'logged_date', dir: 'desc' }]),
     {
+      cacheKey: 'variable_expenses',
       enabled: isFirebaseConfigured,
       map:     mapVariableExpense,
     },

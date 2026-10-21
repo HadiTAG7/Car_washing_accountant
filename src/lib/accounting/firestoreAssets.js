@@ -19,6 +19,7 @@ import {
   collection, doc, getDoc, getDocs, query, where,
   addDoc, setDoc, updateDoc, serverTimestamp,
 } from 'firebase/firestore';
+import { invalidateCollections } from '../readCache';
 import { db, isFirebaseConfigured } from '../firebaseClient.js';
 import { fetchRows } from '../firestoreCrud.js';
 import { postEntry, fetchEntries, ensureAccount } from './firestoreLedger.js';
@@ -68,6 +69,7 @@ export async function createAsset(asset, { userId = null } = {}) {
     createdAt: serverTimestamp(),
     createdAtIso: new Date().toISOString(),
   });
+  invalidateCollections([ASSETS_COL]);
   return { id: ref.id };
 }
 
@@ -104,6 +106,7 @@ export async function updateAsset(id, patch, { userId = null } = {}) {
   await updateDoc(doc(db, ASSETS_COL, id), {
     ...patch, updatedBy: userId, updatedAt: serverTimestamp(),
   });
+  invalidateCollections([ASSETS_COL]);
   return { id };
 }
 
@@ -251,6 +254,7 @@ export async function disposeAsset(id, {
     updatedBy: userId,
     updatedAt: serverTimestamp(),
   }, { merge: true });
+  invalidateCollections([ASSETS_COL]);
 
   return { ...res, accumulated: built.accumulated, bookValue: built.bookValue, result: built.result };
 }
@@ -265,6 +269,7 @@ export async function setAssetActive(id, active, { userId = null } = {}) {
   await updateDoc(doc(db, ASSETS_COL, id), {
     active: Boolean(active), updatedBy: userId, updatedAt: serverTimestamp(),
   });
+  invalidateCollections([ASSETS_COL]);
   return { id, active: Boolean(active) };
 }
 

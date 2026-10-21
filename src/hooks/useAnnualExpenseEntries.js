@@ -18,7 +18,7 @@ import { useFirestoreQuery } from './useFirestoreQuery';
 export function useAllAnnualEntries() {
   const { data, loading, error, refetch } = useFirestoreQuery(
     () => fetchRows('annual_expense_entries'),
-    { enabled: isFirebaseConfigured, map: mapAnnualExpenseEntry, fallback: [] },
+    { cacheKey: 'annual_expense_entries', enabled: isFirebaseConfigured, map: mapAnnualExpenseEntry, fallback: [] },
   );
   return { entries: data ?? [], loading, error, refetch };
 }

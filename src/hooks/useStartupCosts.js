@@ -25,6 +25,7 @@ export function useStartupCosts() {
   const { data, loading, error, refetch } = useFirestoreQuery(
     async () => sortBy(await fetchRows('startup_costs'), [{ key: 'created_at' }]),
     {
+      cacheKey: 'startup_costs',
       enabled: isFirebaseConfigured,
       map:     mapStartupCost,
     },

@@ -17,12 +17,12 @@ import { indexPeriods } from '../lib/accounting/periods';
  */
 export function useLedger({ liveSources = null } = {}) {
   const readJournal = isFirebaseConfigured && !liveSources;
-  const accountsQ = useFirestoreQuery(fetchAccounts, { enabled: isFirebaseConfigured, fallback: [] });
-  const entriesQ  = useFirestoreQuery(fetchEntries, { enabled: readJournal, fallback: [] });
+  const accountsQ = useFirestoreQuery(fetchAccounts, { cacheKey: 'chart_of_accounts', enabled: isFirebaseConfigured, fallback: [] });
+  const entriesQ  = useFirestoreQuery(fetchEntries, { cacheKey: 'journal_entries', enabled: readJournal, fallback: [] });
   // fetchLines also reads journal_entries. Reuse the entries already fetched
   // above instead; only the frozen legacy collection needs a separate read.
-  const linesQ = useFirestoreQuery(() => fetchRows(COL.LINES), { enabled: readJournal, fallback: [] });
-  const periodsQ  = useFirestoreQuery(fetchPeriods,  { enabled: isFirebaseConfigured, fallback: [] });
+  const linesQ = useFirestoreQuery(() => fetchRows(COL.LINES), { cacheKey: COL.LINES, enabled: readJournal, fallback: [] });
+  const periodsQ  = useFirestoreQuery(fetchPeriods,  { cacheKey: 'accounting_periods', enabled: isFirebaseConfigured, fallback: [] });
 
   const accounts = useMemo(() => accountsQ.data || [], [accountsQ.data]);
   const entries = useMemo(() => liveSources ? liveSources.entries : entriesQ.data || [], [liveSources, entriesQ.data]);

@@ -14,22 +14,33 @@ it.each(['accountant', 'partner', 'supervisor'])('does not issue quality reads f
   state.role = role; const { result } = renderHook(() => useOverviewBikerQuality([{ id: 'a' }], '2026-10', true));
   expect(result.current.available).toBe(false); expect(read).not.toHaveBeenCalled();
 });
-it('uses only the existing read contract and keeps a failed worker separate', async () => {
-  read.mockImplementation((_op, input) => input.bikerUID === 'b' ? Promise.reject(new Error('failed')) : Promise.resolve({ reports: [] }));
-  const { result } = renderHook(() => useOverviewBikerQuality([{ id: 'a' }, { id: 'b' }], '2026-10', true));
+it('reads the whole month in one request and keeps a failed worker separate', async () => {
+  read.mockResolvedValue({ results: [{ bikerUID: 'a', data: { reports: [] } }, { bikerUID: 'b', failed: true }] });
+  const { result } = renderHook(() => useOverviewBikerQuality([{ id: 'b' }, { id: 'a' }], '2026-10', true));
   await waitFor(() => expect(result.current.available).toBe(true));
-  expect(read).toHaveBeenCalledWith('read', { bikerUID: 'a', periodKey: '2026-10', rulesVersion: 'all-approved', includeSource: true });
+  expect(read).toHaveBeenCalledTimes(1);
+  expect(read).toHaveBeenCalledWith('readMonth', { periodKey: '2026-10', bikerUIDs: ['a', 'b'] });
   expect(result.current.data.find(r => r.bikerUID === 'b').failed).toBe(true);
 });
-it('hides stale periods immediately and cancels unstarted reads on identity/period changes', async () => {
-  const pending = [];
-  read.mockImplementation(() => new Promise(resolve => pending.push(resolve)));
+it('an unreadable month marks every worker failed, but a denied one is an error', async () => {
+  read.mockRejectedValueOnce(new Error('unavailable'));
+  const { result } = renderHook(() => useOverviewBikerQuality([{ id: 'a' }], '2026-10', true));
+  await waitFor(() => expect(result.current.available).toBe(true));
+  expect(result.current.data).toEqual([{ bikerUID: 'a', failed: true }]);
+  read.mockRejectedValueOnce(Object.assign(new Error('denied'), { code: 'permission-denied' }));
+  const denied = renderHook(() => useOverviewBikerQuality([{ id: 'a' }], '2026-09', true));
+  await waitFor(() => expect(denied.result.current.error?.code).toBe('permission-denied'));
+});
+it('hides stale periods immediately, and returning to a month costs no request', async () => {
+  read.mockImplementation((_op, input) => Promise.resolve({ results: input.bikerUIDs.map(bikerUID => ({ bikerUID, data: { reports: [] } })) }));
   const bikers = Array.from({ length: 7 }, (_, i) => ({ id: `worker-${i}` }));
   const { result, rerender } = renderHook(({ month }) => useOverviewBikerQuality(bikers, month, true), { initialProps: { month: '2026-10' } });
-  expect(read).toHaveBeenCalledTimes(3);
+  await waitFor(() => expect(result.current.available).toBe(true));
   rerender({ month: '2026-09' }); expect(result.current.data).toBeNull();
-  await act(async () => { pending.slice(0, 3).forEach(resolve => resolve({ reports: [] })); });
-  expect(read.mock.calls.filter(([, data]) => data.periodKey === '2026-10')).toHaveLength(3);
+  await waitFor(() => expect(result.current.available).toBe(true));
+  rerender({ month: '2026-10' });
+  await waitFor(() => expect(result.current.available).toBe(true));
+  expect(read).toHaveBeenCalledTimes(2);
   state.partner = true; rerender({ month: '2026-09' });
   expect(result.current.available).toBe(false); expect(result.current.data).toBeNull();
 });

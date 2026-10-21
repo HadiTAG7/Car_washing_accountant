@@ -1,5 +1,9 @@
-import { vi } from 'vitest';
+import { beforeEach, vi } from 'vitest';
 import process from 'node:process';
+import { __resetReadCache } from './lib/readCache.js';
+
+// The session read cache is module state: each test starts with none.
+beforeEach(() => __resetReadCache());
 if (process.env.FIRESTORE_EMULATOR_HOST && !/^(127\.0\.0\.1|localhost):\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST)) {
   throw new Error('Financial emulator tests require a localhost-only endpoint.');
 }

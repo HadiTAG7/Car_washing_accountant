@@ -18,6 +18,7 @@ export function useCategories() {
   const { data, loading, error, refetch } = useFirestoreQuery(
     async () => sortBy(await fetchRows('categories'), [{ key: 'sort_order' }]),
     {
+      cacheKey: 'categories',
       enabled: isFirebaseConfigured,
       map:     mapCategory,
       fallback: FALLBACK,

@@ -13,7 +13,7 @@ import { useFirestoreQuery } from './useFirestoreQuery';
 export function useStartupLedgerParents() {
   const { data, refetch } = useFirestoreQuery(
     () => fetchRows('startup_cost_entries'),
-    { enabled: isFirebaseConfigured, fallback: [] },
+    { cacheKey: 'startup_cost_entries', enabled: isFirebaseConfigured, fallback: [] },
   );
   const parentIds = useMemo(
     () => new Set((data || []).map((r) => r.startup_cost_id)),
@@ -34,7 +34,7 @@ export function useStartupLedgerParents() {
 export function useAllStartupEntries() {
   const { data, loading, error, refetch } = useFirestoreQuery(
     () => fetchRows('startup_cost_entries'),
-    { enabled: isFirebaseConfigured, map: mapStartupCostEntry, fallback: [] },
+    { cacheKey: 'startup_cost_entries', enabled: isFirebaseConfigured, map: mapStartupCostEntry, fallback: [] },
   );
   return { entries: data ?? [], loading, error, refetch };
 }

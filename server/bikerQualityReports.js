@@ -3,8 +3,8 @@ import { z } from 'zod';
 import { AuthError, callerRole } from '../functions/src/handlers.js';
 import { completedCommissionWash } from '../functions/src/washCommission.js';
 import { QUALITY_V2, normalizeQualityV2, validateV2Worker, v2WashReferences } from './bikerQualityV2.js';
-import { QUALITY_V3, normalizeQualityV3, readCanonicalQualitySource, finalizeQualityV3 } from './bikerQualityV3.js';
-import { readManualReview } from './bikerQualityManual.js';
+import { QUALITY_V3, normalizeQualityV3, readCanonicalQualitySource, finalizeQualityV3, canonicalQualitySourceFromRows } from './bikerQualityV3.js';
+import { readManualReview, manualReviewId, manualReviewProjection } from './bikerQualityManual.js';
 
 export const QUALITY_COLLECTION = 'biker_quality_reports';
 export const QUALITY_RULES_VERSION = 'cqo-20261014-v1';
@@ -91,6 +91,67 @@ export async function readQualityReports(db, auth, input) {
     catch { manual = { available: false, reason: 'manual-review-unavailable' }; }
   }
   return { reports, source, manual };
+}
+
+const APPROVED_VERSIONS = [QUALITY_RULES_VERSION, QUALITY_V2, QUALITY_V3];
+const byNewest = (a, b) => b.rulesVersion.localeCompare(a.rulesVersion) || b.to.localeCompare(a.to)
+  || String(b.snapshotAt || '').localeCompare(String(a.snapshotAt || ''))
+  || String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
+const nextMonthKey = key => new Date(Date.UTC(Number(key.slice(0, 4)), Number(key.slice(5, 7)), 1)).toISOString().slice(0, 7);
+
+/**
+ * `read` for every worker of a month in one request — the overview used to
+ * send one per worker, each reading that worker's lifetime washes and every
+ * report of theirs. Here: one role check, the month's reports, the month's
+ * washes once (grouped by worker), the workers and their manual reviews by
+ * id. Each result has the shape `read` returns with `includeSource` and
+ * `all-approved`. A worker absent from the registry reads as before
+ * (`worker-missing`); there is no lifetime-size cut-off, since only the
+ * month is read.
+ */
+export async function readQualityMonth(db, auth, input) {
+  await adminOnly(db, auth);
+  const parsed = z.object({ periodKey: month, bikerUIDs: z.array(identity).min(1).max(300) }).strict().safeParse(input);
+  if (!parsed.success) bad('الفترة أو قائمة العمال غير صالحة.');
+  const { periodKey } = parsed.data;
+  const uids = [...new Set(parsed.data.bikerUIDs)];
+  const [reportSnap, washSnap, workers, manualDocs] = await Promise.all([
+    db.collection(QUALITY_COLLECTION).where('periodKey', '==', periodKey).get(),
+    db.collection('washes').where('wash_date', '>=', periodKey).where('wash_date', '<', nextMonthKey(periodKey)).get(),
+    db.getAll(...uids.map(uid => db.collection('bikers').doc(uid))),
+    db.getAll(...uids.map(uid => db.collection(QUALITY_COLLECTION).doc(manualReviewId(uid, periodKey)))),
+  ]);
+  const reportsOf = new Map(); const washesOf = new Map();
+  for (const doc of reportSnap.docs) {
+    const report = { id: doc.id, ...doc.data() };
+    if (!APPROVED_VERSIONS.includes(report.rulesVersion)) continue;
+    if (!reportsOf.has(report.bikerUID)) reportsOf.set(report.bikerUID, []);
+    reportsOf.get(report.bikerUID).push(report);
+  }
+  for (const doc of washSnap.docs) {
+    const key = String(doc.get('biker_id') ?? '');
+    if (!washesOf.has(key)) washesOf.set(key, []);
+    washesOf.get(key).push({ id: doc.id, data: doc.data() });
+  }
+  const currentDay = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Riyadh' }).format(new Date());
+  const monthEnd = new Date(Date.UTC(Number(periodKey.slice(0, 4)), Number(periodKey.slice(5, 7)), 0)).toISOString().slice(0, 10);
+  return { results: uids.map((bikerUID, index) => {
+    const reports = (reportsOf.get(bikerUID) || []).sort(byNewest);
+    let source;
+    try {
+      source = workers[index].exists
+        ? canonicalQualitySourceFromRows(bikerUID, workers[index].data(), washesOf.get(bikerUID) || [], periodKey)
+        : { available: false, reason: 'worker-missing' };
+    } catch { source = { available: false, reason: 'read-failed' }; }
+    const from = reports[0]?.from || `${periodKey}-01`;
+    const to = reports[0]?.to || (monthEnd < currentDay ? monthEnd : currentDay);
+    let manual = null;
+    if (from <= to) {
+      try { manual = manualReviewProjection(source, manualDocs[index].exists ? manualDocs[index].data() : null, { bikerUID, periodKey, from, to }); }
+      catch { manual = { available: false, reason: 'manual-review-unavailable' }; }
+    }
+    return { bikerUID, data: { reports, source, manual } };
+  }) };
 }
 
 export async function saveQualityReports(db, auth, input) {

@@ -8,6 +8,7 @@ export function useWashes() {
   const { data, loading, error, refetch } = useFirestoreQuery(
     async () => sortBy(await fetchRows('washes'), [{ key: 'wash_date', dir: 'desc' }]),
     {
+      cacheKey: 'washes',
       enabled: isFirebaseConfigured,
       map:     mapWash,
     },

@@ -24,6 +24,11 @@
     "deploy:backend": "firebase deploy --only functions:ledger,firestore:rules",
     "deploy:functions": "firebase deploy --only functions:ledger",
     "deploy:rules": "firebase deploy --only firestore:rules",
+    "emulator:start": "firebase emulators:start --only firestore,auth --project demo-sweater --config firebase.emulator.json",
+    "emulator:seed": "FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 GCLOUD_PROJECT=demo-sweater node scripts/emulator/seed.mjs",
+    "emulator:api": "FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 GCLOUD_PROJECT=demo-sweater node scripts/emulator/api-server.mjs",
+    "emulator:dev": "VITE_FIREBASE_EMULATOR=1 VITE_LEDGER_API_URL=/api/ledger vite --mode emulator",
+    "emulator:measure": "firebase emulators:exec --only firestore,auth --project demo-sweater --config firebase.emulator.json \"node scripts/emulator/seed.mjs && node scripts/emulator/measure.mjs\"",
     "agents:send": "node scripts/send-agent-command-event.mjs",
     "bootstrap:admin": "node scripts/bootstrap-admin.mjs",
     "check:email": "node scripts/check-email-deliverability.mjs"

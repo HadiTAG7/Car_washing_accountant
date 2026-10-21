@@ -10,10 +10,10 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { initializeApp, getApps, getApp, deleteApp } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
+import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import {
-  getAuth, createUserWithEmailAndPassword, signOut as fbSignOut,
+  getAuth, connectAuthEmulator, createUserWithEmailAndPassword, signOut as fbSignOut,
 } from 'firebase/auth';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import {
@@ -41,7 +41,17 @@ function readEnv(name, fallback) {
   return val || fallback;
 }
 
-export const firebaseConfig = {
+// ── المحاكي المحلي ──
+// `npm run emulator:dev` / `emulator:measure` build with VITE_FIREBASE_EMULATOR=1:
+// a demo project on the local emulators, so measuring or developing never
+// spends the production read quota. Unset (every real build), nothing changes.
+export const usingEmulators = import.meta.env.VITE_FIREBASE_EMULATOR === '1';
+const EMULATOR_CONFIG = {
+  apiKey: 'demo-api-key', authDomain: 'demo-sweater.firebaseapp.com', projectId: 'demo-sweater',
+  storageBucket: '', messagingSenderId: '', appId: 'demo-sweater-app',
+};
+
+export const firebaseConfig = usingEmulators ? EMULATOR_CONFIG : {
   apiKey:            readEnv('VITE_FIREBASE_API_KEY',             DEFAULT_CONFIG.apiKey),
   authDomain:        readEnv('VITE_FIREBASE_AUTH_DOMAIN',         DEFAULT_CONFIG.authDomain),
   projectId:         readEnv('VITE_FIREBASE_PROJECT_ID',          DEFAULT_CONFIG.projectId),
@@ -71,6 +81,10 @@ export const db      = app ? getFirestore(app) : null;
 export const functions = app ? getFunctions(app, 'us-central1') : null;
 export const auth    = app ? getAuth(app) : null;
 export const storage = app ? getStorage(app) : null;
+if (usingEmulators && db && auth) {
+  connectFirestoreEmulator(db, '127.0.0.1', 8080);
+  connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
+}
 
 /**
  * Calls a ledger function and unwraps its result.

@@ -46,3 +46,7 @@ mcp/node_modules/
 .vite-cache/
 .test-runtime/
 language-preview.local/
+
+# Emulator measurement build and output (scripts/emulator/).
+dist-emulator
+emulator-reads*.json

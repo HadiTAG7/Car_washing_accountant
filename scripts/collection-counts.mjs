@@ -16,7 +16,7 @@ import { initializeApp, applicationDefault } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 
 // Subcollections are not listed by listCollections(); name them explicitly.
-const SUBCOLLECTION_GROUPS = ['items', 'revisions'];
+const SUBCOLLECTION_GROUPS = ['items', 'payments', 'revisions'];
 // Month-shaped fields, so the seed can spread documents over the same span.
 const DATE_FIELDS = { washes: 'wash_date', journal_entries: 'entryDate', sweater_bookings: 'periodKey' };
 

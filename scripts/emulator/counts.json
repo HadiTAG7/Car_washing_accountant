@@ -1,0 +1,22 @@
+{
+  "_note": "Estimated sizes until scripts/collection-counts.mjs runs against production. Replace with its --json output (collections/spans) to measure at real size.",
+  "months": 6,
+  "collections": {
+    "bikers": 40,
+    "washes": 3000,
+    "sweater_bookings": 2550,
+    "variable_expenses": 240,
+    "monthly_expenses": 40,
+    "annual_expenses": 8,
+    "annual_expense_entries": 16,
+    "temporary_expenses": 120,
+    "partners": 5,
+    "partner_payments": 20,
+    "startup_costs": 30,
+    "startup_cost_entries": 60,
+    "biker_quality_reports": 120,
+    "housing_units": 4
+  },
+  "directWashShare": 0.15,
+  "postedExpenseShare": 0.5
+}

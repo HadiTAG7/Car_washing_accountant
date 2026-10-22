@@ -210,7 +210,7 @@ if (args.has('--plan')) {
   await plan();
 } else {
   await exportAll();
-  if (!only && !args.has('--no-auth') && !emulated) await exportAuth();
+  if (!only && !args.has('--no-auth') && (!emulated || process.env.FIREBASE_AUTH_EMULATOR_HOST)) await exportAuth();
   if (!only && !args.has('--no-storage')) await exportStorageList();
   console.log(`\nاكتمل. القراءات المحسوبة من Firestore: ${manifest.reads}. الملفات في ${OUT}`);
 }

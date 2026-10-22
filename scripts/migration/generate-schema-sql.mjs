@@ -37,12 +37,12 @@ export function tablesSql() {
 `);
   for (const t of SCHEMA) {
     const cols = [`  id text collate "C" not null`];
-    if (t.parentTable) cols.push(`  parent_id text collate "C" not null`);
+    if (t.parentTable) cols.push(`  parent_ref text collate "C" not null`);
     for (const c of t.columns) cols.push(`  ${q(c.column)} ${SQL_TYPES[c.type]}`);
     cols.push(`  extra jsonb not null default '{}'::jsonb`);
     cols.push(`  shape jsonb`);
     const checks = [
-      `  constraint ${q(`${t.table}_pk`)} primary key (${t.parentTable ? 'parent_id, id' : 'id'})`,
+      `  constraint ${q(`${t.table}_pk`)} primary key (${t.parentTable ? 'parent_ref, id' : 'id'})`,
       `  constraint ${q(`${t.table}_extra_object`)} check (jsonb_typeof(extra) = 'object')`,
       `  constraint ${q(`${t.table}_shape_object`)} check (shape is null or jsonb_typeof(shape) = 'object')`,
     ];
@@ -53,7 +53,7 @@ export function tablesSql() {
     }
     out.push(`-- ${t.collection}\ncreate table public.${q(t.table)} (\n${[...cols, ...checks].join(',\n')}\n);`);
     if (t.parentTable) {
-      out.push(`alter table public.${q(t.table)} add constraint ${q(`${t.table}_parent_fk`)} foreign key (parent_id) references public.${q(t.parentTable)}(id) deferrable initially deferred;`);
+      out.push(`alter table public.${q(t.table)} add constraint ${q(`${t.table}_parent_fk`)} foreign key (parent_ref) references public.${q(t.parentTable)}(id) deferrable initially deferred;`);
     }
     for (const c of t.columns.filter(c => c.indexed)) {
       out.push(`create index ${q(`${t.table}_${c.column}_idx`)} on public.${q(t.table)} (${q(c.column)}, id);`);

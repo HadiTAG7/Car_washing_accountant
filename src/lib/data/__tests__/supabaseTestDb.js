@@ -21,8 +21,10 @@ export async function resetDb() {
 }
 
 export async function createAuthUser(id, email) {
-  await db().query(`insert into auth.users (instance_id, id, aud, role, email, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
-    values ('00000000-0000-0000-0000-000000000000', $1, 'authenticated', 'authenticated', $2, now(), '{}', '{}', now(), now())
+  // Auth reads these token columns as strings: '' not NULL, or it cannot load the user.
+  await db().query(`insert into auth.users (instance_id, id, aud, role, email, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
+      confirmation_token, recovery_token, email_change_token_new, email_change, email_change_token_current, reauthentication_token, phone_change, phone_change_token)
+    values ('00000000-0000-0000-0000-000000000000', $1, 'authenticated', 'authenticated', $2, now(), '{}', '{}', now(), now(), '', '', '', '', '', '', '', '')
     on conflict (id) do nothing`, [id, email]);
 }
 

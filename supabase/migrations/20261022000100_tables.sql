@@ -901,7 +901,7 @@ create table public."partner_worker_eligibility" (
 -- partner_worker_eligibility/*/audit
 create table public."partner_worker_eligibility_audit" (
   id text collate "C" not null,
-  parent_id text collate "C" not null,
+  parent_ref text collate "C" not null,
   "period_key" text collate "C",
   "revision" integer,
   "actor_uid" text collate "C",
@@ -911,12 +911,12 @@ create table public."partner_worker_eligibility_audit" (
   "after" jsonb,
   extra jsonb not null default '{}'::jsonb,
   shape jsonb,
-  constraint "partner_worker_eligibility_audit_pk" primary key (parent_id, id),
+  constraint "partner_worker_eligibility_audit_pk" primary key (parent_ref, id),
   constraint "partner_worker_eligibility_audit_extra_object" check (jsonb_typeof(extra) = 'object'),
   constraint "partner_worker_eligibility_audit_shape_object" check (shape is null or jsonb_typeof(shape) = 'object'),
   constraint "partner_worker_eligibility_audit_period_key_month" check (app.is_month("period_key"))
 );
-alter table public."partner_worker_eligibility_audit" add constraint "partner_worker_eligibility_audit_parent_fk" foreign key (parent_id) references public."partner_worker_eligibility"(id) deferrable initially deferred;
+alter table public."partner_worker_eligibility_audit" add constraint "partner_worker_eligibility_audit_parent_fk" foreign key (parent_ref) references public."partner_worker_eligibility"(id) deferrable initially deferred;
 
 -- partner_mcp_keys
 create table public."partner_mcp_keys" (
@@ -1025,7 +1025,7 @@ create index "payroll_runs_status_idx" on public."payroll_runs" ("status", id);
 -- payroll_runs/*/items
 create table public."payroll_run_items" (
   id text collate "C" not null,
-  parent_id text collate "C" not null,
+  parent_ref text collate "C" not null,
   "biker_id" text collate "C",
   "name" text collate "C",
   "monthly_salary" numeric(14,2),
@@ -1046,29 +1046,29 @@ create table public."payroll_run_items" (
   "payment_method" text collate "C",
   extra jsonb not null default '{}'::jsonb,
   shape jsonb,
-  constraint "payroll_run_items_pk" primary key (parent_id, id),
+  constraint "payroll_run_items_pk" primary key (parent_ref, id),
   constraint "payroll_run_items_extra_object" check (jsonb_typeof(extra) = 'object'),
   constraint "payroll_run_items_shape_object" check (shape is null or jsonb_typeof(shape) = 'object'),
   constraint "payroll_run_items_period_key_month" check (app.is_month("period_key")),
   constraint "payroll_run_items_pay_date_day" check (app.is_day("pay_date"))
 );
-alter table public."payroll_run_items" add constraint "payroll_run_items_parent_fk" foreign key (parent_id) references public."payroll_runs"(id) deferrable initially deferred;
+alter table public."payroll_run_items" add constraint "payroll_run_items_parent_fk" foreign key (parent_ref) references public."payroll_runs"(id) deferrable initially deferred;
 create index "payroll_run_items_biker_id_idx" on public."payroll_run_items" ("biker_id", id);
 
 -- payroll_runs/*/payments
 create table public."payroll_run_payments" (
   id text collate "C" not null,
-  parent_id text collate "C" not null,
+  parent_ref text collate "C" not null,
   "preview_hash" text collate "C",
   "created_by" text collate "C",
   "created_at" timestamptz,
   extra jsonb not null default '{}'::jsonb,
   shape jsonb,
-  constraint "payroll_run_payments_pk" primary key (parent_id, id),
+  constraint "payroll_run_payments_pk" primary key (parent_ref, id),
   constraint "payroll_run_payments_extra_object" check (jsonb_typeof(extra) = 'object'),
   constraint "payroll_run_payments_shape_object" check (shape is null or jsonb_typeof(shape) = 'object')
 );
-alter table public."payroll_run_payments" add constraint "payroll_run_payments_parent_fk" foreign key (parent_id) references public."payroll_runs"(id) deferrable initially deferred;
+alter table public."payroll_run_payments" add constraint "payroll_run_payments_parent_fk" foreign key (parent_ref) references public."payroll_runs"(id) deferrable initially deferred;
 
 -- payroll_payment_locks
 create table public."payroll_payment_locks" (
@@ -1123,15 +1123,15 @@ create index "finance_reviews_source_id_idx" on public."finance_reviews" ("sourc
 -- finance_reviews/*/revisions
 create table public."finance_review_revisions" (
   id text collate "C" not null,
-  parent_id text collate "C" not null,
+  parent_ref text collate "C" not null,
   "revision" integer,
   extra jsonb not null default '{}'::jsonb,
   shape jsonb,
-  constraint "finance_review_revisions_pk" primary key (parent_id, id),
+  constraint "finance_review_revisions_pk" primary key (parent_ref, id),
   constraint "finance_review_revisions_extra_object" check (jsonb_typeof(extra) = 'object'),
   constraint "finance_review_revisions_shape_object" check (shape is null or jsonb_typeof(shape) = 'object')
 );
-alter table public."finance_review_revisions" add constraint "finance_review_revisions_parent_fk" foreign key (parent_id) references public."finance_reviews"(id) deferrable initially deferred;
+alter table public."finance_review_revisions" add constraint "finance_review_revisions_parent_fk" foreign key (parent_ref) references public."finance_reviews"(id) deferrable initially deferred;
 
 -- finance_workbench_receipts
 create table public."finance_workbench_receipts" (
@@ -1582,17 +1582,17 @@ create index "executive_reports_report_id_idx" on public."executive_reports" ("r
 -- executive_reports/*/revisions
 create table public."executive_report_revisions" (
   id text collate "C" not null,
-  parent_id text collate "C" not null,
+  parent_ref text collate "C" not null,
   "revision" integer,
   "saved_at" timestamptz,
   "content_hash" text collate "C",
   extra jsonb not null default '{}'::jsonb,
   shape jsonb,
-  constraint "executive_report_revisions_pk" primary key (parent_id, id),
+  constraint "executive_report_revisions_pk" primary key (parent_ref, id),
   constraint "executive_report_revisions_extra_object" check (jsonb_typeof(extra) = 'object'),
   constraint "executive_report_revisions_shape_object" check (shape is null or jsonb_typeof(shape) = 'object')
 );
-alter table public."executive_report_revisions" add constraint "executive_report_revisions_parent_fk" foreign key (parent_id) references public."executive_reports"(id) deferrable initially deferred;
+alter table public."executive_report_revisions" add constraint "executive_report_revisions_parent_fk" foreign key (parent_ref) references public."executive_reports"(id) deferrable initially deferred;
 create index "executive_report_revisions_revision_idx" on public."executive_report_revisions" ("revision", id);
 
 -- finance_reports
@@ -1612,17 +1612,17 @@ create index "finance_reports_report_id_idx" on public."finance_reports" ("repor
 -- finance_reports/*/revisions
 create table public."finance_report_revisions" (
   id text collate "C" not null,
-  parent_id text collate "C" not null,
+  parent_ref text collate "C" not null,
   "revision" integer,
   "saved_at" timestamptz,
   "content_hash" text collate "C",
   extra jsonb not null default '{}'::jsonb,
   shape jsonb,
-  constraint "finance_report_revisions_pk" primary key (parent_id, id),
+  constraint "finance_report_revisions_pk" primary key (parent_ref, id),
   constraint "finance_report_revisions_extra_object" check (jsonb_typeof(extra) = 'object'),
   constraint "finance_report_revisions_shape_object" check (shape is null or jsonb_typeof(shape) = 'object')
 );
-alter table public."finance_report_revisions" add constraint "finance_report_revisions_parent_fk" foreign key (parent_id) references public."finance_reports"(id) deferrable initially deferred;
+alter table public."finance_report_revisions" add constraint "finance_report_revisions_parent_fk" foreign key (parent_ref) references public."finance_reports"(id) deferrable initially deferred;
 create index "finance_report_revisions_revision_idx" on public."finance_report_revisions" ("revision", id);
 
 -- operations_reports
@@ -1642,17 +1642,17 @@ create index "operations_reports_report_id_idx" on public."operations_reports" (
 -- operations_reports/*/revisions
 create table public."operations_report_revisions" (
   id text collate "C" not null,
-  parent_id text collate "C" not null,
+  parent_ref text collate "C" not null,
   "revision" integer,
   "saved_at" timestamptz,
   "content_hash" text collate "C",
   extra jsonb not null default '{}'::jsonb,
   shape jsonb,
-  constraint "operations_report_revisions_pk" primary key (parent_id, id),
+  constraint "operations_report_revisions_pk" primary key (parent_ref, id),
   constraint "operations_report_revisions_extra_object" check (jsonb_typeof(extra) = 'object'),
   constraint "operations_report_revisions_shape_object" check (shape is null or jsonb_typeof(shape) = 'object')
 );
-alter table public."operations_report_revisions" add constraint "operations_report_revisions_parent_fk" foreign key (parent_id) references public."operations_reports"(id) deferrable initially deferred;
+alter table public."operations_report_revisions" add constraint "operations_report_revisions_parent_fk" foreign key (parent_ref) references public."operations_reports"(id) deferrable initially deferred;
 create index "operations_report_revisions_revision_idx" on public."operations_report_revisions" ("revision", id);
 
 -- biker_quality_reports

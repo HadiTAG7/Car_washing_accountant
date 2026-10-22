@@ -211,7 +211,7 @@ export const NOT_MIGRATED = {
 // ── Parsed form ──
 export const snake = s => s.replace(/([a-z0-9])([A-Z])/g, '$1_$2').replace(/([A-Z])([A-Z][a-z])/g, '$1_$2').toLowerCase();
 const TYPES = new Set(['id', 'text', 'int', 'big', 'money', 'num', 'rate', 'bool', 'day', 'month', 'ts', 'iso', 'json']);
-const RESERVED = new Set(['id', 'extra', 'shape']);
+const RESERVED = new Set(['id', 'extra', 'shape', 'parent_ref']);
 
 function parseColumns(spec, table) {
   const out = [];
@@ -235,7 +235,7 @@ export const SCHEMA = TABLES.map((t) => {
   const table = t.table || t.collection;
   const parentTable = t.parent ? (TABLES.find(p => p.collection === t.parent)?.table || t.parent) : null;
   return {
-    ...t, table, parentTable, parentColumn: parentTable ? 'parent_id' : null,
+    ...t, table, parentTable, parentColumn: parentTable ? 'parent_ref' : null,
     columns: parseColumns(t.columns, table),
     fks: t.fks || [],
   };

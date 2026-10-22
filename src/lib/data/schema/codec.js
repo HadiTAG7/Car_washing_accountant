@@ -205,7 +205,7 @@ export function encodeDocument(table, id, data, { parentId = null } = {}) {
   const linesOk = hasLines && Array.isArray(lines) && lines.every(plainMap);
   const { row, extra, shape } = encodeFields(table.columns, tagged, { skip: linesOk ? ['lines'] : [] });
   const out = { id: String(id), ...row, extra, shape: Object.keys(shape).length ? shape : null };
-  if (table.parentTable) out.parent_id = String(parentId);
+  if (table.parentTable) out.parent_ref = String(parentId);
   let lineRows = null;
   if (hasLines) {
     if (linesOk) {

@@ -88,11 +88,14 @@ end $$;
 create trigger journal_entries_immutable before update or delete on public.journal_entries
   for each row execute function app.trg_entry_immutable();
 
+-- reversal_of has no foreign key: a manual entry may carry any reference the
+-- poster typed (normalizeEntry keeps it as text) — production holds «41», an
+-- entry number. Indexed, reported, not refused. The references only the server
+-- sets (reverses, reversed_by, settlement) keep their keys.
 alter table public.journal_entries
   add constraint journal_entries_status check (status is null or status in ('posted', 'reversed', 'draft')),
   add constraint journal_entries_period_matches check (period_key is null or entry_date is null or period_key = substr(entry_date, 1, 7)),
   add constraint journal_entries_number_unique unique (entry_number),
-  add constraint journal_entries_reversal_of_fk foreign key (reversal_of) references public.journal_entries(id) deferrable initially deferred,
   add constraint journal_entries_reverses_fk foreign key (reverses_entry_id) references public.journal_entries(id) deferrable initially deferred,
   add constraint journal_entries_reversed_by_fk foreign key (reversed_by) references public.journal_entries(id) deferrable initially deferred,
   add constraint journal_entries_settlement_fk foreign key (settlement_entry_id) references public.journal_entries(id) deferrable initially deferred,

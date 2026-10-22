@@ -182,6 +182,15 @@ async function exportAuth() {
 async function exportStorageList() {
   if (emulated) return;
   const bucket = getStorage(app).bucket();
+  // A project that never set up Storage has no bucket: nothing to copy, said so.
+  const [exists] = await bucket.exists();
+  if (!exists) {
+    manifest.storage = { bucket: bucket.name, missing: true, files: 0, bytes: 0 };
+    saveManifest();
+    writeFileSync(join(OUT, 'storage-files.ndjson'), '', { mode: 0o600 });
+    console.log(`ملفات الفواتير: لا حاوية ${bucket.name} في المشروع — لا ملفات تُنقل.`);
+    return;
+  }
   const [files] = await bucket.getFiles({ prefix: 'invoices/' });
   const file = join(OUT, 'storage-files.ndjson');
   writeFileSync(file, files.map(f => `${JSON.stringify({

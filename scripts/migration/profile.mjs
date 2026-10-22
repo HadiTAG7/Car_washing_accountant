@@ -20,7 +20,11 @@ const DIR = process.argv[2] || process.env.MIGRATION_DATA || join(ROOT, 'migrati
 const data = readExport(DIR);
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
-const realDay = v => DAY.test(v) && new Date(`${v}T12:00:00Z`).toISOString().slice(0, 10) === v;
+const realDay = (v) => {
+  if (!DAY.test(v)) return false;
+  const d = new Date(`${v}T12:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+};
 function stringShape(v) {
   if (realDay(v)) return 'date';
   if (DAY.test(v)) return 'date-invalid';

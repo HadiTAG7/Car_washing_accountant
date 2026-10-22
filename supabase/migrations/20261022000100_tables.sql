@@ -509,7 +509,6 @@ create table public."variable_expenses" (
   constraint "variable_expenses_pk" primary key (id),
   constraint "variable_expenses_extra_object" check (jsonb_typeof(extra) = 'object'),
   constraint "variable_expenses_shape_object" check (shape is null or jsonb_typeof(shape) = 'object'),
-  constraint "variable_expenses_logged_date_day" check (app.is_day("logged_date")),
   constraint "variable_expenses_spent_date_day" check (app.is_day("spent_date")),
   constraint "variable_expenses_invoice_date_day" check (app.is_day("invoice_date")),
   constraint "variable_expenses_vat_rate_rate" check ("vat_rate" is null or "vat_rate" between 0 and 1),

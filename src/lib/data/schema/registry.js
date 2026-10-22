@@ -90,8 +90,10 @@ export const TABLES = [
       payment_status recurrence logged_date:day! spent_date:day ${TAX_BLOCK} paid_date:day start_period:month end_period:month active:bool
       biker_id:id payroll_period salary_month:month payrollSnapshot:json ${WORKBENCH} created_at:iso`,
     policy: { read: 'staff', write: 'operator', expenseLock: 'monthly' } },
+  // logged_date is text, not day: production holds unpadded dates ('2026-8-22')
+  // that a month query must compare as Firestore does, byte by byte.
   { collection: 'variable_expenses', columns: `expense_name category_id:id quantity:num unit_cost:num total_variable_cost:money payment_status
-      logged_date:day! spent_date:day! ${TAX_BLOCK} paid_date:day ${WORKBENCH} created_at:iso`,
+      logged_date:text! spent_date:day! ${TAX_BLOCK} paid_date:day ${WORKBENCH} created_at:iso`,
     policy: { read: 'staff', write: 'operator', expenseLock: 'variable' } },
   { collection: 'annual_expenses', columns: `expense_name category:id quantity:num annual_cost:money actual_amount:money units:json
       payment_month:int payment_day:int payment_status created_at:iso`, policy: { read: 'staff', write: 'operator' } },

@@ -12,8 +12,11 @@ import http from 'node:http';
 import { readFileSync } from 'node:fs';
 import { takeMeter } from './read-meter.mjs';
 
-if (!process.env.FIRESTORE_EMULATOR_HOST || !process.env.FIREBASE_AUTH_EMULATOR_HOST) {
-  console.error('api-server.mjs serves the emulators only.');
+// Or the local Supabase (DATA_SOURCE=supabase, LEDGER_DB_URL to it): the same
+// handlers on pgstore, for `vite --mode supabase-local`.
+const localSupabase = process.env.DATA_SOURCE === 'supabase' && /@(127\.0\.0\.1|localhost):/.test(process.env.LEDGER_DB_URL || '');
+if (!localSupabase && (!process.env.FIRESTORE_EMULATOR_HOST || !process.env.FIREBASE_AUTH_EMULATOR_HOST)) {
+  console.error('api-server.mjs serves the emulators (or a local Supabase) only.');
   process.exit(2);
 }
 process.env.GCLOUD_PROJECT ||= 'demo-sweater';
@@ -26,7 +29,7 @@ async function handlerFor(pathname) {
   const rewrite = rewrites.find(r => r.source === pathname);
   const target = new URL(rewrite ? rewrite.destination : pathname, 'http://local');
   const file = target.pathname.replace(/^\/api\//, '');
-  if (!/^[a-z0-9-]+$/.test(file)) return null;
+  if (!/^[a-z0-9-]+(\/[a-z0-9-]+)*$/.test(file)) return null;
   if (!handlers.has(file)) handlers.set(file, (await import(`../../api/${file}.js`)).default);
   return { handler: handlers.get(file), query: Object.fromEntries(target.searchParams) };
 }

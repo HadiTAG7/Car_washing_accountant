@@ -53,3 +53,4 @@ emulator-reads*.json
 
 # Firestore → Supabase migration exports (real production data — never commit).
 migration-data/
+dist-supabase-local

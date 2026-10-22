@@ -17,10 +17,13 @@ function releaseId() {
 // `--mode emulator`: count Firestore reads in the browser and send `/api` to
 // the local API server over the emulators (scripts/emulator/). Never in a
 // real build — those run in production mode.
+// `--mode supabase-local`: the same `/api` proxy, to the API server running
+// the handlers on a local Supabase (with VITE_DATA_SOURCE=supabase).
+const localApi = { '/api': { target: `http://127.0.0.1:${process.env.API_PORT || 5174}`, changeOrigin: false } };
 const emulatorMode = mode => mode === 'emulator' ? {
   alias: [{ find: /^firebase\/firestore$/, replacement: fileURLToPath(new URL('./scripts/emulator/firestore-meter.js', import.meta.url)) }],
-  proxy: { '/api': { target: `http://127.0.0.1:${process.env.API_PORT || 5174}`, changeOrigin: false } },
-} : null;
+  proxy: localApi,
+} : mode === 'supabase-local' ? { alias: [], proxy: localApi } : null;
 
 // `VITE_DATA_SOURCE=supabase`: every firebase/* import resolves to the one data
 // layer on supabase-js (src/lib/data/supabase/) — same functions, same

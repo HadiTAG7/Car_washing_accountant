@@ -95,11 +95,18 @@ export async function readCanonicalQualitySource(db,bikerUID,periodKey,{transact
   const query=db.collection('washes').where('biker_id','==',bikerUID).limit(501);
   const snap=await (transaction?transaction.get(query):query.get());
   if(snap.size>=501) return {available:false,reason:'requires-pagination'};
+  return canonicalQualitySourceFromRows(bikerUID,worker,snap.docs.map(doc=>({id:doc.id,data:doc.data()})),periodKey);
+}
+
+// The same projection from rows already read — the month read for every
+// worker at once (`readQualityMonth`). Rows are taken in document-id order,
+// the order the per-worker query returns them.
+export function canonicalQualitySourceFromRows(bikerUID,worker,rows,periodKey) {
   const eligible=[],excluded=[];
-  for(const doc of snap.docs) {
-    const row=doc.data(), serviceDate=String(row.wash_date||'').slice(0,10);
+  for(const {id:washId,data:row} of [...rows].sort((a,b)=>(a.id<b.id?-1:a.id>b.id?1:0))) {
+    const serviceDate=String(row.wash_date||'').slice(0,10);
     if(serviceDate.slice(0,7)!==periodKey||!completedCommissionWash(row)) continue;
-    const ref={washId:doc.id,serviceDate,sspBookingId:row.ssp_booking_id?String(row.ssp_booking_id):null};
+    const ref={washId,serviceDate,sspBookingId:row.ssp_booking_id?String(row.ssp_booking_id):null};
     if(!day.safeParse(serviceDate).success) { excluded.push({...ref,reason:'invalid-date'}); continue; }
     if((worker.start_date&&serviceDate<worker.start_date)||(worker.end_date&&serviceDate>worker.end_date)) { excluded.push({...ref,reason:'outside-employment'}); continue; }
     (Number(row.quantity)===1?eligible:excluded).push(ref);

@@ -179,6 +179,18 @@ export function trialBalance(accounts, entries, lines, { from = null, to = null 
   return summarizeTrialBalance(accounts, postedLines(entries, lines, { from, to }));
 }
 
+/**
+ * The same trial balance from per-account totals the database summed
+ * (`posted_line_sums`: posted and reversed entries, same date window). Every
+ * line holds whole halalas, so the exact sum equals what the loop above adds
+ * and rounds; the presentation below is the same code.
+ */
+export function trialBalanceFromSums(accounts, sums) {
+  return summarizeTrialBalance(accounts, (sums || []).map(s => ({
+    accountId: s.account_id, debit: Number(s.debit) || 0, credit: Number(s.credit) || 0,
+  })));
+}
+
 function summarizeTrialBalance(accounts, selectedLines) {
   const index = indexAccounts(accounts);
   const rows = new Map();
@@ -249,6 +261,11 @@ export function incomeStatement(accounts, entries, lines, { from = null, to = nu
   const tb = salaryAccrual
     ? summarizeTrialBalance(accounts, incomeStatementLines(entries, lines, { from, to }))
     : trialBalance(accounts, entries, lines, { from, to });
+  return incomeStatementFromTrialBalance(accounts, tb, { to, feeRules });
+}
+
+/** The statement from a trial balance already built (from entries, or from database sums). */
+export function incomeStatementFromTrialBalance(accounts, tb, { to = null, feeRules = [] } = {}) {
   const index = indexAccounts(accounts);
 
   const revenue = [], costOfServices = [], expenses = [];
@@ -304,7 +321,15 @@ export function incomeStatement(accounts, entries, lines, { from = null, to = nu
  * the sheet would be out by exactly the net profit.
  */
 export function balanceSheet(accounts, entries, lines, { asOf = null, feeRules = [] } = {}) {
-  const tb = trialBalance(accounts, entries, lines, { to: asOf });
+  return balanceSheetFromTrialBalance(accounts, trialBalance(accounts, entries, lines, { to: asOf }), { asOf, feeRules });
+}
+
+/**
+ * The same sheet from a trial balance through `asOf` — built from entries, or
+ * from the database's sums (`trialBalanceFromSums`). The period result is the
+ * journal-date income statement over that same balance, as above.
+ */
+export function balanceSheetFromTrialBalance(accounts, tb, { asOf = null, feeRules = [] } = {}) {
   const index = indexAccounts(accounts);
 
   const assets = [], liabilities = [], equity = [];
@@ -318,7 +343,7 @@ export function balanceSheet(accounts, entries, lines, { asOf = null, feeRules =
     else if (a.accountType === 'equity')    equity.push({ ...r, amount: creditPositive });
   }
 
-  const is = incomeStatement(accounts, entries, lines, { to: asOf, feeRules });
+  const is = incomeStatementFromTrialBalance(accounts, tb, { to: asOf, feeRules });
   const totalAssets      = round2(assets.reduce((s, r) => s + r.amount, 0));
   const totalLiabilities = round2(liabilities.reduce((s, r) => s + r.amount, 0));
   const equityBeforeResult = round2(equity.reduce((s, r) => s + r.amount, 0));

@@ -9,20 +9,29 @@ export function incomePayrollMonths(periodKey) {
 
 // Preview only. Admin/accountant already have payrollPreview permission;
 // a real partner never receives company payroll rows through this hook.
-export function useIncomePayrollPreviews(periodKey, { enabled = false, revision = '' } = {}) {
+//
+// One server call for the months asked (not one per month), cached for the
+// session: a payroll or wash write drops it (server reports are tagged `*`),
+// and «تحديث» re-reads it. The selected month must succeed; another month that
+// fails stays explicitly unavailable — never zero wages.
+export function useIncomePayrollPreviews(periodKey, { enabled = false, months = null } = {}) {
   const { user, loading } = useAuth();
   const ready = enabled && isFirebaseConfigured && !loading && Boolean(user?.id)
     && /^\d{4}-(0[1-9]|1[0-2])$/.test(periodKey);
-  return useFirestoreQuery(async () => Promise.all(incomePayrollMonths(periodKey).map(async month => {
-    try {
-      const preview = await callPayroll('payrollPreview', { periodKey: month, automaticAdvanceDeduction: true });
-      if (preview?.periodKey !== month || !Array.isArray(preview.lines)) throw new Error('معاينة الرواتب لا تطابق شهر قائمة الدخل.');
-      return preview;
-    } catch (error) {
-      if (month === periodKey) throw error;
+  const wanted = months || incomePayrollMonths(periodKey);
+  return useFirestoreQuery(async () => {
+    const results = await callPayroll('payrollPreviews', { periodKeys: wanted });
+    return wanted.map(month => {
+      const preview = (results || []).find(row => row?.periodKey === month);
+      if (preview && !preview.error && Array.isArray(preview.lines)) return preview;
+      if (month === periodKey) {
+        const error = new Error(preview?.error?.message || 'معاينة الرواتب لا تطابق شهر قائمة الدخل.');
+        if (preview?.error?.code) error.code = preview.error.code;
+        throw error;
+      }
       // A historical chart gap cannot hide a verified selected-month report.
-      // Keep its period explicitly unavailable, never substitute zero wages.
       return { periodKey: month, unavailable: true };
-    }
-  })), { enabled: ready, preserveResult: true, queryKey: JSON.stringify([user?.id, periodKey, enabled, revision]), fallback: [] });
+    });
+  }, { enabled: ready, preserveResult: true, cacheKey: `payrollPreviews:${wanted.join(',')}`, cacheTags: ['*'],
+    queryKey: JSON.stringify([user?.id, periodKey, enabled]), deps: [wanted.join(',')], fallback: [] });
 }

@@ -10,8 +10,13 @@ import DateField from './DateField';
 import LoadingState from './LoadingState';
 import ErrorState, { SetupRequiredCard } from './ErrorState';
 import { useLedger } from '../hooks/useLedger';
-import { trialBalance } from '../lib/accounting/reports';
-import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
+import { useFirestoreQuery } from '../hooks/useFirestoreQuery';
+import { trialBalance, trialBalanceFromSums } from '../lib/accounting/reports';
+import { fetchPostedLineSums } from '../lib/accounting/ledgerSums';
+import { isFirebaseConfigured, missingEnvNames, dataSource } from '../lib/firebaseClient';
+
+// On Supabase the totals are summed in the database (one call, not every entry).
+const SQL_SUMS = dataSource === 'supabase';
 
 const TYPE_LABELS = {
   asset: 'أصول', liability: 'التزامات', equity: 'حقوق ملكية',
@@ -26,14 +31,22 @@ const TYPE_LABELS = {
  * any statement built on top can be trusted.
  */
 export default function TrialBalancePage() {
-  const { accounts, entries, lines, needsSeeding, loading, error, refetch } = useLedger();
+  const { accounts, entries, lines, needsSeeding, loading: ledgerLoading, error: ledgerError, refetch: refetchLedger } = useLedger();
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
 
+  const sumsQ = useFirestoreQuery(() => fetchPostedLineSums({ from, to }), {
+    enabled: SQL_SUMS && isFirebaseConfigured, cacheKey: `postedLineSums:${from}|${to}`,
+    cacheTags: ['journal_entries', 'journal_lines'], deps: [from, to], fallback: [],
+  });
   const tb = useMemo(
-    () => trialBalance(accounts, entries, lines, { from: from || null, to: to || null }),
-    [accounts, entries, lines, from, to],
+    () => (SQL_SUMS ? trialBalanceFromSums(accounts, sumsQ.data)
+      : trialBalance(accounts, entries, lines, { from: from || null, to: to || null })),
+    [accounts, entries, lines, from, to, sumsQ.data],
   );
+  const loading = ledgerLoading || (SQL_SUMS && sumsQ.loading);
+  const error = ledgerError || (SQL_SUMS ? sumsQ.error : null);
+  const refetch = () => { refetchLedger(); if (SQL_SUMS) sumsQ.refetch(); };
 
   function handleExport() {
     const rows = tb.rows.map((r) => [

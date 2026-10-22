@@ -1,4 +1,4 @@
-import { readQualityReports, saveQualityReports } from '../server/bikerQualityReports.js';
+import { readQualityReports, readQualityMonth, saveQualityReports } from '../server/bikerQualityReports.js';
 import { getBikerQualityRuntime } from '../server/bikerQualityRuntime.js';
 import { saveManualReview } from '../server/bikerQualityManual.js';
 
@@ -18,12 +18,12 @@ export function createQualityHandler(getRuntime = getBikerQualityRuntime) {
     try {
       if (Number(req.headers['content-length']) > 500000) return res.status(413).json({ error: { code: 'invalid-argument' } });
       const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-      if (!body || !['read', 'save', 'manual-note', 'manual-correct', 'manual-confirm'].includes(body.operation) || Object.keys(body).some(k => !['operation', 'data'].includes(k))) {
+      if (!body || !['read', 'readMonth', 'save', 'manual-note', 'manual-correct', 'manual-confirm'].includes(body.operation) || Object.keys(body).some(k => !['operation', 'data'].includes(k))) {
         return res.status(400).json({ error: { code: 'invalid-argument', message: 'عملية غير صالحة.' } });
       }
       const result = body.operation.startsWith('manual-')
         ? await saveManualReview(runtime.db, { uid: caller.uid }, body.data, body.operation)
-        : await (body.operation === 'read' ? readQualityReports : saveQualityReports)(runtime.db, { uid: caller.uid }, body.data);
+        : await ({ read: readQualityReports, readMonth: readQualityMonth, save: saveQualityReports })[body.operation](runtime.db, { uid: caller.uid }, body.data);
       return res.status(200).json({ result });
     } catch (error) {
       const statuses = { 'unauthenticated': 401, 'permission-denied': 403, 'invalid-argument': 400,

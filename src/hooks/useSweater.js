@@ -22,7 +22,7 @@ export function useSweaterBookings(periodKey) {
       await fetchRows('sweater_bookings', periodKey ? [where('periodKey', '==', periodKey)] : []),
       [{ key: 'serviceDate' }],
     ),
-    { enabled: enabled && Boolean(periodKey), deps: [periodKey], fallback: [] },
+    { cacheKey: `sweater_bookings:${periodKey}`, enabled: enabled && Boolean(periodKey), deps: [periodKey], fallback: [] },
   );
   return { bookings: data ?? [], loading, error, refetch };
 }
@@ -30,7 +30,7 @@ export function useSweaterBookings(periodKey) {
 export function useSweaterSettlements() {
   const { data, loading, error, refetch } = useFirestoreQuery(
     async () => sortBy(await fetchRows('sweater_settlements'), [{ key: 'periodKey', dir: 'desc' }]),
-    { enabled, fallback: [] },
+    { cacheKey: 'sweater_settlements', enabled, fallback: [] },
   );
   const settlements = useMemo(() => data ?? [], [data]);
 
@@ -61,7 +61,7 @@ export function useSweaterAdjustments(periodKey) {
       await fetchRows('sweater_adjustments', periodKey ? [where('periodKey', '==', periodKey)] : []),
       [{ key: 'effectiveDate', dir: 'desc' }],
     ),
-    { enabled, deps: [periodKey], fallback: [] },
+    { cacheKey: `sweater_adjustments:${periodKey || 'all'}`, enabled, deps: [periodKey], fallback: [] },
   );
   const refresh = refetch;
   return {
@@ -82,7 +82,7 @@ export function useSweaterAdjustments(periodKey) {
 export function useSweaterVariances(periodKey) {
   const { data, loading, error, refetch } = useFirestoreQuery(
     async () => fetchRows('sweater_variances', periodKey ? [where('periodKey', '==', periodKey)] : []),
-    { enabled, deps: [periodKey], fallback: [] },
+    { cacheKey: `sweater_variances:${periodKey || 'all'}`, enabled, deps: [periodKey], fallback: [] },
   );
   const refresh = refetch;
   return {

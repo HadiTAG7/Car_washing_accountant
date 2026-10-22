@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { fileURLToPath } from 'node:url'
@@ -14,7 +14,28 @@ function releaseId() {
   catch { return 'unknown'; }
 }
 
-export default defineConfig({
+// `--mode emulator`: count Firestore reads in the browser and send `/api` to
+// the local API server over the emulators (scripts/emulator/). Never in a
+// real build — those run in production mode.
+// `--mode supabase-local`: the same `/api` proxy, to the API server running
+// the handlers on a local Supabase (with VITE_DATA_SOURCE=supabase).
+const localApi = { '/api': { target: `http://127.0.0.1:${process.env.API_PORT || 5174}`, changeOrigin: false } };
+const emulatorMode = mode => mode === 'emulator' ? {
+  alias: [{ find: /^firebase\/firestore$/, replacement: fileURLToPath(new URL('./scripts/emulator/firestore-meter.js', import.meta.url)) }],
+  proxy: localApi,
+} : mode === 'supabase-local' ? { alias: [], proxy: localApi } : null;
+
+// `VITE_DATA_SOURCE=supabase`: every firebase/* import resolves to the one data
+// layer on supabase-js (src/lib/data/supabase/) — same functions, same
+// document shapes, same errors — so no hook or page changes. Unset, or
+// `firebase`, builds exactly what it always did.
+const SUPABASE_MODULES = ['app', 'firestore', 'auth', 'functions', 'storage'];
+const supabaseMode = dataSource => dataSource === 'supabase' ? SUPABASE_MODULES.map(m => ({
+  find: new RegExp(`^firebase/${m}$`),
+  replacement: fileURLToPath(new URL(`./src/lib/data/supabase/${m}.js`, import.meta.url)),
+})) : [];
+
+export default defineConfig(({ mode }) => ({
   cacheDir: '.vite-cache',
   plugins: [staticAssetsPlugin(releaseId()), { name: 'sweater-diagnostic-release', transformIndexHtml() { return [{ tag: 'meta', attrs: { name: 'sw-build', content: releaseId() }, injectTo: 'head' }]; } }, react({ jsxImportSource: '@sweater/i18n' }), tailwindcss(), {
     name: 'sweater-local-jsx-runtime',
@@ -26,10 +47,15 @@ export default defineConfig({
         .filter(id => !id.startsWith('@sweater/i18n/'));
     },
   }],
-  resolve: { alias: { '@sweater/i18n': fileURLToPath(new URL('./src/i18n', import.meta.url)) } },
+  resolve: { alias: [
+    { find: '@sweater/i18n', replacement: fileURLToPath(new URL('./src/i18n', import.meta.url)) },
+    ...(emulatorMode(mode)?.alias || []),
+    ...supabaseMode(loadEnv(mode, process.cwd(), '').VITE_DATA_SOURCE || process.env.VITE_DATA_SOURCE),
+  ] },
+  ...(emulatorMode(mode) ? { server: { proxy: emulatorMode(mode).proxy }, preview: { proxy: emulatorMode(mode).proxy } } : {}),
   optimizeDeps: { exclude: ['@sweater/i18n/jsx-runtime', '@sweater/i18n/jsx-dev-runtime'] },
   test: { setupFiles: ['./src/testSetup.js'] },
   // The DOM is opted into per file with `// @vitest-environment jsdom` — only
   // the *.form.test.jsx suites need one, because "the save is blocked" is a
   // claim about the form itself and not about a helper the form calls.
-})
+}))

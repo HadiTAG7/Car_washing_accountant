@@ -197,6 +197,8 @@ d('محرك ضريبة المشتريات عبر postSource الحقيقي', () 
     await wipe();
     invoiceSeq = 0;
     await seedChartOfAccounts(db, FieldValue, CHART, { userId: 'u1' });
+    // On Postgres a startup spend belongs to an existing plan item.
+    if (process.env.PGSTORE_TESTS) await db.collection('startup_costs').doc('s1').set({ item_name: 'معدات', budgeted_amount: 0 });
   }, 60_000);
 
   // ═══ (أ) المبلغ المكتوب على الفاتورة يسبق كل شيء ═════════════════════

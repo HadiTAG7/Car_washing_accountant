@@ -5,7 +5,7 @@ import { DEFAULT_CHART_OF_ACCOUNTS } from '../../lib/accounting/chartOfAccounts'
 const state = vi.hoisted(() => ({ live: null, payroll: null, fees: null, tax: null, washRead: vi.fn(), bikerRead: vi.fn() }));
 vi.mock('../useWashes', () => ({ useWashes: state.washRead }));
 vi.mock('../useBikers', () => ({ useBikers: state.bikerRead }));
-vi.mock('../useSweater', () => ({ useSweaterBookings: () => ({ bookings: [], loading: false, error: null, refetch: vi.fn() }) }));
+vi.mock('../useSweater', () => ({ useSweaterAdjustments: () => ({ adjustments: [], loading: false, error: null, refetch: vi.fn() }) }));
 vi.mock('../useLedger', () => ({ useLedger: () => ({ accounts: DEFAULT_CHART_OF_ACCOUNTS, loading: false, error: null, refetch: vi.fn() }) }));
 vi.mock('../useIncomeStatementSources', () => ({ useIncomeStatementSources: () => state.live }));
 vi.mock('../useIncomePayrollPreviews', () => ({ useIncomePayrollPreviews: () => state.payroll }));
@@ -62,4 +62,17 @@ it('does not turn missing salary previews or legacy duplicate salaries into zero
   state.payroll.data = [{ periodKey: '2026-10', lines: [{ basicDue: 900 }] }];
   state.live = { ...state.live, sources: { ...state.live.sources, monthlies: [{ id: 'legacy', expense_name: 'راتب عامل', recurrence: 'one_time', logged_date: '2026-10-01', total_monthly_cost: 900 }] } };
   rerender(); expect(result.current.finance.statement).toBeNull(); expect(result.current.finance.error).toBeTruthy();
+});
+it('does not default an unknown status or missing quantity to a completed execution', () => {
+  state.live.sources.washes = [{ id: 'unknown', wash_date: '2026-10-15', quantity: 8, status: 'unknown' },
+    { id: 'no-qty', wash_date: '2026-10-15', status: 'مكتملة' }];
+  const { result } = renderHook(() => useOverviewDashboard('2026-10', '2026-10-16'));
+  expect(result.current.operations.quantity).toBe(0);
+});
+it('reuses bookings and settlements with independent status rather than refetching them', () => {
+  state.live.sources.bookings = [{ id: 'source' }]; state.live.sources.settlements = [{ id: 'settlement' }];
+  state.live.sourceStatus = { bookings: { loading: false, error: null }, settlements: { loading: false, error: new Error('denied') } };
+  const { result } = renderHook(() => useOverviewDashboard('2026-10', '2026-10-16'));
+  expect(result.current.bookings.items).toEqual([{ id: 'source' }]); expect(result.current.bookings.error).toBeNull();
+  expect(result.current.settlements.error).toBeTruthy(); expect(result.current.adjustments.loading).toBe(false);
 });

@@ -11,6 +11,7 @@ export function useVariableExpenseCategories() {
   const { data, loading, error, refetch } = useFirestoreQuery(
     async () => sortBy(await fetchRows('variable_expense_categories'), [{ key: 'sort_order' }]),
     {
+      cacheKey: 'variable_expense_categories',
       enabled: isFirebaseConfigured,
       map:     mapVariableExpenseCategory,
       fallback: FALLBACK,

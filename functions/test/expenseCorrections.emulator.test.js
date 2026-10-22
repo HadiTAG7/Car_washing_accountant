@@ -4,16 +4,20 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { dispatch } from '../src/handlers.js';
 if (!process.env.FIRESTORE_EMULATOR_HOST || process.env.GCLOUD_PROJECT !== 'demo-sweater') throw Error('Only isolated demo-sweater emulator is allowed');
 let app, db;
+// On Postgres an account id is an Auth user's UUID.
+const pgTesting = process.env.PGSTORE_TESTS ? await import('../../server/db/pgstore/testing/firestore.js') : null;
+const ADMIN = pgTesting ? pgTesting.testUid('test-admin') : 'test-admin';
+if (pgTesting) await pgTesting.ensureAuthUsers(['test-admin']);
 beforeAll(() => { app = initializeApp({ projectId: 'demo-sweater' }, 'mcp-corrections-test'); db = getFirestore(app); });
 afterAll(async () => { await deleteApp(app); });
 beforeEach(async () => {
   for (const name of ['users', 'app_admins', 'variable_expenses', 'startup_costs', 'startup_cost_entries', 'annual_expenses', 'annual_expense_entries', 'journal_entries', 'posting_locks', 'accounting_periods', 'audit_logs', 'mcp_mutation_receipts', 'bikers', 'temporary_expenses', 'payroll_runs']) await db.recursiveDelete(db.collection(name));
-  await db.collection('users').doc('test-admin').set({ role: 'admin' });
+  await db.collection('users').doc(ADMIN).set({ role: 'admin' });
   await db.collection('variable_expenses').doc('test-expense').set({ expense_name: 'Synthetic expense', total_variable_cost: 665.05, quantity: 1, unit_cost: 665.05, logged_date: '2026-09-12', is_tax_invoice: false });
   await db.collection('startup_costs').doc('test-parent').set({ item_name: 'Synthetic bikes', budgeted_amount: 1000, actual_amount: 0 });
   await db.collection('bikers').doc('test-worker').set({ name: 'Synthetic worker' });
 });
-const invoke = (name, data, uid = 'test-admin') => dispatch(db, FieldValue, name, data, { uid });
+const invoke = (name, data, uid = ADMIN) => dispatch(db, FieldValue, name, data, { uid });
 const correction = { kind: 'variable', sourceId: 'test-expense', targetKind: 'startup', targetParentId: 'test-parent', patch: { quantity: 50 }, reason: 'Synthetic owner correction' };
 it('real Firestore query transaction moves once, synchronizes parent and safely replays concurrently', async () => {
   const p = await invoke('expensePreviewCorrection', correction);
@@ -29,6 +33,8 @@ it('real source changes, new sibling and posting lock invalidate plans without s
   const p = await invoke('expensePreviewCorrection', correction);
   await db.collection('startup_cost_entries').doc('test-other').set({ startup_cost_id: 'test-parent', amount: 10 });
   await expect(invoke('expenseSaveCorrection', { ...correction, previewHash: p.previewHash, confirm: true })).rejects.toThrow(/تغيّر/);
+  // On Postgres a lock names an entry that exists.
+  if (process.env.PGSTORE_TESTS) await db.collection('journal_entries').doc('test-journal').set({ status: 'posted', entryDate: '2026-09-12', periodKey: '2026-09', sourceType: 'variable', sourceId: 'test-expense', entryNumber: 1 });
   await db.collection('posting_locks').doc('variable__test-expense').set({ entryId: 'test-journal' });
   await expect(invoke('expensePreviewCorrection', correction)).rejects.toThrow(/مرحّل/);
   expect((await db.collection('audit_logs').get()).empty).toBe(true);
@@ -43,7 +49,7 @@ it('different idempotency keys cannot create two identical advances under concur
   expect((await db.collection('audit_logs').get()).size).toBe(1);
 });
 it('stored role revocation overrides payload claims', async () => {
-  await db.collection('users').doc('test-admin').set({ role: 'supervisor' });
+  await db.collection('users').doc(ADMIN).set({ role: 'supervisor' });
   await expect(invoke('expensePreviewCorrection', { ...correction, role: 'admin' })).rejects.toMatchObject({ code: 'permission-denied' });
   expect((await db.collection('audit_logs').get()).empty).toBe(true);
 });

@@ -267,7 +267,15 @@ d('ربط الفواتير القديمة على Firestore', () => {
 
   afterAll(async () => { if (app) await deleteApp(app); });
 
-  beforeEach(async () => { await wipe(); }, 60_000);
+  beforeEach(async () => {
+    await wipe();
+    // On Postgres a journal line must name an account in the chart.
+    if (process.env.PGSTORE_TESTS) {
+      for (const [code, accountType, normalBalance] of [['1010', 'asset', 'debit'], ['4000', 'revenue', 'credit'], ['2100', 'liability', 'credit']]) {
+        await db.collection('chart_of_accounts').doc(code).set({ code, nameArabic: code, accountType, normalBalance, active: true });
+      }
+    }
+  }, 60_000);
 
   it('الفحص التجريبي لا يكتب شيئاً', async () => {
     const { docId } = await seedMatchedPair();
@@ -402,6 +410,10 @@ d('ربط الفواتير القديمة على Firestore', () => {
       await seedMatchedPair();
       await runLegacyInvoiceLinks(db, FieldValue, { apply: false }, { userId: 'admin1' });
 
+      // On Postgres a claim names a document that exists.
+      if (process.env.PGSTORE_TESTS) {
+        await db.collection(DOC_COL.DOCUMENTS).doc('another-doc').set({ type: 'credit_note', status: 'issued', documentNumber: 'CN-2026-000050' });
+      }
       await db.collection(DOC_COL.SOURCES).doc('wash__w1').set({
         sourceType: 'wash', sourceId: 'w1', status: 'held',
         documentId: 'another-doc', documentNumber: 'INV-2026-000050',

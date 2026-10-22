@@ -21,10 +21,14 @@ function fixture(existing = null) {
   let auto = 0;
   const ref = path => ({ path, id: path.split('/').at(-1), collection: name => collection(`${path}/${name}`),
     get: async () => ({ exists: data.has(path), data: () => structuredClone(data.get(path)) }) });
-  const collection = path => ({ doc: id => ref(`${path}/${id ?? `auto-${++auto}`}`), get: async () => ({
-    docs: [...data.entries()].filter(([key]) => key.startsWith(`${path}/`) && !key.slice(path.length + 1).includes('/'))
-      .map(([key, value]) => ({ id: key.split('/').at(-1), ref: ref(key), data: () => structuredClone(value) })),
-  }) });
+  // String range filters, as the payroll preview's month-scoped wash read uses.
+  const passes = (row, [field, op, value]) => typeof row?.[field] === 'string' && (op === '>=' ? row[field] >= value : row[field] < value);
+  const collection = (path, filters = []) => ({ doc: id => ref(`${path}/${id ?? `auto-${++auto}`}`),
+    where: (...filter) => collection(path, [...filters, filter]), get: async () => ({
+      docs: [...data.entries()].filter(([key, value]) => key.startsWith(`${path}/`) && !key.slice(path.length + 1).includes('/')
+        && filters.every(filter => passes(value, filter)))
+        .map(([key, value]) => ({ id: key.split('/').at(-1), ref: ref(key), data: () => structuredClone(value) })),
+    }) });
   return { data, writes, collection, runTransaction: async callback => {
     const pending = [];
     const result = await callback({ get: reference => reference.get(),

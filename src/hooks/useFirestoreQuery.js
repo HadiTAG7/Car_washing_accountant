@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { cachedRead, peekCached, watchCached, onReadRefresh } from '../lib/readCache';
 
 /**
  * Minimal data-fetching hook for Firestore — the drop-in successor to
@@ -18,15 +19,28 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  *   - `deps` trigger a refetch when changed.
  *   - `queryKey` scopes visible results to an identity; changing it hides
  *     old data immediately and refetches. Only the latest request may settle.
+ *   - `cacheKey` reads through the session cache (src/lib/readCache.js):
+ *     a page that comes back, or a second hook asking for the same thing,
+ *     costs no read. `refetch()` forces a read and updates every reader of
+ *     that key. `cacheTags` names the collections read (default: the key's
+ *     first segment) so a write to one of them drops the entry.
  */
 export function useFirestoreQuery(fetcher, {
   deps = [], map, fallback = null, enabled = true, preserveResult = false, queryKey = null,
+  cacheKey: baseCacheKey = null, cacheTags = null,
 } = {}) {
-  const [state, setState] = useState({
-    data:    enabled ? null : fallback,
-    loading: enabled,
-    error:   null,
-    queryKey,
+  // A hook scoped to an identity (`queryKey`) caches per identity too, so a
+  // second account can never be handed the first one's rows.
+  const cacheKey = baseCacheKey && queryKey != null ? `${baseCacheKey}|${queryKey}` : baseCacheKey;
+  const tags = cacheTags || (baseCacheKey ? [String(baseCacheKey).split(':')[0]] : null);
+  const shape = (rows) => (preserveResult
+    ? rows
+    : (map ? (Array.isArray(rows) ? rows.map(map) : []) : (Array.isArray(rows) ? rows : [])));
+  const [state, setState] = useState(() => {
+    const hit = enabled && cacheKey ? peekCached(cacheKey) : null;
+    return hit
+      ? { data: shape(hit.data), loading: false, error: null, queryKey }
+      : { data: enabled ? null : fallback, loading: enabled, error: null, queryKey };
   });
   const mounted = useRef(true);
   const requestSequence = useRef(0);
@@ -38,22 +52,28 @@ export function useFirestoreQuery(fetcher, {
   // otherwise be reading a stale list and concluding the wrong thing.
   // Returns null when there is nothing fresh to report: disabled, unmounted,
   // or the fetch threw.
-  const run = useCallback(async () => {
+  const run = useCallback(async ({ force = false } = {}) => {
     const requestId = ++requestSequence.current;
     if (!enabled) {
       setState({ data: fallback, loading: false, error: null, queryKey });
       return null;
+    }
+    const hit = cacheKey && !force ? peekCached(cacheKey) : null;
+    if (hit) {
+      const result = shape(hit.data);
+      setState({ data: result, loading: false, error: null, queryKey });
+      return result;
     }
     setState((prev) => ({
       data: prev.queryKey === queryKey ? prev.data : null,
       loading: true, error: null, queryKey,
     }));
     try {
-      const rows = await fetcher();
+      const rows = cacheKey
+        ? await cachedRead(cacheKey, fetcher, { force, tags })
+        : await fetcher();
       if (!mounted.current || requestId !== requestSequence.current) return null;
-      const result = preserveResult
-        ? rows
-        : (map ? (Array.isArray(rows) ? rows.map(map) : []) : (Array.isArray(rows) ? rows : []));
+      const result = shape(rows);
       setState({ data: result, loading: false, error: null, queryKey });
       return result;
     } catch (err) {
@@ -62,7 +82,7 @@ export function useFirestoreQuery(fetcher, {
       return null;
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, queryKey, ...deps]);
+  }, [enabled, queryKey, cacheKey, ...deps]);
 
   useEffect(() => {
     mounted.current = true;
@@ -70,10 +90,24 @@ export function useFirestoreQuery(fetcher, {
     return () => { mounted.current = false; requestSequence.current += 1; };
   }, [run]);
 
+  // Another reader of the same key stored newer data (a write elsewhere
+  // refetched it); show it. The refresh button re-reads what is on screen.
+  useEffect(() => {
+    if (!enabled || !cacheKey) return undefined;
+    const unwatch = watchCached(cacheKey, (rows) => {
+      if (mounted.current) setState({ data: shape(rows), loading: false, error: null, queryKey });
+    });
+    const unrefresh = onReadRefresh(() => run({ force: true }));
+    return () => { unwatch(); unrefresh(); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, cacheKey, queryKey, run]);
+
+  const refetch = useCallback(() => run({ force: true }), [run]);
+
   // Hide the previous identity's data/error on the very first render,
   // before the effect for the new identity has had a chance to run.
   const current = enabled && state.queryKey === queryKey
     ? state
     : { data: fallback, loading: enabled, error: null };
-  return { data: current.data, loading: current.loading, error: current.error, refetch: run };
+  return { data: current.data, loading: current.loading, error: current.error, refetch };
 }

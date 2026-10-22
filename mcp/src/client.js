@@ -24,10 +24,13 @@
 // No server change is needed for that; identity already flows from the token.
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithEmailAndPassword } from 'firebase/auth';
-import { getFirestore, doc, getDoc } from 'firebase/firestore';
-import { getFunctions, httpsCallable } from 'firebase/functions';
+import { sdk, dataSource } from './backend.js';
+import { resolveMcpAppOrigin } from './backend-config.js';
+
+const { initializeApp } = sdk.app;
+const { getAuth, signInWithEmailAndPassword } = sdk.auth;
+const { getFirestore, doc, getDoc } = sdk.firestore;
+const { getFunctions, httpsCallable } = sdk.functions;
 
 const DEFAULT_CONFIG = {
   apiKey: 'AIzaSyC-d8DWDYuFQ318DaUOWKBoAXAn0_LgFjM',
@@ -140,6 +143,8 @@ export async function callServer(name, payload = {}) {
       { code: 'permission-denied' },
     );
   }
+  // On Supabase there are no Cloud Functions: the same handlers answer at the app's /api/ledger.
+  if (dataSource === 'supabase') return callAppServer(name, payload);
   const { functions } = await connect();
   try {
     const res = await httpsCallable(functions, name)(payload);
@@ -153,6 +158,10 @@ export async function callServer(name, payload = {}) {
   }
 }
 
+// The application's origin. Fixed by the operator's environment, never by a
+// tool argument; SWEATER_APP_URL points it at a preview during a parallel run.
+const APP_ORIGIN = resolveMcpAppOrigin();
+
 /** New app workflows ship with Vercel, not a separately deployed callable.
  * No arbitrary endpoint/tool argument: only the fixed application origin.
  * Read previews are allowed in readonly mode; mutations still fail closed.
@@ -164,7 +173,7 @@ export async function callAppServer(name, payload = {}, { write = true } = {}) {
   const token = await auth.currentUser.getIdToken();
   let response;
   try {
-    response = await fetch('https://sweater-hadi-alghanim.vercel.app/api/ledger', {
+    response = await fetch(`${APP_ORIGIN}/api/ledger`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ name, data: payload }), redirect: 'error', signal: AbortSignal.timeout(55000),
     });

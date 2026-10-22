@@ -10,6 +10,8 @@ import {
   eligibleActualDays,
   payPayroll,
   payrollMonthBounds,
+  previewPayroll,
+  previewPayrollMonths,
   reversePayroll,
   savePayrollDraft,
 } from '../src/payroll.js';
@@ -340,4 +342,65 @@ d('مسير الرواتب — المعاملات الذرية', () => {
     expect((await db.collection('payroll_runs').doc(saved.runId).get()).data().status).toBe(PAYROLL_STATUS.REVERSED);
     expect((await db.collection('payroll_payment_locks').get()).empty).toBe(true);
   }, 120_000);
+});
+
+d('معاينة الرواتب لعدة أشهر — قراءة شهرها فقط، بنفس النتيجة', () => {
+  let monthsApp; let mdb;
+  const now = new Date('2026-10-20T08:00:00Z');
+  beforeAll(async () => {
+    monthsApp = initializeApp({ projectId: 'demo-sweater-payroll-months' }, 'payroll-months-test');
+    mdb = getFirestore(monthsApp);
+    const rows = {
+      bikers: { b1: { name: 'عامل أول', salary: 1000, start_date: '2026-08-01' }, b2: { name: 'عامل ثان', salary: 1500, start_date: '2026-09-10' } },
+      washes: {
+        // Ids out of date order: duplicates keep the first id, as a whole-collection read would.
+        z9: { biker_id: 'b1', wash_date: '2026-10-03', status: 'مكتملة', quantity: 1, ssp_booking_id: 'S1' },
+        a1: { biker_id: 'b2', wash_date: '2026-10-03', status: 'مكتملة', quantity: 1, ssp_booking_id: 'S1' },
+        m5: { biker_id: 'b1', wash_date: '2026-10-05T09:00', status: 'مكتملة', quantity: 2 },
+        m6: { biker_id: 'b2', wash_date: '2026-10', status: 'مكتملة', quantity: 1 },
+        m7: { biker_name: 'عامل أول', wash_date: '2026-09-30', status: 'مكتملة', quantity: 3 },
+        m8: { biker_id: 'b2', wash_date: '2026-09-12', status: 'قيد التنفيذ', quantity: 1 },
+        m9: { biker_id: 'b1', wash_date: '2026-08-31', status: 'completed', quantity: 4 },
+        old: { biker_id: 'b1', wash_date: '2026-07-31', status: 'مكتملة', quantity: 9 },
+        next: { biker_id: 'b1', wash_date: '2026-11-01', status: 'مكتملة', quantity: 9 },
+      },
+      temporary_expenses: { t1: { biker_id: 'b1', title: 'سلفة', amount: 300, recovered_amount: 0, status: 'pending', spent_date: '2026-10-02', recovered_date: null } },
+    };
+    for (const [name, docs] of Object.entries(rows)) for (const [id, data] of Object.entries(docs)) await mdb.collection(name).doc(id).set(data);
+  }, 60_000);
+  afterAll(async () => { if (monthsApp) await deleteApp(monthsApp); });
+
+  it('يطابق المعاينة من المجموعات كاملة لكل شهر', async () => {
+    const whole = async name => (await mdb.collection(name).get()).docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const sourceData = { bikers: await whole('bikers'), washes: await whole('washes'), advances: await whole('temporary_expenses') };
+    const months = ['2026-08', '2026-09', '2026-10'];
+    const batched = await previewPayrollMonths(mdb, months, { now });
+    // A refused month (here: one booking executed by two workers in October)
+    // is refused the same way, reported per month instead of thrown.
+    const settled = (periodKey, promise) => promise.catch(e => ({ periodKey, error: { message: e.message, code: e.code || 'internal' } }));
+    for (const [i, periodKey] of months.entries()) {
+      const expected = await settled(periodKey, previewPayroll(mdb, { periodKey, automaticAdvanceDeduction: true }, { now, sourceData }));
+      expect(batched[i]).toEqual(expected);
+      expect(await settled(periodKey, previewPayroll(mdb, { periodKey, automaticAdvanceDeduction: true }, { now }))).toEqual(expected);
+    }
+    expect(batched[2].error.message).toMatch(/مكررة/);
+    expect(batched[0].lines.length).toBeGreaterThan(0);
+
+    // Without the conflict, October previews (duplicates keep one execution).
+    await mdb.collection('washes').doc('a1').update({ biker_id: 'b1' });
+    const fixed = { ...sourceData, washes: await whole('washes') };
+    const [october] = await previewPayrollMonths(mdb, ['2026-10'], { now });
+    expect(october).toEqual(await previewPayroll(mdb, { periodKey: '2026-10', automaticAdvanceDeduction: true }, { now, sourceData: fixed }));
+    expect(october.lines.find(l => l.bikerId === 'b1')).toBeTruthy();
+  });
+
+  it('شهرٌ غير صالح يرفض الطلب، وشهرٌ يفشل وحده لا يُسقط البقية', async () => {
+    await expect(previewPayrollMonths(mdb, [], { now })).rejects.toMatchObject({ code: 'invalid-argument' });
+    await expect(previewPayrollMonths(mdb, ['2026-13'], { now })).rejects.toBeTruthy();
+    await mdb.collection('payroll_periods').doc('2026-09').set({ currentRunId: 'missing-run' });
+    const [aug, sep] = await previewPayrollMonths(mdb, ['2026-08', '2026-09'], { now });
+    expect(aug.lines.length).toBeGreaterThan(0);
+    expect(sep.periodKey).toBe('2026-09');
+    await mdb.collection('payroll_periods').doc('2026-09').delete();
+  });
 });

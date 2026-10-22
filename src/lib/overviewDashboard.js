@@ -35,24 +35,30 @@ export function overviewOperations({ washes = [], bikers = [], periodKey, today 
   const daily = [];
   for (let date = window.from; date <= window.to; date = new Date(Date.parse(`${date}T00:00:00Z`) + 86400000).toISOString().slice(0, 10)) {
     const rows = selected.filter(row => row.washDate === date);
-    daily.push({ date, quantity: sum(rows), rows });
+    daily.push({ date, quantity: sum(rows), rows, incomplete: date === today });
   }
-  const washDays = daily.filter(day => day.quantity > 0).length;
+  const completedDays = daily.filter(day => !day.incomplete);
+  const completedQuantity = completedDays.reduce((total, day) => total + day.quantity, 0);
+  const washDays = completedDays.filter(day => day.quantity > 0).length;
   // One denominator unit per biker on a day with positive washes. Do not use
   // today's status or calendar days as a proxy for historic work/attendance.
   const bikerDays = new Set(); const washingBikers = new Set(); let unlinkedBikerWashes = 0;
   for (const row of selected.filter(row => Number(row.quantity) > 0)) {
     const bikerId = String(row.bikerId ?? row.biker_id ?? '').trim();
     if (!bikerId) { unlinkedBikerWashes++; continue; }
-    washingBikers.add(bikerId); bikerDays.add(JSON.stringify([bikerId, row.washDate ?? row.wash_date]));
+    washingBikers.add(bikerId);
+    if (row.washDate < today) bikerDays.add(JSON.stringify([bikerId, row.washDate ?? row.wash_date]));
   }
-  return { ...window, rows: selected, daily, quantity: sum(selected), previousQuantity: sum(previous),
-    yesterday, yesterdayRows: unique.filter(row => row.washDate === yesterday),
-    yesterdayQuantity: sum(unique.filter(row => row.washDate === yesterday)),
-    washDays, average: washDays ? round(sum(selected) / washDays) : null,
+  const yesterdayRows = selected.filter(row => row.washDate === yesterday);
+  const unlinkedCompleted = selected.some(row => row.washDate < today && Number(row.quantity) > 0 && !String(row.bikerId ?? row.biker_id ?? '').trim());
+  return { ...window, rows: selected, daily, completedDays, completedQuantity, quantity: sum(selected),
+    previousQuantity: previous.length ? sum(previous) : null, hasPreviousData: previous.length > 0,
+    yesterday, yesterdayInPeriod: yesterday >= window.from && yesterday <= window.to, yesterdayRows,
+    yesterdayQuantity: yesterday >= window.from && yesterday <= window.to ? sum(yesterdayRows) : null,
+    washDays, average: washDays ? round(completedQuantity / washDays) : null,
     bikerWashDays: bikerDays.size, washingBikers: washingBikers.size, unlinkedBikerWashes,
-    averagePerBikerDay: bikerDays.size && !unlinkedBikerWashes ? round(sum(selected) / bikerDays.size) : null,
-    working: bikers.filter(isOverviewWorkingBiker).length,
+    averagePerBikerDay: bikerDays.size && !unlinkedCompleted ? round(completedQuantity / bikerDays.size) : null,
+    working: washingBikers.size, workingIds: [...washingBikers],
     unspecified: bikers.filter(biker => !String(biker.currentStatus || '').trim()).length,
     conflicts: [...new Set(conflicts)] };
 }

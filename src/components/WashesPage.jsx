@@ -1,6 +1,6 @@
 import { translate } from '../i18n/locale';
 import { getLocale } from '../i18n/locale';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import WashActivityCards from './WashActivityCards';
 import SweaterWashWorkerSummary from './SweaterWashWorkerSummary';
 import {
@@ -27,6 +27,8 @@ import { useAccountingSettings } from '../hooks/useAccountingSettings';
 import { autoPostOnApproval, describeAutoPost, autoPostTone } from '../lib/accounting/autoPost';
 import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
+import { useStatementMonths } from '../hooks/useStatementMonths';
+import { todayMonth, formatMonthLabel } from '../lib/variableExpenseTotals';
 
 // ─── Status toggle pill (مكتملة ↔ قيد التنفيذ) ────────────────────────────
 function WashStatusPill({ status, onChange, disabled, label }) {
@@ -76,16 +78,25 @@ function formatWashDate(value) {
   return formatDateOnly(value, getLocale());
 }
 
+const PAGE_SIZE = 50;
+
 export default function WashesPage() {
   const { bikers } = useBikers();
   const { language } = useLanguage();
+  // One month at a time: the register used to load every wash ever recorded
+  // (and the Sweater record of each) on every visit.
+  const [month, setMonth] = useState(todayMonth);
+  const [visible, setVisible] = useState(PAGE_SIZE);
+  const months = useStatementMonths();
   const {
     items, loading, error,
     addItem, updateItem, updateStatus, deleteItem, refetch,
-  } = useWashes();
+  } = useWashes({ months: [month] });
   const { scalingFactor, canMutate } = usePartnerView();
   const { settings } = useAccountingSettings();
-  const bookingIds = items.filter(wash => wash.revenueOrigin === 'sweater' && wash.sspBookingId).map(wash => wash.sspBookingId);
+  const shown = useMemo(() => items.slice(0, visible), [items, visible]);
+  // Ticket status only for the rows on screen, not one read per Sweater wash.
+  const bookingIds = shown.filter(wash => wash.revenueOrigin === 'sweater' && wash.sspBookingId).map(wash => wash.sspBookingId);
   const washDetails = useSweaterWashDetails(bookingIds, bookingIds.length > 0);
   const byBookingId = new Map(washDetails.bookings.map(booking => [booking.sspBookingId, booking.record]));
 
@@ -158,7 +169,16 @@ export default function WashesPage() {
       />
 
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
-        <SweaterWashWorkerSummary washes={items} bikers={bikers} scalingFactor={scalingFactor} detailsSource={washDetails} />
+        <Card className="p-4 flex flex-wrap items-center gap-3">
+          <label htmlFor="washes-month" className="text-sm font-semibold text-slate-700 dark:text-slate-300">الشهر</label>
+          <select id="washes-month" value={month}
+            onChange={(e) => { setMonth(e.target.value); setVisible(PAGE_SIZE); }}
+            className="px-3 py-2 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-bold tabular-nums">
+            {(months.includes(month) ? months : [month, ...months]).map((ym) => <option key={ym} value={ym}>{formatMonthLabel(ym)}</option>)}
+          </select>
+          <p className="text-xs text-slate-500 dark:text-slate-400">البطاقات والجدول لغسلات هذا الشهر.</p>
+        </Card>
+        <SweaterWashWorkerSummary washes={items} bikers={bikers} scalingFactor={scalingFactor} />
         {!isFirebaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
 
         {mutationError && (
@@ -215,7 +235,7 @@ export default function WashesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((w) => {
+                  {shown.map((w) => {
                     const total = (w.quantity || 0) * (w.price || 0);
                     const label = displayRecordedBikerName(w, bikers, language);
                     const sourceRecord = byBookingId.get(w.sspBookingId);
@@ -286,6 +306,12 @@ export default function WashesPage() {
                   })}
                 </tbody>
               </table>
+            </div>
+          )}
+          {items.length > shown.length && (
+            <div className="flex items-center justify-between gap-3 pt-4">
+              <span className="text-xs text-slate-500 dark:text-slate-400 tabular-nums">{formatNumber(shown.length)} / {formatNumber(items.length)}</span>
+              <PrimaryButton onClick={() => setVisible(n => n + PAGE_SIZE)}>عرض المزيد</PrimaryButton>
             </div>
           )}
         </Card>

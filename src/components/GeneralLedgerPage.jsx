@@ -2,16 +2,18 @@ import AccountCode from './AccountCode';
 import ScrollableTable from './ScrollableTable';
 import { useMemo, useState } from 'react';
 import { BookOpen, Download, Wallet, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
-import { formatCurrency, formatDate } from '../data/initialData';
+import { formatCurrency, formatDate, formatNumber } from '../data/initialData';
 import { downloadCsv } from '../lib/exportCsv';
 import TopBar from './TopBar';
-import { Card, SectionHeader, StatCard, EmptyState, SecondaryButton } from './UI';
+import { Card, SectionHeader, StatCard, EmptyState, SecondaryButton, PrimaryButton } from './UI';
 import DateField from './DateField';
 import LoadingState from './LoadingState';
 import ErrorState, { SetupRequiredCard } from './ErrorState';
 import { useLedger } from '../hooks/useLedger';
 import { generalLedger } from '../lib/accounting/reports';
 import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
+
+const PAGE_SIZE = 100;
 
 const SOURCE_LABELS = {
   wash: 'غسلة', expense: 'مصروف', partner_payment: 'دفعة شريك',
@@ -46,6 +48,12 @@ export default function GeneralLedgerPage() {
       : null),
     [selected, entries, lines, from, to, accountIndex],
   );
+  // Rows on screen, 100 at a time; the balances and totals still cover every
+  // row, and the CSV export carries them all.
+  const viewKey = `${selected}|${from}|${to}`;
+  const [paging, setPaging] = useState({ key: viewKey, count: PAGE_SIZE });
+  const visible = paging.key === viewKey ? paging.count : PAGE_SIZE;
+  const shownRows = ledger ? ledger.rows.slice(0, visible) : [];
 
   function handleExport() {
     if (!ledger) return;
@@ -168,7 +176,7 @@ export default function GeneralLedgerPage() {
                           {formatCurrency(ledger.opening)}
                         </td>
                       </tr>
-                      {ledger.rows.map((r) => (
+                      {shownRows.map((r) => (
                         <tr key={`${r.entryId}-${r.entryNumber}-${r.description}`}
                           className="border-b border-slate-50 dark:border-slate-800/60 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
                           <td className="py-3 px-4 whitespace-nowrap tabular-nums text-slate-600 dark:text-slate-400">{formatDate(r.entryDate)}</td>
@@ -201,6 +209,12 @@ export default function GeneralLedgerPage() {
                     </tfoot>
                   </table>
                 </ScrollableTable>
+              )}
+              {ledger.rows.length > shownRows.length && (
+                <div className="flex items-center justify-between gap-3 p-4">
+                  <span className="text-xs text-slate-500 dark:text-slate-400 tabular-nums">{formatNumber(shownRows.length)} / {formatNumber(ledger.rows.length)}</span>
+                  <PrimaryButton onClick={() => setPaging({ key: viewKey, count: visible + PAGE_SIZE })}>عرض المزيد</PrimaryButton>
+                </div>
               )}
             </Card>
           </>

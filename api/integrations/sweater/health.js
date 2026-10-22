@@ -20,16 +20,22 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 /** المتغيّرات التي بدونها لا يعمل التكامل، ولكلٍّ سببٌ يُقرأ. */
-const REQUIRED = [
-  {
-    name: 'FIREBASE_SERVICE_ACCOUNT',
-    why: 'بدونه لا يصل الخادم إلى قاعدة البيانات أصلاً.',
-  },
-  {
+const ENCRYPTION = {
     name: 'SWEATER_KEY_ENCRYPTION_KEY',
     why: 'به تُعمّى أسرار مفاتيح الوكيل ويُتحقّق من توقيعها. بدونه لا يُنشأ مفتاح.',
-  },
-];
+};
+
+export function requiredIntegrationSettings(env = process.env) {
+  const supabase = String(env.DATA_SOURCE ?? '').trim() === 'supabase';
+  return supabase ? [
+    { name:'LEDGER_DB_URL', why:'بدونه لا يصل الخادم إلى قاعدة Supabase بالدور المحدود.' },
+    { name:'SUPABASE_URL', why:'مطلوب للتحقق من هوية وجلسة مستخدم Supabase.' },
+    ENCRYPTION,
+  ] : [
+    { name:'FIREBASE_SERVICE_ACCOUNT', why:'بدونه لا يصل الخادم إلى قاعدة البيانات أصلاً.' },
+    ENCRYPTION,
+  ];
+}
 
 export default function handler(req, res) {
   if (req.method !== 'GET') {
@@ -38,7 +44,7 @@ export default function handler(req, res) {
   }
 
   // `Boolean` على النصّ المُشذَّب: متغيّرٌ مضبوط على فراغ ليس مضبوطاً.
-  const checked = REQUIRED.map((v) => ({
+  const checked = requiredIntegrationSettings().map((v) => ({
     name: v.name,
     present: Boolean(String(process.env[v.name] ?? '').trim()),
     why: v.why,

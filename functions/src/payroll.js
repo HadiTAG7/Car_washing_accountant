@@ -397,15 +397,33 @@ export function calculatePayrollPreview({
   };
 }
 
-async function sourceRows(reader, db) {
+const nextMonthKey = (key) => {
+  const [y, m] = key.split('-').map(Number);
+  return new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 7);
+};
+const byDocumentId = (a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+
+/**
+ * The payroll sources. With `periodKeys`, washes are read for those months
+ * only: commission counts nothing outside its period (`commissionFor`,
+ * `uniqueCompletedCommissionWashes` both filter on `wash_date.slice(0,10)`),
+ * and a month-prefix range is a superset of that filter. Rows are put back
+ * in document-id order — the order a whole-collection read returns — because
+ * duplicate executions keep the first one seen.
+ */
+async function sourceRows(reader, db, { periodKeys = null } = {}) {
   const read = (ref) => (reader === db ? ref.get() : reader.get(ref));
+  const months = periodKeys?.length ? [...periodKeys].sort() : null;
+  const washes = months
+    ? db.collection('washes').where('wash_date', '>=', months[0]).where('wash_date', '<', nextMonthKey(months.at(-1)))
+    : db.collection('washes');
   const [bikersSnap, washesSnap, advancesSnap] = await Promise.all([
     read(db.collection('bikers')),
-    read(db.collection('washes')),
+    read(washes),
     read(db.collection('temporary_expenses')),
   ]);
   const rows = (snap) => snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-  return { bikers: rows(bikersSnap), washes: rows(washesSnap), advances: rows(advancesSnap) };
+  return { bikers: rows(bikersSnap), washes: rows(washesSnap).sort(byDocumentId), advances: rows(advancesSnap) };
 }
 
 export async function previewPayroll(db, payload, { now = new Date(), sourceData = null } = {}) {
@@ -427,7 +445,9 @@ export async function previewPayroll(db, payload, { now = new Date(), sourceData
     };
   }
   const active = run && ![PAYROLL_STATUS.REVERSED, PAYROLL_STATUS.CANCELLED].includes(run.status);
-  const sources = sourceData || await sourceRows(db, db);
+  // A frozen run above needs no sources; a live preview reads its month only.
+  const sources = typeof sourceData === 'function' ? await sourceData()
+    : (sourceData || await sourceRows(db, db, { periodKeys: [periodKey] }));
   const automaticAdvanceDeduction = payload?.automaticAdvanceDeduction === true || (payload?.automaticAdvanceDeduction == null && active && run.automaticAdvanceDeduction === true);
   return calculatePayrollPreview({ ...payload, adjustments: payload?.adjustments ?? (active ? run.inputAdjustments : []),
     ...sources, periodKey, automaticAdvanceDeduction, now }, {
@@ -440,6 +460,23 @@ export async function previewPayroll(db, payload, { now = new Date(), sourceData
 export async function previewPayrollPeriods(db, periodKeys, { now = new Date(), sourceData = null } = {}) {
   sourceData ||= await sourceRows(db, db);
   return Promise.all(periodKeys.map(periodKey => previewPayroll(db, { periodKey, automaticAdvanceDeduction: true }, { now, sourceData })));
+}
+
+/**
+ * Several months for the income statement in one call, each settling on its
+ * own: a frozen run is read as stored, and the live ones share one read of
+ * the sources, limited to their months — instead of one call per month each
+ * reading every wash. A month that fails returns its error, not a zero.
+ */
+export async function previewPayrollMonths(db, periodKeys, { now = new Date() } = {}) {
+  if (!Array.isArray(periodKeys) || !periodKeys.length || periodKeys.length > 12) {
+    fail('اختر من شهر إلى ١٢ شهراً.', { code: 'invalid-argument' });
+  }
+  const months = [...new Set(periodKeys.map(validPeriodKey))];
+  let sources;
+  const lazySources = () => (sources ||= sourceRows(db, db, { periodKeys: months }));
+  return Promise.all(months.map(periodKey => previewPayroll(db, { periodKey, automaticAdvanceDeduction: true }, { now, sourceData: lazySources })
+    .catch(error => ({ periodKey, error: { message: error.message, code: error.code || 'internal' } }))));
 }
 
 function auditRecord(action, runId, userId, before, after, reason, FieldValue) {

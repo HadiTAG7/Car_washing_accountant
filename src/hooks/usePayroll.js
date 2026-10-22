@@ -7,7 +7,7 @@ import { useFirestoreQuery } from './useFirestoreQuery';
 export function usePayrollRuns({ enabled = true } = {}) {
   const { data, loading, error, refetch } = useFirestoreQuery(
     async () => sortBy(await fetchRows('payroll_runs'), [{ key: 'periodKey', ascending: false }, { key: 'revision', ascending: false }]),
-    { enabled: enabled && isFirebaseConfigured, fallback: [] },
+    { cacheKey: 'payroll_runs', enabled: enabled && isFirebaseConfigured, fallback: [] },
   );
 
   const invoke = useCallback(async (name, payload) => {

@@ -11,6 +11,7 @@ export function useMonthlyExpenseCategories() {
   const { data, loading, error, refetch } = useFirestoreQuery(
     async () => sortBy(await fetchRows('monthly_expense_categories'), [{ key: 'sort_order' }]),
     {
+      cacheKey: 'monthly_expense_categories',
       enabled: isFirebaseConfigured,
       map:     mapMonthlyExpenseCategory,
       fallback: FALLBACK,

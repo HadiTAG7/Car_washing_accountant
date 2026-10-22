@@ -18,6 +18,7 @@ import { taxPolicyAt, taxPolicyBaselineDate, hasTaxPolicyHistory } from '../lib/
  */
 export function useAccountingSettings() {
   const { data, loading, error, refetch } = useFirestoreQuery(fetchAccountingSettings, {
+    cacheKey: 'app_settings:accounting',
     enabled: isFirebaseConfigured,
     fallback: DEFAULT_ACCOUNTING_SETTINGS,
     // Settings are one document, not a collection query. Without preserving

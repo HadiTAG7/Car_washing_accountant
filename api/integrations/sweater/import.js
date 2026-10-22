@@ -18,6 +18,7 @@
 
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { onSupabase, supabaseRuntime } from '../../../server/db/backend.js';
 
 import { verifyIngestRequest, IntegrationAuthError } from '../../../functions/src/sweater/integrationKeys.js';
 import {
@@ -45,6 +46,8 @@ function serviceAccount() {
 }
 
 function adminDb() {
+  // firebase-admin's FieldValue sentinels are understood by pgstore as well.
+  if (onSupabase()) return supabaseRuntime().db;
   if (!getApps().length) initializeApp({ credential: cert(serviceAccount()) });
   return getFirestore();
 }

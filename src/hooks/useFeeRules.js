@@ -18,7 +18,7 @@ import { useFirestoreQuery } from './useFirestoreQuery';
 export function useFeeRules() {
   const { data, loading, error, refetch } = useFirestoreQuery(
     async () => sortBy(await fetchRows('fee_rules'), [{ key: 'effective_from' }]),
-    { enabled: isFirebaseConfigured, fallback: [] },
+    { cacheKey: 'fee_rules', enabled: isFirebaseConfigured, fallback: [] },
   );
 
   const rules = useMemo(

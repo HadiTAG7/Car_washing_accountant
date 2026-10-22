@@ -11,6 +11,7 @@ export function usePartners({ enabled = true } = {}) {
   const { data, loading, error, refetch } = useFirestoreQuery(
     async () => sortBy(await fetchRows('partners'), [{ key: 'partner_name' }]),
     {
+      cacheKey: 'partners',
       enabled: enabled && isFirebaseConfigured && !authLoading && Boolean(userId),
       queryKey: `${userId || ''}:${enabled}`,
       map:     mapPartner,

@@ -12,6 +12,7 @@ export function useBudgets() {
   const { data, loading, error, refetch } = useFirestoreQuery(
     async () => sortBy(await fetchRows('category_budgets'), [{ key: 'category_label' }]),
     {
+      cacheKey: 'category_budgets',
       enabled: isFirebaseConfigured,
       map:     mapBudget,
     },

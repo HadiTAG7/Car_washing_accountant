@@ -7,6 +7,7 @@
 import { cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
+import { onSupabase } from './db/backend.js';
 
 const APP_NAME = 'password-reset-vercel';
 
@@ -45,6 +46,8 @@ function serviceAccount() {
 }
 
 export function getPasswordResetRuntime() {
+  // On Supabase the reset email comes from Supabase Auth itself; this route is the Firebase one.
+  if (onSupabase()) throw new PasswordResetConfigError('DATA_SOURCE=supabase: رابط إعادة التعيين يُرسل من Supabase Auth.');
   let app = getApps().find((candidate) => candidate.name === APP_NAME);
   if (!app) {
     app = initializeApp(usingEmulators()

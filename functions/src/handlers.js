@@ -53,7 +53,7 @@ import {
   approvePayroll,
   cancelPayroll,
   payPayroll,
-  previewPayroll,
+  previewPayroll, previewPayrollMonths,
   reversePayroll,
   savePayrollDraft,
   unapprovePayroll,
@@ -71,13 +71,29 @@ export class AuthError extends Error {
 
 // ─── مَن المتصل ──────────────────────────────────────────────────────────
 
-/** Resolves the caller's role from Firestore, never from a client claim. */
-export async function callerRole(db, auth) {
-  if (!auth?.uid) throw new AuthError('تسجيل الدخول مطلوب.', { code: 'unauthenticated' });
-  const [userSnap, adminSnap] = await Promise.all([
+// `dispatch` checks the stored role and then the guard resolves it: both used
+// to read `users/{uid}` — three billed reads before any work. They now share
+// one read, held on a copy of `auth` that only those two pre-flight checks
+// see. Everything after them — the handler, its in-transaction re-checks,
+// every other caller — reads the membership afresh, as before.
+const membershipReads = new WeakMap();
+function readMembership(db, auth) {
+  return membershipReads.get(auth) || Promise.all([
     db.collection('users').doc(auth.uid).get(),
     db.collection('app_admins').doc(auth.uid).get(),
   ]);
+}
+function preflightAuth(db, auth) {
+  if (!auth?.uid) return auth;
+  const scoped = { ...auth };
+  membershipReads.set(scoped, readMembership(db, scoped));
+  return scoped;
+}
+
+/** Resolves the caller's role from Firestore, never from a client claim. */
+export async function callerRole(db, auth) {
+  if (!auth?.uid) throw new AuthError('تسجيل الدخول مطلوب.', { code: 'unauthenticated' });
+  const [userSnap, adminSnap] = await readMembership(db, auth);
   if (userSnap.exists && userSnap.data().role === 'supervisor') return 'supervisor';
   if (userSnap.exists && !['admin', 'accountant', 'operator', 'partner', 'supervisor'].includes(userSnap.data().role)) {
     throw new AuthError('دور الحساب غير معروف؛ يلزم مراجعة العضوية.');
@@ -596,6 +612,10 @@ export const HANDLERS = {
     guard: 'accountant',
     run: ({ db, data }) => previewPayroll(db, data || {}),
   },
+  payrollPreviews: {
+    guard: 'accountant',
+    run: ({ db, data }) => previewPayrollMonths(db, data?.periodKeys),
+  },
   payrollSaveDraft: {
     guard: 'accountant',
     run: ({ db, FieldValue, data, uid }) => savePayrollDraft(db, FieldValue, data || {}, { userId: uid }),
@@ -743,8 +763,9 @@ export async function dispatch(db, FieldValue, name, data, auth) {
     // Fail closed for every current and future action except explicit reads.
     // Read the stored role, never a payload/token claim. Do this before any
     // permissive legacy guard (startupWriter/partnerSelf/signedIn) can run.
+    const guardAuth = name === 'authBootstrapStatus' ? auth : preflightAuth(db, auth);
     if (auth?.uid && name !== 'authBootstrapStatus') {
-      const user = await db.collection('users').doc(auth.uid).get();
+      const [user] = await readMembership(db, guardAuth);
       if (user.exists && !['admin', 'accountant', 'operator', 'partner', 'supervisor'].includes(user.data().role)) {
         throw new AuthError('دور الحساب غير معروف؛ يلزم مراجعة العضوية.');
       }
@@ -754,7 +775,7 @@ export async function dispatch(db, FieldValue, name, data, auth) {
     }
     // ما يُرجعه الحارس يُمرَّر كله: `uid` و`role` من كل حارس، وما زاد — صفُّ
     // الشريك من `partnerSelf` — من حارسٍ يحتاجه جسمه، فلا يُقرأ مرتين.
-    const ctx = await GUARDS[handler.guard]({ db, auth, data });
+    const ctx = await GUARDS[handler.guard]({ db, auth: guardAuth, data });
     return await handler.run({ db, FieldValue, data, auth, ...ctx });
   } catch (e) {
     throw new DispatchError(normalizeError(e));

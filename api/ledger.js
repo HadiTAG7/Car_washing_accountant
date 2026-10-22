@@ -31,11 +31,13 @@
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
+import { onSupabase, supabaseRuntime } from '../server/db/backend.js';
 
 import { dispatch, HANDLER_NAMES } from '../functions/src/handlers.js';
 import financeReportsHandler from '../server/financeReportsHttp.js';
 import financeWorkbenchHandler from '../server/financeWorkbenchHttp.js';
 import operationsReportsHandler from '../server/operationsReportsHttp.js';
+import backupExportHandler from '../server/backupExportHttp.js';
 
 /**
  * A refusal the operator must be able to tell apart from a bug.
@@ -81,6 +83,8 @@ const usingEmulators = () => Boolean(
 let cached = null;
 function admin() {
   if (cached) return cached;
+  // DATA_SOURCE=supabase: the same handlers on Postgres (server/db/backend.js).
+  if (onSupabase()) return (cached = supabaseRuntime());
   // Serverless reuses a warm instance, so initializing twice is a real
   // possibility rather than a theoretical one.
   const app = getApps().length
@@ -88,7 +92,7 @@ function admin() {
     : initializeApp(usingEmulators()
       ? { projectId: process.env.GCLOUD_PROJECT || 'demo-sweater' }
       : { credential: cert(serviceAccount()) });
-  cached = { db: getFirestore(app), auth: getAuth(app) };
+  cached = { db: getFirestore(app), auth: getAuth(app), FieldValue };
   return cached;
 }
 
@@ -114,6 +118,8 @@ export default async function handler(req, res) {
   if (req.query?.financeEndpoint === 'reports') return financeReportsHandler(req, res);
   if (req.query?.operationsEndpoint === 'reports') return operationsReportsHandler(req, res);
   if (req.query?.financeEndpoint === 'workbench') return financeWorkbenchHandler(req, res);
+  // Supabase only: the backup reads every table, page by page (server/backupExportHttp.js).
+  if (req.query?.backupEndpoint === 'export') return backupExportHandler(req, res);
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
     return res.status(405).json({ error: { code: 'invalid-argument', message: 'POST فقط.' } });
@@ -121,8 +127,9 @@ export default async function handler(req, res) {
 
   let db;
   let auth;
+  let fieldValue;
   try {
-    ({ db, auth } = admin());
+    ({ db, auth, FieldValue: fieldValue } = admin());
   } catch (e) {
     // Configuration, not a caller error — 503, and say which variable.
     return res.status(503).json({ error: { code: 'internal', message: e.message } });
@@ -157,7 +164,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const result = await dispatch(db, FieldValue, name, body?.data, {
+    const result = await dispatch(db, fieldValue, name, body?.data, {
       uid: decoded.uid,
       token: decoded,
     });

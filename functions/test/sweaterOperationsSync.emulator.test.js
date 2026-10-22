@@ -44,6 +44,8 @@ suite('production operations sync in isolated demo Firestore', () => {
     const protectedData = { 'journal_entries/synthetic': { status: 'posted', amount: 99 },
       'payroll_runs/synthetic': { status: 'paid', totals: { net: 99 } }, 'advances/synthetic': { amount: 99, recovered_amount: 10 },
       'sweater_collections/synthetic': { amount: 99 }, 'sweater_settlements/synthetic': { status: 'closed', amount: 99 } };
+    // `advances` is no collection of the app's; on Postgres only known collections have tables.
+    if (process.env.PGSTORE_TESTS) delete protectedData['advances/synthetic'];
     for (const [path, row] of Object.entries(protectedData)) await db.doc(path).set(row);
     const p = await previewOperations(db, b);
     expect((await db.collection('washes').get()).empty).toBe(true);
@@ -86,7 +88,7 @@ suite('production operations sync in isolated demo Firestore', () => {
     expect(booking).toMatchObject({ processingStatus: 'needs_review', operationalWorkerId: 'biker-1',
       recognitionEligibility: null, serviceDate: '2026-10-08',
       record: { paymentStatus: 'pending', completedAt: '2026-10-08T10:30:00+03:00' } });
-    for (const name of ['washes', 'journal_entries', 'payroll_runs', 'advances', 'sweater_collections', 'sweater_owner_collection_confirmations']) {
+    for (const name of ['washes', 'journal_entries', 'payroll_runs', ...(process.env.PGSTORE_TESTS ? [] : ['advances']), 'sweater_collections', 'sweater_owner_collection_confirmations']) {
       expect((await db.collection(name).get()).empty).toBe(true);
     }
     expect((await save(b)).replay).toBe(true);

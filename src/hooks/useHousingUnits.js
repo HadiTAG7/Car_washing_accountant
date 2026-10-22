@@ -18,7 +18,7 @@ import { useFirestoreQuery } from './useFirestoreQuery';
 export function useHousingUnits() {
   const { data, loading, error, refetch } = useFirestoreQuery(
     () => fetchRows('housing_units'),
-    { enabled: isFirebaseConfigured, map: mapHousingUnit, fallback: [] },
+    { cacheKey: 'housing_units', enabled: isFirebaseConfigured, map: mapHousingUnit, fallback: [] },
   );
 
   // Memoised so the callback below doesn't get a fresh dependency identity

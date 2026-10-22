@@ -6,6 +6,10 @@ import AppErrorBoundary from './components/AppErrorBoundary.jsx'
 import AppMounted from './components/AppMounted.jsx'
 
 async function boot() {
+  // On Supabase, stored invoice links open through a short-lived signed URL.
+  if (import.meta.env.VITE_DATA_SOURCE === 'supabase') {
+    import('./lib/data/supabase/storage.js').then(m => m.installInvoiceLinks()).catch(() => {});
+  }
   // The diagnostic route loads no Auth or financial modules, even while signed out.
   const diagnostic = new URLSearchParams(window.location.search).get('storageDiagnostic') === '1';
   const { default: Root } = diagnostic

@@ -3,12 +3,27 @@ import { isFirebaseConfigured } from '../lib/firebaseClient';
 import { fetchRows, insertRow, updateRow, deleteRow, sortBy } from '../lib/firestoreCrud';
 import { mapWash, toWashInsert, toWashUpdate } from '../lib/mappers';
 import { useFirestoreQuery } from './useFirestoreQuery';
+import { useAuth } from './useAuth';
+import { readWashMonths } from '../lib/washMonths';
 
-export function useWashes() {
+/**
+ * The wash register. With `months`, only those months are read (shared with
+ * the overview and the income statement, lib/washMonths.js); without, the
+ * whole register — kept for pages that genuinely need every wash.
+ */
+export function useWashes({ months = null } = {}) {
+  const { user } = useAuth();
+  const monthsKey = months ? [...new Set(months)].sort().join(',') : null;
   const { data, loading, error, refetch } = useFirestoreQuery(
-    async () => sortBy(await fetchRows('washes'), [{ key: 'wash_date', dir: 'desc' }]),
+    monthsKey
+      ? async () => sortBy(await readWashMonths(user?.id || null, monthsKey.split(',')), [{ key: 'wash_date', dir: 'desc' }])
+      : async () => sortBy(await fetchRows('washes'), [{ key: 'wash_date', dir: 'desc' }]),
     {
-      enabled: isFirebaseConfigured,
+      cacheKey: monthsKey ? `washesMonths:${monthsKey}` : 'washes',
+      cacheTags: ['washes'],
+      queryKey: monthsKey ? user?.id || '' : null,
+      deps: [monthsKey],
+      enabled: isFirebaseConfigured && (!monthsKey || Boolean(user?.id)),
       map:     mapWash,
     },
   );

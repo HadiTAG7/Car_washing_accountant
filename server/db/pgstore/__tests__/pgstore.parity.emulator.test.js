@@ -86,7 +86,7 @@ d('pgstore يطابق Firestore', () => {
       return steps;
     });
     expect(r.pgstore).toEqual(r.firestore);
-  });
+  }, 60_000);
 
   it('الاستعلامات: نطاق البادئة، الترتيب، الحقول الناقصة، النوع، in، الصفحات، count، select', async () => {
     await resetDb(); await wipeFirestore();

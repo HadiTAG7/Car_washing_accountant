@@ -25,6 +25,10 @@ const EMU = process.env.FIRESTORE_EMULATOR_HOST;
 const d = EMU ? describe : describe.skip;
 
 let app, db;
+// On Postgres an account id is an Auth user's UUID: each name maps to one.
+const NAMES = ['u1', 'attacker', 'someone', 'stranger', 'boss', 'faster', 'slower', 'a', 'b'];
+const pgTesting = process.env.PGSTORE_TESTS ? await import('../../server/db/pgstore/testing/firestore.js') : null;
+const U = name => (pgTesting ? pgTesting.testUid(name) : name);
 
 async function wipe() {
   for (const c of ['users', 'app_admins', 'audit_logs']) {
@@ -54,6 +58,7 @@ d('المطالبة بأول مدير', () => {
   beforeAll(async () => {
     app = initializeApp({ projectId: 'demo-sweater-bootstrap' }, 'bootstrap-test');
     db = getFirestore(app);
+    if (pgTesting) await pgTesting.ensureAuthUsers(NAMES);
   }, 60_000);
   afterAll(async () => { if (app) await deleteApp(app); });
   beforeEach(async () => { await wipe(); }, 60_000);
@@ -61,25 +66,25 @@ d('المطالبة بأول مدير', () => {
   it('نظام فارغ: أول متصل يصير مديراً، ويُكتب المستندان وسجل التدقيق', async () => {
     expect(await directoryIsEmpty(db)).toBe(true);
 
-    const res = await claimFirstAdmin(db, FieldValue, { uid: 'u1', email: 'Owner@Example.COM ' });
-    expect(res).toMatchObject({ uid: 'u1', role: 'admin', claimed: true });
+    const res = await claimFirstAdmin(db, FieldValue, { uid: U('u1'), email: 'Owner@Example.COM ' });
+    expect(res).toMatchObject({ uid: U('u1'), role: 'admin', claimed: true });
 
-    expect(await userDoc('u1')).toMatchObject({ role: 'admin', email: 'owner@example.com' });
-    expect(await adminDoc('u1')).toBe(true);
+    expect(await userDoc(U('u1'))).toMatchObject({ role: 'admin', email: 'owner@example.com' });
+    expect(await adminDoc(U('u1'))).toBe(true);
     const [rec] = await audits();
-    expect(rec).toMatchObject({ userId: 'u1', documentId: 'u1' });
+    expect(rec).toMatchObject({ userId: U('u1'), documentId: U('u1') });
     expect(rec.before).toMatchObject({ users: 0, appAdmins: 0 });
     expect(rec.after).toMatchObject({ role: 'admin' });
   }, 60_000);
 
   it('وبعدها يُغلق الباب: أي مطالبة ثانية تُرفض', async () => {
-    await claimFirstAdmin(db, FieldValue, { uid: 'u1', email: 'a@x.com' });
+    await claimFirstAdmin(db, FieldValue, { uid: U('u1'), email: 'a@x.com' });
     expect(await directoryIsEmpty(db)).toBe(false);
 
-    await expect(claimFirstAdmin(db, FieldValue, { uid: 'attacker', email: 'b@x.com' }))
+    await expect(claimFirstAdmin(db, FieldValue, { uid: U('attacker'), email: 'b@x.com' }))
       .rejects.toThrow(/مُهيَّأ بالفعل/);
     // …ولا حتى من نفس الحساب.
-    await expect(claimFirstAdmin(db, FieldValue, { uid: 'u1', email: 'a@x.com' }))
+    await expect(claimFirstAdmin(db, FieldValue, { uid: U('u1'), email: 'a@x.com' }))
       .rejects.toThrow(/مُهيَّأ بالفعل/);
 
     expect((await db.collection('users').get()).size).toBe(1);
@@ -89,17 +94,17 @@ d('المطالبة بأول مدير', () => {
   it('ووجود مستخدم واحد — بأي دور — يكفي لإغلاقه', async () => {
     // An install provisioned by the script, or one that already has staff:
     // the door was never open for a stranger to walk through.
-    await db.collection('users').doc('someone').set({ email: 's@x.com', role: 'operator' });
+    await db.collection('users').doc(U('someone')).set({ email: 's@x.com', role: 'operator' });
     expect(await directoryIsEmpty(db)).toBe(false);
-    await expect(claimFirstAdmin(db, FieldValue, { uid: 'stranger', email: 'z@x.com' }))
+    await expect(claimFirstAdmin(db, FieldValue, { uid: U('stranger'), email: 'z@x.com' }))
       .rejects.toThrow(/مُهيَّأ بالفعل/);
     expect((await db.collection('app_admins').get()).size).toBe(0);
   }, 60_000);
 
   it('و`app_admins` وحدها تكفي لإغلاقه كذلك', async () => {
-    await db.collection('app_admins').doc('boss').set({ email: 'b@x.com' });
+    await db.collection('app_admins').doc(U('boss')).set({ email: 'b@x.com' });
     expect(await directoryIsEmpty(db)).toBe(false);
-    await expect(claimFirstAdmin(db, FieldValue, { uid: 'stranger' }))
+    await expect(claimFirstAdmin(db, FieldValue, { uid: U('stranger') }))
       .rejects.toThrow(/مُهيَّأ بالفعل/);
   }, 60_000);
 
@@ -107,21 +112,21 @@ d('المطالبة بأول مدير', () => {
     // The emptiness test is a TRANSACTIONAL query, so it is in the read set:
     // a document appearing between the read and the commit aborts the
     // transaction, and the retry sees it and refuses.
-    const race = once(() => db.collection('users').doc('faster').set({
+    const race = once(() => db.collection('users').doc(U('faster')).set({
       email: 'f@x.com', role: 'admin',
     }));
-    await expect(claimFirstAdmin(db, FieldValue, { uid: 'slower' }, { onBeforeCommit: race }))
+    await expect(claimFirstAdmin(db, FieldValue, { uid: U('slower') }, { onBeforeCommit: race }))
       .rejects.toThrow(/مُهيَّأ بالفعل/);
 
     expect(race.runs()).toBeGreaterThan(1);
-    expect((await db.collection('users').get()).docs.map((x) => x.id)).toEqual(['faster']);
+    expect((await db.collection('users').get()).docs.map((x) => x.id)).toEqual([U('faster')]);
     expect(await audits()).toHaveLength(0);
   }, 90_000);
 
   it('وبالتوازي الحقيقي: واحدة تنجح والأخرى تُرفض', async () => {
     const results = await Promise.allSettled([
-      claimFirstAdmin(db, FieldValue, { uid: 'a', email: 'a@x.com' }),
-      claimFirstAdmin(db, FieldValue, { uid: 'b', email: 'b@x.com' }),
+      claimFirstAdmin(db, FieldValue, { uid: U('a'), email: 'a@x.com' }),
+      claimFirstAdmin(db, FieldValue, { uid: U('b'), email: 'b@x.com' }),
     ]);
     expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
     expect(results.filter((r) => r.status === 'rejected')).toHaveLength(1);

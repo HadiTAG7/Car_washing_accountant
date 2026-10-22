@@ -263,6 +263,13 @@ export function tableFor(collectionPath) {
   }
   throw new Error(`مسار غير مدعوم: ${collectionPath}`);
 }
+/** Whether documents of this collection path can exist at all (a table is defined for it). */
+export function hasTableFor(collectionPath) {
+  const parts = String(collectionPath).split('/');
+  if (parts.length === 1) return byCollection.has(parts[0]);
+  if (parts.length === 3) return byCollection.has(`${parts[0]}/*/${parts[2]}`);
+  return false;
+}
 export const tableByName = name => byTable.get(name);
 /** Subcollection tables for a collection-group name ('items' → payroll_run_items). */
 export const groupTables = name => SCHEMA.filter(t => t.collection.endsWith(`/*/${name}`));

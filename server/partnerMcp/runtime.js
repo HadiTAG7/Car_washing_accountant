@@ -11,6 +11,7 @@
 
 import { cert, getApps, initializeApp } from 'firebase-admin/app';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
+import { onSupabase, supabaseRuntime } from '../db/backend.js';
 
 const APP_NAME = 'partner-mcp-vercel';
 
@@ -43,6 +44,7 @@ function serviceAccount() {
 }
 
 export function getPartnerMcpRuntime() {
+  if (onSupabase()) { const { db, FieldValue: fieldValue } = supabaseRuntime(); return { db, FieldValue: fieldValue }; }
   let app = getApps().find((candidate) => candidate.name === APP_NAME);
   if (!app) {
     app = initializeApp(usingEmulators()

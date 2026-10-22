@@ -86,6 +86,19 @@ async function wipe() {
 }
 
 /**
+ * On Postgres entry numbers are unique, as the counter guarantees in real
+ * data. A fixture that plants entry N advances the counter past it, as
+ * `postSource` would have.
+ */
+async function reserveEntryNumber(n) {
+  if (!process.env.PGSTORE_TESTS) return;
+  const ref = db.collection('counters').doc('journal');
+  const snap = await ref.get();
+  const next = snap.exists ? Number(snap.data().nextNumber) || 1 : 1;
+  if (next <= n) await ref.set({ nextNumber: n + 1 }, { merge: true });
+}
+
+/**
  * A wash that is genuinely in the books: the record, its posting lock and the
  * entry the lock names, exactly as `postSource` would have left them.
  */
@@ -104,6 +117,7 @@ async function postedWash(id, { quantity = 2, price = 57.5, taxable = true, date
     biker_name: biker, quantity, price, status: 'مكتملة', wash_date: date, payment_method: method,
   });
   const entryRef = db.collection(COL.ENTRIES).doc();
+  await reserveEntryNumber(entryNumber);
   await entryRef.set({
     entryDate: date, periodKey: date.slice(0, 7), sourceType: 'wash', sourceId: id,
     sourceKind: 'wash', description: `غسلات — ${biker}`, status: 'posted', reversalOf: null,
@@ -926,6 +940,7 @@ d('إصدار المستندات الضريبية على الخادم', () => {
         biker_name: 'أحمد', quantity, price, status: 'مكتملة', wash_date: date, payment_method: 'cash',
       });
       const entryRef = db.collection(COL.ENTRIES).doc();
+      await reserveEntryNumber(1);
       await entryRef.set({
         entryDate: date, periodKey: date.slice(0, 7), sourceType: 'wash', sourceId: id,
         sourceKind: 'wash', description: 'غسلات', status: 'posted', reversalOf: null, entryNumber: 1,
@@ -966,6 +981,16 @@ d('إصدار المستندات الضريبية على الخادم', () => {
 
     it('وقيد لا تُشتق نسبته يُرفض بدل افتراض 15%', async () => {
       const posted = await washWithSnapshot('w-bad');
+      // On Postgres a posted entry's lines cannot change at all — the state
+      // this case defends against is refused by the database itself.
+      if (process.env.PGSTORE_TESTS) {
+        await expect(db.collection(COL.ENTRIES).doc(posted.entryId).update({ lines: [
+          { accountId: '1010', debit: 115, credit: 0, description: 'تحصيل' },
+          { accountId: '4000', debit: 0, credit: 100, description: 'إيراد' },
+          { accountId: '2100', debit: 0, credit: 20, description: 'ضريبة' },
+        ] })).rejects.toThrow(/لا يتغيّران بعد الترحيل/);
+        return;
+      }
       // Lines nobody can reproduce a rate from: 20 of tax on 100 of revenue is
       // 20%, but 20% of neither 115 nor 100 gives this trio. No rate and no
       // pricing mode produce it, so the treatment is simply not recoverable.
@@ -1109,6 +1134,16 @@ d('إصدار المستندات الضريبية على الخادم', () => {
     it('وقيد غير قابل للاشتقاق يرفض الإشعار بلا مستند ولا قيد ولا رقم مستهلك', async () => {
       const posted = await washWithSnapshot('w-bad2');
       const inv = await issue({ type: 'invoice', washId: 'w-bad2', issueDate: '2026-08-12' });
+      // On Postgres a posted entry's lines cannot change at all — the state
+      // this case defends against is refused by the database itself.
+      if (process.env.PGSTORE_TESTS) {
+        await expect(db.collection(COL.ENTRIES).doc(posted.entryId).update({ lines: [
+          { accountId: '1010', debit: 115, credit: 0, description: 'تحصيل' },
+          { accountId: '4000', debit: 0, credit: 100, description: 'إيراد' },
+          { accountId: '2100', debit: 0, credit: 20, description: 'ضريبة' },
+        ] })).rejects.toThrow(/لا يتغيّران بعد الترحيل/);
+        return;
+      }
       await db.collection(DOC_COL.DOCUMENTS).doc(inv.id).update({
         vatRate: FieldValue.delete(), taxSnapshot: FieldValue.delete(),
       });
@@ -1138,6 +1173,16 @@ d('إصدار المستندات الضريبية على الخادم', () => {
     it('وفاتورة لا تطابق قيدها تُرفض قبل إصدار الإشعار', async () => {
       const posted = await washWithSnapshot('w-drift');
       const inv = await issue({ type: 'invoice', washId: 'w-drift', issueDate: '2026-08-12' });
+      // On Postgres a posted entry's lines cannot change at all — the state
+      // this case defends against is refused by the database itself.
+      if (process.env.PGSTORE_TESTS) {
+        await expect(db.collection(COL.ENTRIES).doc(posted.entryId).update({ lines: [
+          { accountId: '1010', debit: 115, credit: 0, description: 'تحصيل' },
+          { accountId: '4000', debit: 0, credit: 100, description: 'إيراد' },
+          { accountId: '2100', debit: 0, credit: 20, description: 'ضريبة' },
+        ] })).rejects.toThrow(/لا يتغيّران بعد الترحيل/);
+        return;
+      }
       // The entry is edited under a filed invoice: the two now disagree.
       await db.collection(COL.ENTRIES).doc(posted.entryId).update({
         taxSnapshot: FieldValue.delete(),
@@ -1490,11 +1535,14 @@ d('إصدار المستندات الضريبية على الخادم', () => {
     it('يرفض إشعاراً على فاتورة قيدها مفقود', async () => {
       const inv = await invoiceOfStandalone();
       await db.collection(COL.ENTRIES).doc(inv.journalEntryId).delete();
+      // On Postgres the invoice cannot keep pointing at a missing entry (a
+      // foreign key): wiping the entry also clears the link, and the note is
+      // refused for that — still refused.
       await expect(issue({
         type: 'credit_note', issueDate: '2026-08-20', reason: 'إرجاع',
         referenceDocumentId: inv.id, refundMethod: 'cash',
         lines: [{ description: 'إرجاع', quantity: 2, unitPrice: 57.5 }],
-      })).rejects.toThrow(/غير موجود/);
+      })).rejects.toThrow(process.env.PGSTORE_TESTS ? /بلا قيد/ : /غير موجود/);
     }, 60_000);
   });
 

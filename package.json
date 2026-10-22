@@ -34,7 +34,9 @@
     "check:email": "node scripts/check-email-deliverability.mjs",
     "test:supabase": "vitest run supabase.test --no-file-parallelism",
     "db:generate": "node scripts/migration/generate-schema-sql.mjs && node scripts/migration/generate-security-sql.mjs",
-    "test:pgstore": "firebase emulators:exec --only firestore --project demo-pgstore --config firebase.test.json \"vitest run pgstore.parity --no-file-parallelism\""
+    "test:pgstore": "firebase emulators:exec --only firestore --project demo-pgstore --config firebase.test.json \"vitest run pgstore.parity --no-file-parallelism\"",
+    "test:functions:pg": "vitest run -c vitest.pgstore.config.js --dir functions --exclude **/callables.test.js --exclude **/*.callables.test.js --exclude **/httpApi*.test.js --exclude **/productionRules.test.js --exclude **/partnerRevenue.emulator.test.js --exclude work/**",
+    "reconcile": "firebase emulators:exec --only firestore --project demo-sweater --config firebase.test.json \"vitest run -c vitest.reconcile.config.js\""
   },
   "dependencies": {
     "@capacitor/core": "^8.4.2",

@@ -38,6 +38,7 @@ import {
 } from '../server/passwordResetEmail.js';
 import { clientIp, consumePasswordResetQuota } from '../server/passwordResetThrottle.js';
 import { PasswordResetConfigError, getPasswordResetRuntime } from '../server/passwordResetRuntime.js';
+import { onSupabase } from '../server/db/backend.js';
 
 export const config = { maxDuration: 30 };
 
@@ -198,6 +199,13 @@ export function createPasswordResetHandler({
     if (request.method !== 'POST') {
       response.setHeader('Allow', 'POST');
       response.status(405).json({ ok: false, error: 'method-not-allowed' });
+      return;
+    }
+
+    // على Supabase ترسل Supabase Auth الرسالة بنفسها (SMTP المشروع): 501 هو
+    // نفس إشارة «استخدم المسار المدمج» التي تفهمها الواجهة.
+    if (onSupabase()) {
+      response.status(501).json({ ok: false, error: 'not-configured' });
       return;
     }
 

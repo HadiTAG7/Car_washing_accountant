@@ -367,6 +367,19 @@ d('الخادم الموثوق للترحيل', () => {
 
     it('يرفض الإقفال مع قيد غير متوازن دُسّ في القاعدة مباشرة', async () => {
       await post(WASH());
+      const unbalanced = {
+        entryDate: '2026-08-20', periodKey: '2026-08', status: 'posted',
+        entryNumber: 999, sourceType: 'manual', description: 'مختل',
+        lines: [
+          { accountId: '1010', debit: 50, credit: 0 },
+          { accountId: '4000', debit: 0, credit: 40 },
+        ],
+      };
+      // On Postgres the database itself refuses it, before any close can see it.
+      if (process.env.PGSTORE_TESTS) {
+        await expect(db.collection(COL.ENTRIES).doc().set(unbalanced)).rejects.toThrow(/غير متوازن/);
+        return;
+      }
       await db.collection(COL.ENTRIES).doc().set({
         entryDate: '2026-08-20', periodKey: '2026-08', status: 'posted',
         entryNumber: 999, sourceType: 'manual', description: 'مختل',
@@ -577,6 +590,13 @@ d('الخادم الموثوق للترحيل', () => {
       await db.collection('monthly_expenses').doc('m1').set({
         expense_name: 'إيجار', total_monthly_cost: 1150, logged_date: '2026-08-05',
       });
+      // On Postgres a lock must point at a real entry (a foreign key), so the
+      // old entry it names exists here.
+      if (process.env.PGSTORE_TESTS) {
+        await db.collection(COL.ENTRIES).doc('old').set({ entryDate: '2026-08-05', periodKey: '2026-08', status: 'posted', entryNumber: 7,
+          sourceType: 'expense', sourceId: 'm1', description: 'قديم',
+          lines: [{ accountId: '5200', debit: 1150, credit: 0 }, { accountId: '1010', debit: 0, credit: 1150 }] });
+      }
       await db.collection(COL.LOCKS).doc('expense__m1').set({
         sourceType: 'expense', sourceId: 'm1', entryId: 'old', entryNumber: 7,
       });
@@ -627,7 +647,13 @@ d('الخادم الموثوق للترحيل', () => {
         quantity: 1, price: 115, status: 'مكتملة', wash_date: '2026-08-11',
       });
       const e1 = await postSource(db, FieldValue, { kind: 'wash', sourceId: 'w1' }, { userId: 'u1' });
-      // Re-point the lock at a newer entry, as a re-post would.
+      // Re-point the lock at a newer entry, as a re-post would. (On Postgres
+      // the lock's entry must exist — a foreign key — so it is created.)
+      if (process.env.PGSTORE_TESTS) {
+        await db.collection(COL.ENTRIES).doc('newer-entry').set({ entryDate: '2026-08-12', periodKey: '2026-08', status: 'posted', entryNumber: 99,
+          sourceType: 'wash', sourceId: 'w1', description: 'أحدث',
+          lines: [{ accountId: '1010', debit: 115, credit: 0 }, { accountId: '4000', debit: 0, credit: 115 }] });
+      }
       await db.collection(COL.LOCKS).doc('wash__w1').update({ entryId: 'newer-entry' });
 
       const rev = await reverseEntry(db, FieldValue, e1.entryId, { entryDate: '2026-08-20', userId: 'u1' });

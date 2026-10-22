@@ -1,8 +1,11 @@
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { operationsHandler } from '../../../functions/src/sweater/operationsHttp.js';
+import { onSupabase, supabaseRuntime } from '../../../server/db/backend.js';
 
 function getDb() {
+  // firebase-admin's FieldValue sentinels are understood by pgstore as well.
+  if (onSupabase()) return supabaseRuntime().db;
   if (!getApps().length) {
     const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
     if (!raw) throw new Error('Missing server configuration');

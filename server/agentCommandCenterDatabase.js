@@ -1,5 +1,6 @@
 import { cert, getApps, initializeApp } from 'firebase-admin/app';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
+import { onSupabase, supabaseRuntime } from './db/backend.js';
 
 const APP_NAME = 'agent-command-center-vercel';
 const DEFAULT_PROJECT_ID = 'gemini-eed4a';
@@ -20,6 +21,7 @@ function loadServiceAccount() {
 }
 
 export function getAgentCommandCenterDatabase() {
+  if (onSupabase()) { const { db, FieldValue: fieldValue } = supabaseRuntime(); return { db, FieldValue: fieldValue }; }
   let app = getApps().find((candidate) => candidate.name === APP_NAME);
   if (!app) {
     const { projectId, serviceAccount } = loadServiceAccount();

@@ -139,7 +139,7 @@ export function effectiveOrders(filters, orders) {
  * Compiles a query. `filters`: [{field, op, value}], `orders`: [{field, dir}],
  * `cursor`: values for startAfter (one per effective order key), `limit`.
  */
-export function compileQuery(table, { parentId = null, filters = [], orders = [], cursor = null, limit = null, count = false }) {
+export function compileQuery(table, { parentId = null, filters = [], orders = [], cursor = null, limit = null, count = false, versions = false }) {
   const b = new SqlBuilder();
   const where = [];
   if (table.parentTable) {
@@ -173,7 +173,9 @@ export function compileQuery(table, { parentId = null, filters = [], orders = []
     return [v.rank, v.bool, v.num, v.time, v.str].map(x => `${x} ${dir} nulls ${dir === 'asc' ? 'first' : 'last'}`);
   }).join(', ');
   const limitSql = limit != null ? ` limit ${Number(limit)}` : '';
-  return { text: `select * from public.${qi(table.table)}${whereSql} order by ${orderSql}${limitSql}`, values: b.params, effective };
+  // `versions`: each row's xmin — a transaction's read set, checked again at commit.
+  const cols = versions ? '*, xmin::text as "__v"' : '*';
+  return { text: `select ${cols} from public.${qi(table.table)}${whereSql} order by ${orderSql}${limitSql}`, values: b.params, effective };
 }
 
 // startAfter: strictly after the cursor value in the field's full (type, value) order.

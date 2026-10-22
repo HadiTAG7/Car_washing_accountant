@@ -163,7 +163,11 @@ async function walk(browser, who, pages, label) {
   const bypass = process.env.VERCEL_BYPASS;
   if (REMOTE && bypass) {
     const origin = new URL(BASE).origin;
-    await context.route(u => u.origin === origin, route => route.continue({ headers: { ...route.request().headers(), 'x-vercel-protection-bypass': bypass } }));
+    // The header for the requests the page makes, and Vercel's bypass cookie
+    // for the one the routing cannot see (the service worker's script).
+    await context.route(u => u.origin === origin, route => route.continue({
+      headers: { ...route.request().headers(), 'x-vercel-protection-bypass': bypass, 'x-vercel-set-bypass-cookie': 'true' },
+    }));
   }
   let session = null;
   if (REMOTE) {

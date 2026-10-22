@@ -76,12 +76,22 @@ SMTP Settings، أو `PATCH /v1/projects/<ref>/config/auth`):
 | Sender email (`smtp_admin_email`) | `no-reply@mail.hadialghanim.com` |
 | Sender name (`smtp_sender_name`) | `سويتر` |
 
-ثم القالب: الموضوع «تعيين كلمة المرور — سويتر» والمحتوى من `supabase/templates/recovery.html`
+ثم القالب: الموضوع «استعادة كلمة المرور — سويتر» والمحتوى من `supabase/templates/recovery.html`
 (`mailer_subjects_recovery`، `mailer_templates_recovery_content`)، ورسالة تجربة لحساب المدير.
 لا تغيير في الكود: على Supabase يرسل Supabase Auth الرسالة نفسها (مسار Mailgun في
 `api/password-reset.js` يخص Firebase فقط).
 
 ## التشغيل المتوازي (Vercel Preview)
+
+### نطاق البريد والمعاينة — 23 أكتوبر 2026
+
+- `app.hadialghanim.com` مرتبط بفرع `claude/supabase-migration` فقط، وليس بفرع الإنتاج. سجل Cloudflare المضاف وحده هو CNAME باسم `app` إلى القيمة التي أوصت بها Vercel (`cname.vercel-dns.com`، DNS only).
+- في مشروع Supabase `jipayrdjhchrhiyrbbnx`: `Site URL` هو `https://app.hadialghanim.com`، وأضيف رابط العودة المحدد `https://app.hadialghanim.com/update-password` مع الاحتفاظ بالرابط السابق. لا روابط عودة عامة أو wildcard جديد.
+- يبقى القالب معتمدًا على `{{ .SiteURL }}` بدل تثبيت نطاق معاينة داخل HTML، ويحافظ على `TokenHash` ومسار `/update-password`. يتطلب أي تغيير لاحق للـ Site URL فحص نطاق رابط الاستعادة، لا مجرد قبول إرسال الرسالة.
+- يبقى SMTP ومفتاح الإرسال المحدود بالنطاق كما هما؛ لا تغيير لكلمة مرور مستخدم أو لسجلات MX/SPF/DKIM/DMARC، ولا تفعيل لتتبع الروابط أو الفتح.
+- حماية معاينة Vercel لم تُعطّل. ظهور التطبيق في متصفح المالك لا يعني أن مستخدمًا غير مخوّل يستطيع فتح المعاينة. تُراجع جاهزية الدخول العام عند اعتماد التحويل النهائي، لا بتعطيل الحماية لغرض اختبار البريد.
+- تحقق تسليم الرسالة من تصنيف Gmail نفسه (`INBOX` أو `SPAM`) وليس حالة Resend `Delivered` وحدها. اختبار واحد لحساب المالك لا يضمن الوارد لكل المستخدمين أو مزودي البريد.
+- لم يُدمج فرع المعاينة ولم يتغير رابط أو نشر Firebase الحالي. للرجوع عن إعدادات البريد الجديدة قبل التحويل: أعد Site URL السابق في Supabase، وأزل رابط العودة الجديد فقط عند عدم الحاجة له، واترك سجلات البريد الأصلية دون تعديل.
 
 متغيرات Preview في Vercel (Settings ← Environment Variables ← Preview، لفرع
 `claude/supabase-migration` فقط):

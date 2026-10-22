@@ -22,9 +22,9 @@ export default function OverviewOperationalAttention({ data, periodKey, today, w
           <span>{formatCurrencyPrecise(row.amount)} · {row.approvalStatus === 'approved' ? text('معتمد', 'Approved') : text('معلّق / محل اعتراض', 'Pending / disputed')}</span></li>)}</ul>
         <button className="sw-overview__link" type="button" onClick={() => onNavigate?.('sweater_settlements')}>{text('فتح التفاصيل', 'Open details')}</button>
       </section>}
-      {workerReady && a.idle.length > 0 && <section><h3>{text('بايكر بلا غسلات مسجلة أمس أو اليوم', 'Bikers without recorded washes yesterday or today')}</h3>
-        <small>{text('من النشطين المسجلين، وليس إثبات غياب. اليوم لم يكتمل، ولا نرسل أو نسجل أي إجراء تلقائي.', 'Recorded active roster, not proof of absence. Today is incomplete; no automatic action is sent or recorded.')}</small>
-        <ul>{a.idle.map(({ biker, dates }) => <li key={biker.id}>{bikerLabel(biker)}<span>{dates.map(day => day === today ? text('اليوم — لم يكتمل', 'Today — incomplete') : day).join(' · ')}</span></li>)}</ul>
+      {workerReady && a.idle.length > 0 && <section><h3>{text('بايكر بلا غسلات مسجلة أمس', 'Bikers without recorded washes yesterday')}</h3>
+        <small>{text('أمس فقط، آخر يوم مكتمل، من النشطين المسجلين؛ وليس إثبات غياب. لا نرسل أو نسجل أي إجراء تلقائي.', 'Yesterday only, the last completed day, for the recorded active roster; not proof of absence. No automatic action is sent or recorded.')}</small>
+        <ul>{a.idle.map(({ biker, dates }) => <li key={biker.id}>{bikerLabel(biker)}<bdi>{dates.join(' · ')}</bdi></li>)}</ul>
       </section>}
       {workerReady && a.iqamas.length > 0 && <section><h3>{text(`إقامات تنتهي خلال ${settings.documentWarningDays} يومًا`, `Iqamas expiring within ${settings.documentWarningDays} days`)}</h3>
         <ul>{a.iqamas.map(({ biker, daysLeft }) => <li key={biker.id}>{bikerLabel(biker)}<bdi>{biker.iqamaExpiry}</bdi><span>{formatNumber(daysLeft)} {text('يوم', 'days')}</span></li>)}</ul>
@@ -40,7 +40,7 @@ export default function OverviewOperationalAttention({ data, periodKey, today, w
       <p>{text('لا توجد حقول موثقة لانتهاء تأمين الدباب أو الاستمارة؛ لا تنبيهات لهما. نحتاج تاريخ انتهاء التأمين وتاريخ انتهاء الاستمارة وربطهما بالدباب.', 'No documented bike insurance or registration expiry fields; their alerts are omitted. Each needs an expiry date linked to the bike.')}</p>
       {!adjustmentReady && <p>{text('قراءة المخالفات والتسويات الخصمية غير متاحة بعد.', 'Violation and deduction adjustments are not available yet.')}</p>}
       {(data.bookings?.error || data.adjustments?.error || data.settlements?.error) && <button type="button" className="sw-overview__link" onClick={data.retry}>{text('إعادة قراءة المصادر', 'Retry source reads')}</button>}
-      {today.slice(0, 7) !== periodKey && <p>{text('تنبيهات عدم وجود غسلات أمس/اليوم وانتهاء الوثائق للشهر الحالي فقط؛ حالة العامل الحالية لا تثبت حالته التاريخية.', 'No-wash and document expiry alerts apply to the current month only; current worker status does not establish historical status.')}</p>}
+      {today.slice(0, 7) !== periodKey && <p>{text('تنبيهات عدم وجود غسلات أمس وانتهاء الوثائق للشهر الحالي فقط؛ حالة العامل الحالية لا تثبت حالته التاريخية.', 'No-wash and document expiry alerts apply to the current month only; current worker status does not establish historical status.')}</p>}
     </details>
   </>;
 }

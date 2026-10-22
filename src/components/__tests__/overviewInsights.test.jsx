@@ -82,10 +82,15 @@ it('does not display failed adjustment reads as zero, while operational forecast
   expect(card('Month-end forecast').textContent).not.toContain('Unavailable');
 });
 it('shows only evidence-backed attention items and does not attribute an unfinished day to absence', () => {
-  render(<OverviewOperationalAttention data={data()} periodKey="2026-10" today="2026-10-21" washReady workerReady language="ar" />);
+  // b1 washed yesterday; b2 is active with no wash yesterday. Today is never listed.
+  const d = data(); d.workers.bikers = [biker, { ...biker, id: 'b2', name: 'عامل ثان', driverExternalId: '2077' }];
+  render(<OverviewOperationalAttention data={d} periodKey="2026-10" today="2026-10-21" washReady workerReady language="ar" />);
   expect(card('غسلات أقل من 10 دقائق').textContent).toContain('SSP'); expect(card('غسلات أقل من 10 دقائق').textContent).toContain('1984');
   expect(card('غسلات أقل من 10 دقائق').textContent).toContain('9');
-  expect(card('بايكر بلا غسلات مسجلة أمس أو اليوم').textContent).toContain('ليس إثبات غياب');
+  const idle = card('بايكر بلا غسلات مسجلة أمس');
+  expect(idle.textContent).toContain('ليس إثبات غياب'); expect(idle.textContent).toContain('2077');
+  expect(idle.textContent).toContain('2026-10-20'); expect(idle.textContent).not.toContain('1984');
+  expect(idle.textContent).not.toContain('2026-10-21'); expect(idle.textContent).not.toContain('لم يكتمل');
   expect(card('إقامات تنتهي خلال 30 يومًا').textContent).toContain('2026-11-01');
 });
 it('omits alerts when timestamps/expiry are missing rather than inferring a short wash or expired document', () => {

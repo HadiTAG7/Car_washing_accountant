@@ -94,7 +94,8 @@ describe('evidenced, month-scoped attention items', () => {
     const a = overviewAttention({ ops: ops(), bikers: [biker], bookings: [booking, booking], today: '2026-10-21' });
     expect(a.shortWashes).toHaveLength(1); expect(a.shortWashes[0]).toMatchObject({ duration: 9, biker });
     expect(a.iqamas).toHaveLength(1); expect(a.iqamas[0].daysLeft).toBe(30);
-    expect(a.idle[0].dates).toEqual(['2026-10-21']);
+    // b1 washed yesterday (the last completed day); today is still running.
+    expect(a.idle).toEqual([]);
     expect(overviewAttention({ ops: ops(), bookings: [{ record: { ...booking.record, startedAt: null } }], today: '2026-10-21' }).shortWashes).toEqual([]);
   });
   it('omits unlinked, invalid, negative, date-only and conflicting timestamps', () => {
@@ -114,7 +115,24 @@ describe('evidenced, month-scoped attention items', () => {
   });
   it('does not call a worker idle when wash identities cannot establish absence', () => {
     const a = overviewAttention({ ops: operations([wash('unlinked', '2026-10-20', 1, null)]), today: '2026-10-21', bikers: [biker] });
-    expect(a.idle[0].dates).toEqual(['2026-10-21']);
+    expect(a.idle).toEqual([]);
+  });
+  it('checks yesterday only — the last completed day, never the running one', () => {
+    const today = '2026-10-21'; const yesterday = '2026-10-20';
+    const idle = (washes, bikers = [biker], day = today) => overviewAttention({ ops: operations(washes, day), today: day, bikers }).idle;
+    // No wash yesterday: flagged, dated yesterday.
+    expect(idle([])).toEqual([{ biker, dates: [yesterday] }]);
+    // Washed yesterday, nothing yet today: not flagged.
+    expect(idle([wash('y', yesterday)])).toEqual([]);
+    // Washed today only: flagged for yesterday, and today never appears.
+    expect(idle([wash('t', today)])).toEqual([{ biker, dates: [yesterday] }]);
+    // The first of the month: yesterday is outside the selected month.
+    expect(idle([], [biker], '2026-10-01')).toEqual([]);
+    // Not on the roster yesterday: started today, or ended before yesterday.
+    expect(idle([], [{ ...biker, startDate: today }])).toEqual([]);
+    expect(idle([], [{ ...biker, endDate: '2026-10-19' }])).toEqual([]);
+    // Another biker's wash yesterday does not cover this one.
+    expect(idle([wash('other', yesterday, 3, 'b2')])).toEqual([{ biker, dates: [yesterday] }]);
   });
 });
 

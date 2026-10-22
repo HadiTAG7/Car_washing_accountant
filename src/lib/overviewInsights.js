@@ -97,9 +97,11 @@ export function overviewAttention({ ops, bikers = [], bookings = [], today, sett
     const left = (dayMs(biker.iqamaExpiry) - dayMs(today)) / 86400000;
     return Number.isFinite(left) && left >= 0 && left <= settings.documentWarningDays ? [{ biker, daysLeft: left }] : [];
   }) : [];
+  // Yesterday only: the last completed day. Today is still running, so a
+  // missing wash today is not yet evidence of anything.
   const idle = current ? bikers.filter(isOverviewWorkingBiker).flatMap(biker => {
     const eligible = day => (!biker.startDate || biker.startDate <= day) && (!biker.endDate || biker.endDate >= day);
-    const dates = [ops.yesterday, today].filter(day => day >= ops.from && day <= ops.to && eligible(day)
+    const dates = [ops.yesterday].filter(day => day >= ops.from && day <= ops.to && eligible(day)
       && !ops.rows.some(row => row.washDate === day && Number(row.quantity) > 0 && !row.bikerId)
       && !ops.rows.some(row => row.bikerId === biker.id && row.washDate === day && Number(row.quantity) > 0));
     return dates.length ? [{ biker, dates }] : [];

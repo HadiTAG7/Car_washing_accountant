@@ -6,6 +6,7 @@
 
 import { fetchRows } from './firestoreCrud';
 import { auth, dataSource } from './firebaseClient';
+import { riyadhTodayISO } from './washesYesterday';
 
 // CRC-32 (IEEE 802.3), table-driven.
 const CRC_TABLE = (() => {
@@ -198,7 +199,7 @@ async function buildSupabaseBackup() {
   const stamp = new Date();
   return {
     blob: new Blob([buildZip(files, stamp)], { type: 'application/zip' }),
-    filename: `سويتر-نسخة-احتياطية-${stamp.toISOString().slice(0, 10)}.zip`,
+    filename: `سويتر-نسخة-احتياطية-${riyadhTodayISO(stamp)}.zip`,
     counts,
   };
 }
@@ -223,7 +224,7 @@ export async function buildFullBackup() {
     counts.push(`${table}: ${rows.length}`);
   }
   const stamp = new Date();
-  const dateTag = stamp.toISOString().slice(0, 10);
+  const dateTag = riyadhTodayISO(stamp);
   files.push({
     name: 'manifest.txt',
     text: [

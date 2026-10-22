@@ -83,6 +83,14 @@ SUPABASE_ACCESS_TOKEN=… node scripts/migration/db-fingerprint.mjs --via api --
 
 الدوال في دبلن (`regions: ["dub1"]`) بجانب القاعدة في أيرلندا.
 
+جولة كل الصفحات على المعاينة (مدير وشريك) — لا تُغيَّر كلمة مرور أحد: جلسة مؤقتة من Auth
+Admin تُغلق في النهاية، ورمز تجاوز حماية Vercel يُرسل لطلبات الموقع فقط:
+
+```bash
+SUPABASE_URL=https://<ref>.supabase.co SUPABASE_SERVICE_ROLE_KEY=… SUPABASE_ACCESS_TOKEN=… VERCEL_BYPASS=… \
+  node scripts/migration/ui-smoke.mjs --base https://<المعاينة>
+```
+
 ## التحويل النهائي (بعد موافقتك)
 
 1. إعلان وقت التحويل، وإيقاف الإدخال في الموقع الحالي (لا تعديل في بيانات Firebase).

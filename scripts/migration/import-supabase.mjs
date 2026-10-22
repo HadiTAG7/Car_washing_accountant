@@ -20,6 +20,8 @@
 // تبقى كما هي.
 //
 //   node scripts/migration/import-supabase.mjs [--dir migration-data] [--dry-run]
+// والاستعادة من نسخة الموقع الاحتياطية (Supabase): نفس الأمر على مجلد الملف
+// بعد فكّه — المعرّفات كما هي، ولا حسابات تُنشأ، وجدول ربط الحسابات يعود معها.
 // الهدف: SUPABASE_DB_URL (الافتراضي القاعدة المحلية) و SUPABASE_URL +
 // SUPABASE_SERVICE_ROLE_KEY لإنشاء الحسابات (service_role هنا فقط، لا في الموقع).
 // ═══════════════════════════════════════════════════════════════════════════
@@ -63,13 +65,17 @@ const opts = { makeTimestamp: plainTimestamp };
 /** The documents to load: { table, id, parentId, data } after the uid mapping. */
 export function plan(exportData) {
   const problems = []; const skipped = {}; const docs = []; const uidMap = new Map(); const remapped = [];
-  for (const u of exportData.authUsers) uidMap.set(u.uid, uidFor(u.uid));
+  // Restoring a Supabase backup: ids are already Supabase's, accounts already
+  // exist (the foreign keys check it at commit), and nothing is remapped.
+  const restore = Boolean(exportData.restore);
+  if (!restore) for (const u of exportData.authUsers) uidMap.set(u.uid, uidFor(u.uid));
   // A users/app_admins document needs a real account behind it (it is the
   // account's role). One without is reported, not invented.
-  for (const name of ['users', 'app_admins']) {
+  for (const name of restore ? [] : ['users', 'app_admins']) {
     for (const r of exportData.collections[name] || []) if (!uidMap.has(r.id)) problems.push(`${name}/${r.id}: لا حساب دخول بهذا المعرّف في Firebase Auth`);
   }
   const mapUid = (where, value) => {
+    if (restore) return value;
     if (typeof value !== 'string' || !value) return value;
     if (!uidMap.has(value)) { problems.push(`${where}: يشير لحساب غير موجود ${value}`); return value; }
     remapped.push(where);
@@ -81,7 +87,7 @@ export function plan(exportData) {
     try { table = tableFor(name).table; } catch (e) { problems.push(e.message); continue; }
     for (const row of rows) {
       let { id } = row; const data = { ...row.data };
-      if (name === 'users' || name === 'app_admins') id = uidMap.get(id);
+      if (!restore && (name === 'users' || name === 'app_admins')) id = uidMap.get(id);
       if (name === 'partners' && 'user_id' in data) data.user_id = mapUid(`partners/${row.id}.user_id`, data.user_id);
       if ((name === 'partner_mcp_keys' || name === 'partner_mcp_key_hashes') && 'ownerUid' in data) data.ownerUid = mapUid(`${name}/${row.id}.ownerUid`, data.ownerUid);
       docs.push({ table, id, parentId: null, data, source: `${name}/${row.id}` });
@@ -177,7 +183,8 @@ export async function runImport({ dir = DIR, dbUrl = DB_URL, dry = DRY, createUs
   const report = { at: new Date().toISOString(), target: dbUrl.replace(/:[^:@/]+@/, ':***@'), tables: [], skipped, users: exportData.authUsers.length, remappedReferences: remapped.length };
   if (dry) { log('تشغيل تجريبي: نجح التحويل لكل المستندات، لم يُكتب شيء.'); return report; }
 
-  if (createUsers) report.auth = await ensureAuthUsers(exportData.authUsers, uidMap);
+  report.restore = Boolean(exportData.restore);
+  if (createUsers && !exportData.restore) report.auth = await ensureAuthUsers(exportData.authUsers, uidMap);
 
   const client = new pg.Client({ connectionString: dbUrl });
   await client.connect();
@@ -186,10 +193,10 @@ export async function runImport({ dir = DIR, dbUrl = DB_URL, dry = DRY, createUs
     await client.query('set constraints all deferred');
     const appTables = [...SCHEMA.map(t => t.table), ...SCHEMA.filter(t => t.lines).map(t => t.lines), 'firebase_uid_map'];
     await client.query(`truncate ${appTables.map(t => `public.${qi(t)}`).join(', ')}`);
-    for (const [fb, id] of uidMap) {
-      const email = exportData.authUsers.find(u => u.uid === fb)?.email ?? null;
-      await client.query('insert into public.firebase_uid_map (firebase_uid, user_id, email) values ($1, $2, $3)', [fb, id, email]);
-    }
+    const mapRows = exportData.restore
+      ? exportData.uidMapRows.map(r => [r.firebase_uid, r.user_id, r.email ?? null])
+      : [...uidMap].map(([fb, id]) => [fb, id, exportData.authUsers.find(u => u.uid === fb)?.email ?? null]);
+    for (const row of mapRows) await client.query('insert into public.firebase_uid_map (firebase_uid, user_id, email) values ($1, $2, $3)', row);
     // Parents before children; FKs are deferred anyway.
     const order = [...SCHEMA].sort((a, b) => Number(Boolean(a.parentTable)) - Number(Boolean(b.parentTable)));
     for (const table of order) {

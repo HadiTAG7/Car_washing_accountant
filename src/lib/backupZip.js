@@ -5,6 +5,7 @@
 // iOS Files) opens it. UTF-8 filename flag set so Arabic names survive.
 
 import { fetchRows } from './firestoreCrud';
+import { auth, dataSource } from './firebaseClient';
 
 // CRC-32 (IEEE 802.3), table-driven.
 const CRC_TABLE = (() => {
@@ -138,12 +139,77 @@ const BACKUP_TABLES = [
   'app_settings',
 ];
 
+// ── Supabase: every table, restorable ──────────────────────────────────
+// The free plan keeps no backups of its own, so this file IS the backup:
+// every collection as NDJSON in the export's tagged form (restored as is by
+// scripts/migration/import-supabase.mjs --dir), the same readable CSVs as
+// before, and a manifest with counts and SHA-256s. Pages come from the
+// server (admin only), each under Vercel's response limit.
+async function backupPage(input) {
+  if (!auth?.currentUser) throw Object.assign(new Error('تسجيل الدخول مطلوب.'), { code: 'unauthenticated' });
+  const res = await fetch('/api/ledger?backupEndpoint=export', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await auth.currentUser.getIdToken()}` },
+    body: JSON.stringify(input),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok || body?.error) throw Object.assign(new Error(body?.error?.message || 'تعذّر إنشاء النسخة الاحتياطية.'), { code: body?.error?.code || 'internal' });
+  return body.result;
+}
+async function sha256Hex(text) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+// Tagged values (`{"$fs:ts":…}`) read as plain cells in the CSV copy.
+const plainCell = v => (v && typeof v === 'object' && v['$fs:ts'] ? new Date(v['$fs:ts'].s * 1000).toISOString() : v);
+async function buildSupabaseBackup() {
+  const { collections } = await backupPage({ list: true });
+  const files = []; const manifest = { version: 1, source: 'supabase-backup', createdAt: new Date().toISOString(), collections: {} };
+  const groups = new Map(); const counts = [];
+  for (const collection of collections) {
+    const rows = [];
+    for (let after = null; ;) {
+      const page = await backupPage({ collection, after });
+      rows.push(...page.rows);
+      if (!page.next) break;
+      after = page.next;
+    }
+    if (collection.includes('/*/')) {
+      const group = collection.split('/*/')[1];
+      groups.set(group, [...(groups.get(group) || []), ...rows]);
+      counts.push(`${collection}: ${rows.length}`);
+      continue;
+    }
+    const name = collection === 'firebase_uid_map' ? 'firebase-uid-map' : collection;
+    const text = rows.map(r => JSON.stringify(r)).join('\n') + (rows.length ? '\n' : '');
+    files.push({ name: `${name}.ndjson`, text });
+    manifest.collections[name] = { count: rows.length, sha256: await sha256Hex(text) };
+    counts.push(`${collection}: ${rows.length}`);
+    if (BACKUP_TABLES.includes(collection)) {
+      files.push({ name: `csv/${collection}.csv`, text: rowsToCsv(rows.map(r => ({ id: r.id, ...Object.fromEntries(Object.entries(r.data).map(([k, v]) => [k, plainCell(v)])) }))) });
+    }
+  }
+  for (const [group, rows] of groups) {
+    const text = rows.map(r => JSON.stringify(r)).join('\n') + (rows.length ? '\n' : '');
+    files.push({ name: `group__${group}.ndjson`, text });
+    manifest.collections[`group__${group}`] = { count: rows.length, sha256: await sha256Hex(text) };
+  }
+  files.push({ name: 'manifest.json', text: JSON.stringify(manifest, null, 2) });
+  const stamp = new Date();
+  return {
+    blob: new Blob([buildZip(files, stamp)], { type: 'application/zip' }),
+    filename: `سويتر-نسخة-احتياطية-${stamp.toISOString().slice(0, 10)}.zip`,
+    counts,
+  };
+}
+
 /**
  * Fetch every table and hand back { blob, filename, counts }. Admin-only
  * by construction: RLS returns zero rows to anyone else, and the button
  * is gated behind canMutate anyway.
  */
 export async function buildFullBackup() {
+  if (dataSource === 'supabase') return buildSupabaseBackup();
   const files = [];
   const counts = [];
   for (const table of BACKUP_TABLES) {

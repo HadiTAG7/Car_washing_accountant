@@ -12,8 +12,10 @@
 // hands them.
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
+import { sdk } from './backend.js';
 import { connect } from './client.js';
+
+const { collection, getDocs, doc, getDoc } = sdk.firestore;
 
 export const COL = {
   ACCOUNTS: 'chart_of_accounts',

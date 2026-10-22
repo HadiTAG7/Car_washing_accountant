@@ -60,7 +60,25 @@ SUPABASE_ACCESS_TOKEN=… node scripts/migration/db-fingerprint.mjs --via api --
 العربي (`supabase/templates/recovery.html`) لا يُقبل على الخطة المجانية إلا بعد ضبط SMTP خاص —
 فيُرفع القالب مع SMTP. إلى أن يُضبط: `node scripts/migration/first-login-links.mjs` يولّد لكل مستخدم رابطاً
 خاصاً في `migration-data/first-login-links.md` يرسله المدير بنفسه (مرة واحدة،
-صلاحية محدودة).
+صلاحية ساعة).
+
+### البريد: Resend
+الدومين `mail.hadialghanim.com` متحقَّق في Resend. في Supabase (Authentication ← Emails ←
+SMTP Settings، أو `PATCH /v1/projects/<ref>/config/auth`):
+
+| الحقل | القيمة |
+|---|---|
+| Host (`smtp_host`) | `smtp.resend.com` |
+| Port (`smtp_port`) | `465` |
+| Username (`smtp_user`) | `resend` |
+| Password (`smtp_pass`) | مفتاح Resend API بصلاحية **Sending access** فقط، محصور بالدومين — **سرّي** |
+| Sender email (`smtp_admin_email`) | `no-reply@mail.hadialghanim.com` |
+| Sender name (`smtp_sender_name`) | `سويتر` |
+
+ثم القالب: الموضوع «تعيين كلمة المرور — سويتر» والمحتوى من `supabase/templates/recovery.html`
+(`mailer_subjects_recovery`، `mailer_templates_recovery_content`)، ورسالة تجربة لحساب المدير.
+لا تغيير في الكود: على Supabase يرسل Supabase Auth الرسالة نفسها (مسار Mailgun في
+`api/password-reset.js` يخص Firebase فقط).
 
 ## التشغيل المتوازي (Vercel Preview)
 
@@ -94,7 +112,7 @@ SUPABASE_URL=https://<ref>.supabase.co SUPABASE_SERVICE_ROLE_KEY=… SUPABASE_AC
 ## التحويل النهائي (بعد موافقتك)
 
 1. إعلان وقت التحويل، وإيقاف الإدخال في الموقع الحالي (لا تعديل في بيانات Firebase).
-   قبله: SMTP خاص في Supabase + قالب الرسالة العربي + رابط الموقع وروابط العودة للنطاق النهائي.
+   قبله: SMTP عبر Resend (أعلاه) + قالب الرسالة العربي + رابط الموقع وروابط العودة للنطاق النهائي.
 2. تصدير أخير ← استيراد ← نفس البوابات ← تقرير المطابقة: صفر فروقات.
 3. ضبط نفس المتغيرات في Production ثم دمج الفرع ونشره.
 4. فتح الموقع، ومطابقة أرقام الشهر الحالي، ثم إعلام المستخدمين بأول دخول.

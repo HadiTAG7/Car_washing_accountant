@@ -16,7 +16,9 @@
 // الـdouble، فـ0.30000000000000004 تبقى 0.30000000000000004.
 // ═══════════════════════════════════════════════════════════════════════════
 
-export const TAG = '$fs:';
+import { TAG, tagOf } from '../../src/lib/data/schema/tags.js';
+
+export { TAG, tagOf };
 
 export function encodeValue(value) {
   if (value === null || value === undefined) return value ?? null;
@@ -46,9 +48,3 @@ export function encodeValue(value) {
   return out;
 }
 
-/** Is this encoded value a tagged Firestore type (not a plain map)? */
-export function tagOf(value) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const keys = Object.keys(value);
-  return keys.length === 1 && keys[0].startsWith(TAG) ? keys[0].slice(TAG.length) : null;
-}

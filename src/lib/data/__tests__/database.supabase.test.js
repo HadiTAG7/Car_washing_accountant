@@ -3,7 +3,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { tableFor } from '../schema/registry.js';
 import { writeDocument } from '../../../../server/db/rows.js';
-import { available, resetDb, createAuthUser, asUser, asServer, asOwner, attempt, closeDb } from './supabaseTestDb.js';
+import { available, resetDb, createAuthUser, asUser, asServer, asOwner, attempt, closeDb, db, actAsUser } from './supabaseTestDb.js';
 
 const up = await available();
 const d = up ? describe : describe.skip;
@@ -95,6 +95,39 @@ d('الصلاحيات تطابق firestore.rules', () => {
     expect(await count(U.admin, `update washes set price = 30 where id = 'w1'`)).toBe(0);
     expect(await count(U.admin, `delete from washes where id = 'w1'`)).toBe(0);
     expect(await count(U.partner, 'select * from washes')).toBe(0);
+  });
+  it('تعديل ينتظر صف غسلة يرحّلها الخادم يُرفض بعد الترحيل، لا يمر بلقطة قديمة', async () => {
+    await asUser(U.operator, c => put(c, 'washes', 'w-race', { wash_date: '2026-10-05', quantity: 1, price: 20, status: 'مكتملة' }));
+    const server = await db().connect(); const user = await db().connect();
+    try {
+      // The server's posting holds the wash it read (as pgstore does at commit).
+      await server.query('begin isolation level serializable');
+      await server.query('set local role ledger_server');
+      await server.query(`select id from washes where id = 'w-race' for share`);
+      await put(server, 'journal_entries', 'ew-race', entry([L('1100', 20, 0), L('4000', 0, 20)], { entryNumber: 9061 }));
+      await put(server, 'posting_locks', 'wash__w-race', { kind: 'wash', sourceId: 'w-race', entryId: 'ew-race' });
+      // The edit starts before the posting commits: its policy sees no lock yet, and it waits for the row.
+      await user.query('begin'); await actAsUser(user, U.operator);
+      const edit = attempt(user.query(`update washes set price = 99 where id = 'w-race'`));
+      await new Promise(r => setTimeout(r, 300));
+      await server.query('commit');
+      expect(await edit).toMatchObject({ ok: false, code: '42501' });
+      await user.query('rollback');
+    } finally { server.release(); user.release(); }
+    expect((await asOwner(c => c.query(`select price from washes where id = 'w-race'`))).rows[0].price).toBe('20.00');
+  });
+  it('الجلسة الحيّة: للخادم وحده، ولا تقبل جلسة محذوفة أو مستخدماً محظوراً', async () => {
+    const sid = '11111111-1111-4111-8111-111111111111';
+    await asOwner(c => c.query(`insert into auth.sessions (id, user_id, created_at, updated_at) values ($1, $2, now(), now())`, [sid, U.operator]));
+    const live = (uid, s) => asServer(c => c.query('select app.session_is_live($1, $2) as v', [uid, s])).then(r => r.rows[0].v);
+    expect(await live(U.operator, sid)).toBe(true);
+    expect(await live(U.admin, sid)).toBe(false);
+    expect(await attempt(asUser(U.operator, c => c.query('select app.session_is_live($1, $2)', [U.operator, sid])))).toMatchObject({ ok: false, code: '42501' });
+    await asOwner(c => c.query(`update auth.users set banned_until = now() + interval '1 day' where id = $1`, [U.operator]));
+    expect(await live(U.operator, sid)).toBe(false);
+    await asOwner(c => c.query(`update auth.users set banned_until = null where id = $1`, [U.operator]));
+    await asOwner(c => c.query('delete from auth.sessions where id = $1', [sid]));
+    expect(await live(U.operator, sid)).toBe(false);
   });
   it('مصروف شهري بقفل قديم expense__ لا يتعدّل', async () => {
     await asUser(U.operator, c => put(c, 'monthly_expenses', 'm1', { expense_name: 'إيجار', total_monthly_cost: 100 }));

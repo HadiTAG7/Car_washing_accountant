@@ -62,7 +62,10 @@ export async function requestPasswordReset(auth, email, {
   const target = String(email ?? '').trim();
   if (!target) throw new Error('البريد الإلكتروني مطلوب.');
 
-  if (fetchImpl) {
+  // On Supabase the email is the project's own (its SMTP, its rate limit);
+  // /api/password-reset belongs to the Firebase deployment.
+  const onSupabase = import.meta.env?.VITE_DATA_SOURCE === 'supabase';
+  if (fetchImpl && !onSupabase) {
     const outcome = await requestFromServer(target, fetchImpl);
     if (outcome === 'sent') return { via: 'server' };
   }

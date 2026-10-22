@@ -39,6 +39,21 @@ const READ = {
   owner: `((select app.is_admin()) or ((select app.is_signed_in_known_non_supervisor()) and owner_uid = (select auth.uid())::text))`,
 };
 
+// The policies' lock checks see the statement's snapshot. A posting that
+// commits while this write waits for the row is caught by a trigger that runs
+// after the row is locked, on a fresh snapshot (app.trg_lock_recheck).
+function lockRecheck(t) {
+  const p = t.policy; const T = `public.${q(t.table)}`;
+  const kinds = { update: [], delete: [] };
+  if (p.write === 'operator' && p.lock) kinds.update = kinds.delete = p.lock;
+  if (p.write === 'operator' && p.expenseLock) kinds.update = kinds.delete = [p.expenseLock, 'expense'];
+  if (p.write === 'vouchers') kinds.update = ['voucher', 'expense'];
+  if (p.write === 'annual-entries') kinds.delete = ['annual', 'expense'];
+  if (p.write === 'temporary-expenses') { kinds.update = ['recovery']; kinds.delete = ['temporary_expense', 'recovery']; }
+  return Object.entries(kinds).filter(([, k]) => k.length).map(([op, k]) =>
+    `create trigger ${q(`${t.table}_lock_recheck_${op}`)} before ${op} on ${T} for each row execute function app.trg_lock_recheck(${k.map(lit).join(', ')});`);
+}
+
 function policiesFor(t) {
   const out = []; const T = `public.${q(t.table)}`; const p = t.policy; const name = s => q(`${t.table}_${s}`);
   const grants = new Set();
@@ -209,6 +224,21 @@ begin
 end $$;
 create trigger temporary_expenses_fields before update on public.temporary_expenses for each row execute function app.trg_temporary_expense_fields();
 
+-- ── قفل الترحيل، مرة ثانية بعد قفل الصف ──
+-- سياسة RLS تفحص القفل بلقطة بداية الأمر؛ إن رُحِّل السجل والكتابة تنتظر
+-- الصف، فهذا الفحص (بلقطة جديدة بعد الانتظار) هو الذي يراه ويرفض.
+create or replace function app.trg_lock_recheck() returns trigger language plpgsql set search_path = '' as $$
+declare k text;
+begin
+  if current_user <> 'authenticated' then return coalesce(new, old); end if;
+  foreach k in array tg_argv loop
+    if not app.not_locked(k, old.id) then
+      raise exception 'السجل مُرحّل — لا يُعدّل ولا يُحذف إلا بعكس قيده' using errcode = '42501';
+    end if;
+  end loop;
+  return coalesce(new, old);
+end $$;
+
 -- ── RLS لكل جدول، والأصل المنع ──
 `);
   const extraTables = ['journal_entry_lines', 'firebase_uid_map'];
@@ -219,7 +249,7 @@ create trigger temporary_expenses_fields before update on public.temporary_expen
   out.push('');
   for (const t of SCHEMA) {
     const { out: pol, grants } = policiesFor(t);
-    if (pol.length) out.push(`-- ${t.collection}: read ${t.policy.read}, write ${t.policy.write}`, ...pol);
+    if (pol.length) out.push(`-- ${t.collection}: read ${t.policy.read}, write ${t.policy.write}`, ...pol, ...lockRecheck(t));
     if (grants.length) out.push(`grant ${grants.join(', ')} on public.${q(t.table)} to authenticated;`);
   }
   out.push(`-- journal entry lines follow their entries; the uid map is for the admin

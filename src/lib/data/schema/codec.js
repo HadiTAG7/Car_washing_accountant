@@ -69,7 +69,7 @@ export function fromTagged(value, opts) {
   if (tag === 'num') return Number(value['$fs:num']);
   if (tag === 'ref') return opts.makeRef ? opts.makeRef(value['$fs:ref']) : { path: value['$fs:ref'], __docRef: true };
   if (tag === 'bytes') return opts.makeBytes ? opts.makeBytes(value['$fs:bytes']) : Uint8Array.from(atob(value['$fs:bytes']), c => c.charCodeAt(0));
-  if (tag === 'geo') return { latitude: value['$fs:geo'][0], longitude: value['$fs:geo'][1] };
+  if (tag === 'geo') return opts.makeGeo ? opts.makeGeo(value['$fs:geo'][0], value['$fs:geo'][1]) : { latitude: value['$fs:geo'][0], longitude: value['$fs:geo'][1] };
   return sortedObject(value, v => fromTagged(v, opts));
 }
 
@@ -239,4 +239,45 @@ export function plainTimestamp(seconds, nanoseconds) {
     toDate: () => new Date(seconds * 1000 + Math.floor(nanoseconds / 1e6)),
     toMillis: () => seconds * 1000 + Math.floor(nanoseconds / 1e6),
   };
+}
+
+/**
+ * A top-level patch (updateDoc / update) → the field-level delta apply_writes
+ * applies in one UPDATE: typed columns, extra keys set/removed, and the shape
+ * entries each changed field gains or loses. `isDelete(v)` / `isServerTime(v)`
+ * recognise the caller's sentinels; server times are filled in by the database.
+ */
+export function encodePatch(table, patch, { isDelete = () => false, isServerTime = () => false } = {}) {
+  const known = new Map(table.columns.map(c => [c.field, c]));
+  const out = { columns: {}, extra_set: {}, extra_unset: [], shape: { n_add: [], n_remove: [], r_set: {}, r_remove: [], t_set: {}, t_remove: [] }, ts_columns: [], ts_extra: [] };
+  for (const [field, value] of Object.entries(patch)) {
+    if (value === undefined) continue;
+    if (field.includes('.')) throw new Error(`update بمسار منقّط غير مدعوم (${field})`);
+    if (table.lines && field === 'lines') throw new Error('سطور القيد لا تُكتب من المتصفح');
+    const col = known.get(field);
+    const forget = () => { out.shape.n_remove.push(field); out.shape.r_remove.push(field); out.shape.t_remove.push(field); };
+    if (!col) {
+      if (isDelete(value)) out.extra_unset.push(field);
+      else if (isServerTime(value)) out.ts_extra.push(field);
+      else out.extra_set[field] = toTagged(value);
+      continue;
+    }
+    if (isDelete(value)) { out.columns[col.column] = null; forget(); continue; }
+    if (isServerTime(value)) {
+      if (col.type !== 'ts' && col.type !== 'iso') throw new Error(`serverTimestamp في عمود ليس لحظة (${field})`);
+      out.ts_columns.push(col.column); forget();
+      if (col.type === 'iso') { out.shape.t_set[field] = 'ts'; out.shape.t_remove.pop(); }
+      continue;
+    }
+    const tagged = toTagged(value);
+    forget();
+    if (tagged === null) { out.columns[col.column] = null; out.shape.n_add.push(field); out.shape.n_remove.pop(); continue; }
+    const fit = fitColumn(col.type, tagged);
+    if (!fit) { out.columns[col.column] = null; out.shape.r_set[field] = tagged; out.shape.r_remove.pop(); continue; }
+    out.columns[col.column] = fit.value;
+    if (!fit.exact) { out.shape.r_set[field] = tagged; out.shape.r_remove.pop(); }
+    const usual = col.type === 'iso' ? 'iso' : 'ts';
+    if (fit.form && fit.form !== usual) { out.shape.t_set[field] = fit.form; out.shape.t_remove.pop(); }
+  }
+  return out;
 }

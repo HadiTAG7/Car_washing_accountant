@@ -9,9 +9,14 @@ import DateField from './DateField';
 import LoadingState from './LoadingState';
 import ErrorState, { SetupRequiredCard } from './ErrorState';
 import { useLedger } from '../hooks/useLedger';
-import { balanceSheet } from '../lib/accounting/reports';
+import { useFirestoreQuery } from '../hooks/useFirestoreQuery';
+import { balanceSheet, balanceSheetFromTrialBalance, trialBalanceFromSums } from '../lib/accounting/reports';
+import { fetchPostedLineSums } from '../lib/accounting/ledgerSums';
 import { useFeeRules } from '../hooks/useFeeRules';
-import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
+import { isFirebaseConfigured, missingEnvNames, dataSource } from '../lib/firebaseClient';
+
+// On Supabase the account totals are summed in the database (one call).
+const SQL_SUMS = dataSource === 'supabase';
 
 /** One side of the sheet — a titled list of accounts with a total. */
 function Section({ title, rows, total, tone }) {
@@ -51,14 +56,23 @@ function Section({ title, rows, total, tone }) {
  * across, so without it the sheet would be out by exactly the net profit.
  */
 export default function BalanceSheetPage() {
-  const { accounts, entries, lines, needsSeeding, loading, error, refetch } = useLedger();
+  const { accounts, entries, lines, needsSeeding, loading: ledgerLoading, error: ledgerError, refetch: refetchLedger } = useLedger();
   const { rules: feeRules } = useFeeRules();
   const [asOf, setAsOf] = useState('');
+  const sumsQ = useFirestoreQuery(() => fetchPostedLineSums({ to: asOf }), {
+    enabled: SQL_SUMS && isFirebaseConfigured, cacheKey: `postedLineSums:|${asOf}`,
+    cacheTags: ['journal_entries', 'journal_lines'], deps: [asOf], fallback: [],
+  });
 
   const bs = useMemo(
-    () => balanceSheet(accounts, entries, lines, { asOf: asOf || null, feeRules }),
-    [accounts, entries, lines, asOf, feeRules],
+    () => (SQL_SUMS
+      ? balanceSheetFromTrialBalance(accounts, trialBalanceFromSums(accounts, sumsQ.data), { asOf: asOf || null, feeRules })
+      : balanceSheet(accounts, entries, lines, { asOf: asOf || null, feeRules })),
+    [accounts, entries, lines, asOf, feeRules, sumsQ.data],
   );
+  const loading = ledgerLoading || (SQL_SUMS && sumsQ.loading);
+  const error = ledgerError || (SQL_SUMS ? sumsQ.error : null);
+  const refetch = () => { refetchLedger(); if (SQL_SUMS) sumsQ.refetch(); };
 
   function handleExport() {
     const rows = [];

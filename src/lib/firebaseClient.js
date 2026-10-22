@@ -129,7 +129,9 @@ export async function callLedger(name, payload = {}) {
 // nothing else in the app knows which door it went through.
 //
 // Empty by default, so an install that has Cloud Functions keeps using them.
-export const ledgerApiUrl = String(import.meta.env.VITE_LEDGER_API_URL || '').trim();
+// On Supabase there are no Cloud Functions: the trusted server is /api/ledger.
+export const dataSource = String(import.meta.env.VITE_DATA_SOURCE || 'firebase').trim();
+export const ledgerApiUrl = String(import.meta.env.VITE_LEDGER_API_URL || (dataSource === 'supabase' ? '/api/ledger' : '')).trim();
 
 /**
  * Deliberately reproduces `callLedger`'s failure shape — `.message`, `.code`,

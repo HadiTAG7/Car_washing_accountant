@@ -761,6 +761,21 @@ begin
 end $$;
 create trigger temporary_expenses_fields before update on public.temporary_expenses for each row execute function app.trg_temporary_expense_fields();
 
+-- ── قفل الترحيل، مرة ثانية بعد قفل الصف ──
+-- سياسة RLS تفحص القفل بلقطة بداية الأمر؛ إن رُحِّل السجل والكتابة تنتظر
+-- الصف، فهذا الفحص (بلقطة جديدة بعد الانتظار) هو الذي يراه ويرفض.
+create or replace function app.trg_lock_recheck() returns trigger language plpgsql set search_path = '' as $$
+declare k text;
+begin
+  if current_user <> 'authenticated' then return coalesce(new, old); end if;
+  foreach k in array tg_argv loop
+    if not app.not_locked(k, old.id) then
+      raise exception 'السجل مُرحّل — لا يُعدّل ولا يُحذف إلا بعكس قيده' using errcode = '42501';
+    end if;
+  end loop;
+  return coalesce(new, old);
+end $$;
+
 -- ── RLS لكل جدول، والأصل المنع ──
 
 alter table public."journal_entries" enable row level security;
@@ -978,6 +993,8 @@ create policy "washes_read" on public."washes" for select to authenticated using
 create policy "washes_insert" on public."washes" for insert to authenticated with check ((select app.is_operator()));
 create policy "washes_update" on public."washes" for update to authenticated using ((select app.is_operator()) and app.not_locked('wash', id)) with check ((select app.is_operator()));
 create policy "washes_delete" on public."washes" for delete to authenticated using ((select app.is_operator()) and app.not_locked('wash', id));
+create trigger "washes_lock_recheck_update" before update on public."washes" for each row execute function app.trg_lock_recheck('wash');
+create trigger "washes_lock_recheck_delete" before delete on public."washes" for each row execute function app.trg_lock_recheck('wash');
 grant select, insert, update, delete on public."washes" to authenticated;
 -- bikers: read staff, write operator
 create policy "bikers_read" on public."bikers" for select to authenticated using ((select app.is_staff()));
@@ -996,18 +1013,24 @@ create policy "temporary_expenses_read" on public."temporary_expenses" for selec
 create policy "temporary_expenses_insert" on public."temporary_expenses" for insert to authenticated with check ((select app.is_operator()));
 create policy "temporary_expenses_update" on public."temporary_expenses" for update to authenticated using ((select app.is_operator()) and app.not_locked('recovery', id) and not (app."doc_temporary_expenses"(temporary_expenses) ? 'payroll_lock_id')) with check ((select app.is_operator()));
 create policy "temporary_expenses_delete" on public."temporary_expenses" for delete to authenticated using ((select app.is_operator()) and not (app."doc_temporary_expenses"(temporary_expenses) ? 'payroll_lock_id') and app.not_locked('temporary_expense', id) and app.not_locked('recovery', id));
+create trigger "temporary_expenses_lock_recheck_update" before update on public."temporary_expenses" for each row execute function app.trg_lock_recheck('recovery');
+create trigger "temporary_expenses_lock_recheck_delete" before delete on public."temporary_expenses" for each row execute function app.trg_lock_recheck('temporary_expense', 'recovery');
 grant select, insert, update, delete on public."temporary_expenses" to authenticated;
 -- monthly_expenses: read staff, write operator
 create policy "monthly_expenses_read" on public."monthly_expenses" for select to authenticated using ((select app.is_staff()));
 create policy "monthly_expenses_insert" on public."monthly_expenses" for insert to authenticated with check ((select app.is_operator()));
 create policy "monthly_expenses_update" on public."monthly_expenses" for update to authenticated using ((select app.is_operator()) and app.not_posted_expense('monthly', id)) with check ((select app.is_operator()));
 create policy "monthly_expenses_delete" on public."monthly_expenses" for delete to authenticated using ((select app.is_operator()) and app.not_posted_expense('monthly', id));
+create trigger "monthly_expenses_lock_recheck_update" before update on public."monthly_expenses" for each row execute function app.trg_lock_recheck('monthly', 'expense');
+create trigger "monthly_expenses_lock_recheck_delete" before delete on public."monthly_expenses" for each row execute function app.trg_lock_recheck('monthly', 'expense');
 grant select, insert, update, delete on public."monthly_expenses" to authenticated;
 -- variable_expenses: read staff, write operator
 create policy "variable_expenses_read" on public."variable_expenses" for select to authenticated using ((select app.is_staff()));
 create policy "variable_expenses_insert" on public."variable_expenses" for insert to authenticated with check ((select app.is_operator()));
 create policy "variable_expenses_update" on public."variable_expenses" for update to authenticated using ((select app.is_operator()) and app.not_posted_expense('variable', id)) with check ((select app.is_operator()));
 create policy "variable_expenses_delete" on public."variable_expenses" for delete to authenticated using ((select app.is_operator()) and app.not_posted_expense('variable', id));
+create trigger "variable_expenses_lock_recheck_update" before update on public."variable_expenses" for each row execute function app.trg_lock_recheck('variable', 'expense');
+create trigger "variable_expenses_lock_recheck_delete" before delete on public."variable_expenses" for each row execute function app.trg_lock_recheck('variable', 'expense');
 grant select, insert, update, delete on public."variable_expenses" to authenticated;
 -- annual_expenses: read staff, write operator
 create policy "annual_expenses_read" on public."annual_expenses" for select to authenticated using ((select app.is_staff()));
@@ -1020,6 +1043,7 @@ create policy "annual_expense_entries_read" on public."annual_expense_entries" f
 create policy "annual_expense_entries_insert" on public."annual_expense_entries" for insert to authenticated with check ((select app.is_operator()));
 create policy "annual_expense_entries_update" on public."annual_expense_entries" for update to authenticated using ((select app.is_operator())) with check ((select app.is_operator()));
 create policy "annual_expense_entries_delete" on public."annual_expense_entries" for delete to authenticated using ((select app.is_operator()) and app.not_posted_expense('annual', id));
+create trigger "annual_expense_entries_lock_recheck_delete" before delete on public."annual_expense_entries" for each row execute function app.trg_lock_recheck('annual', 'expense');
 grant select, insert, update, delete on public."annual_expense_entries" to authenticated;
 -- startup_costs: read staff, write startup-plan
 create policy "startup_costs_read" on public."startup_costs" for select to authenticated using ((select app.is_staff()));
@@ -1032,6 +1056,7 @@ grant select on public."startup_cost_entries" to authenticated;
 create policy "expense_vouchers_read" on public."expense_vouchers" for select to authenticated using ((select app.is_staff()));
 create policy "expense_vouchers_insert" on public."expense_vouchers" for insert to authenticated with check ((select app.is_accountant()));
 create policy "expense_vouchers_update" on public."expense_vouchers" for update to authenticated using ((select app.is_accountant()) and app.not_posted_expense('voucher', id)) with check ((select app.is_accountant()));
+create trigger "expense_vouchers_lock_recheck_update" before update on public."expense_vouchers" for each row execute function app.trg_lock_recheck('voucher', 'expense');
 grant select, insert, update on public."expense_vouchers" to authenticated;
 -- fixed_assets: read staff, write accountant-no-delete
 create policy "fixed_assets_read" on public."fixed_assets" for select to authenticated using ((select app.is_staff()));
@@ -1087,6 +1112,8 @@ create policy "partner_payments_read" on public."partner_payments" for select to
 create policy "partner_payments_insert" on public."partner_payments" for insert to authenticated with check ((select app.is_operator()));
 create policy "partner_payments_update" on public."partner_payments" for update to authenticated using ((select app.is_operator()) and app.not_locked('partner_payment', id)) with check ((select app.is_operator()));
 create policy "partner_payments_delete" on public."partner_payments" for delete to authenticated using ((select app.is_operator()) and app.not_locked('partner_payment', id));
+create trigger "partner_payments_lock_recheck_update" before update on public."partner_payments" for each row execute function app.trg_lock_recheck('partner_payment');
+create trigger "partner_payments_lock_recheck_delete" before delete on public."partner_payments" for each row execute function app.trg_lock_recheck('partner_payment');
 grant select, insert, update, delete on public."partner_payments" to authenticated;
 -- partner_mcp_keys: read owner, write none
 create policy "partner_mcp_keys_read" on public."partner_mcp_keys" for select to authenticated using (((select app.is_admin()) or ((select app.is_signed_in_known_non_supervisor()) and owner_uid = (select auth.uid())::text)));

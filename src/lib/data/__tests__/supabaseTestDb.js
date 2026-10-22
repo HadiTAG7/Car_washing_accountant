@@ -42,12 +42,14 @@ async function inTx(setup, fn) {
   } finally { client.release(); }
 }
 
-/** As a signed-in user (uid) — RLS and the user-only triggers apply. */
-export const asUser = (uid, fn) => inTx(async (c) => {
+/** Inside an open transaction: act as a signed-in user, the way PostgREST does. */
+export async function actAsUser(c, uid) {
   await c.query('set local role authenticated');
   await c.query(`select set_config('request.jwt.claims', $1, true), set_config('request.jwt.claim.sub', $2, true), set_config('request.jwt.claim.role', 'authenticated', true)`,
     [JSON.stringify({ sub: uid, role: 'authenticated', aud: 'authenticated' }), uid]);
-}, fn);
+}
+/** As a signed-in user (uid) — RLS and the user-only triggers apply. */
+export const asUser = (uid, fn) => inTx(c => actAsUser(c, uid), fn);
 /** As the trusted server role — its own policies and grants, no RLS bypass. */
 export const asServer = fn => inTx(c => c.query('set local role ledger_server'), fn);
 /** As the database owner (migration scripts only). */

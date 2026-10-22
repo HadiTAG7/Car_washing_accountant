@@ -36,6 +36,15 @@ SUPABASE_DB_URL=… SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=… \
 RECONCILE_EXPECT_OCTOBER=1 RECONCILE_DIR=migration-data npm run reconcile
 ```
 
+حين لا يصل اتصال Postgres المباشر (مثل بيئة Claude السحابية)، نفس الاستيراد عبر HTTPS
+بواجهة إدارة Supabase — نفس البوابات، والتبديل في عملية واحدة بعد مرحلة مؤقتة:
+
+```bash
+SUPABASE_ACCESS_TOKEN=… SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=… \
+  node scripts/migration/import-supabase.mjs --dir migration-data --via api --project <ref>
+# تجربته محلياً بنفس السلوك: --via sql (على SUPABASE_DB_URL)
+```
+
 `service_role` يُستعمل في سكربتات النقل المحلية فقط، ولا يدخل الموقع ولا Vercel.
 
 ## أول دخول

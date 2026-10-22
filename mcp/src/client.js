@@ -25,6 +25,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { sdk, dataSource } from './backend.js';
+import { resolveMcpAppOrigin } from './backend-config.js';
 
 const { initializeApp } = sdk.app;
 const { getAuth, signInWithEmailAndPassword } = sdk.auth;
@@ -159,12 +160,7 @@ export async function callServer(name, payload = {}) {
 
 // The application's origin. Fixed by the operator's environment, never by a
 // tool argument; SWEATER_APP_URL points it at a preview during a parallel run.
-const APP_ORIGIN = (() => {
-  const raw = String(process.env.SWEATER_APP_URL ?? '').trim() || 'https://sweater-hadi-alghanim.vercel.app';
-  const u = new URL(raw);
-  if (u.protocol !== 'https:' && u.hostname !== '127.0.0.1' && u.hostname !== 'localhost') throw new Error('SWEATER_APP_URL must be https.');
-  return u.origin;
-})();
+const APP_ORIGIN = resolveMcpAppOrigin();
 
 /** New app workflows ship with Vercel, not a separately deployed callable.
  * No arbitrary endpoint/tool argument: only the fixed application origin.

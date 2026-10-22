@@ -7,9 +7,10 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { modulePath, isMainModule } from '../module-paths.mjs';
 import { SCHEMA } from '../../src/lib/data/schema/registry.js';
 
-const ROOT = new URL('../../', import.meta.url).pathname;
+const ROOT = modulePath('../../', import.meta.url);
 const FILE = `${ROOT}supabase/migrations/20261022000100_tables.sql`;
 
 const SQL_TYPES = {
@@ -82,11 +83,11 @@ create index ${q(`${t.lines}_account_idx`)} on public.${q(t.lines)} (account_id,
   return `${out.join('\n')}\n`;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   const sql = tablesSql();
   if (process.argv.includes('--check')) {
     const current = existsSync(FILE) ? readFileSync(FILE, 'utf8') : '';
-    if (current !== sql) { console.error(`${FILE} ليس محدّثاً — شغّل generate-schema-sql.mjs`); process.exit(1); }
+    if (current.replace(/\r\n/g, '\n') !== sql) { console.error(`${FILE} ليس محدّثاً — شغّل generate-schema-sql.mjs`); process.exit(1); }
     console.log('محدّث ✓');
   } else {
     writeFileSync(FILE, sql);

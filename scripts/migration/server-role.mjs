@@ -13,6 +13,7 @@
 import { createHash, createHmac, pbkdf2Sync, randomBytes } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { modulePath, isMainModule } from '../module-paths.mjs';
 
 const API = 'https://api.supabase.com/v1';
 
@@ -48,11 +49,11 @@ async function main() {
   // No sslmode here: node-pg would let it replace the server's TLS setting
   // (verify against Supabase's root CA, server/db/backend.js#ledgerConnection).
   const url = `postgresql://ledger_server.${ref}:${password}@${host}:${port}/postgres`;
-  const dir = process.env.MIGRATION_DATA || join(new URL('../../', import.meta.url).pathname, 'migration-data');
+  const dir = process.env.MIGRATION_DATA || join(modulePath('../../', import.meta.url), 'migration-data');
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const file = join(dir, 'ledger-server.env');
   writeFileSync(file, `# سرّي — يُلصق في Vercel ثم يُحذف هذا الملف\nLEDGER_DB_URL=${url}\n`, { mode: 0o600 });
   console.log(`ledger_server يدخل الآن. سطر الاتصال في ${file} (لم يُطبع).`);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main().catch((e) => { console.error(e.message); process.exit(1); });
+if (isMainModule(import.meta.url)) main().catch((e) => { console.error(e.message); process.exit(1); });

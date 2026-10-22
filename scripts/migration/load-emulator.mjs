@@ -10,6 +10,7 @@
 //     "node scripts/migration/load-emulator.mjs --dir migration-data"
 // ═══════════════════════════════════════════════════════════════════════════
 import { initializeApp } from 'firebase-admin/app';
+import { isMainModule } from '../module-paths.mjs';
 import { getFirestore, Timestamp, GeoPoint } from 'firebase-admin/firestore';
 import { readExport } from './ndjson.mjs';
 import { fromTagged } from '../../src/lib/data/schema/codec.js';
@@ -40,7 +41,7 @@ export async function loadIntoEmulator(dir, { projectId = process.env.GCLOUD_PRO
   return { db, app, documents: n };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   const i = process.argv.indexOf('--dir');
   const dir = i > 0 ? process.argv[i + 1] : (process.env.MIGRATION_DATA || 'migration-data');
   loadIntoEmulator(dir).then(({ documents }) => { console.log(`حُمّل ${documents} مستنداً في المحاكي.`); process.exit(0); },

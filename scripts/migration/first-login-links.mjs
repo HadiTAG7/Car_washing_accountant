@@ -16,11 +16,12 @@
 // ═══════════════════════════════════════════════════════════════════════════
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { modulePath, isMainModule } from '../module-paths.mjs';
 
 const url = String(process.env.SUPABASE_URL || '').replace(/\/+$/, '');
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const app = String(process.env.APP_URL || '').replace(/\/+$/, '');
-const out = process.env.MIGRATION_DATA || join(new URL('../../', import.meta.url).pathname, 'migration-data');
+const out = process.env.MIGRATION_DATA || join(modulePath('../../', import.meta.url), 'migration-data');
 const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null;
 
 /** One user's link to /update-password (the token hash, spent on save). */
@@ -56,4 +57,4 @@ async function main() {
   console.log(`${targets.length} رابطاً في ${file}`);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main().catch((e) => { console.error(e.message); process.exit(1); });
+if (isMainModule(import.meta.url)) main().catch((e) => { console.error(e.message); process.exit(1); });

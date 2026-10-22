@@ -29,10 +29,11 @@ import { getAuth } from 'firebase-admin/auth';
 import { getStorage } from 'firebase-admin/storage';
 import { mkdirSync, existsSync, readFileSync, writeFileSync, renameSync, openSync, writeSync, fsyncSync, closeSync, truncateSync, statSync, chmodSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { modulePath } from '../module-paths.mjs';
 import { createHash } from 'node:crypto';
 import { encodeValue } from './firestoreCodec.mjs';
 
-const ROOT = new URL('../../', import.meta.url).pathname;
+const ROOT = modulePath('../../', import.meta.url);
 const OUT = process.env.MIGRATION_DATA || join(ROOT, 'migration-data');
 const PAGE = Number(process.env.EXPORT_PAGE_SIZE || 500);
 // Subcollections the app writes (grep: payroll_runs/*/items|payments,

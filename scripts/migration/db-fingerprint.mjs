@@ -8,6 +8,7 @@
 //   SUPABASE_DB_URL=… node scripts/migration/db-fingerprint.mjs > a.json
 //   SUPABASE_ACCESS_TOKEN=… node scripts/migration/db-fingerprint.mjs --via api --project <ref> > b.json
 import { SCHEMA } from '../../src/lib/data/schema/registry.js';
+import { isMainModule } from '../module-paths.mjs';
 import { literal, managementApiTransport, pgSqlTransport } from './sql-transport.mjs';
 
 const qi = s => `"${String(s).replace(/"/g, '""')}"`;
@@ -41,7 +42,7 @@ export async function fingerprint(target) {
   }));
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   const opt = (name) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : undefined; };
   const target = opt('--via') === 'api'
     ? managementApiTransport({ ref: opt('--project'), token: process.env.SUPABASE_ACCESS_TOKEN })

@@ -7,7 +7,9 @@
 //   SWEATER_SUPABASE_URL       https://<ref>.supabase.co
 //   SWEATER_SUPABASE_ANON_KEY  المفتاح العام (مثل إعداد Firebase العام)
 // ═══════════════════════════════════════════════════════════════════════════
-const onSupabase = String(process.env.SWEATER_DATA_SOURCE ?? '').trim() === 'supabase';
+import { resolveMcpBackend } from './backend-config.js';
+const configured = resolveMcpBackend();
+const onSupabase = configured.dataSource === 'supabase';
 
 async function load() {
   if (!onSupabase) {
@@ -16,8 +18,8 @@ async function load() {
     ]);
     return { app, auth, firestore, functions };
   }
-  const url = String(process.env.SWEATER_SUPABASE_URL ?? '').trim();
-  const anon = String(process.env.SWEATER_SUPABASE_ANON_KEY ?? '').trim();
+  const url = configured.url;
+  const anon = configured.publishableKey;
   // The layer reads its project from these at import time.
   if (url) process.env.VITE_SUPABASE_URL = url;
   if (anon) process.env.VITE_SUPABASE_ANON_KEY = anon;

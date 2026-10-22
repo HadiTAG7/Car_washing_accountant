@@ -11,11 +11,12 @@
 
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { modulePath } from '../module-paths.mjs';
 import { readExport } from './ndjson.mjs';
 import { tagOf } from './firestoreCodec.mjs';
 import { financeSourceHash, FINANCE_KINDS } from '../../functions/src/financeReview.js';
 
-const ROOT = new URL('../../', import.meta.url).pathname;
+const ROOT = modulePath('../../', import.meta.url);
 const DIR = process.argv[2] || process.env.MIGRATION_DATA || join(ROOT, 'migration-data');
 const data = readExport(DIR);
 

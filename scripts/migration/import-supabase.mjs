@@ -28,6 +28,7 @@
 
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { modulePath, isMainModule } from '../module-paths.mjs';
 import { createHash } from 'node:crypto';
 import pg from 'pg';
 import { SCHEMA, NOT_MIGRATED, tableFor } from '../../src/lib/data/schema/registry.js';
@@ -37,7 +38,7 @@ import { qi, rowColumns, readDocuments } from '../../server/db/rows.js';
 import { readExport } from './ndjson.mjs';
 import { financeSourceHash, FINANCE_KINDS } from '../../functions/src/financeReview.js';
 
-const ROOT = new URL('../../', import.meta.url).pathname;
+const ROOT = modulePath('../../', import.meta.url);
 const argv = process.argv.slice(2);
 const flag = name => argv.includes(name);
 const opt = (name) => {
@@ -423,7 +424,7 @@ function writeReport(dir, report, skipped, log) {
   return report;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   // --via api --project <ref>: over HTTPS with SUPABASE_ACCESS_TOKEN (no direct Postgres).
   // --via sql: the same raw-SQL path on SUPABASE_DB_URL (its local rehearsal).
   const via = opt('--via');

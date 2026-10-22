@@ -21,6 +21,7 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { modulePath } from '../module-paths.mjs';
 import { createRequire } from 'node:module';
 import { managementApiTransport, pgSqlTransport } from './sql-transport.mjs';
 
@@ -31,7 +32,7 @@ const { chromium } = (() => {
   catch { return require(`${execFileSync('npm', ['root', '-g'], { encoding: 'utf8' }).trim()}/playwright`); }
 })();
 
-const ROOT = new URL('../../', import.meta.url).pathname;
+const ROOT = modulePath('../../', import.meta.url);
 const opt = (name) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : undefined; };
 const REMOTE = opt('--base')?.replace(/\/+$/, '');
 const API_PORT = 5184; const WEB_PORT = 4183;

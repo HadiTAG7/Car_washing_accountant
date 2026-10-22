@@ -5,6 +5,7 @@
 //   firebase emulators:exec --only firestore --project demo-sweater --config firebase.test.json \
 //     "RECONCILE_DIR=migration-data vitest run -c vitest.reconcile.config.js"
 import { defineConfig } from 'vitest/config';
+import { modulePath } from './scripts/module-paths.mjs';
 import { execFileSync } from 'node:child_process';
 
 // The local project's URL and public key, so the app's own client (created at
@@ -12,7 +13,7 @@ import { execFileSync } from 'node:child_process';
 const local = Object.fromEntries(execFileSync('npx', ['supabase', 'status', '-o', 'env'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
   .split('\n').map(l => /^([A-Z_]+)="?(.*?)"?$/.exec(l.trim())).filter(Boolean).map(m => [m[1], m[2]]));
 
-const here = new URL('.', import.meta.url).pathname;
+const here = modulePath('.', import.meta.url);
 const MODULES = ['app', 'firestore', 'auth', 'functions', 'storage'];
 export default defineConfig({
   resolve: {

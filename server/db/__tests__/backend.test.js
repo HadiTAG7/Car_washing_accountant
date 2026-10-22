@@ -2,8 +2,11 @@
 // from this project's issuer, and only while its session is alive.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createServer } from 'node:http';
+import { X509Certificate } from 'node:crypto';
+import pg from 'pg';
 import { SignJWT, exportJWK, generateKeyPair } from 'jose';
-import { dataSource, supabaseAuth, verifySupabaseToken } from '../backend.js';
+import { dataSource, ledgerConnection, supabaseAuth, verifySupabaseToken } from '../backend.js';
+import { SUPABASE_ROOT_CA } from '../supabaseCa.js';
 
 const SECRET = 'test-secret-with-at-least-thirty-two-characters!!';
 const UID = '6b1f2e5c-8a3d-4f0b-9c7e-1d2a3b4c5d6e';
@@ -80,5 +83,37 @@ describe('supabaseAuth.verifyIdToken', () => {
     await expect(supabaseAuth(db(false), env()).verifyIdToken(await esToken(), true)).rejects.toThrow('session-revoked');
     // Without checkRevoked the signature alone decides, as in Firebase.
     expect((await supabaseAuth(db(false), env()).verifyIdToken(await esToken(), false)).uid).toBe(UID);
+  });
+});
+
+describe('ledgerConnection (TLS to the database)', () => {
+  const POOLER = 'postgresql://ledger_server.abc:pw-1_x@aws-0-eu-west-1.pooler.supabase.com:6543/postgres';
+  it('the bundled CA is Supabase Root 2021 CA', () => {
+    const cert = new X509Certificate(SUPABASE_ROOT_CA);
+    expect(cert.subject).toContain('CN=Supabase Root 2021 CA');
+    expect(cert.ca).toBe(true);
+    expect(cert.fingerprint256).toBe('80:70:25:AD:50:D4:ED:21:9D:2C:9C:7D:29:9C:00:4F:82:4E:B0:0C:F7:F6:5A:FE:F6:07:D0:7B:72:E6:CA:FA');
+  });
+  it('a Supabase host is verified against that CA, whatever sslmode the URL carries', () => {
+    for (const suffix of ['', '?sslmode=require', '?sslmode=disable', '?sslmode=verify-full&sslrootcert=/x.crt&application_name=api']) {
+      const c = ledgerConnection({ LEDGER_DB_URL: POOLER + suffix });
+      expect(c.ssl).toEqual({ ca: SUPABASE_ROOT_CA, rejectUnauthorized: true });
+      expect(c.connectionString).not.toMatch(/ssl/);
+      // node-pg keeps this TLS setting (a URL sslmode would have replaced it).
+      const params = new pg.Client(c).connectionParameters;
+      expect(params.ssl).toEqual({ ca: SUPABASE_ROOT_CA, rejectUnauthorized: true });
+      expect([params.user, params.password, params.host, params.port]).toEqual(['ledger_server.abc', 'pw-1_x', 'aws-0-eu-west-1.pooler.supabase.com', 6543]);
+    }
+    expect(ledgerConnection({ LEDGER_DB_URL: `${POOLER}?application_name=api` }).connectionString).toContain('application_name=api');
+  });
+  it('LEDGER_DB_CA replaces the bundled CA; a local database goes without TLS', () => {
+    expect(ledgerConnection({ LEDGER_DB_URL: POOLER, LEDGER_DB_CA: 'PEM' }).ssl.ca).toBe('PEM');
+    const local = 'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
+    expect(ledgerConnection({ LEDGER_DB_URL: local })).toEqual({ connectionString: local, ssl: undefined });
+    expect(ledgerConnection({ LEDGER_DB_URL: 'postgresql://u:p@db.evilsupabase.co:5432/postgres' }).ssl).toBeUndefined();
+  });
+  it('a missing or broken URL is a configuration error', () => {
+    expect(() => ledgerConnection({})).toThrow(/LEDGER_DB_URL/);
+    expect(() => ledgerConnection({ LEDGER_DB_URL: 'not a url' })).toThrow(/LEDGER_DB_URL/);
   });
 });

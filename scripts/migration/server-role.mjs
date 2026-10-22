@@ -45,7 +45,9 @@ async function main() {
   const poolers = await api(`/projects/${ref}/config/database/pooler`, token);
   const tx = (Array.isArray(poolers) ? poolers : [poolers]).find(p => p.pool_mode === 'transaction') || (Array.isArray(poolers) ? poolers[0] : poolers);
   const host = tx.db_host; const port = tx.db_port || 6543;
-  const url = `postgresql://ledger_server.${ref}:${password}@${host}:${port}/postgres?sslmode=require`;
+  // No sslmode here: node-pg would let it replace the server's TLS setting
+  // (verify against Supabase's root CA, server/db/backend.js#ledgerConnection).
+  const url = `postgresql://ledger_server.${ref}:${password}@${host}:${port}/postgres`;
   const dir = process.env.MIGRATION_DATA || join(new URL('../../', import.meta.url).pathname, 'migration-data');
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const file = join(dir, 'ledger-server.env');

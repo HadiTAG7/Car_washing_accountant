@@ -10,13 +10,14 @@
 // ── متغيّرات البيئة على Supabase ──
 //   DATA_SOURCE=supabase
 //   LEDGER_DB_URL         اتصال Postgres بحساب ledger_server (كلمة مروره خارج git)
-//   LEDGER_DB_CA          شهادة Supabase الجذرية PEM (اختياري؛ للتحقق الكامل من TLS)
+//   LEDGER_DB_CA          شهادة جذرية PEM بديلة (اختياري؛ شهادة Supabase مدمجة في الكود)
 //   SUPABASE_URL          https://<ref>.supabase.co — مُصدِر التوكن ومفاتيحه العامة
 //   SUPABASE_JWT_SECRET   فقط إن كان المشروع ما زال يوقّع بـHS256
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { createRemoteJWKSet, decodeProtectedHeader, jwtVerify } from 'jose';
 import { createStore, FieldValue } from './pgstore/index.js';
+import { SUPABASE_ROOT_CA } from './supabaseCa.js';
 
 export const dataSource = (env = process.env) => (String(env.DATA_SOURCE || '').trim() === 'supabase' ? 'supabase' : 'firebase');
 export const onSupabase = (env = process.env) => dataSource(env) === 'supabase';
@@ -69,15 +70,31 @@ export function supabaseAuth(db, env = process.env) {
   };
 }
 
+// ── اتصال الخادم بالقاعدة ──
+// TLS متحقَّق منه بالكامل (السلسلة واسم المضيف) مقابل شهادة Supabase الجذرية
+// المدمجة، أو LEDGER_DB_CA إن ضُبط. قاعدة محلية (الاختبارات) بلا TLS.
+// node-pg يستبدل إعداد TLS كله بـsslmode إن وُجد في الرابط (ثم يتحقق مقابل
+// شهادات النظام، وشهادة Supabase ليست منها)، فتُحذف معاملات TLS من الرابط
+// كلما طُبّق هذا الإعداد — أياً كان الرابط الملصوق.
+const URL_TLS_PARAMS = ['sslmode', 'ssl', 'sslrootcert', 'sslcert', 'sslkey', 'sslpassword', 'uselibpqcompat'];
+export function ledgerConnection(env = process.env) {
+  const raw = required(env, 'LEDGER_DB_URL');
+  let url;
+  try { url = new URL(raw); } catch { throw new BackendConfigError('LEDGER_DB_URL ليس رابط Postgres صالحاً.'); }
+  const ca = String(env.LEDGER_DB_CA ?? '').trim() || (/(^|\.)supabase\.(co|com)$/i.test(url.hostname) ? SUPABASE_ROOT_CA : '');
+  if (!ca) return { connectionString: raw, ssl: undefined };
+  for (const p of URL_TLS_PARAMS) url.searchParams.delete(p);
+  return { connectionString: url.toString(), ssl: { ca, rejectUnauthorized: true } };
+}
+
 // One pool per warm instance, shared by every route.
 let runtime = null;
 export function supabaseRuntime(env = process.env) {
   if (runtime) return runtime;
-  const connectionString = required(env, 'LEDGER_DB_URL');
-  const ca = String(env.LEDGER_DB_CA ?? '').trim();
+  const { connectionString, ssl } = ledgerConnection(env);
   // SET LOCAL ROLE on every transaction as well: even a wrongly pasted owner
   // URL runs as the restricted role.
-  const db = createStore({ connectionString, role: 'ledger_server', max: 3, ssl: ca ? { ca, rejectUnauthorized: true } : undefined });
+  const db = createStore({ connectionString, role: 'ledger_server', max: 3, ssl });
   runtime = { db, auth: supabaseAuth(db, env), FieldValue };
   return runtime;
 }

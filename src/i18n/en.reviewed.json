@@ -2274,5 +2274,6 @@
   "DATA_SOURCE=supabase: رابط إعادة التعيين يُرسل من Supabase Auth.": "DATA_SOURCE=supabase: the reset link is sent by Supabase Auth.",
   "مجموعة غير معروفة: [VAR0]": "Unknown collection: [VAR0]",
   "مجموعة غير معروفة:": "Unknown collection:",
-  "تعذّرت قراءة النسخة الاحتياطية.": "The backup could not be read."
+  "تعذّرت قراءة النسخة الاحتياطية.": "The backup could not be read.",
+  "LEDGER_DB_URL ليس رابط Postgres صالحاً.": "LEDGER_DB_URL is not a valid Postgres URL."
 }

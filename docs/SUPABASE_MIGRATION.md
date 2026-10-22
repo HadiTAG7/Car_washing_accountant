@@ -43,6 +43,9 @@ RECONCILE_EXPECT_OCTOBER=1 RECONCILE_DIR=migration-data npm run reconcile
 SUPABASE_ACCESS_TOKEN=… SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=… \
   node scripts/migration/import-supabase.mjs --dir migration-data --via api --project <ref>
 # تجربته محلياً بنفس السلوك: --via sql (على SUPABASE_DB_URL)
+# بصمة كل جدول (نفس النص محلياً وبعيداً، الأوقات UTC) — تُقارن بالاستيراد المحلي المرجعي:
+node scripts/migration/db-fingerprint.mjs > local.json
+SUPABASE_ACCESS_TOKEN=… node scripts/migration/db-fingerprint.mjs --via api --project <ref> > remote.json
 ```
 
 `service_role` يُستعمل في سكربتات النقل المحلية فقط، ولا يدخل الموقع ولا Vercel.
@@ -53,8 +56,9 @@ SUPABASE_ACCESS_TOKEN=… SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=… \
 1. يفتح الموقع ← «نسيت كلمة المرور» ← يكتب إيميله.
 2. تصله رسالة «تعيين كلمة المرور — سويتر» ← يضغط الزر ← يختار كلمة مرور ← «حفظ».
 
-الرسالة تحتاج SMTP في المشروع (بريد Supabase المدمج يرسل لأعضاء الفريق فقط).
-إلى أن يُضبط: `node scripts/migration/first-login-links.mjs` يولّد لكل مستخدم رابطاً
+الرسالة تحتاج SMTP في المشروع (بريد Supabase المدمج يرسل لأعضاء الفريق فقط)، وقالبها
+العربي (`supabase/templates/recovery.html`) لا يُقبل على الخطة المجانية إلا بعد ضبط SMTP خاص —
+فيُرفع القالب مع SMTP. إلى أن يُضبط: `node scripts/migration/first-login-links.mjs` يولّد لكل مستخدم رابطاً
 خاصاً في `migration-data/first-login-links.md` يرسله المدير بنفسه (مرة واحدة،
 صلاحية محدودة).
 
@@ -67,17 +71,22 @@ SUPABASE_ACCESS_TOKEN=… SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=… \
 |---|---|---|
 | `VITE_DATA_SOURCE` | `supabase` | لا |
 | `VITE_SUPABASE_URL` | `https://<ref>.supabase.co` | لا |
-| `VITE_SUPABASE_ANON_KEY` | المفتاح العام (anon / publishable) | لا |
+| `VITE_SUPABASE_ANON_KEY` | المفتاح العام `sb_publishable_…` (أو anon القديم) | لا |
 | `DATA_SOURCE` | `supabase` | لا |
 | `SUPABASE_URL` | `https://<ref>.supabase.co` | لا |
-| `LEDGER_DB_URL` | من `scripts/migration/server-role.mjs` | **نعم** |
-| `SUPABASE_JWT_SECRET` | فقط إن كان المشروع يوقّع بـ HS256 | **نعم** |
+| `LEDGER_DB_URL` | من `scripts/migration/server-role.mjs` (عبر Supavisor، 6543) | **نعم** |
+| `SUPABASE_JWT_SECRET` | فقط إن كان المشروع ما زال يوقّع بـ HS256 (مفاتيح التوقيع في اللوحة) | **نعم** |
+
+- TLS للقاعدة متحقَّق منه بالكامل مقابل شهادة Supabase الجذرية المدمجة في الكود
+  (`server/db/supabaseCa.js`)؛ و`sslmode` في الرابط يُتجاهل. `LEDGER_DB_CA` لاستبدالها فقط.
+- `service_role` لا يدخل Vercel.
 
 الدوال في دبلن (`regions: ["dub1"]`) بجانب القاعدة في أيرلندا.
 
 ## التحويل النهائي (بعد موافقتك)
 
 1. إعلان وقت التحويل، وإيقاف الإدخال في الموقع الحالي (لا تعديل في بيانات Firebase).
+   قبله: SMTP خاص في Supabase + قالب الرسالة العربي + رابط الموقع وروابط العودة للنطاق النهائي.
 2. تصدير أخير ← استيراد ← نفس البوابات ← تقرير المطابقة: صفر فروقات.
 3. ضبط نفس المتغيرات في Production ثم دمج الفرع ونشره.
 4. فتح الموقع، ومطابقة أرقام الشهر الحالي، ثم إعلام المستخدمين بأول دخول.

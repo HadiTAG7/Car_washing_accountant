@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<body style="font-family: Tahoma, Arial, sans-serif; direction: rtl; text-align: right; color: #0f172a;">
+  <h2 style="margin: 0 0 12px;">تعيين كلمة المرور — سويتر</h2>
+  <p>طلبت (أو طُلب لك) تعيين كلمة مرور لحسابك <strong dir="ltr">{{ .Email }}</strong>.</p>
+  <p>
+    <a href="{{ .SiteURL }}/update-password?oobCode={{ .TokenHash }}&amp;email={{ .Email }}"
+       style="display: inline-block; padding: 10px 18px; background: #0f766e; color: #ffffff; border-radius: 8px; text-decoration: none;">
+      اختر كلمة مرور جديدة
+    </a>
+  </p>
+  <p style="color: #475569; font-size: 13px;">الرابط صالح لمدة محدودة ولمرة واحدة. فتح الصفحة لا يستهلكه؛ يُستهلك عند الضغط على «حفظ».</p>
+  <p style="color: #475569; font-size: 13px;">إن لم تطلب ذلك، تجاهل هذه الرسالة — كلمة مرورك الحالية لا تتغيّر.</p>
+</body>
+</html>

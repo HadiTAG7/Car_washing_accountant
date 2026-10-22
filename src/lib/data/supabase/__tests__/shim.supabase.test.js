@@ -13,7 +13,8 @@ import {
   getFirestore, collection, doc, query, where, orderBy, limit, documentId, getDoc, getDocs, getCountFromServer,
   setDoc, addDoc, updateDoc, deleteDoc, writeBatch, serverTimestamp, deleteField, Timestamp,
 } from '../firestore.js';
-import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from '../auth.js';
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, confirmPasswordReset } from '../auth.js';
+import { recoveryLink } from '../../../../../scripts/migration/first-login-links.mjs';
 import { verifySupabaseToken, supabaseAuth } from '../../../../../server/db/backend.js';
 import { trialBalance, trialBalanceFromSums, balanceSheet, balanceSheetFromTrialBalance } from '../../../accounting/reports.js';
 import { fetchPostedLineSums } from '../../../accounting/ledgerSums.js';
@@ -86,6 +87,24 @@ d('طبقة المتصفح على Supabase', () => {
       await expect(verifier.verifyIdToken(token, true)).rejects.toThrow('session-revoked');
     } finally { await store.close(); stop(); }
     expect(seen).toContain(uid.operator);
+  });
+
+  it('أول دخول لمستخدم منقول بلا كلمة مرور: الرابط يضبطها مرة واحدة، ثم الدخول يعمل', async () => {
+    const email = 'migrated@sweater.test';
+    const { data, error } = await admin.auth.admin.createUser({ email, email_confirm: true, user_metadata: { firebase_uid: 'fbMigrated' } });
+    if (error) throw error;
+    await expect(signInWithEmailAndPassword(auth, email, 'anything-at-all')).rejects.toMatchObject({ code: 'auth/invalid-credential' });
+    const link = await recoveryLink({ url: env.API_URL, key: env.SERVICE_ROLE_KEY, app: 'https://app.example' }, email);
+    const parsed = new URL(link);
+    expect(parsed.pathname).toBe('/update-password');
+    expect(parsed.searchParams.get('email')).toBe(email);
+    const code = parsed.searchParams.get('oobCode');
+    await confirmPasswordReset(auth, code, 'New-first-password-1');
+    expect(auth.currentUser).toBeNull(); // signed out after, as Firebase does
+    await signInWithEmailAndPassword(auth, email, 'New-first-password-1');
+    expect(auth.currentUser.uid).toBe(data.user.id);
+    await signOut(auth);
+    await expect(confirmPasswordReset(auth, code, 'Another-password-2')).rejects.toBeTruthy(); // one use only
   });
 
   it('الكتابة والقراءة: المستند كما كُتب، وكما يقرؤه الخادم حرفاً بحرف', async () => {

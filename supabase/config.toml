@@ -255,6 +255,12 @@ otp_expiry = 3600
 # subject = "Your password has been changed"
 # content_path = "./supabase/templates/password_changed_notification.html"
 
+# Password reset lands on the app's own /update-password screen with the
+# token hash; the token is spent only when the new password is saved.
+[auth.email.template.recovery]
+subject = "تعيين كلمة المرور — سويتر"
+content_path = "./supabase/templates/recovery.html"
+
 [auth.sms]
 # Allow/disallow new user signups via SMS to your project.
 enable_signup = false

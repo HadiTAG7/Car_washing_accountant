@@ -15,9 +15,13 @@ export const PERIOD_TOKENS = [
   'ytd', 'last_3_months', 'last_6_months', 'last_12_months', 'all',
 ];
 
-const AR_MONTH = new Intl.DateTimeFormat('ar-SA', { month: 'long', numberingSystem: 'latn' });
+const RIYADH = { timeZone: 'Asia/Riyadh', calendar: 'gregory', numberingSystem: 'latn' };
+const DATE_PARTS = new Intl.DateTimeFormat('en-CA', {
+  ...RIYADH, year: 'numeric', month: '2-digit', day: '2-digit',
+});
+const AR_MONTH = new Intl.DateTimeFormat('ar-SA', { ...RIYADH, month: 'long' });
 const AR_DAY = new Intl.DateTimeFormat('ar-SA', {
-  weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', numberingSystem: 'latn',
+  ...RIYADH, weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
 });
 
 const pad = (n) => String(n).padStart(2, '0');
@@ -25,16 +29,17 @@ const keyOf = (y, m) => `${y}-${pad(m)}`;
 const lastDay = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate();
 const monthLabel = (key) => {
   const [y, m] = key.split('-').map(Number);
-  return `${AR_MONTH.format(new Date(y, m - 1, 1))} ${y}`;
+  return `${AR_MONTH.format(new Date(Date.UTC(y, m - 1, 1)))} ${y}`;
 };
 const shift = (y, m, delta) => {
-  const d = new Date(y, m - 1 + delta, 1);
-  return [d.getFullYear(), d.getMonth() + 1];
+  const d = new Date(Date.UTC(y, m - 1 + delta, 1));
+  return [d.getUTCFullYear(), d.getUTCMonth() + 1];
 };
 
 /** تاريخ اليوم كما يجب أن يراه المساعد — في كل ردٍّ تقريباً. */
 export function todayInfo(now = new Date()) {
-  const y = now.getFullYear(); const m = now.getMonth() + 1; const d = now.getDate();
+  const parts = Object.fromEntries(DATE_PARTS.formatToParts(now).map(({ type, value }) => [type, value]));
+  const y = Number(parts.year); const m = Number(parts.month); const d = Number(parts.day);
   return {
     today: `${y}-${pad(m)}-${pad(d)}`,
     currentMonth: keyOf(y, m),

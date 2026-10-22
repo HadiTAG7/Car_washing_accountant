@@ -31,7 +31,8 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import pg from 'pg';
 import { SCHEMA, NOT_MIGRATED, tableFor } from '../../src/lib/data/schema/registry.js';
-import { encodeDocument, decodeDocument, toTagged, plainTimestamp } from '../../src/lib/data/schema/codec.js';
+import { encodeDocument, decodeDocument, toTagged, plainTimestamp, LINE_COLUMNS } from '../../src/lib/data/schema/codec.js';
+import { literal, pgSqlTransport, managementApiTransport } from './sql-transport.mjs';
 import { qi, rowColumns, readDocuments } from '../../server/db/rows.js';
 import { readExport } from './ndjson.mjs';
 import { financeSourceHash, FINANCE_KINDS } from '../../functions/src/financeReview.js';
@@ -165,7 +166,8 @@ function financeHashState(docsBySource) {
   return state;
 }
 
-export async function runImport({ dir = DIR, dbUrl = DB_URL, dry = DRY, createUsers = true, log = console.log } = {}) {
+/** Everything decided before the database is touched: shared by both paths. */
+function prepare(dir) {
   const exportData = readExport(dir);
   const { docs, problems, skipped, uidMap, remapped } = plan(exportData);
   if (problems.length) throw new Error(`لا يمكن الاستيراد:\n- ${problems.slice(0, 30).join('\n- ')}`);
@@ -184,7 +186,11 @@ export async function runImport({ dir = DIR, dbUrl = DB_URL, dry = DRY, createUs
   const sourceDocs = new Map();
   for (const [name, rows] of Object.entries(exportData.collections)) for (const r of rows) sourceDocs.set(`${name}/${r.id}`, decodeDocument({ columns: [] }, { extra: r.data }, null, opts));
   const hashesBefore = financeHashState(sourceDocs);
+  return { exportData, docs, skipped, uidMap, remapped, encoded, lineRows, hashesBefore };
+}
 
+export async function runImport({ dir = DIR, dbUrl = DB_URL, dry = DRY, createUsers = true, log = console.log } = {}) {
+  const { exportData, docs, skipped, uidMap, remapped, encoded, lineRows, hashesBefore } = prepare(dir);
   const report = { at: new Date().toISOString(), target: dbUrl.replace(/:[^:@/]+@/, ':***@'), tables: [], skipped, users: exportData.authUsers.length, remappedReferences: remapped.length };
   if (dry) { log('تشغيل تجريبي: نجح التحويل لكل المستندات، لم يُكتب شيء.'); return report; }
 
@@ -249,6 +255,164 @@ export async function runImport({ dir = DIR, dbUrl = DB_URL, dry = DRY, createUs
     throw e;
   } finally { await client.end(); }
 
+  return writeReport(dir, report, skipped, log);
+}
+
+// ═══ The same import over raw SQL: HTTPS (Management API) or its local twin ═══
+// No direct Postgres here, so no transaction can span requests. The data goes
+// first to a private staging schema (the live tables untouched), is read back
+// and compared document by document, and then ONE request swaps it in:
+// truncate, copy, and every gate — counts, live = staged row for row, ledger
+// balance, all deferred keys — inside that single implicit transaction. Any
+// failure there leaves the live tables exactly as they were.
+const STAGE = 'migration_stage';
+const SQL_BATCH = 900_000;     // characters of SQL per request
+const READ_PAGE = 250;         // rows per read-back request
+const LINE_SPEC = [{ column: 'entry_id' }, { column: 'line_no', type: 'int' }, ...LINE_COLUMNS, { column: 'extra', type: 'json' }, { column: 'shape', type: 'json' }];
+const valueSql = (col, v) => (col.type === 'json' ? (v == null ? 'null' : `${literal(JSON.stringify(v))}::jsonb`) : literal(v ?? null));
+// Read back exactly as the pg driver returns rows: integers, booleans and
+// jsonb as themselves; numerics, bigints and instants as their text.
+const readSql = col => (['int', 'bool', 'json'].includes(col.type) ? qi(col.column) : `${qi(col.column)}::text as ${qi(col.column)}`);
+
+async function uploadRows(sql, tableName, cols, rows) {
+  const head = `insert into ${STAGE}.${qi(tableName)} (${cols.map(c => qi(c.column)).join(', ')}) values `;
+  let tuples = []; let size = 0;
+  const flush = async () => { if (tuples.length) await sql.run(`${head}${tuples.join(', ')} on conflict do nothing`); tuples = []; size = 0; };
+  for (const row of rows) {
+    const tuple = `(${cols.map(c => valueSql(c, row[c.column])).join(', ')})`;
+    if (size + tuple.length > SQL_BATCH) await flush();
+    tuples.push(tuple); size += tuple.length;
+  }
+  await flush();
+}
+async function readPaged(sql, schema, tableName, cols, order) {
+  const out = [];
+  for (let offset = 0; ; offset += READ_PAGE) {
+    const [{ page }] = await sql.run(`select coalesce(json_agg(r), '[]')::text as page from (select ${cols.map(readSql).join(', ')}
+      from ${schema}.${qi(tableName)} order by ${order} limit ${READ_PAGE} offset ${offset}) r`);
+    const rows = JSON.parse(page);
+    out.push(...rows);
+    if (rows.length < READ_PAGE) return out;
+  }
+}
+/** Every document of `schema`, decoded as readDocuments does: Map key → { id, parentId, data }. */
+async function readBack(sql, schema) {
+  const out = new Map();
+  for (const table of SCHEMA) {
+    let linesBy = new Map();
+    if (table.lines) {
+      for (const l of await readPaged(sql, schema, table.lines, LINE_SPEC, 'entry_id collate "C", line_no')) {
+        linesBy.set(l.entry_id, [...(linesBy.get(l.entry_id) || []), l]);
+      }
+    }
+    const order = table.parentTable ? 'parent_ref collate "C", id collate "C"' : 'id collate "C"';
+    for (const r of await readPaged(sql, schema, table.table, rowColumns(table), order)) {
+      out.set(`${table.table}|${r.parent_ref ?? ''}|${r.id}`, { id: r.id, parentId: r.parent_ref ?? null, data: decodeDocument(table, r, linesBy.get(r.id), opts), table });
+    }
+  }
+  return out;
+}
+function roundTrip(docs, back, where) {
+  const bySource = new Map(docs.map(d => [`${d.table.table}|${d.parentId ?? ''}|${d.id}`, d]));
+  let checked = 0;
+  for (const [key, b] of back) {
+    const src = bySource.get(key);
+    if (!src || canon(b.data) !== canon(src.data)) throw new Error(`المستند لا يعود من ${where} حرفياً: ${src?.source || key}`);
+    checked += 1;
+  }
+  if (checked !== docs.length) throw new Error(`قُرئ من ${where} ${checked} من ${docs.length}`);
+  return checked;
+}
+function hashesOf(back) {
+  const docs = new Map();
+  for (const name of ['finance_reviews', ...Object.values(FINANCE_KINDS).map(s => s.collection)]) {
+    const t = tableFor(name).table;
+    for (const b of back.values()) if (b.table === t) docs.set(`${name}/${b.id}`, b.data);
+  }
+  return financeHashState(docs);
+}
+
+export async function runImportViaSql({ dir = DIR, sql, dry = DRY, createUsers = true, log = console.log } = {}) {
+  const { exportData, docs, skipped, uidMap, remapped, encoded, lineRows, hashesBefore } = prepare(dir);
+  const report = { at: new Date().toISOString(), target: sql.target, transport: sql.name, tables: [], skipped, users: exportData.authUsers.length, remappedReferences: remapped.length };
+  if (dry) { log('تشغيل تجريبي: نجح التحويل لكل المستندات، لم يُكتب شيء.'); return report; }
+  report.restore = Boolean(exportData.restore);
+  if (createUsers && !exportData.restore) report.auth = await ensureAuthUsers(exportData.authUsers, uidMap);
+
+  const lineTables = SCHEMA.filter(t => t.lines).map(t => t.lines);
+  const appTables = [...SCHEMA.map(t => t.table), ...lineTables, 'firebase_uid_map'];
+  let swapped = false;
+  try {
+    // ── 1. Staging: private, the live tables untouched ──
+    await sql.run([`drop schema if exists ${STAGE} cascade`, `create schema ${STAGE}`, `revoke all on schema ${STAGE} from public`,
+      ...[...SCHEMA.map(t => t.table), ...lineTables].map(t => `create table ${STAGE}.${qi(t)} (like public.${qi(t)} including defaults including indexes)`)].join(';\n'));
+    for (const table of SCHEMA) if (encoded.get(table.table)?.length) await uploadRows(sql, table.table, rowColumns(table), encoded.get(table.table));
+    for (const lt of lineTables) if (lineRows.get(lt)?.length) await uploadRows(sql, lt, LINE_SPEC, lineRows.get(lt));
+
+    // ── 2. Staged documents read back and compared, before anything goes live ──
+    const staged = await readBack(sql, STAGE);
+    roundTrip(docs, staged, 'المرحلة المؤقتة');
+    const stagedHashes = hashesOf(staged);
+    for (const [k, v] of hashesBefore) if (stagedHashes.get(k) !== v) throw new Error(`بصمة الاعتماد تغيّرت: ${k} (${v} → ${stagedHashes.get(k)})`);
+
+    // ── 3. One request, one transaction: swap in, then every gate ──
+    const mapRows = exportData.restore
+      ? exportData.uidMapRows.map(r => [r.firebase_uid, r.user_id, r.email ?? null])
+      : [...uidMap].map(([fb, id]) => [fb, id, exportData.authUsers.find(u => u.uid === fb)?.email ?? null]);
+    const order = [...SCHEMA].sort((a, b) => Number(Boolean(a.parentTable)) - Number(Boolean(b.parentTable)));
+    const copy = (name, cols) => `insert into public.${qi(name)} (${cols}) select ${cols} from ${STAGE}.${qi(name)}`;
+    const same = (name, cols) => `if exists (select ${cols} from public.${qi(name)} except all select ${cols} from ${STAGE}.${qi(name)})
+      or exists (select ${cols} from ${STAGE}.${qi(name)} except all select ${cols} from public.${qi(name)}) then
+      raise exception 'الجدول % لا يطابق ما رُفع', ${literal(name)}; end if;`;
+    const count = (name, n) => `if (select count(*) from public.${qi(name)}) <> ${Number(n)} then
+      raise exception 'العدد لا يطابق في %: % ≠ %', ${literal(name)}, (select count(*) from public.${qi(name)}), ${Number(n)}; end if;`;
+    const swap = ['set constraints all deferred', `truncate ${appTables.map(t => `public.${qi(t)}`).join(', ')}`];
+    if (mapRows.length) swap.push(`insert into public.firebase_uid_map (firebase_uid, user_id, email) values ${mapRows.map(r => `(${r.map(literal).join(', ')})`).join(', ')}`);
+    const gates = [count('firebase_uid_map', mapRows.length)];
+    for (const table of order) {
+      const cols = rowColumns(table).map(c => qi(c.column)).join(', ');
+      swap.push(copy(table.table, cols));
+      gates.push(count(table.table, encoded.get(table.table)?.length || 0), same(table.table, cols));
+      if (table.lines) {
+        const lcols = LINE_SPEC.map(c => qi(c.column)).join(', ');
+        swap.push(copy(table.lines, lcols));
+        gates.push(count(table.lines, lineRows.get(table.lines)?.length || 0), same(table.lines, lcols));
+      }
+    }
+    gates.push(`if (select coalesce(sum(l.debit), 0) <> coalesce(sum(l.credit), 0) from public.journal_entry_lines l
+      join public.journal_entries e on e.id = l.entry_id where e.status in ('posted', 'reversed')) then
+      raise exception 'الدفتر غير متوازن بعد الاستيراد'; end if;`);
+    swap.push(`do $gate$ begin\n${gates.join('\n')}\nend $gate$`, 'set constraints all immediate');
+    await sql.run(swap.join(';\n'));
+    swapped = true;
+
+    // ── 4. Committed: the report, from the live tables ──
+    const [{ counts }] = await sql.run(`select json_object_agg(t, n)::text as counts from (${SCHEMA.map(t => `select ${literal(t.table)} as t, count(*) as n from public.${qi(t.table)}`).join(' union all ')}) c`);
+    const live = JSON.parse(counts);
+    for (const table of SCHEMA) {
+      const want = encoded.get(table.table)?.length || 0;
+      report.tables.push({ collection: table.collection, table: table.table, firebase: want, supabase: Number(live[table.table]) });
+      if (Number(live[table.table]) !== want) throw new Error(`العدد لا يطابق في ${table.table} بعد التثبيت: ${live[table.table]} ≠ ${want}`);
+    }
+    const back = await readBack(sql, 'public');
+    report.roundTrip = { checked: roundTrip(docs, back, 'القاعدة'), of: docs.length };
+    const [ledger] = await sql.run(`select coalesce(sum(l.debit), 0)::text as debit, coalesce(sum(l.credit), 0)::text as credit
+      from public.journal_entry_lines l join public.journal_entries e on e.id = l.entry_id where e.status in ('posted', 'reversed')`);
+    report.ledger = ledger;
+    const hashesAfter = hashesOf(back);
+    for (const [k, v] of hashesBefore) if (hashesAfter.get(k) !== v) throw new Error(`بصمة الاعتماد تغيّرت: ${k} (${v} → ${hashesAfter.get(k)})`);
+    report.financeHashes = { reviews: hashesBefore.size, match: [...hashesBefore.values()].filter(v => v === 'match').length };
+  } catch (e) {
+    // After the swap the live tables hold the new data: say so, never «nothing changed».
+    if (swapped) e.message = `ثُبّتت البيانات، ثم فشل التحقق بعدها: ${e.message}`;
+    throw e;
+  } finally {
+    await sql.run(`drop schema if exists ${STAGE} cascade`).catch(() => {});
+  }
+  return writeReport(dir, report, skipped, log);
+}
+
+function writeReport(dir, report, skipped, log) {
   const md = ['| المجموعة | الجدول | العدد في Firebase | العدد في Supabase |', '|---|---|---:|---:|',
     ...report.tables.filter(t => t.firebase || t.supabase).map(t => `| ${t.collection} | ${t.table} | ${t.firebase} | ${t.supabase} ${t.firebase === t.supabase ? '✓' : '✗'} |`),
     ...Object.entries(skipped).map(([n, s]) => `| ${n} | — | ${s.count} | لم يُنقل: ${s.reason} |`)];
@@ -260,5 +424,10 @@ export async function runImport({ dir = DIR, dbUrl = DB_URL, dry = DRY, createUs
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  runImport().catch((e) => { console.error(`\n✗ ${e.message}\nلم يُثبَّت شيء.`); process.exit(1); });
+  // --via api --project <ref>: over HTTPS with SUPABASE_ACCESS_TOKEN (no direct Postgres).
+  // --via sql: the same raw-SQL path on SUPABASE_DB_URL (its local rehearsal).
+  const via = opt('--via');
+  const run = !via ? runImport()
+    : runImportViaSql({ sql: via === 'api' ? managementApiTransport({ ref: opt('--project'), token: process.env.SUPABASE_ACCESS_TOKEN }) : pgSqlTransport(DB_URL) });
+  run.catch((e) => { console.error(`\n✗ ${e.message}${/^ثُبّتت/.test(e.message) ? '' : '\nلم يُثبَّت شيء في الجداول الحية.'}`); process.exit(1); });
 }

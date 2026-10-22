@@ -30,7 +30,6 @@ import { trialBalance, trialBalanceFromSums, balanceSheet, balanceSheetFromTrial
 import { taxPolicyAt } from '../../../src/lib/accounting/taxPolicy.js';
 import { overviewOperations } from '../../../src/lib/overviewDashboard.js';
 import { mapWash, mapBiker } from '../../../src/lib/mappers.js';
-import { __setSupabaseClient } from '../../../src/lib/data/supabase/client.js';
 import { getAuth, signInWithEmailAndPassword } from '../../../src/lib/data/supabase/auth.js';
 
 const DIR = process.env.RECONCILE_DIR;
@@ -56,13 +55,15 @@ const adminExec = (db, FieldPath, { notEquals = true } = {}) => {
 };
 
 // ── Comparison at JSON precision ──
+// Not data: the instant each side generated its payroll preview.
+const WALL_CLOCK = new Set(['generatedAtIso']);
 function normalize(v) {
   if (v === null || v === undefined || typeof v !== 'object') return v;
   if (typeof v.toMillis === 'function') return { $ts: [v.seconds ?? v._seconds, v.nanoseconds ?? v._nanoseconds] };
   if (typeof v.path === 'string' && (v.firestore || v.__docRef)) return { $ref: v.path };
   if (Buffer.isBuffer(v) || v instanceof Uint8Array) return { $bytes: Buffer.from(v).toString('base64') };
   if (Array.isArray(v)) return v.map(normalize);
-  return Object.fromEntries(Object.keys(v).sort().map(k => [k, normalize(v[k])]));
+  return Object.fromEntries(Object.keys(v).filter(k => !WALL_CLOCK.has(k)).sort().map(k => [k, normalize(v[k])]));
 }
 function differences(a, b, path = '', out = []) {
   if (out.length >= 10) return out;
@@ -77,7 +78,9 @@ function differences(a, b, path = '', out = []) {
   return out;
 }
 
-const FIGURES = ['netRevenue', 'totalRevenue', 'totalExpenses', 'operatingProfit', 'totalFees', 'netProfit'];
+const FIGURES = ['netRevenue', 'directCosts', 'operatingExpenses', 'totalCosts', 'totalFees', 'netProfit'];
+// The owner's October figures (Stage 5), checked when RECONCILE_EXPECT_OCTOBER=1 (the production export).
+const OCTOBER = { month: '2026-10', washes: 382, netRevenue: 7640, totalCosts: 30036.57, costPerWash: 78.63, breakEven: 1502 };
 const monthEnd = m => { const [y, mo] = m.split('-').map(Number); return `${m}-${String(new Date(Date.UTC(y, mo, 0)).getUTCDate()).padStart(2, '0')}`; };
 
 d('المطابقة الشهرية: Firebase ↔ Supabase', () => {
@@ -103,7 +106,6 @@ d('المطابقة الشهرية: Firebase ↔ Supabase', () => {
     const service = createClient(env.API_URL, env.SERVICE_ROLE_KEY, { auth: { persistSession: false } });
     const password = `reconcile-${Date.now()}`;
     await service.auth.admin.updateUserById(pgAdmin.id, { password });
-    __setSupabaseClient(createClient(env.API_URL, env.ANON_KEY, { auth: { persistSession: false, autoRefreshToken: false } }));
     await signInWithEmailAndPassword(getAuth(), pgAdmin.email, password);
 
     const set = new Set();
@@ -209,6 +211,15 @@ d('المطابقة الشهرية: Firebase ↔ Supabase', () => {
       const s = statements.pgstore || {};
       row.figures.washes = opsNew?.quantity ?? null;
       for (const k of FIGURES) if (typeof s[k] === 'number') row.figures[k] = s[k];
+      // Per wash, and washes to cover the month's costs at its average net price.
+      if (row.figures.washes > 0 && typeof s.totalCosts === 'number') {
+        row.figures.costPerWash = Math.round((s.totalCosts / row.figures.washes) * 100) / 100;
+        if (s.netRevenue > 0) row.figures.breakEven = Math.ceil(s.totalCosts / (s.netRevenue / row.figures.washes));
+      }
+      if (process.env.RECONCILE_EXPECT_OCTOBER === '1' && month === OCTOBER.month) {
+        const got = { month, washes: row.figures.washes, netRevenue: row.figures.netRevenue, totalCosts: row.figures.totalCosts, costPerWash: row.figures.costPerWash, breakEven: row.figures.breakEven };
+        flag('أرقام أكتوبر المرجعية', differences(OCTOBER, got));
+      }
       row.figures.partners = partners;
       if (s.error) row.figures.statementError = s.error;
       report.months.push(row);
@@ -217,20 +228,29 @@ d('المطابقة الشهرية: Firebase ↔ Supabase', () => {
   }, 3_600_000);
 });
 
+// A partner's balance as the app shows it: capital paid (receipts), the
+// capital account's ledger balance, and what is received but not yet posted.
 function summarizePartner(r) {
   if (!r || r.error) return r;
-  const pick = {};
-  for (const k of ['capitalBalance', 'capitalPaid', 'balance', 'share', 'shareAmount', 'netShare', 'allocated', 'remaining']) if (typeof r[k] === 'number') pick[k] = r[k];
-  return Object.keys(pick).length ? pick : { keys: Object.keys(r).slice(0, 12) };
+  const c = r.capital || {};
+  return { paid: c.paid, ledgerBalance: c.ledgerBalance, unposted: c.unposted, receipts: c.receiptsCount };
 }
 
 function markdown(report) {
   const fmt = v => (typeof v === 'number' ? v.toLocaleString('en-US', { maximumFractionDigits: 2 }) : v ?? '—');
   const out = ['# تقرير المطابقة الشهري — Firebase ↔ Supabase', '',
-    '| الشهر | الغسلات | الإيراد | المصاريف | صافي الربح | الميزان متوازن | الفحوص |', '|---|---:|---:|---:|---:|:-:|:-:|'];
+    '| الشهر | الغسلات | الإيراد | المصاريف | تكلفة الغسلة | غسلات التعادل | صافي الربح | الميزان | المركز المالي | الفحوص |', '|---|---:|---:|---:|---:|---:|---:|:-:|:-:|:-:|'];
   for (const m of report.months) {
     const bad = Object.values(m.checks).filter(v => v !== 'ok').length;
-    out.push(`| ${m.month} | ${fmt(m.figures.washes)} | ${fmt(m.figures.netRevenue ?? m.figures.totalRevenue)} | ${fmt(m.figures.totalExpenses)} | ${fmt(m.figures.netProfit)} | ${m.figures.trialBalance?.balanced ? '✓' : '✗'} | ${bad ? `✗ ${bad}` : '✓'} |`);
+    const bs = m.figures.balanceSheet;
+    const sheet = !bs ? '—' : bs.balanced ? '✓' : `غير متوازن (${fmt(Math.round((bs.totalAssets - bs.totalLiabilities - bs.totalEquity) * 100) / 100)})`;
+    out.push(`| ${m.month} | ${fmt(m.figures.washes)} | ${fmt(m.figures.netRevenue)} | ${fmt(m.figures.totalCosts)} | ${fmt(m.figures.costPerWash)} | ${fmt(m.figures.breakEven)} | ${fmt(m.figures.netProfit)} | ${m.figures.trialBalance?.balanced ? '✓' : '✗'} | ${sheet} | ${bad ? `✗ ${bad}` : '✓'} |`);
+  }
+  out.push('', 'الفحوص ✓ = Firebase وSupabase متطابقان في كل ما سبق. «غير متوازن» في المركز المالي حالة في البيانات نفسها، بنفس الفرق على الجهتين.');
+  const partners = report.months.at(-1)?.figures.partners || {};
+  if (Object.keys(partners).length) {
+    out.push('', `## الشركاء — حتى نهاية ${report.months.at(-1).month}`, '', '| الشريك | الأرقام |', '|---|---|');
+    for (const [id, p] of Object.entries(partners)) out.push(`| ${id} | ${Object.entries(p || {}).map(([k, v]) => `${k}: ${fmt(v)}`).join(' · ')} |`);
   }
   out.push('', report.problems.length ? '## الفروقات' : '## لا فرق — كل الأرقام متطابقة بالهللة', '');
   for (const p of report.problems) out.push(`- **${p.month} · ${p.what}**`, ...p.diffs.map(x => `  - \`${x}\``));

@@ -39,7 +39,12 @@ import { financeSourceHash, FINANCE_KINDS } from '../../functions/src/financeRev
 const ROOT = new URL('../../', import.meta.url).pathname;
 const argv = process.argv.slice(2);
 const flag = name => argv.includes(name);
-const opt = name => argv.find(a => a.startsWith(`${name}=`))?.slice(name.length + 1);
+const opt = (name) => {
+  const eq = argv.find(a => a.startsWith(`${name}=`));
+  if (eq) return eq.slice(name.length + 1);
+  const i = argv.indexOf(name);
+  return i >= 0 ? argv[i + 1] : undefined;
+};
 const DIR = opt('--dir') || process.env.MIGRATION_DATA || join(ROOT, 'migration-data');
 const DB_URL = process.env.SUPABASE_DB_URL || 'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
 const DRY = flag('--dry-run');

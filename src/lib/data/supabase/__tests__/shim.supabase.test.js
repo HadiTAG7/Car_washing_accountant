@@ -66,7 +66,7 @@ d('طبقة المتصفح على Supabase', () => {
       }
     });
   }, 60_000);
-  afterAll(async () => { if (auth?.currentUser) await signOut(auth); await closeDb(); });
+  afterAll(async () => { if (auth?.currentUser) await signOut(auth); await resetDb(); await closeDb(); });
 
   it('الدخول: كلمة خاطئة مرفوضة برمز Firebase، والصحيحة تعطي المستخدم وتوكناً يقبله الخادم', async () => {
     await expect(signInWithEmailAndPassword(auth, 'operator@sweater.test', 'wrong-password')).rejects.toMatchObject({ code: 'auth/invalid-credential' });

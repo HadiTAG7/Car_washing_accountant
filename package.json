@@ -33,7 +33,8 @@
     "bootstrap:admin": "node scripts/bootstrap-admin.mjs",
     "check:email": "node scripts/check-email-deliverability.mjs",
     "test:supabase": "vitest run supabase.test --no-file-parallelism",
-    "db:generate": "node scripts/migration/generate-schema-sql.mjs && node scripts/migration/generate-security-sql.mjs"
+    "db:generate": "node scripts/migration/generate-schema-sql.mjs && node scripts/migration/generate-security-sql.mjs",
+    "test:pgstore": "firebase emulators:exec --only firestore --project demo-pgstore --config firebase.test.json \"vitest run pgstore.parity --no-file-parallelism\""
   },
   "dependencies": {
     "@capacitor/core": "^8.4.2",

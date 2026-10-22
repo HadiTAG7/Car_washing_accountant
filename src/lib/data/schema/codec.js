@@ -103,7 +103,7 @@ function fitNumber(v, digits, bound) {
   const text = v.toFixed(digits);
   return { value: text, exact: Number(text) === v && !Object.is(v, -0) };
 }
-function fitColumn(type, v) {
+export function fitColumn(type, v) {
   switch (type) {
     case 'id': case 'text': return typeof v === 'string' ? { value: v, exact: true } : null;
     case 'int': return Number.isInteger(v) && Math.abs(v) <= 2147483647 && !Object.is(v, -0) ? { value: v, exact: true } : null;

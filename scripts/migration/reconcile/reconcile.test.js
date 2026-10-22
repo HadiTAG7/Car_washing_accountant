@@ -5,12 +5,14 @@
 //   • مصادر قائمة الدخل كما يحمّلها المتصفح (loadScopedIncomeSources) —
 //     عبر Firestore الحقيقي، وعبر pgstore (الخادم)، وعبر طبقة المتصفح على Supabase
 //   • معاينات الرواتب من الخادم، ثم قائمة الدخل الحية (liveIncomeStatement)
-//   • عدد الغسلات كما تعرضه النظرة العامة
+//   • عدد الغسلات ومؤشرات النظرة العامة (التعادل، تكلفة الغسلة، الاستغلال،
+//     التوقع، الخصومات، التنبيهات) بدوال الصفحة نفسها
 //   • ميزان المراجعة: محرك JS على القيود ↔ مجاميع SQL في القاعدة
 //   • تقرير كل شريك (partnerAllocationReport) حتى نهاية الشهر
 // أي فرق ولو هللة يُسجَّل بمساره، والتقرير يفشل.
 //
 //   RECONCILE_DIR=migration-data npm run reconcile
+//   RECONCILE_TODAY=2026-10-22 يثبّت «اليوم» (الافتراضي: اليوم الفعلي، كما في الصفحة)
 // ═══════════════════════════════════════════════════════════════════════════
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { writeFileSync } from 'node:fs';
@@ -29,6 +31,7 @@ import { liveIncomeStatement } from '../../../src/lib/accounting/liveIncomeState
 import { trialBalance, trialBalanceFromSums, balanceSheet, balanceSheetFromTrialBalance } from '../../../src/lib/accounting/reports.js';
 import { taxPolicyAt } from '../../../src/lib/accounting/taxPolicy.js';
 import { overviewOperations } from '../../../src/lib/overviewDashboard.js';
+import { overviewAttention, overviewBusinessMetrics, overviewSettlements } from '../../../src/lib/overviewInsights.js';
 import { mapWash, mapBiker } from '../../../src/lib/mappers.js';
 import { getAuth, signInWithEmailAndPassword } from '../../../src/lib/data/supabase/auth.js';
 
@@ -80,7 +83,10 @@ function differences(a, b, path = '', out = []) {
 
 const FIGURES = ['netRevenue', 'directCosts', 'operatingExpenses', 'totalCosts', 'totalFees', 'netProfit'];
 // The owner's October figures (Stage 5), checked when RECONCILE_EXPECT_OCTOBER=1 (the production export).
-const OCTOBER = { month: '2026-10', washes: 382, netRevenue: 7640, totalCosts: 30036.57, costPerWash: 78.63, breakEven: 1502 };
+// Cost per wash, break-even and utilization are the overview's own (overviewBusinessMetrics).
+const OCTOBER = { month: '2026-10', washes: 382, netRevenue: 7640, totalCosts: 30036.57, costPerWash: 78.63, breakEven: 1502, utilization: 48 };
+// The page's «today» (Riyadh date); pinned for a reproducible reference run.
+const TODAY = process.env.RECONCILE_TODAY || new Date().toISOString().slice(0, 10);
 const monthEnd = m => { const [y, mo] = m.split('-').map(Number); return `${m}-${String(new Date(Date.UTC(y, mo, 0)).getUTCDate()).padStart(2, '0')}`; };
 
 d('المطابقة الشهرية: Firebase ↔ Supabase', () => {
@@ -111,8 +117,7 @@ d('المطابقة الشهرية: Firebase ↔ Supabase', () => {
     const set = new Set();
     for (const w of exported.collections.washes || []) if (/^\d{4}-\d{2}/.test(w.data.wash_date || '')) set.add(w.data.wash_date.slice(0, 7));
     for (const e of exported.collections.journal_entries || []) if (/^\d{4}-\d{2}/.test(e.data.entryDate || '')) set.add(e.data.entryDate.slice(0, 7));
-    const now = new Date().toISOString().slice(0, 7);
-    months = [...set].filter(m => m <= now).sort();
+    months = [...set].filter(m => m <= TODAY.slice(0, 7)).sort();
   }, 600_000);
 
   afterAll(async () => {
@@ -146,7 +151,7 @@ d('المطابقة الشهرية: Firebase ↔ Supabase', () => {
         lines: entries.flatMap(e => (e.lines || []).map((l, i) => ({ ...l, entryId: e.id, id: `${e.id}:${i}` }))).concat(await all('journal_lines')),
       };
     }
-    const today = new Date().toISOString().slice(0, 10);
+    const today = TODAY;
 
     for (const month of months) {
       const row = { month, figures: {}, checks: {} };
@@ -178,8 +183,11 @@ d('المطابقة الشهرية: Firebase ↔ Supabase', () => {
       }
       flag('قائمة الدخل', differences(statements.firebase, statements.pgstore));
 
-      const ops = side => overviewOperations({ washes: sources[side].washes.map(mapWash), bikers: (sources[side].bikers || []).map(mapBiker),
-        periodKey: month, today: today < monthEnd(month) ? today : monthEnd(month) });
+      // As the overview builds them: the page's wash mapping (raw status and
+      // quantity) and the page's «today», so complete days match the page.
+      const ops = side => overviewOperations({ periodKey: month, today,
+        washes: sources[side].washes.map(row => ({ ...mapWash(row), status: row.status, quantity: Math.max(0, Number(row.quantity) || 0) })),
+        bikers: (sources[side].bikers || []).map(mapBiker) });
       const opsRef = ops('firebase'); const opsNew = ops('browser');
       flag('عدد الغسلات', differences(opsRef?.quantity, opsNew?.quantity));
 
@@ -208,16 +216,36 @@ d('المطابقة الشهرية: Firebase ↔ Supabase', () => {
         partners[partnerId] = summarizePartner(out.pgstore);
       }
 
+      // The overview's decisions on each side: break-even, cost per wash,
+      // utilization and forecast from the statement; deductions and the
+      // expected payment from the month's adjustments and settlements; the
+      // attention list from bookings and bikers.
+      const adjustments = {
+        firebase: await backends.firebase.exec.equals('sweater_adjustments', 'periodKey', month),
+        browser: await backends.browser.exec.equals('sweater_adjustments', 'periodKey', month),
+      };
+      const insights = {};
+      for (const [side, opsSide, statement] of [['firebase', opsRef, statements.firebase], ['browser', opsNew, statements.pgstore]]) {
+        const st = statement && !statement.error ? statement : null;
+        insights[side] = {
+          metrics: overviewBusinessMetrics(opsSide, st),
+          settlements: opsSide ? overviewSettlements({ adjustments: adjustments[side], settlements: sources[side].settlements || [], periodKey: month, to: opsSide.to }) : null,
+          attention: overviewAttention({ ops: opsSide, today, bikers: (sources[side].bikers || []).map(mapBiker), bookings: sources[side].bookings || [] }),
+        };
+      }
+      flag('مؤشرات النظرة العامة', differences(insights.firebase, insights.browser));
+
       const s = statements.pgstore || {};
+      const m = insights.browser.metrics;
       row.figures.washes = opsNew?.quantity ?? null;
       for (const k of FIGURES) if (typeof s[k] === 'number') row.figures[k] = s[k];
-      // Per wash, and washes to cover the month's costs at its average net price.
-      if (row.figures.washes > 0 && typeof s.totalCosts === 'number') {
-        row.figures.costPerWash = Math.round((s.totalCosts / row.figures.washes) * 100) / 100;
-        if (s.netRevenue > 0) row.figures.breakEven = Math.ceil(s.totalCosts / (s.netRevenue / row.figures.washes));
-      }
+      if (m?.costPerWash != null) row.figures.costPerWash = Math.round(m.costPerWash * 100) / 100;
+      if (m?.monthlyRequired != null) row.figures.breakEven = m.monthlyRequired;
+      if (m?.capacityUtilization != null) row.figures.utilization = Math.round(m.capacityUtilization * 10) / 10;
+      if (m?.forecastQuantity != null) row.figures.forecastWashes = Math.round(m.forecastQuantity);
       if (process.env.RECONCILE_EXPECT_OCTOBER === '1' && month === OCTOBER.month) {
-        const got = { month, washes: row.figures.washes, netRevenue: row.figures.netRevenue, totalCosts: row.figures.totalCosts, costPerWash: row.figures.costPerWash, breakEven: row.figures.breakEven };
+        const got = { month, washes: row.figures.washes, netRevenue: row.figures.netRevenue, totalCosts: row.figures.totalCosts, costPerWash: row.figures.costPerWash,
+          breakEven: row.figures.breakEven, utilization: row.figures.utilization == null ? null : Math.round(row.figures.utilization) };
         flag('أرقام أكتوبر المرجعية', differences(OCTOBER, got));
       }
       row.figures.partners = partners;
@@ -239,12 +267,13 @@ function summarizePartner(r) {
 function markdown(report) {
   const fmt = v => (typeof v === 'number' ? v.toLocaleString('en-US', { maximumFractionDigits: 2 }) : v ?? '—');
   const out = ['# تقرير المطابقة الشهري — Firebase ↔ Supabase', '',
-    '| الشهر | الغسلات | الإيراد | المصاريف | تكلفة الغسلة | غسلات التعادل | صافي الربح | الميزان | المركز المالي | الفحوص |', '|---|---:|---:|---:|---:|---:|---:|:-:|:-:|:-:|'];
+    `«اليوم» في هذا التقرير: ${TODAY}`, '',
+    '| الشهر | الغسلات | الإيراد | المصاريف | تكلفة الغسلة | غسلات التعادل | الاستغلال % | صافي الربح | الميزان | المركز المالي | الفحوص |', '|---|---:|---:|---:|---:|---:|---:|---:|:-:|:-:|:-:|'];
   for (const m of report.months) {
     const bad = Object.values(m.checks).filter(v => v !== 'ok').length;
     const bs = m.figures.balanceSheet;
     const sheet = !bs ? '—' : bs.balanced ? '✓' : `غير متوازن (${fmt(Math.round((bs.totalAssets - bs.totalLiabilities - bs.totalEquity) * 100) / 100)})`;
-    out.push(`| ${m.month} | ${fmt(m.figures.washes)} | ${fmt(m.figures.netRevenue)} | ${fmt(m.figures.totalCosts)} | ${fmt(m.figures.costPerWash)} | ${fmt(m.figures.breakEven)} | ${fmt(m.figures.netProfit)} | ${m.figures.trialBalance?.balanced ? '✓' : '✗'} | ${sheet} | ${bad ? `✗ ${bad}` : '✓'} |`);
+    out.push(`| ${m.month} | ${fmt(m.figures.washes)} | ${fmt(m.figures.netRevenue)} | ${fmt(m.figures.totalCosts)} | ${fmt(m.figures.costPerWash)} | ${fmt(m.figures.breakEven)} | ${fmt(m.figures.utilization)} | ${fmt(m.figures.netProfit)} | ${m.figures.trialBalance?.balanced ? '✓' : '✗'} | ${sheet} | ${bad ? `✗ ${bad}` : '✓'} |`);
   }
   out.push('', 'الفحوص ✓ = Firebase وSupabase متطابقان في كل ما سبق. «غير متوازن» في المركز المالي حالة في البيانات نفسها، بنفس الفرق على الجهتين.');
   const partners = report.months.at(-1)?.figures.partners || {};

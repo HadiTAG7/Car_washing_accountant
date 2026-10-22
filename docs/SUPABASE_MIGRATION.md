@@ -32,8 +32,9 @@ node scripts/migration/profile.mjs                 # ورقة القرارات
 # 2) استيراد (كله أو لا شيء؛ جدول الأعداد في migration-data/import-report.md)
 SUPABASE_DB_URL=… SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=… \
   node scripts/migration/import-supabase.mjs --dir migration-data
-# 3) المطابقة الشهرية (Firebase من التصدير ↔ Supabase)
-RECONCILE_EXPECT_OCTOBER=1 RECONCILE_DIR=migration-data npm run reconcile
+# 3) المطابقة الشهرية (Firebase من التصدير ↔ Supabase)، ومعها مؤشرات النظرة العامة
+#    بدوال الصفحة نفسها؛ مرجع أكتوبر بـ«اليوم» = يوم التصدير:
+RECONCILE_EXPECT_OCTOBER=1 RECONCILE_TODAY=2026-10-22 RECONCILE_DIR=migration-data npm run reconcile
 ```
 
 حين لا يصل اتصال Postgres المباشر (مثل بيئة Claude السحابية)، نفس الاستيراد عبر HTTPS

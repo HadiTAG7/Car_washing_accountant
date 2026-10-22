@@ -212,6 +212,25 @@ d('طبقة المتصفح على Supabase', () => {
     expect((await getDocs(collection(fs, 'journal_entries'))).size).toBe(0);
   });
 
+  it('تسويات سويتر للنظرة العامة: الشهر المطلوب فقط كما كُتبت وكما يقرؤها الخادم؛ والشريك لا يرى شيئاً', async () => {
+    // The overview's only extra read: sweater_adjustments where periodKey == month.
+    const adjustment = (id, periodKey, effectiveDate, extra = {}) => ({ id, kind: 'deduction', typeKey: 'operational_or_traffic_violation',
+      amount: 150.25, effectiveDate, periodKey, approvalStatus: 'approved', sspBookingId: `ssp-${id}`, driverName: 'سائق', ...extra });
+    const rows = [adjustment('a1', '2026-10', '2026-10-03'), adjustment('a2', '2026-10', '2026-10-19', { approvalStatus: 'pending_review', amount: 40 }),
+      adjustment('a3', '2026-09', '2026-09-28')];
+    await asOwner(async (c) => { for (const row of rows) await put(c, 'sweater_adjustments', row.id, row); });
+    await signInAs('operator');
+    const snap = await getDocs(query(collection(fs, 'sweater_adjustments'), where('periodKey', '==', '2026-10')));
+    const got = Object.fromEntries(snap.docs.map(d => [d.id, plain(d.data())]));
+    expect(Object.keys(got).sort()).toEqual(['a1', 'a2']);
+    for (const id of ['a1', 'a2']) {
+      expect(got[id]).toEqual(plain(rows.find(r => r.id === id)));
+      expect(got[id]).toEqual(plain(await serverRead('sweater_adjustments', id)));
+    }
+    await signInAs('partner');
+    expect((await getDocs(query(collection(fs, 'sweater_adjustments'), where('periodKey', '==', '2026-10')))).size).toBe(0);
+  });
+
   it('ميزان المراجعة من مجاميع القاعدة = ميزان المحرك من القيود نفسها، لكل نافذة تاريخ', async () => {
     // Random balanced entries in whole halalas, mixed statuses and dates.
     let seed = 7; const rnd = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };

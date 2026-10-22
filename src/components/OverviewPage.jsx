@@ -4,7 +4,6 @@ import { useLanguage } from '../i18n/useLanguage';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 import { useOverviewDashboard } from '../hooks/useOverviewDashboard';
 import { riyadhToday } from '../lib/bikerProfile';
-import { isOverviewWorkingBiker } from '../lib/overviewDashboard';
 import { displayBikerName, displayRecordedBikerName, recordedBikerSweaterId } from '../lib/bikerNames';
 import { formatCurrencyPrecise, formatNumber } from '../data/initialData';
 import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
@@ -12,6 +11,8 @@ import { downloadFullBackup } from '../lib/backupZip';
 import TopBar from './TopBar';
 import CapitalOverviewPage from './CapitalOverviewPage';
 import OverviewBikerQuality from './OverviewBikerQuality';
+import OverviewBusinessInsights from './OverviewBusinessInsights';
+import OverviewOperationalAttention from './OverviewOperationalAttention';
 import BikerProfileMonthPicker from './BikerProfileMonthPicker';
 import IncomeStatementDetailsModal from './IncomeStatementDetailsModal';
 import ModalSurface from './ModalSurface';
@@ -66,7 +67,8 @@ export function ManagementOverview({ onNavigate }) {
     { key: 'netProfit', label: text('صافي الربح', 'Net profit'), icon: Wallet, tone: st?.netProfit < 0 ? 'amber' : 'green', note: text('بعد التكاليف ورسوم الإدارة والإشراف', 'After costs, management and supervision fees') },
   ];
   const detailRows = detail?.kind === 'day' ? detail.rows : ['month', 'bikerAverage'].includes(detail?.kind) ? ops?.rows
-    : detail?.kind === 'yesterday' ? ops?.yesterdayRows : detail?.kind === 'workers' ? workers.bikers.filter(isOverviewWorkingBiker) : [];
+    : detail?.kind === 'yesterday' ? ops?.yesterdayRows : detail?.kind === 'workers' ? ops?.workingIds.map(id => workers.bikers.find(biker => biker.id === id)
+      || { id, name: ops.rows.find(row => row.bikerId === id)?.bikerName || '—' }) : [];
   const isWashDetail = ['day', 'month', 'yesterday', 'bikerAverage'].includes(detail?.kind);
   return <>
     <TopBar title={text('نظرة عامة', 'Overview')} subtitle={text('صورة المشروع: المال، التشغيل والجودة', 'Your business at a glance: finance, operations and quality')}
@@ -91,32 +93,35 @@ export function ManagementOverview({ onNavigate }) {
           {!st && <p>{finance.loading ? text('جارٍ تحميل القائمة والرواتب…', 'Loading statement and payroll…') : text('تعذّر تأكيد الأرقام المالية؛ أعد المحاولة أو راجع قائمة الدخل.', 'Financial figures could not be confirmed. Retry or review the income statement.')}</p>}
           {st?.issues?.length > 0 && <p role="alert">{text('تنبيه: الأرقام تستبعد سجلات ببيانات ضريبية غير محسومة؛ افتح التفاصيل قبل الاعتماد عليها.', 'Warning: figures exclude records with unresolved tax data. Open the details before relying on them.')}</p>}
           {finance.error && <button type="button" className="sw-overview__link" onClick={data.retry}>{text('إعادة المحاولة', 'Retry')}</button>}</div>}
+        <OverviewBusinessInsights data={data} periodKey={periodKey} washReady={washReady} language={language} onNavigate={onNavigate} />
       </section>
 
       <section aria-labelledby="overview-operations-title" className="sw-overview__section">
         <SectionHeader title={<span id="overview-operations-title">{text('حركة التشغيل', 'Operations')}</span>} subtitle={text('الغسلات المكتملة المسجلة، وليست الحجوزات الخام أو إثبات اكتمال الاستيراد.', 'Recorded completed washes, not raw bookings or proof of import completeness.')} action={action('فتح الغسلات', 'Open washes', 'washes')} />
         <div className="sw-overview__metric-grid sw-overview__operations-grid">
           <Metric icon={CalendarDays} label={text('غسلات أمس', 'Yesterday’s washes')} value={washReady ? number(ops.yesterdayQuantity) : unavailable}
-            note={ops ? date(ops.yesterday) : ''} disabled={!washReady} onClick={() => setDetail({ kind: 'yesterday', title: text('غسلات أمس', 'Yesterday’s washes') })} />
+            note={ops?.yesterdayInPeriod ? date(ops.yesterday) : text('أمس خارج الشهر المختار', 'Yesterday is outside the selected month')} disabled={!washReady || !ops?.yesterdayInPeriod} onClick={() => setDetail({ kind: 'yesterday', title: text('غسلات أمس', 'Yesterday’s washes') })} />
           <Metric icon={CheckCircle2} label={text('غسلات الشهر', 'Monthly washes')} value={washReady ? number(ops.quantity) : unavailable} disabled={!washReady}
             note={ops ? `${date(ops.from)} — ${date(ops.to)}` : ''} onClick={() => setDetail({ kind: 'month', title: text('غسلات الشهر', 'Monthly washes') })}
-            comparison={washReady ? `${text('الفترة المقارنة', 'Comparison window')}: ${date(ops.previousFrom)} — ${date(ops.previousTo)} · ${number(ops.previousQuantity)}` : null} />
+            comparison={washReady ? ops.hasPreviousData ? `${text('الفترة المقارنة', 'Comparison window')}: ${date(ops.previousFrom)} — ${date(ops.previousTo)} · ${number(ops.previousQuantity)}` : text('الفترة المقارنة: لا توجد بيانات', 'Comparison window: no data') : null} />
           <Metric icon={Activity} label={text('المتوسط', 'Average')} value={washReady ? number(ops.average) : unavailable} disabled={!washReady}
-            note={text('غسلة لكل يوم فيه غسلات فعلًا', 'Washes per day with recorded washes')} onClick={() => setDetail({ kind: 'month', title: text('المتوسط وأيام الغسيل', 'Average and wash days') })} />
+            note={text('غسلة لكل يوم مكتمل فيه غسلات فعلًا؛ اليوم مستبعد', 'Washes per completed day with recorded washes; today excluded')} onClick={() => setDetail({ kind: 'month', title: text('المتوسط وأيام الغسيل', 'Average and wash days') })} />
           <Metric icon={Bike} label={text('متوسط غسلات البايكر', 'Average washes per biker')} value={washReady ? number(ops.averagePerBikerDay) : unavailable}
             disabled={!washReady || ops?.averagePerBikerDay == null}
-            note={ops?.unlinkedBikerWashes ? text('توجد غسلات بلا ربط عامل مؤكّد', 'Some washes lack a confirmed worker link') : text('يوميًا · على أيام الغسيل الفعلية لكل بايكر', 'Daily · based on each biker’s actual wash days')}
+            note={ops?.unlinkedBikerWashes ? text('توجد غسلات بلا ربط عامل مؤكّد', 'Some washes lack a confirmed worker link') : text('على أيام الغسيل المكتملة لكل بايكر؛ اليوم مستبعد', 'Per biker’s completed wash days; today excluded')}
             onClick={() => setDetail({ kind: 'bikerAverage', title: text('متوسط غسلات البايكر', 'Average washes per biker') })} />
-          <Metric icon={Bike} label={text('البايكر العاملون', 'Working bikers')} value={workerReady ? number(ops?.working) : unavailable} disabled={!workerReady}
-            note={text('الحالة الحالية المسجلة، وليس حضور الشهر', 'Current recorded status, not monthly attendance')} onClick={() => setDetail({ kind: 'workers', title: text('البايكر العاملون حاليًا', 'Currently working bikers') })} />
+          <Metric icon={Bike} label={text('البايكر العاملون', 'Working bikers')} value={washReady && !ops?.unlinkedBikerWashes ? number(ops?.working) : unavailable} disabled={!workerReady || !washReady}
+            note={ops?.unlinkedBikerWashes ? text(`يوجد ${ops.working} مرتبطون مؤكدون، لكن غسلات أخرى بلا هوية عامل؛ لا يمكن تأكيد العدد الكلي`, `${ops.working} confirmed linked bikers, but other washes lack worker identity; the full count is unconfirmed`) : text('بايكرز مرتبطون بغسلات فعلية في الشهر المختار', 'Bikers linked to actual washes in the selected month')} onClick={() => setDetail({ kind: 'workers', title: text('البايكر العاملون في الفترة', 'Working bikers in this period') })} />
         </div>
         {(washes.error || ops?.conflicts.length > 0) && <p role="alert" className="sw-overview__notice">{text('تعذّر تأكيد إجمالي الغسلات؛ راجع المصدر أو تعارض التكرار.', 'Wash totals are unconfirmed. Review source availability or conflicting duplicates.')}</p>}
         <Card className="sw-overview__panel sw-overview__daily"><SectionHeader title={text('الغسلات يومًا بيوم', 'Daily washes')} subtitle={text('اضغط على اليوم لعرض الغسلات المسجلة فيه.', 'Select a day to view its recorded washes.')} />
           {washReady ? <><div className="sw-overview__bars" role="group" aria-label={text('رسم الغسلات اليومية', 'Daily washes chart')}>
-            {ops.daily.map(day => <button type="button" key={day.date} aria-label={`${date(day.date)}: ${number(day.quantity)} ${text('غسلة', 'washes')}`}
+            {ops.daily.map(day => <button type="button" key={day.date} className={day.incomplete ? 'sw-overview__day-incomplete' : undefined}
+              title={day.incomplete ? text('لم يكتمل؛ مستبعد من المتوسطات', 'Incomplete; excluded from averages') : date(day.date)}
+              aria-label={`${date(day.date)}: ${number(day.quantity)} ${text('غسلة', 'washes')}${day.incomplete ? text(' — لم يكتمل', ' — incomplete') : ''}`}
               onClick={() => setDetail({ kind: 'day', title: date(day.date), rows: day.rows })}>
-              <span className="sw-overview__bar-count">{number(day.quantity)}</span><span className="sw-overview__bar-track"><span style={{ height: `${day.quantity / Math.max(1, ...ops.daily.map(d => d.quantity)) * 100}%` }} /></span><time dateTime={day.date}>{Number(day.date.slice(8))}</time></button>)}
-          </div><details className="sw-overview__disclosure"><summary>{text('عرض البيانات كجدول', 'View data as a table')}</summary><table><thead><tr><th>{text('التاريخ', 'Date')}</th><th>{text('الغسلات', 'Washes')}</th></tr></thead><tbody>{ops.daily.map(day => <tr key={day.date}><td>{date(day.date)}</td><td>{number(day.quantity)}</td></tr>)}</tbody></table></details></>
+              <span className="sw-overview__bar-count">{number(day.quantity)}</span><span className="sw-overview__bar-track"><span style={{ height: `${day.quantity / Math.max(1, ...ops.daily.map(d => d.quantity)) * 100}%` }} /></span><time dateTime={day.date}>{Number(day.date.slice(8))}</time>{day.incomplete && <small>{text('لم يكتمل', 'Incomplete')}</small>}</button>)}
+          </div><details className="sw-overview__disclosure"><summary>{text('عرض البيانات كجدول', 'View data as a table')}</summary><table><thead><tr><th>{text('التاريخ', 'Date')}</th><th>{text('الغسلات', 'Washes')}</th></tr></thead><tbody>{ops.daily.map(day => <tr key={day.date}><td>{date(day.date)}{day.incomplete && ` · ${text('لم يكتمل', 'Incomplete')}`}</td><td>{number(day.quantity)}</td></tr>)}</tbody></table></details></>
             : <p role="status">{washes.loading ? text('جارٍ تحميل الغسلات…', 'Loading washes…') : unavailable}</p>}
         </Card>
       </section>
@@ -124,10 +129,11 @@ export function ManagementOverview({ onNavigate }) {
       <OverviewBikerQuality workers={workers} periodKey={periodKey} today={today} onNavigate={onNavigate} />
 
       <Card className="sw-overview__panel"><SectionHeader title={text('يحتاج انتباهك', 'Needs your attention')} subtitle={text('ملاحظات من المصادر المقروءة فقط، لا قائمة شاملة بكل التزامات المشروع.', 'Findings from the read sources only, not a complete list of business obligations.')} />
+        <OverviewOperationalAttention data={data} periodKey={periodKey} today={today} washReady={washReady} workerReady={workerReady} language={language} onNavigate={onNavigate} />
         <div className="sw-overview__attention">
           <div><h3>{text('المصاريف والبيانات', 'Expenses and data')}</h3>
             {!st ? <p>{text('الأرقام المالية غير مؤكدة بعد.', 'Financial figures are not yet confirmed.')}</p> : <>
-              <p>{text('سندات مصروف غير مدفوعة ومستحقة في الشهر', 'Unpaid expense vouchers due in this month')}: <strong>{number(data.dueVouchers.length)}</strong></p>
+              {data.dueVouchers.length > 0 && <p>{text('سندات مصروف غير مدفوعة ومستحقة في الشهر', 'Unpaid expense vouchers due in this month')}: <strong>{number(data.dueVouchers.length)}</strong></p>}
               {st.issues?.length > 0 && <p role="alert">{text('سجلات مستبعدة من القائمة لبيانات ضريبية غير محسومة', 'Records excluded from the statement due to unresolved tax data')}: <strong>{number(st.issues.length)}</strong></p>}
             </>}
             {workerReady && ops?.unspecified > 0 && <p>{text('بايكر بدون حالة مسجلة', 'Bikers without a recorded status')}: <strong>{number(ops.unspecified)}</strong></p>}
@@ -152,8 +158,8 @@ export function ManagementOverview({ onNavigate }) {
     {detail && detail.kind !== 'financial' && <ModalSurface onClose={() => setDetail(null)}><section className="sw-overview-detail" dir={language === 'en' ? 'ltr' : 'rtl'}>
       <header><h2>{detail.title}</h2><button type="button" aria-label={text('إغلاق التفاصيل', 'Close details')} onClick={() => setDetail(null)}><X size={20} /></button></header>
       <p><bdi dir="ltr">{detail.kind === 'yesterday' ? ops?.yesterday : periodKey}</bdi> · {text('سجلات مقروءة فقط', 'Read records only')}</p>
-      {detail.kind === 'month' && <p>{text('المتوسط = الغسلات ÷ الأيام التي فيها غسلات', 'Average = washes ÷ days with washes')}: <bdi dir="ltr">{number(ops.quantity)} ÷ {number(ops.washDays)} = {number(ops.average)}</bdi></p>}
-      {detail.kind === 'bikerAverage' && <p>{text('المتوسط اليومي للبايكر = الغسلات ÷ مجموع أيام الغسيل لكل بايكر', 'Daily biker average = washes ÷ the sum of each biker’s wash days')}: <bdi dir="ltr">{number(ops.quantity)} ÷ {number(ops.bikerWashDays)} = {number(ops.averagePerBikerDay)}</bdi></p>}
+      {detail.kind === 'month' && <p>{text('المتوسط = غسلات الأيام المكتملة ÷ الأيام المكتملة التي فيها غسلات؛ اليوم الجاري مستبعد', 'Average = completed-day washes ÷ completed days with washes; today excluded')}: <bdi dir="ltr">{number(ops.completedQuantity)} ÷ {number(ops.washDays)} = {number(ops.average)}</bdi></p>}
+      {detail.kind === 'bikerAverage' && <p>{text('المتوسط اليومي للبايكر = غسلات الأيام المكتملة ÷ مجموع أيام الغسيل المكتملة لكل بايكر', 'Daily biker average = completed-day washes ÷ each biker’s completed wash days')}: <bdi dir="ltr">{number(ops.completedQuantity)} ÷ {number(ops.bikerWashDays)} = {number(ops.averagePerBikerDay)}</bdi></p>}
       {!detailRows?.length ? <p>{text('لا توجد سجلات ضمن النطاق المقروء.', 'No records in the read scope.')}</p> : <ul>{detailRows.map((row, index) => <li key={row.id || row.sspBookingId || index}>
         {isWashDetail ? <><bdi>{row.sspBookingId || row.id}</bdi><span><bdi>{recordedBikerSweaterId(row, workers.bikers) || '—'}</bdi> · <span translate="no">{displayRecordedBikerName(row, workers.bikers, language)}</span></span><span>{date(row.washDate)} · {number(row.quantity)} {text('غسلة', 'washes')}</span></>
           : detail.kind === 'workers' ? <><bdi>{row.driverExternalId || '—'}</bdi><span translate="no">{displayBikerName(row, language)}</span></>

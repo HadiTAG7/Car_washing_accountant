@@ -10,6 +10,7 @@ import { liveIncomeStatement } from '../lib/accounting/liveIncomeStatement';
 import { taxPolicyAt } from '../lib/accounting/taxPolicy';
 import { overviewOperations, overviewWindow } from '../lib/overviewDashboard';
 import { monthsBetween } from '../lib/accounting/incomeStatementScope';
+import { useSweaterAdjustments } from './useSweater';
 
 /**
  * The months this page needs: the statement for the month (and the previous
@@ -32,11 +33,18 @@ export function useOverviewDashboard(periodKey, today) {
   const ledger = useLedger({ liveSources: live });
   const fees = useFeeRules();
   const tax = useAccountingSettings();
+  // The only additional collection read: month-scoped adjustments. Bookings,
+  // settlements, workers and washes reuse the statement's live snapshots.
+  const adjustments = useSweaterAdjustments(periodKey);
   const { sources, entries, lines } = live;
   // The overview already has live washes and workers for its statement.
   // Reuse those snapshots, retaining each source's loading/error state, so a
   // failed salary query cannot hide otherwise verified operational results.
-  const washes = { items: useMemo(() => sortBy(sources.washes, [{ key: 'wash_date', dir: 'desc' }]).map(mapWash), [sources.washes]),
+  const washes = { items: useMemo(() => sortBy(sources.washes, [{ key: 'wash_date', dir: 'desc' }]).map(row => ({ ...mapWash(row),
+    // Do not let the legacy form mapper default a missing status/quantity
+    // into a completed wash. These overrides are overview-only.
+    status: row.status, quantity: Math.max(0, Number(row.quantity) || 0),
+  })), [sources.washes]),
     ...(live.sourceStatus?.washes || { loading: live.loading, error: live.error }), refetch: live.refetch };
   const workers = { bikers: useMemo(() => sortBy(sources.bikers || [], [{ key: 'name' }]).map(mapBiker), [sources.bikers]),
     ...(live.sourceStatus?.bikers || { loading: live.loading, error: live.error }), refetch: live.refetch };
@@ -58,7 +66,7 @@ export function useOverviewDashboard(periodKey, today) {
       const statement = calculate(periodKey);
       let previous = null;
       if (window.completeMonth && payroll.data.some(p => p.periodKey === window.previousKey && !p.unavailable)) {
-        try { previous = calculate(window.previousKey); } catch { /* Historical gap must not hide this month. */ }
+        try { const candidate = calculate(window.previousKey); previous = candidate.hasActivity ? candidate : null; } catch { /* Historical gap must not hide this month. */ }
       }
       return { statement, previous };
     } catch (error) { return { statement: null, previous: null, error }; }
@@ -68,5 +76,8 @@ export function useOverviewDashboard(periodKey, today) {
   const dueVouchers = sources.vouchers.filter(v => v.status === 'unpaid' && String(v.dueDate || '').slice(0, 7) === periodKey && v.dueDate <= today);
   return { finance: { ...finance, loading }, operations, dueVouchers,
     washes, workers,
-    retry: () => { live.refetch(); ledger.refetch(); fees.refetch(); tax.refetch(); payroll.refetch(); } };
+    bookings: { items: sources.bookings || [], ...(live.sourceStatus?.bookings || { loading: live.loading, error: live.error }) },
+    settlements: { items: sources.settlements || [], ...(live.sourceStatus?.settlements || { loading: live.loading, error: live.error }) },
+    adjustments: { items: adjustments.adjustments, loading: adjustments.loading, error: adjustments.error },
+    retry: () => { live.refetch(); ledger.refetch(); fees.refetch(); tax.refetch(); payroll.refetch(); adjustments.refetch(); } };
 }

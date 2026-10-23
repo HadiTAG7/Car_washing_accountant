@@ -76,7 +76,6 @@ export async function saveSellerProfile(profile, { userId = null } = {}) {
       name: String(profile.name || '').trim(),
       vatNumber: String(profile.vatNumber || '').trim(),
       address: String(profile.address || '').trim(),
-      vatRegistered: Boolean(profile.vatRegistered),
     },
     updatedAt: serverTimestamp(),
     updatedBy: userId,

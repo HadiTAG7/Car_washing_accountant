@@ -37,6 +37,7 @@ import {
   issueDocument, voidDocument, correctLinkedInvoice, InvoicingError,
 } from './invoicing.js';
 import { runLegacyInvoiceLinks } from './legacyLinks.js';
+import { closeReadiness } from './periodReadiness.js';
 import {
   setTaxPolicy, seedTaxPolicy, setAccountingPreferences,
 } from './accountingSettings.js';
@@ -342,7 +343,13 @@ export const HANDLERS = {
   // ── الفترات ──
   ledgerClosePeriod: {
     guard: 'accountant',
-    run: ({ db, FieldValue, data, uid }) => closePeriod(db, FieldValue, data?.periodKey, { userId: uid }),
+    run: ({ db, FieldValue, data, uid }) => closePeriod(db, FieldValue, data?.periodKey, {
+      userId: uid, overrideReason: data?.overrideReason,
+    }),
+  },
+  ledgerCloseReadiness: {
+    guard: 'accountant',
+    run: ({ db, data }) => closeReadiness(db, data || {}),
   },
 
   // Re-opening a filed month is the one action that changes what a filed

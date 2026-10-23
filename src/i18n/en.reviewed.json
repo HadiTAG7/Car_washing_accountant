@@ -3140,5 +3140,7 @@
   "إهلاك": "Depreciation",
   "مجمع [VAR0] — [VAR1]": "Accumulated [VAR0] — [VAR1]",
   "مجمع": "Accumulated",
-  "الترحيل متوقف: تكلفة سجل الأصول لا تطابق رصيد 1500 في الدفتر.": "Posting is blocked: asset register cost does not match ledger account 1500."
+  "الترحيل متوقف: تكلفة سجل الأصول لا تطابق رصيد 1500 في الدفتر.": "Posting is blocked: asset register cost does not match ledger account 1500.",
+  "تفاصيل الخصومات والإضافات": "Deduction and addition details",
+  "الحساب المحفوظ لم يحتسب خدمات بسبب حجوزات تحتاج مراجعة؛ لا يعني أن المستحق صفر.": "The saved calculation excluded services requiring review; this does not establish a zero amount due."
 }

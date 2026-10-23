@@ -3,6 +3,7 @@ import { Activity, ArrowUpRight, Bike, CalendarDays, CheckCircle2, DatabaseBacku
 import { useLanguage } from '../i18n/useLanguage';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 import { useOverviewDashboard } from '../hooks/useOverviewDashboard';
+import { useOverviewRefresh } from '../hooks/useOverviewRefresh';
 import { riyadhToday } from '../lib/bikerProfile';
 import { displayBikerName, displayRecordedBikerName, recordedBikerSweaterId } from '../lib/bikerNames';
 import { formatCurrencyPrecise, formatNumber } from '../data/initialData';
@@ -45,6 +46,7 @@ export function ManagementOverview({ onNavigate }) {
   const [capitalOpen, setCapitalOpen] = useState(false);
   const [toast, setToast] = useState({ open: false, message: '', tone: 'success' });
   const data = useOverviewDashboard(periodKey, today);
+  useOverviewRefresh(periodKey, isFirebaseConfigured);
   const { finance, operations: ops, washes, workers } = data;
   const st = finance.statement;
   const washReady = !washes.loading && !washes.error && ops && !ops.conflicts.length && isFirebaseConfigured;

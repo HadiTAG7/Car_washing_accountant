@@ -59,12 +59,15 @@ export function overviewSettlements({ adjustments = [], settlements = [], period
   const settlement = matches.length === 1 ? matches[0] : null;
   const expected = number(settlement?.figures?.netDue);
   const collected = number(settlement?.collectedTotal);
+  // Display-only: an unresolved calculation is not an evidenced zero payment.
+  const unresolvedZero = expected === 0 && number(settlement?.figures?.counts?.eligible) === 0
+    && (Number(settlement?.figures?.counts?.needsReview) > 0 || Number(settlement?.figures?.counts?.unknownStatus) > 0);
   return { deductions, deductionRecordCount: deductionRecords.length,
     deductionTotal: malformed || !deductions.length ? null : money(deductions.reduce((sum, row) => sum + Number(row.amount), 0)),
     pending, pendingTotal: malformed ? null : money(pending.reduce((sum, row) => sum + Number(row.amount), 0)), malformed,
     violations: selected.filter(row => row.kind === 'deduction' && ['operational_or_traffic_violation', 'proven_damage', 'customer_compensation'].includes(row.typeKey)
       && !['rejected', 'cancelled', 'reversed'].includes(row.approvalStatus)),
-    settlement, expected, collected, remaining: expected !== null && collected !== null ? money(Math.max(0, expected - collected)) : null,
+    settlement, expected, unresolvedZero, collected, remaining: expected !== null && collected !== null ? money(Math.max(0, expected - collected)) : null,
     ambiguous: matches.length > 1 };
 }
 

@@ -72,12 +72,12 @@ it.each(['ar', 'en'])('keeps separate source times after partial snapshots and d
   const tips = card(language === 'ar' ? 'البقشيش' : 'Tips');
   const deductions = card(language === 'ar' ? 'الخصومات والتعويضات' : 'Deductions and compensation');
   const washes = region(language === 'ar' ? 'مطابقة الغسلات مع سويتر' : 'Sweater wash reconciliation');
-  for (const box of [tips, washes]) {
-    expect(box.textContent).toMatch(/9:00|09:00/);
-    expect(box.textContent).not.toContain('10:00');
-  }
-  expect(deductions.textContent).toContain('10:00');
-  expect(deductions.textContent).not.toMatch(/9:00|09:00/);
+  expect(tips.querySelector('h3').title).toMatch(/9:00|09:00/);
+  expect(tips.querySelector('h3').title).not.toContain('10:00');
+  expect(washes.textContent).toMatch(/9:00|09:00/);
+  expect(washes.textContent).not.toContain('10:00');
+  expect(deductions.querySelector('h3').title).toContain('10:00');
+  expect(deductions.querySelector('h3').title).not.toMatch(/9:00|09:00/);
   expect(deductions.querySelector('strong').textContent).toContain('530.00');
   expect(tips.querySelector('strong').textContent).toContain('68.00');
   expect(washes.querySelector('strong').textContent).toBe('480');
@@ -89,10 +89,11 @@ it('dates each compensation item when that group contains readings taken at diff
     { ...october, extractedAtIso: '2026-10-23T07:00:00Z', metrics: { violations: 535 } },
   ], '2026-10'), loading: false, error: null };
   render(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language="en" />);
+  fireEvent.click(within(card('Deductions and compensation')).getByText('Deduction and addition details'));
   const items = within(card('Deductions and compensation')).getAllByRole('listitem');
   expect(items.find(item => item.textContent.includes('Violations')).textContent).toContain('10:00');
   expect(items.find(item => item.textContent.includes('Damages')).textContent).toContain('08:00');
-  expect(card('Deductions and compensation').textContent).toContain('each item retains its time');
+  expect(card('Deductions and compensation').querySelector('h3').title).toContain('each item retains its time');
 });
 it('fills Sweater’s count, tips and itemized deductions from the latest reading, each with its time', () => {
   const d = data(); d.sweaterMetrics = { snapshot: october, loading: false, error: null }; const navigate = vi.fn();
@@ -103,19 +104,25 @@ it('fills Sweater’s count, tips and itemized deductions from the latest readin
   expect(screen.getByRole('status').textContent).toContain('+479'); expect(screen.getByRole('status').className).toContain('warning');
   expect(count.textContent).toContain('آخر تحديث من سويتر'); expect(screen.queryByRole('textbox')).toBeNull();
   const tips = card('البقشيش');
-  expect(tips.querySelector('strong').textContent).toContain('68.00'); expect(tips.textContent).toContain('منفصل عن الإيراد');
-  expect(tips.textContent).toContain('آخر تحديث من سويتر');
+  expect(tips.querySelector('strong').textContent).toContain('68.00'); expect(tips.textContent).not.toContain('منفصل عن الإيراد');
+  expect(tips.querySelector('h3').title).toContain('آخر تحديث من سويتر');
   const deductions = card('الخصومات والتعويضات');
   expect(deductions.querySelector('strong').textContent).toContain('530.00');
+  const disclosure = deductions.querySelector('details');
+  expect(disclosure.open).toBe(false);
+  fireEvent.click(within(deductions).getByText('تفاصيل الخصومات والإضافات'));
+  expect(disclosure.open).toBe(true);
   const [taken, added] = within(deductions).getAllByRole('list');
   expect([...taken.querySelectorAll('li')].map(li => li.textContent.replace(/\s+/g, ' ').replace(/[\u200e\u200f]/g, '')))
     .toEqual(['المخالفات530.00 ر.س', 'الأضرار0.00 ر.س', 'التعويضات0.00 ر.س', 'غسلات مجانية تعويض8', 'إلغاء من البايكر13', 'إلغاء بسبب الصيانة4']);
   expect(added.textContent).toBe('إلغاء من العميل10');
   expect(deductions.textContent).toContain('المعتمد في الدفتر: غير مسجلة');
   fireEvent.click(within(deductions).getByRole('button', { name: 'تفاصيل تسويات سويتر' })); expect(navigate).toHaveBeenCalledWith('sweater_settlements');
-  // The workbench is a document review, not a balance: its box is gone, its link stays.
+  fireEvent.click(within(deductions).getByText('تفاصيل الخصومات والإضافات'));
+  expect(disclosure.open).toBe(false);
   expect(screen.queryByRole('heading', { name: 'رصيد صندوق العمل المالي' })).toBeNull();
-  fireEvent.click(within(card('الفلوس والمواعيد')).getByRole('button', { name: 'فتح صندوق العمل المالي' })); expect(navigate).toHaveBeenCalledWith('finance_workbench');
+  expect(screen.queryByRole('heading', { name: 'الفلوس والمواعيد' })).toBeNull();
+  expect(deductions.textContent).not.toContain('من لوحة Compensations');
 });
 it('without Sweater data says so instead of zero, item by item', () => {
   const d = data(); d.sweaterMetrics = { snapshot: null, loading: false, error: null };
@@ -126,20 +133,36 @@ it('without Sweater data says so instead of zero, item by item', () => {
   d.sweaterMetrics = { snapshot: { ...october, metrics: { completedWashes: 480 } }, loading: false, error: null };
   rerender(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language="ar" />);
   expect(card('البقشيش').querySelector('strong').textContent).toBe('ما وصلت بيانات سويتر');
+  fireEvent.click(within(card('الخصومات والتعويضات')).getByText('تفاصيل الخصومات والإضافات'));
   expect(within(card('الخصومات والتعويضات')).getAllByRole('listitem').every(li => li.textContent.includes('ما وصلت بيانات سويتر'))).toBe(true);
   expect(card('الخصومات والتعويضات').textContent).not.toContain('0.00');
   d.sweaterMetrics = { snapshot: null, loading: false, error: new Error('denied') };
   rerender(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language="ar" />);
   expect(card('البقشيش').querySelector('strong').textContent).toBe('تعذّرت قراءة أرقام سويتر');
 });
-it('shows missing fields honestly, separates tips and marks estimated payroll', () => {
+it('removes the selected explanations without changing the displayed calculations', () => {
   render(<OverviewBusinessInsights data={data()} periodKey="2026-10" washReady language="ar" />);
   expect(card('استغلال الطاقة').textContent).toContain('10%'); expect(card('البقشيش').textContent).toContain('ما وصلت بيانات سويتر');
-  expect(card('استغلال الطاقة').textContent).toContain('تقريبي · على أيام الغسيل، مو الحضور');
-  expect(card('تكلفة الغسلة').textContent).toContain('تقديري');
+  expect(card('استغلال الطاقة').textContent).not.toContain('تقريبي · على أيام الغسيل، مو الحضور');
+  expect(card('تكلفة الغسلة').querySelector('small')).toBeNull();
+  expect(card('تكلفة الغسلة').textContent).not.toContain('تقديري');
+  expect(card('توقع نهاية الشهر').querySelector('small')).toBeNull();
+  expect(card('توقع نهاية الشهر').textContent).not.toContain('الأيام غير المكتملة المتبقية');
+  expect(screen.queryByRole('heading', { name: 'الفلوس والمواعيد' })).toBeNull();
   expect(card('الدفعة المتوقعة من سويتر').textContent).toContain('لم تُسجّل تسوية');
   expect(card('الخصومات والتعويضات').textContent).toContain('غير مسجلة');
   expect(card('الخصومات والتعويضات').textContent).not.toContain('0.00');
+});
+it.each(['ar', 'en'])('does not present an unresolved saved settlement as a confirmed zero payment (%s)', language => {
+  const d = data(); const row = { id: 's', periodKey: '2026-10', status: 'calculated', figures: { netDue: 0, counts: { eligible: 0, needsReview: 2, unknownStatus: 1 } } };
+  d.settlements.items = [row];
+  const { rerender } = render(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language={language} />);
+  const box = card(language === 'ar' ? 'الدفعة المتوقعة من سويتر' : 'Expected Sweater payment');
+  expect(box.querySelector('strong').textContent).toBe(language === 'ar' ? 'تحتاج مراجعة' : 'Needs review');
+  expect(row.figures.netDue).toBe(0); // No recalculation or saved-record mutation.
+  d.settlements.items = [{ ...row, figures: { netDue: 0, counts: { eligible: 1, needsReview: 0, unknownStatus: 0 } } }];
+  rerender(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language={language} />);
+  expect(box.querySelector('strong').textContent).toContain('0.00');
 });
 it('distinguishes no records, explicit approved zero, pending deductions and credit-only records', () => {
   const d = data();

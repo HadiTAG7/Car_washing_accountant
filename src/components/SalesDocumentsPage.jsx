@@ -33,7 +33,7 @@ import {
 import { integrationSummary } from '../lib/accounting/zatcaIntegration';
 import { isFirebaseConfigured, missingEnvNames, describeBackendError } from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
-import { sellerIssuanceProblems, invoiceCustomerProblems, standaloneBuyerProblems } from '../../functions/src/invoiceReadiness.js';
+import { sellerIssuanceProblems, invoiceCustomerProblems, standaloneBuyerProblems, sellerRegistration } from '../../functions/src/invoiceReadiness.js';
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 const nowTime  = () => new Date().toTimeString().slice(0, 8);
@@ -60,7 +60,7 @@ const TYPE_TONE = {
 export default function SalesDocumentsPage() {
   const { bikers } = useBikers();
   const { language } = useLanguage();
-  const { documents, seller, totals, gaps, integrityProblems, loading, error, refetch } = useSalesDocuments();
+  const { documents, seller: storedSeller, totals, gaps, integrityProblems, loading, error, refetch } = useSalesDocuments();
   const { user } = useAuth();
   const { canMutate } = usePartnerView();
   const { items: washes, refetch: refetchWashes } = useWashes();
@@ -110,7 +110,8 @@ export default function SalesDocumentsPage() {
   // The seller card edits a local copy so a half-typed VAT number is never saved.
   const { policyAt, loading: policyLoading, error: policyError, baselineFrom, policyConfigured } = useAccountingSettings();
   const ledgerPolicy = policyAt(form.issueDate);
-  const registrationConflict = !policyLoading && !policyError && policyConfigured && ledgerPolicy.known && seller && Boolean(seller.vatRegistered) !== Boolean(ledgerPolicy.vatRegistered);
+  const seller = storedSeller ? sellerRegistration(storedSeller, ledgerPolicy) : null;
+  const registrationConflict = !policyLoading && !policyError && policyConfigured && ledgerPolicy.known && seller && Boolean(seller.legacyVatRegistered) !== Boolean(ledgerPolicy.vatRegistered);
   const sellerDraft = profile ?? seller ?? { name: '', vatNumber: '', address: '', vatRegistered: false };
   const patchSeller = (patch) => setProfile({ ...sellerDraft, ...patch });
   const sellerProblems = sellerIssuanceProblems(seller, ledgerPolicy, {
@@ -363,15 +364,14 @@ export default function SalesDocumentsPage() {
             </div>
             <div className="flex items-end">
               <label className="flex items-center gap-2.5 min-h-touch cursor-pointer select-none">
-                <input type="checkbox" checked={Boolean(sellerDraft.vatRegistered)} disabled={!canMutate}
-                  onChange={(e) => patchSeller({ vatRegistered: e.target.checked })}
+                <input type="checkbox" checked={Boolean(ledgerPolicy.known && ledgerPolicy.vatRegistered)} disabled
                   className="w-4 h-4 accent-primary-600" />
                 <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">مسجّلة في ضريبة القيمة المضافة</span>
               </label>
             </div>
           </div>
-          <p className="text-xs text-slate-600 dark:text-slate-300">هذا إعداد ملف البائع للمستندات الجديدة. سياسة الدفتر المحاسبي مؤرخة وتُراجع في إقفال الفترات{baselineFrom ? `؛ بداية سجلها ${baselineFrom}` : ''}.</p>
-          {registrationConflict && <p role="alert" className="p-3 rounded-control bg-amber-50 text-amber-900 dark:bg-amber-950 dark:text-amber-200">تعارض إعدادات التسجيل: ملف البائع {seller.vatRegistered ? 'مسجّل' : 'غير مسجّل'}، وسياسة الدفتر {ledgerPolicy.vatRegistered ? 'مسجّلة' : 'غير مسجّلة'}. سياسة الدفتر سارية من {ledgerPolicy.effectiveFrom}. راجع المصدرين وتاريخ السريان قبل إصدار مستند؛ لم تُعدّل أي قيمة تلقائيًا.</p>}
+          <p className="text-xs text-slate-600 dark:text-slate-300">التسجيل من سياسة الدفتر فقط؛ ملف البائع يحفظ الاسم والرقم الضريبي والعنوان. تعارض التسجيل القديم يبقى حتى تأكيد هادي{baselineFrom ? `؛ بداية سجلها ${baselineFrom}` : ''}.</p>
+          {registrationConflict && <p role="alert" className="p-3 rounded-control bg-amber-50 text-amber-900 dark:bg-amber-950 dark:text-amber-200">تعارض إعدادات التسجيل: ملف البائع {seller.legacyVatRegistered ? 'مسجّل' : 'غير مسجّل'}، وسياسة الدفتر {ledgerPolicy.vatRegistered ? 'مسجّلة' : 'غير مسجّلة'}. سياسة الدفتر سارية من {ledgerPolicy.effectiveFrom}. راجع المصدرين وتاريخ السريان قبل إصدار مستند؛ لم تُعدّل أي قيمة تلقائيًا.</p>}
           {!seller?.vatRegistered && (
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-3 leading-relaxed">
               إصدار الفواتير متوقف حتى تأكيد التسجيل واستكمال بيانات المنشأة وحل تعارض السياسة. لم تُعبّأ أي قيمة تلقائيًا.

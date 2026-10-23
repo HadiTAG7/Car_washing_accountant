@@ -181,10 +181,12 @@ export async function reverseEntry(entryId, { entryDate, description } = {}) {
  * the UI's check could be seconds stale, and a close is the one action that
  * must not race an in-flight posting.
  */
-export async function closePeriod(periodKey) {
+export async function closePeriod(periodKey, { overrideReason = '' } = {}) {
   requireDb();
-  return call('ledgerClosePeriod', { periodKey });
+  return call('ledgerClosePeriod', { periodKey, overrideReason });
 }
+
+export const fetchCloseReadiness = () => call('ledgerCloseReadiness', {});
 
 /**
  * Re-opens a closed month. Admin-only and the reason is mandatory, both

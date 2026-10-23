@@ -2,6 +2,11 @@
 export const SWEATER_BUYER_NAME = 'شركة اللمسة العصرية التقنية';
 export const INVOICE_KINDS = ['standard', 'simplified'];
 const text = value => String(value ?? '').trim();
+// Keep the legacy flag as conflict evidence, never a second editable source.
+export function sellerRegistration(profile, policy) {
+  return { ...profile, legacyVatRegistered: profile?.legacyVatRegistered ?? profile?.vatRegistered,
+    vatRegistered: policy?.known ? Boolean(policy.vatRegistered) : null };
+}
 export const validVatNumber = value => /^3\d{13}3$/.test(text(value));
 
 export function sellerIssuanceProblems(seller, policy, { pending = false, error = false, configured = true } = {}) {
@@ -13,8 +18,9 @@ export function sellerIssuanceProblems(seller, policy, { pending = false, error 
   if (!text(seller?.address)) problems.push('عنوان المنشأة غير مكتمل.');
   if (seller?.vatRegistered !== true) problems.push('تأكيد تسجيل المنشأة في ضريبة القيمة المضافة مطلوب.');
   if (!configured || !policy?.known) problems.push('السياسة الضريبية المؤرخة غير متاحة لتاريخ الإصدار.');
-  if (policy?.known && typeof seller?.vatRegistered === 'boolean'
-    && seller.vatRegistered !== Boolean(policy.vatRegistered)) {
+  const legacy = seller?.legacyVatRegistered ?? seller?.vatRegistered;
+  if (policy?.known && typeof legacy === 'boolean'
+    && legacy !== Boolean(policy.vatRegistered)) {
     problems.push('يوجد تعارض بين تسجيل المنشأة وسياسة الدفتر؛ راجع المصدرين قبل الإصدار.');
   }
   return [...new Set(problems)];

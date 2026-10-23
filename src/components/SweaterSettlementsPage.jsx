@@ -9,6 +9,7 @@ import LoadingState from './LoadingState';
 import ErrorState from './ErrorState';
 import Toast from './Toast';
 import SweaterActionDialog from './SweaterActionDialog';
+import SettlementInvoicePanel from './SettlementInvoicePanel';
 import {
   useSweaterSettlements, useSweaterBookings, useSweaterAdjustments, useSweaterVariances,
   useSweaterMetrics, useSweaterFirstPeriod,
@@ -68,7 +69,10 @@ function StatusChip({ status, reviewCount = 0 }) {
 }
 
 export default function SweaterSettlementsPage() {
-  const [periodKey, setPeriodKey] = useState(currentPeriod());
+  const [periodKey, setPeriodKey] = useState(() => {
+    const requested = new URLSearchParams(window.location.search).get('period');
+    return /^\d{4}-(0[1-9]|1[0-2])$/.test(requested || '') ? requested : currentPeriod();
+  });
   const [filters, setFilters] = useState({ driver: '', region: '', serviceType: '' });
   const [busy, setBusy] = useState(null);
   // نوافذ داخلية بدل `prompt` — الأخيرة محجوبةٌ في المتصفح الآلي، ولا تتحقق
@@ -328,6 +332,8 @@ export default function SweaterSettlementsPage() {
             )}
 
             {/* ── المؤشرات التشغيلية ── */}
+            {canMutate && <SettlementInvoicePanel key={periodKey} settlement={settlement} periodKey={periodKey} busy={busy !== null}
+              onIssue={fn => guarded('invoice', async () => { const result = await fn(); await settlementsApi.refetch(); return result; })} />}
             <Card className="p-4 sm:p-6">
               <SectionHeader title="المؤشرات التشغيلية" subtitle="كل رقمٍ مبنيٌّ على صفوفٍ يمكن عدّها" />
               <div className="flex flex-wrap gap-2.5 mt-3 mb-4">

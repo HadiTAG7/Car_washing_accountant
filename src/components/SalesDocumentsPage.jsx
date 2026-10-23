@@ -33,6 +33,7 @@ import {
 import { integrationSummary } from '../lib/accounting/zatcaIntegration';
 import { isFirebaseConfigured, missingEnvNames, describeBackendError } from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
+import { sellerIssuanceProblems, invoiceCustomerProblems, standaloneBuyerProblems } from '../../functions/src/invoiceReadiness.js';
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 const nowTime  = () => new Date().toTimeString().slice(0, 8);
@@ -68,7 +69,7 @@ export default function SalesDocumentsPage() {
 
   const [busy, setBusy] = useState('');
   const [toast, setToast] = useState({ open: false, message: '', tone: 'success', duration: 3000 });
-  const [expanded, setExpanded] = useState(null);
+  const [expanded, setExpanded] = useState(() => new URLSearchParams(window.location.search).get('document'));
   const [voiding, setVoiding] = useState(null);
   const [correcting, setCorrecting] = useState(null);
   // The wash panel's own issue date — the paper's date, not the service's.
@@ -76,11 +77,9 @@ export default function SalesDocumentsPage() {
 
   const [profile, setProfile] = useState(null);
   const [form, setForm] = useState({
-    issueDate: todayIso(), customer: '', priceMode: 'inclusive',
-    // A standalone invoice CREATES the sale in the books, so the settlement is
-    // an answer the page has to collect. There is no honest default for "which
-    // drawer did this money go into", only a common one.
-    paymentMethod: 'cash', paymentStatus: 'paid',
+    issueDate: todayIso(), invoiceKind: 'standard', customer: '', customerAddress: '', customerVat: '', priceMode: 'inclusive',
+    // Never assume a collection or a cash drawer for a new sale.
+    paymentMethod: '', paymentStatus: 'unpaid',
     lines: [emptyLine()],
   });
 
@@ -110,15 +109,24 @@ export default function SalesDocumentsPage() {
 
   // The seller card edits a local copy so a half-typed VAT number is never saved.
   const { policyAt, loading: policyLoading, error: policyError, baselineFrom, policyConfigured } = useAccountingSettings();
-  const ledgerPolicy = policyAt(todayIso());
+  const ledgerPolicy = policyAt(form.issueDate);
   const registrationConflict = !policyLoading && !policyError && policyConfigured && ledgerPolicy.known && seller && Boolean(seller.vatRegistered) !== Boolean(ledgerPolicy.vatRegistered);
   const sellerDraft = profile ?? seller ?? { name: '', vatNumber: '', address: '', vatRegistered: false };
   const patchSeller = (patch) => setProfile({ ...sellerDraft, ...patch });
+  const sellerProblems = sellerIssuanceProblems(seller, ledgerPolicy, {
+    pending: loading || policyLoading, error: Boolean(error || policyError), configured: policyConfigured,
+  });
+  const customer = { name: form.customer.trim(), address: form.customerAddress.trim(), vatNumber: form.customerVat.trim() };
+  const issueProblems = [...sellerProblems,
+    ...(profile ? ['احفظ تعديلات بيانات المنشأة قبل الإصدار.'] : []),
+    ...invoiceCustomerProblems(form.invoiceKind, customer), ...standaloneBuyerProblems(customer),
+    ...(!form.paymentMethod ? ['اختر طريقة السداد؛ لا توجد طريقة افتراضية.'] : []),
+  ];
 
   const preview = useMemo(() => invoiceTotals(
     form.lines.filter((l) => Number(l.unitPrice) > 0),
-    { priceMode: form.priceMode, taxable: Boolean(seller?.vatRegistered) },
-  ), [form.lines, form.priceMode, seller]);
+    { priceMode: form.priceMode, taxable: Boolean(ledgerPolicy?.known && ledgerPolicy.vatRegistered), rate: ledgerPolicy?.vatRate },
+  ), [form.lines, form.priceMode, ledgerPolicy?.known, ledgerPolicy?.vatRegistered, ledgerPolicy?.vatRate]);
 
   function patchLine(i, patch) {
     setForm((f) => ({ ...f, lines: f.lines.map((l, idx) => (idx === i ? { ...l, ...patch } : l)) }));
@@ -137,6 +145,7 @@ export default function SalesDocumentsPage() {
   }
 
   async function handleIssue() {
+    if (issueProblems.length) { showToast(issueProblems.join(' '), 'error'); return; }
     const lines = form.lines.filter((l) => Number(l.unitPrice) > 0 && Number(l.quantity) > 0);
     if (lines.length === 0) { showToast('أضف سطراً واحداً على الأقل بسعر أكبر من صفر.', 'error'); return; }
     setBusy('issue');
@@ -147,7 +156,8 @@ export default function SalesDocumentsPage() {
         priceMode: form.priceMode,
         paymentMethod: form.paymentMethod,
         paymentStatus: form.paymentStatus,
-        customer: form.customer.trim() ? { name: form.customer.trim() } : null,
+        invoiceKind: form.invoiceKind,
+        customer,
         lines: lines.map((l) => ({
           description: l.description.trim() || 'خدمة غسيل',
           quantity: Number(l.quantity) || 0,
@@ -155,8 +165,8 @@ export default function SalesDocumentsPage() {
         })),
       }, { userId: user?.id });
       setForm({
-        issueDate: todayIso(), customer: '', priceMode: 'inclusive',
-        paymentMethod: 'cash', paymentStatus: 'paid', lines: [emptyLine()],
+        issueDate: todayIso(), invoiceKind: 'standard', customer: '', customerAddress: '', customerVat: '', priceMode: 'inclusive',
+        paymentMethod: '', paymentStatus: 'unpaid', lines: [emptyLine()],
       });
       showToast(`تم إصدار الفاتورة ${res.documentNumber} وترحيل قيدها رقم ${res.journalEntryNumber}.`);
       await Promise.all([refetch(), refetchLedger()]);
@@ -172,6 +182,10 @@ export default function SalesDocumentsPage() {
    * which is what its number, year, period and QR timestamp follow.
    */
   async function handleIssueForWash(wash) {
+    const problems = sellerIssuanceProblems(seller, policyAt(washIssueDate), {
+      pending: loading || policyLoading, error: Boolean(error || policyError), configured: policyConfigured,
+    });
+    if (problems.length || profile) { showToast(problems.join(' ') || 'احفظ بيانات المنشأة أولًا.', 'error'); return; }
     if (washIssueDate < wash.washDate) {
       showToast('تاريخ الإصدار قبل تاريخ الغسلة — الفاتورة لا تسبق الخدمة.', 'error');
       return;
@@ -290,6 +304,7 @@ export default function SalesDocumentsPage() {
           <div className="min-w-0">
             <p className="font-bold">لا يوجد ربط مع منصة «فاتورة» (هيئة الزكاة والضريبة والجمارك).</p>
             <p className="mt-1">{status.warning}</p>
+            <p className="mt-1">لو وصلك إشعار من الهيئة بموعد الربط (المرحلة الثانية)، الفواتير لازم تطلع من نظام مربوط.</p>
             <p className="mt-1">
               <span className="font-semibold">المُنفَّذ:</span> {status.implemented.join(' · ')}.
               {' '}
@@ -359,8 +374,7 @@ export default function SalesDocumentsPage() {
           {registrationConflict && <p role="alert" className="p-3 rounded-control bg-amber-50 text-amber-900 dark:bg-amber-950 dark:text-amber-200">تعارض إعدادات التسجيل: ملف البائع {seller.vatRegistered ? 'مسجّل' : 'غير مسجّل'}، وسياسة الدفتر {ledgerPolicy.vatRegistered ? 'مسجّلة' : 'غير مسجّلة'}. سياسة الدفتر سارية من {ledgerPolicy.effectiveFrom}. راجع المصدرين وتاريخ السريان قبل إصدار مستند؛ لم تُعدّل أي قيمة تلقائيًا.</p>}
           {!seller?.vatRegistered && (
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-3 leading-relaxed">
-              التسجيل الضريبي غير مفعّل في ملف البائع المستخدم لإصدار المستندات — وفق هذا الملف ستصدر المستندات بدون ضريبة وبدون رمز QR،
-              لأن رمز QR أثرٌ خاص بالفاتورة الضريبية ولا يجوز طبعه على إيصال غير ضريبي.
+              إصدار الفواتير متوقف حتى تأكيد التسجيل واستكمال بيانات المنشأة وحل تعارض السياسة. لم تُعبّأ أي قيمة تلقائيًا.
             </p>
           )}
         </Card>
@@ -381,18 +395,39 @@ export default function SalesDocumentsPage() {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
               <div>
+                <label htmlFor="doc-kind" className="block text-sm font-semibold mb-1.5">نوع المستند</label>
+                <select id="doc-kind" value={form.invoiceKind} onChange={e => setForm(f => ({ ...f, invoiceKind: e.target.value }))}
+                  className="w-full min-h-touch px-3 py-2 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm">
+                  <option value="standard">فاتورة ضريبية (لمنشأة)</option>
+                  <option value="simplified">فاتورة مبسطة (لفرد)</option>
+                </select>
+              </div>
+              <div>
                 <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">تاريخ الإصدار</label>
                 <DateField name="issueDate" value={form.issueDate}
                   onChange={(e) => setForm((f) => ({ ...f, issueDate: e.target.value }))} ariaLabel="تاريخ الإصدار" />
               </div>
               <div>
                 <label htmlFor="doc-customer" className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                  العميل <span className="font-normal text-slate-500 dark:text-slate-400">(اختياري)</span>
+                  اسم العميل {form.invoiceKind === 'standard' ? '(مطلوب)' : '(اختياري)'}
                 </label>
                 <input id="doc-customer" type="text" value={form.customer}
+                  required={form.invoiceKind === 'standard'}
                   onChange={(e) => setForm((f) => ({ ...f, customer: e.target.value }))}
                   className="w-full min-h-touch px-3 py-2 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-slate-900 dark:text-slate-100" />
               </div>
+              {form.invoiceKind === 'standard' && <>
+                <div>
+                  <label htmlFor="doc-customer-address" className="block text-sm font-semibold mb-1.5">عنوان العميل</label>
+                  <input id="doc-customer-address" required value={form.customerAddress} onChange={e => setForm(f => ({ ...f, customerAddress: e.target.value }))}
+                    className="w-full min-h-touch px-3 py-2 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm" />
+                </div>
+                <div>
+                  <label htmlFor="doc-customer-vat" className="block text-sm font-semibold mb-1.5">الرقم الضريبي للعميل</label>
+                  <input id="doc-customer-vat" required inputMode="numeric" dir="ltr" maxLength={15} value={form.customerVat} onChange={e => setForm(f => ({ ...f, customerVat: e.target.value.replace(/\D/g, '') }))}
+                    className="w-full min-h-touch px-3 py-2 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm" />
+                </div>
+              </>}
               <div>
                 <label htmlFor="doc-mode" className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">وضع التسعير</label>
                 <select id="doc-mode" value={form.priceMode}
@@ -415,6 +450,7 @@ export default function SalesDocumentsPage() {
                 <select id="doc-pay-method" value={form.paymentMethod}
                   onChange={(e) => setForm((f) => ({ ...f, paymentMethod: e.target.value }))}
                   className="w-full min-h-touch px-3 py-2 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-slate-900 dark:text-slate-100">
+                  <option value="">اختر طريقة السداد</option>
                   <option value="cash">نقداً — الصندوق</option>
                   <option value="card">شبكة — البنك</option>
                   <option value="transfer">تحويل — البنك</option>
@@ -478,10 +514,17 @@ export default function SalesDocumentsPage() {
                   الضريبة <span className="whitespace-nowrap tabular-nums font-semibold text-slate-900 dark:text-slate-100">{formatCurrencyPrecise(preview.vat)}</span>
                 </span>
                 <span className="flex flex-wrap justify-between gap-2 font-bold text-slate-900 dark:text-slate-100">الإجمالي <span className="whitespace-nowrap tabular-nums">{formatCurrencyPrecise(preview.gross)}</span></span>
-                <PrimaryButton className="w-full sm:w-auto" icon={busy === 'issue' ? Loader2 : FileText} onClick={handleIssue} disabled={Boolean(busy)}>
+                <button type="button" className="sw-button sw-button--sm sw-button--primary w-full sm:w-auto" onClick={handleIssue} disabled={Boolean(busy) || issueProblems.length > 0} aria-describedby="invoice-issue-gaps">
+                  {busy === 'issue' ? <Loader2 size={16} /> : <FileText size={16} />}
                   {busy === 'issue' ? 'جارٍ الإصدار...' : 'إصدار'}
-                </PrimaryButton>
+                </button>
               </div>
+            </div>
+            <div id="invoice-issue-gaps" className="mt-3 text-sm leading-relaxed">
+              {issueProblems.length > 0 ? <><strong>الناقص قبل الإصدار:</strong><ul className="mt-1 list-disc ps-5 space-y-1">{issueProblems.map(problem => <li key={problem}>{problem}</li>)}</ul></>
+                : <p>البيانات مكتملة؛ الإصدار ينشئ المستند والقيد عند اختيارك.</p>}
+              <a href="?page=sweater_settlements" className="text-primary-600 dark:text-primary-400 underline">فاتورة سويتر الشهرية من صفحة التسويات فقط</a>
+              {form.invoiceKind === 'simplified' && <p>الفاتورة المبسطة تحمل رمز QR عند إصدارها.</p>}
             </div>
           </Card>
         )}
@@ -544,7 +587,7 @@ export default function SalesDocumentsPage() {
                           <SecondaryButton
                             icon={busy === `wash-${w.id}` ? Loader2 : FileText}
                             onClick={() => handleIssueForWash(w)}
-                            disabled={Boolean(busy) || tooEarly}
+                            disabled={Boolean(busy) || tooEarly || Boolean(profile) || sellerIssuanceProblems(seller, policyAt(washIssueDate), { pending: loading || policyLoading, error: Boolean(error || policyError), configured: policyConfigured }).length > 0}
                             title={tooEarly ? 'تاريخ الإصدار قبل تاريخ الغسلة' : undefined}
                           >
                             {busy === `wash-${w.id}` ? 'جارٍ الإصدار...' : 'إصدار الفاتورة'}
@@ -617,7 +660,7 @@ export default function SalesDocumentsPage() {
                             </td>
                             <td className="py-3 px-4 whitespace-nowrap">
                               <span className={`inline-flex px-2.5 py-1 rounded-full border text-[11px] font-semibold ${TYPE_TONE[d.type] || ''}`}>
-                                {DOCUMENT_TYPE_LABELS[d.type] || d.type}
+                                {d.type === 'invoice' && d.invoiceKind ? (d.invoiceKind === 'standard' ? 'فاتورة ضريبية' : 'فاتورة مبسطة') : DOCUMENT_TYPE_LABELS[d.type] || d.type}
                               </span>
                             </td>
                             {/* Both dates. They coincide on most documents, and
@@ -635,6 +678,7 @@ export default function SalesDocumentsPage() {
                             </td>
                             <td className="py-3 px-4 text-slate-700 dark:text-slate-300">
                               {d.customer?.name || '—'}
+                              {d.sourceType === 'sweater_settlement' && <a className="block text-xs text-primary-600 dark:text-primary-400 underline" href={`?page=sweater_settlements&period=${encodeURIComponent(d.settlementPeriodKey || d.sourceId)}`}>تسوية {d.settlementPeriodKey || d.sourceId}</a>}
                               {d.referenceNumber && (
                                 <span className="block text-[11px] tabular-nums text-slate-500 dark:text-slate-400">
                                   على {d.referenceNumber}
@@ -661,6 +705,8 @@ export default function SalesDocumentsPage() {
                                 <span className="text-[11px] text-slate-500 dark:text-slate-400">للعرض فقط</span>
                               ) : cancelled ? (
                                 <span className="text-[11px] text-slate-500 dark:text-slate-400">—</span>
+                              ) : d.sourceType === 'sweater_settlement' ? (
+                                <a className="text-xs text-primary-600 dark:text-primary-400 underline" href={`?page=sweater_settlements&period=${encodeURIComponent(d.settlementPeriodKey || d.sourceId)}`}>راجع التسوية المرتبطة</a>
                               ) : (
                                 <div className="flex items-center justify-end gap-1.5">
                                   {d.type === 'invoice' && (
@@ -707,6 +753,7 @@ export default function SalesDocumentsPage() {
                               <td colSpan={8} className="py-4 px-4">
                                 <div className="flex flex-col lg:flex-row gap-6">
                                   <div className="min-w-0 flex-1">
+                                    {d.customer?.address && <p className="text-xs mb-2">عنوان العميل: {d.customer.address} · الرقم الضريبي: {d.customer.vatNumber}</p>}
                                     <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100 mb-2">سطور المستند</h4>
                                     <table className="w-full text-xs">
                                       <thead>

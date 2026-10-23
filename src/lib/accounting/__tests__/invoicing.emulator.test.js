@@ -79,6 +79,9 @@ d('إصدار المستندات على Firestore الحقيقي', () => {
     // before anything can be issued.
     await ledger.seedChartOfAccounts({ userId: 'u1' });
     await inv.saveSellerProfile(SELLER, { userId: 'u1' });
+    await setDoc(doc(db, 'app_settings', 'accounting'), { value: {
+      taxPolicyHistory: [{ effectiveFrom: '2010-01-01', vatRegistered: true, vatRate: 0.15, washPriceMode: 'inclusive' }],
+    } });
   }, 60_000);
 
   it('يحفظ هوية المنشأة ويقرأها كما هي', async () => {
@@ -186,15 +189,12 @@ d('إصدار المستندات على Firestore الحقيقي', () => {
 
   // Taxability is an ACCOUNTING policy, not a letterhead: it comes from
   // `app_settings/accounting`, and the seller profile only supplies identity.
-  it('منشأة غير مسجّلة في الضريبة تصدر مستنداً بلا ضريبة وبلا رمز', async () => {
+  it('تعارض التسجيل يمنع إصدار الفاتورة الجديدة دون استهلاك رقم', async () => {
     await setDoc(doc(db, 'app_settings', 'accounting'), {
       value: { vatRegistered: false, washPriceMode: 'inclusive' },
     });
-    const res = await sale();
-    const saved = await inv.fetchDocument(res.id);
-    expect(saved.vat).toBe(0);
-    expect(saved.gross).toBe(115);
-    expect(saved.qrPayload).toBeNull();
+    await expect(sale()).rejects.toThrow(/تعارض/);
+    expect((await getDocs(collection(db, 'sales_documents'))).size).toBe(0);
   }, 90_000);
 
   it('المستند الصادر يُلغى بسبب ولا يُحذف', async () => {

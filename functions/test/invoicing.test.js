@@ -149,6 +149,9 @@ d('إصدار المستندات الضريبية على الخادم', () => {
   beforeEach(async () => {
     await wipe();
     await db.collection(DOC_COL.SETTINGS).doc('company').set({ value: COMPANY });
+    await db.collection(DOC_COL.SETTINGS).doc('accounting').set({ value: {
+      taxPolicyHistory: [{ effectiveFrom: '2010-01-01', vatRegistered: true, vatRate: 0.15, washPriceMode: 'inclusive' }],
+    } });
     for (const a of CHART) await db.collection('chart_of_accounts').doc(a.code).set(a);
   }, 60_000);
 
@@ -256,19 +259,16 @@ d('إصدار المستندات الضريبية على الخادم', () => {
 
     // Taxability is an ACCOUNTING policy, not a letterhead — so this is set on
     // `app_settings/accounting`, and the seller profile is left alone.
-    it('منشأة غير مسجّلة: بلا ضريبة وبلا رمز QR', async () => {
+    it('تعارض التسجيل يمنع إصدار فاتورة جديدة بدل إصدار ورقة بلا ضريبة', async () => {
       await db.collection(DOC_COL.SETTINGS).doc('accounting').set({
         value: { vatRegistered: false, washPriceMode: 'inclusive' },
       });
-      const res = await issue({ type: 'invoice', issueDate: '2026-08-11', lines: LINES });
-      const doc = (await db.collection(DOC_COL.DOCUMENTS).doc(res.id).get()).data();
-      expect(doc.vat).toBe(0);
-      expect(doc.gross).toBe(115);
-      expect(doc.qrPayload).toBeNull();
+      await expect(issue({ type: 'invoice', issueDate: '2026-08-11', lines: LINES })).rejects.toThrow(/تعارض/);
+      expect((await db.collection(DOC_COL.DOCUMENTS).get()).size).toBe(0);
     });
 
     // ── company هو هوية البائع، لا سياسة الضريبة ──────────────────────
-    it('company.vatRegistered لا يتغلب على سياسة المحاسبة', async () => {
+    it('ملف البائع وسياسة الدفتر يجب أن يتفقا قبل إصدار فاتورة جديدة', async () => {
       // The seller profile says "not registered"; the accounting policy says
       // it is. The policy decides, and the QR still needs a real VAT number —
       // which this profile has, so the document is a full tax invoice.
@@ -278,19 +278,14 @@ d('إصدار المستندات الضريبية على الخادم', () => {
       await db.collection(DOC_COL.SETTINGS).doc('accounting').set({
         value: { vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15 },
       });
-      const res = await issue({ type: 'invoice', issueDate: '2026-08-11', lines: LINES });
-      expect(res.vat).toBe(15);
-      const doc = (await db.collection(DOC_COL.DOCUMENTS).doc(res.id).get()).data();
-      expect(doc.taxable).toBe(true);
-      expect(doc.qrPayload).toBeTruthy();
+      await expect(issue({ type: 'invoice', issueDate: '2026-08-11', lines: LINES })).rejects.toThrow(/تعارض/);
 
       // …and the reverse: a registered-looking profile does not make a supply
       // taxable when the policy says the business is not registered.
       await db.collection(DOC_COL.SETTINGS).doc('accounting').set({
         value: { vatRegistered: false, washPriceMode: 'inclusive' },
       });
-      const untaxed = await issue({ type: 'invoice', issueDate: '2026-08-12', lines: LINES });
-      expect(untaxed.vat).toBe(0);
+      await expect(issue({ type: 'invoice', issueDate: '2026-08-12', lines: LINES })).rejects.toThrow(/تأكيد تسجيل/);
     }, 90_000);
 
     it('رقم ضريبي غير صالح يمنع الإصدار قبل أن يمسّ العدّاد', async () => {
@@ -1231,7 +1226,7 @@ d('إصدار المستندات الضريبية على الخادم', () => {
       await expect(issue({
         type: 'invoice', issueDate: '2025-12-15',
         lines: [{ description: 'خدمة', quantity: 1, unitPrice: 115 }],
-      })).rejects.toThrow(/السياسة الضريبية غير مهيأة/);
+      })).rejects.toThrow(/السياسة الضريبية.*غير/);
       expect((await db.collection(DOC_COL.DOCUMENTS).get()).size).toBe(0);
     }, 90_000);
   });
@@ -1262,7 +1257,8 @@ d('إصدار المستندات الضريبية على الخادم', () => {
         wash_date: '2026-08-11', payment_method: 'cash', ...over,
       });
       await db.collection('app_settings').doc('accounting').set({
-        value: { vatRegistered: true, washPriceMode: 'inclusive' },
+        value: { vatRegistered: true, washPriceMode: 'inclusive',
+          taxPolicyHistory: [{ effectiveFrom: '2026-01-01', vatRegistered: true, vatRate: 0.15, washPriceMode: 'inclusive' }] },
       });
       return postSource(db, FieldValue, { kind: 'wash', sourceId: id }, { userId: 'acct1' });
     }

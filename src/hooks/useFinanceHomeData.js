@@ -18,6 +18,7 @@ import { isFirebaseConfigured } from '../lib/firebaseClient';
 import { fetchRows } from '../lib/firestoreCrud';
 import { riyadhTodayISO } from '../lib/washesYesterday';
 import { todayMonth } from '../lib/variableExpenseTotals';
+import { mapAnnualExpenseEntry } from '../lib/mappers';
 import { financeLedgerSnapshot, financeVatSnapshot, financeWorkbenchCounts } from '../lib/financeHome';
 
 function useDocumentSource(collection) {
@@ -39,9 +40,6 @@ export function useFinanceHomeData(month) {
   const variable = useVariableExpenses(), variableCats = useVariableExpenseCategories();
   const [hiddenKeys, setHiddenKeys] = useState(readHidden);
   const budgetMonth = todayMonth();
-  const budgetModel = useBudgetReadModel({ budgets: budgets.items, monthlies: monthly.items, monthlyCats: monthlyCats.categories,
-    annuals: annual.items, annualCats: annualCats.categories, variables: variable.items, variableCats: variableCats.categories,
-    washes: washes.items, hiddenKeys, currentMonth: budgetMonth, currentYear: String(new Date().getFullYear()) });
   // These are raw readers of the same cache units as the original registers.
   // No per-document network loop and no limited workbench page mistaken for a total.
   const variableDocs = useDocumentSource('variable_expenses');
@@ -49,6 +47,10 @@ export function useFinanceHomeData(month) {
   const annualDocs = useDocumentSource('annual_expense_entries');
   const startupDocs = useDocumentSource('startup_cost_entries');
   const documentSources = [variableDocs, monthlyDocs, annualDocs, startupDocs];
+  const budgetModel = useBudgetReadModel({ budgets: budgets.items, monthlies: monthly.items, monthlyCats: monthlyCats.categories,
+    annuals: annual.items, annualCats: annualCats.categories, variables: variable.items, variableCats: variableCats.categories,
+    washes: washes.items, hiddenKeys, currentMonth: budgetMonth, currentYear: today.slice(0,4), asOfDate:today,
+    annualEntries:(annualDocs.data || []).map(mapAnnualExpenseEntry) });
   const locks = useFirestoreQuery(() => fetchRows('posting_locks'),
     { enabled: isFirebaseConfigured, cacheKey: 'posting_locks', fallback: [] });
   const ledgerReady = !ledger.loading && !ledger.error && !ledger.needsSeeding && ledger.accounts.length > 0;
@@ -62,7 +64,7 @@ export function useFinanceHomeData(month) {
   const vat = useMemo(() => !taxLoading && !taxError && ledgerReady
     ? financeVatSnapshot({ invoices: tax.invoices, washes: washes.items, entries: ledger.entries, lines: ledger.lines, settings: settings.settings, month })
     : null, [taxLoading, taxError, ledgerReady, tax.invoices, washes.items, ledger.entries, ledger.lines, settings.settings, month]);
-  const budgetSources = [budgets, monthly, monthlyCats, annual, annualCats, variable, variableCats, washes];
+  const budgetSources = [budgets, monthly, monthlyCats, annual, annualCats, variable, variableCats, washes, annualDocs];
   const budgetLoading = budgetSources.some(source => source.loading);
   const budgetError = budgetSources.find(source => source.error)?.error;
   const documentLoading = documentSources.some(source => source.loading) || locks.loading || ledger.loading;
@@ -89,7 +91,7 @@ export function useFinanceHomeData(month) {
     overview.retry(); ledger.refetch(); tax.refetch(); settings.refetch(); washes.refetch();
     budgetSources.filter(source => source !== washes).forEach(source => source.refetch());
     // Monthly/variable raw readers observe the refresh of their shared units above.
-    annualDocs.refetch(); startupDocs.refetch(); locks.refetch(); setHiddenKeys(readHidden());
+    startupDocs.refetch(); locks.refetch(); setHiddenKeys(readHidden());
   };
   return { today, month, loading, problems, refresh, ledger: ledgerSnapshot, statement: overview.finance.statement,
     vat, workbench, settlement, settlementReady: !settlementSource.loading && !settlementSource.error,

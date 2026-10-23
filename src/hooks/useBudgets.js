@@ -1,10 +1,12 @@
 import { useCallback } from 'react';
 import { isFirebaseConfigured } from '../lib/firebaseClient';
-import { fetchRows, insertRow, updateRow, deleteRow, sortBy } from '../lib/firestoreCrud';
+import { fetchRows, getRow, insertRow, updateRow, deleteRow, sortBy } from '../lib/firestoreCrud';
+import { budgetHasRecordedExpenses } from '../lib/budgetControls';
 import {
   mapBudget,
   toBudgetInsert,
   toBudgetUpdate,
+  mapMonthlyExpense, mapVariableExpense, mapAnnualExpense, mapWash,
 } from '../lib/mappers';
 import { useFirestoreQuery } from './useFirestoreQuery';
 
@@ -34,6 +36,19 @@ export function useBudgets() {
 
   const deleteItem = useCallback(async (id) => {
     if (!isFirebaseConfigured) return null;
+    // Re-read before deleting: an expense added after the card loaded still blocks deletion.
+    // A failed read fails closed. No category or expense is deleted here.
+    const [budget,monthlies,monthlyCats,annuals,annualCats,variables,variableCats,washes] = await Promise.all([
+      getRow('category_budgets',id), fetchRows('monthly_expenses'), fetchRows('monthly_expense_categories'),
+      fetchRows('annual_expenses'), fetchRows('annual_expense_categories'), fetchRows('variable_expenses'),
+      fetchRows('variable_expense_categories'), fetchRows('washes'),
+    ]);
+    if(!budget)throw new Error('الميزانية غير موجودة؛ لم يُنفّذ الحذف');
+    if(budgetHasRecordedExpenses(mapBudget(budget),{monthlies:monthlies.map(mapMonthlyExpense),monthlyCats,
+      annuals:annuals.map(mapAnnualExpense),annualCats,variables:variables.map(mapVariableExpense),
+      variableCats:variableCats.map(c=>({...c,isDynamic:c.is_dynamic})),washes:washes.map(mapWash)})) {
+      throw new Error('لا يمكن حذف ميزانية تصنيف عليه مصاريف مسجلة');
+    }
     await deleteRow('category_budgets', id);
     await refetch();
   }, [refetch]);

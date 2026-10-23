@@ -37,7 +37,7 @@ function ActionList({ data, onNavigate }) {
     detail: `${workbench.unknownPayment.count} مستندات · ${amountText(workbench.unknownPayment.amount)}` });
   if (workbench?.pending.count) rows.push({ key: 'pending', route: 'finance_workbench', label: 'مستندات بانتظار المراجعة أو الاعتماد أو الترحيل',
     detail: `${workbench.pending.count} مستندات · ${amountText(workbench.pending.amount)}` });
-  const overrunCount = budget?.cards.filter(card => card.spent > card.budget.amount).length || 0;
+  const overrunCount = budget?.cards.filter(card => card.budget.amount > 0 && card.spent > card.budget.amount).length || 0;
   if (overrunCount) rows.push({ key: 'budget', route: 'budgets', label: 'ميزانيات متجاوزة',
     detail: `${overrunCount} بنود · ${budget.totals.remaining < 0 ? `العجز الإجمالي: ${amountText(budget.totals.remaining)}` : 'راجع تفاصيل التجاوز'} · ${budget.month}` });
   const complete = ledger && vat && workbench && budget && settlementReady;

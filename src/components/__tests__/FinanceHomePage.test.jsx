@@ -15,7 +15,13 @@ beforeEach(() => {
     settlementReady: true, settlement: { status: 'calculated', figures: { netDue: 0, counts: { eligible: 0, imported: 113 } } },
     vat: { netTax: 902.92, unpostedEligible: Array(8).fill({}), unpostedInputTax: 243.08 },
     workbench: { unknownPayment: { count: 4, amount: 410 }, pending: { count: 3, amount: 300 } },
-    budget: { month: '2026-10', cards: [{ budget: { amount: 0 }, spent: 87263.64 }], totals: { remaining: -87263.64 } } };
+    budget: { month: '2026-10', cards: [{ budget: { amount: 5000 }, spent: 92263.64 }], totals: { remaining: -87263.64 } } };
+});
+it('does not describe unbudgeted expenditure as a budget overrun', () => {
+  state.data.budget = { month: '2026-10', cards: [{ budget: { amount: 0 }, spent: 87263.64 }], totals: { remaining: 0 } };
+  render(<FinanceHomePage onNavigate={vi.fn()} />);
+  expect(screen.queryByText('ميزانيات متجاوزة')).toBeNull();
+  expect(screen.getByRole('region', { name: 'يحتاج إجراء' }).querySelectorAll('li')).toHaveLength(5);
 });
 it('renders the seven source-backed amounts, posted comparisons, negative cash and six actionable rows', () => {
   const navigate = vi.fn(); render(<FinanceHomePage onNavigate={navigate} />);

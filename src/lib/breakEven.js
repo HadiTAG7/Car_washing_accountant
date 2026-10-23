@@ -31,8 +31,9 @@ export function dailyBreakEvenDays(daily = [], required) {
   if (finite(required) === null) return null;
   const days = daily.map(day => ({ ...day, gap: day.quantity - required, reached: day.incomplete ? null : day.quantity >= required }));
   const completed = days.filter(day => !day.incomplete);
+  const mean = pick => completed.length ? completed.reduce((sum, day) => sum + pick(day), 0) / completed.length : null;
   return { days, completed: completed.length, reached: completed.filter(day => day.reached).length,
-    averageGap: completed.length ? completed.reduce((sum, day) => sum + day.gap, 0) / completed.length : null };
+    averageActual: mean(day => day.quantity), averageGap: mean(day => day.gap) };
 }
 
 /**
@@ -133,8 +134,12 @@ export function bikerBreakEven({ statement, payrollLines = [], washes = [], bike
 
   const allocated = rows.reduce((sum, row) => sum + cents(row.direct) + cents(row.share), 0);
   const withRequired = rows.filter(row => row.requiredDaily !== null);
+  const average = pick => withRequired.length ? withRequired.reduce((sum, row) => sum + pick(row), 0) / withRequired.length : null;
+  // A biker with no wash counts as 0 a day, as in coverage.
+  const averageRequiredDaily = average(row => row.requiredDaily);
+  const averageActualDaily = average(row => row.actualDaily ?? 0);
   return { periodKey, basis: settings.bikerBreakEvenBasis, total, monthDays, directTotal: directTotal / 100, shared: shared / 100, allocatedTotal: allocated / 100,
     difference: (cents(total) - allocated) / 100, approximateTotal: rows.reduce((sum, row) => sum + row.approxDirect, 0),
-    averageRequiredDaily: withRequired.length ? withRequired.reduce((sum, row) => sum + row.requiredDaily, 0) / withRequired.length : null,
+    averageRequiredDaily, averageActualDaily, averageCoverage: averageRequiredDaily ? averageActualDaily / averageRequiredDaily : null,
     rows, idle: idleSummary, outside, unlinkedWashes, estimated: Boolean(statement?.salaryAccrual?.estimated) };
 }

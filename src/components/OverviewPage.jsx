@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Activity, ArrowUpRight, Bike, CalendarDays, CheckCircle2, DatabaseBackup, Loader2, Receipt, TrendingUp, Wallet, X } from 'lucide-react';
 import { useLanguage } from '../i18n/useLanguage';
 import { usePartnerView } from '../contexts/PartnerViewContext';
@@ -13,7 +13,7 @@ import CapitalOverviewPage from './CapitalOverviewPage';
 import OverviewBikerQuality from './OverviewBikerQuality';
 import OverviewBusinessInsights from './OverviewBusinessInsights';
 import OverviewOperationalAttention from './OverviewOperationalAttention';
-import { dailyBreakEven, dailyBreakEvenDays } from '../lib/breakEven';
+import { bikerBreakEven, dailyBreakEven, dailyBreakEvenDays } from '../lib/breakEven';
 import BikerProfileMonthPicker from './BikerProfileMonthPicker';
 import IncomeStatementDetailsModal from './IncomeStatementDetailsModal';
 import ModalSurface from './ModalSurface';
@@ -79,9 +79,12 @@ export function ManagementOverview({ onNavigate }) {
   const breakEvenDays = breakEven ? dailyBreakEvenDays(ops.daily, breakEven.required) : null;
   const chartMax = Math.max(1, ...(washReady ? ops.daily.map(d => d.quantity) : []), (breakEven?.required ?? 0) * BREAK_EVEN_LABEL_ROOM);
   const breakEvenLabel = breakEven && `${text('نقطة التعادل', 'Break-even')}: ${formatNumber(Math.round(breakEven.required * 100) / 100)} ${text('غسلة/يوم', 'washes/day')}`;
-  const breakEvenBasis = breakEven && `${breakEven.basis === 'month' ? text('مصروفات الشهر', 'The month’s costs') : text('مصروفات الشهر حتى اليوم', 'The month’s costs to date')} `
-    + `${formatCurrencyPrecise(breakEven.costs)} ÷ ${text('سعر الغسلة قبل الضريبة', 'net wash price')} ${formatCurrencyPrecise(breakEven.price)} ÷ ${breakEven.monthDays} ${text('يومًا', 'days')}`
-    + `${breakEven.estimated ? ` · ${text('تشمل رواتب تقديرية', 'includes estimated salaries')}` : ''}${breakEven.partial ? ` · ${text('التكلفة جزئية', 'partial costs')}` : ''}`;
+  // Per biker, as on the bikers page: the payroll preview behind the statement.
+  const payrollLines = data.payroll?.data?.find(p => p.periodKey === periodKey && !p.unavailable)?.lines;
+  const perBiker = useMemo(() => {
+    const result = washReady && st && payrollLines ? bikerBreakEven({ statement: st, payrollLines, washes: ops.rows, bikers: workers.bikers, periodKey, today }) : null;
+    return result && !result.error ? result : null;
+  }, [washReady, st, payrollLines, ops, workers.bikers, periodKey, today]);
   return <>
     <TopBar title={text('نظرة عامة', 'Overview')} subtitle={text('صورة المشروع: المال، التشغيل والجودة', 'Your business at a glance: finance, operations and quality')}
       actions={canMutate && isFirebaseConfigured ? <button type="button" onClick={backup} disabled={backupBusy}
@@ -105,7 +108,8 @@ export function ManagementOverview({ onNavigate }) {
           {!st && <p>{finance.loading ? text('جارٍ تحميل القائمة والرواتب…', 'Loading statement and payroll…') : text('تعذّر تأكيد الأرقام المالية؛ أعد المحاولة أو راجع قائمة الدخل.', 'Financial figures could not be confirmed. Retry or review the income statement.')}</p>}
           {st?.issues?.length > 0 && <p role="alert">{text('تنبيه: الأرقام تستبعد سجلات ببيانات ضريبية غير محسومة؛ افتح التفاصيل قبل الاعتماد عليها.', 'Warning: figures exclude records with unresolved tax data. Open the details before relying on them.')}</p>}
           {finance.error && <button type="button" className="sw-overview__link" onClick={data.retry}>{text('إعادة المحاولة', 'Retry')}</button>}</div>}
-        <OverviewBusinessInsights data={data} periodKey={periodKey} washReady={washReady} language={language} onNavigate={onNavigate} />
+        <OverviewBusinessInsights data={data} periodKey={periodKey} washReady={washReady} language={language} onNavigate={onNavigate}
+          breakEven={{ daily: breakEven, days: breakEvenDays, perBiker }} />
       </section>
 
       <section aria-labelledby="overview-operations-title" className="sw-overview__section">
@@ -127,13 +131,7 @@ export function ManagementOverview({ onNavigate }) {
         </div>
         {(washes.error || ops?.conflicts.length > 0) && <p role="alert" className="sw-overview__notice">{text('تعذّر تأكيد إجمالي الغسلات؛ راجع المصدر أو تعارض التكرار.', 'Wash totals are unconfirmed. Review source availability or conflicting duplicates.')}</p>}
         <Card className="sw-overview__panel sw-overview__daily"><SectionHeader title={text('الغسلات يومًا بيوم', 'Daily washes')} subtitle={text('اضغط على اليوم لعرض الغسلات المسجلة فيه.', 'Select a day to view its recorded washes.')} />
-          {washReady ? <>{breakEven ? <div className="sw-overview__breakeven" title={breakEvenBasis}>
-            <p className="sw-overview__breakeven-legend"><span aria-hidden="true" />{breakEvenLabel}</p>
-            <dl><div><dt>{text('أيام وصلت نقطة التعادل', 'Days at break-even')}</dt><dd><bdi>{formatNumber(breakEvenDays.reached)}</bdi> {text('من', 'of')} <bdi>{formatNumber(breakEvenDays.completed)}</bdi> {text('يومًا مكتملًا', 'completed days')}</dd></div>
-              <div><dt>{text('متوسط الفجوة', 'Average gap')}</dt><dd><bdi dir="ltr">{breakEvenDays.averageGap == null ? unavailable : `${breakEvenDays.averageGap > 0 ? '+' : ''}${formatNumber(Math.round(breakEvenDays.averageGap * 100) / 100)}`}</bdi> {text('غسلة/يوم', 'washes/day')}</dd></div></dl>
-            <small>{breakEvenBasis}</small>
-          </div> : <p className="sw-overview__breakeven-missing">{text('نقطة التعادل غير متاحة لحين تأكيد مصروفات الشهر.', 'Break-even is unavailable until the month’s costs are confirmed.')}</p>}
-          <div className="sw-overview__bars" role="group" aria-label={text('رسم الغسلات اليومية', 'Daily washes chart')}>
+          {washReady ? <><div className="sw-overview__bars" role="group" aria-label={text('رسم الغسلات اليومية', 'Daily washes chart')}>
             {ops.daily.map((day, i) => { const reached = breakEvenDays?.days[i].reached ?? null;
               return <button type="button" key={day.date} className={day.incomplete ? 'sw-overview__day-incomplete' : reached === true ? 'sw-overview__day-reached' : reached === false ? 'sw-overview__day-below' : undefined}
               title={day.incomplete ? text('لم يكتمل؛ مستبعد من المتوسطات', 'Incomplete; excluded from averages') : `${date(day.date)}${reached === null ? '' : reached ? ` · ${text('وصل نقطة التعادل', 'At or above break-even')}` : ` · ${text('تحت نقطة التعادل', 'Below break-even')}`}`}

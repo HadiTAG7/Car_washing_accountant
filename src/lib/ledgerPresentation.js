@@ -1,4 +1,13 @@
 // Read-only presentation. The ledger remains the authority for every balance.
+import { isRealCalendarDate } from './vatFields';
+
+export function ledgerLocationFilters(search) {
+  const params = new URLSearchParams(search);
+  const account = params.get('account') || '';
+  const from = params.get('from') || '', to = params.get('to') || '';
+  return { account: /^[\w-]{1,160}$/.test(account) ? account : '',
+    from: isRealCalendarDate(from) ? from : '', to: isRealCalendarDate(to) ? to : '' };
+}
 export const LEDGER_SOURCE_LABELS = {
   wash: 'غسلة', expense: 'مصروف', partner_payment: 'دفعة شريك',
   temporary_expense: 'عهدة', recovery: 'استرداد', manual: 'يدوي',

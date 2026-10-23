@@ -13,7 +13,7 @@ import ErrorState, { SetupRequiredCard } from './ErrorState';
 import { useLedger } from '../hooks/useLedger';
 import { useLedgerSourceDocuments } from '../hooks/useLedgerSourceDocuments';
 import JournalEntryDetails from './JournalEntryDetails';
-import { balanceNature, ledgerAccountGroups, ledgerMovementContext, matchesLedgerMovement, referencedLedgerEntry, LEDGER_SOURCE_LABELS as SOURCE_LABELS } from '../lib/ledgerPresentation';
+import { balanceNature, ledgerAccountGroups, ledgerLocationFilters, ledgerMovementContext, matchesLedgerMovement, referencedLedgerEntry, LEDGER_SOURCE_LABELS as SOURCE_LABELS } from '../lib/ledgerPresentation';
 import { generalLedger } from '../lib/accounting/reports';
 import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
 
@@ -26,9 +26,10 @@ const PAGE_SIZE = 100;
  */
 export default function GeneralLedgerPage() {
   const { accounts, entries, lines, accountIndex, needsSeeding, loading, error, refetch } = useLedger();
-  const [accountCode, setAccountCode] = useState('');
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
+  const [initialFilters] = useState(() => ledgerLocationFilters(typeof window !== 'undefined' ? window.location.search : ''));
+  const [accountCode, setAccountCode] = useState(initialFilters.account);
+  const [from, setFrom] = useState(initialFilters.from);
+  const [to, setTo] = useState(initialFilters.to);
   const [search, setSearch] = useState('');
   const [sourceType, setSourceType] = useState('');
   const [openedEntryId, setOpenedEntryId] = useState(null);

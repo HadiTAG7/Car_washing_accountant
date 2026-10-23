@@ -1,5 +1,5 @@
 // Read-only presentation. The ledger remains the authority for every balance.
-import { isRealCalendarDate } from './vatFields';
+import { isRealCalendarDate } from './vatFields.js';
 
 export function ledgerLocationFilters(search) {
   const params = new URLSearchParams(search);

@@ -1,196 +1,120 @@
-import AccountLabel from './AccountLabel';
-import { useMemo, useState } from 'react';
-import { Landmark, Download, CheckCircle2, AlertTriangle } from 'lucide-react';
-import { formatCurrency } from '../data/initialData';
+import { Fragment, useMemo, useState } from 'react';
+import { Landmark, Download, ChevronDown } from 'lucide-react';
+import { formatCurrency, todayISO } from '../data/initialData';
 import { downloadCsv } from '../lib/exportCsv';
 import TopBar from './TopBar';
-import { Card, SectionHeader, StatCard, EmptyState, SecondaryButton } from './UI';
+import { Card, SectionHeader, StatCard, SecondaryButton } from './UI';
+import ScrollableTable from './ScrollableTable';
 import DateField from './DateField';
 import LoadingState from './LoadingState';
 import ErrorState, { SetupRequiredCard } from './ErrorState';
 import { useLedger } from '../hooks/useLedger';
-import { useFirestoreQuery } from '../hooks/useFirestoreQuery';
-import { balanceSheet, balanceSheetFromTrialBalance, trialBalanceFromSums } from '../lib/accounting/reports';
-import { fetchPostedLineSums } from '../lib/accounting/ledgerSums';
 import { useFeeRules } from '../hooks/useFeeRules';
-import { isFirebaseConfigured, missingEnvNames, dataSource } from '../lib/firebaseClient';
+import { useBalanceAssetSources } from '../hooks/useBalanceAssetSources';
+import { usePartnerView } from '../contexts/PartnerViewContext';
+import { balanceSheetPresentation, comparisonRows, previousMonthEnd } from '../lib/balanceSheetView';
+import { ledgerPeriodHref } from '../lib/trialBalanceView';
+import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
+import BalanceSheetUnposted from './BalanceSheetUnposted';
 
-// On Supabase the account totals are summed in the database (one call).
-const SQL_SUMS = dataSource === 'supabase';
-
-/** One side of the sheet — a titled list of accounts with a total. */
-function Section({ title, rows, total, tone }) {
-  return (
-    <div>
-      <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-2">{title}</h3>
-      {rows.length === 0 ? (
-        <p className="text-xs text-slate-500 dark:text-slate-400 py-2">لا توجد أرصدة.</p>
-      ) : (
-        <ul className="divide-y divide-slate-50 dark:divide-slate-800/60">
-          {rows.map((r) => (
-            <li key={r.code} className="flex flex-wrap items-baseline justify-between gap-3 py-2">
-              <span className="text-sm text-slate-700 dark:text-slate-300 min-w-0">
-                <AccountLabel account={r} />
-              </span>
-              <span className="text-sm font-semibold tabular-nums text-slate-900 dark:text-slate-100 shrink-0">
-                {formatCurrency(r.amount)}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-      <div className={`flex items-baseline justify-between gap-3 mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 font-bold ${tone}`}>
-        <span className="text-sm">الإجمالي</span>
-        <span className="text-sm tabular-nums">{formatCurrency(total)}</span>
-      </div>
-    </div>
-  );
+const SECTIONS = [
+  ['currentAssets', 'الأصول المتداولة'], ['noncurrentAssets', 'الأصول غير المتداولة'],
+  ['unclassifiedAssets', 'أصول لم يُحدد تصنيف أجلها'],
+  ['currentLiabilities', 'الالتزامات المتداولة'], ['noncurrentLiabilities', 'الالتزامات غير المتداولة'],
+  ['unclassifiedLiabilities', 'التزامات لم يُحدد أجل استحقاقها'], ['equity', 'حقوق الملكية'],
+];
+const numeric = 'p-3 text-start whitespace-nowrap tabular-nums';
+function StaffBalanceSheet(props) {
+  const assetSources = useBalanceAssetSources();
+  return <BalanceSheetContent {...props} assetSources={assetSources} staff />;
 }
-
-/**
- * المركز المالي — assets against liabilities + equity, as of a date.
- *
- * The current period's result is shown as its own equity line: retained
- * earnings only carry PRIOR periods until a year-end close moves the result
- * across, so without it the sheet would be out by exactly the net profit.
- */
 export default function BalanceSheetPage() {
-  const { accounts, entries, lines, needsSeeding, loading: ledgerLoading, error: ledgerError, refetch: refetchLedger } = useLedger();
-  const { rules: feeRules } = useFeeRules();
-  const [asOf, setAsOf] = useState('');
-  const sumsQ = useFirestoreQuery(() => fetchPostedLineSums({ to: asOf }), {
-    enabled: SQL_SUMS && isFirebaseConfigured, cacheKey: `postedLineSums:|${asOf}`,
-    cacheTags: ['journal_entries', 'journal_lines'], deps: [asOf], fallback: [],
-  });
-
-  const bs = useMemo(
-    () => (SQL_SUMS
-      ? balanceSheetFromTrialBalance(accounts, trialBalanceFromSums(accounts, sumsQ.data), { asOf: asOf || null, feeRules })
-      : balanceSheet(accounts, entries, lines, { asOf: asOf || null, feeRules })),
-    [accounts, entries, lines, asOf, feeRules, sumsQ.data],
-  );
-  const loading = ledgerLoading || (SQL_SUMS && sumsQ.loading);
-  const error = ledgerError || (SQL_SUMS ? sumsQ.error : null);
-  const refetch = () => { refetchLedger(); if (SQL_SUMS) sumsQ.refetch(); };
-
-  function handleExport() {
-    const rows = [];
-    rows.push(['الأصول', '', '']);
-    bs.assets.forEach((r) => rows.push([r.code, r.nameArabic, Number(r.amount.toFixed(2))]));
-    rows.push(['', 'إجمالي الأصول', Number(bs.totalAssets.toFixed(2))]);
-    rows.push(['الالتزامات', '', '']);
-    bs.liabilities.forEach((r) => rows.push([r.code, r.nameArabic, Number(r.amount.toFixed(2))]));
-    rows.push(['', 'إجمالي الالتزامات', Number(bs.totalLiabilities.toFixed(2))]);
-    rows.push(['حقوق الملكية', '', '']);
-    bs.equity.forEach((r) => rows.push([r.code, r.nameArabic, Number(r.amount.toFixed(2))]));
-    rows.push(['', 'نتيجة الفترة', Number(bs.periodResult.toFixed(2))]);
-    rows.push(['', 'إجمالي حقوق الملكية', Number(bs.totalEquity.toFixed(2))]);
-    rows.push(['', 'الالتزامات + حقوق الملكية', Number((bs.totalLiabilities + bs.totalEquity).toFixed(2))]);
-    downloadCsv(`المركز-المالي${asOf ? `-حتى-${asOf}` : ''}`, ['رقم الحساب', 'البند', 'المبلغ'], rows);
-  }
-
-  return (
-    <>
-      <TopBar title="المركز المالي" subtitle="الأصول والالتزامات وحقوق الملكية من القيود المرحّلة" />
-
-      <main className="p-4 sm:p-6 lg:p-8 space-y-6">
-        {!isFirebaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
-        {error && <ErrorState title="تعذّر تحميل المركز المالي" error={error} onRetry={refetch} />}
-        {needsSeeding && (
-          <div role="alert" className="bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/30 text-amber-700 dark:text-amber-300 text-xs px-4 py-2.5 rounded-control leading-relaxed">
-            لم تتم تهيئة دليل الحسابات بعد — افتح صفحة «إقفال الفترة» واضغط «تهيئة دليل الحسابات».
-          </div>
-        )}
-
-        {!loading && (
-          bs.balanced ? (
-            <div role="status" className="flex items-start gap-2 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-sm px-4 py-3 rounded-control">
-              <CheckCircle2 size={18} className="shrink-0 mt-0.5" />
-              <span><strong>المعادلة المحاسبية متحققة</strong> — الأصول = الالتزامات + حقوق الملكية.</span>
-            </div>
-          ) : (
-            <div role="alert" className="flex items-start gap-2 bg-rose-50 dark:bg-rose-500/10 border border-rose-100 dark:border-rose-500/30 text-rose-700 dark:text-rose-300 text-sm px-4 py-3 rounded-control leading-relaxed">
-              <AlertTriangle size={18} className="shrink-0 mt-0.5" />
-              <span>
-                <strong>المعادلة غير متحققة</strong> — الفرق{' '}
-                <span className="tabular-nums font-bold">{formatCurrency(bs.difference)}</span>.
-                راجع ميزان المراجعة أولاً؛ الغالب أن هناك قيداً غير متوازن.
-              </span>
-            </div>
-          )
-        )}
-
-        <Card className="p-4 sm:p-5">
-          <div className="max-w-xs">
-            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">كما في تاريخ</label>
-            <DateField name="asOf" value={asOf} onChange={(e) => setAsOf(e.target.value)} ariaLabel="كما في تاريخ" />
-          </div>
-        </Card>
-
-        {loading ? (
-          <LoadingState message="جارٍ إعداد المركز المالي..." />
-        ) : (
-          <>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 sm:gap-5">
-              <StatCard icon={Landmark} tone="primary" label="إجمالي الأصول" value={formatCurrency(bs.totalAssets)} />
-              <StatCard icon={Landmark} tone="rose" label="إجمالي الالتزامات" value={formatCurrency(bs.totalLiabilities)} />
-              <StatCard className="col-span-2 md:col-span-1" icon={Landmark} tone="emerald"
-                label="حقوق الملكية" value={formatCurrency(bs.totalEquity)}
-                sub={`منها نتيجة الفترة ${formatCurrency(bs.periodResult)}`} />
-            </div>
-
-            <Card className="p-6">
-              <SectionHeader
-                title="المركز المالي"
-                subtitle={asOf ? `كما في ${asOf}` : 'حتى اليوم'}
-                action={<SecondaryButton icon={Download} onClick={handleExport}>تصدير CSV</SecondaryButton>}
-              />
-              {bs.assets.length + bs.liabilities.length + bs.equity.length === 0 ? (
-                <EmptyState icon={Landmark} title="لا توجد أرصدة بعد"
-                  hint="سيظهر المركز المالي تلقائياً بمجرد ترحيل أول عملية." compact />
-              ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                  <Section title="الأصول" rows={bs.assets} total={bs.totalAssets}
-                    tone="text-slate-900 dark:text-slate-100" />
-                  <div className="space-y-8">
-                    <Section title="الالتزامات" rows={bs.liabilities} total={bs.totalLiabilities}
-                      tone="text-slate-900 dark:text-slate-100" />
-                    <div>
-                      <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-2">حقوق الملكية</h3>
-                      <ul className="divide-y divide-slate-50 dark:divide-slate-800/60">
-                        {bs.equity.map((r) => (
-                          <li key={r.code} className="flex flex-wrap items-baseline justify-between gap-3 py-2">
-                            <span className="text-sm text-slate-700 dark:text-slate-300">
-                              <AccountLabel account={r} />
-                            </span>
-                            <span className="text-sm font-semibold tabular-nums text-slate-900 dark:text-slate-100">{formatCurrency(r.amount)}</span>
-                          </li>
-                        ))}
-                        {/* Retained earnings hold prior periods only; this
-                            period's result is shown separately until closed. */}
-                        <li className="flex items-baseline justify-between gap-3 py-2">
-                          <span className="text-sm text-slate-700 dark:text-slate-300">نتيجة الفترة الحالية</span>
-                          <span className={`text-sm font-semibold tabular-nums ${bs.periodResult >= 0 ? 'text-emerald-700 dark:text-emerald-300' : 'text-rose-700 dark:text-rose-300'}`}>
-                            {formatCurrency(bs.periodResult)}
-                          </span>
-                        </li>
-                      </ul>
-                      <div className="flex items-baseline justify-between gap-3 mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 font-bold text-slate-900 dark:text-slate-100">
-                        <span className="text-sm">الإجمالي</span>
-                        <span className="text-sm tabular-nums">{formatCurrency(bs.totalEquity)}</span>
-                      </div>
-                    </div>
-                    <div className="flex items-baseline justify-between gap-3 pt-3 border-t-2 border-slate-200 dark:border-slate-700 font-extrabold text-slate-900 dark:text-slate-100">
-                      <span className="text-sm">الالتزامات + حقوق الملكية</span>
-                      <span className="text-sm tabular-nums">{formatCurrency(bs.totalLiabilities + bs.totalEquity)}</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </Card>
-          </>
-        )}
-      </main>
-    </>
-  );
+  const ledger = useLedger(), fees = useFeeRules();
+  const { role, isPartnerView } = usePartnerView();
+  const props = { ledger, fees };
+  return !isPartnerView && ['admin', 'accountant'].includes(role)
+    ? <StaffBalanceSheet {...props} /> : <BalanceSheetContent {...props} />;
 }
+
+function BalanceSheetContent({ ledger, fees, assetSources, staff = false }) {
+  const today = todayISO();
+  const [asOf, setAsOf] = useState(today), [compareDate, setCompareDate] = useState(previousMonthEnd(today));
+  const [expanded, setExpanded] = useState({});
+  const date = asOf || today, comparisonDate = compareDate || previousMonthEnd(date);
+  const current = useMemo(() => balanceSheetPresentation({ ...ledger, ...assetSources, asOf: date, feeRules: fees.rules }), [ledger, assetSources, date, fees.rules]);
+  const previous = useMemo(() => balanceSheetPresentation({ ...ledger, ...assetSources, asOf: comparisonDate, feeRules: fees.rules }), [ledger, assetSources, comparisonDate, fees.rules]);
+  const loading = ledger.loading || fees.loading, error = ledger.error || fees.error;
+  function exportCsv() {
+    // Keep original ledger account identities and amounts in CSV. Display
+    // grouping and intangible classification never rewrite the raw export.
+    const rows = [];
+    for (const [label, accounts, total] of [['الأصول', current.assets, current.totalAssets], ['الالتزامات', current.liabilities, current.totalLiabilities], ['حقوق الملكية', current.equity, current.equityBeforeResult]]) {
+      rows.push([label, '', '']); accounts.forEach(row => rows.push([row.code, row.nameArabic, Number(row.amount.toFixed(2))]));
+      if (label !== 'حقوق الملكية') rows.push(['', `إجمالي ${label}`, total]);
+    }
+    rows.push(['', 'نتيجة الفترة', current.periodResult], ['', 'إجمالي حقوق الملكية', current.totalEquity], ['', 'الالتزامات + حقوق الملكية', current.totalLiabilities + current.totalEquity]);
+    downloadCsv(`المركز-المالي-حتى-${date}`, ['رقم الحساب', 'البند', 'المبلغ'], rows);
+  }
+  const totals = (key, label, amount, before) => <tr key={key} className="border-t-2 border-slate-300 dark:border-slate-600 font-bold">
+    <th className="p-3 text-start">{label}</th><td className={numeric}>{formatCurrency(amount)}</td><td className={numeric}>{formatCurrency(before)}</td>
+  </tr>;
+  return <>
+    <TopBar title="المركز المالي" subtitle="الأصول والالتزامات وحقوق الملكية من القيود المرحّلة" />
+    <main className="p-4 sm:p-6 lg:p-8 space-y-6">
+      {!isFirebaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
+      {error && <ErrorState title="تعذّر تحميل المركز المالي" error={error} onRetry={ledger.refetch} />}
+      {ledger.needsSeeding && <p role="alert">لم تتم تهيئة دليل الحسابات بعد.</p>}
+      <Card className="p-4 grid sm:grid-cols-2 gap-4">
+        <div><label className="block mb-2">كما في تاريخ</label><DateField name="asOf" value={date} onChange={event => setAsOf(event.target.value)} ariaLabel="كما في تاريخ" /></div>
+        <div><label className="block mb-2">تاريخ المقارنة</label><DateField name="compareDate" value={comparisonDate} onChange={event => setCompareDate(event.target.value)} ariaLabel="تاريخ المقارنة" /></div>
+      </Card>
+      {loading ? <LoadingState message="جارٍ إعداد المركز المالي..." /> : !error && <>
+        <Card className={`p-4 ${current.balanced ? 'text-emerald-700 dark:text-emerald-300' : 'text-rose-700 dark:text-rose-300'}`}>
+          <p role={current.balanced ? 'status' : 'alert'} className="font-bold">{current.balanced ? 'المعادلة المحاسبية متحققة' : 'المعادلة غير متحققة'} · الأصول = الالتزامات + حقوق الملكية</p>
+          {!current.balanced && <p>الفرق: {formatCurrency(current.difference)}</p>}
+          <p className="text-sm mt-2 text-slate-700 dark:text-slate-300">المعادلة من القيود المرحّلة بس</p>
+          {!previous.balanced && <p role="alert" className="text-rose-600">معادلة تاريخ المقارنة غير متحققة؛ الفرق: {formatCurrency(previous.difference)}</p>}
+        </Card>
+        {current.abnormalRows.length > 0 && <div role="alert" className="p-4 rounded-control bg-rose-100 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300">
+          <strong>رصيد عكس طبيعة الحساب</strong>{current.abnormalRows.map(row => <p key={row.key}>{row.label}: {formatCurrency(row.amount)} · رصيد غير طبيعي</p>)}
+        </div>}
+        {staff && <BalanceSheetUnposted ledger={ledger} asOf={date} feeRules={fees.rules} />}
+        <div className="grid sm:grid-cols-3 gap-4">
+          <StatCard icon={Landmark} tone="primary" label="إجمالي الأصول" value={formatCurrency(current.totalAssets)} />
+          <StatCard icon={Landmark} tone="rose" label="إجمالي الالتزامات" value={formatCurrency(current.totalLiabilities)} />
+          <StatCard icon={Landmark} tone="emerald" label="حقوق الملكية" value={formatCurrency(current.totalEquity)} />
+        </div>
+        <Card className="p-4 sm:p-6"><SectionHeader title="المركز المالي" subtitle="عرض دفتري؛ التصنيف التفصيلي لا يغير القيود" action={<SecondaryButton icon={Download} onClick={exportCsv}>تصدير CSV</SecondaryButton>} />
+          {staff && !assetSources.assetSourcesReady && <p role="status" className="text-sm mb-3">{assetSources.loading ? 'جارٍ تفصيل الأصول...' : 'تعذر تفصيل الأصول؛ الرصيد الكامل باقٍ دون توزيع افتراضي.'}</p>}
+          <ScrollableTable className="overflow-x-auto"><table className="w-full min-w-[38rem] text-sm">
+            <thead><tr><th className="p-3 text-start">البند</th><th className={numeric}>{date}</th><th className={numeric}>{comparisonDate}</th></tr></thead>
+            {SECTIONS.filter(([key]) => !key.startsWith('unclassified') || current.sections[key].rows.length || previous.sections[key].rows.length).map(([key, label]) => <tbody key={key}>
+              <tr className="bg-slate-100 dark:bg-slate-800"><th colSpan={3} className="p-3 text-start">{label}</th></tr>
+              {comparisonRows(current, previous, key).map(row => <Fragment key={row.key}>
+                <tr className="border-t border-slate-100 dark:border-slate-800">
+                  <th className={`p-3 text-start min-w-52 ${row.abnormal ? 'text-rose-600 dark:text-rose-300' : ''}`}>
+                    {row.children?.length ? <button type="button" aria-expanded={Boolean(expanded[row.key])} aria-controls={`balance-detail-${row.key}`} className="inline-flex items-center gap-2 text-start" onClick={() => setExpanded(value => ({ ...value, [row.key]: !value[row.key] }))}><ChevronDown size={16} />{row.label}</button>
+                      : row.code ? <a href={ledgerPeriodHref(row.code, null, date)} className="underline">{row.label}</a> : row.label}
+                    {row.note && <small className="block font-normal mt-1">{row.note}</small>}
+                    {row.abnormal && <small className="block">رصيد غير طبيعي</small>}
+                  </th>
+                  <td className={`${numeric} ${row.abnormal || (['currentResult', 'retained'].includes(row.key) && row.amount < 0) ? 'text-rose-600 dark:text-rose-300 font-bold' : ''}`}>{formatCurrency(row.amount)}</td>
+                  <td className={`${numeric} ${row.comparisonAbnormal ? 'text-rose-600 dark:text-rose-300' : ''}`}>{formatCurrency(row.comparison)}{row.comparisonAbnormal && <small className="block">رصيد غير طبيعي</small>}</td>
+                </tr>
+                {expanded[row.key] && row.children?.map((child, i) => <tr id={i === 0 ? `balance-detail-${row.key}` : undefined} key={child.key} className="bg-slate-50 dark:bg-slate-800/30">
+                  <th className="p-3 ps-8 text-start font-normal">{child.label}</th><td className={numeric}>{formatCurrency(child.amount)}</td><td className={numeric}>{formatCurrency(child.comparison)}</td>
+                </tr>)}
+              </Fragment>)}
+              {totals(key, `إجمالي ${label}`, current.sections[key].total, previous.sections[key].total)}
+              {key === 'unclassifiedAssets' || (key === 'noncurrentAssets' && !current.sections.unclassifiedAssets.rows.length && !previous.sections.unclassifiedAssets.rows.length) ? totals('totalAssets', 'إجمالي الأصول', current.totalAssets, previous.totalAssets) : null}
+              {key === 'unclassifiedLiabilities' || (key === 'noncurrentLiabilities' && !current.sections.unclassifiedLiabilities.rows.length && !previous.sections.unclassifiedLiabilities.rows.length) ? totals('totalLiabilities', 'إجمالي الالتزامات', current.totalLiabilities, previous.totalLiabilities) : null}
+            </tbody>)}
+            <tfoot>{totals('equation', 'الالتزامات + حقوق الملكية', roundMoney(current.totalLiabilities + current.totalEquity), roundMoney(previous.totalLiabilities + previous.totalEquity))}</tfoot>
+          </table></ScrollableTable>
+          <p className="text-xs mt-4 text-slate-500 dark:text-slate-400">تفصيل 1500 حسب بنود المصادر المرحلة؛ «أخرى» لا تعني اعتماد أهليتها للرسملة. لا إهلاك أو توزيع مصاريف سنوية مفترض.</p>
+        </Card>
+      </>}
+    </main>
+  </>;
+}
+const roundMoney = value => Math.round(value * 100) / 100;

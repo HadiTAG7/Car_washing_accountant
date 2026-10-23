@@ -114,7 +114,7 @@ export default function FixedAssetsPage() {
     try {
       await assertAssetCostMatches();
       const r = await postDepreciationBacklog({
-        userId: user?.id, onProgress: (p) => setProgress(p),
+        userId: user?.id, through: period, onProgress: (p) => setProgress(p),
       });
       showToast(
         r.failed.length

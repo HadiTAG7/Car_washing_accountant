@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components -- isolated browser fixtures */
-import { normalizeAsset, depreciationSchedule, accumulatedThrough, registerSummary, depreciationForPeriod } from '../../src/lib/accounting/depreciation';
+import { normalizeAsset, depreciationSchedule, accumulatedThrough, registerSummary, depreciationForPeriod, unpostedDepreciationPeriods } from '../../src/lib/accounting/depreciation';
 import { reconcileAssetCost } from '../../src/lib/accounting/assetReconciliation';
 const params = new URLSearchParams(window.location.search);
 const matched = params.get('matched') === 'yes';
@@ -26,7 +26,11 @@ export const assertAssetCostMatches = async () => {
 const record = label => { document.getElementById('fixture-action').textContent = label; };
 export const createAsset = async draft => { record(`إضافة وهمية: ${draft.name} · ${draft.inServiceDate} · ${draft.usefulLifeMonths} شهر · ${draft.assetKind}`); return { id: 'demo' }; };
 export const postDepreciationForPeriod = async period => { record(`ترحيل وهمي: ${period}`); return { total: 25, assetCount: 1 }; };
-export const postDepreciationBacklog = async () => { record('ترحيل وهمي: 3 أشهر'); return { posted: [1, 2, 3], failed: [] }; };
+export const postDepreciationBacklog = async ({ through }) => {
+  const periods = unpostedDepreciationPeriods(raw, { through });
+  record(`ترحيل وهمي: ${periods.length} أشهر حتى ${through}`);
+  return { posted: periods, failed: [] };
+};
 export const disposeAsset = async () => { throw new Error('الاستبعاد غير مشمول بهذا الفحص'); };
 export const setAssetActive = async () => { throw new Error('تغيير الحالة غير مشمول بهذا الفحص'); };
 export default function TopBar() { return <header className="p-4 text-xl font-bold">الأصول الثابتة — معاينة معزولة</header>; }

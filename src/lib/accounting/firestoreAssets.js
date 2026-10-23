@@ -200,7 +200,7 @@ export async function postDepreciationForPeriod(periodKey, { userId = null, asse
  * failure on one month is reported without stranding the rest — the same
  * contract as the operational posting sweep.
  */
-export async function postDepreciationBacklog({ userId = null, through = null, onProgress } = {}) {
+export async function postDepreciationBacklog({ userId = null, through = periodKeyOf(riyadhTodayISO()), onProgress } = {}) {
   requireDb();
   const assets = await fetchAssets();
   const already = await postedDepreciationPeriods();

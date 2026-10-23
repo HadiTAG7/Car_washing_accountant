@@ -50,6 +50,28 @@ describe('الأصول — حواجز العرض والترحيل', () => {
     render(<FixedAssetsPage />); fireEvent.click(screen.getByRole('button', { name: 'ترحيل' }));
     await waitFor(() => expect(fixture.post).toHaveBeenCalledWith('2026-10', { userId: 'synthetic' }));
   });
+  it('يرسل الجماعي حتى آخر شهر معروض فقط بعد التأكيد', async () => {
+    fixture.data.costReconciliation.matched = true;
+    fixture.backlog.mockResolvedValue({ posted: [1], failed: [] });
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    render(<FixedAssetsPage />);
+    fireEvent.click(screen.getByRole('button', { name: 'ترحيل 1 شهر' }));
+    await waitFor(() => expect(fixture.backlog).toHaveBeenCalledWith({
+      userId: 'synthetic', through: '2026-10', onProgress: expect.any(Function),
+    }));
+    expect(confirm).toHaveBeenCalledOnce(); confirm.mockRestore();
+  });
+  it('لا يمرر الجماعي بعد إلغاء التأكيد أو تغير المطابقة', async () => {
+    fixture.data.costReconciliation.matched = true;
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    render(<FixedAssetsPage />);
+    fireEvent.click(screen.getByRole('button', { name: 'ترحيل 1 شهر' }));
+    expect(fixture.preflight).not.toHaveBeenCalled();
+    confirm.mockReturnValue(true); fixture.preflight.mockRejectedValueOnce(new Error('المطابقة تغيرت'));
+    fireEvent.click(screen.getByRole('button', { name: 'ترحيل 1 شهر' }));
+    await waitFor(() => expect(fixture.preflight).toHaveBeenCalledOnce());
+    expect(fixture.backlog).not.toHaveBeenCalled(); confirm.mockRestore();
+  });
   it('بدء التشغيل فارغ، والأعمار قابلة للتعديل، والعقد بلا مدة مفترضة', () => {
     render(<FixedAssetsPage />); fireEvent.click(screen.getByRole('button', { name: 'أصل جديد' }));
     const date = screen.getByRole('button', { name: 'تاريخ بدء التشغيل' });

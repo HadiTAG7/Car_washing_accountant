@@ -265,6 +265,15 @@ d('سجل الأصول والإهلاك على Firestore الحقيقي', () => 
     await expect(assetsApi.postDepreciationForPeriod('2026-01')).rejects.toThrow(/مُرحّل بالفعل/);
   }, 90_000);
 
+  it('الجماعي الافتراضي لا يرحل الأشهر المستقبلية حتى لو أغفل المستدعي الحد', async () => {
+    const currentMonth = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Riyadh' }).format(new Date()).slice(0, 7);
+    await assetsApi.createAsset({ ...WASHER, inServiceDate: `${currentMonth}-01`, usefulLifeMonths: 4 });
+    const result = await assetsApi.postDepreciationBacklog();
+    expect(result.posted.map(row => row.periodKey)).toEqual([currentMonth]);
+    expect(result.failed).toEqual([]);
+    expect((await ledger.fetchEntries()).filter(row => row.sourceType === 'depreciation')).toHaveLength(1);
+  }, 90_000);
+
   it('لا يُرحَّل الإهلاك في فترة مقفلة، ويستأنف المتأخر بعد تخطّيها', async () => {
     await assetsApi.createAsset({ ...WASHER, usefulLifeMonths: 3 }, { userId: 'u1' });
     // Close January with nothing in it — the month is filed, so its charge

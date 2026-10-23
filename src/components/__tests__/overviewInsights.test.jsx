@@ -142,8 +142,8 @@ it('without Sweater data says so instead of zero, item by item', () => {
 });
 it('removes the selected explanations without changing the displayed calculations', () => {
   render(<OverviewBusinessInsights data={data()} periodKey="2026-10" washReady language="ar" />);
-  expect(card('استغلال الطاقة').textContent).toContain('10%'); expect(card('البقشيش').textContent).toContain('ما وصلت بيانات سويتر');
-  expect(card('استغلال الطاقة').textContent).not.toContain('تقريبي · على أيام الغسيل، مو الحضور');
+  expect(card('الإنتاج مقارنة بالطاقة اليومية').textContent).toContain('12.5%'); expect(card('البقشيش').textContent).toContain('ما وصلت بيانات سويتر');
+  expect(card('الإنتاج مقارنة بالطاقة اليومية').textContent).not.toContain('تقريبي · على أيام الغسيل، مو الحضور');
   expect(card('تكلفة الغسلة').querySelector('small')).toBeNull();
   expect(card('تكلفة الغسلة').textContent).not.toContain('تقديري');
   expect(card('توقع نهاية الشهر').querySelector('small')).toBeNull();
@@ -152,6 +152,14 @@ it('removes the selected explanations without changing the displayed calculation
   expect(card('الدفعة المتوقعة من سويتر').textContent).toContain('لم تُسجّل تسوية');
   expect(card('الخصومات والتعويضات').textContent).toContain('غير مسجلة');
   expect(card('الخصومات والتعويضات').textContent).not.toContain('0.00');
+});
+it.each(['ar', 'en'])('labels daily capacity clearly and displays eight assumed washes per biker (%s)', language => {
+  render(<OverviewBusinessInsights data={data()} periodKey="2026-10" washReady language={language} />);
+  const box = card(language === 'ar' ? 'الإنتاج مقارنة بالطاقة اليومية' : 'Output vs daily capacity');
+  expect(box.querySelector('strong').textContent).toBe('12.5%');
+  expect(box.querySelector('p bdi').textContent).toBe('8');
+  expect(box.textContent).toContain(language === 'ar' ? 'غسلات / يوم' : 'washes / day');
+  expect(screen.queryByRole('heading', { name: language === 'ar' ? 'استغلال الطاقة' : 'Capacity utilization' })).toBeNull();
 });
 it.each(['ar', 'en'])('does not present an unresolved saved settlement as a confirmed zero payment (%s)', language => {
   const d = data(); const row = { id: 's', periodKey: '2026-10', status: 'calculated', figures: { netDue: 0, counts: { eligible: 0, needsReview: 2, unknownStatus: 1 } } };

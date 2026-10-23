@@ -2,7 +2,7 @@
 export const OVERVIEW_SETTINGS = Object.freeze({
   washNetPrice: 20,
   // A biker's daily capacity: utilization and the break-even «فوق الطاقة» flag.
-  dailyAppointmentsPerBiker: 10,
+  dailyAppointmentsPerBiker: 8,
   // Break-even per biker: days off a month (prorated for a partial month), and
   // how costs with no biker on record are shared ('equal' per eligible day).
   monthlyDaysOff: 2,

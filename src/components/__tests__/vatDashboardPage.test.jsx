@@ -62,4 +62,12 @@ describe('VAT page display/read coverage',()=>{
    render(<VatDeclarations rows={[{period:'2026-Q3',report:{input:{tax:20},output:{tax:0},netTax:-20}}]} records={[{periodKey:'2026-Q3',status:'submitted',submittedDate:'2026-10-20',evidenceUrl:'javascript:alert(1)'}]} today="2026-10-23"/>);
    expect(screen.queryByRole('link')).toBeNull(); expect(screen.queryByRole('button')).toBeNull(); expect(screen.getByText('مقدّم')).toBeTruthy();
  });
+ it('distinguishes missing tracking evidence from an explicitly unsubmitted return',()=>{
+   render(<VatDeclarations rows={['2026-Q2','2026-Q3'].map(period=>({period,report:{input:{tax:0},output:{tax:0},netTax:0}}))}
+     records={[{periodKey:'2026-Q3',status:'not_submitted'}]} today="2026-10-23"/>);
+   expect(screen.getByText('حالة التقديم غير متحققة — لا إثبات مسجّل')).toBeTruthy();
+   expect(screen.getByText('لم يُقدَّم')).toBeTruthy();
+   expect(screen.getByText(/انقضى الموعد منذ 84 يوم/)).toBeTruthy();
+   expect(screen.queryByText(/متأخر 84 يوم/)).toBeNull();
+ });
 });

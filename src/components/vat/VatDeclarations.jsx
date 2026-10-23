@@ -19,7 +19,8 @@ export default function VatDeclarations({ rows, records, loading, error, today, 
       const deadline = declarationDeadline(row.period); const days = daysToDeadline(deadline, today);
       return <div key={row.period} role="alert" className={`border rounded-control p-3 text-sm ${days < 10 ? 'border-red-400 text-red-600 dark:text-red-300 bg-red-500/10' : 'border-amber-400 text-amber-700 dark:text-amber-300 bg-amber-500/10'}`}>
         إقرار {periodLabel(row.period).split(' · ')[0]}: آخر موعد {formatDateOnly(deadline)}،{' '}
-        {days >= 0 ? `باقي ${formatNumber(days)} يوم` : `متأخر ${formatNumber(Math.abs(days))} يوم`}
+        {days >= 0 ? `باقي ${formatNumber(days)} يوم` : indexed.get(row.period)?.status === 'not_submitted'
+          ? `متأخر ${formatNumber(Math.abs(days))} يوم` : `انقضى الموعد منذ ${formatNumber(Math.abs(days))} يوم`}
         {!indexed.has(row.period) && <span className="block mt-1 text-xs">لا يوجد إثبات تقديم مسجّل؛ هذا لا يثبت عدم التقديم لدى الهيئة.</span>}
       </div>;
     })}
@@ -34,7 +35,7 @@ export default function VatDeclarations({ rows, records, loading, error, today, 
             <td className="p-3 tabular-nums">{row.report.policyUnconfigured ? 'غير محسوم' : money(row.report.output.tax, scale)}</td>
             <td className="p-3 tabular-nums">{money(row.report.input.tax, scale)}</td>
             <td className="p-3 tabular-nums">{row.report.policyUnconfigured ? 'غير محسوم' : <>{money(Math.abs(row.report.netTax), scale)} · {row.report.netTax < 0 ? 'مسترد' : row.report.netTax > 0 ? 'مستحق' : 'متوازن'}</>}</td>
-            <td className="p-3">{record ? known || 'حالة غير معروفة' : 'لم يُقدَّم — لا إثبات مسجّل'}</td>
+            <td className="p-3">{record ? known || 'حالة غير معروفة' : 'حالة التقديم غير متحققة — لا إثبات مسجّل'}</td>
             <td className="p-3">{record?.submittedDate ? formatDateOnly(record.submittedDate) : '—'}</td>
             <td className="p-3">{/^https?:\/\//i.test(record?.evidenceUrl || '') ? <a className="text-primary-600 underline" href={record.evidenceUrl} target="_blank" rel="noopener noreferrer">عرض الإثبات</a> : 'غير مسجّل'}</td>
           </tr>;

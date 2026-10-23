@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { overviewOperations, overviewQuality, overviewWindow } from '../overviewDashboard';
+import { isDepartedStatus, overviewOperations, overviewQuality, overviewWindow } from '../overviewDashboard';
 
 const opts = { periodKey: '2026-10', today: '2026-10-16' };
 const wash = (id, washDate, quantity = 1, extra = {}) => ({ id, washDate, quantity, status: 'مكتملة', ...extra });
@@ -60,5 +60,12 @@ describe('quality sample, not a full quality assessment', () => {
       booking('b', 1, { driverName: 'Same' }), { bikerId: 'b', record: booking('c', 3, { driverExternalId: '1982' }).record }] });
     expect(q.attention.map(item => [item.biker.id, item.low])).toEqual([['a', 1], ['b', 1]]);
     expect(overviewQuality({ ...opts, bikers: [...bikers, { id: 'c', driverExternalId: '1982' }], bookings: [booking('d', 1, { driverExternalId: '1982' })] }).attention).toEqual([]);
+  });
+});
+
+describe('departed statuses', () => {
+  it('«هرب» or «مشيناه», alone or followed by more words', () => {
+    expect(['هرب', 'هرب مع الشريحة', 'هرب مع الاجهزة', 'مشيناه', ' مشيناه '].map(s => isDepartedStatus(s))).toEqual([true, true, true, true, true]);
+    expect(['هربان', 'شغال', 'جاهز للاختبار', '', null, undefined].map(s => isDepartedStatus(s))).toEqual([false, false, false, false, false, false]);
   });
 });

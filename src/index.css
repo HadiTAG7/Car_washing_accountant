@@ -259,8 +259,10 @@ html.dark ::-webkit-scrollbar-thumb:hover { background: #52565c; }
 .sw-modal-surface::backdrop { background: rgb(15 23 42 / 45%); }
 .sw-modal-surface:not([open]) { display: none; }
 
-/* Keep row identity visible while leaving every financial column scrollable. */
-.sw-table-sticky-identity :is(th, td):first-child:not([colspan]) {
+/* Keep row identity visible while leaving every financial column scrollable.
+   The identity is the first column, or the second (--second) where a code comes first. */
+.sw-table-sticky-identity:not(.sw-table-sticky-identity--second) :is(th, td):first-child:not([colspan]),
+.sw-table-sticky-identity--second :is(th, td):nth-child(2):not([colspan]) {
   position: sticky;
   inset-inline-start: 0;
   z-index: 2;
@@ -272,7 +274,7 @@ html.dark ::-webkit-scrollbar-thumb:hover { background: #52565c; }
   background: var(--sw-surface);
   border-inline-end: 1px solid var(--sw-border-subtle);
 }
-.sw-table-sticky-identity th:first-child { z-index: 3; }
+.sw-table-sticky-identity:not(.sw-table-sticky-identity--second) th:first-child, .sw-table-sticky-identity--second th:nth-child(2) { z-index: 3; }
 @media (max-width: 639px) {
   .sw-stat-card { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 4px 12px; padding: 12px; }
   .sw-stat-top { display: contents; }
@@ -281,5 +283,6 @@ html.dark ::-webkit-scrollbar-thumb:hover { background: #52565c; }
   .sw-stat-label { grid-column: 2; margin: 0; }
   .sw-stat-value { grid-column: 2; min-width: 0; font-size: 20px; line-height: 1.45; }
   .sw-stat-sub { grid-column: 2; margin: 0; }
-  .sw-table-sticky-identity :is(th, td):first-child:not([colspan]) { width: 9rem; max-width: 9rem; }
+  .sw-table-sticky-identity:not(.sw-table-sticky-identity--second) :is(th, td):first-child:not([colspan]),
+  .sw-table-sticky-identity--second :is(th, td):nth-child(2):not([colspan]) { width: 9rem; max-width: 9rem; }
 }

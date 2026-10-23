@@ -1,6 +1,6 @@
 import { OVERVIEW_SETTINGS } from '../config/overviewSettings.js';
 import { monthRange } from './accounting/monthlyStatement.js';
-import { isOverviewWorkingBiker } from './overviewDashboard.js';
+import { isDepartedStatus, isOverviewWorkingBiker } from './overviewDashboard.js';
 import { ADJUSTMENT_KIND, ADJUSTMENT_APPROVAL } from '../../functions/src/sweater/vocab.js';
 
 const money = n => Math.round(n * 100) / 100;
@@ -70,7 +70,9 @@ export function overviewSettlements({ adjustments = [], settlements = [], period
 // Only persisted source timestamps, never guessed duration or an owner's
 // completion decision. Conflicting duplicate source bookings are suppressed.
 export function overviewAttention({ ops, bikers = [], bookings = [], today, settings = OVERVIEW_SETTINGS }) {
-  if (!ops) return { shortWashes: [], iqamas: [], idle: [], timed: 0, missingTiming: 0, conflictingBookings: 0, missingIqama: null };
+  // Left (هرب / مشيناه) with no end date on record: listed only, never edited.
+  const missingEndDate = bikers.filter(biker => isDepartedStatus(biker.currentStatus, settings) && !String(biker.endDate || '').trim());
+  if (!ops) return { shortWashes: [], iqamas: [], idle: [], timed: 0, missingTiming: 0, conflictingBookings: 0, missingIqama: null, missingEndDate };
   const seen = new Map(); const conflicts = new Set();
   for (const booking of bookings) {
     const row = booking.record || booking;
@@ -108,7 +110,7 @@ export function overviewAttention({ ops, bikers = [], bookings = [], today, sett
   }) : [];
   return { shortWashes: timed.filter(row => row.duration < settings.shortWashMinutes), timed: timed.length,
     missingTiming: executed.size - timed.length, conflictingBookings: conflicts.size,
-    iqamas, idle, missingIqama: bikers.filter(b => !Number.isFinite(dayMs(b.iqamaExpiry))).length };
+    iqamas, idle, missingIqama: bikers.filter(b => !Number.isFinite(dayMs(b.iqamaExpiry))).length, missingEndDate };
 }
 
 export function parseMetabaseCount(value) {

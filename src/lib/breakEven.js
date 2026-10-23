@@ -43,9 +43,13 @@ export function dailyBreakEvenDays(daily = [], required) {
  * which is exactly the statement's salary accrual. Housing, bike/insurance,
  * fuel, phone and iqama/fees have no biker field, so they are shared.
  *
- * Shared costs = the statement's total − recorded direct costs, split equally
- * per payroll-eligible day (the payroll's own start/end proration). Shares are
- * apportioned in halalas so the allocation sums to the total exactly.
+ * Who carries the cost (settings.bikerBreakEvenBasis): 'washers' — bikers on
+ * the payroll with a wash on a completed day of the month (the salaries of
+ * those without one join the shared costs); 'payroll' — everyone paid.
+ *
+ * Shared costs = the statement's total − the carriers' direct costs, split
+ * equally per payroll-eligible day (the payroll's own start/end proration).
+ * Shares are apportioned in halalas so the allocation sums to the total exactly.
  *
  * A biker with eligible days but no recorded direct cost gets the average
  * direct cost per eligible day and is marked approximate; that amount is not a
@@ -55,6 +59,7 @@ export function bikerBreakEven({ statement, payrollLines = [], washes = [], bike
   const total = finite(statement?.totalCosts);
   if (total === null || !periodKey || !(settings.washNetPrice > 0)) return null;
   if (settings.fixedCostAllocation !== 'equal') throw new Error(`Unsupported fixed cost allocation: ${settings.fixedCostAllocation}`);
+  if (!['washers', 'payroll'].includes(settings.bikerBreakEvenBasis)) throw new Error(`Unsupported break-even basis: ${settings.bikerBreakEvenBasis}`);
   const monthDays = monthDaysOf(periodKey);
   const { from, to } = monthRange(periodKey);
   const names = new Map(bikers.map(biker => [biker.id, biker]));
@@ -68,7 +73,22 @@ export function bikerBreakEven({ statement, payrollLines = [], washes = [], bike
     const prior = lines.get(line.bikerId);
     lines.set(line.bikerId, { bikerId: line.bikerId, name: line.name, days: (prior?.days ?? 0) + days, direct: (prior?.direct ?? 0) + direct });
   }
-  const active = [...lines.values()].filter(row => row.days > 0);
+
+  // Completed days only (today is still running), as the overview averages.
+  const byBiker = new Map(); let unlinkedWashes = 0;
+  for (const wash of washes) {
+    const day = wash.washDate ?? wash.wash_date; const quantity = Math.max(0, Number(wash.quantity) || 0);
+    if (!day || day < from || day > to || (today && day >= today) || !quantity) continue;
+    const bikerId = String(wash.bikerId ?? wash.biker_id ?? '').trim();
+    if (!bikerId) { unlinkedWashes += quantity; continue; }
+    const entry = byBiker.get(bikerId) || { washes: 0, days: new Set() };
+    entry.washes += quantity; entry.days.add(day); byBiker.set(bikerId, entry);
+  }
+
+  const paid = [...lines.values()].filter(row => row.days > 0);
+  // Paid this month without a wash on a completed day.
+  const idle = paid.filter(row => !byBiker.has(row.bikerId));
+  const active = settings.bikerBreakEvenBasis === 'washers' ? paid.filter(row => byBiker.has(row.bikerId)) : paid;
   const directTotal = active.reduce((sum, row) => sum + row.direct, 0);
   const shared = cents(total) - directTotal;
   const daySum = active.reduce((sum, row) => sum + row.days, 0);
@@ -82,17 +102,6 @@ export function bikerBreakEven({ statement, payrollLines = [], washes = [], bike
 
   const recorded = active.filter(row => row.direct > 0);
   const directPerDay = recorded.length ? recorded.reduce((sum, row) => sum + row.direct, 0) / recorded.reduce((sum, row) => sum + row.days, 0) : null;
-
-  // Completed days only (today is still running), as the overview averages.
-  const byBiker = new Map(); let unlinkedWashes = 0;
-  for (const wash of washes) {
-    const day = wash.washDate ?? wash.wash_date; const quantity = Math.max(0, Number(wash.quantity) || 0);
-    if (!day || day < from || day > to || (today && day >= today) || !quantity) continue;
-    const bikerId = String(wash.bikerId ?? wash.biker_id ?? '').trim();
-    if (!bikerId) { unlinkedWashes += quantity; continue; }
-    const entry = byBiker.get(bikerId) || { washes: 0, days: new Set() };
-    entry.washes += quantity; entry.days.add(day); byBiker.set(bikerId, entry);
-  }
 
   const workDaysFull = monthDays - (finite(settings.monthlyDaysOff) ?? 0);
   const rows = active.map((row, i) => {
@@ -112,13 +121,20 @@ export function bikerBreakEven({ statement, payrollLines = [], washes = [], bike
       actualDaily, coverage, tone: coverageTone(coverage), overCapacity: requiredDaily !== null && requiredDaily > settings.dailyAppointmentsPerBiker };
   });
   // Bikers with washes but no eligible payroll days carry no cost here.
-  const outside = [...byBiker.entries()].filter(([id]) => !active.some(row => row.bikerId === id))
+  const outside = [...byBiker.entries()].filter(([id]) => !paid.some(row => row.bikerId === id))
     .map(([id, done]) => ({ bikerId: id, biker: names.get(id) || null, name: names.get(id)?.name || id, washes: done.washes, washDays: done.days.size }));
+  // Their salaries, and the daily break-even (overview definition) without them.
+  const idleSalaries = idle.reduce((sum, row) => sum + row.direct, 0);
+  const idleSummary = { count: idle.length, salaries: idleSalaries / 100,
+    rows: idle.map(row => ({ bikerId: row.bikerId, biker: names.get(row.bikerId) || null, name: names.get(row.bikerId)?.name || row.name || row.bikerId,
+      activeDays: row.days, salary: row.direct / 100 })),
+    dailyRequired: total / settings.washNetPrice / monthDays,
+    dailyWithout: (cents(total) - idleSalaries) / 100 / settings.washNetPrice / monthDays };
 
   const allocated = rows.reduce((sum, row) => sum + cents(row.direct) + cents(row.share), 0);
   const withRequired = rows.filter(row => row.requiredDaily !== null);
-  return { periodKey, total, monthDays, directTotal: directTotal / 100, shared: shared / 100, allocatedTotal: allocated / 100,
+  return { periodKey, basis: settings.bikerBreakEvenBasis, total, monthDays, directTotal: directTotal / 100, shared: shared / 100, allocatedTotal: allocated / 100,
     difference: (cents(total) - allocated) / 100, approximateTotal: rows.reduce((sum, row) => sum + row.approxDirect, 0),
     averageRequiredDaily: withRequired.length ? withRequired.reduce((sum, row) => sum + row.requiredDaily, 0) / withRequired.length : null,
-    rows, outside, unlinkedWashes, estimated: Boolean(statement?.salaryAccrual?.estimated) };
+    rows, idle: idleSummary, outside, unlinkedWashes, estimated: Boolean(statement?.salaryAccrual?.estimated) };
 }

@@ -1,8 +1,14 @@
 import { uniqueCompletedCommissionWashes } from '../../functions/src/washCommission.js';
 import { monthRange } from './accounting/monthlyStatement.js';
+import { OVERVIEW_SETTINGS } from '../config/overviewSettings.js';
 
 const round = n => Math.round(n * 100) / 100;
 export const isOverviewWorkingBiker = biker => ['يشتغل', 'شغال', 'working'].includes(String(biker.currentStatus || '').trim().toLowerCase());
+/** A biker who has left: status «هرب» or «مشيناه», alone or followed by more words. */
+export const isDepartedStatus = (status, settings = OVERVIEW_SETTINGS) => {
+  const value = String(status || '').trim();
+  return settings.departedStatuses.some(word => value === word || value.startsWith(`${word} `));
+};
 const realDay = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
   && Number.isFinite(Date.parse(`${value}T00:00:00Z`)) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
 export function overviewWindow(periodKey, today) {

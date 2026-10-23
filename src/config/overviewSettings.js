@@ -7,6 +7,12 @@ export const OVERVIEW_SETTINGS = Object.freeze({
   // how costs with no biker on record are shared ('equal' per eligible day).
   monthlyDaysOff: 2,
   fixedCostAllocation: 'equal',
+  // Who carries the month's full cost in break-even per biker: 'washers' (on the
+  // payroll with a wash on a completed day of the month) or 'payroll' (everyone paid).
+  bikerBreakEvenBasis: 'washers',
+  // A biker whose status is one of these (alone or followed by more words, as in
+  // «هرب مع الشريحة») has left; with no end date on record, the overview lists them.
+  departedStatuses: ['هرب', 'مشيناه'],
   shortWashMinutes: 10,
   documentWarningDays: 30,
   forecastWindowDays: 7,

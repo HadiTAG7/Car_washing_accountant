@@ -19,7 +19,7 @@ import AddBikerModal from './AddBikerModal';
 import AddBikerAdvanceModal from './AddBikerAdvanceModal';
 import BikerPayroll from './BikerPayroll';
 import BikerProfile from './BikerProfile';
-import { BikerBreakEvenLoader, BreakEvenCells, BreakEvenHeaders, BreakEvenReconciliation, BREAK_EVEN_COLUMNS } from './BikerBreakEven';
+import { BikerBreakEvenLoader, BreakEvenCells, BreakEvenHeaders, BreakEvenReconciliation, BREAK_EVEN_COLUMNS, IdleSalariesCard } from './BikerBreakEven';
 import { riyadhToday } from '../lib/bikerProfile';
 import { useBikers } from '../hooks/useBikers';
 import { useWashes } from '../hooks/useWashes';
@@ -318,8 +318,9 @@ export default function BikersPage({ role, payrollPreview = false, initialSectio
             ) : null}
           />
 
+          {showBreakEven && <IdleSalariesCard state={breakEven} monthLabel={formatMonthLabel(month)} />}
           <TableSearch id="biker-search" label="البحث في سجل العمال" value={search} onChange={setSearch} shown={filteredRows.length} total={rows.length} hint="الملخصات تشمل جميع العمال" />
-          <ScrollableTable stickyIdentity className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
+          <ScrollableTable stickyIdentity identityColumn={2} className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
             <table className={`w-full ${showBreakEven ? 'min-w-[2160px]' : 'min-w-[1440px]'} text-sm`}>
               <thead>
                 <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">

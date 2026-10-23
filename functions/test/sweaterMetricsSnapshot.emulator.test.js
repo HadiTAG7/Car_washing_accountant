@@ -53,6 +53,14 @@ suite('Sweater metrics readings in an isolated demo store', () => {
     expect(rows.docs.map(d => d.id)).toEqual(['metrics-2026-10-23-0900', 'metrics-2026-10-23-0800']);
   });
 
+  it('persists source-precision biker attribution and refuses changing it on replay', async () => {
+    const payload = reading({ metrics: { tipsNet: 73.13 }, tipsByBiker: [{ driverExternalId: '1984', netAmount: 73.125 }] });
+    expect(await saveMetricsSnapshot(db, FieldValue, payload, { keyId: 'k', nowMs: NOW })).toMatchObject({ stored: true });
+    expect((await db.collection(COL).doc(payload.importRunId).get()).data().tipsByBiker).toEqual(payload.tipsByBiker);
+    expect(await saveMetricsSnapshot(db, FieldValue, payload, { keyId: 'k', nowMs: NOW })).toMatchObject({ stored: false });
+    await expect(saveMetricsSnapshot(db, FieldValue, { ...payload, tipsByBiker: [{ driverExternalId: '1989', netAmount: 73.125 }] }, { keyId: 'k', nowMs: NOW })).rejects.toMatchObject({ code: 'already-exists' });
+  });
+
   it('arrives through the operations endpoint only under the agent key and the full-request signature', async () => {
     const key = await createIntegrationKey(db, FieldValue, { label: 'Synthetic demo-only key' });
     const handler = operationsHandler({ getDb: () => db, FieldValue });

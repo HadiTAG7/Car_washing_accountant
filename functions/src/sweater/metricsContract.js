@@ -37,9 +37,25 @@ const sspSourceUrl = x => {
 };
 const halalas = v => Number(v.toFixed(2)) === v;
 
+// Optional display-only attribution from the same Tips reading. Retain source
+// precision; round the sum once, just as the monthly net metric is rounded.
+export function validTipsByBiker(rows, total) {
+  if (!Array.isArray(rows) || rows.length > 5000 || typeof total !== 'number' || !Number.isFinite(total)) return false;
+  const ids = new Set(); let sum = 0;
+  for (const row of rows) {
+    if (!exactKeys(row, ['driverExternalId', 'netAmount']) || !docId(row.driverExternalId)
+      || ids.has(row.driverExternalId) || typeof row.netAmount !== 'number' || !Number.isFinite(row.netAmount)
+      || Math.abs(row.netAmount) > 1e9) return false;
+    ids.add(row.driverExternalId); sum += row.netAmount;
+  }
+  return Math.round(sum * 100) === Math.round(total * 100);
+}
+
 /** One month's reading: known metrics only, counts as whole numbers, money to the halala. */
 export function validateMetricsSnapshot(payload) {
-  if (!exactKeys(payload, ['contractVersion', 'importRunId', 'periodKey', 'extractedAt', 'sourceUrl', 'metrics'])
+  const fields = ['contractVersion', 'importRunId', 'periodKey', 'extractedAt', 'sourceUrl', 'metrics'];
+  if (object(payload) && Object.hasOwn(payload, 'tipsByBiker')) fields.push('tipsByBiker');
+  if (!exactKeys(payload, fields)
     || payload.contractVersion !== METRICS_CONTRACT || !docId(payload.importRunId) || !month(payload.periodKey)
     || !instant(payload.extractedAt) || !sspSourceUrl(payload.sourceUrl)) fail('عقد لقطة أرقام سويتر أو معرّفها أو شهرها أو وقتها أو رابطها غير صالح.');
   // A reading of a month's dashboard is taken on or after its first day (Riyadh).
@@ -53,6 +69,9 @@ export function validateMetricsSnapshot(payload) {
       // Net tips after fees may fall below zero; the other amounts never do.
       : halalas(value) && (key === 'tipsNet' || value >= 0));
     if (!valid) fail(`قيمة ${key} غير صالحة: ${unit === 'count' ? 'عدد صحيح غير سالب' : 'مبلغ بالريال لا يتجاوز هللتين'}.`);
+  }
+  if (Object.hasOwn(payload, 'tipsByBiker') && !validTipsByBiker(payload.tipsByBiker, payload.metrics.tipsNet)) {
+    fail('تفاصيل البقشيش تحتاج معرفات بايكر فريدة ومبالغ فعلية يطابق مجموعها صافي اللقطة نفسها.');
   }
   return payload;
 }

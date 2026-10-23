@@ -28,6 +28,11 @@
 .sw-overview__source-note p + p { margin-top: 4px; }
 .sw-overview__insights { display: grid; gap: 18px; margin-top: 22px; }
 .sw-overview-insight { gap: 10px; }
+.sw-overview-insight:has(.sw-overview-insight__opener) { position: relative; }
+.sw-overview-insight__opener { text-align: inherit; font: inherit; color: inherit; }
+.sw-overview-insight__opener::after { content: ''; position: absolute; inset: 0; border-radius: inherit; cursor: pointer; }
+.sw-overview-insight:has(.sw-overview-insight__opener:focus-visible) { outline: 2px solid var(--sw-action); outline-offset: 3px; }
+.sw-overview-insight:has(.sw-overview-insight__opener):hover { border-color: var(--sw-action); }
 .sw-overview-insight h3 { font-size: .85rem; color: var(--sw-text-secondary); font-weight: 600; }
 .sw-overview-insight p { font-size: .8rem; line-height: 1.9; }
 .sw-overview-insight small { color: var(--sw-text-secondary); font-size: .73rem; line-height: 1.8; }
@@ -93,6 +98,9 @@
 .sw-overview-quality__coverage[open] > summary { margin-bottom: 14px; }
 .sw-overview-detail button { min-width: 44px; min-height: 44px; display: grid; place-items: center; }
 .sw-overview-detail p { margin-bottom: 16px; font-size: .8rem; line-height: 1.9; }
+.sw-overview-detail__table { overflow-x: auto; }
+.sw-overview-detail__table table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+.sw-overview-detail__table th, .sw-overview-detail__table td { text-align: start; padding: 12px 8px; border-bottom: 1px solid var(--sw-border-subtle); }
 .sw-overview-detail li { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 14px 0; border-bottom: 1px solid var(--sw-border-subtle); font-size: .85rem; overflow-wrap: anywhere; }
 @media (max-width: 1100px) { .sw-overview__metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .sw-overview__operations-grid > :last-child { grid-column: 1 / -1; } }
 @media (max-width: 640px) { .sw-overview { padding: 20px 14px; gap: 26px; } .sw-overview__intro { align-items: stretch; flex-direction: column; } .sw-overview__financial-grid { grid-template-columns: 1fr; } .sw-overview-metric { padding: 17px; } .sw-overview__panel { padding: 18px; } .sw-overview__attention { grid-template-columns: 1fr; } .sw-overview-detail { padding: 16px; } }

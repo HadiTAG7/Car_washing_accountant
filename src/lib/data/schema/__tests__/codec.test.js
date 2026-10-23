@@ -25,6 +25,10 @@ const roundTrip = (collection, id, data) => {
 };
 
 describe('سجل الجداول', () => {
+  it('round-trips display-only biker tips in the existing snapshot extra JSON without schema changes', () => {
+    const document = { periodKey: '2026-10', metrics: { tipsNet: 73.13 }, tipsByBiker: [{ driverExternalId: '1984', netAmount: 73.125 }] };
+    expect(roundTrip('sweater_metric_snapshots', 'tips-test', document)).toEqual(document);
+  });
   it('كل جدول باسم فريد وأعمدة بلا تكرار', () => {
     const names = SCHEMA.map(t => t.table);
     expect(new Set(names).size).toBe(names.length);

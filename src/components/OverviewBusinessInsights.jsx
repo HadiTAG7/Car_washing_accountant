@@ -1,9 +1,12 @@
+import { useState } from 'react';
 import { OVERVIEW_SETTINGS as settings } from '../config/overviewSettings';
 import { overviewBusinessMetrics, overviewSettlements, overviewSweaterMetrics } from '../lib/overviewInsights';
 import { formatCurrencyPrecise, formatNumber } from '../data/initialData';
+import OverviewBikerDetails from './OverviewBikerDetails';
 
 export default function OverviewBusinessInsights({ data, periodKey, washReady, language, onNavigate, breakEven = {} }) {
   const text = (ar, en) => language === 'en' ? en : ar;
+  const [detail, setDetail] = useState(null);
   const unavailable = text('غير متاح', 'Unavailable');
   const num = value => value == null ? unavailable : formatNumber(Math.round(value * 100) / 100);
   const currency = value => value == null ? unavailable : formatCurrencyPrecise(value);
@@ -58,7 +61,7 @@ export default function OverviewBusinessInsights({ data, periodKey, washReady, l
         <p>{text('سعر الغسلة قبل الضريبة', 'Net wash price')}: <bdi>{currency(settings.washNetPrice)}</bdi></p>
         {(sourceGap || partial) && <small>{sourceGap || partial}</small>}
       </Insight>
-      <Insight title={text('الإنتاج مقارنة بالطاقة اليومية', 'Output vs daily capacity')} value={m?.capacityUtilization == null ? unavailable : `${num(m.capacityUtilization)}%`}>
+      <Insight title={text('الإنتاج مقارنة بالطاقة اليومية', 'Output vs daily capacity')} onOpen={() => setDetail('capacity')} value={m?.capacityUtilization == null ? unavailable : `${num(m.capacityUtilization)}%`}>
         <p>{text('الطاقة المفترضة لكل بايكر', 'Assumed capacity per biker')}: <bdi>{num(settings.dailyAppointmentsPerBiker)}</bdi> {text('غسلات / يوم', 'washes / day')}</p>
         {m?.capacityUtilization == null && <small>{text('لا يوجد متوسط بايكر مؤكّد لأيام مكتملة، أو ربط الغسلات ناقص.', 'No confirmed biker average for completed days, or wash identities are incomplete.')}</small>}
       </Insight>
@@ -83,9 +86,7 @@ export default function OverviewBusinessInsights({ data, periodKey, washReady, l
         {aReady && settlement?.pending.length > 0 && <p>{text('خصومات معلّقة، غير داخلة في الإجمالي', 'Pending deductions, excluded from total')}: <bdi>{currency(settlement.pendingTotal)}</bdi></p>}
         {link(text('تفاصيل تسويات سويتر', 'Sweater settlement details'), 'sweater_settlements')}
       </Insight>
-      <Insight title={text('البقشيش', 'Tips')} titleHint={updated(['tipsNet'])} value={fromSweater(sweater?.tipsNet, currency)}>
-        <p>{text('صافي البقشيش بعد الرسوم، من تبويب Tips في Business Dashboard.', 'Net tips after fees, from the Tips tab of the Business Dashboard.')}</p>
-      </Insight>
+      <Insight title={text('البقشيش', 'Tips')} titleHint={updated(['tipsNet'])} onOpen={() => setDetail('tips')} value={fromSweater(sweater?.tipsNet, currency)} />
     </div>
     <div className="sw-overview__financial-grid sw-overview__insight-grid">
       <Insight title={text('الدفعة المتوقعة من سويتر', 'Expected Sweater payment')} value={sReady && settlement?.unresolvedZero ? text('تحتاج مراجعة', 'Needs review') : currency(sReady && ops ? settlement.expected : null)}>
@@ -106,11 +107,13 @@ export default function OverviewBusinessInsights({ data, periodKey, washReady, l
       </p>}
       <small>{periodKey} · {text('من Business Dashboard في سويتر، يصل تلقائيًا مع تكامل التشغيل.', 'From Sweater’s Business Dashboard, sent automatically by the operations integration.')} {updated(['completedWashes'])}</small>
     </section>
+    {detail && <OverviewBikerDetails key={`${periodKey}:${detail}`} kind={detail} ops={ops} bikers={data.workers?.error || data.workers?.loading ? [] : data.workers?.bikers || []}
+      snapshot={sweaterRead?.snapshot} periodKey={periodKey} language={language} onClose={() => setDetail(null)} />}
   </div>;
 }
 
 // tone: true (reached, green), false (below, red), or none.
-function Insight({ title, titleHint, value, tone = null, children }) {
+function Insight({ title, titleHint, value, tone = null, onOpen, children }) {
   return <section className={`sw-overview-metric sw-overview-insight${tone === true ? ' sw-overview-insight--good' : tone === false ? ' sw-overview-insight--bad' : ''}`}>
-    <h3 title={titleHint || undefined}>{title}</h3><strong className="tabular-nums"><bdi>{value}</bdi></strong>{children}</section>;
+    <h3 title={titleHint || undefined}>{onOpen ? <button type="button" className="sw-overview-insight__opener" onClick={onOpen} aria-haspopup="dialog">{title}</button> : title}</h3><strong className="tabular-nums"><bdi>{value}</bdi></strong>{children}</section>;
 }

@@ -53,8 +53,8 @@ export default function OverviewBusinessInsights({ data, periodKey, washReady, l
         <p>{text('متوسط الفعلي لكل بايكر', 'Average actual per biker')}: <bdi>{num(perBiker?.averageActualDaily)}</bdi> · {text('التغطية', 'Coverage')}: <bdi>{perBiker?.averageCoverage == null ? unavailable : `${formatNumber(Math.round(perBiker.averageCoverage * 100))}%`}</bdi></p>
         <p>{text('البايكرية المحسوبون', 'Bikers counted')}: <bdi>{perBiker ? formatNumber(perBiker.rows.length) : unavailable}</bdi></p>
         <small>{!perBiker ? sourceGap || text('مسير الشهر غير متاح بعد.', 'The month’s payroll is not available yet.')
-          : perBiker.basis === 'washers' ? text('على من سجّل غسلة في يوم مكتمل من الشهر: تكلفة الشهر كاملة موزعة بالتساوي على أيام المسير. الفعلي على أيام غسيل كل بايكر المكتملة.', 'Bikers with a wash on a completed day of the month carry the month’s full cost, shared equally by payroll days. Actual over each biker’s completed wash days.')
-            : text('على كل من في مسير الشهر، بالتناسب مع أيام المسير. الفعلي على أيام غسيل كل بايكر المكتملة.', 'Everyone on the month’s payroll, prorated by payroll days. Actual over each biker’s completed wash days.')} {estimated}</small>
+          : perBiker.basis === 'washers' ? text('على من سجّل غسلة في يوم مكتمل من الشهر: تكلفة الشهر كاملة موزعة بالتساوي على أيام المسير. الفعلي = غسلات الأيام المكتملة ÷ أيام غسيل البايكرية، نفس «متوسط غسلات البايكر».', 'Bikers with a wash on a completed day of the month carry the month’s full cost, shared equally by payroll days. Actual = washes on completed days ÷ biker wash days, the same as «Average washes per biker».')
+            : text('على كل من في مسير الشهر، بالتناسب مع أيام المسير. الفعلي = غسلات الأيام المكتملة ÷ أيام غسيل البايكرية، نفس «متوسط غسلات البايكر».', 'Everyone on the month’s payroll, prorated by payroll days. Actual = washes on completed days ÷ biker wash days, the same as «Average washes per biker».')} {estimated}</small>
         {link(text('تفاصيل كل بايكر', 'Per-biker details'), 'bikers')}
       </Insight>
       <Insight title={text('تكلفة الغسلة', 'Cost per wash')} value={currency(m?.costPerWash)}>

@@ -143,7 +143,7 @@ function formatLoggedDate(value) {
   }
 }
 
-export default function VariableExpensesPage() {
+export default function VariableExpensesPage({ embedded = false } = {}) {
   const { bikers } = useBikers();
   const { language } = useLanguage();
   const {
@@ -278,10 +278,10 @@ export default function VariableExpensesPage() {
 
   return (
     <>
-      <TopBar
+      {!embedded && <TopBar
         title="المصاريف المتغيرة"
         subtitle="تتبّع تكاليف الغسلة الواحدة، العمولات، والمستلزمات المتغيرة حسب الشهر"
-      />
+      />}
 
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
         {!isFirebaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}

@@ -1,4 +1,4 @@
-import AccountCode from './AccountCode';
+import AccountLabel from './AccountLabel';
 import { useMemo, useState } from 'react';
 import { Landmark, Download, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { formatCurrency } from '../data/initialData';
@@ -30,8 +30,7 @@ function Section({ title, rows, total, tone }) {
           {rows.map((r) => (
             <li key={r.code} className="flex flex-wrap items-baseline justify-between gap-3 py-2">
               <span className="text-sm text-slate-700 dark:text-slate-300 min-w-0">
-                <span className="tabular-nums text-slate-500 dark:text-slate-400 ml-1"><AccountCode code={r.code} /></span>
-                {r.nameArabic}
+                <AccountLabel account={r} />
               </span>
               <span className="text-sm font-semibold tabular-nums text-slate-900 dark:text-slate-100 shrink-0">
                 {formatCurrency(r.amount)}
@@ -162,8 +161,7 @@ export default function BalanceSheetPage() {
                         {bs.equity.map((r) => (
                           <li key={r.code} className="flex flex-wrap items-baseline justify-between gap-3 py-2">
                             <span className="text-sm text-slate-700 dark:text-slate-300">
-                              <span className="tabular-nums text-slate-500 dark:text-slate-400 ml-1"><AccountCode code={r.code} /></span>
-                              {r.nameArabic}
+                              <AccountLabel account={r} />
                             </span>
                             <span className="text-sm font-semibold tabular-nums text-slate-900 dark:text-slate-100">{formatCurrency(r.amount)}</span>
                           </li>

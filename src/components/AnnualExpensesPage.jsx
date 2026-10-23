@@ -52,7 +52,7 @@ function formatAnnualPaymentDate(month, day) {
   return `${formatNumber(day)} / ${formatNumber(month)} من كل عام`;
 }
 
-export default function AnnualExpensesPage() {
+export default function AnnualExpensesPage({ embedded = false } = {}) {
   const {
     items, loading, error,
     addItem, updateItem, updateStatus, deleteItem, refetch,
@@ -181,10 +181,10 @@ export default function AnnualExpensesPage() {
 
   return (
     <>
-      <TopBar
+      {!embedded && <TopBar
         title="المصاريف السنوية"
         subtitle="متابعة المصاريف التشغيلية المتكررة للأسطول والامتياز"
-      />
+      />}
 
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
         {!isFirebaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}

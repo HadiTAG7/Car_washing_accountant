@@ -23,17 +23,20 @@ function readCollapsed() {
 // tabs, never from an unfiltered navigation catalogue.
 function sidebarItems(group) {
   const seen = new Set();
-  return group.tabs.flatMap(tab => {
+  const tabs = group.tabs.filter(tab => !tab.hidden);
+  // The section catalogue sets presentation order, not access permissions.
+  const ordered = group.sections ? group.sections.flatMap(section => section.tabIds.map(id => tabs.find(tab => tab.id === id)).filter(Boolean)) : tabs;
+  return ordered.flatMap(tab => {
     const section = group.sections?.find(item => item.tabIds.includes(tab.id));
     if (!section) return [{ tab }];
     if (seen.has(section.id)) return [];
     seen.add(section.id);
-    return [{ section, tabs: section.tabIds.map(id => group.tabs.find(item => item.id === id)).filter(Boolean) }];
+    return [{ section, tabs: section.tabIds.map(id => tabs.find(item => item.id === id)).filter(Boolean) }];
   });
 }
 
-function SidebarTab({ tab: { id, label, icon: Icon }, activeTab, onSelectTab }) {
-  const isActive = activeTab === id;
+function SidebarTab({ tab: { id, label, icon: Icon, activeTabIds = [] }, activeTab, onSelectTab }) {
+  const isActive = activeTab === id || activeTabIds.includes(activeTab);
   return <li><button type="button" onClick={() => onSelectTab(id)}
     aria-current={isActive ? 'page' : undefined}
     className={`relative w-full flex items-center gap-3 px-3.5 py-3 md:py-2.5 text-sm font-semibold transition-colors duration-200
@@ -224,7 +227,7 @@ export default function Sidebar({
                     {sidebarItems(group).map(item => {
                       if (item.tab) return <SidebarTab key={item.tab.id} tab={item.tab} activeTab={activeTab} onSelectTab={onSelectTab} />;
                       const key = `${group.id}:${item.section.id}`;
-                      const open = !collapsed.has(key) || item.tabs.some(tab => tab.id === activeTab);
+                      const open = !collapsed.has(key) || item.tabs.some(tab => tab.id === activeTab || tab.activeTabIds?.includes(activeTab));
                       const listId = `nav-${group.id}-${item.section.id}`;
                       return <li key={key} className="my-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/40">
                         <div role="group" aria-label={item.section.title}>

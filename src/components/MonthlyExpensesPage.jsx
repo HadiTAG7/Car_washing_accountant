@@ -79,7 +79,7 @@ function formatLoggedDate(iso) {
   }
 }
 
-export default function MonthlyExpensesPage() {
+export default function MonthlyExpensesPage({ embedded = false } = {}) {
   const {
     items: allItems, loading, error,
     addItem, updateItem, updateStatus, deleteItem, refetch,
@@ -204,10 +204,10 @@ export default function MonthlyExpensesPage() {
 
   return (
     <>
-      <TopBar
+      {!embedded && <TopBar
         title="المصاريف الشهرية"
         subtitle="متابعة المصاريف التشغيلية الشهرية المتكررة"
-      />
+      />}
 
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
         <label className="inline-flex flex-wrap items-center gap-3 text-sm font-semibold">

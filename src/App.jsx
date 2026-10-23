@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { Loader2 } from 'lucide-react';
 import {
-  visibleGroupsFor, resolveTab, investorViewFor, INVESTOR_TAB_IDS,
+  visibleGroupsFor, resolveTab, investorViewFor, INVESTOR_TAB_IDS, EXPENSE_TAB_IDS,
 } from './lib/navGroups';
 
 import { lazy, Suspense } from 'react';
@@ -28,12 +28,9 @@ const ExecutiveReportsPage = lazy(() => import('./components/ExecutiveReportsPag
 const SupervisorPage       = lazy(() => import('./components/SupervisorPage'));
 const SupervisorRecordsPage = lazy(() => import('./components/SupervisorRecordsPage'));
 const InvestorPage         = lazy(() => import('./components/InvestorPage'));
-const StartupPage          = lazy(() => import('./components/StartupPage'));
-const AnnualExpensesPage   = lazy(() => import('./components/AnnualExpensesPage'));
+const ExpensesPage = lazy(() => import('./components/ExpensesPage'));
 const SweaterSettlementsPage = lazy(() => import('./components/SweaterSettlementsPage'));
 const SweaterIntegrationPage = lazy(() => import('./components/SweaterIntegrationPage'));
-const MonthlyExpensesPage  = lazy(() => import('./components/MonthlyExpensesPage'));
-const VariableExpensesPage = lazy(() => import('./components/VariableExpensesPage'));
 const WashesPage           = lazy(() => import('./components/WashesPage'));
 const FinancialSummaryPage = lazy(() => import('./components/FinancialSummaryPage'));
 const VatRecoveryPage      = lazy(() => import('./components/VatRecoveryPage'));
@@ -42,7 +39,6 @@ const PartnersPage         = lazy(() => import('./components/PartnersPage'));
 const PartnerPaymentsPage  = lazy(() => import('./components/PartnerPaymentsPage'));
 const BikersPage           = lazy(() => import('./components/BikersPage'));
 const HousingPage          = lazy(() => import('./components/HousingPage'));
-const TemporaryExpensesPage = lazy(() => import('./components/TemporaryExpensesPage'));
 const AgentCommandCenterPage = lazy(() => import('./components/AgentCommandCenterPage'));
 // ── الدفاتر المحاسبية ──────────────────────────────────────────────────
 const GeneralLedgerPage    = lazy(() => import('./components/GeneralLedgerPage'));
@@ -111,6 +107,8 @@ function AppShell({ membership }) {
   const investorView = INVESTOR_TAB_IDS.includes(effectiveTab)
     ? investorViewFor(effectiveTab)
     : null;
+  const expenseRoute = effectiveTab === 'expenses' || EXPENSE_TAB_IDS.includes(effectiveTab);
+  const pageKey = expenseRoute ? 'expenses' : effectiveTab;
 
   const [showEntrySelector, setShowEntrySelector] = useState(false);
   const [pendingEntry, setPendingEntry] = useState(null);
@@ -206,11 +204,11 @@ function AppShell({ membership }) {
           />
         )}
 
-        <AppErrorBoundary key={effectiveTab}><Suspense fallback={<LoadingState message="جارٍ تحميل الصفحة..." />}>
+        <AppErrorBoundary key={pageKey}><Suspense fallback={<LoadingState message="جارٍ تحميل الصفحة..." />}>
           {/* key={activeTab} remounts the wrapper per tab so the page-in
               entrance replays on every switch (no-op under
               prefers-reduced-motion). */}
-          <div key={effectiveTab} className="animate-page-in flex-1 flex flex-col">
+          <div key={pageKey} className="animate-page-in flex-1 flex flex-col">
             <RouteMounted page={effectiveTab} />
             {investorView && <InvestorPage view={investorView} />}
             {effectiveTab === 'overview' && (membership.role === 'supervisor' ? <SupervisorPage /> : <OverviewPage onNavigate={handleSelectTab} />)}
@@ -228,17 +226,14 @@ function AppShell({ membership }) {
                 preview={previewCommandCenter}
               />
             )}
-            {effectiveTab === 'startup'   && (
-              <StartupPage
+            {expenseRoute && (
+              <ExpensesPage activeTab={effectiveTab} onNavigate={handleSelectTab}
                 pendingEntry={pendingEntry}
                 onClearPendingEntry={clearPendingEntry}
               />
             )}
-            {effectiveTab === 'annual'    && <AnnualExpensesPage />}
             {effectiveTab === 'sweater_settlements' && <SweaterSettlementsPage />}
             {effectiveTab === 'sweater_integration' && <SweaterIntegrationPage />}
-            {effectiveTab === 'monthly'   && <MonthlyExpensesPage />}
-            {effectiveTab === 'variable'  && <VariableExpensesPage />}
             {effectiveTab === 'washes'    && <WashesPage />}
             {effectiveTab === 'bikers'    && <BikersPage role={visibleRole} payrollPreview={previewPayroll} />}
             {effectiveTab === 'housing'   && <HousingPage />}
@@ -247,7 +242,6 @@ function AppShell({ membership }) {
             {effectiveTab === 'budgets'   && <BudgetsPage />}
             {effectiveTab === 'partners'  && <PartnersPage />}
             {effectiveTab === 'payments'  && <PartnerPaymentsPage />}
-            {effectiveTab === 'temporary_expenses' && <TemporaryExpensesPage />}
             {effectiveTab === 'ledger'    && <GeneralLedgerPage />}
             {effectiveTab === 'trial'     && <TrialBalancePage />}
             {effectiveTab === 'balance'   && <BalanceSheetPage />}

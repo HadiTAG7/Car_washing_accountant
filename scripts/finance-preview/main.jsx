@@ -4,6 +4,9 @@ import FinanceHomePage from '../../src/components/FinanceHomePage';
 import FinanceReportsPage from '../../src/components/FinanceReportsPage';
 import FinanceWorkbenchPage from '../../src/components/FinanceWorkbenchPage';
 import Sidebar from '../../src/components/Sidebar';
+import BalanceSheetPage from '../../src/components/BalanceSheetPage';
+import TrialBalancePage from '../../src/components/TrialBalancePage';
+import GeneralLedgerPage from '../../src/components/GeneralLedgerPage';
 import { visibleGroupsFor } from '../../src/lib/navGroups';
 import '../../src/index.css';
 export default function Preview() {
@@ -16,6 +19,6 @@ export default function Preview() {
     {navigation && <button type="button" onClick={() => setMobileOpen(true)}>اختبار القائمة</button>}
     <nav style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 12 }}>
     <button onClick={() => setPage('finance')}>المالية</button><button onClick={() => setPage('finance_workbench')}>صندوق العمل</button><button onClick={() => setPage('finance_reports')}>التقارير والأرشيف</button>
-  </nav></header>{page === 'finance_reports' ? <FinanceReportsPage /> : page === 'finance_workbench' ? <FinanceWorkbenchPage /> : <FinanceHomePage onNavigate={setPage} />}</div></>;
+  </nav></header>{page === 'finance_reports' ? <FinanceReportsPage /> : page === 'finance_workbench' ? <FinanceWorkbenchPage /> : page === 'balance' ? <BalanceSheetPage /> : page === 'trial' ? <TrialBalancePage /> : page === 'ledger' ? <GeneralLedgerPage /> : <FinanceHomePage onNavigate={setPage} />}</div></>;
 }
 createRoot(document.getElementById('root')).render(<Preview />);

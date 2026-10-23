@@ -1,3 +1,9 @@
 .fw-period { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; max-width: 100%; }
 .fw-page .sw-profile-month-picker__trigger { border-color: var(--sw-primary, #f97316); background: #f9731615; }
 .fw-page .sw-profile-month-picker__months button[aria-pressed="true"] { background: var(--sw-primary, #f97316); color: #fff; border-color: transparent; }
+.fw-posting-note { font-size: .95rem; line-height: 1.9; padding: 12px 16px; border-right: 3px solid var(--sw-primary, #f97316); }
+.fw-comparison { padding: 18px; }
+.fw-comparison h2 { font-weight: 700; margin-bottom: 8px; }
+.fw-comparison p, .fw-comparison small { font-size: .8rem; line-height: 1.8; }
+.fw-comparison table { margin: 12px 0; min-width: 420px; font-size: .85rem; }
+.fw-comparison th, .fw-comparison td { padding: 12px 8px; border-bottom: 1px solid #64748b40; }

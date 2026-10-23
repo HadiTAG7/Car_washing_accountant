@@ -59,37 +59,36 @@ const tabButton = (label) => screen.queryByRole('button', { name: label });
 const groupHeader = (title) => screen.getByRole('button', { name: title });
 
 describe('Sidebar — المجموعات', () => {
-  it('nests all five expense pages inside finance/expenses, not under settlements', () => {
+  it('shows one expense destination inside daily entry, retaining the three finance sections', () => {
     const select = renderSidebar({ groups: visibleGroupsFor({ role: 'admin' }) });
     const finance = screen.getByRole('group', { name: 'المالية', exact: true });
-    const expenses = within(finance).getByRole('group', { name: 'المصاريف', exact: true });
+    const expenses = within(finance).getByRole('group', { name: 'الإدخال اليومي', exact: true });
     for (const label of ['رسوم التأسيس', 'المصاريف السنوية', 'المصاريف الشهرية', 'المصاريف المتغيرة', 'المصروفات المؤقتة']) {
-      expect(within(expenses).getByRole('button', { name: label, exact: true })).toBeTruthy();
-      expect(screen.getAllByRole('button', { name: label, exact: true })).toHaveLength(1);
+      expect(screen.queryByRole('button', { name: label, exact: true })).toBeNull();
     }
-    expect(within(expenses).queryByRole('button', { name: 'تسويات سويتر' })).toBeNull();
+    expect(within(expenses).getByRole('button', { name: 'تسويات سويتر' })).toBeTruthy();
     expect(within(finance).getByRole('button', { name: 'تسويات سويتر' })).toBeTruthy();
-    fireEvent.click(within(expenses).getByRole('button', { name: 'المصاريف الشهرية', exact: true }));
-    expect(select).toHaveBeenCalledWith('monthly');
     fireEvent.click(within(expenses).getByRole('button', { name: 'المصاريف', exact: true }));
-    expect(within(expenses).queryByRole('button', { name: 'رسوم التأسيس' })).toBeNull();
-    expect(within(finance).getByRole('button', { name: 'تسويات سويتر' })).toBeTruthy();
-    expect(JSON.parse(localStorage.getItem('mw:navCollapsed'))).toEqual(['finance:expenses']);
+    expect(select).toHaveBeenCalledWith('expenses');
+    expect(within(finance).getByRole('group', { name: 'القوائم' })).toBeTruthy();
+    expect(within(finance).getByRole('group', { name: 'الشركاء والضريبة والإقفال' })).toBeTruthy();
   });
 
   it('keeps both finance and expenses expanded for an active legacy expense URL without erasing preferences', () => {
-    localStorage.setItem('mw:navCollapsed', JSON.stringify(['finance', 'finance:expenses']));
+    localStorage.setItem('mw:navCollapsed', JSON.stringify(['finance', 'finance:daily']));
     renderSidebar({ activeTab: 'annual', groups: visibleGroupsFor({ role: 'admin' }) });
     expect(groupHeader('المالية').getAttribute('aria-expanded')).toBe('true');
-    expect(groupHeader('المصاريف').getAttribute('aria-expanded')).toBe('true');
-    expect(tabButton('المصاريف السنوية').getAttribute('aria-current')).toBe('page');
-    expect(JSON.parse(localStorage.getItem('mw:navCollapsed'))).toEqual(['finance', 'finance:expenses']);
+    expect(groupHeader('الإدخال اليومي').getAttribute('aria-expanded')).toBe('true');
+    expect(tabButton('المصاريف').getAttribute('aria-current')).toBe('page');
+    expect(JSON.parse(localStorage.getItem('mw:navCollapsed'))).toEqual(['finance', 'finance:daily']);
   });
 
   it('never restores section children removed by the caller role filter', () => {
     const finance = visibleGroupsFor({ role: 'admin' }).find(group => group.id === 'finance');
-    renderSidebar({ groups: [{ ...finance, tabs: finance.tabs.filter(tab => ['finance', 'monthly'].includes(tab.id)) }] });
-    expect(tabButton('المصاريف الشهرية')).toBeTruthy();
+    renderSidebar({ groups: [{ ...finance, tabs: finance.tabs.filter(tab => ['finance', 'expenses'].includes(tab.id)) }] });
+    expect(tabButton('المصاريف')).toBeTruthy();
+    expect(tabButton('صندوق العمل المالي')).toBeNull();
+    expect(tabButton('تسويات سويتر')).toBeNull();
     expect(tabButton('رسوم التأسيس')).toBeNull();
     expect(tabButton('المصاريف السنوية')).toBeNull();
     expect(tabButton('المصاريف المتغيرة')).toBeNull();

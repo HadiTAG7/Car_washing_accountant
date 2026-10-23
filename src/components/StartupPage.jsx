@@ -109,7 +109,7 @@ function EmptyState({ onAdd, canMutate }) {
   );
 }
 
-export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
+export default function StartupPage({ pendingEntry, onClearPendingEntry, embedded = false }) {
   const {
     items, loading, error,
     addItem, updateItem, deleteItem, refetch,
@@ -235,10 +235,10 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry }) {
 
   return (
     <>
-      <TopBar
+      {!embedded && <TopBar
         title="رسوم التأسيس"
         subtitle="تتبع المصاريف التأسيسية لمرة واحدة لامتياز سويتر"
-      />
+      />}
 
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
         {!isFirebaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}

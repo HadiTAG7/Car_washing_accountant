@@ -1,6 +1,7 @@
 // Synthetic visual-test fixture. Reference financial totals supplied by Hadi;
 // no credentials, live SDK reads, financial writes or real worker identities.
 import { overviewOperations } from '../../src/lib/overviewDashboard';
+import { composeSweaterMetricReadings } from '../../src/lib/sweaterMetricReadings';
 const today = '2026-10-21';
 const bikers = [{ id: 'TEST-A', driverExternalId: 'TEST-A', name: 'بايكر اختبار أ', nameEnglish: 'Test biker A', currentStatus: 'working', iqamaExpiry: '2026-11-01' },
   { id: 'TEST-B', driverExternalId: 'TEST-B', name: 'بايكر اختبار ب', nameEnglish: 'Test biker B', currentStatus: 'training', iqamaExpiry: '' }];
@@ -14,5 +15,10 @@ export function useOverviewDashboard(periodKey) {
   return { finance: { statement, previous: null, loading: false }, operations: overviewOperations({ washes, bikers, periodKey, today }),
     workers: { bikers, loading: false, error: null }, washes: ready(washes), dueVouchers: [], retry: () => {},
     bookings: ready([{ record: { sspBookingId: 'TEST-19-0', serviceDate: '2026-10-20', driverExternalId: 'TEST-A', startedAt: '2026-10-20T09:00:00+03:00', completedAt: '2026-10-20T09:09:00+03:00' } }]),
+    sweaterMetrics: { snapshot: composeSweaterMetricReadings([
+      { id: 'TEST-BUSINESS', periodKey: '2026-10', extractedAtIso: '2026-10-21T06:00:00Z', metrics: { completedWashes: 400, tipsNet: 50 } },
+      { id: 'TEST-COMPENSATIONS', periodKey: '2026-10', extractedAtIso: '2026-10-21T07:00:00Z', metrics: { violations: 100, damages: 0, compensations: 0,
+        freeWashCompensation: 2, cancelledByBiker: 3, cancelledMaintenance: 1, cancelledByCustomer: 4 } },
+    ], periodKey), loading: false, error: null },
     settlements: ready([]), adjustments: ready([]) };
 }

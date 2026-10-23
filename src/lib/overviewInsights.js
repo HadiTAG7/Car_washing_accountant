@@ -127,7 +127,9 @@ export function overviewSweaterMetrics(snapshot, ops) {
   const deductions = items('deduction');
   const money = deductions.filter(item => item.unit === 'sar' && item.value !== null);
   const completedWashes = value('completedWashes');
-  return { updatedAtIso: snapshot.extractedAtIso || null, completedWashes, tipsNet: value('tipsNet'),
+  const updatedAtByMetric = Object.fromEntries(Object.keys(SWEATER_METRICS).map(key => [key, value(key) === null ? null
+    : snapshot.metricSources ? snapshot.metricSources[key]?.extractedAtIso ?? null : snapshot.extractedAtIso || null]));
+  return { updatedAtIso: snapshot.extractedAtIso || null, updatedAtByMetric, completedWashes, tipsNet: value('tipsNet'),
     washDifference: completedWashes !== null && ops ? completedWashes - ops.quantity : null,
     deductions, additions: items('addition'),
     deductionMoney: money.length ? money.reduce((sum, item) => sum + item.value, 0) : null };

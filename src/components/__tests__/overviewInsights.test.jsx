@@ -5,6 +5,7 @@ import OverviewBusinessInsights from '../OverviewBusinessInsights';
 import OverviewOperationalAttention from '../OverviewOperationalAttention';
 import { overviewOperations } from '../../lib/overviewDashboard';
 import { bikerBreakEven, dailyBreakEven, dailyBreakEvenDays } from '../../lib/breakEven';
+import { composeSweaterMetricReadings } from '../../lib/sweaterMetricReadings';
 
 afterEach(cleanup);
 beforeEach(() => localStorage.clear());
@@ -61,6 +62,38 @@ it('break-even boxes stay neutral and unavailable without confirmed figures', ()
 const october = { periodKey: '2026-10', extractedAtIso: '2026-10-23T05:00:00.000Z', metrics: { completedWashes: 480, tipsNet: 68, violations: 530,
   damages: 0, compensations: 0, freeWashCompensation: 8, cancelledByCustomer: 10, cancelledByBiker: 13, cancelledMaintenance: 4 } };
 const region = name => screen.getByRole('region', { name });
+it.each(['ar', 'en'])('keeps separate source times after partial snapshots and does not stamp older tips/washes as fresh (%s)', language => {
+  const d = data();
+  d.sweaterMetrics = { snapshot: composeSweaterMetricReadings([
+    { ...october, extractedAtIso: '2026-10-23T06:00:00Z', metrics: { completedWashes: 480, tipsNet: 68 } },
+    { ...october, extractedAtIso: '2026-10-23T07:00:00Z', metrics: { violations: 530, damages: 0, compensations: 0 } },
+  ], '2026-10'), loading: false, error: null };
+  render(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language={language} />);
+  const tips = card(language === 'ar' ? 'البقشيش' : 'Tips');
+  const deductions = card(language === 'ar' ? 'الخصومات والتعويضات' : 'Deductions and compensation');
+  const washes = region(language === 'ar' ? 'مطابقة الغسلات مع سويتر' : 'Sweater wash reconciliation');
+  for (const box of [tips, washes]) {
+    expect(box.textContent).toMatch(/9:00|09:00/);
+    expect(box.textContent).not.toContain('10:00');
+  }
+  expect(deductions.textContent).toContain('10:00');
+  expect(deductions.textContent).not.toMatch(/9:00|09:00/);
+  expect(deductions.querySelector('strong').textContent).toContain('530.00');
+  expect(tips.querySelector('strong').textContent).toContain('68.00');
+  expect(washes.querySelector('strong').textContent).toBe('480');
+});
+it('dates each compensation item when that group contains readings taken at different times', () => {
+  const d = data();
+  d.sweaterMetrics = { snapshot: composeSweaterMetricReadings([
+    october,
+    { ...october, extractedAtIso: '2026-10-23T07:00:00Z', metrics: { violations: 535 } },
+  ], '2026-10'), loading: false, error: null };
+  render(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language="en" />);
+  const items = within(card('Deductions and compensation')).getAllByRole('listitem');
+  expect(items.find(item => item.textContent.includes('Violations')).textContent).toContain('10:00');
+  expect(items.find(item => item.textContent.includes('Damages')).textContent).toContain('08:00');
+  expect(card('Deductions and compensation').textContent).toContain('each item retains its time');
+});
 it('fills Sweater’s count, tips and itemized deductions from the latest reading, each with its time', () => {
   const d = data(); d.sweaterMetrics = { snapshot: october, loading: false, error: null }; const navigate = vi.fn();
   render(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language="ar" onNavigate={navigate} />);

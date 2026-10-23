@@ -41,6 +41,7 @@
 .sw-overview-insight__group { font-weight: 600; }
 .sw-overview-insight__items { display: grid; gap: 2px; width: 100%; margin: 0; padding: 0; list-style: none; font-size: .8rem; }
 .sw-overview-insight__items li { display: flex; justify-content: space-between; gap: 12px; }
+.sw-overview-insight__items li small { display: block; border: 0; padding-top: 2px; }
 .sw-overview__reconciliation { display: grid; gap: 10px; padding: 20px; border: 1px solid var(--sw-border-subtle); background: var(--sw-surface); border-radius: var(--sw-radius-card); font-size: .85rem; }
 .sw-overview__reconciliation h3 { font-weight: 700; }
 .sw-overview__reconciliation strong { font-size: clamp(1.25rem, 2vw, 1.85rem); line-height: 1.4; }

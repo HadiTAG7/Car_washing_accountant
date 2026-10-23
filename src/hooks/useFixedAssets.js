@@ -9,8 +9,6 @@ import {
   reconcileDepreciation,
 } from '../lib/accounting/depreciation';
 import { currentPeriodKey } from '../lib/accounting/periods';
-import { reconcileAssetCost } from '../lib/accounting/assetReconciliation';
-import { riyadhTodayISO } from '../lib/washesYesterday';
 
 /**
  * سجل الأصول — the register, enriched with what each asset's schedule says
@@ -54,9 +52,6 @@ export function useFixedAssets({ asOf = null } = {}) {
   [rawAssets, period]);
 
   const summary = useMemo(() => registerSummary(rawAssets, period), [rawAssets, period]);
-  const costReconciliation = useMemo(() => reconcileAssetCost(rawAssets, entries, lines, {
-    to: riyadhTodayISO(),
-  }), [rawAssets, entries, lines]);
 
   // Only months up to the current one: depreciating a future month would
   // recognise an expense before it was incurred.
@@ -80,7 +75,7 @@ export function useFixedAssets({ asOf = null } = {}) {
   }, []);
 
   return {
-    assets, summary, pendingPeriods, postedPeriods, period, reconciliation, costReconciliation,
+    assets, summary, pendingPeriods, postedPeriods, period, reconciliation,
     loading: assetsQ.loading || entriesQ.loading || linesQ.loading,
     error: assetsQ.error || entriesQ.error || linesQ.error || null,
     refetch,

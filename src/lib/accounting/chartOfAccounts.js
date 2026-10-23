@@ -39,7 +39,6 @@ export const ACC = {
   EMPLOYEE_ADVANCE:  '1300', // عهد ومصروفات قابلة للاسترداد
   FIXED_ASSETS:      '1500', // أصول ثابتة
   ACCUM_DEPRECIATION:'1510', // مجمع الإهلاك
-  ACCUM_AMORTIZATION:'1511', // مجمع إطفاء الأصول غير الملموسة
   PAYABLE:           '2000', // الموردون / الذمم الدائنة
   PAYROLL_PAYABLE:   '2010', // رواتب مستحقة
   OUTPUT_VAT:        '2100', // ضريبة مخرجات مستحقة
@@ -57,7 +56,6 @@ export const ACC = {
   RENT_MONTHLY:      '5200', // الإيجار والمصروفات الشهرية
   ADMIN_EXPENSES:    '5300', // المصروفات الإدارية
   DEPRECIATION:      '5400', // الإهلاك
-  AMORTIZATION:      '5410', // إطفاء الأصول غير الملموسة
   ASSET_DISPOSAL_LOSS:'5500',// خسائر استبعاد أصول
 };
 
@@ -80,8 +78,6 @@ export const DEFAULT_CHART_OF_ACCOUNTS = [
   // Contra-asset: it lives under assets but carries a credit balance, which
   // is why normalBalance is stated explicitly here instead of derived.
   { code: ACC.ACCUM_DEPRECIATION, nameArabic: 'مجمع الإهلاك',                   accountType: 'asset',
-    parentId: ACC.FIXED_ASSETS, normalBalance: 'credit', contra: true },
-  { code: ACC.ACCUM_AMORTIZATION, nameArabic: 'مجمع إطفاء الأصول غير الملموسة', accountType: 'asset',
     parentId: ACC.FIXED_ASSETS, normalBalance: 'credit', contra: true },
 
   // ── الالتزامات ──────────────────────────────────────────────────────
@@ -120,7 +116,6 @@ export const DEFAULT_CHART_OF_ACCOUNTS = [
   { code: ACC.RENT_MONTHLY,       nameArabic: 'الإيجار والمصروفات الشهرية',     accountType: 'expense' },
   { code: ACC.ADMIN_EXPENSES,     nameArabic: 'المصروفات الإدارية',             accountType: 'expense' },
   { code: ACC.DEPRECIATION,       nameArabic: 'الإهلاك',                        accountType: 'expense' },
-  { code: ACC.AMORTIZATION,       nameArabic: 'إطفاء الأصول غير الملموسة',      accountType: 'expense' },
   { code: ACC.ASSET_DISPOSAL_LOSS, nameArabic: 'خسائر استبعاد أصول',            accountType: 'expense' },
 ].map((a) => ({
   parentId: null,

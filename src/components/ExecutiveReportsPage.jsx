@@ -8,16 +8,17 @@ import { AGENT_CATALOG } from '../lib/agentOrganization';
 import { riyadhTodayISO } from '../lib/washesYesterday';
 import { LanguageContext } from '../i18n/LanguageContext';
 import './ExecutiveReportsPage.css';
+import ExecutiveDailySummary, { ExecutiveDailySummaryLive } from './ExecutiveDailySummary';
 
 const roleName=role=>AGENT_CATALOG.find(x=>x.number===role)?.name||String(role);
 const number=value=>value==null?'غير متاح':new Intl.NumberFormat('ar-SA',{numberingSystem:'latn',maximumFractionDigits:2}).format(value);
 const date=value=>new Intl.DateTimeFormat('ar-SA-u-ca-gregory',{numberingSystem:'latn',timeZone:'Asia/Riyadh',dateStyle:'medium',timeStyle:'short',hourCycle:'h23'}).format(new Date(value));
 const tabs=[['daily','ملخص اليوم'],['decisions','متابعة القرارات'],['weekly','المراجعة الأسبوعية']];
 const kindName={independent:'تحقق مستقل',owner:'تحقق المالك',self:'تحقق ذاتي — ليس مستقلًا'};
-const reviewedLanguage={language:'ar'}; // Preserve the CEO's reviewed Arabic snapshot verbatim.
+const reviewedLanguage={language:'ar'}; // Archived tabs stay verbatim; the daily projection never rewrites the snapshot.
 
 const shortTitle = value => value.split(/[؛.!؟]/u)[0];
-export function ExecutiveReportView({report,currentRevision=report.revision,selectedTab,onTabChange}){
+export function ExecutiveReportView({report,currentRevision=report.revision,selectedTab,onTabChange,dailySummary}){
   const viewId=useId();
   const [localTab,setLocalTab]=useState('daily'),[status,setStatus]=useState('all'),[owner,setOwner]=useState('all'),[search,setSearch]=useState('');
   const tab=selectedTab||localTab, tabRefs=useRef(new Map()), resetRef=useRef(null);
@@ -29,7 +30,7 @@ export function ExecutiveReportView({report,currentRevision=report.revision,sele
     &&(!query||[d.caseId,d.decision,d.next,roleName(d.ownerRole)].join(' ').toLocaleLowerCase('ar-SA').includes(query)));
   const reset=()=>{setStatus('all');setOwner('all');setSearch('');};
   return <LanguageContext.Provider value={reviewedLanguage}><article className="sw-executive" dir="rtl" translate="no">
-    <header className="sw-executive__hero">
+    {tab!=='daily'&&<><header className="sw-executive__hero">
       <div className="sw-executive__snapshot"><span className="sw-executive__pill">لقطة محفوظة</span><span>{report.dateRiyadh}</span><span>نسخة {number(report.revision)}</span><time dateTime={report.cutAtRiyadh}>القطع {date(report.cutAtRiyadh)}</time></div>
       <h2>{report.title}</h2>
       {report.dateRiyadh!==riyadhTodayISO()&&<p className="sw-executive__dated">هذا تقرير {report.dateRiyadh}؛ ليس ملخص اليوم الحالي.</p>}
@@ -44,7 +45,7 @@ export function ExecutiveReportView({report,currentRevision=report.revision,sele
     <section aria-label="التحذيرات وحدود التقرير" className="sw-executive__warnings"><h3>قيود تؤثر في قراءة النتائج</h3><div>
       {report.visibleWarnings.map(w=><p key={w.id} className="sw-executive__warning" data-severity={w.severity}><span aria-hidden="true">!</span>{w.text}</p>)}
     </div></section>
-    <section className="sw-executive__owner" aria-label="قرار المالك عند القطع"><span>{report.ownerAction.requiredAtCut?'يتطلب قرار هادي عند القطع: ':'قرار المالك عند القطع: '}</span><p>{report.ownerAction.text}</p></section>
+    <section className="sw-executive__owner" aria-label="قرار المالك عند القطع"><span>{report.ownerAction.requiredAtCut?'يتطلب قرار هادي عند القطع: ':'قرار المالك عند القطع: '}</span><p>{report.ownerAction.text}</p></section></>}
     <div role="tablist" aria-label="أقسام التقارير" className="sw-executive__tabs">
       {tabs.map(([key,label],i)=><button key={key} ref={el=>{if(el)tabRefs.current.set(key,el);else tabRefs.current.delete(key);}}
         type="button" role="tab" id={`${viewId}-tab-${key}`} aria-controls={`${viewId}-panel-${key}`} aria-selected={tab===key} tabIndex={tab===key?0:-1}
@@ -54,11 +55,13 @@ export function ExecutiveReportView({report,currentRevision=report.revision,sele
     </div>
     <section role="tabpanel" id={`${viewId}-panel-${tab}`} aria-labelledby={`${viewId}-tab-${tab}`} tabIndex={0} className="sw-executive__content">
       {tab==='daily'&&<>
+        {report.revision<currentRevision&&<p className="sw-executive__warning">تعرض نسخة قديمة. أحدث نسخة محفوظة: {number(currentRevision)}.</p>}
+        {dailySummary||<ExecutiveDailySummary report={report}/>}
+        <details className="sw-executive-daily__tracking"><summary>أعداد المتابعة في التقرير</summary>
         <section className="sw-executive__queue" aria-label="حالات التقرير عند القطع"><div><h3>أين وصلت المتابعة؟</h3><p>حالات التقرير المختار فقط، لا نسب إنجاز.</p></div>
           <div className="sw-executive__counts"><button type="button" onClick={()=>{reset();openDecisions();}}><strong>{number(report.decisions.length)}</strong><span>كل الحالات</span></button>
             {Object.entries(EXECUTIVE_STATES).map(([key,label])=><button type="button" key={key} onClick={()=>{setStatus(key);setOwner('all');setSearch('');openDecisions();}}><strong>{number(counts[key])}</strong><span>{label}</span></button>)}</div>
-        </section>
-        <section className="sw-executive__detail-list" aria-label="تفاصيل الملخص">{report.details.map((d,i)=><details key={i}><summary>{d.title}</summary><p>{d.text}</p>{d.sourceRef&&<p>مرجع المصدر: <bdi>{d.sourceRef}</bdi></p>}</details>)}</section>
+        </section></details>
       </>}
       {tab==='decisions'&&<>
         <div className="sw-executive__section-heading"><h3>متابعة القرارات</h3><p>حالات ضمن التقرير المختار حتى وقت قطعه؛ وصول التكليف لا يعني تنفيذه.</p></div>
@@ -95,10 +98,12 @@ export function ExecutiveReportView({report,currentRevision=report.revision,sele
   </article></LanguageContext.Provider>;
 }
 
-export function ExecutiveReportsAdmin({useQuery=useExecutiveReportQuery,request=requestExecutiveReport}){
+export function ExecutiveReportsAdmin({useQuery=useExecutiveReportQuery,request=requestExecutiveReport,DailySummary=ExecutiveDailySummaryLive}){
   const [viewTab,setViewTab]=useState('daily');
   const [refresh,setRefresh]=useState(0),[before,setBefore]=useState(null),[selected,setSelected]=useState(null),[revision,setRevision]=useState(null);
+  const [firstPageDate,setFirstPageDate]=useState(null);
   const archive=useQuery({action:'list',...(before?{before}:{})},refresh);
+  const latestReportDate=before?firstPageDate:archive.data?.items[0]?.dateRiyadh;
   const reportId=selected||archive.data?.items[0]?.reportId;
   const source=useQuery(reportId?{action:'read',reportId,...(revision?{revision}:{})}:null,refresh);
   const [draft,setDraft]=useState(null),[issue,setIssue]=useState(null),[receipt,setReceipt]=useState(null),[saving,setSaving]=useState(false);
@@ -140,9 +145,11 @@ export function ExecutiveReportsAdmin({useQuery=useExecutiveReportQuery,request=
     {(archive.error||source.error)&&<p role="alert">{archive.error||source.error}</p>}
     {!archive.loading&&!archive.error&&archive.data?.items.length===0&&<p>لا تقارير محفوظة في صفحة الأرشيف هذه.</p>}
     {source.data&&source.data.report===null&&<p>لم توجد نسخة محفوظة لهذا المعرف؛ لم تُنشأ بيانات بديلة.</p>}
-    {source.data?.report&&<ExecutiveReportView key={`${reportId}|${source.data.report.revision}`} report={source.data.report} currentRevision={source.data.currentRevision} selectedTab={viewTab} onTabChange={setViewTab}/>}
+    {source.data?.report&&<ExecutiveReportView key={`${reportId}|${source.data.report.revision}`} report={source.data.report} currentRevision={source.data.currentRevision} selectedTab={viewTab} onTabChange={setViewTab}
+      dailySummary={<DailySummary report={source.data.report} latestReportDate={latestReportDate}/>}/>}
+    {!archive.loading&&!source.loading&&!source.data?.report&&viewTab==='daily'&&<DailySummary report={null}/>}
     <details className="sw-executive__archive"><summary>النسخ وإدارة الأرشيف</summary>
-      {archive.data?.nextBefore&&<button type="button" onClick={()=>{setBefore(archive.data.nextBefore);setSelected(null);setRevision(null);}}>تقارير أقدم</button>}
+      {archive.data?.nextBefore&&<button type="button" onClick={()=>{if(!before)setFirstPageDate(archive.data.items[0]?.dateRiyadh);setBefore(archive.data.nextBefore);setSelected(null);setRevision(null);}}>تقارير أقدم</button>}
       {source.data?.report&&<><label className="sw-executive__revision">نسخة التقرير<select value={source.data.report.revision} onChange={e=>setRevision(Number(e.target.value))}>
       {!source.data.history.some(h=>h.revision===source.data.report.revision)&&<option value={source.data.report.revision}>نسخة {number(source.data.report.revision)} — قديمة</option>}
       {source.data.history.map(h=><option key={h.revision} value={h.revision}>نسخة {number(h.revision)} — {h.reason}</option>)}</select></label>
@@ -161,6 +168,6 @@ export function ExecutiveReportsAdmin({useQuery=useExecutiveReportQuery,request=
 export default function ExecutiveReportsPage(){
   const {session}=useAuth(),{role,isPartnerView}=usePartnerView();
   const allowed=role==='admin'&&!isPartnerView&&Boolean(session?.user?.id);
-  return <><TopBar wrapTitle title="الداش بورد التنفيذي" subtitle="ملخص محفوظ · قرارات ومتابعة · مراجعة أسبوعية"/>
+  return <><TopBar wrapTitle title="التقارير التنفيذية" subtitle="خلاصة المشروع والقرارات المطلوبة"/>
     {allowed?<ExecutiveReportsAdmin key={`${session.user.id}|${role}|${isPartnerView}`} request={(input,signal)=>requestExecutiveReport(input,signal,session.user.id)}/>:<p>هذه الصفحة للأدمن فقط.</p>}</>;
 }

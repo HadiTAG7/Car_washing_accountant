@@ -4,16 +4,17 @@ import { afterEach,expect,it,vi } from 'vitest';
 import { ExecutiveReportView,ExecutiveReportsAdmin } from '../ExecutiveReportsPage';
 import { executiveFixture } from '../../../server/__tests__/executiveFixture';
 import { LanguageContext } from '../../i18n/LanguageContext';
+vi.mock('../../hooks/useExecutiveDailyMetrics',()=>({useExecutiveDailyMetrics:()=>undefined}));
 afterEach(cleanup);
 it('preserves reviewed Arabic report wording even when the surrounding application is English',()=>{
   const report=executiveFixture({summary:'غير متاح'});
   render(<LanguageContext.Provider value={{language:'en'}}><ExecutiveReportView report={report}/></LanguageContext.Provider>);
-  expect(screen.getByText('غير متاح')).toBeTruthy();expect(screen.getByRole('tab',{name:'ملخص اليوم'})).toBeTruthy();
+  expect(screen.getAllByText('غير متاح').length).toBeGreaterThan(0);expect(screen.getByRole('tab',{name:'ملخص اليوم'})).toBeTruthy();
 });
 it('keeps source limits and owner action visible across three tabs; no invented weekly or zeros',()=>{
   const report=executiveFixture();report.metrics[0].value=null;
   render(<ExecutiveReportView report={report}/>);
-  expect(screen.getByText('تغطية وهمية غير إنتاجية')).toBeTruthy();expect(screen.getByText('غير متاح')).toBeTruthy();
+  expect(screen.getAllByText('تغطية وهمية غير إنتاجية').length).toBeGreaterThan(0);expect(screen.getAllByText('غير متاح').length).toBeGreaterThan(0);
   fireEvent.click(screen.getByRole('tab',{name:'المراجعة الأسبوعية'}));
   expect(screen.getByRole('tabpanel').textContent).toContain('غير مستحقة');expect(screen.getByText('تغطية وهمية غير إنتاجية')).toBeTruthy();
   fireEvent.click(screen.getByRole('tab',{name:'متابعة القرارات'}));

@@ -55,7 +55,7 @@ import {
   approvePayroll,
   cancelPayroll,
   payPayroll,
-  previewPayroll, previewPayrollMonths,
+  previewPayroll, previewPayrollMonths, previewPayrollPreapproval,
   reversePayroll,
   savePayrollDraft,
   unapprovePayroll,
@@ -636,6 +636,10 @@ export const HANDLERS = {
   payrollApprove: {
     guard: 'admin',
     run: ({ db, FieldValue, data, uid }) => approvePayroll(db, FieldValue, data || {}, { userId: uid }),
+  },
+  payrollPreapproval: {
+    guard: 'accountant',
+    run: ({ db, data }) => previewPayrollPreapproval(db, data || {}),
   },
   payrollUnapprove: {
     guard: 'admin',

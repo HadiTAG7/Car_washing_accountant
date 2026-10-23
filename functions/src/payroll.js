@@ -11,6 +11,7 @@ import {
 } from './invariants.js';
 import { WASH_COMMISSION_RATE, WASH_COMMISSION_EFFECTIVE_MONTH, uniqueCompletedCommissionWashes } from './washCommission.js';
 import { advanceAssignmentMonth } from '../../src/lib/advanceMonth.js';
+import { payrollPreapproval } from './payrollPreapproval.js';
 
 export const PAYROLL_POLICY = Object.freeze({
   method: 'actual_month_days',
@@ -426,6 +427,13 @@ async function sourceRows(reader, db, { periodKeys = null } = {}) {
   return { bikers: rows(bikersSnap), washes: rows(washesSnap).sort(byDocumentId), advances: rows(advancesSnap) };
 }
 
+export async function previewPayrollPreapproval(db, payload, { now = new Date() } = {}) {
+  const periodKey = validPeriodKey(payload?.periodKey);
+  const sources = await sourceRows(db, db, { periodKeys: [periodKey] });
+  const preview = await previewPayroll(db, payload, { now, sourceData: sources });
+  return payrollPreapproval({ ...sources, lines: preview.lines, periodKey, today: isoToday(now) });
+}
+
 export async function previewPayroll(db, payload, { now = new Date(), sourceData = null } = {}) {
   const periodKey = validPeriodKey(payload?.periodKey);
   const meta = await db.collection('payroll_periods').doc(periodKey).get();
@@ -610,7 +618,7 @@ async function refreshedPreviewInTransaction(tx, db, run, now) {
   }, { commission: run.automaticAdvanceDeduction ? null : storedCommissionPolicy(run) });
 }
 
-export async function approvePayroll(db, FieldValue, { runId }, {
+export async function approvePayroll(db, FieldValue, { runId, overrideReason = '' }, {
   userId = null, now = new Date(), onBeforeCommit = null,
 } = {}) {
   const id = cleanText(runId, 'معرّف المسير', { required: true, max: 180 });
@@ -624,6 +632,17 @@ export async function approvePayroll(db, FieldValue, { runId }, {
     if (oldItems.docs.some(doc => doc.data().status === PAYROLL_STATUS.PAID)) fail('المسير يتضمن سدادًا سابقًا؛ لا يُعاد احتساب أو استبدال سطور مصروفة.');
     const preview = await refreshedPreviewInTransaction(tx, db, run, now);
     if (!preview.lineCount) fail('لا يوجد عامل مستحق ضمن المسير.');
+    const sources = await sourceRows(tx, db, { periodKeys: [run.periodKey] });
+    const review = payrollPreapproval({ ...sources, lines: preview.lines, periodKey: run.periodKey, today: isoToday(now) });
+    const reason = String(overrideReason || '').trim();
+    if (review.approvalBlocked) {
+      if (!reason) fail('الاعتماد متوقف: توجد حالات هرب أو مشيناه بلا تاريخ نهاية.');
+      const [membership, admin] = await Promise.all([
+        tx.get(db.collection('users').doc(String(userId))), tx.get(db.collection('app_admins').doc(String(userId))),
+      ]);
+      if (!(membership.exists && membership.data().role === 'admin')
+        && !(admin.exists && !membership.exists)) fail('تجاوز نواقص الاعتماد للمدير فقط.', { code: 'permission-denied' });
+    }
 
     if (onBeforeCommit) await onBeforeCommit();
     tx.set(runRef, {
@@ -632,6 +651,7 @@ export async function approvePayroll(db, FieldValue, { runId }, {
         userId, FieldValue, previous: run,
       }),
       approvedAt: FieldValue.serverTimestamp(), approvedBy: userId,
+      preapprovalSnapshot: review, approvalOverrideReason: review.approvalBlocked ? reason : null,
     }, { merge: true });
     const keep = new Set(preview.lines.map((line) => line.bikerId));
     for (const snap of oldItems.docs) if (!keep.has(snap.id)) tx.delete(snap.ref);
@@ -644,8 +664,9 @@ export async function approvePayroll(db, FieldValue, { runId }, {
     tx.set(db.collection('audit_logs').doc(), auditRecord(
       'payroll-approve', id, userId,
       { status: run.status, totals: run.totals },
-      { status: PAYROLL_STATUS.APPROVED, totals: preview.totals, policySnapshot: preview.policySnapshot },
-      'اعتماد مسير الرواتب دون إنشاء قيد', FieldValue,
+      { status: PAYROLL_STATUS.APPROVED, totals: preview.totals, policySnapshot: preview.policySnapshot,
+        approvalOverrideReason: review.approvalBlocked ? reason : null, missingEndDates: review.missingEndDates },
+      review.approvalBlocked ? `اعتماد باستثناء المدير: ${reason}` : 'اعتماد مسير الرواتب دون إنشاء قيد', FieldValue,
     ));
     return { runId: id, status: PAYROLL_STATUS.APPROVED, totals: preview.totals };
   });

@@ -7,16 +7,17 @@ import FinanceWorkbenchPage from '../FinanceWorkbenchPage';
 import { financeFixture } from '../../../server/__tests__/financeFixtures';
 import { LanguageContext } from '../../i18n/LanguageContext';
 
-const mock = vi.hoisted(() => ({ read: vi.fn(), api: vi.fn(), ledger: vi.fn(), role: { role: 'admin', isPartnerView: false } }));
+const mock = vi.hoisted(() => ({ read: vi.fn(), api: vi.fn(), ledger: vi.fn(), home: vi.fn(), role: { role: 'admin', isPartnerView: false } }));
 vi.mock('../../hooks/useFinanceRead', () => ({ useFinanceRead: (...args) => mock.read(...args) }));
 vi.mock('../../lib/financeApi', () => ({ callFinanceApi: (...args) => mock.api(...args) }));
 vi.mock('../../hooks/useLedger', () => ({ useLedger: () => mock.ledger() }));
+vi.mock('../../hooks/useFinanceHomeData', () => ({ useFinanceHomeData: (...args) => mock.home(...args) }));
 vi.mock('../../hooks/useOverviewDashboard', () => ({ useOverviewDashboard: () => ({ finance: { loading: false, error: null, statement: { netRevenue: 500, totalCosts: 300 } } }) }));
 vi.mock('../../contexts/PartnerViewContext', () => ({ usePartnerView: () => mock.role }));
 vi.mock('../TopBar', () => ({ default: ({ title }) => <h1>{title}</h1> }));
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 beforeEach(() => {
-  mock.role.role = 'admin'; mock.role.isPartnerView = false; mock.read.mockReset(); mock.api.mockReset(); mock.ledger.mockReset();
+  mock.role.role = 'admin'; mock.role.isPartnerView = false; mock.read.mockReset(); mock.api.mockReset(); mock.ledger.mockReset(); mock.home.mockReset();
 });
 const base = data => ({ allowed: true, loading: false, error: null, refresh: vi.fn(), data });
 function reports(report = financeFixture()) {
@@ -72,27 +73,29 @@ describe('finance report UI and access boundaries', () => {
   });
   it('does not even mount ledger queries for a partner simulation', () => {
     mock.role.isPartnerView = true; render(<FinanceHomePage onNavigate={vi.fn()} />);
-    expect(mock.ledger).not.toHaveBeenCalled(); expect(screen.getByRole('alert')).toBeTruthy();
+    expect(mock.ledger).not.toHaveBeenCalled(); expect(mock.home).not.toHaveBeenCalled(); expect(screen.getByRole('alert')).toBeTruthy();
   });
-  it('keeps missing ledger data unavailable and all six destinations linked to original screens', () => {
-    const navigate = vi.fn(); mock.ledger.mockReturnValue({ accounts: [], entries: [], lines: [], error: 'offline', loading: false, needsSeeding: true });
+  it('keeps incomplete sources unavailable, removes duplicate panels, and never claims there are no issues', () => {
+    const navigate = vi.fn(); mock.home.mockReturnValue({ today: '2026-10-23', month: '2026-10', problems: ['الدفتر'], loading: false, settlementReady: false });
     render(<FinanceHomePage onNavigate={navigate} />);
-    expect(screen.getAllByText('غير متاح')).toHaveLength(4);
-    fireEvent.click(screen.getByRole('button', { name: 'المتغيرة' })); expect(navigate).toHaveBeenCalledWith('variable');
-    fireEvent.click(screen.getByRole('button', { name: 'عرض التقارير والأرشيف' })); expect(navigate).toHaveBeenCalledWith('finance_reports');
-    expect(screen.getByRole('heading', { name: 'الرواتب ماليًا' })).toBeTruthy();
+    expect(screen.getAllByText('غير متاح')).toHaveLength(7);
+    expect(screen.queryByText('صورة واضحة. خطوة موثقة.')).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'الرواتب ماليًا' })).toBeNull();
+    expect(screen.queryByText('ما فيه شي يحتاج إجراء')).toBeNull();
+    expect(screen.getByRole('alert').textContent).toContain('الدفتر');
+    expect(screen.getByRole('status').textContent).toContain('لم يكتمل فحص');
+    fireEvent.click(screen.getByRole('button', { name: /^النقد المتاح/ })); expect(navigate).toHaveBeenCalledWith('ledger');
+    fireEvent.click(screen.getByRole('button', { name: /^رأس المال المدفوع/ })); expect(navigate).toHaveBeenCalledWith('balance');
+    fireEvent.click(screen.getByRole('button', { name: /^الضريبة المستحقة/ })); expect(navigate).toHaveBeenCalledWith('vat');
   });
   it('uses the branded English calendar and filters posted revenue without refetching or writing', () => {
     vi.useFakeTimers(); vi.setSystemTime(new Date('2026-10-19T07:00:00Z'));
     const refetch = vi.fn();
-    const ledger = { accounts: [{ code: '4000', name: 'Revenue', accountType: 'revenue', normalBalance: 'credit' }],
-      entries: [{ id: 'OCT', status: 'posted', entryDate: '2026-10-03' }, { id: 'SEP', status: 'posted', entryDate: '2026-09-03' }],
-      lines: [{ entryId: 'OCT', accountId: '4000', credit: 120, debit: 0 }, { entryId: 'SEP', accountId: '4000', credit: 80, debit: 0 }],
-      loading: false, needsSeeding: false, error: null, refetch };
-    const original = JSON.stringify(ledger); mock.ledger.mockReturnValue(ledger);
+    mock.home.mockImplementation(month => ({ today: '2026-10-19', month, problems: [], loading: false,
+      ledger: { postedRevenue: month === '2026-10' ? 120 : 80, negativeAccounts: [] }, refresh: refetch, settlementReady: false }));
     render(<LanguageContext.Provider value={{ language: 'ar' }}><FinanceHomePage onNavigate={vi.fn()} /></LanguageContext.Provider>);
     const trigger = screen.getByRole('button', { name: 'Month' });
-    const revenue = () => screen.getByText('الإيرادات المرحلة').closest('article').querySelector('strong').textContent;
+    const revenue = () => screen.getByRole('button', { name: /^الإيراد / }).textContent;
     expect(trigger.textContent).toContain('October 2026'); expect(revenue()).toContain('120.00');
     expect(document.querySelector('input[type="month"]')).toBeNull();
     fireEvent.click(trigger);
@@ -102,11 +105,12 @@ describe('finance report UI and access boundaries', () => {
     fireEvent.click(screen.getByRole('button', { name: 'September 2026' }));
     expect(trigger.textContent).toContain('September 2026'); expect(revenue()).toContain('80.00');
     expect(screen.queryByRole('dialog')).toBeNull(); expect(document.activeElement).toBe(trigger);
-    expect(screen.getAllByText('بتاريخ القيد — 2026-09')).toHaveLength(2);
+    expect(mock.home).toHaveBeenLastCalledWith('2026-09');
     fireEvent.click(trigger); fireEvent.click(screen.getByRole('button', { name: 'Next year' }));
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
     expect(trigger.textContent).toContain('September 2026'); expect(document.activeElement).toBe(trigger);
-    expect(refetch).not.toHaveBeenCalled(); expect(mock.api).not.toHaveBeenCalled(); expect(JSON.stringify(ledger)).toBe(original);
+    expect(refetch).not.toHaveBeenCalled(); expect(mock.api).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'تحديث البيانات' })); expect(refetch).toHaveBeenCalledTimes(1);
   });
   it('keeps long record titles and metadata separate and selects a record without a write', () => {
     const title = `مصروف طويل — مستند Q4 — ${'REFERENCE'.repeat(20)}`;

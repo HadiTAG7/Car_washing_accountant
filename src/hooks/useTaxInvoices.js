@@ -244,5 +244,12 @@ export function useTaxInvoices() {
     annualQ.refetch(); monthlyQ.refetch(); vouchersQ.refetch(); variableQ.refetch();
   };
 
-  return { invoices, loading, error, sourceErrors, refetch };
+  // Consumers of a single headline total must not interpret partial coverage
+  // as a complete tax report. Keep the existing detail-page contract intact.
+  const coverage = {
+    loading: loading || ledgerParentsQ.loading,
+    error: startupQ.error || startupItemsQ.error || ledgerParentsQ.error || annualQ.error
+      || monthlyQ.error || vouchersQ.error || variableQ.error || null,
+  };
+  return { invoices, loading, error, sourceErrors, coverage, refetch };
 }

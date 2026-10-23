@@ -1,54 +1,114 @@
-import { useMemo, useState } from 'react';
-import { Landmark, Inbox, Receipt, Handshake, BookOpen, FileText, ArrowLeft, RefreshCw, AlertTriangle, Wallet } from 'lucide-react';
+import { useState } from 'react';
+import { ArrowLeft, RefreshCw, AlertTriangle, TrendingUp, Receipt, Wallet, HandCoins, Landmark, Users, Percent, CheckCircle2 } from 'lucide-react';
 import TopBar from './TopBar';
-import LoadingState from './LoadingState';
 import BikerProfileMonthPicker from './BikerProfileMonthPicker';
-import FinanceMonthComparison from './FinanceMonthComparison';
-import { useLedger } from '../hooks/useLedger';
-import { incomeStatement, generalLedger } from '../lib/accounting/reports';
+import { useFinanceHomeData } from '../hooks/useFinanceHomeData';
+import { APPROVED_SETTLEMENT_STATUSES } from '../lib/financeHome';
 import { usePartnerView } from '../contexts/PartnerViewContext';
+import { riyadhTodayISO } from '../lib/washesYesterday';
 import './FinanceWorkspace.css';
 import './BikerProfile.css';
 import './FinanceHomePage.css';
 
-const sections = [
-  { title: 'صندوق العمل', icon: Inbox, text: 'المستند، النقص، المراجعة والاعتماد والترحيل — خطوات مستقلة.', links: [['finance_workbench', 'فتح صندوق العمل']] },
-  { title: 'المصاريف', icon: Receipt, text: 'كل مصروف في سجله الأصلي، دون إنشاء نسخة للتجميع.', links: [['startup', 'التأسيس'], ['annual', 'السنوية'], ['monthly', 'الشهرية'], ['variable', 'المتغيرة'], ['temporary_expenses', 'المؤقتة']] },
-  { title: 'الشركاء والتمويل', icon: Handshake, text: 'رأس المال والمدفوعات ومصادر التمويل.', links: [['partners', 'الشركاء'], ['payments', 'مدفوعات الشركاء']] },
-  { title: 'المحاسبة والرقابة', icon: BookOpen, text: 'الدفاتر والقوائم والضريبة والأصول في مسار واضح.', links: [['ledger', 'دفتر الأستاذ'], ['trial', 'ميزان المراجعة'], ['balance', 'المركز المالي'], ['summary', 'قائمة الدخل'], ['budgets', 'الميزانيات'], ['vat', 'الضريبة'], ['documents', 'المستندات الضريبية'], ['assets', 'الأصول الثابتة'], ['sweater_settlements', 'تسويات سويتر'], ['periods', 'إقفال الفترة']] },
-  { title: 'الرواتب ماليًا', icon: Wallet, text: 'رابط للمسير الحالي؛ لا نقل لإدارة الموظفين ولا أمر صرف.', links: [['finance_payroll', 'مسير الرواتب']] },
-  { title: 'تقارير المالية', icon: FileText, text: 'تقارير المدير المالي والتسجيل والضرائب، مع مصادر ونسخ وأرشيف.', links: [['finance_reports', 'عرض التقارير والأرشيف']] },
-];
+const money = value => Number.isFinite(value) ? value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : null;
+const amountText = value => money(value) === null ? 'المبلغ غير متاح' : `${money(value)} ر.س`;
+
+function Metric({ label, value, note, date, icon: Icon, tone = '', onClick, children }) {
+  return <button type="button" className={`fm-card ${tone ? `fm-card--${tone}` : ''}`} onClick={onClick}>
+    <span className="fm-card__top"><span>{label}</span><span className="fm-card__icon"><Icon size={20} /></span></span>
+    <strong className="fm-card__value">{money(value) === null ? 'غير متاح' : <><bdi dir="ltr">{money(value)}</bdi><small>ر.س</small></>}</strong>
+    {children}
+    {note && <span className="fm-card__note">{note}</span>}
+    <span className="fm-card__footer"><span>{date}</span><ArrowLeft size={15} aria-hidden="true" /></span>
+  </button>;
+}
+
+function ActionList({ data, onNavigate }) {
+  const { ledger, vat, workbench, settlement, settlementReady, budget, month } = data;
+  const rows = [];
+  ledger?.negativeAccounts.forEach(account => rows.push({ key: `cash-${account.code}`, danger: true, route: 'ledger',
+    label: `${account.name} رصيده سالب`, detail: amountText(account.balance) }));
+  if (vat?.unpostedEligible.length) rows.push({ key: 'vat', route: 'vat', label: 'فواتير ضريبتها مؤهلة ولم تُرحّل إلى حساب 1200',
+    detail: `${vat.unpostedEligible.length} فواتير · ${amountText(vat.unpostedInputTax)}` });
+  if (settlementReady && !APPROVED_SETTLEMENT_STATUSES.has(settlement?.status)) rows.push({ key: 'settlement', route: 'sweater_settlements',
+    label: settlement?.figures ? 'تسوية سويتر بانتظار الاعتماد' : 'تسوية سويتر لم تُحسب',
+    detail: settlement?.figures ? `${settlement.figures.counts?.eligible ?? '—'} خدمات مؤهلة من ${settlement.figures.counts?.imported ?? '—'} حجز · ${month}` : month });
+  if (workbench?.unknownPayment.count) rows.push({ key: 'payment', route: 'finance_workbench', label: 'مستندات السداد غير مثبت',
+    detail: `${workbench.unknownPayment.count} مستندات · ${amountText(workbench.unknownPayment.amount)}` });
+  if (workbench?.pending.count) rows.push({ key: 'pending', route: 'finance_workbench', label: 'مستندات بانتظار المراجعة أو الاعتماد أو الترحيل',
+    detail: `${workbench.pending.count} مستندات · ${amountText(workbench.pending.amount)}` });
+  const overrunCount = budget?.cards.filter(card => card.spent > card.budget.amount).length || 0;
+  if (overrunCount) rows.push({ key: 'budget', route: 'budgets', label: 'ميزانيات متجاوزة',
+    detail: `${overrunCount} بنود · ${budget.totals.remaining < 0 ? `العجز الإجمالي: ${amountText(budget.totals.remaining)}` : 'راجع تفاصيل التجاوز'} · ${budget.month}` });
+  const complete = ledger && vat && workbench && budget && settlementReady;
+  return <section className="fm-actions" aria-labelledby="finance-actions-title">
+    <div className="fm-section-heading"><h2 id="finance-actions-title">يحتاج إجراء</h2>{rows.length > 0 && <span className="fm-count">{rows.length}</span>}</div>
+    {rows.length > 0 && <ul>{rows.map(row => <li key={row.key} className={row.danger ? 'fm-action--danger' : ''}>
+      <button type="button" onClick={() => onNavigate(row.route)}>
+        <AlertTriangle size={17} aria-hidden="true" /><span className="fm-action__label">{row.label}</span>
+        <span className="fm-action__detail">{row.detail}</span><ArrowLeft size={16} aria-hidden="true" />
+      </button>
+    </li>)}</ul>}
+    {rows.length === 0 && complete && <p className="fm-clear"><CheckCircle2 size={18} />ما فيه شي يحتاج إجراء</p>}
+    {!complete && <p className="fm-incomplete" role="status">{data.loading ? 'جارٍ التحقق من البنود المتبقية…' : 'لم يكتمل فحص جميع البنود؛ لا يعني ذلك خلوّها من الإجراءات.'}</p>}
+    <p className="fm-scope">المستندات: كل الفترات. الميزانيات: الشهر الحالي والسنة، كما في صفحة الرقابة والميزانيات.</p>
+  </section>;
+}
+
 export default function FinanceHomePage({ onNavigate }) {
   const { role, isPartnerView } = usePartnerView();
   if (role !== 'admin' || isPartnerView) return <div className="fw-page" role="alert">لوحة المالية التفصيلية للإدارة فقط.</div>;
   return <FinanceHomeContent onNavigate={onNavigate} />;
 }
+
 function FinanceHomeContent({ onNavigate }) {
-  const ledger = useLedger();
-  const [month, setMonth] = useState(() => new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Riyadh' }).slice(0, 7));
+  const [month, setMonth] = useState(() => riyadhTodayISO().slice(0, 7));
+  const data = useFinanceHomeData(month);
+  const { ledger, statement, vat, settlement, settlementReady } = data;
   const [readStarted, setReadStarted] = useState(() => new Date().toISOString());
-  const data = useMemo(() => {
-    const from = `${month}-01`, to = `${month}-31`;
-    const income = incomeStatement(ledger.accounts, ledger.entries, ledger.lines, { from, to, salaryAccrual: false });
-    const balance = code => generalLedger(code, ledger.entries, ledger.lines).closing;
-    return { income, cash: balance('1010'), bank: balance('1020') };
-  }, [ledger.accounts, ledger.entries, ledger.lines, month]);
-  const available = !ledger.loading && !ledger.error && !ledger.needsSeeding && ledger.accounts.length > 0;
-  const metrics = [ ['الإيرادات المرحلة', data.income.totalRevenue], ['تكاليف ومصروفات الفترة المرحلة', data.income.totalCost + data.income.totalExpenses],
-    ['رصيد الصندوق الدفتري', data.cash], ['رصيد البنك الدفتري', data.bank] ];
-  return <><TopBar title="المالية" subtitle="من المستند إلى القرار — مركز عمل فريق المالية" /><main className="fw-page" dir="rtl">
-    <section className="fw-hero"><div><div className="fw-eyebrow"><Landmark size={18} /> مالية سويتر</div><h1>صورة واضحة. خطوة موثقة.</h1><p>الأرقام والمستندات والمتابعة في مكان واحد، مع بقاء الفرق بين التسجيل والاعتماد والترحيل والسداد ظاهرًا.</p></div><button type="button" onClick={() => onNavigate('finance_workbench')}>ابدأ من صندوق العمل <ArrowLeft size={17} /></button></section>
-    <div className="fw-toolbar"><div className="fw-period" role="group" aria-label="فترة القيود"><span>فترة القيود</span>
-      <BikerProfileMonthPicker value={month} max="9999-12" language="en" onChange={setMonth} /></div>
-      <button type="button" disabled={ledger.loading} onClick={() => { setReadStarted(new Date().toISOString()); ledger.refetch(); }}><RefreshCw size={16} /> تحديث البيانات</button></div>
-    <div className="fw-warning" role="note"><AlertTriangle size={18} />الأرقام أدناه من القيود المرحلة؛ ليست كشف بنك أو جرد صندوق أو تحصيلًا مثبتًا. نتيجة الفترة بتاريخ القيد لا تعني اكتمال نتيجتها الاقتصادية.</div>
-    {ledger.error && <div className="fw-warning" role="alert">تعذر تحميل الدفاتر؛ لا تُعرض أرقام بديلة أو أصفار.</div>}
-    {ledger.loading && <LoadingState message="جارٍ قراءة الدفاتر..." />}
-    <div className="fw-metrics">{metrics.map(([label, value]) => <article className="fw-panel fw-metric" key={label}><span>{label}</span><strong>{available ? value.toLocaleString('ar-SA', { numberingSystem: 'latn', minimumFractionDigits: 2, maximumFractionDigits: 2 }) : 'غير متاح'} <small>{available ? 'ر.س' : ''}</small></strong><small>{label.includes('رصيد') ? 'تراكمي لكل الدفاتر عند القراءة' : `بتاريخ القيد — ${month}`}</small></article>)}</div>
-    <p className="fw-posting-note">الإيراد يترحل مع فاتورة سويتر آخر الشهر، والرواتب وقت الإقفال، عشان كذا الأرقام هنا تختلف عن النظرة العامة</p>
-    {available && <FinanceMonthComparison month={month} income={data.income} />}
-    <p className="fw-meta">بدء القراءة: {new Date(readStarted).toLocaleString('ar-SA', { timeZone: 'Asia/Riyadh', calendar: 'gregory', numberingSystem: 'latn' })} — الرياض. التحديث يدوي، ولا توجد أرقام تشغيلية مضافة إلى الأرصدة.</p>
-    <div className="fw-sections">{sections.map(s => <section className="fw-panel fw-section" key={s.title}><div className="fw-section-icon"><s.icon size={23} /></div><h2>{s.title}</h2><p>{s.text}</p><div className="fw-links">{s.links.map(([id, label]) => <button type="button" key={id} onClick={() => onNavigate(id)}>{label}<ArrowLeft size={14} /></button>)}</div></section>)}</div>
-  </main></>;
+  const cumulativeDate = `تراكمي · ${data.today}`;
+  const monthDate = `${month} · حتى ${data.today}`;
+  const hasNegativeCash = Boolean(ledger?.negativeAccounts.length);
+  return <><TopBar title="ملخص المالية" subtitle="نتيجة الشهر، الفلوس المتاحة، وما يحتاج إجراء" />
+    <main className="fw-page fm-page" dir="rtl" aria-busy={data.loading}>
+      <div className="fw-toolbar"><div className="fw-period" role="group" aria-label="فترة الملخص"><span>الشهر</span>
+        <BikerProfileMonthPicker value={month} max="9999-12" language="en" onChange={setMonth} /></div>
+        <button type="button" disabled={data.loading} onClick={() => { setReadStarted(new Date().toISOString()); data.refresh(); }}><RefreshCw size={16} /> تحديث البيانات</button>
+      </div>
+      <p className="fm-ledger-note" role="note"><AlertTriangle size={14} />الأرصدة دفترية، وليست كشف بنك أو جرد صندوق أو إثبات سداد.</p>
+      {data.problems.length > 0 && <p className="fm-read-error" role="alert">تعذرت قراءة: {data.problems.join('، ')}. الأرقام غير المتحققة لا تُستبدل بأصفار.</p>}
+      {data.loading && <p className="fm-loading" role="status">جارٍ قراءة الأرقام من مصادرها…</p>}
+      <section aria-labelledby="finance-month-title">
+        <div className="fm-section-heading"><h2 id="finance-month-title">نتيجة الشهر</h2><span>{month}</span></div>
+        <div className="fm-grid fm-grid--month">
+          <Metric label="الإيراد" value={statement?.netRevenue} icon={TrendingUp} tone="revenue" date={monthDate}
+            note={`المرحل في الدفتر: ${amountText(ledger?.postedRevenue)}`} onClick={() => onNavigate('summary')} />
+          <Metric label="المصروفات" value={statement?.totalCosts} icon={Receipt} date={monthDate}
+            note={`المرحل: ${amountText(ledger?.postedCosts)}`} onClick={() => onNavigate('summary')} />
+          <Metric label="نتيجة الشهر" value={statement?.netProfit} icon={Wallet} date={monthDate}
+            tone={statement?.netProfit < 0 ? 'loss' : statement?.netProfit >= 0 ? 'profit' : ''}
+            note={statement?.netProfit < 0 ? 'خسارة الشهر' : statement?.netProfit >= 0 ? 'ربح الشهر' : 'من قائمة الدخل'} onClick={() => onNavigate('summary')} />
+          <Metric label="المتوقع من سويتر" value={settlementReady ? settlement?.figures?.netDue : null} icon={HandCoins} date={month}
+            note={settlementReady && settlement?.figures ? APPROVED_SETTLEMENT_STATUSES.has(settlement.status) ? 'صافي المستحق في التسوية المعتمدة' : 'صافي التسوية المحسوبة · لم تُعتمد' : 'من تسويات سويتر للشهر'}
+            onClick={() => onNavigate('sweater_settlements')} />
+        </div>
+        <p className="fm-posting-note">الإيراد يترحل مع فاتورة سويتر آخر الشهر، والرواتب وقت الإقفال</p>
+      </section>
+      <section aria-labelledby="finance-money-title">
+        <div className="fm-section-heading"><h2 id="finance-money-title">الفلوس</h2><span>أرصدة الدفتر وصافي الضريبة</span></div>
+        <div className="fm-grid fm-grid--money">
+          <Metric label="النقد المتاح (دفتري)" value={ledger?.availableCash} icon={Landmark} date={cumulativeDate} onClick={() => onNavigate('ledger')}>
+            <span className="fm-cash-split"><span className={ledger?.bank < 0 ? 'fm-negative' : ''}>البنك <bdi>{amountText(ledger?.bank)}</bdi></span>
+              <span className={ledger?.cash < 0 ? 'fm-negative' : ''}>الصندوق <bdi>{amountText(ledger?.cash)}</bdi></span></span>
+            {hasNegativeCash && <span className="fm-negative fm-cash-alert"><AlertTriangle size={14} />يوجد حساب نقدي بالسالب</span>}
+          </Metric>
+          <Metric label="رأس المال المدفوع" value={ledger?.capital} icon={Users} date={cumulativeDate}
+            note="من حسابات رأس مال الشركاء في المركز المالي" onClick={() => onNavigate('balance')} />
+          <Metric label="الضريبة المستحقة" value={vat?.netTax} icon={Percent} date={monthDate}
+            note={vat?.direction === 'refundable' ? 'صافي الشهر قابل للاسترداد' : 'صافي ضريبة الشهر من صفحة الضريبة'} onClick={() => onNavigate('vat')} />
+        </div>
+      </section>
+      <ActionList data={data} onNavigate={onNavigate} />
+      <p className="fw-meta">بدء القراءة: {new Date(readStarted).toLocaleString('ar-SA', { timeZone: 'Asia/Riyadh', calendar: 'gregory', numberingSystem: 'latn' })} · الرياض</p>
+    </main></>;
 }

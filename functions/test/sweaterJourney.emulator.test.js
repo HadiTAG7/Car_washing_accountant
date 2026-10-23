@@ -97,7 +97,8 @@ d('الرحلة الكاملة لتكامل سويتر', () => {
 
     await seedChartOfAccounts(db, FieldValue, DEFAULT_CHART_OF_ACCOUNTS, { userId: 'acct1' });
     await db.collection('app_settings').doc('accounting').set({
-      value: { vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15, taxPolicyHistory: [] },
+      value: { vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15,
+        taxPolicyHistory: [{ effectiveFrom: '2026-01-01', vatRegistered: true, washPriceMode: 'inclusive', vatRate: 0.15 }] },
     });
     await db.collection(DOC_COL.SETTINGS).doc('company').set({ value: COMPANY });
 
@@ -223,7 +224,7 @@ d('الرحلة الكاملة لتكامل سويتر', () => {
       settlementPeriodKey: PERIOD,
       issueDate: '2026-06-01', issueTime: '10:00:00',
       lines: [{ description: `خدمات سويتر — ${PERIOD}`, quantity: 1, unitPrice: 266 }],
-      customer: { name: 'منصة سويتر' },
+      customer: { name: 'منصة سويتر', address: 'عنوان سويتر الاصطناعي', vatNumber: '311111111111113' },
     }, { userId: 'acct1' });
     expect(doc.documentNumber).toMatch(/^INV-2026-/);
 

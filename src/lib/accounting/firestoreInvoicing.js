@@ -60,12 +60,12 @@ export async function fetchSellerProfile() {
   const snap = await getDoc(doc(db, DOC_COL.SETTINGS, COMPANY_SETTINGS_ID));
   const v = snap.exists() ? (snap.data().value || snap.data()) : {};
   return {
-    name:       v.name || 'شركة هادي الغانم',
+    name:       v.name || '',
     vatNumber:  v.vatNumber || '',
     address:    v.address || '',
     // Until a real VAT registration is entered, documents are internal papers
     // and must not pretend to be tax invoices.
-    vatRegistered: Boolean(v.vatRegistered && v.vatNumber),
+    vatRegistered: Boolean(v.vatRegistered),
   };
 }
 
@@ -114,6 +114,8 @@ export async function issueDocument(document, _options = {}) {
   requireDb();
   return callLedger('salesIssueDocument', {
     type: document.type,
+    invoiceKind: document.invoiceKind,
+    settlementPeriodKey: document.settlementPeriodKey || null,
     issueDate: document.issueDate,
     issueTime: document.issueTime,
     priceMode: document.priceMode,
@@ -157,15 +159,21 @@ export async function issueDocument(document, _options = {}) {
  */
 export async function issueSimplifiedInvoice({
   issueDate, issueTime, lines, customer = null, priceMode = 'inclusive',
-  paymentMethod = 'cash', paymentStatus = 'paid', supplyDate = null,
+  paymentMethod = null, paymentStatus = 'unpaid', supplyDate = null, invoiceKind = 'simplified',
   sourceType = null, sourceId = null,
 }) {
   // The seller identity and the VAT treatment come from the server's copy of
   // app_settings/company, so nothing about them is passed here.
   return issueDocument({
     type: 'invoice', issueDate, issueTime, lines, customer, priceMode,
-    paymentMethod, paymentStatus, supplyDate, sourceType, sourceId,
+    paymentMethod, paymentStatus, supplyDate, sourceType, sourceId, invoiceKind,
   });
+}
+
+/** The server reads approved figures and the posting lock; no client money is sent. */
+export async function issueInvoiceForSettlement(settlementPeriodKey, { issueDate, customer } = {}) {
+  return issueDocument({ type: 'invoice', invoiceKind: 'standard', settlementPeriodKey, issueDate, customer,
+    issueTime: new Date().toLocaleTimeString('en-GB', { timeZone: 'Asia/Riyadh', hour12: false }) });
 }
 
 /**

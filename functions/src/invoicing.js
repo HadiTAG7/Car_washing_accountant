@@ -21,7 +21,9 @@ import {
   journalCounterUpdate,
 } from './invariants.js';
 import { splitVat, VAT_RATE, ACC, settlementForSale, ADAPTERS } from './posting.js';
-import { taxPolicyAt } from './taxPolicy.js';
+import { taxPolicyAt, hasTaxPolicyHistory } from './taxPolicy.js';
+import { sellerIssuanceProblems, invoiceCustomerProblems, standaloneBuyerProblems,
+  settlementInvoiceProblems, SWEATER_BUYER_NAME } from './invoiceReadiness.js';
 
 export const DOC_COL = {
   DOCUMENTS: 'sales_documents',
@@ -206,7 +208,7 @@ export function saleTotalsOfEntry(lines) {
   for (const l of lines || []) {
     const code = String(l?.accountId ?? '');
     const movement = round2(l?.credit) - round2(l?.debit);
-    if (code === ACC.WASH_REVENUE || code === ACC.SALES_RETURNS) net += movement;
+    if (code === ACC.WASH_REVENUE || code === ACC.SWEATER_REVENUE || code === ACC.SALES_RETURNS) net += movement;
     else if (code === ACC.OUTPUT_VAT) vat += movement;
     else {
       gross += -movement;
@@ -391,7 +393,7 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
   const issueTime = normalizeTimeOfDay(input.issueTime);
   // On the linked path the lines are BUILT from the wash, so whatever the
   // caller sent is not merely unused — it never enters the calculation.
-  if (mode !== 'linked') {
+  if (mode !== 'linked' && mode !== 'settlement') {
     const problems = lineProblems(input.lines);
     if (problems.length) throw new InvoicingError(problems[0], { code: 'invalid-argument' });
   }
@@ -417,6 +419,8 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
   let paymentMethod = null;
   let paymentStatus = null;
   if (mode === 'standalone') {
+    const buyerProblems = standaloneBuyerProblems(input.customer, input.sourceType);
+    if (buyerProblems.length) throw new InvoicingError(buyerProblems[0], { code: 'invalid-argument' });
     paymentMethod = String(input.paymentMethod ?? '').trim();
     paymentStatus = String(input.paymentStatus ?? '').trim();
     if (!SALE_PAYMENT_METHODS.includes(paymentMethod)) {
@@ -473,6 +477,9 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
   // document, not a second document for the same wash, so it must not take
   // the claim — that would block the very note that corrects it.
   const settlementKey = mode === 'settlement' ? String(input.settlementPeriodKey).trim() : '';
+  if (mode === 'settlement' && !isValidPeriodKey(settlementKey)) {
+    throw new InvoicingError('شهر التسوية غير صالح.', { code: 'invalid-argument' });
+  }
   const claimType = mode === 'linked' ? 'wash'
     : mode === 'settlement' ? 'sweater_settlement'
       : (mode === 'standalone' && input.sourceType ? String(input.sourceType) : null);
@@ -488,6 +495,7 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
     let washEntry = null;
     let linkedEntryId = null;
     let settlementRef = null;
+    let settlementRow = null;
 
     // ── فاتورة التسوية: تُوثّق قيداً قائماً ولا تُنشئ غيره ──
     // نفس منطق `linked` حرفياً: يُقرأ قفل المصدر، ويُتبع إلى قيده، ويُشترط
@@ -501,6 +509,9 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
       if (!setSnap.exists) {
         throw new InvoicingError(`لا تسوية للشهر ${settlementKey}.`, { code: 'not-found' });
       }
+      settlementRow = setSnap.data();
+      const problems = settlementInvoiceProblems(settlementRow);
+      if (problems.length) throw new InvoicingError(problems[0]);
       if (!lockSnap.exists) {
         throw new InvoicingError(
           `تسوية ${settlementKey} لم تُعتمد ولم تُرحّل بعد — الفاتورة توثّق مطالبةً مُثبتة، `
@@ -516,6 +527,19 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
         });
       }
       washEntry = entrySnap.data();
+      if (settlementRow.journalEntryId !== entryId || washEntry.sourceType !== 'sweater_settlement'
+        || washEntry.sourceId !== settlementKey) {
+        throw new InvoicingError('قيد الشهر لا يطابق مصدر التسوية المعتمدة.');
+      }
+      const approved = settlementRow.figures.services;
+      const frozen = saleTotalsOfEntry(washEntry.lines);
+      const allowedAccounts = [ACC.SWEATER_RECEIVABLE, ACC.SWEATER_REVENUE, ACC.OUTPUT_VAT];
+      if ((washEntry.lines || []).some(l => !allowedAccounts.includes(l.accountId))
+        || ['net', 'vat', 'gross'].some(k => Math.abs(Number(approved[k]) - frozen[k]) >= MONEY_EPSILON)
+        || frozen.settlementAccount !== ACC.SWEATER_RECEIVABLE
+        || Math.abs(frozen.gross - frozen.net - frozen.vat) >= MONEY_EPSILON) {
+        throw new InvoicingError('مبالغ التسوية المعتمدة لا تطابق قيد الخدمات؛ راجع الأصل قبل إصدار الفاتورة.');
+      }
       linkedEntryId = entryId;
     }
 
@@ -567,6 +591,9 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
       if (!isRealDate(supplyDate)) {
         throw new InvoicingError('تاريخ الغسلة غير صالح — صحّحه قبل إصدار الفاتورة.');
       }
+    } else if (mode === 'settlement') {
+      const [y, m] = settlementKey.split('-').map(Number);
+      supplyDate = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
     } else if (mode === 'standalone' && input.supplyDate) {
       supplyDate = String(input.supplyDate).slice(0, 10);
       if (!isRealDate(supplyDate)) {
@@ -729,10 +756,18 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
     // that could name its own VAT number could sign a QR with someone else's.
     const company = settingsSnap.exists ? (settingsSnap.data().value || settingsSnap.data()) : {};
     const companySeller = {
-      name: String(company.name || 'شركة هادي الغانم'),
+      name: String(company.name || ''),
       vatNumber: String(company.vatNumber || ''),
       address: String(company.address || ''),
     };
+    const accounting = settingsAccountingSnap.exists
+      ? (settingsAccountingSnap.data().value || settingsAccountingSnap.data()) : {};
+    if (mode !== 'note') {
+      const problems = sellerIssuanceProblems(company, taxPolicyAt(issueDate, accounting), {
+        configured: hasTaxPolicyHistory(accounting),
+      });
+      if (problems.length) throw new InvoicingError(problems.join(' '));
+    }
 
     // ── المعالجة الضريبية ──
     // Three sources, one per path, and NONE of them is "what the settings say
@@ -748,7 +783,7 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
     //               at posting. A pre-snapshot entry has its treatment derived
     //               from its lines — exactly, or the invoice is refused.
     //   standalone  resolves the policy at the SUPPLY date.
-    const entrySale = mode === 'linked' ? saleTotalsOfEntry(washEntry.lines) : null;
+    const entrySale = ['linked', 'settlement'].includes(mode) ? saleTotalsOfEntry(washEntry.lines) : null;
     let taxable;
     let vatRate;
     let entryTreatment = null;
@@ -787,7 +822,7 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
       referenceTreatment = recovered;
       policyEffectiveFrom = reference.taxPolicyEffectiveFrom
         || reference.taxSnapshot?.effectiveFrom || null;
-    } else if (mode === 'linked') {
+    } else if (mode === 'linked' || mode === 'settlement') {
       entryTreatment = saleTaxTreatmentOfEntry(washEntry);
       if (!entryTreatment.known) {
         throw new InvoicingError(
@@ -848,9 +883,18 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
     }
 
     const seller = reference?.seller?.vatNumber ? reference.seller : companySeller;
+    const invoiceKind = reference?.invoiceKind || (mode === 'settlement' ? 'standard' : (input.invoiceKind || 'simplified'));
     const customer = reference
       ? (reference.customer || null)
-      : (input.customer?.name ? { name: String(input.customer.name).slice(0, 200) } : null);
+      : (input.customer?.name || mode === 'settlement' ? {
+        name: mode === 'settlement' ? SWEATER_BUYER_NAME : String(input.customer.name).trim().slice(0, 200),
+        address: String(input.customer?.address || '').trim().slice(0, 500),
+        vatNumber: String(input.customer?.vatNumber || '').trim().slice(0, 30),
+      } : null);
+    if (mode !== 'note') {
+      const customerProblems = invoiceCustomerProblems(invoiceKind, customer);
+      if (customerProblems.length) throw new InvoicingError(customerProblems.join(' '), { code: 'invalid-argument' });
+    }
     const sourceType = reference
       ? (reference.sourceType || null)
       : mode === 'linked' ? 'wash'
@@ -862,7 +906,13 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
         : mode === 'settlement' ? settlementKey
           : (input.sourceId ? String(input.sourceId) : null);
 
-    const totals = totalsFromLines(documentLines, { priceMode, taxable, rate: vatRate });
+    // Freeze the approved posted service split, not client lines or today's tax rate.
+    if (mode === 'settlement') priceMode = 'exclusive';
+    const totals = mode === 'settlement' ? {
+      net: entrySale.net, vat: entrySale.vat, gross: entrySale.gross,
+      lines: [{ description: `خدمات سويتر المعتمدة — ${settlementKey}`, quantity: 1,
+        unitPrice: entrySale.net, lineNet: entrySale.net, lineVat: entrySale.vat, lineGross: entrySale.gross }],
+    } : totalsFromLines(documentLines, { priceMode, taxable, rate: vatRate });
     if (!Number.isFinite(totals.gross) || !(totals.gross > 0)) {
       throw new InvoicingError('إجمالي المستند يجب أن يكون أكبر من صفر.', { code: 'invalid-argument' });
     }
@@ -1032,6 +1082,7 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
         status: 'invoiced',
         invoiceDocumentId: ref.id,
         invoiceNumber: documentNumber,
+        invoiceNet: totals.net, invoiceVat: totals.vat, invoiceGross: totals.gross,
         invoicedAt: FieldValue.serverTimestamp(),
         invoicedAtIso: new Date().toISOString(),
       }, { merge: true });
@@ -1042,7 +1093,8 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
       // Which of the three paths issued it. Stored because "does this document
       // carry its own entry?" is answered differently for each, and reading it
       // back off the document beats re-deriving it.
-      issueMode: mode,
+      issueMode: mode, invoiceKind,
+      settlementPeriodKey: mode === 'settlement' ? settlementKey : null,
       documentNumber, sequence, year,
       issueDate, issueTime, timestamp,
       // When the service was rendered, kept apart from when the paper was
@@ -1061,7 +1113,7 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
       paymentMethod: mode === 'linked'
         ? (wash.payment_method || null)
         : (paymentMethod || null),
-      paymentStatus: mode === 'linked' ? 'paid' : (paymentStatus || null),
+      paymentStatus: mode === 'linked' ? 'paid' : mode === 'settlement' ? 'unpaid' : (paymentStatus || null),
       settlementAccount,
       // Stored explicitly rather than assumed to be 15% forever: a rate change
       // must not restate what a filed document said.
@@ -1087,7 +1139,7 @@ export async function issueDocument(db, FieldValue, input = {}, { userId = null 
       // the wash's entry, and a note reads either one as proof that there is
       // something real to adjust.
       linkedJournalEntryId: linkedEntryId || null,
-      linkedJournalEntryNumber: mode === 'linked' ? (washEntry.entryNumber ?? null) : null,
+      linkedJournalEntryNumber: ['linked', 'settlement'].includes(mode) ? (washEntry.entryNumber ?? null) : null,
       // The cancelled document this one stands in for, when a correction
       // released the source claim. Its own number and date are untouched.
       replacesDocumentId: replacesDocumentId || null,

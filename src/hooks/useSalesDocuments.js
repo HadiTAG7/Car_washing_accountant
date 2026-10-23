@@ -14,7 +14,9 @@ import { documentSign } from '../lib/accounting/invoicing';
  */
 export function useSalesDocuments() {
   const docsQ = useFirestoreQuery(fetchDocuments, { enabled: isFirebaseConfigured, fallback: [] });
-  const sellerQ = useFirestoreQuery(fetchSellerProfile, { enabled: isFirebaseConfigured, fallback: null });
+  const sellerQ = useFirestoreQuery(fetchSellerProfile, {
+    enabled: isFirebaseConfigured, fallback: null, preserveResult: true,
+  });
 
   const documents = useMemo(() => {
     const rows = docsQ.data || [];

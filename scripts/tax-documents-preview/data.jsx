@@ -1,0 +1,27 @@
+const ready = new URLSearchParams(window.location.search).get('state') === 'ready';
+const seller = ready ? { name: 'منشأة اختبار معزولة', address: 'عنوان اصطناعي', vatRegistered: true, vatNumber: '300000000000003' } : { name: '', address: '', vatRegistered: false, vatNumber: '' };
+const policy = { known: true, vatRegistered: true, vatRate: .15, washPriceMode: 'exclusive', effectiveFrom: '2026-01-01' };
+export const isFirebaseConfigured = true;
+export const missingEnvNames = [];
+export const maskedProjectRef = () => 'synthetic-only';
+export const describeBackendError = e => e?.message || '';
+export const useBikers = () => ({ bikers: [] });
+export const useAuth = () => ({ user: { id: 'synthetic-admin' } });
+export const useWashes = () => ({ items: [], refetch: () => {} });
+export const useLedger = () => ({ entries: [], refetch: () => {} });
+export const usePartnerView = () => ({ canMutate: true });
+export const useAccountingSettings = () => ({ policyAt: () => policy, policyConfigured: true, baselineFrom: '2026-01-01', loading: false });
+export const useSalesDocuments = () => ({ seller, documents: [], totals: { count: 0, net: 0, vat: 0, gross: 0 }, gaps: [], integrityProblems: [], loading: false, refetch: () => {} });
+export const useFirestoreQuery = () => ({ data: seller, loading: false });
+export const fetchSellerProfile = async () => seller;
+export const hasPostedEntryFor = () => false;
+const synthetic = async () => ({ documentNumber: 'SYNTHETIC-NOT-SAVED', journalEntryNumber: 'TEST', linkedJournalEntryId: 'synthetic-entry' });
+export const issueSimplifiedInvoice = synthetic;
+export const issueInvoiceForSettlement = synthetic;
+export const issueInvoiceForWash = synthetic;
+export const issueCreditNoteFor = synthetic;
+export const issueDebitNoteFor = synthetic;
+export const voidDocument = synthetic;
+export const correctWashInvoice = synthetic;
+export const saveSellerProfile = async () => { throw new Error('هذه معاينة اصطناعية؛ لا تحفظ بيانات المنشأة.'); };
+export default function TopBar() { return <header className="p-4"><h1 className="text-xl font-bold">المستندات الضريبية — اختبار معزول</h1></header>; }

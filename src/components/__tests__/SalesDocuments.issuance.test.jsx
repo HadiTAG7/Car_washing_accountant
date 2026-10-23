@@ -44,6 +44,8 @@ it('blocks standalone Sweater and routes to settlements; simplified hides busine
   render(<SalesDocumentsPage />); complete();
   fireEvent.change(screen.getByLabelText(/اسم العميل/), { target: { value: 'شركة اللمسة العصرية التقنية' } });
   expect(screen.getByRole('button', { name: 'إصدار', exact: true }).disabled).toBe(true);
+  fireEvent.change(screen.getByLabelText(/اسم العميل/), { target: { value: 'اللمسة العصرية' } });
+  expect(screen.getByRole('button', { name: 'إصدار', exact: true }).disabled).toBe(true);
   expect(screen.getByRole('link', { name: 'فاتورة سويتر الشهرية من صفحة التسويات فقط' }).getAttribute('href')).toBe('?page=sweater_settlements');
   fireEvent.change(screen.getByLabelText('نوع المستند'), { target: { value: 'simplified' } });
   expect(screen.queryByLabelText('عنوان العميل')).toBeNull(); expect(screen.getByText(/المبسطة تحمل رمز QR/)).toBeTruthy();

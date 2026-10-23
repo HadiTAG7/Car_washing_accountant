@@ -55,7 +55,7 @@ describe('tax-document issuance guards — isolated memory only', () => {
     expect(db.rows.get(`sales_documents/${simplified.id}`)).toMatchObject({ invoiceKind: 'simplified', paymentStatus: 'unpaid' });
     expect(simplified.qrPayload).toBeTruthy(); expect(invoiceCustomerProblems('standard', {})).toHaveLength(3);
   });
-  it.each(['سويتر', 'شركة اللمسة العصرية التقنية', 'Sweater', 'شركه اللمسه العصريه التقنيه'])('rejects standalone Sweater buyer %s with no source metadata', async name => {
+  it.each(['سويتر', 'شركة اللمسة العصرية التقنية', 'اللمسة العصرية', 'Sweater', 'شركه اللمسه العصريه التقنيه'])('rejects standalone Sweater buyer %s with no source metadata', async name => {
     const db = database(); expect(isSweaterBuyer({ name })).toBe(true);
     await expect(issue(db, { ...sale, customer: { ...buyer, name } })).rejects.toThrow(/تسويات سويتر/);
     expect([...db.rows.keys()].some(k => k.startsWith('sales_documents/'))).toBe(false);

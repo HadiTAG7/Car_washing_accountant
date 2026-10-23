@@ -34,7 +34,7 @@ export function isSweaterBuyer(customer) {
   const name = text(customer?.name).normalize('NFKC').toLowerCase()
     .replace(/[\u064B-\u065F\u0670ـ]/g, '').replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه')
     .replace(/[^\p{L}\p{N}]/gu, '');
-  return /سويتر|sweater|اللمسهالعصريهالتقني/.test(name);
+  return /سويتر|sweater|اللمسهالعصريه/.test(name);
 }
 
 export function standaloneBuyerProblems(customer, sourceType = '') {

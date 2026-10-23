@@ -22,13 +22,20 @@ import { useWashes } from '../hooks/useWashes';
 import { useLedger } from '../hooks/useLedger';
 import { useAccountingSettings } from '../hooks/useAccountingSettings';
 import {
-  buildVatReport, periodLabel, availablePeriods, currentPeriodKey,
+  periodLabel, availablePeriods, periodKeyFor,
   FILING_PERIOD_LABELS,
 } from '../lib/accounting/vatReturn';
 import { taxPolicyAt } from '../lib/accounting/taxPolicy';
 import { amountRoleOf } from '../lib/accounting/purchaseDisplay';
 import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
+import { buildVatDashboardReport, registeredPeriods, riyadhDay } from '../lib/accounting/vatDashboard';
+import { useSweaterSettlements } from '../hooks/useSweater';
+import { useVatDeclarations } from '../hooks/useVatDeclarations';
+import { useFirestoreQuery } from '../hooks/useFirestoreQuery';
+import { fetchSellerProfile } from '../lib/accounting/firestoreInvoicing';
+import VatDeclarations from './vat/VatDeclarations';
+import VatInvoiceFollowUp from './vat/VatInvoiceFollowUp';
 
 /** Where a deducted VAT figure actually came from — shown, never inferred. */
 const TAX_SOURCE_LABELS = {
@@ -81,15 +88,22 @@ function SourceBadge({ source }) {
  * excluded from the claim, but never hidden.
  */
 export default function VatRecoveryPage() {
-  const { invoices, loading, error, sourceErrors, refetch } = useTaxInvoices();
+  const { invoices, loading, error, sourceErrors, coverage, refetch } = useTaxInvoices({ includeNonTax: true });
   const { items: startupItems } = useStartupCosts();
   const { items: annualItems }  = useAnnualExpenses();
   const { items: monthlyItems } = useMonthlyExpenses();
   const { items: variableItems } = useVariableExpenses();
-  const { items: washes } = useWashes();
-  const { entries, lines } = useLedger();
-  const { settings } = useAccountingSettings();
+  const washRead = useWashes();
+  const { items: washes } = washRead;
+  const ledger = useLedger();
+  const { entries, lines } = ledger;
+  const accounting = useAccountingSettings();
+  const { settings } = accounting;
+  const settlementRead = useSweaterSettlements();
+  const declarationRead = useVatDeclarations();
+  const sellerRead = useFirestoreQuery(fetchSellerProfile, { enabled: isFirebaseConfigured, preserveResult: true, fallback: null, cacheKey: 'app_settings:company' });
   const { scalingFactor } = usePartnerView();
+  const today = riyadhDay();
 
   const filing = settings.vatFilingPeriod || 'quarterly';
   // Opens on the period actually being prepared — the only view whose totals
@@ -97,8 +111,8 @@ export default function VatRecoveryPage() {
   const [period, setPeriod] = useState('');
 
   const periods = useMemo(
-    () => availablePeriods(invoices, filing, washes.map((w) => w.washDate)),
-    [invoices, filing, washes],
+    () => [...new Set([...availablePeriods(invoices, filing, washes.map((w) => w.washDate)), ...registeredPeriods(settings, today, filing), periodKeyFor(today, filing)])].sort().reverse(),
+    [invoices, filing, washes, settings, today],
   );
 
   // Switching the filing frequency changes the shape of a period key
@@ -107,7 +121,7 @@ export default function VatRecoveryPage() {
   // rendering a select with no matching option.
   const selected = period === '__all__' || periods.includes(period)
     ? period
-    : currentPeriodKey(filing);
+    : periodKeyFor(today, filing);
   const activePeriod = selected === '__all__' ? '' : selected;
 
   // A posted wash reports what its own entry froze; an unposted one is split
@@ -123,7 +137,7 @@ export default function VatRecoveryPage() {
     return m;
   }, [entries]);
 
-  const report = useMemo(() => buildVatReport({
+  const reportOptions = useMemo(() => ({
     inputs: invoices,
     washes,
     entries,
@@ -134,7 +148,11 @@ export default function VatRecoveryPage() {
     postedEntryOf: (w) => washEntryBySource.get(String(w.id)),
     vatRegistered: settings.vatRegistered,
     washPriceMode: settings.washPriceMode,
-  }), [invoices, washes, entries, lines, activePeriod, filing, settings, washEntryBySource]);
+    settlements: settlementRead.settlements,
+  }), [invoices, washes, entries, lines, activePeriod, filing, settings, washEntryBySource, settlementRead.settlements]);
+  const report = useMemo(() => buildVatDashboardReport(reportOptions), [reportOptions]);
+  const declarationRows = useMemo(() => registeredPeriods(settings, today, filing)
+    .map(period => ({ period, report: buildVatDashboardReport({ ...reportOptions, period }) })), [settings, today, filing, reportOptions]);
 
   // Resolve parentId → item name across all sources (uuids can't collide, so
   // one merged map is enough).
@@ -233,6 +251,12 @@ export default function VatRecoveryPage() {
     || report.unresolved.length > 0 || report.needsConversion.length > 0
     || report.output.count > 0;
 
+  const dataLoading = coverage.loading || washRead.loading || ledger.loading || accounting.loading || settlementRead.loading;
+  const dataError = coverage.error || washRead.error || ledger.error || accounting.error || settlementRead.error;
+  if (dataLoading || dataError) return <><TopBar title="تقرير ضريبة القيمة المضافة" /><main className="p-5">
+    {dataError ? <ErrorState title="بيانات الضريبة غير مكتملة؛ لم نعرض إجماليات جزئية" error={dataError} onRetry={() => { refetch(); washRead.refetch(); ledger.refetch(); accounting.refetch(); settlementRead.refetch(); }} /> : <LoadingState message="جارٍ تحميل بيانات الفترة والدفتر…" />}
+  </main></>;
+
   return (
     <>
       <TopBar
@@ -241,6 +265,21 @@ export default function VatRecoveryPage() {
       />
 
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
+        <div className="flex flex-wrap items-center gap-3">
+          <Calendar size={18} /><label htmlFor="vat-period" className="text-sm font-bold">فترة الضريبة</label>
+          <select id="vat-period" value={selected} onChange={e => setPeriod(e.target.value)} className="sw-input w-auto">
+            {periods.map(p => <option key={p} value={p}>{periodLabel(p)}</option>)}<option value="__all__">كل الفترات</option>
+          </select>
+          <span className="text-xs text-slate-500">كل المربعات تتبع الفترة المختارة؛ الصافي من التشغيل، والدفتر للمقارنة.</span>
+        </div>
+        <VatDeclarations rows={declarationRows} records={declarationRead.declarations} loading={declarationRead.loading}
+          error={declarationRead.error} today={today} scale={s} />
+        {sellerRead.error ? <p role="alert">تعذّر التحقق من ملف البائع؛ حالة التسجيل تحتاج مراجعة.</p> : !sellerRead.loading && sellerRead.data && sellerRead.data.vatRegistered !== taxPolicyAt(today, settings).vatRegistered &&
+          <div role="alert" className="border border-red-400 bg-red-500/10 text-red-600 dark:text-red-300 p-3 rounded-control text-sm">
+            تعارض التسجيل: ملف البائع {sellerRead.data.vatRegistered ? 'مسجّل' : 'غير مسجّل'}، وسياسة الدفتر {taxPolicyAt(today, settings).vatRegistered ? 'مسجّلة' : 'غير مسجّلة'}.
+            <a href="?page=documents" className="underline mx-2">مراجعة المستندات الضريبية</a>
+            <p className="mt-1 text-xs">ملف البائع بلا تاريخ سريان موثق. الأرقام أدناه حسب سياسة الدفتر المؤرخة؛ لا يتغير أي إعداد تلقائيًا.</p>
+          </div>}
         {!isFirebaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
         {error && (
           <ErrorState title="تعذّر تحميل الفواتير الضريبية" error={error} onRetry={refetch} />
@@ -290,10 +329,8 @@ export default function VatRecoveryPage() {
             icon={ArrowUpRight}
             tone="indigo"
             label="ضريبة المخرجات (المبيعات)"
-            value={formatCurrencyPrecise(outputTax)}
-            sub={report.output.source === 'ledger'
-              ? 'من حركة حساب 2100 المُرحّلة — شاملة الإشعارات'
-              : `${formatNumber(report.output.count)} غسلة مكتملة (لا توجد قيود بعد)`}
+            value={report.policyUnconfigured ? 'غير محسوم' : formatCurrencyPrecise(outputTax)}
+            sub={report.output.source === 'settlements-and-washes' ? 'من التسويات المعتمدة والغسلات غير الممثلة فيها' : `من الغسلات · ${formatNumber(report.output.count)} غسلة مكتملة`}
           />
           <StatCard
             icon={ArrowDownLeft}
@@ -307,12 +344,19 @@ export default function VatRecoveryPage() {
             icon={Percent}
             tone={report.direction === 'refundable' ? 'emerald' : 'primary'}
             label={report.direction === 'refundable' ? 'صافي الضريبة المستردة' : 'صافي الضريبة المستحقة'}
-            value={formatCurrencyPrecise(Math.abs(netTax))}
+            value={report.policyUnconfigured ? 'غير محسوم' : formatCurrencyPrecise(Math.abs(netTax))}
             sub={report.direction === 'refundable'
               ? 'المدخلات تفوق المخرجات'
               : report.direction === 'nil' ? 'لا مستحق ولا مسترد' : 'تُسدَّد للهيئة'}
           />
         </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3" aria-label="مقارنة ضريبة المخرجات">
+          <StatCard icon={Scale} tone="slate" label="المخرجات المرحّلة (2100)" value={formatCurrencyPrecise(report.ledgerOutput.tax * s)} sub={report.ledgerOutput.available ? 'حركة الفترة من الدفتر' : 'لا حركة مرحّلة في الفترة'} />
+          <StatCard icon={Scale} tone="slate" label="المدخلات المرحّلة (1200)" value={formatCurrencyPrecise(report.ledgerInput.tax * s)} sub="للمقارنة فقط؛ الصافي من المخرجات التشغيلية والمدخلات المؤهلة" />
+        </div>
+        {report.policyUnconfigured && <p role="alert" className="text-red-600 dark:text-red-300">المسودة غير مكتملة: توجد سياسة أو ضريبة غير محسومة. الأرقام المعروفة لا تكفي للتقديم.</p>}
+        <VatInvoiceFollowUp report={report} scale={s} />
 
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3 sm:gap-5">
           <StatCard
@@ -350,24 +394,24 @@ export default function VatRecoveryPage() {
               {report.outputMismatch !== 0 && (
                 <p className="mt-1">
                   <span className="font-semibold">المخرجات:</span> من الغسلات{' '}
-                  <strong className="tabular-nums">{formatCurrencyPrecise(report.operationalOutput.tax)}</strong>{' '}
+                  <strong className="tabular-nums">{formatCurrencyPrecise(report.operationalOutput.tax * s)}</strong>{' '}
                   · في الدفاتر (حساب 2100){' '}
-                  <strong className="tabular-nums">{formatCurrencyPrecise(report.ledgerOutput.tax)}</strong>{' '}
+                  <strong className="tabular-nums">{formatCurrencyPrecise(report.ledgerOutput.tax * s)}</strong>{' '}
                   · الفرق{' '}
-                  <strong className="tabular-nums">{formatCurrencyPrecise(report.outputMismatch)}</strong>
+                  <strong className="tabular-nums">{formatCurrencyPrecise(report.outputMismatch * s)}</strong>
                 </p>
               )}
               {report.inputMismatch !== 0 && (
                 <p className="mt-1">
                   <span className="font-semibold">المدخلات:</span> من الفواتير المؤهلة{' '}
-                  <strong className="tabular-nums">{formatCurrencyPrecise(report.input.tax)}</strong>{' '}
+                  <strong className="tabular-nums">{formatCurrencyPrecise(report.input.tax * s)}</strong>{' '}
                   · في الدفاتر (حساب 1200){' '}
-                  <strong className="tabular-nums">{formatCurrencyPrecise(report.ledgerInput.tax)}</strong>{' '}
+                  <strong className="tabular-nums">{formatCurrencyPrecise(report.ledgerInput.tax * s)}</strong>{' '}
                   · الفرق{' '}
-                  <strong className="tabular-nums">{formatCurrencyPrecise(report.inputMismatch)}</strong>
+                  <strong className="tabular-nums">{formatCurrencyPrecise(report.inputMismatch * s)}</strong>
                 </p>
               )}
-              <p className="mt-1">شغّل «إقفال الفترة ← فحص غير المُرحّل ← ترحيل» لتتطابق الأرقام.</p>
+              <p className="mt-1">الفروق للمراجعة؛ لا ترحيل أو تغيير تسجيل من هذه الصفحة.</p>
             </div>
           </div>
         )}
@@ -418,19 +462,7 @@ export default function VatRecoveryPage() {
             subtitle={activePeriod ? periodLabel(activePeriod) : 'كل الفترات'}
             action={
               <div className="flex items-center gap-2">
-                <div className="relative">
-                  <Calendar size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 pointer-events-none" />
-                  <select
-                    value={selected}
-                    onChange={(e) => setPeriod(e.target.value)}
-                    className="appearance-none h-10 pr-8 pl-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs font-semibold tabular-nums focus:outline-none focus:border-primary-500 transition-colors"
-                    aria-label="فلترة حسب الفترة"
-                  >
-                    {periods.map((p) => <option key={p} value={p}>{periodLabel(p)}</option>)}
-                    <option value="__all__">كل الفترات</option>
-                  </select>
-                </div>
-                <SecondaryButton icon={Download} onClick={handleExport} disabled={!anyRows}>
+                <SecondaryButton icon={Download} onClick={handleExport} disabled={!anyRows || report.policyUnconfigured}>
                   تصدير CSV
                 </SecondaryButton>
               </div>

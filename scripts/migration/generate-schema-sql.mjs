@@ -43,6 +43,9 @@ function tableSql(t, out) {
     if (c.type === 'month') checks.push(`  constraint ${q(`${t.table}_${c.column}_month`)} check (app.is_month(${q(c.column)}))`);
     if (c.type === 'rate') checks.push(`  constraint ${q(`${t.table}_${c.column}_rate`)} check (${q(c.column)} is null or ${q(c.column)} between 0 and 1)`);
   }
+  for (const [name, expression] of t.checks || []) {
+    checks.push(`  constraint ${q(`${t.table}_${name}`)} check (${expression})`);
+  }
   out.push(`-- ${t.collection}\ncreate table public.${q(t.table)} (\n${[...cols, ...checks].join(',\n')}\n);`);
   if (t.parentTable) {
     out.push(`alter table public.${q(t.table)} add constraint ${q(`${t.table}_parent_fk`)} foreign key (parent_ref) references public.${q(t.parentTable)}(id) deferrable initially deferred;`);

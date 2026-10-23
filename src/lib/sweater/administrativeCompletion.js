@@ -1,0 +1,53 @@
+import { recordProblems, ALLOWED_RECORD_FIELDS } from '../../../functions/src/sweater/recordContract.js';
+import { ownerBookingIdentity } from './bookingIdentity.js';
+
+export const ADMIN_COMPLETION_KIND = 'owner_administrative_completion_v1';
+export const ADMIN_COMPLETION_WARNING = 'اكتمال إداري بقرار المالك، لا اكتمال من SSP ولا إثبات تحصيل. التغطية للحجوزات المحددة فقط.';
+const object = x => x && typeof x === 'object' && !Array.isArray(x);
+const exact = (x, keys) => object(x) && Object.keys(x).every(k => keys.includes(k));
+const text = (x, max = 1000) => typeof x === 'string' && x.trim().length > 0 && x.length <= max;
+const id = x => typeof x === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,159}$/.test(x);
+const day = x => typeof x === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(x) && Number.isFinite(Date.parse(x)) && new Date(x).toISOString().slice(0, 10) === x;
+const stamp = x => typeof x === 'string' && /T.*(?:Z|[+-]\d{2}:\d{2})$/.test(x) && Number.isFinite(Date.parse(x));
+const url = x => { try { const u = new URL(x); return u.protocol === 'https:' && u.hostname === 'ssp-portal.sweater.sa' && !u.username && !u.password && !u.hash && ![...u.searchParams.keys()].some(k => /token|session|auth|secret|cookie/i.test(k)); } catch { return false; } };
+
+// An explicit, bounded owner decision. No daily booking exceptions, prices,
+// collection assertion, source status conversion, credentials or write access.
+export function reviewAdministrativeCompletion(input) {
+  const errors = [], rows = [], warnings = [ADMIN_COMPLETION_WARNING];
+  if (!exact(input, ['kind', 'importRunId', 'coverage', 'decision', 'workerLinks', 'records'])
+    || input.kind !== ADMIN_COMPLETION_KIND || !id(input.importRunId)
+    || new TextEncoder().encode(JSON.stringify(input)).length > 2 * 1024 * 1024) {
+    return { ready: false, errors: ['عقد قرار الاكتمال الإداري أو حجم الملف غير صالح.'], rows, warnings, payload: null };
+  }
+  const d = input.decision, c = input.coverage, records = Array.isArray(input.records) ? input.records : [];
+  if (!exact(d, ['source', 'ownerName', 'statement', 'conversationId', 'messageId', 'decidedAt', 'decidedAtBasis', 'approved', 'decision', 'serviceDate', 'bookingIds', 'excludedBookingIds'])
+    || d.source !== 'owner_statement' || d.approved !== true || d.decision !== 'record_as_completed_wash'
+    || !text(d.ownerName, 150) || !text(d.statement, 2000) || !id(d.conversationId) || !id(d.messageId)
+    || !stamp(d.decidedAt) || !['message_timestamp', 'request_received_at'].includes(d.decidedAtBasis) || !day(d.serviceDate) || !Array.isArray(d.bookingIds) || !d.bookingIds.length || d.bookingIds.length > 50
+    || d.bookingIds.some(x => typeof x !== 'string' || !/^(?:[A-Za-z]+-)?\d+$/.test(x)) || new Set(d.bookingIds.map(ownerBookingIdentity)).size !== d.bookingIds.length
+    || !Array.isArray(d.excludedBookingIds) || d.excludedBookingIds.length > 100 || d.excludedBookingIds.some(x => typeof x !== 'string' || !/^(?:[A-Za-z]+-)?\d+$/.test(x))) {
+    errors.push('قرار هادي يحتاج نصًا ومرجع رسالة وتاريخًا وقائمة حجوزات صريحة ومستثنيات منفصلة.');
+  }
+  if (!exact(c, ['rangeFrom', 'rangeTo', 'extractedAt', 'pageCount', 'pagesFetched', 'recordCount', 'isComplete', 'sourceUrl', 'scope', 'scopeComplete'])
+    || !day(c.rangeFrom) || c.rangeFrom !== c.rangeTo || c.rangeFrom !== d?.serviceDate
+    || !stamp(c.extractedAt) || !Number.isSafeInteger(c.pageCount) || c.pageCount < 1 || c.pagesFetched !== c.pageCount
+    || c.recordCount !== records.length || c.isComplete !== false || c.scope !== 'explicit_owner_bookings' || c.scopeComplete !== true || !url(c.sourceUrl)) {
+    errors.push('التغطية للحجوزات المعتمدة فقط، بوقت قراءة ومصدر وصفحات كاملة، دون ادعاء اكتمال اليوم أو الشركة.');
+  }
+  if (!Array.isArray(input.records) || !records.length || records.length > 50 || records.length !== d?.bookingIds?.length
+    || new Set(records.map(r => ownerBookingIdentity(r?.sspBookingId))).size !== records.length
+    || !object(input.workerLinks) || Object.entries(input.workerLinks).some(([k,v]) => !id(k) || !id(v) || !records.some(r => r?.driverExternalId === k))) errors.push('الحجوزات وروابط العمال يجب أن تطابق نطاق القرار دون تكرار.');
+  const approvedIds = Array.isArray(d?.bookingIds) ? d.bookingIds : [];
+  const excluded = new Set((Array.isArray(d?.excludedBookingIds) ? d.excludedBookingIds : []).map(ownerBookingIdentity));
+  for (const [index, r] of records.entries()) {
+    const problems = recordProblems(r).filter(p => p.code !== 'unknown_service_type').map(p => ({ code: p.code, message: p.ar }));
+    if (!object(r) || !approvedIds.includes(r.sspBookingId) || excluded.has(ownerBookingIdentity(r?.sspBookingId))
+      || r?.serviceDate !== d?.serviceDate || r?.rawStatus !== 'Cancelled by Admin' || r?.bookingKind !== 'individual'
+      || !id(r?.driverExternalId) || !input.workerLinks?.[r?.driverExternalId] || !url(r?.sourceUrl)) problems.push({ code: 'outside_decision', message: 'الحجز خارج قرار المالك أو مستثنى أو حالته/عامله غير موثقين.' });
+    if (object(r) && ALLOWED_RECORD_FIELDS.some(k => r[k] != null && (typeof r[k] === 'object' || typeof r[k] === 'boolean' || String(r[k]).length > 2000))) problems.push({ code: 'bad_shape', message: 'حقول المصدر يجب أن تبقى قيمًا بسيطة دون بيانات جلسة.' });
+    rows.push({ index: index + 1, sspBookingId: r?.sspBookingId || '—', problems });
+  }
+  const ready = !errors.length && rows.every(r => !r.problems.length);
+  return { ready, errors, rows, warnings, payload: ready ? input : null };
+}

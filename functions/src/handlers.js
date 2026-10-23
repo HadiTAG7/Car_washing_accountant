@@ -263,6 +263,7 @@ import { partnerWashShare } from './partnerInsights.js';
 import { partnerAllocationReport } from './partnerAllocationReport.js';
 import { projectAllocationReport, projectWashShare, projectPartnerProfile } from './partnerProjection.js';
 import { previewSweaterHandoff } from './sweater/preview.js';
+import { previewAdministrativeCompletion, saveAdministrativeCompletion } from './sweater/administrativeCompletion.js';
 import { saveOwnerHandoff } from './sweater/staffHandoff.js';
 import { previewOwnerWashTax, saveOwnerWashTax } from './sweater/ownerWashTax.js';
 import { SweaterIngestError } from './sweater/ingest.js';
@@ -535,6 +536,12 @@ export const HANDLERS = {
   sweaterSaveOwnerHandoff: {
     guard: 'accountant',
     run: ({ db, FieldValue, data, uid }) => saveOwnerHandoff(db, FieldValue, data, uid),
+  },
+  sweaterPreviewAdministrativeCompletion: {
+    guard: 'admin', run: ({ db, data, uid }) => previewAdministrativeCompletion(db, data, uid),
+  },
+  sweaterSaveAdministrativeCompletion: {
+    guard: 'admin', run: ({ db, FieldValue, data, uid }) => saveAdministrativeCompletion(db, FieldValue, data, uid),
   },
   payrollPreviewAdvanceMonth: { guard: 'accountant', run: ({ db, data }) => previewAdvanceMonth(db, data) },
   payrollSaveAdvanceMonth: { guard: 'accountant', run: ({ db, FieldValue, data, uid }) => saveAdvanceMonth(db, FieldValue, data, uid) },

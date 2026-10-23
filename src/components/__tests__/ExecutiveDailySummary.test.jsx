@@ -5,8 +5,6 @@ import ExecutiveDailySummary from '../ExecutiveDailySummary';
 import { executiveFixture } from '../../../server/__tests__/executiveFixture';
 import { overviewOperations } from '../../lib/overviewDashboard';
 import { executiveOwnerDecisions, executiveProblems, readableExecutiveText } from '../../lib/executiveOwnerSummary';
-import { financeFixture } from '../../../server/__tests__/financeFixtures';
-import { FINANCE_NUMBER_ROWS } from '../../lib/financeReportPresentation';
 
 afterEach(cleanup);
 const fixture = () => ({ today: '2026-10-23', cash: { balances: [{ code: '1010', name: 'الصندوق', balance: -123.45 }], loading: false }, overview: {
@@ -14,15 +12,15 @@ const fixture = () => ({ today: '2026-10-23', cash: { balances: [{ code: '1010',
   washes: { loading: false, error: null }, operations: overviewOperations({ washes: [{ id: 'test', bikerId: 'b', washDate: '2026-10-22', quantity: 6, status: 'مكتملة' }], bikers: [{ id: 'b' }], periodKey: '2026-10', today: '2026-10-23' }),
 } });
 const metric = name => within(screen.getByRole('region', { name, exact: true }));
-it('uses the saved finance source for the financial table, not CEO prose or current overview values', () => {
+it('uses current overview values, not archived metrics, and gives each metric its date', () => {
   const report = executiveFixture(); report.metrics[0].value = 99999;
-  const saved = financeFixture(); saved.metrics = FINANCE_NUMBER_ROWS.map((row, index) => ({ id: row.id, label: row.label, value: [700, 500, 200, 300, -100, 50][index], unit: 'ريال', basis: row.basis, asOf: saved.cutAtRiyadh, coverage: 'لقطة اختبار من الموقع' }));
-  render(<ExecutiveDailySummary report={report} data={fixture()} finance={{ data: { report: saved } }} />);
+  render(<ExecutiveDailySummary report={report} data={fixture()} />);
   expect(metric('غسلات أمس').getByText('6')).toBeTruthy();
-  const finance = screen.getByRole('region', { name: 'الأرقام المالية المحفوظة' });
-  expect(finance.textContent).toContain('700.00'); expect(finance.textContent).toContain('200.00');
-  expect(finance.textContent).not.toContain('900.00'); expect(finance.textContent).not.toContain('1,200.00');
-  expect(screen.getByRole('link', { name: 'فتح التقرير المالي الكامل' }).href).toContain('app.hadialghanim.com/?page=finance_reports&report=');
+  expect(metric('إيراد الشهر حتى اليوم').getByRole('heading').textContent).toBe('إيراد الشهر حتى اليوم');
+  expect(metric('إيراد الشهر حتى اليوم').getByText(/900\.00/)).toBeTruthy();
+  expect(metric('مصروفات الشهر').getByText(/1,200\.00/)).toBeTruthy();
+  expect(metric('صافي الربح').getByText(/-300\.00/)).toBeTruthy();
+  expect(metric('مصروفات الشهر').getByText('تشمل رواتب تقديرية حتى اعتماد المسير.')).toBeTruthy();
   for (const section of screen.getByRole('region', { name: 'خلاصة المشروع الحالية' }).querySelectorAll('section')) expect(section.querySelector('time[datetime]')).toBeTruthy();
   expect(screen.getByRole('region', { name: 'خلاصة المشروع الحالية' }).textContent).not.toContain('99,999');
   expect(screen.getByText('التفاصيل التقنية والتقرير المحفوظ').closest('details').open).toBe(false);
@@ -72,10 +70,9 @@ it('renders individual owner questions without approval buttons or changing the 
 });
 it('distinguishes missing readings from actual zero and explains an absent report without inventing a failure', () => {
   const data = fixture(); data.overview.finance = { statement: null, error: 'failed' }; data.overview.washes.error = 'failed'; data.cash.error = 'failed';
-  render(<ExecutiveDailySummary report={executiveFixture()} data={data} finance={{ error: 'failed' }} />);
+  render(<ExecutiveDailySummary report={executiveFixture()} data={data} />);
   expect(metric('غسلات أمس').getByText('غير متاح')).toBeTruthy();
-  expect(screen.getByText('تعذرت قراءة تقرير المالية؛ لم تُستبدل أرقامه بأرقام اليوم.')).toBeTruthy();
-  expect(screen.queryByText('900.00')).toBeNull();
+  expect(metric('صافي الربح').getByText('غير متاح')).toBeTruthy();
   expect(screen.getByRole('note').textContent).toContain('سبب عدم صدوره غير مسجل');
   expect(screen.getByRole('note').textContent).not.toContain('حد الاستخدام');
   expect(executiveProblems(null, data.cash)[0].severity).toBe('open');

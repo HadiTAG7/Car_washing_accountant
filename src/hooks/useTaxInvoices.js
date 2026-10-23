@@ -42,15 +42,15 @@ import { useFirestoreQuery } from './useFirestoreQuery';
  * startup one, for the same reason: a real dated document and a ×N estimate
  * of the same cost must never both be claimed.
  */
-export function useTaxInvoices() {
+export function useTaxInvoices({ includeNonTax = false } = {}) {
   const startupQ = useFirestoreQuery(
-    () => fetchRows('startup_cost_entries', [where('is_tax_invoice', '==', true)]),
-    { enabled: isFirebaseConfigured, map: mapStartupCostEntry, fallback: [] },
+    () => fetchRows('startup_cost_entries', includeNonTax ? [] : [where('is_tax_invoice', '==', true)]),
+    { enabled: isFirebaseConfigured, deps: [includeNonTax], map: mapStartupCostEntry, fallback: [] },
   );
 
   const annualQ = useFirestoreQuery(
-    () => fetchRows('annual_expense_entries', [where('is_tax_invoice', '==', true)]),
-    { enabled: isFirebaseConfigured, map: mapAnnualExpenseEntry, fallback: [] },
+    () => fetchRows('annual_expense_entries', includeNonTax ? [] : [where('is_tax_invoice', '==', true)]),
+    { enabled: isFirebaseConfigured, deps: [includeNonTax], map: mapAnnualExpenseEntry, fallback: [] },
   );
 
   // Startup ITEMS flagged as tax invoices — for items whose spend was typed
@@ -67,13 +67,13 @@ export function useTaxInvoices() {
   );
 
   const variableQ = useFirestoreQuery(
-    () => fetchRows('variable_expenses', [where('is_tax_invoice', '==', true)]),
-    { enabled: isFirebaseConfigured, map: mapVariableExpense, fallback: [] },
+    () => fetchRows('variable_expenses', includeNonTax ? [] : [where('is_tax_invoice', '==', true)]),
+    { enabled: isFirebaseConfigured, deps: [includeNonTax], map: mapVariableExpense, fallback: [] },
   );
 
   const monthlyQ = useFirestoreQuery(
-    () => fetchRows('monthly_expenses', [where('is_tax_invoice', '==', true)]),
-    { enabled: isFirebaseConfigured, map: mapMonthlyExpense, fallback: [] },
+    () => fetchRows('monthly_expenses', includeNonTax ? [] : [where('is_tax_invoice', '==', true)]),
+    { enabled: isFirebaseConfigured, deps: [includeNonTax], map: mapMonthlyExpense, fallback: [] },
   );
 
   // Dated vouchers generated from the recurring templates. Once a template
@@ -118,7 +118,7 @@ export function useTaxInvoices() {
         vatRate:       m.vatRate ?? null,
         priceMode:     m.priceMode || 'inclusive',
         vatDeductible: m.vatDeductible,
-        isTaxInvoice: true,
+        isTaxInvoice: m.isTaxInvoice,
         createdAt:   m.loggedDate || '',
         source:      'monthly',
         sourceKind:  'monthly',
@@ -127,7 +127,7 @@ export function useTaxInvoices() {
       }));
     // Each voucher IS a dated document, so it needs no recurrence estimate.
     const vouchers = voucherRows
-      .filter((v) => v.isTaxInvoice)
+      .filter((v) => includeNonTax || v.isTaxInvoice)
       .map((v) => ({
         id:           v.id,
         description:  `${v.templateName || 'مصروف شهري'} — ${v.periodKey}`,
@@ -142,7 +142,7 @@ export function useTaxInvoices() {
         vatRate:       v.vatRate ?? null,
         priceMode:     v.priceMode || 'inclusive',
         vatDeductible: v.vatDeductible !== false,
-        isTaxInvoice: true,
+        isTaxInvoice: Boolean(v.isTaxInvoice),
         createdAt:    v.generatedAtIso || v.dueDate || '',
         // The badge says «سند» and the KEY says `voucher` — the adapter that
         // posts it. Tagging a voucher `monthly` made it collide in the posted
@@ -168,7 +168,7 @@ export function useTaxInvoices() {
       vatRate:       v.vatRate ?? null,
       priceMode:     v.priceMode || 'inclusive',
       vatDeductible: v.vatDeductible,
-      isTaxInvoice: true,
+      isTaxInvoice: v.isTaxInvoice,
       createdAt:    v.loggedDate || '',
       source:       'variable',
       sourceKind:   'variable',
@@ -225,7 +225,7 @@ export function useTaxInvoices() {
         return byDate !== 0 ? byDate : String(b.createdAt).localeCompare(String(a.createdAt));
       });
   }, [startupQ.data, startupItemsQ.data, ledgerParentsQ.data, annualQ.data,
-    monthlyQ.data, vouchersQ.data, variableQ.data]);
+    monthlyQ.data, vouchersQ.data, variableQ.data, includeNonTax]);
 
   const loading = startupQ.loading || startupItemsQ.loading || annualQ.loading
     || monthlyQ.loading || vouchersQ.loading || variableQ.loading;

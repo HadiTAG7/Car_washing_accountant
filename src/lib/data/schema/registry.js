@@ -188,6 +188,16 @@ export const TABLES = [
   { collection: 'sweater_metric_snapshots', columns: 'periodKey:month! extractedAtIso sourceUrl payloadHash keyId:id metrics:json receivedAt:ts receivedAtIso',
     policy: { read: 'staff', write: 'none' }, migration: '20261023000000_sweater_metric_snapshots' },
 
+  // Evidence of owner-filed VAT returns; this screen has no write path.
+  { collection: 'vat_declarations', columns: 'periodKey:text! status submittedDate:day evidenceUrl refundReceivedDate:day updatedAt:iso',
+    policy: { read: 'staff', write: 'none' }, migration: '20261023180318_vat_return_tracking',
+    checks: [
+      ['period', `period_key is not null and id = period_key and period_key ~ '^\\d{4}-(Q[1-4]|0[1-9]|1[0-2])$'`],
+      ['status', `status is not null and status in ('not_submitted', 'submitted', 'refund_received')`],
+      ['proof', `status = 'not_submitted' or (submitted_date is not null and evidence_url is not null and evidence_url ~ '^https?://')`],
+      ['refund', `status <> 'refund_received' or refund_received_date is not null`],
+    ] },
+
   // ── مركز قيادة الوكلاء ──
   { collection: 'agent_command_agents', columns: '', policy: { read: 'accountant', write: 'none' }, realtime: true },
   { collection: 'agent_command_reports', columns: 'reportedAt:ts! reportId:id!', policy: { read: 'accountant', write: 'none' }, realtime: true },

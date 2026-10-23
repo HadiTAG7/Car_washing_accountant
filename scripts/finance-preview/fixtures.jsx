@@ -23,6 +23,14 @@ const entries = [{ id: 'SYNTHETIC', status: 'posted', entryDate: '2026-10-01', e
 const lines = [{ entryId: 'SYNTHETIC', accountId: '1010', debit: 100, credit: 0 }, { entryId: 'SYNTHETIC', accountId: '3000-test-partner', debit: 0, credit: 100 }];
 export const useLedger = () => ({ accounts, entries, lines, accountIndex: new Map(accounts.map(account => [account.code, account])), periods: [], loading: false, error: null, needsSeeding: false, refetch: () => {} });
 export const useOverviewDashboard = () => ({ finance: { statement: { netRevenue: 1234, totalCosts: 567 }, loading: false, error: null } });
+export const useFinanceHomeData = month => ({ today: '2026-10-23', month, loading: false, problems: [], refresh: () => {},
+  statement: { netRevenue: 1234, totalCosts: 1567, netProfit: -333 },
+  ledger: { postedRevenue: 0, postedCosts: 500, cash: -50, bank: 300, availableCash: 250, capital: 500,
+    negativeAccounts: [{ code: '1010', name: 'صندوق اختبار', balance: -50 }] },
+  settlementReady: true, settlement: { status: 'calculated', figures: { netDue: 0, counts: { eligible: 0, imported: 12 } } },
+  vat: { netTax: 23, unpostedEligible: [{}, {}], unpostedInputTax: 7 },
+  workbench: { unknownPayment: { count: 4, amount: 410 }, pending: { count: 3, amount: 300 } },
+  budget: { month: '2026-10', cards: [{ budget: { amount: 0 }, spent: 100 }], totals: { remaining: -100 } } });
 // Dense, long mixed-direction labels reproduce the shrinking flex-list defect.
 const recordItems = Array.from({ length: 20 }, (_, index) => ({ sourceId: `TEST-${index}`, title: `${index + 1} — مصروف اختبار طويل لصيانة المعدات وباقة الاتصالات (مستند Q4-TEST) — مرجع ${'SYNTHETIC'.repeat(8)}`, date: '2026-10-19', amount: 57.34, paymentStatus: 'unpaid' }));
 export const useFinanceRead = (endpoint, request) => ({ allowed: true, loading: false, error: null, refresh: () => {},

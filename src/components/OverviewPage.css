@@ -31,6 +31,12 @@
 .sw-overview-insight h3 { font-size: .85rem; color: var(--sw-text-secondary); font-weight: 600; }
 .sw-overview-insight p { font-size: .8rem; line-height: 1.9; }
 .sw-overview-insight small { color: var(--sw-text-secondary); font-size: .73rem; line-height: 1.8; }
+/* Break-even boxes: green when the actual reaches break-even, red below it. */
+.sw-overview-insight--good { border-color: var(--sw-success); background: var(--sw-success-soft); }
+.sw-overview-insight--bad { border-color: var(--sw-danger); background: var(--sw-danger-soft); }
+.sw-overview-insight--good strong, .sw-overview-insight--good .sw-overview-insight__status { color: var(--sw-success); }
+.sw-overview-insight--bad strong, .sw-overview-insight--bad .sw-overview-insight__status { color: var(--sw-danger); }
+.sw-overview-insight__status { font-weight: 600; }
 .sw-overview__reconciliation { display: grid; gap: 10px; padding: 20px; border: 1px solid var(--sw-border-subtle); background: var(--sw-surface); border-radius: var(--sw-radius-card); font-size: .85rem; }
 .sw-overview__reconciliation label { font-weight: 700; }
 .sw-overview__reconciliation input { width: min(100%, 260px); padding: 10px 12px; min-height: 44px; background: var(--sw-surface); color: var(--sw-text-primary); border: 1px solid var(--sw-border-subtle); border-radius: 8px; }
@@ -56,13 +62,6 @@
   color: var(--sw-text-secondary); background: var(--sw-surface, #fff); padding: 0 4px; border-radius: 4px; }
 .sw-overview__bars .sw-overview__day-reached .sw-overview__bar-track > span { background: var(--sw-success); }
 .sw-overview__bars .sw-overview__day-below .sw-overview__bar-track > span { background: var(--sw-danger); }
-.sw-overview__breakeven { display: grid; gap: 6px; margin: 4px 0 10px; padding: 10px 12px; border-radius: 10px; background: #64748b0a; }
-.sw-overview__breakeven-legend { display: flex; align-items: center; gap: 8px; margin: 0; font-weight: 600; }
-.sw-overview__breakeven-legend > span { width: 22px; border-top: 2px dashed var(--sw-text-secondary); }
-.sw-overview__breakeven dl { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 0; }
-.sw-overview__breakeven dt { font-size: .75rem; color: var(--sw-text-secondary); }
-.sw-overview__breakeven dd { margin: 0; font-weight: 600; }
-.sw-overview__breakeven small, .sw-overview__breakeven-missing { color: var(--sw-text-secondary); font-size: .75rem; }
 .sw-overview__bar-track > span { width: 100%; min-height: 2px; border-radius: 4px; background: var(--sw-brand-500); }
 .sw-overview__bars button:hover .sw-overview__bar-track { background: #f9731620; }
 .sw-overview__disclosure { margin-top: 12px; font-size: .8rem; }

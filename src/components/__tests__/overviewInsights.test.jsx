@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import OverviewBusinessInsights from '../OverviewBusinessInsights';
 import OverviewOperationalAttention from '../OverviewOperationalAttention';
 import { overviewOperations } from '../../lib/overviewDashboard';
+import { bikerBreakEven, dailyBreakEven, dailyBreakEvenDays } from '../../lib/breakEven';
 
 afterEach(cleanup);
 beforeEach(() => localStorage.clear());
@@ -16,6 +17,38 @@ const data = () => ({ operations: overviewOperations({ washes: rows, bikers: [bi
   workers: { bikers: [biker] },
 });
 const card = title => screen.getByRole('heading', { name: title, exact: true }).closest('section');
+it('shows the daily and per-biker break-even boxes from breakEven.js, red below and green at or above', () => {
+  const d = data(); const navigate = vi.fn();
+  // Costs 100: 100 ÷ 20 ÷ 31 = 0.16 a day; one wash on the 20th of 20 completed days = 0.05 a day.
+  const daily = dailyBreakEven({ statement: d.finance.statement, periodKey: '2026-10', completeMonth: false });
+  const days = dailyBreakEvenDays(d.operations.daily, daily.required);
+  // b1 washed (1 on one day) and carries the month: 100 ÷ 20 ÷ 29 work days = 0.17 a day; coverage 580%.
+  const perBiker = bikerBreakEven({ statement: d.finance.statement, washes: d.operations.rows, bikers: [biker], periodKey: '2026-10', today: '2026-10-21',
+    payrollLines: [{ bikerId: 'b1', name: biker.name, basicDue: 50, bonus: 0, deduction: 0, daysEntitled: 31, monthDays: 31 }] });
+  render(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language="ar" onNavigate={navigate} breakEven={{ daily, days, perBiker }} />);
+  const box = title => screen.getByRole('heading', { name: title, exact: true }).closest('section');
+  const first = box('نقطة التعادل اليومية');
+  expect(first.querySelector('strong').textContent).toBe('0.16 غسلة / يوم');
+  expect(first.textContent).toContain('المتوسط الفعلي: 0.05'); expect(first.textContent).toMatch(/الفرق: \u200e?-0\.11/);
+  expect(first.textContent).toContain('وصلها: 1 من 20 يومًا مكتملًا');
+  expect(first.textContent).toContain('تحت نقطة التعادل'); expect(first.className).toContain('sw-overview-insight--bad');
+  const second = box('نقطة التعادل لكل بايكر');
+  expect(second.querySelector('strong').textContent).toBe('0.17 غسلة / يوم');
+  expect(second.textContent).toContain('متوسط الفعلي لكل بايكر: 1'); expect(second.textContent).toContain('التغطية: 580%');
+  expect(second.textContent).toContain('البايكرية المحسوبون: 1');
+  expect(second.textContent).toContain('وصل نقطة التعادل'); expect(second.className).toContain('sw-overview-insight--good');
+  fireEvent.click(within(second).getByRole('button', { name: 'تفاصيل كل بايكر' })); expect(navigate).toHaveBeenCalledWith('bikers');
+});
+
+it('break-even boxes stay neutral and unavailable without confirmed figures', () => {
+  render(<OverviewBusinessInsights data={data()} periodKey="2026-10" washReady language="ar" />);
+  for (const title of ['نقطة التعادل اليومية', 'نقطة التعادل لكل بايكر']) {
+    const section = screen.getByRole('heading', { name: title, exact: true }).closest('section');
+    expect(section.querySelector('strong').textContent).toBe('غير متاح');
+    expect(section.className).not.toMatch(/--good|--bad/);
+  }
+});
+
 it('supports month-keyed saved counts, explicit zero and warning differences without database writes', () => {
   const d = data(); const navigate = vi.fn();
   const { rerender } = render(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language="ar" onNavigate={navigate} />);

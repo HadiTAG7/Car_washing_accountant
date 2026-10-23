@@ -23,6 +23,7 @@ describe('daily break-even', () => {
     const days = dailyBreakEvenDays([{ quantity: 50 }, { quantity: 40 }, { quantity: 45 }, { quantity: 2, incomplete: true }], 45);
     expect(days.completed).toBe(3); expect(days.reached).toBe(2);
     expect(days.averageGap).toBeCloseTo((5 - 5 + 0) / 3, 10);
+    expect(days.averageActual).toBeCloseTo((50 + 40 + 45) / 3, 10);
     expect(days.days.map(d => d.reached)).toEqual([true, false, true, null]);
     expect(dailyBreakEvenDays([], null)).toBeNull();
   });
@@ -71,6 +72,9 @@ describe('break-even per biker, payroll basis (optional)', () => {
     expect([b.actualDaily, c.washes, c.actualDaily, c.coverage, c.tone]).toEqual([1, 0, null, 0, 'red']);
     expect(c.overCapacity).toBe(true); expect(a.overCapacity).toBe(false);
     expect(r.unlinkedWashes).toBe(3);
+    // c has no wash: 0 a day in the average, as in its coverage.
+    expect(r.averageActualDaily).toBeCloseTo((2 + 1 + 0) / 3, 10);
+    expect(r.averageCoverage).toBeCloseTo(r.averageActualDaily / r.averageRequiredDaily, 10);
   });
   it('lists bikers who washed but have no eligible payroll days, with no cost', () => {
     const r = bikerBreakEven({ statement, payrollLines: [line('a', 900)], washes: [wash('x', '2026-10-01', 4)], periodKey: '2026-10' });
@@ -100,6 +104,10 @@ describe('break-even per biker, washers basis (the default)', () => {
     expect(r.rows.map(x => x.share)).toEqual([600, 600]);
     expect(r.allocatedTotal).toBe(3000); expect(r.difference).toBe(0);
     expect(r.rows[0].requiredDaily).toBeCloseTo(1500 / 20 / 29, 10);
+    // The overview's per-biker box: average required, average actual (4 and 2), coverage.
+    expect(r.averageRequiredDaily).toBeCloseTo(1500 / 20 / 29, 10);
+    expect(r.averageActualDaily).toBe(3);
+    expect(r.averageCoverage).toBeCloseTo(3 / (1500 / 20 / 29), 10);
     expect(r.outside).toEqual([]);
   });
   it('reports the salaries of bikers paid without a wash, and the daily break-even without them', () => {

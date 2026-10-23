@@ -7,7 +7,7 @@ import { useFirestoreQuery } from './useFirestoreQuery';
 function mapRow(row) {
   return {
     id:        row.id,
-    label:     row.label,
+    label:     row.label || row.name || '',
     sortOrder: row.sort_order ?? 0,
   };
 }

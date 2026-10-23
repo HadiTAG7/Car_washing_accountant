@@ -34,6 +34,10 @@ import { convertStartupParentSpend } from '../lib/accounting/firestoreStartupMig
 import StartupConversionModal from './StartupConversionModal';
 import { isFirebaseConfigured, missingEnvNames, describeBackendError } from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
+import StartupCapacityCard from './StartupCapacityCard';
+import ExpenseChangeConfirmation from './ExpenseChangeConfirmation';
+import { useExpenseConfirmation } from '../hooks/useExpenseConfirmation';
+import { paidWithoutEntries, planHasFinancialHistory } from '../lib/expensePageSafety';
 
 // ─── Formatted amount input (thousands separators) ─────────────────────────
 // A text-driven numeric field that reads like "194,000" at rest but lets
@@ -110,6 +114,7 @@ function EmptyState({ onAdd, canMutate }) {
 }
 
 export default function StartupPage({ pendingEntry, onClearPendingEntry, embedded = false }) {
+  const confirmation = useExpenseConfirmation();
   const {
     items, loading, error,
     addItem, updateItem, deleteItem, refetch,
@@ -143,7 +148,7 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry, embedde
   const detailLedger = useStartupCostEntries(detailItem?.id ?? null);
   // Which items are ledger-managed. Their inline actual-amount input is
   // locked (the ledger is the single writer for actual_amount there).
-  const { parentIds: ledgerManagedIds, refetch: refetchLedgerParents } =
+  const { parentIds: ledgerManagedIds, loading: ledgerParentsLoading, error: ledgerParentsError, refetch: refetchLedgerParents } =
     useStartupLedgerParents();
   // ── بنود ما زالت تحمل مبلغاً فعلياً بلا قيد ──
   // Legacy rows from before the actual amount moved to the sub-ledger. They
@@ -225,12 +230,20 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry, embedde
     catch (e) { setMutationError(e); throw e; }
   }
   async function handleUpdateItem(id, updates) {
-    try { await updateItem(id, updates); }
-    catch (e) { setMutationError(e); throw e; }
+    try {
+      const item = items.find(row => row.id === id);
+      const consent = await confirmation.confirm({ title: 'تأكيد تعديل خطة التأسيس', reasonRequired: true,
+        description: `${item?.itemName || ''} — المبلغ الفعلي والحالة يبقيان محسوبين من الدفعات. راجع تغييرات الخطة قبل حفظها.` });
+      await updateItem(id, updates, consent);
+    } catch (e) { if (e.code !== 'cancelled') setMutationError(e); throw e; }
   }
   async function handleDelete(id) {
-    try { await deleteItem(id); }
-    catch (e) { setMutationError(e); }
+    try {
+      const item = items.find(row => row.id === id);
+      if (!item || planHasFinancialHistory(item, ledgerManagedIds)) return;
+      await confirmation.confirm({ title: 'تأكيد حذف بند تأسيس', description: `${item.itemName} — الحذف للبند الخالي من الدفعات والقيود فقط.`, reasonRequired: false });
+      await deleteItem(id);
+    } catch (e) { if (e.code !== 'cancelled') setMutationError(e); }
   }
 
   return (
@@ -241,6 +254,12 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry, embedde
       />}
 
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
+        <StartupCapacityCard />
+        {ledgerParentsError && <p role="alert">تعذرت قراءة الدفعات؛ لا يمكن تأكيد التنبيه أو السماح بالحذف الآن.</p>}
+        {!ledgerParentsLoading && !ledgerParentsError && paidWithoutEntries(items, ledgerManagedIds, 'startup').length > 0 && <div role="alert" className="rounded-card border border-amber-400 bg-amber-50 dark:bg-amber-950/30 p-4">
+          <strong>بنود مكتملة بلا دفعات مسجلة: {paidWithoutEntries(items, ledgerManagedIds, 'startup').length}</strong>
+          <p>الحالة وحدها لا تثبت السداد. راجع سجل الدفعات؛ لم تتغير الأرقام أو الحالة.</p>
+        </div>}
         {!isFirebaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
 
         {mutationError && (
@@ -294,7 +313,7 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry, embedde
           <SectionHeader
             title="بنود رسوم التأسيس"
             subtitle={canMutate
-              ? 'حرّر المبلغ الفعلي أو الحالة مباشرةً من الجدول'
+              ? 'الفعلي والحالة من سجل الدفعات؛ تعديل الخطة يحتاج تأكيدًا وسببًا.'
               : 'عرض حصّتك من بنود التأسيس (للقراءة فقط)'}
             action={canMutate ? (
               <PrimaryButton icon={Plus} onClick={openAddModal}>
@@ -483,9 +502,10 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry, embedde
                               <button
                                 type="button"
                                 onClick={() => handleDelete(i.id)}
+                                disabled={ledgerParentsLoading || Boolean(ledgerParentsError) || planHasFinancialHistory(i, ledgerManagedIds)}
                                 className="sw-tap inline-flex items-center justify-center p-1.5 rounded-control text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/15 transition-colors"
                                 aria-label={`حذف ${i.itemName}`}
-                                title="حذف البند"
+                                title={planHasFinancialHistory(i, ledgerManagedIds) ? 'الحذف ممنوع لبند له دفعات أو مبلغ فعلي' : 'حذف البند'}
                               >
                                 <Trash2 size={15} />
                               </button>
@@ -549,6 +569,7 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry, embedde
         duration={toast.duration}
         onClose={closeToast}
       />
+      {confirmation.request && <ExpenseChangeConfirmation key={confirmation.request.title} request={confirmation.request} onFinish={confirmation.finish} />}
     </>
   );
 }

@@ -11,7 +11,7 @@ import { useFirestoreQuery } from './useFirestoreQuery';
  * inline editor and the ledger roll-up never fight over actual_amount.
  */
 export function useStartupLedgerParents() {
-  const { data, refetch } = useFirestoreQuery(
+  const { data, loading, error, refetch } = useFirestoreQuery(
     () => fetchRows('startup_cost_entries'),
     { cacheKey: 'startup_cost_entries', enabled: isFirebaseConfigured, fallback: [] },
   );
@@ -19,7 +19,7 @@ export function useStartupLedgerParents() {
     () => new Set((data || []).map((r) => r.startup_cost_id)),
     [data],
   );
-  return { parentIds, refetch };
+  return { parentIds, loading, error, refetch };
 }
 
 /**

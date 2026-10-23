@@ -743,7 +743,7 @@ export async function convertLegacyStartupSpend(db, FieldValue, { parentId, form
  * carry `status`, `actual_amount` or the tax block is refused rather than
  * ignored: a caller that sent them believes they took effect.
  */
-export async function updateStartupPlan(db, FieldValue, { parentId, patch = {} }, {
+export async function updateStartupPlan(db, FieldValue, { parentId, patch = {}, reason }, {
   userId = null, role = 'operator', onBeforeCommit = null,
 } = {}) {
   requireRole(role, WRITE_ROLES, 'تعديل خطة رسوم التأسيس');
@@ -793,7 +793,7 @@ export async function updateStartupPlan(db, FieldValue, { parentId, patch = {} }
         status: parent.status ?? null,
       },
       after: { ...next, ...rollup, entryCount: entries.length },
-      note: `تعديل خطة بند التأسيس ${id}`,
+      note: reason ? String(reason).trim() : `تعديل خطة بند التأسيس ${id}`,
     }, FieldValue));
     return { id, ...rollup };
   });

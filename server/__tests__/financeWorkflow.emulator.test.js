@@ -9,6 +9,8 @@ import { financeReports } from '../financeReports.js';
 import { postSource } from '../../functions/src/ledger.js';
 import { expensePatch, financeFixture } from './financeFixtures.js';
 import { approveFinanceSelection } from '../../src/lib/financeWorkbenchActions.js';
+import { dispatch } from '../../functions/src/handlers.js';
+import { deleteStartupPlan } from '../../functions/src/startupCosts.js';
 
 const projectId = 'demo-sweater-finance';
 const enabled = /^(127\.0\.0\.1|localhost):19080$/.test(process.env.FIRESTORE_EMULATOR_HOST || '');
@@ -37,6 +39,34 @@ describe.skipIf(!enabled)('finance real Firestore workflow — isolated demo onl
   }, 120000);
   afterAll(async () => { if (rules) await rules.cleanup(); if (db) await db.terminate(); if (app) await deleteApp(app); });
   const call = input => financeWorkbench(db, auth, input);
+
+  it('confirms and audits an annual status change without creating a payment, then refuses deleting any parent with payments or a journal', async () => {
+    const request = { action: 'update', parentId: 'test-parent', patch: { payment_status: 'paid' }, confirmed: true,
+      reason: 'سبب اختبار معزول للتأكيد', expected: { payment_status: 'pending', annual_cost: 1000 } };
+    await expect(dispatch(db, FieldValue, 'annualPlanAction', { ...request, confirmed: false }, auth)).rejects.toThrow();
+    await dispatch(db, FieldValue, 'annualPlanAction', request, auth);
+    expect((await db.doc('annual_expenses/test-parent').get()).data()).toMatchObject({ actual_amount: 0, annual_cost: 1000, payment_status: 'paid' });
+    expect((await db.collection('audit_logs').where('action', '==', 'annual-plan-update').get()).docs[0].data().reason).toBe(request.reason);
+    expect((await db.collection('journal_entries').get()).size).toBe(0); expect((await db.collection('annual_expense_entries').get()).size).toBe(0);
+    await db.doc('annual_expense_entries/isolated-payment').set({ annual_expense_id: 'test-parent', amount: 10 });
+    const deletion = { action: 'delete', parentId: 'test-parent', confirmed: true };
+    await expect(dispatch(db, FieldValue, 'annualPlanAction', deletion, auth)).rejects.toThrow(/الحذف ممنوع/);
+    await db.doc('annual_expense_entries/isolated-payment').delete();
+    await db.doc('journal_entries/isolated-journal').set({ sourceId: 'test-parent', status: 'posted' });
+    await expect(dispatch(db, FieldValue, 'annualPlanAction', deletion, auth)).rejects.toThrow(/الحذف ممنوع/);
+    expect((await db.doc('annual_expenses/test-parent').get()).exists).toBe(true);
+  }, 120000);
+
+  it('keeps the startup server deletion guard and deletes only an empty confirmed annual plan', async () => {
+    await dispatch(db, FieldValue, 'startupUpdatePlan', { parentId: 'test-parent', patch: { itemName: 'خطة اختبار معدلة' }, reason: 'سبب موثق من تأكيد الواجهة' }, auth);
+    expect((await db.collection('audit_logs').where('action', '==', 'startup-plan-update').get()).docs[0].data().note).toBe('سبب موثق من تأكيد الواجهة');
+    await db.doc('startup_cost_entries/isolated-spend').set({ startup_cost_id: 'test-parent', amount: 5 });
+    await expect(deleteStartupPlan(db, FieldValue, { parentId: 'test-parent' }, { role: 'admin', userId: auth.uid })).rejects.toThrow(/مصروف/);
+    await dispatch(db, FieldValue, 'annualPlanAction', { action: 'delete', parentId: 'test-parent', confirmed: true }, auth);
+    expect((await db.doc('annual_expenses/test-parent').get()).exists).toBe(false);
+    expect((await db.doc('startup_cost_entries/isolated-spend').get()).exists).toBe(true);
+    expect((await db.collection('journal_entries').get()).size).toBe(0);
+  }, 120000);
   async function captured(overrides = {}, requestId = 'TEST-REQUEST') {
     const input = { kind: 'variable', requestId, patch: expensePatch(overrides) };
     const preview = await call({ action: 'previewCapture', ...input });

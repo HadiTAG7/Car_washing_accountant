@@ -95,6 +95,7 @@ export const startupAssignUnits = callable('startupAssignUnits');
 export const startupConvertLegacySpend = callable('startupConvertLegacySpend');
 export const startupUpdatePlan = callable('startupUpdatePlan');
 export const startupDeletePlan = callable('startupDeletePlan');
+export const annualPlanAction = callable('annualPlanAction');
 
 // ─── تهيئة أول مدير ──────────────────────────────────────────────────────
 // ⚠️ Until the first claim, any authenticated account in this project can make

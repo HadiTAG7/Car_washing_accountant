@@ -1,4 +1,5 @@
 import { previewAdvanceMonth, saveAdvanceMonth } from './advanceMonth.js';
+import { annualPlanAction } from './annualPlans.js';
 import { ExpenseCorrectionError, previewExpenseCorrection, saveExpenseCorrection, recordWorkerAdvance, expenseCorrectionOptions, payrollReadStatus } from './expenseCorrections.js';
 import { FinanceReviewError } from './financeReview.js';
 // ═══════════════════════════════════════════════════════════════════════════
@@ -482,7 +483,7 @@ export const HANDLERS = {
   startupUpdatePlan: {
     guard: 'startupWriter',
     run: ({ db, FieldValue, data, uid, role }) => updateStartupPlan(db, FieldValue, {
-      parentId: data?.parentId, patch: data?.patch,
+      parentId: data?.parentId, patch: data?.patch, reason: data?.reason,
     }, { userId: uid, role }),
   },
 
@@ -491,6 +492,11 @@ export const HANDLERS = {
     run: ({ db, FieldValue, data, uid, role }) => deleteStartupPlan(db, FieldValue, {
       parentId: data?.parentId,
     }, { userId: uid, role }),
+  },
+
+  annualPlanAction: {
+    guard: 'startupWriter',
+    run: ({ db, FieldValue, data, uid, role }) => annualPlanAction(db, FieldValue, data, { userId: uid, role }),
   },
 
   // ── تهيئة أول مدير ──

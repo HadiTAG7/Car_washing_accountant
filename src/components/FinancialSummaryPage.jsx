@@ -36,6 +36,10 @@ import { mapWash, mapBiker, mapVariableExpense } from '../lib/mappers';
 import { useIncomePayrollPreviews, incomePayrollMonths } from '../hooks/useIncomePayrollPreviews';
 import { useStatementMonths } from '../hooks/useStatementMonths';
 import { usePayrollRuns } from '../hooks/usePayroll';
+import { incomeCostReconciliation } from '../lib/accounting/incomeCostReconciliation';
+import IncomeCostReconciliation from './statement/IncomeCostReconciliation';
+import IncomeSweaterComparison from './statement/IncomeSweaterComparison';
+import { overviewOperations } from '../lib/overviewDashboard';
 
 export default function FinancialSummaryPage() {
   const { language } = useLanguage();
@@ -113,6 +117,10 @@ export default function FinancialSummaryPage() {
   const isProfit            = finalNetProfit >= 0;
 
   const monthLabel = formatMonthLabel(selectedMonth);
+  const costReconciliation = useMemo(() => incomeCostReconciliation({ statement, accounts, entries, lines, scalingFactor }),
+    [statement, accounts, entries, lines, scalingFactor]);
+  const recordedWashCount = useMemo(() => overviewOperations({ washes, periodKey: selectedMonth, today: statement.to })?.quantity,
+    [washes, selectedMonth, statement.to]);
 
   // The tax rules in force in the month being viewed, not the ones in force
   // today — said out loud, because it is the difference between a reconciled
@@ -257,6 +265,11 @@ export default function FinancialSummaryPage() {
           <LoadingState rows={4} />
         ) : (
           <>
+            {costReconciliation?.annualTotal > 0 && <p role="status" className="rounded-control border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-3 text-sm text-amber-900 dark:text-amber-200">
+              هذا الشهر فيه مصاريف سنوية كاملة بمبلغ {formatCurrency(costReconciliation.annualTotal)}.
+              {' '}{canReadDetails ? <button type="button" className="underline font-semibold" onClick={() => setDetailCategory('annual')}>عرض تفاصيل المصاريف السنوية</button>
+                : <a className="underline font-semibold" href="?page=annual">عرض تفاصيل المصاريف السنوية</a>}
+            </p>}
             {/* ── Top 3 KPI cards ─────────────────────────────────── */}
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3 sm:gap-5">
               <StatCard
@@ -265,9 +278,11 @@ export default function FinancialSummaryPage() {
                 tone="primary"
                 label="صافي الإيرادات"
                 value={formatCurrency(netRevenue)}
-                sub={statement.salesReturns > 0
-                  ? `بعد خصم مردودات بقيمة ${formatCurrency(statement.salesReturns)} لشهر ${monthLabel}`
-                  : `إيرادات مسجلة لشهر ${monthLabel}`}
+                sub={<>
+                  من الغسلات المسجلة · المرحّل في الدفتر: {formatCurrency(statement.ledgerNetRevenue)}
+                  {statement.salesReturns > 0 && <span className="block">بعد خصم مردودات بقيمة {formatCurrency(statement.salesReturns)}</span>}
+                  {canReadDetails && <IncomeSweaterComparison periodKey={selectedMonth} washCount={recordedWashCount} />}
+                </>}
               />
               <StatCard
                 icon={TrendingDown}
@@ -363,6 +378,8 @@ export default function FinancialSummaryPage() {
                 </p>
               </Card>
             )}
+
+            <IncomeCostReconciliation reconciliation={costReconciliation} />
 
             {/* ── Vertical Income Statement table ─────────────────── */}
             <Card className="p-6">

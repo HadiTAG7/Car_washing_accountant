@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({ sources: {}, entries: [], accounts: [], partner: false, role: 'admin', loading: false,
-  payroll: [], payrollLoading: false, payrollError: null,
+  payroll: [], payrollLoading: false, payrollError: null, snapshot: null, metricsError: null,
   reads: { washes: vi.fn(), variables: vi.fn(), monthly: vi.fn(), annual: vi.fn(), bikers: vi.fn() } }));
 vi.mock('../../hooks/useIncomePayrollPreviews', async original => ({ ...await original(), useIncomePayrollPreviews: () => ({ data: state.payroll, loading: state.payrollLoading, error: state.payrollError, refetch: vi.fn() }) }));
 vi.mock('../../hooks/useBikers', () => ({ useBikers: options => { state.reads.bikers(options); return { bikers: [] }; } }));
@@ -14,6 +14,7 @@ vi.mock('../../hooks/useLedger', () => ({ useLedger: () => ({ accounts: state.ac
 // The month list now comes from date bounds (useStatementMonths has its own test).
 vi.mock('../../hooks/useStatementMonths', () => ({ useStatementMonths: () => ['2026-10', '2026-09', '2026-08'] }));
 vi.mock('../../hooks/usePayroll', () => ({ usePayrollRuns: () => ({ runs: [] }) }));
+vi.mock('../../hooks/useSweater', () => ({ useSweaterMetrics: () => ({ snapshot: state.snapshot, loading: false, error: state.metricsError, refetch: vi.fn() }) }));
 vi.mock('../../hooks/useFeeRules', () => ({ useFeeRules: () => ({ rules: [] }) }));
 vi.mock('../../hooks/useAccountingSettings', () => ({ useAccountingSettings: () => ({ settings: { vatRegistered: true, vatRate: 0.15 } }) }));
 vi.mock('../../hooks/useIncomeStatementSources', () => ({ useIncomeStatementSources: () => ({ sources: state.sources,
@@ -36,6 +37,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   setLanguage('ar'); state.partner = false; state.role = 'admin'; state.loading = false; state.accounts = DEFAULT_CHART_OF_ACCOUNTS;
   state.payroll = []; state.payrollLoading = false; state.payrollError = null;
+  state.snapshot = null; state.metricsError = null;
   state.sources = { washes: [], variables: [{ id: 'synthetic-expense', expense_name: 'مصروف تجريبي', total_variable_cost: 115,
     invoice_date: '2026-10-03', invoice_number: 'synthetic-invoice', supplier: 'Synthetic supplier', is_tax_invoice: true, vat_amount: 15 }], monthlies: [], annualEntries: [], vouchers: [] };
   state.entries = [{ id: 'synthetic-payroll', entryDate: '2026-10-04', entryNumber: 163, status: 'posted', sourceType: 'payroll',
@@ -46,6 +48,50 @@ afterEach(() => { cleanup(); setLanguage('ar'); });
 const openCosts = () => fireEvent.click(screen.getByRole('button', { name: 'عرض تفاصيل: يُخصم منه: التكاليف المباشرة والعمولات' }));
 
 describe('statement drilldown UI', () => {
+  it('renders cost reconciliation from the accepted statement and explains salary payment timing', () => {
+    render(<FinancialSummaryPage />);
+    const box = screen.getByRole('region', { name: 'مطابقة التكاليف بالدفاتر' });
+    expect(within(box).getByText('يُخصم: رواتب رُحّلت هذا الشهر وتخص أشهرًا أخرى')).toBeTruthy();
+    const gap = within(box).getByText('فرق غير مفسّر').closest('tr');
+    expect(gap.textContent).toContain(formatCurrency(0));
+    expect(screen.getByText(/من الغسلات المسجلة · المرحّل في الدفتر:/)).toBeTruthy();
+  });
+  it('shows the annual full-month warning with working details only in a month with annual costs', () => {
+    state.sources.annualEntries = [{ id: 'annual', amount: 88500, spent_date: '2026-08-24', description: 'Synthetic annual insurance' }];
+    render(<FinancialSummaryPage />);
+    expect(screen.queryByText(/هذا الشهر فيه مصاريف سنوية كاملة/)).toBeNull();
+    fireEvent.change(screen.getByLabelText('فترة التقرير (الشهر)'), { target: { value: '2026-08' } });
+    expect(screen.getByText(/هذا الشهر فيه مصاريف سنوية كاملة/).textContent).toContain(formatCurrency(88500));
+    fireEvent.click(screen.getByRole('button', { name: 'عرض تفاصيل المصاريف السنوية' }));
+    expect(screen.getByRole('dialog', { name: 'تفاصيل كشف: المصروفات السنوية المسجلة - أغسطس 2026', exact: true }).textContent).toContain('Synthetic annual insurance');
+  });
+  it('shows actual monthly Sweater counts, preserves zero, and never keeps an October snapshot in September', () => {
+    state.snapshot = { periodKey: '2026-10', metrics: { completedWashes: 501 }, metricSources: { completedWashes: { extractedAtIso: '2026-10-23T14:39:02Z' } } };
+    render(<FinancialSummaryPage />);
+    expect(screen.getByText('سويتر: 501 غسلة مقابل 0 مسجلة')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('فترة التقرير (الشهر)'), { target: { value: '2026-09' } });
+    expect(screen.queryByText(/سويتر: 501/)).toBeNull();
+  });
+  it('uses overview quantity and SSP deduplication, and displays a measured zero snapshot rather than missing data', () => {
+    state.sources.washes = [
+      { id: 'synthetic-aggregate', wash_date: '2026-10-04', status: 'مكتملة', quantity: 2, price: 20 },
+      { id: 'synthetic-w1', wash_date: '2026-10-04', status: 'مكتملة', quantity: 1, price: 20, ssp_booking_id: 'same' },
+      { id: 'synthetic-w2', wash_date: '2026-10-04', status: 'مكتملة', quantity: 1, price: 20, ssp_booking_id: 'same' },
+    ];
+    state.snapshot = { periodKey: '2026-10', metrics: { completedWashes: 0 } };
+    render(<FinancialSummaryPage />);
+    expect(screen.getByText('سويتر: 0 غسلة مقابل 3 مسجلة')).toBeTruthy();
+  });
+  it('keeps snapshot read errors separate from the statement and hides company-wide counts for partners', () => {
+    state.metricsError = new Error('Synthetic snapshot unavailable');
+    const { rerender } = render(<FinancialSummaryPage />);
+    expect(screen.getByText(/تعذرت قراءة لقطة سويتر/)).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'مطابقة التكاليف بالدفاتر' })).toBeTruthy();
+    state.partner = true; state.role = 'partner'; state.metricsError = null;
+    state.snapshot = { periodKey: '2026-10', metrics: { completedWashes: 501 } };
+    rerender(<FinancialSummaryPage />);
+    expect(screen.queryByText(/سويتر: 501/)).toBeNull();
+  });
   it('reuses statement snapshots instead of reading the expense and wash registers again', () => {
     render(<FinancialSummaryPage />);
     for (const name of ['washes', 'variables', 'monthly', 'annual']) expect(state.reads[name]).not.toHaveBeenCalled();

@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- isolated synthetic adapters, never part of the application bundle */
 export const isFirebaseConfigured = true;
 export const missingEnvNames = [];
 export const describeBackendError = (error) => error?.message || 'خطأ اختبار';

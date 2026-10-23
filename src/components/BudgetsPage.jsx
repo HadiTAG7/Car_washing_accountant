@@ -173,7 +173,7 @@ export function BudgetCard({ budget, allocated, spent, commitment = 0, dueToDate
       </div>}
 
       {/* Three figures */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 gap-3">
         {/* Allocated — inline editable */}
         <div className="rounded-smallcard bg-slate-50 dark:bg-slate-800 px-3 py-2.5">
           <div className="flex items-start justify-between gap-1">

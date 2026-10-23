@@ -22,10 +22,8 @@ import {
 import { invalidateCollections } from '../readCache';
 import { db, isFirebaseConfigured } from '../firebaseClient.js';
 import { fetchRows } from '../firestoreCrud.js';
-import { postEntry, fetchEntries, fetchLines, ensureAccount } from './firestoreLedger.js';
+import { postEntry, fetchEntries, ensureAccount } from './firestoreLedger.js';
 import { ACC } from './chartOfAccounts.js';
-import { reconcileAssetCost } from './assetReconciliation.js';
-import { riyadhTodayISO } from '../washesYesterday.js';
 import {
   normalizeAsset, validateAsset, buildDepreciationEntry, buildDisposalEntry,
   depreciationForPeriod, unpostedDepreciationPeriods, accumulatedThrough,
@@ -47,15 +45,6 @@ function requireDb() {
 
 // ─── السجل ───────────────────────────────────────────────────────────────
 export const fetchAssets = () => fetchRows(ASSETS_COL);
-
-// Refresh before a page-initiated posting; an earlier green banner may be
-// stale. This is a read-only preflight, not a new journal-writing path.
-export async function assertAssetCostMatches() {
-  const [assets, entries, lines] = await Promise.all([fetchAssets(), fetchEntries(), fetchLines()]);
-  const result = reconcileAssetCost(assets, entries, lines, { to: riyadhTodayISO() });
-  if (!result.matched) throw new Error('الترحيل متوقف: تكلفة سجل الأصول لا تطابق رصيد 1500 في الدفتر.');
-  return result;
-}
 
 export async function fetchAsset(id) {
   const snap = await getDoc(doc(db, ASSETS_COL, id));
@@ -101,8 +90,7 @@ export async function updateAsset(id, patch, { userId = null } = {}) {
     throw err;
   }
 
-  const structural = ['cost', 'salvageValue', 'usefulLifeMonths', 'inServiceDate', 'method',
-    'assetKind', 'assetAccount', 'accumulatedAccount', 'expenseAccount'];
+  const structural = ['cost', 'salvageValue', 'usefulLifeMonths', 'inServiceDate', 'method'];
   const changesStructure = structural.some(
     (k) => patch[k] !== undefined && String(patch[k]) !== String(current[k]),
   );
@@ -180,14 +168,6 @@ export async function postDepreciationForPeriod(periodKey, { userId = null, asse
   }
 
   const built = buildDepreciationEntry(periodKey, list, { createdBy: userId });
-  if (rows.some(row => row.expenseAccount === ACC.AMORTIZATION)) {
-    // Lazily provision only on an explicit future posting, never on reads or
-    // registration. No existing account or journal is changed.
-    await ensureAccount({ code: ACC.ACCUM_AMORTIZATION, nameArabic: 'مجمع إطفاء الأصول غير الملموسة',
-      accountType: 'asset', parentId: ACC.FIXED_ASSETS, normalBalance: 'credit', contra: true, active: true });
-    await ensureAccount({ code: ACC.AMORTIZATION, nameArabic: 'إطفاء الأصول غير الملموسة',
-      accountType: 'expense', parentId: null, normalBalance: 'debit', contra: false, active: true });
-  }
   // `lockKind: 'depreciation'` keeps the month idempotent server-side.
   const res = await postEntry(built, { lockKind: 'depreciation' });
   return { ...res, periodKey, total, assetCount: rows.length };

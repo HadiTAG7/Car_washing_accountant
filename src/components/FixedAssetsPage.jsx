@@ -17,16 +17,14 @@ import { useAuth } from '../hooks/useAuth';
 import {
   createAsset, postDepreciationForPeriod, postDepreciationBacklog,
   disposeAsset, setAssetActive,
-  assertAssetCostMatches,
 } from '../lib/accounting/firestoreAssets';
 import { USEFUL_LIFE_PRESETS, validateAsset } from '../lib/accounting/depreciation';
-import { canPostAssetCharges } from '../lib/accounting/assetReconciliation';
 import { isFirebaseConfigured, missingEnvNames, describeBackendError } from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 const emptyForm = () => ({
-  name: '', cost: '', salvageValue: '0', usefulLifeMonths: 60, inServiceDate: '', assetKind: 'tangible',
+  name: '', cost: '', salvageValue: '', usefulLifeMonths: 60, inServiceDate: todayIso(),
 });
 
 /**
@@ -40,7 +38,7 @@ const emptyForm = () => ({
  */
 export default function FixedAssetsPage() {
   const {
-    assets, summary, pendingPeriods, period, reconciliation, costReconciliation, loading, error, refetch,
+    assets, summary, pendingPeriods, period, reconciliation, loading, error, refetch,
   } = useFixedAssets();
   const { user } = useAuth();
   const { canMutate } = usePartnerView();
@@ -63,7 +61,6 @@ export default function FixedAssetsPage() {
     salvageValue: Number(form.salvageValue) || 0,
     usefulLifeMonths: Number(form.usefulLifeMonths) || 0,
     inServiceDate: form.inServiceDate,
-    assetKind: form.assetKind,
   }), [form]);
   const draftProblems = useMemo(() => validateAsset(draft), [draft]);
   const draftMonthly = draftProblems.length === 0
@@ -71,8 +68,6 @@ export default function FixedAssetsPage() {
     : 0;
 
   const backlogTotal = pendingPeriods.reduce((s, p) => s + p.total, 0);
-  const postingAllowed = canPostAssetCharges({ loading, error, costReconciliation,
-    pendingCount: pendingPeriods.length });
 
   async function handleAdd() {
     if (draftProblems.length) { showToast(draftProblems[0], 'error'); return; }
@@ -89,10 +84,8 @@ export default function FixedAssetsPage() {
   }
 
   async function handlePostPeriod(periodKey) {
-    if (!canMutate || !postingAllowed) return;
     setBusy(periodKey);
     try {
-      await assertAssetCostMatches();
       const r = await postDepreciationForPeriod(periodKey, { userId: user?.id });
       showToast(`تم ترحيل إهلاك ${periodKey} — ${r.assetCount} أصل بمبلغ ${formatCurrencyPrecise(r.total)}.`);
       await refetch();
@@ -102,7 +95,6 @@ export default function FixedAssetsPage() {
   }
 
   async function handlePostBacklog() {
-    if (!canMutate || !postingAllowed) return;
     const ok = typeof window === 'undefined' || window.confirm(
       translate(`ترحيل إهلاك ${pendingPeriods.length} شهر بإجمالي ${formatCurrencyPrecise(backlogTotal)}؟\n\n`
       + 'يُرحَّل كل شهر بقيد مستقل مؤرَّخ في آخر يوم منه. '
@@ -112,7 +104,6 @@ export default function FixedAssetsPage() {
     setBusy('backlog');
     setProgress({ done: 0, total: pendingPeriods.length, label: '' });
     try {
-      await assertAssetCostMatches();
       const r = await postDepreciationBacklog({
         userId: user?.id, onProgress: (p) => setProgress(p),
       });
@@ -192,19 +183,6 @@ export default function FixedAssetsPage() {
         {!isFirebaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
         {error && <ErrorState title="تعذّر تحميل سجل الأصول" error={error} onRetry={refetch} />}
 
-        {!loading && !error && costReconciliation && (
-          <section aria-label="مطابقة تكلفة سجل الأصول" role={costReconciliation.matched ? 'status' : 'alert'}
-            className={`rounded-control border p-4 space-y-2 text-sm ${costReconciliation.matched
-              ? 'border-emerald-500/40 text-emerald-700 dark:text-emerald-300'
-              : 'border-rose-500/50 bg-rose-500/10 text-rose-700 dark:text-rose-300'}`}>
-            <h2 className="font-bold">{costReconciliation.matched ? 'تكلفة السجل تطابق الدفتر' : 'سجل الأصول لا يطابق الدفتر'}</h2>
-            <p className="tabular-nums">تكلفة السجل: {formatCurrencyPrecise(costReconciliation.registerCost)} · رصيد 1500 في الدفتر: {formatCurrencyPrecise(costReconciliation.ledgerCost)}</p>
-            <p className="tabular-nums font-bold">الفرق (السجل − الدفتر): {formatCurrencyPrecise(costReconciliation.difference)}</p>
-            {!costReconciliation.matched && <p>ترحيل الإهلاك والإطفاء متوقف حتى تكتمل المطابقة. إضافة الأصل للسجل لا تنشئ قيد شراء جديدًا.</p>}
-            <a href="?page=ledger&account=1500" className="inline-block underline min-h-touch py-2">عرض قيود الأصول في دفتر الأستاذ</a>
-          </section>
-        )}
-
         {reconciliation.length > 0 && (
           <div role="alert" className="flex items-start gap-2.5 bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/30 text-amber-800 dark:text-amber-300 text-xs px-4 py-3 rounded-control leading-relaxed">
             <AlertTriangle size={16} className="shrink-0 mt-0.5" />
@@ -243,20 +221,15 @@ export default function FixedAssetsPage() {
             {/* ── الأشهر المستحقة ───────────────────────────────────── */}
             <Card className="p-6">
               <SectionHeader
-                title="قيود الإهلاك والإطفاء المستحقة"
-                subtitle="كل شهر بقيد مستقل. إطفاء الأصول غير الملموسة في حسابات مستقلة عن الإهلاك."
-                action={canMutate ? (
+                title="قيود الإهلاك المستحقة"
+                subtitle="كل شهر بقيد مستقل مؤرَّخ في آخر يوم منه — مدين مصروف الإهلاك، دائن مجمع الإهلاك"
+                action={canMutate && pendingPeriods.length > 0 ? (
                   <PrimaryButton icon={busy === 'backlog' ? Loader2 : CalendarClock}
-                    onClick={handlePostBacklog} disabled={Boolean(busy) || !postingAllowed}>
+                    onClick={handlePostBacklog} disabled={Boolean(busy)}>
                     {busy === 'backlog' ? 'جارٍ الترحيل...' : `ترحيل ${pendingPeriods.length} شهر`}
                   </PrimaryButton>
                 ) : null}
               />
-              <p className="text-sm font-bold tabular-nums mb-3">أشهر غير مرحلة: {pendingPeriods.length} · الإجمالي: {formatCurrencyPrecise(backlogTotal)}</p>
-              {!postingAllowed && <p className="text-xs text-rose-700 dark:text-rose-300 mb-3">
-                {error ? 'تعذرت قراءة المطابقة؛ الترحيل متوقف.' : !costReconciliation?.matched
-                  ? 'أكمل مطابقة سجل الأصول مع حساب 1500 أولًا.' : 'لا توجد أشهر مستحقة غير مرحلة.'}
-              </p>}
               {progress && (
                 <p role="status" className="text-xs text-slate-600 dark:text-slate-300 tabular-nums mb-3">
                   {progress.done} / {progress.total} — {progress.label}
@@ -288,7 +261,7 @@ export default function FixedAssetsPage() {
                           <td className="py-3 px-4 text-left">
                             {canMutate ? (
                               <SecondaryButton icon={busy === p.periodKey ? Loader2 : TrendingDown}
-                                onClick={() => handlePostPeriod(p.periodKey)} disabled={Boolean(busy) || !postingAllowed}>
+                                onClick={() => handlePostPeriod(p.periodKey)} disabled={Boolean(busy)}>
                                 {busy === p.periodKey ? '...' : 'ترحيل'}
                               </SecondaryButton>
                             ) : (
@@ -308,7 +281,7 @@ export default function FixedAssetsPage() {
               <Card className="p-6">
                 <SectionHeader
                   title="إضافة أصل"
-                  subtitle="التكلفة تستبعد الضريبة القابلة للاسترداد فقط؛ غير القابلة للاسترداد تدخل التكلفة. لا يُنشأ قيد شراء."
+                  subtitle="التكلفة بالصافي بعد استبعاد الضريبة القابلة للاسترداد"
                   action={(
                     <SecondaryButton icon={Plus} onClick={() => setShowForm((s) => !s)}>
                       {showForm ? 'إخفاء' : 'أصل جديد'}
@@ -318,17 +291,6 @@ export default function FixedAssetsPage() {
                 {showForm && (
                   <>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-                      <div className="lg:col-span-2">
-                        <label htmlFor="asset-kind" className="block text-sm font-semibold mb-1.5">نوع الأصل</label>
-                        <select id="asset-kind" value={form.assetKind}
-                          onChange={e => setForm(f => ({ ...f, assetKind: e.target.value,
-                            usefulLifeMonths: e.target.value === 'intangible' ? '' : 60 }))}
-                          className="w-full min-h-touch px-3 py-2 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm">
-                          <option value="tangible">أصل ملموس</option>
-                          <option value="intangible">أصل غير ملموس (رسوم انضمام أو امتياز)</option>
-                        </select>
-                        {form.assetKind === 'intangible' && <p className="text-xs mt-2">أدخل عدد أشهر العقد المعتمد. الإطفاء: مصروف 5410، ومجمع 1511. لا تُغيّر تكلفة 1500 تلقائيًا.</p>}
-                      </div>
                       <div className="lg:col-span-2">
                         <label htmlFor="asset-name" className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">اسم الأصل</label>
                         <input id="asset-name" type="text" value={form.name}
@@ -352,27 +314,27 @@ export default function FixedAssetsPage() {
                           className="w-full min-h-touch px-3 py-2 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm tabular-nums text-slate-900 dark:text-slate-100" />
                       </div>
                       <div>
-                        <label htmlFor="asset-service-date" className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">بدء التشغيل (مطلوب)</label>
-                        <DateField id="asset-service-date" name="inServiceDate" value={form.inServiceDate} required
+                        <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">بدء التشغيل</label>
+                        <DateField name="inServiceDate" value={form.inServiceDate}
                           onChange={(e) => setForm((f) => ({ ...f, inServiceDate: e.target.value }))}
                           ariaLabel="تاريخ بدء التشغيل" />
                       </div>
                       <div className="lg:col-span-3">
                         <label htmlFor="asset-life" className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                          {form.assetKind === 'intangible' ? 'مدة العقد (بالأشهر)' : 'العمر الإنتاجي (بالأشهر)'}
+                          العمر الإنتاجي (بالأشهر)
                         </label>
-                        <div className="flex flex-col sm:flex-row min-w-0 gap-2">
+                        <div className="flex gap-2">
                           <input id="asset-life" type="number" min="1" step="1" value={form.usefulLifeMonths}
                             onChange={(e) => setForm((f) => ({ ...f, usefulLifeMonths: e.target.value }))}
                             className="w-28 min-h-touch px-3 py-2 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm tabular-nums text-slate-900 dark:text-slate-100" />
-                          {form.assetKind !== 'intangible' && <select aria-label="عمر جاهز" value=""
+                          <select aria-label="عمر جاهز" value=""
                             onChange={(e) => e.target.value && setForm((f) => ({ ...f, usefulLifeMonths: e.target.value }))}
-                            className="flex-1 min-w-0 w-full min-h-touch px-3 py-2 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-slate-900 dark:text-slate-100">
+                            className="flex-1 min-h-touch px-3 py-2 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-slate-900 dark:text-slate-100">
                             <option value="">اختر عمراً جاهزاً…</option>
                             {USEFUL_LIFE_PRESETS.map((p) => (
-                              <option key={p.label} value={p.months}>{p.label}</option>
+                              <option key={p.months} value={p.months}>{p.label}</option>
                             ))}
-                          </select>}
+                          </select>
                         </div>
                       </div>
                       <div className="lg:col-span-2 flex items-end justify-between gap-3">

@@ -26,7 +26,7 @@ import { invalidateAllReads } from './readCache';
 // so after it succeeds every cached read is dropped and re-read on next use.
 const READ_ONLY_OPERATIONS = new Set([
   'payrollPreview', 'payrollPreviews', 'payrollPreapproval', 'payrollReadStatus', 'payrollPreviewAdvanceMonth',
-  'payrollPreviewPartialPayment', 'expenseCorrectionOptions', 'expensePreviewCorrection',
+  'payrollPreviewPartialPayment', 'expenseCorrectionOptions', 'expensePreviewCorrection', 'sweaterPreviewAdministrativeCompletion',
   'supervisorOverview', 'supervisorRecords', 'partnerEligibilityGet', 'partnerInsights',
   'partnerProfile', 'sweaterPreviewImport', 'sweaterPreviewOwnerWashTax',
   'sweaterListIntegrationKeys', 'authBootstrapStatus',
@@ -201,6 +201,8 @@ export function callSweaterImportPreview(payload) {
 export function callSweaterOwnerHandoffSave(payload) {
   return callLedgerApi('sweaterSaveOwnerHandoff', payload, '/api/ledger');
 }
+export const callSweaterAdministrativeCompletionPreview = payload => callLedgerApi('sweaterPreviewAdministrativeCompletion', payload, '/api/ledger');
+export const callSweaterAdministrativeCompletionSave = payload => callLedgerApi('sweaterSaveAdministrativeCompletion', payload, '/api/ledger');
 
 export const callSweaterOwnerWashTaxPreview = () => callLedgerApi('sweaterPreviewOwnerWashTax', {}, '/api/ledger');
 export const callSweaterOwnerWashTaxSave = previewHash => callLedgerApi('sweaterSaveOwnerWashTax', { previewHash }, '/api/ledger');

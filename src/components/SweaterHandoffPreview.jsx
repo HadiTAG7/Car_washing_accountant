@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { formatCurrency } from '../data/initialData';
 import { Card, SectionHeader, SecondaryButton } from './UI';
-import { callSweaterImportPreview, callSweaterOwnerHandoffSave, describeBackendError } from '../lib/firebaseClient';
+import { callSweaterImportPreview, callSweaterOwnerHandoffSave, callSweaterAdministrativeCompletionPreview, callSweaterAdministrativeCompletionSave, describeBackendError } from '../lib/firebaseClient';
+import { ADMIN_COMPLETION_KIND, reviewAdministrativeCompletion } from '../lib/sweater/administrativeCompletion';
 import { HANDOFF_MAX_BYTES, reviewSweaterHandoff } from '../lib/sweater/handoff';
 import SweaterWashWorkerSummary from './SweaterWashWorkerSummary';
 
@@ -23,20 +24,20 @@ export default function SweaterHandoffPreview() {
   };
   const reviewLocal = () => {
     setResult(null); setConfirmed(false); setSaveConfirmed(false); setCompletionDecisionConfirmed(false); setError('');
-    try { setReview(reviewSweaterHandoff(JSON.parse(text))); }
+    try { const value = JSON.parse(text); setReview(value?.kind === ADMIN_COMPLETION_KIND ? reviewAdministrativeCompletion(value) : reviewSweaterHandoff(value)); }
     catch { setReview(null); setError('الملف ليس JSON صالحاً؛ لا تضع بيانات الدخول في الملف.'); }
   };
   const preview = async () => {
     if (!review?.ready || !confirmed || busy) return;
     setBusy(true); setError(''); setResult(null); setSaveConfirmed(false); setCompletionDecisionConfirmed(false);
-    try { setResult(await callSweaterImportPreview(review.payload)); }
+    try { setResult(await (review.payload.kind === ADMIN_COMPLETION_KIND ? callSweaterAdministrativeCompletionPreview : callSweaterImportPreview)(review.payload)); }
     catch (err) { setError(describeBackendError(err)); }
     finally { setBusy(false); }
   };
   const save = async () => {
-    if (!result?.canSave || result.saved || !saveConfirmed || (review?.payload?.ownerCompletionDecision && !completionDecisionConfirmed) || !review?.ready || busy) return;
+    if (!result?.canSave || result.saved || !saveConfirmed || ((review?.payload?.ownerCompletionDecision || result.administrativeDecision) && !completionDecisionConfirmed) || !review?.ready || busy) return;
     setBusy(true); setError('');
-    try { setResult(await callSweaterOwnerHandoffSave({ payload: review.payload,
+    try { setResult(await (review.payload.kind === ADMIN_COMPLETION_KIND ? callSweaterAdministrativeCompletionSave : callSweaterOwnerHandoffSave)({ payload: review.payload,
       reviewedPayloadHash: result.reviewedPayloadHash, previewStateHash: result.previewStateHash })); }
     catch (err) { setError(describeBackendError(err)); setResult(null); setSaveConfirmed(false); setCompletionDecisionConfirmed(false); }
     finally { setBusy(false); }
@@ -49,6 +50,7 @@ export default function SweaterHandoffPreview() {
   return <Card className="p-4 sm:p-5 space-y-4">
     <SectionHeader title="مراجعة ملف SSP ومعاينة الاستيراد" subtitle="المعاينة لا تحفظ؛ حفظ الغسلات بإقرار المالك يأتي بعدها دون ترحيل" />
     <p className="text-sm text-slate-600 dark:text-slate-300">المنسق يقرأ SSP من جلسته، ويسلّم JSON بلا كوكيز أو رموز دخول أو بيانات عملاء. إذا نوع الخدمة مو ظاهر، اتركه ناقصًا؛ ما نستنتجه من رقم الحجز.</p>
+    <p className="text-xs text-amber-700 dark:text-amber-300">ملف قرار الاكتمال الإداري مسار مستقل للمدير: يبقي حالة SSP الأصلية، ولا يؤكد التحصيل أو ينشئ قيدًا.</p>
     <label className="block text-sm">ملف JSON<input type="file" accept=".json,application/json" onChange={readFile} disabled={busy} className="block mt-2 max-w-full" /></label>
     <label className="block text-sm">بيانات التسليم<textarea value={text} onChange={event => change(event.target.value)} disabled={busy}
       rows={6} dir="ltr" spellCheck={false} className="mt-2 w-full rounded-control border border-slate-200 dark:border-slate-700 bg-transparent p-3 font-mono text-xs" /></label>
@@ -70,7 +72,7 @@ export default function SweaterHandoffPreview() {
       </SecondaryButton>
     </div>}
     {result && <div className="space-y-3 text-sm" aria-label="نتيجة dryRun">
-      <p className="font-bold">{result.saved ? 'تم حفظ الغسلات وإقرار المالك دون ترحيل أو صرف عمولة' : 'معاينة فقط — ما تم استيراد أو ترحيل'}</p>
+      <p className="font-bold">{result.saved ? (result.administrativeDecision ? 'حُفظ قرار الاكتمال والغسلات دون تحصيل أو ترحيل أو صرف عمولة' : 'تم حفظ الغسلات وإقرار المالك دون ترحيل أو صرف عمولة') : 'معاينة فقط — ما تم استيراد أو ترحيل'}</p>
       <p>جديد: {result.counts.new} · معدل: {result.counts.modified} · مكرر: {result.counts.duplicate} · مرفوض: {result.counts.rejected} · يحتاج مراجعة: {result.counts.needsReview}</p>
       {result.previousRun && <p>المعرّف مستخدم سابقًا بنفس السجلات؛ هذه قراءة فقط، مو إعادة استيراد.</p>}
       {[...(result.coverageIssues || []), ...(result.reviewWarnings || [])].map((message, index) => <p key={index} className="text-amber-700 dark:text-amber-300">{message}</p>)}
@@ -82,6 +84,17 @@ export default function SweaterHandoffPreview() {
         <p>{result.ownerCompletionDecision.ownerName}: {result.ownerCompletionDecision.statement}</p>
       </div>}
       <p className="break-all text-xs">بصمة الملف المراجع: {result.reviewedPayloadHash}</p>
+      {result.administrativeDecision && <div className="space-y-3" aria-label="قرار الاكتمال الإداري دون تحصيل">
+        <p>{result.administrativeDecision.ownerName}: {result.administrativeDecision.statement}</p>
+        <p>مرجع القرار: {result.administrativeDecision.conversationId} · {result.administrativeDecision.messageId}</p>
+        <p>التحصيل غير مثبت. كل غسلة: صافي 20 ريال، ضريبة 3، إجمالي 23، وعمولة 4.50 غير مدفوعة وفق القيم القائمة.</p>
+        <ul>{result.rows.map(row => <li key={row.sspBookingId}>{row.sspBookingId} · {row.rawStatus} · {row.bikerName} · {row.collectionStatus}</li>)}</ul>
+        {!result.saved && <>
+          <label className="flex items-start gap-2"><input type="checkbox" checked={completionDecisionConfirmed} onChange={event => setCompletionDecisionConfirmed(event.target.checked)} disabled={!result.canSave || busy} />راجعت الحجوزات المشمولة والمستثناة ومرجع قرار هادي، دون إثبات تحصيل</label>
+          <label className="flex items-start gap-2"><input type="checkbox" checked={saveConfirmed} onChange={event => setSaveConfirmed(event.target.checked)} disabled={!result.canSave || busy} />أحفظ القرار والغسلات المحددة فقط دون قيد أو قبض أو صرف</label>
+          <SecondaryButton onClick={save} disabled={!result.canSave || !saveConfirmed || !completionDecisionConfirmed || busy}>{busy ? 'نحفظ الغسلات...' : 'حفظ قرار الاكتمال دون تحصيل'}</SecondaryButton>
+        </>}
+      </div>}
       {result.ownerConfirmation && <>
         {result.ownerConfirmation.vatAmount != null && <dl aria-label="فصل الضريبة بإقرار المالك" className="grid grid-cols-3 gap-2 text-xs">
           <div><dt>الصافي قبل الضريبة</dt><dd>{formatCurrency(result.ownerConfirmation.totalAmount)}</dd></div>

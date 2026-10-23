@@ -79,5 +79,7 @@ export function useOverviewDashboard(periodKey, today) {
     bookings: { items: sources.bookings || [], ...(live.sourceStatus?.bookings || { loading: live.loading, error: live.error }) },
     settlements: { items: sources.settlements || [], ...(live.sourceStatus?.settlements || { loading: live.loading, error: live.error }) },
     adjustments: { items: adjustments.adjustments, loading: adjustments.loading, error: adjustments.error },
+    // The salary previews behind the statement (one line per biker), for break-even per biker.
+    payroll: { data: payroll.data, loading: payroll.loading, error: payroll.error },
     retry: () => { live.refetch(); ledger.refetch(); fees.refetch(); tax.refetch(); payroll.refetch(); adjustments.refetch(); } };
 }

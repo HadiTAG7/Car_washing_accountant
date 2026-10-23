@@ -63,7 +63,8 @@ it('opens exact P&L detail including unpaid salaries, preserving loss signs and 
 });
 it('opens a day by keyboard/click with wash IDs, worker ID, quantity and original date', () => {
   render(<OverviewPage />);
-  fireEvent.click(screen.getByRole('button', { name: '15 أكتوبر: 2 غسلة', exact: true }));
+  // The day's name also says where it stands against break-even (not by colour alone).
+  fireEvent.click(screen.getByRole('button', { name: /^15 أكتوبر: 2 غسلة( — (وصل|تحت) نقطة التعادل)?$/ }));
   const dialog = screen.getByRole('dialog');
   expect(within(dialog).getByText('wash-a')).toBeTruthy(); expect(within(dialog).getByText('1984')).toBeTruthy();
   fireEvent.click(within(dialog).getByRole('button', { name: 'إغلاق التفاصيل' })); expect(screen.queryByRole('dialog')).toBeNull();

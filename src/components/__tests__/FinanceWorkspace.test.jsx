@@ -21,40 +21,52 @@ beforeEach(() => {
 });
 const base = data => ({ allowed: true, loading: false, error: null, refresh: vi.fn(), data });
 function reports(report = financeFixture()) {
-  mock.read.mockImplementation((_endpoint, request) => request.action === 'list'
-    ? base({ items: [report] }) : base({ report, currentRevision: 1, history: [{ revision: 1, reason: 'الإصدار الأول' }] }));
+  mock.read.mockImplementation((_endpoint, request) => request.action === 'archive'
+    ? base({ items: [report], page: 1, pages: 1, total: 1 }) : base({ report, currentRevision: 1, history: [{ revision: 1, reason: 'الإصدار الأول' }] }));
 }
 describe('finance report UI and access boundaries', () => {
   it('clearly labels an old revision and returns to the latest without restating historical content', () => {
     const first = financeFixture(), latest = financeFixture({ revision: 2, summary: 'ملخص النسخة الثانية', correctionReason: 'تصحيح اختباري' });
-    mock.read.mockImplementation((_e, r) => r.action === 'list' ? base({ items: [latest] })
+    mock.read.mockImplementation((_e, r) => r.action === 'archive' ? base({ items: [latest], page: 1, pages: 1, total: 1 })
       : base({ report: r.revision === 1 ? first : latest, currentRevision: 2, history: [{ revision: 2, reason: 'تصحيح' }, { revision: 1, reason: 'أول' }] }));
     render(<FinanceReportsPage />); expect(screen.getByText('ملخص النسخة الثانية')).toBeTruthy();
     fireEvent.change(screen.getByLabelText('نسخة التقرير'), { target: { value: '1' } });
-    expect(screen.getByText(/نسخة تاريخية معروضة/)).toBeTruthy(); expect(screen.getByText('النسخة المعروضة: 1')).toBeTruthy();
+    expect(screen.getByText(/نسخة تاريخية معروضة/)).toBeTruthy(); expect(screen.getByText(/النسخة المعروضة: 1/)).toBeTruthy();
     expect(screen.getByText(first.summary)).toBeTruthy(); fireEvent.click(screen.getByRole('button', { name: 'عرض أحدث نسخة' }));
-    expect(screen.queryByText(/نسخة تاريخية معروضة/)).toBeNull(); expect(screen.getByText('النسخة المعروضة: 2')).toBeTruthy();
+    expect(screen.queryByText(/نسخة تاريخية معروضة/)).toBeNull(); expect(screen.getByText(/النسخة المعروضة: 2/)).toBeTruthy();
     expect(screen.getByText('ملخص النسخة الثانية')).toBeTruthy();
   });
-  it('shows a zero-match filter state without claiming cases were closed and restores all cases', () => {
-    reports(); render(<FinanceReportsPage />); fireEvent.click(screen.getByRole('tab', { name: 'المتابعات' }));
-    fireEvent.change(screen.getByLabelText('حالة المتابعة'), { target: { value: 'verified_closed' } });
-    expect(screen.getByRole('status').textContent).toContain('0 / 1');
-    expect(screen.getByText(/لا حالات تطابق التصفية الحالية/)).toBeTruthy(); expect(screen.queryByText('TEST-CASE')).toBeNull();
-    fireEvent.change(screen.getByLabelText('حالة المتابعة'), { target: { value: 'all' } });
-    expect(screen.getByText('TEST-CASE')).toBeTruthy(); expect(screen.getByRole('status').textContent).toContain('1 / 1');
+  it('filters the full archive by team without claiming cases were closed', () => {
+    const report = financeFixture();
+    mock.read.mockImplementation((_e, request) => request.action === 'archive' ? base({ items: request.sourceRole === 2 ? [] : [report], total: request.sourceRole === 2 ? 0 : 1, page: 1, pages: 1 }) : base({ report, currentRevision: 1, history: [] }));
+    render(<FinanceReportsPage />);
+    fireEvent.change(screen.getByLabelText('تصفية الفريق في صفحة الأرشيف'), { target: { value: '2' } });
+    expect(screen.getByRole('status').textContent).toContain('0 تقرير مطابق');
+    expect(screen.getByText(/لا تقارير تطابق التصفية/)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('تصفية الفريق في صفحة الأرشيف'), { target: { value: 'all' } });
+    expect(screen.getByRole('status').textContent).toContain('1 تقرير مطابق'); expect(mock.api).not.toHaveBeenCalled();
   });
-  it('renders reviewed Arabic verbatim, missing metrics as unavailable, warnings outside tabs, with keyboard interaction', () => {
+  it('retains original Arabic in folded details and exposes missing historical numbers without inventing zeros', () => {
     reports(); render(<LanguageContext.Provider value={{ language: 'en' }}><FinanceReportsPage /></LanguageContext.Provider>);
     expect(screen.getByText(financeFixture().summary)).toBeTruthy();
     expect(screen.getAllByText('غير متاح').length).toBeGreaterThan(0);
-    const first = screen.getByRole('tab', { name: 'الملخص' }); first.focus(); fireEvent.keyDown(first, { key: 'ArrowLeft' });
-    expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'المتابعات' }));
-    expect(screen.getByRole('tabpanel').id).toBe('finance-report-cases');
-    expect(screen.getByText(financeFixture().visibleWarnings[0].text)).toBeTruthy();
-    fireEvent.keyDown(document.activeElement, { key: 'End' });
-    expect(screen.getByRole('tabpanel').id).toBe('finance-report-evidence');
+    expect(screen.getByText('ما انحفظت أرقام مع هذا التقرير')).toBeTruthy();
+    const technical = screen.getByText('التفاصيل التقنية والتقرير الأصلي'); expect(technical.closest('details').open).toBe(false);
+    technical.focus(); fireEvent.click(technical); expect(technical.closest('details').open).toBe(true);
     expect(screen.getByText('المصادر وحدود التغطية')).toBeTruthy();
+  });
+  it('sends date and submitted search filters to the full-archive read, and resets numbered pages', () => {
+    const report = financeFixture();
+    mock.read.mockImplementation((_e, request) => request.action === 'archive' ? base({ items: [report], total: 66, page: request.page, pages: 7 }) : base({ report, currentRevision: 1, history: [] }));
+    render(<FinanceReportsPage />);
+    fireEvent.click(screen.getByRole('button', { name: 'صفحة 7', exact: true }));
+    expect(mock.read.mock.calls.filter(([, r]) => r.action === 'archive').at(-1)[1].page).toBe(7);
+    fireEvent.change(screen.getByLabelText('من تاريخ'), { target: { value: '2026-10-10' } });
+    fireEvent.change(screen.getByLabelText('إلى تاريخ'), { target: { value: '2026-10-12' } });
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'المستند14' } });
+    fireEvent.submit(screen.getByRole('searchbox').closest('form'));
+    expect(mock.read.mock.calls.filter(([, r]) => r.action === 'archive').at(-1)[1]).toMatchObject({ page: 1, from: '2026-10-10', to: '2026-10-12', search: 'المستند14' });
+    expect(mock.api).not.toHaveBeenCalled();
   });
   it('does not show reports or zero cards on connection failure', () => {
     mock.read.mockReturnValue({ ...base(null), error: 'انقطاع اختبار' }); render(<FinanceReportsPage />);

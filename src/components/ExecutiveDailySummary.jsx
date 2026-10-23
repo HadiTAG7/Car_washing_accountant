@@ -2,31 +2,37 @@ import { useExecutiveDailyMetrics } from '../hooks/useExecutiveDailyMetrics';
 import { executiveOwnerDecisions, executiveProblems, readableExecutiveText } from '../lib/executiveOwnerSummary';
 import { formatCurrencyPrecise, formatNumber } from '../data/initialData';
 import { riyadhTodayISO } from '../lib/washesYesterday';
+import { useFinanceRead } from '../hooks/useFinanceRead';
+import { FinanceReportDigest } from './FinanceReportOwnerView';
+import { parseFinanceReport } from '../lib/financeReportContract';
+import { useMemo } from 'react';
 
 const dayLabel = day => new Intl.DateTimeFormat('ar-SA-u-ca-gregory', { dateStyle: 'medium', numberingSystem: 'latn', timeZone: 'UTC' }).format(new Date(`${day}T00:00:00Z`));
 
 export function ExecutiveDailySummaryLive({ report, latestReportDate }) {
   const data = useExecutiveDailyMetrics();
-  return <ExecutiveDailySummary report={report} data={data} latestReportDate={latestReportDate} />;
+  const finance = useFinanceRead('finance-reports', { action: 'forExecutive', ...(report ? { at: report.cutAtRiyadh } : {}) });
+  const parsed = useMemo(() => {
+    try {
+      const source = finance.data?.report ? parseFinanceReport(finance.data.report) : null;
+      const previousReport = finance.data?.previousReport ? parseFinanceReport(finance.data.previousReport) : null;
+      if (source && (source.sourceRole !== 1 || report && Date.parse(source.cutAtRiyadh) > Date.parse(report.cutAtRiyadh))) throw new Error('finance-cutoff');
+      return { ...finance, data: { report: source, previousReport } };
+    } catch { return { ...finance, data: null, error: 'تعذر التحقق من لقطة المالية.' }; }
+  }, [finance, report]);
+  return <ExecutiveDailySummary report={report} data={data} latestReportDate={latestReportDate} finance={parsed} />;
 }
 
-export default function ExecutiveDailySummary({ report, data, latestReportDate = report?.dateRiyadh }) {
-  const today = data?.today || riyadhTodayISO(), periodKey = today.slice(0, 7);
-  const overview = data?.overview, statement = overview?.finance.statement;
+export default function ExecutiveDailySummary({ report, data, latestReportDate = report?.dateRiyadh, finance }) {
+  const today = data?.today || riyadhTodayISO();
+  const overview = data?.overview;
   const ops = data?.yesterdayOperations || overview?.operations;
   const washReady = overview && !overview.washes.loading && !overview.washes.error && ops && !ops.conflicts.length;
   const washValue = washReady && ops.yesterdayInPeriod ? ops.yesterdayQuantity : null;
-  const money = key => statement ? formatCurrencyPrecise(statement[key]) : overview?.finance.loading ? '…' : 'غير متاح';
-  const periodLabel = `${dayLabel(`${periodKey}-01`)} — ${dayLabel(today)}`;
   const yesterday = ops?.yesterday;
   const metrics = [
     { label: 'غسلات أمس', value: washValue == null ? overview?.washes.loading ? '…' : 'غير متاح' : formatNumber(washValue), day: yesterday,
       date: yesterday ? dayLabel(yesterday) : 'بتوقيت الرياض', note: ops && !ops.yesterdayInPeriod ? 'أمس خارج شهر النظرة العامة؛ راجع صفحة الغسلات.' : null },
-    { label: 'إيراد الشهر حتى اليوم', value: money('netRevenue'), date: periodLabel, day: today },
-    { label: 'مصروفات الشهر', value: money('totalCosts'), date: periodLabel, day: today,
-      note: statement?.salaryAccrual?.estimated ? 'تشمل رواتب تقديرية حتى اعتماد المسير.' : null },
-    { label: 'صافي الربح', value: money('netProfit'), date: periodLabel, day: today,
-      note: statement?.salaryAccrual?.estimated ? 'تقديري حتى اعتماد مسير الرواتب.' : null },
   ];
   const problems = executiveProblems(report, data?.cash);
   const decisions = executiveOwnerDecisions(report);
@@ -38,8 +44,12 @@ export default function ExecutiveDailySummary({ report, data, latestReportDate =
         <h3>{metric.label}</h3><strong><bdi>{metric.value}</bdi></strong><time dateTime={metric.day}>{metric.date}</time>
         {metric.note && <small>{metric.note}</small>}
       </section>)}</div>
-      {overview?.finance.error && <p className="sw-executive-daily__read-error" role="alert">تعذرت قراءة الأرقام المالية؛ لم تُستبدل بأرقام التقرير القديم.</p>}
       {overview && (overview.washes.error || ops?.conflicts.length > 0) && <p role="alert">تعذر تأكيد غسلات أمس؛ راجع بيانات الغسلات.</p>}
+    </section>
+    <section aria-label="المالية من تقرير المدير المالي"><h2>خلاصة المالية المحفوظة</h2>
+      {finance?.loading ? <p role="status">جارٍ قراءة خلاصة المالية…</p> : finance?.error ? <p role="alert">تعذرت قراءة تقرير المالية؛ لم تُستبدل أرقامه بأرقام اليوم.</p>
+        : finance?.data?.report ? <FinanceReportDigest report={finance.data.report} previousReport={finance.data.previousReport} />
+          : <p>ما فيه تقرير مالي محفوظ ضمن وقت القطع. افتح أرشيف المالية للتحقق.</p>}
     </section>
     <section aria-label="أهم المشاكل" className="sw-executive-daily__problems"><h2>أهم المشاكل</h2>
       {problems.length ? <ul>{problems.map(problem => <li key={problem.id} data-severity={problem.severity}>

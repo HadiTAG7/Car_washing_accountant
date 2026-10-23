@@ -539,7 +539,7 @@ service cloud.firestore {
       return c in [
         'sweater_raw_payloads', 'sweater_bookings', 'sweater_settlements',
         'sweater_variances', 'sweater_import_runs', 'sweater_integration_state',
-        'sweater_adjustments'
+        'sweater_adjustments', 'sweater_metric_snapshots'
       ];
     }
     function isSweaterConfigColl(c) {

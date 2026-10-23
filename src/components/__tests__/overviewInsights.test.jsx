@@ -49,27 +49,51 @@ it('break-even boxes stay neutral and unavailable without confirmed figures', ()
   }
 });
 
-it('supports month-keyed saved counts, explicit zero and warning differences without database writes', () => {
-  const d = data(); const navigate = vi.fn();
-  const { rerender } = render(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language="ar" onNavigate={navigate} />);
-  const input = screen.getByLabelText('عدد غسلات الشهر حسب سويتر — Metabase');
-  expect(screen.getByRole('status').textContent).toContain('الحقل الفارغ لا يعني صفرًا');
-  fireEvent.change(input, { target: { value: '٣' } });
-  expect(screen.getByRole('status').textContent).toContain('+2'); expect(screen.getByRole('status').className).toContain('warning');
-  rerender(<OverviewBusinessInsights data={d} periodKey="2026-09" washReady language="ar" />);
-  expect(input.value).toBe('');
-  rerender(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language="ar" onNavigate={navigate} />);
-  expect(input.value).toBe('٣'); fireEvent.change(input, { target: { value: '1' } });
-  expect(screen.getByRole('status').textContent).toContain('متطابق');
-  fireEvent.change(input, { target: { value: '0' } }); expect(screen.getByRole('status').textContent).toContain('-1');
-  fireEvent.change(input, { target: { value: '-1' } }); expect(input.getAttribute('aria-invalid')).toBe('true');
-  fireEvent.click(screen.getByRole('button', { name: 'تفاصيل تسويات سويتر' })); expect(navigate).toHaveBeenCalledWith('sweater_settlements');
+const october = { periodKey: '2026-10', extractedAtIso: '2026-10-23T05:00:00.000Z', metrics: { completedWashes: 480, tipsNet: 68, violations: 530,
+  damages: 0, compensations: 0, freeWashCompensation: 8, cancelledByCustomer: 10, cancelledByBiker: 13, cancelledMaintenance: 4 } };
+const region = name => screen.getByRole('region', { name });
+it('fills Sweater’s count, tips and itemized deductions from the latest reading, each with its time', () => {
+  const d = data(); d.sweaterMetrics = { snapshot: october, loading: false, error: null }; const navigate = vi.fn();
+  render(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language="ar" onNavigate={navigate} />);
+  const count = region('مطابقة الغسلات مع سويتر');
+  expect(count.querySelector('strong').textContent).toBe('480');
+  // One recorded wash in the fixture: Sweater − recorded = +479, flagged for reconciliation.
+  expect(screen.getByRole('status').textContent).toContain('+479'); expect(screen.getByRole('status').className).toContain('warning');
+  expect(count.textContent).toContain('آخر تحديث من سويتر'); expect(screen.queryByRole('textbox')).toBeNull();
+  const tips = card('البقشيش');
+  expect(tips.querySelector('strong').textContent).toContain('68.00'); expect(tips.textContent).toContain('منفصل عن الإيراد');
+  expect(tips.textContent).toContain('آخر تحديث من سويتر');
+  const deductions = card('الخصومات والتعويضات');
+  expect(deductions.querySelector('strong').textContent).toContain('530.00');
+  const [taken, added] = within(deductions).getAllByRole('list');
+  expect([...taken.querySelectorAll('li')].map(li => li.textContent.replace(/\s+/g, ' ').replace(/[\u200e\u200f]/g, '')))
+    .toEqual(['المخالفات530.00 ر.س', 'الأضرار0.00 ر.س', 'التعويضات0.00 ر.س', 'غسلات مجانية تعويض8', 'إلغاء من البايكر13', 'إلغاء بسبب الصيانة4']);
+  expect(added.textContent).toBe('إلغاء من العميل10');
+  expect(deductions.textContent).toContain('المعتمد في الدفتر: غير مسجلة');
+  fireEvent.click(within(deductions).getByRole('button', { name: 'تفاصيل تسويات سويتر' })); expect(navigate).toHaveBeenCalledWith('sweater_settlements');
+  // The workbench is a document review, not a balance: its box is gone, its link stays.
+  expect(screen.queryByRole('heading', { name: 'رصيد صندوق العمل المالي' })).toBeNull();
+  fireEvent.click(within(card('الفلوس والمواعيد')).getByRole('button', { name: 'فتح صندوق العمل المالي' })); expect(navigate).toHaveBeenCalledWith('finance_workbench');
+});
+it('without Sweater data says so instead of zero, item by item', () => {
+  const d = data(); d.sweaterMetrics = { snapshot: null, loading: false, error: null };
+  const { rerender } = render(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language="ar" />);
+  for (const box of [card('البقشيش'), card('الخصومات والتعويضات')]) expect(box.querySelector('strong').textContent).toBe('ما وصلت بيانات سويتر');
+  expect(region('مطابقة الغسلات مع سويتر').querySelector('strong').textContent).toBe('ما وصلت بيانات سويتر');
+  expect(screen.queryByRole('status')).toBeNull();
+  d.sweaterMetrics = { snapshot: { ...october, metrics: { completedWashes: 480 } }, loading: false, error: null };
+  rerender(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language="ar" />);
+  expect(card('البقشيش').querySelector('strong').textContent).toBe('ما وصلت بيانات سويتر');
+  expect(within(card('الخصومات والتعويضات')).getAllByRole('listitem').every(li => li.textContent.includes('ما وصلت بيانات سويتر'))).toBe(true);
+  expect(card('الخصومات والتعويضات').textContent).not.toContain('0.00');
+  d.sweaterMetrics = { snapshot: null, loading: false, error: new Error('denied') };
+  rerender(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language="ar" />);
+  expect(card('البقشيش').querySelector('strong').textContent).toBe('تعذّرت قراءة أرقام سويتر');
 });
 it('shows missing fields honestly, separates tips and marks estimated payroll', () => {
   render(<OverviewBusinessInsights data={data()} periodKey="2026-10" washReady language="ar" />);
-  expect(card('استغلال الطاقة').textContent).toContain('10%'); expect(card('البقشيش').textContent).toContain('غير متاح');
+  expect(card('استغلال الطاقة').textContent).toContain('10%'); expect(card('البقشيش').textContent).toContain('ما وصلت بيانات سويتر');
   expect(card('استغلال الطاقة').textContent).toContain('تقريبي · على أيام الغسيل، مو الحضور');
-  expect(card('رصيد صندوق العمل المالي').textContent).toContain('ليس حسابًا نقديًا');
   expect(card('تكلفة الغسلة').textContent).toContain('تقديري');
   expect(card('الدفعة المتوقعة من سويتر').textContent).toContain('لم تُسجّل تسوية');
   expect(card('الخصومات والتعويضات').textContent).toContain('غير مسجلة');
@@ -90,22 +114,6 @@ it('distinguishes no records, explicit approved zero, pending deductions and cre
   d.adjustments.items = [{ ...row, kind: 'compensation', amount: 25 }];
   rerender(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language="ar" />);
   expect(card('الخصومات والتعويضات').textContent).toContain('غير مسجلة');
-});
-it('restores the correct month after remount and does not persist invalid edits over a saved valid number', () => {
-  const d = data();
-  let view = render(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language="ar" />);
-  fireEvent.change(screen.getByLabelText('عدد غسلات الشهر حسب سويتر — Metabase'), { target: { value: '٣٨٢' } });
-  view.unmount();
-  view = render(<OverviewBusinessInsights data={d} periodKey="2026-09" washReady language="ar" />);
-  expect(screen.getByLabelText('عدد غسلات الشهر حسب سويتر — Metabase').value).toBe('');
-  fireEvent.change(screen.getByLabelText('عدد غسلات الشهر حسب سويتر — Metabase'), { target: { value: '25' } });
-  view.unmount();
-  view = render(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language="ar" />);
-  expect(screen.getByLabelText('عدد غسلات الشهر حسب سويتر — Metabase').value).toBe('382');
-  fireEvent.change(screen.getByLabelText('عدد غسلات الشهر حسب سويتر — Metabase'), { target: { value: '-1' } });
-  view.unmount();
-  render(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language="ar" />);
-  expect(screen.getByLabelText('عدد غسلات الشهر حسب سويتر — Metabase').value).toBe('382');
 });
 it('does not display failed adjustment reads as zero, while operational forecasts still work', () => {
   const d = data(); d.adjustments.error = new Error('denied'); d.finance.statement = null;

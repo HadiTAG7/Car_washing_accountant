@@ -37,10 +37,13 @@
 .sw-overview-insight--good strong, .sw-overview-insight--good .sw-overview-insight__status { color: var(--sw-success); }
 .sw-overview-insight--bad strong, .sw-overview-insight--bad .sw-overview-insight__status { color: var(--sw-danger); }
 .sw-overview-insight__status { font-weight: 600; }
+/* Sweater's itemized numbers: a label and its value per line. */
+.sw-overview-insight__group { font-weight: 600; }
+.sw-overview-insight__items { display: grid; gap: 2px; width: 100%; margin: 0; padding: 0; list-style: none; font-size: .8rem; }
+.sw-overview-insight__items li { display: flex; justify-content: space-between; gap: 12px; }
 .sw-overview__reconciliation { display: grid; gap: 10px; padding: 20px; border: 1px solid var(--sw-border-subtle); background: var(--sw-surface); border-radius: var(--sw-radius-card); font-size: .85rem; }
-.sw-overview__reconciliation label { font-weight: 700; }
-.sw-overview__reconciliation input { width: min(100%, 260px); padding: 10px 12px; min-height: 44px; background: var(--sw-surface); color: var(--sw-text-primary); border: 1px solid var(--sw-border-subtle); border-radius: 8px; }
-.sw-overview__reconciliation input:focus-visible { outline: 2px solid var(--sw-action); outline-offset: 2px; }
+.sw-overview__reconciliation h3 { font-weight: 700; }
+.sw-overview__reconciliation strong { font-size: clamp(1.25rem, 2vw, 1.85rem); line-height: 1.4; }
 .sw-overview__reconciliation small { color: var(--sw-text-secondary); line-height: 1.8; }
 .sw-overview__reconciliation-warning { color: var(--sw-warning); font-weight: 700; border-inline-start: 3px solid var(--sw-warning); padding-inline-start: 10px; }
 .sw-overview__bars .sw-overview__day-incomplete .sw-overview__bar-track > span { opacity: .35; border: 1px dashed var(--sw-action); }

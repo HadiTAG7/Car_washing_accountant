@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { overviewOperations } from '../overviewDashboard';
-import { overviewBusinessMetrics, overviewSettlements, overviewAttention, parseMetabaseCount } from '../overviewInsights';
+import { overviewBusinessMetrics, overviewSettlements, overviewAttention, overviewSweaterMetrics } from '../overviewInsights';
 import { OVERVIEW_SETTINGS } from '../../config/overviewSettings';
 
 const wash = (id, date, quantity = 1, bikerId = 'b1') => ({ id, washDate: date, status: 'مكتملة', quantity, bikerId });
@@ -144,6 +144,22 @@ describe('evidenced, month-scoped attention items', () => {
   });
 });
 
-it.each([['', null], ['0', 0], ['٣٨٢', 382], ['۳۸۲', 382], [' 382 ', 382], ['-1', null], ['1.5', null], ['abc', null], ['9007199254740992', null]])('validates manual Metabase input %s', (value, expected) => {
-  expect(parseMetabaseCount(value)).toBe(expected);
+describe('Sweater’s own numbers, from the latest dashboard reading', () => {
+  const october = { periodKey: '2026-10', extractedAtIso: '2026-10-23T05:00:00.000Z', metrics: { completedWashes: 480, tipsNet: 68, violations: 530,
+    damages: 0, compensations: 0, freeWashCompensation: 8, cancelledByCustomer: 10, cancelledByBiker: 13, cancelledMaintenance: 4 } };
+  it('shows October as Sweater classes it: riyal deductions added up, counts listed, the customer cancellation as an addition', () => {
+    const s = overviewSweaterMetrics(october, { quantity: 382 });
+    expect(s).toMatchObject({ updatedAtIso: '2026-10-23T05:00:00.000Z', completedWashes: 480, washDifference: 98, tipsNet: 68, deductionMoney: 530 });
+    expect(s.deductions).toEqual([{ key: 'violations', unit: 'sar', value: 530 }, { key: 'damages', unit: 'sar', value: 0 }, { key: 'compensations', unit: 'sar', value: 0 },
+      { key: 'freeWashCompensation', unit: 'count', value: 8 }, { key: 'cancelledByBiker', unit: 'count', value: 13 }, { key: 'cancelledMaintenance', unit: 'count', value: 4 }]);
+    expect(s.additions).toEqual([{ key: 'cancelledByCustomer', unit: 'count', value: 10 }]);
+  });
+  it('a number that did not arrive is null, never zero; no reading is null altogether', () => {
+    const s = overviewSweaterMetrics({ extractedAtIso: '2026-10-23T05:00:00.000Z', metrics: { completedWashes: 480 } }, null);
+    expect([s.tipsNet, s.deductionMoney, s.washDifference]).toEqual([null, null, null]);
+    expect(s.deductions.every(item => item.value === null)).toBe(true);
+    expect(overviewSweaterMetrics({ metrics: { damages: 0 } }, null).deductionMoney).toBe(0);
+    expect(overviewSweaterMetrics(null, { quantity: 382 })).toBeNull();
+    expect(overviewSweaterMetrics({ metrics: null }, null)).toBeNull();
+  });
 });

@@ -5,7 +5,8 @@ import { DEFAULT_CHART_OF_ACCOUNTS } from '../../lib/accounting/chartOfAccounts'
 const state = vi.hoisted(() => ({ live: null, payroll: null, fees: null, tax: null, washRead: vi.fn(), bikerRead: vi.fn() }));
 vi.mock('../useWashes', () => ({ useWashes: state.washRead }));
 vi.mock('../useBikers', () => ({ useBikers: state.bikerRead }));
-vi.mock('../useSweater', () => ({ useSweaterAdjustments: () => ({ adjustments: [], loading: false, error: null, refetch: vi.fn() }) }));
+vi.mock('../useSweater', () => ({ useSweaterAdjustments: () => ({ adjustments: [], loading: false, error: null, refetch: vi.fn() }),
+  useSweaterMetrics: () => ({ snapshot: null, loading: false, error: null, refetch: vi.fn() }) }));
 vi.mock('../useLedger', () => ({ useLedger: () => ({ accounts: DEFAULT_CHART_OF_ACCOUNTS, loading: false, error: null, refetch: vi.fn() }) }));
 vi.mock('../useIncomeStatementSources', () => ({ useIncomeStatementSources: () => state.live }));
 vi.mock('../useIncomePayrollPreviews', () => ({ useIncomePayrollPreviews: () => state.payroll }));

@@ -2,6 +2,7 @@ import { verifyIngestRequest, IntegrationAuthError, INTEGRATION_PRINCIPAL } from
 import { SweaterIngestError, MAX_BODY_BYTES } from './ingest.js';
 import { hashBody } from './record.js';
 import { validateOperationsPayload, previewOperations, saveOperations, operationsStatus } from './operationsSync.js';
+import { checkMetricsSnapshot, saveMetricsSnapshot } from './metricsSnapshot.js';
 
 // Complete action + payload + preview hashes are signed. An import signature
 // cannot be reused as a status/save signature or to alter extraction coverage.
@@ -19,17 +20,19 @@ export function operationsHandler({ getDb, FieldValue, verify = verifyIngestRequ
         return res.status(413).json({ error: { code: 'invalid-argument', message: 'Request exceeds the operational contract.' } });
       }
       const allowed = body.action === 'save' ? ['action', 'payload', 'reviewedPayloadHash', 'previewStateHash'] : ['action', 'payload'];
-      if (!['preview', 'save', 'status'].includes(body.action) || Object.keys(body).some(k => !allowed.includes(k))) {
-        throw new SweaterIngestError('Only preview, save or status requests are allowed.');
+      if (!['preview', 'save', 'status', 'metrics'].includes(body.action) || Object.keys(body).some(k => !allowed.includes(k))) {
+        throw new SweaterIngestError('Only preview, save, status or metrics requests are allowed.');
       }
-      validateOperationsPayload(body.payload);
+      // metrics: one month's reading of Sweater's dashboards, under the same key, principal and signature.
+      if (body.action === 'metrics') checkMetricsSnapshot(body.payload); else validateOperationsPayload(body.payload);
       const db = getDb();
       const auth = await verify(db, FieldValue, { keyId: header(req, 'x-sweater-key-id'), timestamp: header(req, 'x-sweater-timestamp'),
         signature: header(req, 'x-sweater-signature'), importRunId: body.payload.importRunId,
         bodyHash: operationsSigningHash(body), requiredPrincipal: INTEGRATION_PRINCIPAL });
-      const result = body.action === 'preview' ? await previewOperations(db, body.payload)
-        : body.action === 'status' ? await operationsStatus(db, body.payload)
-          : await saveOperations(db, FieldValue, { payload: body.payload, reviewedPayloadHash: body.reviewedPayloadHash, previewStateHash: body.previewStateHash }, auth.principal);
+      const result = body.action === 'metrics' ? await saveMetricsSnapshot(db, FieldValue, body.payload, { keyId: auth.keyId })
+        : body.action === 'preview' ? await previewOperations(db, body.payload)
+          : body.action === 'status' ? await operationsStatus(db, body.payload)
+            : await saveOperations(db, FieldValue, { payload: body.payload, reviewedPayloadHash: body.reviewedPayloadHash, previewStateHash: body.previewStateHash }, auth.principal);
       return res.status(200).json({ result });
     } catch (error) {
       const known = error instanceof SweaterIngestError || error instanceof IntegrationAuthError;

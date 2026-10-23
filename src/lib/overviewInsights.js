@@ -2,6 +2,7 @@ import { OVERVIEW_SETTINGS } from '../config/overviewSettings.js';
 import { monthRange } from './accounting/monthlyStatement.js';
 import { isDepartedStatus, isOverviewWorkingBiker } from './overviewDashboard.js';
 import { ADJUSTMENT_KIND, ADJUSTMENT_APPROVAL } from '../../functions/src/sweater/vocab.js';
+import { SWEATER_METRICS } from '../../functions/src/sweater/metricsContract.js';
 
 const money = n => Math.round(n * 100) / 100;
 const number = value => value !== null && value !== undefined && String(value).trim() !== '' && Number.isFinite(Number(value)) ? Number(value) : null;
@@ -113,8 +114,21 @@ export function overviewAttention({ ops, bikers = [], bookings = [], today, sett
     iqamas, idle, missingIqama: bikers.filter(b => !Number.isFinite(dayMs(b.iqamaExpiry))).length, missingEndDate };
 }
 
-export function parseMetabaseCount(value) {
-  const normalized = String(value).trim().replace(/[٠-٩]/g, digit => String(digit.charCodeAt(0) - '٠'.charCodeAt(0)))
-    .replace(/[۰-۹]/g, digit => String(digit.charCodeAt(0) - '۰'.charCodeAt(0)));
-  return /^\d+$/.test(normalized) && Number.isSafeInteger(Number(normalized)) ? Number(normalized) : null;
+/**
+ * The month's latest reading of Sweater's dashboards, as the overview shows it.
+ * A number that did not arrive is null, never zero; deductions and additions
+ * keep Sweater's classes, and only riyal deductions are added up.
+ */
+export function overviewSweaterMetrics(snapshot, ops) {
+  if (!snapshot?.metrics || typeof snapshot.metrics !== 'object') return null;
+  const value = key => (typeof snapshot.metrics[key] === 'number' && Number.isFinite(snapshot.metrics[key]) ? snapshot.metrics[key] : null);
+  const items = direction => Object.entries(SWEATER_METRICS).filter(([, metric]) => metric.direction === direction)
+    .map(([key, metric]) => ({ key, unit: metric.unit, value: value(key) }));
+  const deductions = items('deduction');
+  const money = deductions.filter(item => item.unit === 'sar' && item.value !== null);
+  const completedWashes = value('completedWashes');
+  return { updatedAtIso: snapshot.extractedAtIso || null, completedWashes, tipsNet: value('tipsNet'),
+    washDifference: completedWashes !== null && ops ? completedWashes - ops.quantity : null,
+    deductions, additions: items('addition'),
+    deductionMoney: money.length ? money.reduce((sum, item) => sum + item.value, 0) : null };
 }

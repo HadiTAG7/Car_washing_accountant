@@ -10,7 +10,7 @@ import { liveIncomeStatement } from '../lib/accounting/liveIncomeStatement';
 import { taxPolicyAt } from '../lib/accounting/taxPolicy';
 import { overviewOperations, overviewWindow } from '../lib/overviewDashboard';
 import { monthsBetween } from '../lib/accounting/incomeStatementScope';
-import { useSweaterAdjustments } from './useSweater';
+import { useSweaterAdjustments, useSweaterMetrics } from './useSweater';
 
 /**
  * The months this page needs: the statement for the month (and the previous
@@ -33,9 +33,11 @@ export function useOverviewDashboard(periodKey, today) {
   const ledger = useLedger({ liveSources: live });
   const fees = useFeeRules();
   const tax = useAccountingSettings();
-  // The only additional collection read: month-scoped adjustments. Bookings,
-  // settlements, workers and washes reuse the statement's live snapshots.
+  // The only additional collection reads, both month-scoped: adjustments, and
+  // Sweater's own numbers (washes, tips, compensations; the latest reading).
+  // Bookings, settlements, workers and washes reuse the statement's live snapshots.
   const adjustments = useSweaterAdjustments(periodKey);
+  const sweaterMetrics = useSweaterMetrics(periodKey);
   const { sources, entries, lines } = live;
   // The overview already has live washes and workers for its statement.
   // Reuse those snapshots, retaining each source's loading/error state, so a
@@ -79,7 +81,8 @@ export function useOverviewDashboard(periodKey, today) {
     bookings: { items: sources.bookings || [], ...(live.sourceStatus?.bookings || { loading: live.loading, error: live.error }) },
     settlements: { items: sources.settlements || [], ...(live.sourceStatus?.settlements || { loading: live.loading, error: live.error }) },
     adjustments: { items: adjustments.adjustments, loading: adjustments.loading, error: adjustments.error },
+    sweaterMetrics: { snapshot: sweaterMetrics.snapshot, loading: sweaterMetrics.loading, error: sweaterMetrics.error },
     // The salary previews behind the statement (one line per biker), for break-even per biker.
     payroll: { data: payroll.data, loading: payroll.loading, error: payroll.error },
-    retry: () => { live.refetch(); ledger.refetch(); fees.refetch(); tax.refetch(); payroll.refetch(); adjustments.refetch(); } };
+    retry: () => { live.refetch(); ledger.refetch(); fees.refetch(); tax.refetch(); payroll.refetch(); adjustments.refetch(); sweaterMetrics.refetch(); } };
 }

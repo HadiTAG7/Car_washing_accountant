@@ -41,6 +41,10 @@ const CATEGORY = 'label sort_order:int created_at:iso';
  * its own grants; see scripts/migration/sql/*.sql.
  *   read:  'staff' | 'accountant' | 'admin' | 'none' | 'members-self' | 'owner'
  *   write: 'operator' | 'accountant' | 'admin' | 'none' | special names handled in SQL
+ *
+ * migration: a table added after go-live names its own migration file
+ * ('20261023000000_name'). It stays out of the baseline files (already applied
+ * in production) and is generated into supabase/migrations/<migration>.sql.
  */
 export const TABLES = [
   // ── الدفاتر (الخادم وحده يكتب) ──
@@ -180,6 +184,9 @@ export const TABLES = [
   { collection: 'sweater_owner_tax_clarifications', columns: '', policy: { read: 'none', write: 'none' } },
   { collection: 'sweater_integration_keys', columns: 'keyId:id status scope principal createdAt:ts', policy: { read: 'none', write: 'none' } },
   { collection: 'sweater_rate_limits', columns: 'keyId:id count:int updatedAt:ts', policy: { read: 'none', write: 'none' } },
+  // Readings of Sweater's Metabase dashboards, signed by the operations agent: one row per reading, never rewritten.
+  { collection: 'sweater_metric_snapshots', columns: 'periodKey:month! extractedAtIso sourceUrl payloadHash keyId:id metrics:json receivedAt:ts receivedAtIso',
+    policy: { read: 'staff', write: 'none' }, migration: '20261023000000_sweater_metric_snapshots' },
 
   // ── مركز قيادة الوكلاء ──
   { collection: 'agent_command_agents', columns: '', policy: { read: 'accountant', write: 'none' }, realtime: true },

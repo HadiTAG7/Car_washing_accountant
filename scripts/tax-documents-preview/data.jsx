@@ -24,4 +24,3 @@ export const issueDebitNoteFor = synthetic;
 export const voidDocument = synthetic;
 export const correctWashInvoice = synthetic;
 export const saveSellerProfile = async () => { throw new Error('هذه معاينة اصطناعية؛ لا تحفظ بيانات المنشأة.'); };
-export default function TopBar() { return <header className="p-4"><h1 className="text-xl font-bold">المستندات الضريبية — اختبار معزول</h1></header>; }

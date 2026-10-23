@@ -14,18 +14,25 @@ export default function OverviewBusinessInsights({ data, periodKey, washReady, l
   const sReady = data.settlements && !data.settlements.loading && !data.settlements.error;
   const settlement = ops ? overviewSettlements({ adjustments: aReady ? data.adjustments.items : [],
     settlements: sReady ? data.settlements.items : [], periodKey, to: ops.to }) : null;
-  // Sweater's own numbers: the month's latest reading of its dashboards, with its time.
+  // Each metric keeps the time of its own last actual source reading.
   const sweaterRead = data.sweaterMetrics;
   const sweater = overviewSweaterMetrics(sweaterRead?.snapshot, ops);
   const noSweater = sweaterRead?.error ? text('تعذّرت قراءة أرقام سويتر', 'Sweater numbers could not be read')
     : sweaterRead?.loading && !sweaterRead.snapshot ? '…' : text('ما وصلت بيانات سويتر', 'No Sweater data received');
   const fromSweater = (value, format) => value === null || value === undefined ? noSweater : format(value);
-  const updated = sweater?.updatedAtIso && <> {text('آخر تحديث من سويتر', 'Last updated from Sweater')}: <bdi>{new Intl.DateTimeFormat(language === 'en' ? 'en-GB' : 'ar-SA-u-ca-gregory',
-    { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Riyadh', numberingSystem: 'latn' }).format(new Date(sweater.updatedAtIso))}</bdi></>;
+  const updated = keys => {
+    const dates = [...new Set(keys.map(key => sweater?.updatedAtByMetric[key]).filter(date => date && Number.isFinite(Date.parse(date))))]
+      .sort((a, b) => Date.parse(a) - Date.parse(b));
+    if (!dates.length) return null;
+    const format = date => new Intl.DateTimeFormat(language === 'en' ? 'en-GB' : 'ar-SA-u-ca-gregory',
+      { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Riyadh', numberingSystem: 'latn' }).format(new Date(date));
+    return <> {dates.length === 1 ? text('آخر تحديث من سويتر', 'Last updated from Sweater') : text('أوقات القراءات من سويتر — لكل بند وقته', 'Sweater reading times — each item retains its time')}: <bdi>{format(dates[0])}{dates.length > 1 && <> — {format(dates.at(-1))}</>}</bdi> {text('(بتوقيت الرياض)', '(Riyadh time)')}</>;
+  };
   const metricLabels = { violations: text('المخالفات', 'Violations'), damages: text('الأضرار', 'Damages'), compensations: text('التعويضات', 'Compensations'),
     freeWashCompensation: text('غسلات مجانية تعويض', 'Free compensation washes'), cancelledByBiker: text('إلغاء من البايكر', 'Cancelled by the biker'),
     cancelledMaintenance: text('إلغاء بسبب الصيانة', 'Cancelled for maintenance'), cancelledByCustomer: text('إلغاء من العميل', 'Cancelled by the customer') };
-  const metricItem = ({ key, unit, value }) => <li key={key}><span>{metricLabels[key]}</span><bdi>{fromSweater(value, unit === 'sar' ? currency : num)}</bdi></li>;
+  const mixedCompensationTimes = new Set(Object.keys(metricLabels).map(key => sweater?.updatedAtByMetric[key]).filter(Boolean)).size > 1;
+  const metricItem = ({ key, unit, value }) => <li key={key}><span>{metricLabels[key]}{mixedCompensationTimes && <small>{updated([key])}</small>}</span><bdi>{fromSweater(value, unit === 'sar' ? currency : num)}</bdi></li>;
   const sourceGap = !st ? text('المصاريف غير مؤكدة بعد.', 'Costs are not confirmed yet.') : !ops ? text('الغسلات غير مؤكدة بعد.', 'Washes are not confirmed yet.') : '';
   const estimated = m?.estimated ? text('تقديري · الرواتب لم تُعتمد نهائيًا.', 'Estimated · payroll is not final.') : '';
   const partial = m?.partialCosts ? text('التكلفة جزئية: توجد سجلات ضريبية مستبعدة.', 'Partial costs: unresolved tax records are excluded.') : '';
@@ -73,7 +80,7 @@ export default function OverviewBusinessInsights({ data, periodKey, washReady, l
           <p className="sw-overview-insight__group">{text('الإضافات', 'Additions')}</p>
           <ul className="sw-overview-insight__items">{sweater.additions.map(metricItem)}</ul>
         </>}
-        <small>{text('من لوحة Compensations في سويتر: المخالفات والأضرار والتعويضات بالريال، ومجموعها أعلاه؛ والباقي أعداد. سويتر يعدّ إلغاء العميل إضافة، والباقي خصمًا.', 'From Sweater’s Compensations dashboard: violations, damages and compensations in riyals, totalled above; the rest are counts. Sweater adds customer cancellations and deducts the rest.')}{updated}</small>
+        <small>{text('من لوحة Compensations في سويتر: المخالفات والأضرار والتعويضات بالريال، ومجموعها أعلاه؛ والباقي أعداد. سويتر يعدّ إلغاء العميل إضافة، والباقي خصمًا.', 'From Sweater’s Compensations dashboard: violations, damages and compensations in riyals, totalled above; the rest are counts. Sweater adds customer cancellations and deducts the rest.')}{updated(Object.keys(metricLabels))}</small>
         <p>{text('المعتمد في الدفتر', 'Approved in the ledger')}: <bdi>{!aReady || !ops || settlement.malformed ? unavailable
           : !settlement.deductionRecordCount ? text('غير مسجلة', 'Not recorded')
             : settlement.deductionTotal === null ? text('لا خصومات معتمدة', 'No approved deductions') : currency(settlement.deductionTotal)}</bdi></p>
@@ -84,7 +91,7 @@ export default function OverviewBusinessInsights({ data, periodKey, washReady, l
       </Insight>
       <Insight title={text('البقشيش', 'Tips')} value={fromSweater(sweater?.tipsNet, currency)}>
         <p>{text('صافي البقشيش بعد الرسوم، من تبويب Tips في Business Dashboard.', 'Net tips after fees, from the Tips tab of the Business Dashboard.')}</p>
-        <small>{text('منفصل عن الإيراد ولا يدخل قائمة الدخل.', 'Kept apart from revenue; not in the income statement.')}{updated}</small>
+        <small>{text('منفصل عن الإيراد ولا يدخل قائمة الدخل.', 'Kept apart from revenue; not in the income statement.')}{updated(['tipsNet'])}</small>
       </Insight>
     </div>
     <div className="sw-overview__financial-grid sw-overview__insight-grid">
@@ -109,7 +116,7 @@ export default function OverviewBusinessInsights({ data, periodKey, washReady, l
       {sweater?.washDifference != null && <p className={sweater.washDifference ? 'sw-overview__reconciliation-warning' : ''} role="status">
         {`${text('الفرق: سويتر − المسجّل', 'Difference: Sweater − recorded')}: ${sweater.washDifference > 0 ? '+' : ''}${num(sweater.washDifference)} · ${sweater.washDifference ? text('يوجد فرق يحتاج مطابقة', 'Mismatch to reconcile') : text('متطابق', 'Matched')}`}
       </p>}
-      <small>{periodKey} · {text('من Business Dashboard في سويتر، يصل تلقائيًا مع تكامل التشغيل.', 'From Sweater’s Business Dashboard, sent automatically by the operations integration.')}{updated}</small>
+      <small>{periodKey} · {text('من Business Dashboard في سويتر، يصل تلقائيًا مع تكامل التشغيل.', 'From Sweater’s Business Dashboard, sent automatically by the operations integration.')}{updated(['completedWashes'])}</small>
     </section>
   </div>;
 }

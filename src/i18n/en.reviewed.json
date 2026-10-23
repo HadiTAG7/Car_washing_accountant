@@ -2563,5 +2563,7 @@
   "تعذرت قراءة أرصدة الحسابات النقدية؛ لا يمكن تأكيد الرصيد الحالي.": "Cash account balances could not be read; the current balance cannot be confirmed.",
   "رصيد نقدي سالب يحتاج مراجعة:": "Negative cash balance requiring review:",
   "بيانات التشغيل غير مكتملة؛ الأرقام التشغيلية في التقرير تحتاج تحديثًا.": "Operations data is incomplete; the report's operational figures need updating.",
-  "تقييم الجودة غير مكتمل؛ لا تعتمد عليه لتقييم جميع البايكرز.": "Quality assessment is incomplete; do not use it to assess all bikers."
+  "تقييم الجودة غير مكتمل؛ لا تعتمد عليه لتقييم جميع البايكرز.": "Quality assessment is incomplete; do not use it to assess all bikers.",
+  "أوقات القراءات من سويتر — لكل بند وقته": "Sweater reading times — each item retains its time",
+  "(بتوقيت الرياض)": "(Riyadh time)"
 }

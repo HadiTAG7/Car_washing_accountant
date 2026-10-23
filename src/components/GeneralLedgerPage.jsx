@@ -36,7 +36,10 @@ export default function GeneralLedgerPage() {
 
   // Default to the first account that actually has movement, so the page is
   // useful on arrival instead of showing an empty picker.
-  const usedCodes = useMemo(() => new Set(lines.map((l) => String(l.accountId))), [lines]);
+  const usedCodes = useMemo(() => {
+    const postedIds = new Set(entries.filter((entry) => ['posted', 'reversed'].includes(entry.status)).map((entry) => entry.id));
+    return new Set(lines.filter((line) => postedIds.has(line.entryId)).map((line) => String(line.accountId)));
+  }, [entries, lines]);
   const accountGroups = useMemo(() => ledgerAccountGroups(accounts, usedCodes), [accounts, usedCodes]);
   const selected = accountCode
     || accounts.find((a) => usedCodes.has(String(a.code)))?.code

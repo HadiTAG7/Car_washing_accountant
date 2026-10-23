@@ -11,6 +11,21 @@ const reading = (extra = {}) => ({ contractVersion: 'sweater-metrics-v1', import
 const response = () => ({ setHeader: vi.fn(), status(n) { this.code = n; return this; }, json(v) { this.body = v; return this; } });
 
 describe('Sweater metrics contract', () => {
+  it('accepts optional source-precision biker tips only with the same reading and a reconciled net total', () => {
+    const tipsByBiker = [{ driverExternalId: '1984', netAmount: 73.125 }];
+    expect(validateMetricsSnapshot(reading({ metrics: { tipsNet: 73.13 }, tipsByBiker })).tipsByBiker).toEqual(tipsByBiker);
+    expect(() => validateMetricsSnapshot(reading({ metrics: { tipsNet: 0 }, tipsByBiker: [] }))).not.toThrow();
+  });
+  it.each([
+    { tipsByBiker: [{ driverExternalId: '1984', netAmount: 1 }] },
+    { metrics: { completedWashes: 1 }, tipsByBiker: [] },
+    { metrics: { tipsNet: 2 }, tipsByBiker: [{ driverExternalId: '1984', netAmount: 1 }, { driverExternalId: '1984', netAmount: 1 }] },
+    { metrics: { tipsNet: 1 }, tipsByBiker: [{ driverExternalId: '1984', netAmount: '1' }] },
+    { metrics: { tipsNet: 1 }, tipsByBiker: [{ driverExternalId: '1984', netAmount: 1, customerName: 'not allowed' }] },
+    { metrics: { tipsNet: 1 }, tipsByBiker: [{ driverExternalId: '', netAmount: 1 }] },
+  ])('refuses partial, mismatched, duplicated or identifying customer data in tips details %#', extra => {
+    expect(() => validateMetricsSnapshot(reading(extra))).toThrow();
+  });
   it('knows each number’s unit and whether Sweater deducts or adds it', () => {
     expect(Object.entries(SWEATER_METRICS).filter(([, m]) => m.unit === 'sar').map(([k]) => k)).toEqual(['tipsNet', 'violations', 'damages', 'compensations']);
     expect(Object.entries(SWEATER_METRICS).filter(([, m]) => m.direction === 'addition').map(([k]) => k)).toEqual(['cancelledByCustomer']);

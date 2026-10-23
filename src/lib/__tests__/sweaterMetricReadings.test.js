@@ -7,6 +7,14 @@ const early = { id: 'early', periodKey: period, extractedAtIso: '2026-10-23T06:0
 const later = { id: 'later', periodKey: period, extractedAtIso: '2026-10-23T07:00:00Z', sourceUrl: 'https://ssp-portal.sweater.sa/dashboards/compensations', metrics: { violations: 100, damages: 0, compensations: 0, freeWashCompensation: 2, cancelledByBiker: 3, cancelledMaintenance: 1, cancelledByCustomer: 4 } };
 
 describe('monthly source readings, composed independently per metric', () => {
+  it('binds biker attribution to the exact selected net-tips reading, never another snapshot or month', () => {
+    const detailed = { ...early, tipsByBiker: [{ driverExternalId: '1984', netAmount: 50 }] };
+    expect(composeSweaterMetricReadings([detailed, later], period).tipsByBiker).toEqual(detailed.tipsByBiker);
+    const newerTotal = { ...later, metrics: { tipsNet: 60 } };
+    expect(composeSweaterMetricReadings([detailed, newerTotal], period).tipsByBiker).toBeNull();
+    expect(composeSweaterMetricReadings([{ ...detailed, tipsByBiker: [{ driverExternalId: '1984', netAmount: 49 }] }], period).tipsByBiker).toBeNull();
+    expect(composeSweaterMetricReadings([{ ...detailed, periodKey: '2026-09' }, early], period).tipsByBiker).toBeNull();
+  });
   it('keeps all nine fields after a partial update and retains each original time and source without mutating rows', () => {
     const rows = [early, later]; const before = JSON.stringify(rows);
     const result = composeSweaterMetricReadings(rows, period);

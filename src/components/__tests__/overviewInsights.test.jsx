@@ -161,6 +161,32 @@ it.each(['ar', 'en'])('labels daily capacity clearly and displays eight assumed 
   expect(box.textContent).toContain(language === 'ar' ? 'غسلات / يوم' : 'washes / day');
   expect(screen.queryByRole('heading', { name: language === 'ar' ? 'استغلال الطاقة' : 'Capacity utilization' })).toBeNull();
 });
+it.each(['ar', 'en'])('opens capacity and tips details without navigation or record writes (%s)', language => {
+  const d = data(); const navigate = vi.fn();
+  d.sweaterMetrics = { snapshot: composeSweaterMetricReadings([{ ...october, metrics: { tipsNet: 73.13 }, tipsByBiker: [{ driverExternalId: '1984', netAmount: 73.125 }] }], '2026-10'), loading: false };
+  render(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language={language} onNavigate={navigate} />);
+  fireEvent.click(screen.getByRole('button', { name: language === 'ar' ? 'الإنتاج مقارنة بالطاقة اليومية' : 'Output vs daily capacity' }));
+  let dialog = screen.getByRole('dialog');
+  expect(dialog.textContent).toContain('1984'); expect(dialog.textContent).toContain('12.5%');
+  expect(within(dialog).getByRole('table')).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole('button', { name: language === 'ar' ? 'إغلاق التفاصيل' : 'Close details' }));
+  expect(screen.queryByRole('dialog')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: language === 'ar' ? 'البقشيش' : 'Tips', exact: true }));
+  dialog = screen.getByRole('dialog');
+  expect(dialog.textContent).toContain('1984'); expect(dialog.textContent).toContain('عامل اختبار'); expect(dialog.textContent).toContain('73.13');
+  expect(navigate).not.toHaveBeenCalled();
+  expect(card(language === 'ar' ? 'البقشيش' : 'Tips').querySelector('p')).toBeNull();
+});
+it('does not attribute an aggregate-only or wrong-month tips snapshot to a biker', () => {
+  const d = data(); d.sweaterMetrics = { snapshot: october, loading: false };
+  const { rerender } = render(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language="ar" />);
+  fireEvent.click(screen.getByRole('button', { name: 'البقشيش', exact: true }));
+  expect(screen.getByRole('dialog').textContent).toContain('المحفوظ إجمالي فقط');
+  expect(screen.getByRole('dialog').textContent).not.toContain('1984');
+  d.sweaterMetrics.snapshot = { ...october, tipsByBiker: [{ driverExternalId: '1984', netAmount: 68 }] };
+  rerender(<OverviewBusinessInsights data={d} periodKey="2026-09" washReady language="ar" />);
+  expect(screen.getByRole('dialog').textContent).not.toContain('1984');
+});
 it.each(['ar', 'en'])('does not present an unresolved saved settlement as a confirmed zero payment (%s)', language => {
   const d = data(); const row = { id: 's', periodKey: '2026-10', status: 'calculated', figures: { netDue: 0, counts: { eligible: 0, needsReview: 2, unknownStatus: 1 } } };
   d.settlements.items = [row];

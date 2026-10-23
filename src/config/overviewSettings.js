@@ -17,5 +17,4 @@ export const OVERVIEW_SETTINGS = Object.freeze({
   documentWarningDays: 30,
   forecastWindowDays: 7,
   statementDay: 5,
-  metabaseStoragePrefix: 'sweater:overview:metabase:v1:',
 });

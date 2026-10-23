@@ -55,6 +55,15 @@ export function useSweaterSettlements() {
   };
 }
 
+/** The month's latest reading of Sweater's dashboards (the operations agent sends them), or null. */
+export function useSweaterMetrics(periodKey) {
+  const { data, loading, error, refetch } = useFirestoreQuery(
+    async () => sortBy(await fetchRows('sweater_metric_snapshots', [where('periodKey', '==', periodKey)]), [{ key: 'extractedAtIso', dir: 'desc' }]),
+    { cacheKey: `sweater_metric_snapshots:${periodKey}`, enabled: enabled && Boolean(periodKey), deps: [periodKey], fallback: [] },
+  );
+  return { snapshot: data?.[0] ?? null, loading, error, refetch };
+}
+
 export function useSweaterAdjustments(periodKey) {
   const { data, loading, error, refetch } = useFirestoreQuery(
     async () => sortBy(

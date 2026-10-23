@@ -73,7 +73,10 @@ export default function SweaterIntegrationPage() {
   }, []);
 
   const st = integ.current;
-  const lastHours = hoursSince(st?.lastSuccessAtIso);
+  // The later of the two paths: a staff/legacy import (lastSuccessAtIso) and the
+  // operations agent's save (lastOperationalSuccessAtIso). Both are toISOString(), so they sort as text.
+  const lastSuccessIso = [st?.lastSuccessAtIso, st?.lastOperationalSuccessAtIso].filter(Boolean).sort().at(-1) ?? null;
+  const lastHours = hoursSince(lastSuccessIso);
   const stale = lastHours === null || lastHours > STALE_HOURS;
   const agentAlert = ['session_expired', 'otp_required', 'blocked'].includes(st?.lastAgentStatus);
 
@@ -149,7 +152,7 @@ export default function SweaterIntegrationPage() {
             tone={stale ? 'amber' : 'primary'}
             label="آخر استيراد ناجح"
             value={lastHours === null ? '—' : `قبل ${formatNumber(lastHours)} ساعة`}
-            sub={st?.lastSuccessAtIso ? st.lastSuccessAtIso.slice(0, 16).replace('T', ' ') : 'لم يصل شيء بعد'}
+            sub={lastSuccessIso ? lastSuccessIso.slice(0, 16).replace('T', ' ') : 'لم يصل شيء بعد'}
           />
           <StatCard
             icon={CheckCircle2}

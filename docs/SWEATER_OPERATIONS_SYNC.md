@@ -225,6 +225,55 @@ boundary, **not a production save/readback or completed wash workflow**.
 The authentication gate is resolved for this installed account/caller; no
 automation has been enabled and no operational import has been performed.
 
+## Monthly readings of Sweater's dashboards (`--metrics`)
+
+Sweater's own numbers for a month, read from its Metabase dashboards on
+`ssp-portal.sweater.sa`, travel the same path: the same endpoint, key,
+principal `sweater-browser-agent`, full-request signature and rate limit.
+They are **display and reconciliation only**: the overview shows Sweater's
+wash count beside ours, net tips apart from revenue, and the Compensations
+lines. Nothing is posted to the ledger and no wash is created.
+
+| metric | dashboard | unit | Sweater's class |
+|---|---|---|---|
+| `completedWashes` | Business Dashboard | count | — |
+| `tipsNet` (net tips after fees) | Business Dashboard › Tips | SAR | — |
+| `violations`, `damages`, `compensations` | Compensations | SAR | deduction |
+| `freeWashCompensation`, `cancelledByBiker`, `cancelledMaintenance` | Compensations | count | deduction |
+| `cancelledByCustomer` | Compensations | count | addition |
+
+```json
+{ "contractVersion": "sweater-metrics-v1", "importRunId": "metrics-20261023-0800",
+  "periodKey": "2026-10", "extractedAt": "2026-10-23T08:00:00+03:00",
+  "sourceUrl": "https://ssp-portal.sweater.sa/…",
+  "metrics": { "completedWashes": 480, "tipsNet": 68, "violations": 530, "damages": 0,
+    "compensations": 0, "freeWashCompensation": 8, "cancelledByCustomer": 10,
+    "cancelledByBiker": 13, "cancelledMaintenance": 4 } }
+```
+
+```
+node scripts/sync-sweater-operations.mjs absolute-metrics.json --metrics
+```
+
+- Send only what was read: a missing metric stays «not received» on the
+  overview, never zero. Counts are whole numbers; amounts are riyals to the
+  halala (`tipsNet` may be negative after fees; the others may not).
+- Each reading gets a **new** `importRunId` and is stored as its own row
+  (`sweater_metric_snapshots`); the overview shows the month's latest, with
+  its time. Re-sending the same file is idempotent (same run id and body);
+  the same run id with other numbers is refused, never overwritten.
+- `extractedAt` is the reading time with its zone; a time in the future (beyond
+  five minutes of clock skew) or before the month's first day is refused.
+
+**On the Windows account**: the sender, client and contract files changed,
+so their SHA-256 fingerprints in `approved-sender.json` no longer match and
+signing refuses until Hadi approves the new fingerprints of the updated
+working copy. This is a fresh approval of reviewed files, not a bypass.
+
+**Production order**: apply
+`supabase/migrations/20261023000000_sweater_metric_snapshots.sql` to the
+project before the code that reads the table is deployed.
+
 ## Recommendation for agent 7 instructions (do not auto-edit skills/schedules)
 
 After the signer gate is resolved, add this document/command as the general

@@ -274,6 +274,18 @@ describe('نافذة إلغاء المفتاح', () => {
 });
 
 
+describe('آخر استيراد ناجح', () => {
+  const lastImport = () => screen.getByText('آخر استيراد ناجح').closest('div').parentElement.textContent;
+  it.each([
+    ['the operations agent saved after the last staff import', { lastSuccessAtIso: '2026-10-10T04:49:35.401Z', lastOperationalSuccessAtIso: '2026-10-20T19:10:15.520Z' }, '2026-10-20 19:10'],
+    ['a staff import came after the agent', { lastSuccessAtIso: '2026-10-21T08:00:00.000Z', lastOperationalSuccessAtIso: '2026-10-20T19:10:15.520Z' }, '2026-10-21 08:00'],
+    ['only the agent has saved', { lastOperationalSuccessAtIso: '2026-10-20T19:10:15.520Z' }, '2026-10-20 19:10'],
+  ])('shows the later of both paths when %s', (_, times, shown) => {
+    const before = state.current; state.current = { lastAgentStatus: 'ok', ...times };
+    try { render(<SweaterIntegrationPage />); expect(lastImport()).toContain(shown); } finally { state.current = before; }
+  });
+});
+
 describe('معاينة التسليم تستخدم الأدوار الحالية فقط', () => {
   it.each(['admin', 'accountant'])('تظهر للمراجع %s', role => {
     state.role = role;

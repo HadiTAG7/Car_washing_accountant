@@ -1,6 +1,7 @@
 import { operationsSigningHash } from '../../functions/src/sweater/operationsHttp.js';
 import { hashBody } from '../../functions/src/sweater/record.js';
 import { validateOperationsPayload } from '../../functions/src/sweater/operationsSync.js';
+import { validateMetricsSnapshot } from '../../functions/src/sweater/metricsContract.js';
 
 export const OPERATIONS_ENDPOINT = 'https://sweater-hadi-alghanim.vercel.app/api/integrations/sweater/operations';
 export class OperationsClientError extends Error {
@@ -10,11 +11,12 @@ export class OperationsClientError extends Error {
 export function makeOperationsTransport({ sign, fetchImpl = fetch, timeoutMs = 25000 }) {
   return async request => {
     const allowed = request?.action === 'save' ? ['action', 'payload', 'reviewedPayloadHash', 'previewStateHash'] : ['action', 'payload'];
-    if (!request || !['preview', 'save', 'status'].includes(request.action) || Object.keys(request).some(k => !allowed.includes(k))
+    if (!request || !['preview', 'save', 'status', 'metrics'].includes(request.action) || Object.keys(request).some(k => !allowed.includes(k))
       || (request.action === 'save' && (!/^[a-f0-9]{64}$/.test(request.reviewedPayloadHash ?? '') || !/^[a-f0-9]{64}$/.test(request.previewStateHash ?? '')))) {
       throw new OperationsClientError('Operational request refused before signing.');
     }
-    try { validateOperationsPayload(request.payload); } catch { throw new OperationsClientError('Operational request refused before signing.'); }
+    try { (request.action === 'metrics' ? validateMetricsSnapshot : validateOperationsPayload)(request.payload); }
+    catch { throw new OperationsClientError('Operational request refused before signing.'); }
     const timestamp = String(Math.floor(Date.now() / 1000));
     let auth;
     try { auth = await sign({ timestamp, importRunId: request.payload.importRunId, bodyHash: operationsSigningHash(request) }); }
@@ -79,6 +81,25 @@ export async function syncOperations(payload, { request, persist, savedRequest =
       const status = await check();
       if (status.found) return verified(status);
       if (n === 2) throw new OperationsClientError('Three save attempts exhausted; retain the same run/body for investigation.');
+      await sleep(e.status === 429 ? 60000 : 1000 * 2 ** n);
+    }
+  }
+}
+
+// One month's reading of Sweater's dashboards. Storing it is idempotent by run
+// id and body, so a retry after a lost response reads back the same row.
+export async function syncMetricsSnapshot(payload, { request, sleep = ms => new Promise(resolve => setTimeout(resolve, ms)) }) {
+  validateMetricsSnapshot(payload);
+  const payloadHash = hashBody(payload);
+  for (let n = 0; n < 3; n++) {
+    try {
+      const result = await request({ action: 'metrics', payload });
+      if (result?.snapshotId !== payload.importRunId || result.payloadHash !== payloadHash || result.periodKey !== payload.periodKey) {
+        throw new OperationsClientError('Metrics reading is stored but cannot be verified; keep the same run/body and investigate.');
+      }
+      return result;
+    } catch (e) {
+      if (!transient(e) || n === 2) throw e;
       await sleep(e.status === 429 ? 60000 : 1000 * 2 ** n);
     }
   }

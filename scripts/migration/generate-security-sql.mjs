@@ -11,6 +11,8 @@ import { SCHEMA } from '../../src/lib/data/schema/registry.js';
 
 const ROOT = modulePath('../../', import.meta.url);
 const FILE = `${ROOT}supabase/migrations/20261022000300_security.sql`;
+// Tables added after go-live get their security in their own migration (generate-schema-sql.mjs).
+const BASELINE = SCHEMA.filter(t => !t.migration);
 const q = name => `"${name.replace(/"/g, '""')}"`;
 const lit = s => `'${String(s).replace(/'/g, "''")}'`;
 
@@ -114,6 +116,30 @@ function policiesFor(t) {
   return { out, grants: [...grants] };
 }
 
+// The trusted server (ledger_server): no RLS bypass, an explicit policy per table.
+function serverAccess(name) {
+  const appendOnly = ['audit_logs', 'journal_entries', 'journal_entry_lines', 'journal_lines_legacy', 'sweater_raw_payloads',
+    'executive_report_revisions', 'finance_report_revisions', 'operations_report_revisions', 'partner_worker_eligibility_audit',
+    'sweater_metric_snapshots'].includes(name);
+  return [`create policy ${q(`${name}_server`)} on public.${q(name)} for all to ledger_server using (true) with check (true);`,
+    `grant select, insert${appendOnly && name === 'audit_logs' ? '' : ', update'}${appendOnly ? '' : ', delete'} on public.${q(name)} to ledger_server;`];
+}
+
+/** A table added after go-live: what the baseline file gives every table, for this one. */
+export function tableSecuritySql(t) {
+  const { out: pol, grants } = policiesFor(t);
+  return [
+    docFunction(t),
+    `grant execute on function app.${q(`doc_${t.table}`)}(public.${q(t.table)}) to ledger_server, authenticated;`,
+    `alter table public.${q(t.table)} enable row level security;`,
+    `revoke all on public.${q(t.table)} from anon, authenticated;`,
+    ...(pol.length ? [`-- ${t.collection}: read ${t.policy.read}, write ${t.policy.write}`, ...pol, ...lockRecheck(t)] : []),
+    ...(grants.length ? [`grant ${grants.join(', ')} on public.${q(t.table)} to authenticated;`] : []),
+    ...serverAccess(t.table),
+    '',
+  ].join('\n');
+}
+
 export function securitySql() {
   const out = [];
   out.push(`-- ═══════════════════════════════════════════════════════════════════════════
@@ -173,7 +199,7 @@ language sql immutable set search_path = '' as $$
     select key as k from jsonb_each(o) union select key from jsonb_each(n)
   ) keys where (o -> k) is distinct from (n -> k) $$;
 `);
-  for (const t of SCHEMA) out.push(docFunction(t));
+  for (const t of BASELINE) out.push(docFunction(t));
 
   out.push(`
 -- ── بند تأسيس جديد = خطة فقط (startupCreateIsPlanOnly) ──
@@ -243,12 +269,12 @@ end $$;
 -- ── RLS لكل جدول، والأصل المنع ──
 `);
   const extraTables = ['journal_entry_lines', 'firebase_uid_map'];
-  for (const name of [...SCHEMA.map(t => t.table), ...extraTables]) {
+  for (const name of [...BASELINE.map(t => t.table), ...extraTables]) {
     out.push(`alter table public.${q(name)} enable row level security;`);
     out.push(`revoke all on public.${q(name)} from anon, authenticated;`);
   }
   out.push('');
-  for (const t of SCHEMA) {
+  for (const t of BASELINE) {
     const { out: pol, grants } = policiesFor(t);
     if (pol.length) out.push(`-- ${t.collection}: read ${t.policy.read}, write ${t.policy.write}`, ...pol, ...lockRecheck(t));
     if (grants.length) out.push(`grant ${grants.join(', ')} on public.${q(t.table)} to authenticated;`);
@@ -263,12 +289,7 @@ grant select on public.firebase_uid_map to authenticated;
   out.push(`-- ── الخادم الموثوق (ledger_server): بلا تجاوز للـRLS، بسياسة صريحة لكل جدول ──
 -- The ledger tables cannot be deleted from by anyone (triggers), the audit log
 -- is append-only for the server too.`);
-  for (const name of [...SCHEMA.map(t => t.table), 'journal_entry_lines']) {
-    const appendOnly = ['audit_logs', 'journal_entries', 'journal_entry_lines', 'journal_lines_legacy', 'sweater_raw_payloads',
-      'executive_report_revisions', 'finance_report_revisions', 'operations_report_revisions', 'partner_worker_eligibility_audit'].includes(name);
-    out.push(`create policy ${q(`${name}_server`)} on public.${q(name)} for all to ledger_server using (true) with check (true);`);
-    out.push(`grant select, insert${appendOnly && name === 'audit_logs' ? '' : ', update'}${appendOnly ? '' : ', delete'} on public.${q(name)} to ledger_server;`);
-  }
+  for (const name of [...BASELINE.map(t => t.table), 'journal_entry_lines']) out.push(...serverAccess(name));
   out.push(`grant select on public.firebase_uid_map to ledger_server;
 create policy firebase_uid_map_server on public.firebase_uid_map for select to ledger_server using (true);
 grant execute on all functions in schema app to ledger_server, authenticated;

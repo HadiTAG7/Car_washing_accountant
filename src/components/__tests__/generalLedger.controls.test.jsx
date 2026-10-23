@@ -20,6 +20,16 @@ beforeAll(() => {
 });
 afterEach(cleanup);
 
+it('opens the linked account in the exact requested period', () => {
+  window.history.replaceState({}, '', '?page=ledger&account=1020&from=2026-05-01&to=2026-05-02');
+  try {
+    render(<GeneralLedgerPage />);
+    expect(screen.getByLabelText('الحساب').value).toBe('1020');
+    expect(screen.getByLabelText('من تاريخ').textContent).toContain('1 مايو 2026');
+    expect(screen.getByLabelText('إلى تاريخ').textContent).toContain('2 مايو 2026');
+  } finally { window.history.replaceState({}, '', '/'); }
+});
+
 it('shows abnormal balance, descriptive document context, filtered rows and unchanged whole-account footer', () => {
   const { container } = render(<GeneralLedgerPage />);
   expect(screen.getByText('رصيد غير طبيعي')).toBeTruthy();

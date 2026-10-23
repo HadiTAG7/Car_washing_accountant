@@ -1,207 +1,133 @@
+import { useMemo, useState } from 'react';
+import { Scale, Download, CheckCircle2, AlertTriangle } from 'lucide-react';
 import AccountCode from './AccountCode';
 import { accountDisplayName, isPartnerCapital } from '../lib/accountDisplay';
 import ScrollableTable from './ScrollableTable';
-import { useMemo, useState } from 'react';
-import { Scale, Download, CheckCircle2, AlertTriangle } from 'lucide-react';
-import { formatCurrency } from '../data/initialData';
+import { formatCurrency, todayISO } from '../data/initialData';
 import { downloadCsv } from '../lib/exportCsv';
 import TopBar from './TopBar';
-import { Card, SectionHeader, StatCard, EmptyState, SecondaryButton } from './UI';
+import { Card, SectionHeader, StatCard, SecondaryButton } from './UI';
 import DateField from './DateField';
 import LoadingState from './LoadingState';
 import ErrorState, { SetupRequiredCard } from './ErrorState';
 import { useLedger } from '../hooks/useLedger';
-import { useFirestoreQuery } from '../hooks/useFirestoreQuery';
-import { trialBalance, trialBalanceFromSums } from '../lib/accounting/reports';
-import { fetchPostedLineSums } from '../lib/accounting/ledgerSums';
-import { isFirebaseConfigured, missingEnvNames, dataSource } from '../lib/firebaseClient';
+import { useTrialReconciliation } from '../hooks/useTrialReconciliation';
+import { usePartnerView } from '../contexts/PartnerViewContext';
+import { trialBalancePeriod, ledgerPeriodHref } from '../lib/trialBalanceView';
+import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
 
-// On Supabase the totals are summed in the database (one call, not every entry).
-const SQL_SUMS = dataSource === 'supabase';
-
-const TYPE_LABELS = {
-  asset: 'أصول', liability: 'التزامات', equity: 'حقوق ملكية',
-  revenue: 'إيرادات', expense: 'مصروفات', unknown: 'غير معرّف',
+const COST_REASONS = {
+  'transferred-out': 'رواتب تخص شهرًا آخر', 'transferred-in': 'رواتب هذا الشهر رُحلت في شهر آخر',
+  payroll: 'رواتب غير مرحلة', variable: 'مصاريف متغيرة غير مرحلة', monthly: 'مصاريف شهرية غير مرحلة',
+  voucher: 'سندات غير مرحلة', annual: 'مصاريف سنوية غير مرحلة', other: 'مستندات أخرى', rounding: 'تقريب',
 };
+const cell = 'py-3 px-3 text-start whitespace-nowrap tabular-nums';
+function SignedBalance({ amount }) {
+  return <span dir="auto">{formatCurrency(Math.abs(amount))} <small>{amount > 0 ? 'مدين' : amount < 0 ? 'دائن' : ''}</small></span>;
+}
 
-/**
- * ميزان المراجعة — every account's debits, credits and net balance, with an
- * explicit verdict on whether the two grand totals agree. An out-of-balance
- * ledger is stated loudly rather than quietly rendered: it means an entry
- * reached the database without passing validation, which needs fixing before
- * any statement built on top can be trusted.
- */
+function Reconciliation({ data, today }) {
+  return <Card className="p-4 sm:p-6" id="subledger-reconciliation">
+    <SectionHeader title="مطابقة الدفاتر الفرعية" subtitle={`الصفحات الحالية حتى ${today} — مستقلة عن فلتر حركة الفترة أعلاه`} />
+    <p className="text-sm mb-4">فرق المطابقة = رقم الصفحة − رقم الدفتر. لا يسجل هذا القسم أي قيد.</p>
+    <ScrollableTable className="overflow-x-auto"><table className="w-full min-w-[48rem] text-sm">
+      <thead><tr>{['الحساب الرقابي', 'في الدفتر', 'في الصفحة', 'الفرق', 'أساس المقارنة'].map(label => <th className={cell} key={label}>{label}</th>)}</tr></thead>
+      <tbody>{data.rows.map(row => <tr key={row.key} className="border-t border-slate-200 dark:border-slate-700">
+        <th className={cell}><a className="text-primary-600 underline" href={row.href}>{row.label}</a><small className="block" dir="ltr">{row.code}</small></th>
+        <td className={cell}>{formatCurrency(row.ledger)}</td>
+        <td className={cell}>{row.page === null ? 'غير متاح' : formatCurrency(row.page)}</td>
+        <td className={`${cell} ${row.difference ? 'text-amber-700 dark:text-amber-300 font-bold' : ''}`}>
+          {row.difference === null ? (row.loading ? 'جارٍ التحميل...' : 'تعذر إكمال المطابقة') : formatCurrency(row.difference)}
+        </td>
+        <td className="p-3 min-w-64 max-w-md leading-relaxed">{row.note}{row.error && <span role="alert" className="block text-rose-600">تعذرت قراءة المصدر كاملًا؛ لا يمثل صفرًا.</span>}</td>
+      </tr>)}</tbody>
+    </table></ScrollableTable>
+    <details className="mt-5 border-t pt-4 border-slate-200 dark:border-slate-700">
+      <summary className="cursor-pointer font-bold">تفصيل مطابقة المصروفات حسب الشهر</summary>
+      <ScrollableTable className="overflow-x-auto"><table className="w-full min-w-[44rem] text-sm mt-3">
+        <thead><tr>{['الشهر', 'المرحل', 'قائمة الدخل', 'الفرق', 'تفسير الفرق'].map(label => <th key={label} className={cell}>{label}</th>)}</tr></thead>
+        <tbody>{data.monthly.filter(row => row.error || row.costs?.posted || row.statement?.totalCosts).map(row => <tr key={row.month} className="border-t border-slate-200 dark:border-slate-700">
+          <th className={cell}>{row.month}</th>
+          {row.error ? <td colSpan={4} className="p-3 text-rose-600">تعذرت قراءة الشهر؛ لا يمثل صفرًا.</td> : <>
+            <td className={cell}>{formatCurrency(row.costs.posted)}</td><td className={cell}>{formatCurrency(row.statement.totalCosts)}</td>
+            <td className={cell}>{formatCurrency(row.costs.difference)}</td>
+            <td className="p-3 min-w-72">{row.costs.rows.map(reason => <p key={reason.key}>{COST_REASONS[reason.key] || reason.key}: {formatCurrency(reason.amount)}</p>)}
+              <p className={row.costs.unexplained ? 'text-rose-600' : ''}>فرق غير مفسّر: {formatCurrency(row.costs.unexplained)}</p></td>
+          </>}
+        </tr>)}</tbody>
+      </table></ScrollableTable>
+    </details>
+  </Card>;
+}
+
+function StaffTrialBalance({ ledger, today }) {
+  const reconciliation = useTrialReconciliation(ledger, today);
+  return <TrialBalanceContent ledger={ledger} today={today} reconciliation={reconciliation} />;
+}
+
 export default function TrialBalancePage() {
-  const { accounts, entries, lines, needsSeeding, loading: ledgerLoading, error: ledgerError, refetch: refetchLedger } = useLedger();
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
+  const ledger = useLedger();
+  const { role, isPartnerView } = usePartnerView();
+  const today = todayISO();
+  return !isPartnerView && ['admin', 'accountant'].includes(role)
+    ? <StaffTrialBalance ledger={ledger} today={today} />
+    : <TrialBalanceContent ledger={ledger} today={today} />;
+}
 
-  const sumsQ = useFirestoreQuery(() => fetchPostedLineSums({ from, to }), {
-    enabled: SQL_SUMS && isFirebaseConfigured, cacheKey: `postedLineSums:${from}|${to}`,
-    cacheTags: ['journal_entries', 'journal_lines'], deps: [from, to], fallback: [],
-  });
-  const tb = useMemo(
-    () => (SQL_SUMS ? trialBalanceFromSums(accounts, sumsQ.data)
-      : trialBalance(accounts, entries, lines, { from: from || null, to: to || null })),
-    [accounts, entries, lines, from, to, sumsQ.data],
-  );
-  const loading = ledgerLoading || (SQL_SUMS && sumsQ.loading);
-  const error = ledgerError || (SQL_SUMS ? sumsQ.error : null);
-  const refetch = () => { refetchLedger(); if (SQL_SUMS) sumsQ.refetch(); };
-
+function TrialBalanceContent({ ledger, today, reconciliation }) {
+  const { accounts, entries, lines, loading, error, needsSeeding, refetch } = ledger;
+  const [from, setFrom] = useState(`${today.slice(0, 4)}-01-01`), [to, setTo] = useState(today);
+  const [showAll, setShowAll] = useState(false);
+  const invalidPeriod = Boolean(from && to && from > to);
+  const tb = useMemo(() => trialBalancePeriod(accounts, entries, lines, { from, to, showAll }), [accounts, entries, lines, from, to, showAll]);
   function handleExport() {
-    const rows = tb.rows.map((r) => [
-      r.code, r.nameArabic, TYPE_LABELS[r.accountType] || r.accountType,
-      Number(r.debit.toFixed(2)), Number(r.credit.toFixed(2)),
-      Number(r.balanceDebit.toFixed(2)), Number(r.balanceCredit.toFixed(2)),
-    ]);
-    rows.push(['الإجمالي', '', '',
-      Number(tb.totalDebit.toFixed(2)), Number(tb.totalCredit.toFixed(2)), '', '']);
-    downloadCsv(
-      `ميزان-المراجعة${to ? `-حتى-${to}` : ''}`,
-      ['رقم الحساب', 'اسم الحساب', 'النوع', 'إجمالي المدين', 'إجمالي الدائن', 'رصيد مدين', 'رصيد دائن'],
-      rows,
-    );
+    downloadCsv(`ميزان-المراجعة-${from}-${to}`, ['رقم الحساب', 'اسم الحساب', 'النوع', 'رصيد أول الفترة مدين ناقص دائن', 'حركة مدين', 'حركة دائن', 'رصيد آخر الفترة مدين ناقص دائن'],
+      tb.rows.map(row => [row.code, row.nameArabic, row.accountType, row.openingSigned, row.debit, row.credit, row.closingSigned]));
   }
-
-  return (
-    <>
-      <TopBar title="ميزان المراجعة" subtitle="أرصدة كل الحسابات من القيود المرحّلة" />
-
-      <main className="p-4 sm:p-6 lg:p-8 space-y-6">
-        {!isFirebaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
-        {error && <ErrorState title="تعذّر تحميل ميزان المراجعة" error={error} onRetry={refetch} />}
-
-        {needsSeeding && (
-          <div role="alert" className="bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/30 text-amber-700 dark:text-amber-300 text-xs px-4 py-2.5 rounded-control leading-relaxed">
-            لم تتم تهيئة دليل الحسابات بعد — افتح صفحة «إقفال الفترة» واضغط «تهيئة دليل الحسابات».
-          </div>
-        )}
-
-        {/* ── The verdict, stated before anything else ─────────── */}
-        {!loading && tb.rows.length > 0 && (
-          tb.balanced ? (
-            <div role="status" className="flex items-start gap-2 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-sm px-4 py-3 rounded-control">
-              <CheckCircle2 size={18} className="shrink-0 mt-0.5" />
-              <span>
-                <strong>الميزان متوازن</strong> — إجمالي المدين يساوي إجمالي الدائن
-                (<span className="tabular-nums">{formatCurrency(tb.totalDebit)}</span>).
-              </span>
-            </div>
-          ) : (
-            <div role="alert" className="flex items-start gap-2 bg-rose-50 dark:bg-rose-500/10 border border-rose-100 dark:border-rose-500/30 text-rose-700 dark:text-rose-300 text-sm px-4 py-3 rounded-control leading-relaxed">
-              <AlertTriangle size={18} className="shrink-0 mt-0.5" />
-              <span>
-                <strong>الميزان غير متوازن</strong> — الفرق{' '}
-                <span className="tabular-nums font-bold">{formatCurrency(tb.difference)}</span>.
-                يوجد قيد وصل إلى قاعدة البيانات دون المرور بالتحقق. راجع دفتر الأستاذ
-                للحسابات المتأثرة قبل الاعتماد على أي تقرير مبني على هذه الأرقام.
-              </span>
-            </div>
-          )
-        )}
-
-        {tb.unknownAccounts.length > 0 && (
-          <div role="alert" className="bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/30 text-amber-700 dark:text-amber-300 text-xs px-4 py-2.5 rounded-control leading-relaxed">
-            حسابات مستخدمة في القيود لكنها غير موجودة في دليل الحسابات:{' '}
-            <span className="tabular-nums font-bold">{tb.unknownAccounts.join('، ')}</span>
-          </div>
-        )}
-
-        <Card className="p-4 sm:p-5">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">من تاريخ</label>
-              <DateField name="from" value={from} onChange={(e) => setFrom(e.target.value)} ariaLabel="من تاريخ" />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">إلى تاريخ</label>
-              <DateField name="to" value={to} onChange={(e) => setTo(e.target.value)} ariaLabel="إلى تاريخ" />
-            </div>
-          </div>
+  return <>
+    <TopBar title="ميزان المراجعة" subtitle="رصيد أول الفترة وحركتها ورصيد آخرها — من القيود المرحّلة" />
+    <main className="p-4 sm:p-6 lg:p-8 space-y-6">
+      {!isFirebaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
+      {error && <ErrorState title="تعذّر تحميل ميزان المراجعة" error={error} onRetry={refetch} />}
+      {needsSeeding && <p role="alert">لم تتم تهيئة دليل الحسابات بعد.</p>}
+      <Card className="p-4"><div className="grid sm:grid-cols-2 gap-4">
+        <div><label className="block mb-2">من تاريخ</label><DateField name="from" value={from} onChange={event => setFrom(event.target.value)} ariaLabel="من تاريخ" /></div>
+        <div><label className="block mb-2">إلى تاريخ</label><DateField name="to" value={to} onChange={event => setTo(event.target.value)} ariaLabel="إلى تاريخ" /></div>
+      </div><label className="flex gap-2 mt-4"><input type="checkbox" checked={showAll} onChange={event => setShowAll(event.target.checked)} />عرض كل الحسابات</label>
+        <p className="text-xs mt-2">يشمل الحسابات بلا حركة، مثل مجمع الإهلاك والذمم المدينة.</p>
+      </Card>
+      {invalidPeriod ? <p role="alert" className="text-rose-600">تاريخ البداية يجب ألا يتجاوز تاريخ النهاية.</p> : loading ? <LoadingState message="جارٍ حساب الأرصدة..." /> : !error && <>
+        <Card className={`p-4 ${tb.balanced ? 'text-emerald-700 dark:text-emerald-300' : 'text-rose-700 dark:text-rose-300'}`}>
+          <p role={tb.balanced ? 'status' : 'alert'} className="font-bold">{tb.balanced ? 'الميزان متوازن' : 'الميزان غير متوازن'} · فرق الحركة: {formatCurrency(tb.difference)}</p>
+          {reconciliation && <p className="text-sm mt-2 text-slate-700 dark:text-slate-300"><a href="#subledger-reconciliation" className="underline">متوازن ما يعني مطابق: {reconciliation.differences} فروقات مع الصفحات</a>
+            {reconciliation.unavailable > 0 && <span> · {reconciliation.unavailable} مطابقات لم تكتمل قراءتها</span>}</p>}
         </Card>
-
-        {loading ? (
-          <LoadingState message="جارٍ حساب الأرصدة..." />
-        ) : (
-          <>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-5">
-              <StatCard icon={Scale} tone="primary" label="إجمالي المدين"
-                value={formatCurrency(tb.totalDebit)} sub={`${tb.rows.length} حساب متحرك`} />
-              <StatCard icon={Scale} tone="indigo" label="إجمالي الدائن"
-                value={formatCurrency(tb.totalCredit)} />
-              <StatCard className="col-span-1"
-                icon={tb.balanced ? CheckCircle2 : AlertTriangle}
-                tone={tb.balanced ? 'emerald' : 'rose'} label="الفرق"
-                value={formatCurrency(tb.difference)}
-                sub={tb.balanced ? 'متوازن ✓' : 'يجب أن يكون صفراً'} />
-            </div>
-
-            <Card className="p-6">
-              <SectionHeader
-                title="أرصدة الحسابات"
-                subtitle={to ? `حتى ${to}` : 'كل الفترات'}
-                action={tb.rows.length > 0 ? (
-                  <SecondaryButton icon={Download} onClick={handleExport}>تصدير CSV</SecondaryButton>
-                ) : null}
-              />
-              {tb.rows.length === 0 ? (
-                <EmptyState icon={Scale} title="لا توجد قيود مرحّلة بعد"
-                  hint="سيظهر الميزان تلقائياً بمجرد ترحيل أول عملية." compact />
-              ) : (
-                <ScrollableTable className="overflow-x-auto">
-                  <table className="w-full text-sm min-w-[44rem]">
-                    <thead>
-                      <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
-                        <th className="py-3 px-4">رقم الحساب</th>
-                        <th className="py-3 px-4">اسم الحساب</th>
-                        <th className="py-3 px-4">النوع</th>
-                        <th className="py-3 px-4 text-left">إجمالي المدين</th>
-                        <th className="py-3 px-4 text-left">إجمالي الدائن</th>
-                        <th className="py-3 px-4 text-left">الرصيد</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {tb.rows.map((r) => (
-                        <tr key={r.code} className="border-b border-slate-50 dark:border-slate-800/60 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
-                          <td className="py-3 px-4 whitespace-nowrap tabular-nums font-semibold text-slate-700 dark:text-slate-300">{!isPartnerCapital(r) && <AccountCode code={r.code} />}</td>
-                          <td className="py-3 px-4 text-slate-700 dark:text-slate-300">
-                            {accountDisplayName(r)}
-                            {!r.known && (
-                              <span className="mr-2 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-100 dark:border-amber-500/30">
-                                خارج الدليل
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-3 px-4 whitespace-nowrap text-slate-500 dark:text-slate-400">{TYPE_LABELS[r.accountType] || r.accountType}</td>
-                          <td className="py-3 px-4 text-left tabular-nums text-slate-700 dark:text-slate-300">{r.debit ? formatCurrency(r.debit) : '—'}</td>
-                          <td className="py-3 px-4 text-left tabular-nums text-slate-700 dark:text-slate-300">{r.credit ? formatCurrency(r.credit) : '—'}</td>
-                          <td className="py-3 px-4 text-left tabular-nums font-bold text-slate-900 dark:text-slate-100">
-                            {r.balanceDebit ? formatCurrency(r.balanceDebit) : formatCurrency(r.balanceCredit)}
-                            <span className="text-[10px] font-normal text-slate-500 dark:text-slate-400 mr-1">
-                              {r.balanceDebit ? 'مدين' : r.balanceCredit ? 'دائن' : ''}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot>
-                      <tr className="bg-slate-50 dark:bg-slate-800 font-bold">
-                        <td className="py-3 px-4 text-slate-900 dark:text-slate-100" colSpan={3}>الإجمالي</td>
-                        <td className="py-3 px-4 text-left tabular-nums text-slate-900 dark:text-slate-100">{formatCurrency(tb.totalDebit)}</td>
-                        <td className="py-3 px-4 text-left tabular-nums text-slate-900 dark:text-slate-100">{formatCurrency(tb.totalCredit)}</td>
-                        <td className={`py-3 px-4 text-left tabular-nums ${tb.balanced ? 'text-emerald-700 dark:text-emerald-300' : 'text-rose-700 dark:text-rose-300'}`}>
-                          {tb.balanced ? 'متوازن ✓' : formatCurrency(tb.difference)}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </ScrollableTable>
-              )}
-            </Card>
-          </>
-        )}
-      </main>
-    </>
-  );
+        {tb.abnormalRows.length > 0 && <div role="alert" className="rounded-control p-4 bg-rose-100 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300"><strong>رصيد غير طبيعي</strong>
+          {tb.abnormalRows.map(row => <p key={row.code}><a className="underline" href={ledgerPeriodHref(row.code, from, to)}>{accountDisplayName(row)}</a>: {formatCurrency(row.balance)}</p>)}</div>}
+        <div className="grid sm:grid-cols-3 gap-4">
+          <StatCard icon={Scale} label="حركة الفترة — مدين" value={formatCurrency(tb.totalDebit)} />
+          <StatCard icon={Scale} label="حركة الفترة — دائن" value={formatCurrency(tb.totalCredit)} />
+          <StatCard icon={tb.result < 0 ? AlertTriangle : CheckCircle2} tone={tb.result < 0 ? 'rose' : 'emerald'} label="نتيجة الفترة" value={formatCurrency(tb.result)} sub="من إيرادات ومصروفات الدفتر، وليست النتيجة التشغيلية" />
+        </div>
+        {tb.unknownAccounts.length > 0 && <p role="alert">حسابات مستخدمة خارج الدليل: {tb.unknownAccounts.join('، ')}</p>}
+        <Card className="p-4 sm:p-6"><SectionHeader title="أرصدة الحسابات" subtitle={`${from || 'أول حركة'} — ${to || 'آخر حركة'}`} action={<SecondaryButton icon={Download} onClick={handleExport}>تصدير CSV</SecondaryButton>} />
+          <ScrollableTable className="overflow-x-auto"><table className="w-full min-w-[52rem] text-sm">
+            <thead><tr>{['الحساب', 'اسم الحساب', 'رصيد أول الفترة', 'حركة الفترة — مدين', 'حركة الفترة — دائن', 'رصيد آخر الفترة'].map(label => <th className={cell} key={label}>{label}</th>)}</tr></thead>
+            {tb.groups.map(group => <tbody key={group.type}>
+              <tr className="bg-slate-100 dark:bg-slate-800"><th className={cell} colSpan={2}>{group.label}</th>
+                <td className={cell}><SignedBalance amount={group.openingSigned} /></td><td className={cell}>{formatCurrency(group.debit)}</td><td className={cell}>{formatCurrency(group.credit)}</td><td className={cell}><SignedBalance amount={group.closingSigned} /></td></tr>
+              {group.rows.map(row => <tr key={row.code} className={`border-t border-slate-100 dark:border-slate-800 ${row.abnormal ? 'text-rose-700 dark:text-rose-300' : ''}`}>
+                <td className={cell}>{!isPartnerCapital(row) && <a href={ledgerPeriodHref(row.code, from, to)}><AccountCode code={row.code} /></a>}</td>
+                <th className="p-3 text-start min-w-44"><a href={ledgerPeriodHref(row.code, from, to)} className="underline">{accountDisplayName(row)}</a>{!row.hasMovement && <small className="block">بلا حركة</small>}{row.abnormal && <small className="block font-bold">رصيد غير طبيعي</small>}</th>
+                <td className={cell}><SignedBalance amount={row.openingSigned} /></td><td className={cell}>{formatCurrency(row.debit)}</td><td className={cell}>{formatCurrency(row.credit)}</td><td className={cell}><SignedBalance amount={row.closingSigned} /></td>
+              </tr>)}
+            </tbody>)}
+            <tfoot><tr className="font-bold border-t"><th className={cell} colSpan={2}>الإجمالي</th><td className={cell}>{formatCurrency(tb.openingDebit)} مدين<br />{formatCurrency(tb.openingCredit)} دائن</td><td className={cell}>{formatCurrency(tb.totalDebit)}</td><td className={cell}>{formatCurrency(tb.totalCredit)}</td><td className={cell}>{formatCurrency(tb.closingDebit)} مدين<br />{formatCurrency(tb.closingCredit)} دائن</td></tr>
+              <tr><th className={cell} colSpan={5}>نتيجة الفترة</th><td className={`${cell} ${tb.result < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{formatCurrency(tb.result)}</td></tr></tfoot>
+          </table></ScrollableTable>
+        </Card>
+      </>}
+      {reconciliation && !error && !loading && <Reconciliation data={reconciliation} today={today} />}
+    </main>
+  </>;
 }

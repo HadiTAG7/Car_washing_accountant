@@ -21,7 +21,7 @@ import {
 } from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 
-export default function TemporaryExpensesPage() {
+export default function TemporaryExpensesPage({ embedded = false } = {}) {
   const {
     expenses,
     loading,
@@ -118,10 +118,10 @@ export default function TemporaryExpensesPage() {
 
   return (
     <>
-      <TopBar
+      {!embedded && <TopBar
         title="المصروفات المؤقتة"
         subtitle="تتبع المبالغ المدفوعة مؤقتاً والمتوقع استردادها لاحقاً"
-      />
+      />}
 
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
         {!isFirebaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}

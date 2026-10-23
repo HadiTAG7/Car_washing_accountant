@@ -10,7 +10,19 @@ const detail = { kind: 'variable', sourceId: 'TEST-ONLY', sourceHash: 'a'.repeat
 export const usePartnerView = () => ({ role: 'admin', isPartnerView: false });
 export const auth = null;
 export const isFirebaseConfigured = false;
-export const useLedger = () => ({ accounts: [], entries: [], lines: [], periods: [], loading: false, error: 'بيانات الدفاتر غير متاحة في الاختبار البصري', needsSeeding: true, refetch: () => {} });
+export const db = null;
+export const missingEnvNames = [];
+export const dataSource = 'firebase';
+export const describeBackendError = error => String(error);
+export const maskedProjectRef = () => null;
+export const callLedger = async () => { throw new Error('Read-only synthetic preview'); };
+const accounts = [{ code: '1010', nameArabic: 'الصندوق', accountType: 'asset', normalBalance: 'debit' },
+  { code: '3000-test-partner', nameArabic: 'رأس مال — شريك اختباري', accountType: 'equity', normalBalance: 'credit', parentId: '3000' },
+  { code: '4000', nameArabic: 'الإيرادات', accountType: 'revenue', normalBalance: 'credit' }];
+const entries = [{ id: 'SYNTHETIC', status: 'posted', entryDate: '2026-10-01', entryNumber: 1 }];
+const lines = [{ entryId: 'SYNTHETIC', accountId: '1010', debit: 100, credit: 0 }, { entryId: 'SYNTHETIC', accountId: '3000-test-partner', debit: 0, credit: 100 }];
+export const useLedger = () => ({ accounts, entries, lines, accountIndex: new Map(accounts.map(account => [account.code, account])), periods: [], loading: false, error: null, needsSeeding: false, refetch: () => {} });
+export const useOverviewDashboard = () => ({ finance: { statement: { netRevenue: 1234, totalCosts: 567 }, loading: false, error: null } });
 // Dense, long mixed-direction labels reproduce the shrinking flex-list defect.
 const recordItems = Array.from({ length: 20 }, (_, index) => ({ sourceId: `TEST-${index}`, title: `${index + 1} — مصروف اختبار طويل لصيانة المعدات وباقة الاتصالات (مستند Q4-TEST) — مرجع ${'SYNTHETIC'.repeat(8)}`, date: '2026-10-19', amount: 57.34, paymentStatus: 'unpaid' }));
 export const useFinanceRead = (endpoint, request) => ({ allowed: true, loading: false, error: null, refresh: () => {},

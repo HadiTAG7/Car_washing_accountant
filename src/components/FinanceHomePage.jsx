@@ -3,6 +3,7 @@ import { Landmark, Inbox, Receipt, Handshake, BookOpen, FileText, ArrowLeft, Ref
 import TopBar from './TopBar';
 import LoadingState from './LoadingState';
 import BikerProfileMonthPicker from './BikerProfileMonthPicker';
+import FinanceMonthComparison from './FinanceMonthComparison';
 import { useLedger } from '../hooks/useLedger';
 import { incomeStatement, generalLedger } from '../lib/accounting/reports';
 import { usePartnerView } from '../contexts/PartnerViewContext';
@@ -45,6 +46,8 @@ function FinanceHomeContent({ onNavigate }) {
     {ledger.error && <div className="fw-warning" role="alert">تعذر تحميل الدفاتر؛ لا تُعرض أرقام بديلة أو أصفار.</div>}
     {ledger.loading && <LoadingState message="جارٍ قراءة الدفاتر..." />}
     <div className="fw-metrics">{metrics.map(([label, value]) => <article className="fw-panel fw-metric" key={label}><span>{label}</span><strong>{available ? value.toLocaleString('ar-SA', { numberingSystem: 'latn', minimumFractionDigits: 2, maximumFractionDigits: 2 }) : 'غير متاح'} <small>{available ? 'ر.س' : ''}</small></strong><small>{label.includes('رصيد') ? 'تراكمي لكل الدفاتر عند القراءة' : `بتاريخ القيد — ${month}`}</small></article>)}</div>
+    <p className="fw-posting-note">الإيراد يترحل مع فاتورة سويتر آخر الشهر، والرواتب وقت الإقفال، عشان كذا الأرقام هنا تختلف عن النظرة العامة</p>
+    {available && <FinanceMonthComparison month={month} income={data.income} />}
     <p className="fw-meta">بدء القراءة: {new Date(readStarted).toLocaleString('ar-SA', { timeZone: 'Asia/Riyadh', calendar: 'gregory', numberingSystem: 'latn' })} — الرياض. التحديث يدوي، ولا توجد أرقام تشغيلية مضافة إلى الأرصدة.</p>
     <div className="fw-sections">{sections.map(s => <section className="fw-panel fw-section" key={s.title}><div className="fw-section-icon"><s.icon size={23} /></div><h2>{s.title}</h2><p>{s.text}</p><div className="fw-links">{s.links.map(([id, label]) => <button type="button" key={id} onClick={() => onNavigate(id)}>{label}<ArrowLeft size={14} /></button>)}</div></section>)}</div>
   </main></>;

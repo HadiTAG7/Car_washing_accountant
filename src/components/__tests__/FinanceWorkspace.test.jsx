@@ -11,6 +11,7 @@ const mock = vi.hoisted(() => ({ read: vi.fn(), api: vi.fn(), ledger: vi.fn(), r
 vi.mock('../../hooks/useFinanceRead', () => ({ useFinanceRead: (...args) => mock.read(...args) }));
 vi.mock('../../lib/financeApi', () => ({ callFinanceApi: (...args) => mock.api(...args) }));
 vi.mock('../../hooks/useLedger', () => ({ useLedger: () => mock.ledger() }));
+vi.mock('../../hooks/useOverviewDashboard', () => ({ useOverviewDashboard: () => ({ finance: { loading: false, error: null, statement: { netRevenue: 500, totalCosts: 300 } } }) }));
 vi.mock('../../contexts/PartnerViewContext', () => ({ usePartnerView: () => mock.role }));
 vi.mock('../TopBar', () => ({ default: ({ title }) => <h1>{title}</h1> }));
 afterEach(() => { cleanup(); vi.useRealTimers(); });

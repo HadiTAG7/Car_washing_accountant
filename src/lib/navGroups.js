@@ -88,18 +88,27 @@ const LEGACY_TAB_GROUPS = [
 export const FINANCE_TAB_IDS = ['sweater_settlements', 'startup', 'annual', 'monthly', 'variable', 'temporary_expenses', 'partners', 'payments',
   'summary', 'vat', 'budgets', 'ledger', 'trial', 'balance', 'documents', 'assets', 'periods'];
 const oldFinanceTabs = LEGACY_TAB_GROUPS.flatMap(group => group.tabs).filter(tab => FINANCE_TAB_IDS.includes(tab.id));
+export const EXPENSE_TAB_IDS = ['startup', 'annual', 'monthly', 'variable', 'temporary_expenses'];
+const financeTabs = [
+  { id: 'finance', label: 'ملخص المالية', icon: Landmark, roles: ['admin'] },
+  { id: 'finance_workbench', label: 'صندوق العمل المالي', icon: Receipt, roles: ['admin'] },
+  { id: 'finance_reports', label: 'تقارير المالية والأرشيف', icon: FileText, roles: ['admin'] },
+  { id: 'expenses', label: 'المصاريف', icon: Receipt, activeTabIds: EXPENSE_TAB_IDS },
+  ...oldFinanceTabs.map(tab => EXPENSE_TAB_IDS.includes(tab.id) ? { ...tab, hidden: true } : tab),
+  { id: 'finance_payroll', label: 'الرواتب ماليًا', icon: HandCoins, roles: ['admin'] },
+];
+const top = LEGACY_TAB_GROUPS[0];
 export const TAB_GROUPS = [
-  ...LEGACY_TAB_GROUPS.filter(group => ['top', 'ops', 'sweater'].includes(group.id))
-    .map(group => ({ ...group, tabs: group.tabs.filter(tab => !FINANCE_TAB_IDS.includes(tab.id)) })),
+  { ...top, tabs: ['overview', 'executive_reports'].map(id => top.tabs.find(tab => tab.id === id)) },
   { id: 'finance', title: 'المالية', homeTab: 'finance',
-    sections: [{ id: 'expenses', title: 'المصاريف', tabIds: ['startup', 'annual', 'monthly', 'variable', 'temporary_expenses'] }],
-    tabs: [
-    { id: 'finance', label: 'ملخص المالية', icon: Landmark, roles: ['admin'] },
-    { id: 'finance_workbench', label: 'صندوق العمل المالي', icon: Receipt, roles: ['admin'] },
-    { id: 'finance_reports', label: 'تقارير المالية والأرشيف', icon: FileText, roles: ['admin'] },
-    ...oldFinanceTabs,
-    { id: 'finance_payroll', label: 'الرواتب ماليًا', icon: HandCoins, roles: ['admin'] },
-  ] },
+    sections: [
+      { id: 'daily', title: 'الإدخال اليومي', tabIds: ['finance_workbench', 'expenses', 'sweater_settlements', 'finance_payroll'] },
+      { id: 'statements', title: 'القوائم', tabIds: ['finance', 'summary', 'balance', 'trial', 'ledger', 'finance_reports'] },
+      { id: 'partners-tax-close', title: 'الشركاء والضريبة والإقفال', tabIds: ['partners', 'payments', 'vat', 'documents', 'assets', 'budgets', 'periods'] },
+    ], tabs: financeTabs },
+  { id: 'management', title: null, tabs: top.tabs.filter(tab => !['overview', 'executive_reports'].includes(tab.id)) },
+  ...LEGACY_TAB_GROUPS.filter(group => ['ops', 'sweater'].includes(group.id))
+    .map(group => ({ ...group, tabs: group.tabs.filter(tab => !FINANCE_TAB_IDS.includes(tab.id)) })),
 ];
 
 // ── ما يراه المستثمر ──────────────────────────────────────────────────────

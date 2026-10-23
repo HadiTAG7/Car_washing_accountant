@@ -1,4 +1,5 @@
 import AccountCode from './AccountCode';
+import { accountDisplayLabel, isPartnerCapital } from '../lib/accountDisplay';
 import ScrollableTable from './ScrollableTable';
 import { useMemo, useState } from 'react';
 import { BookOpen, Download, Wallet, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
@@ -105,11 +106,11 @@ export default function GeneralLedgerPage() {
                 {accounts.length === 0 && <option value="">— لا توجد حسابات —</option>}
                 {accounts.map((a) => (
                   <option key={a.code} value={a.code}>
-                    {a.nameArabic} — {String(a.code).length > 18 ? `${String(a.code).slice(0, 9)}…${String(a.code).slice(-4)}` : a.code}{usedCodes.has(String(a.code)) ? '' : ' (بلا حركة)'}
+                    {accountDisplayLabel(a)}{isPartnerCapital(a) || usedCodes.has(String(a.code)) ? '' : ' (بلا حركة)'}
                   </option>
                 ))}
               </select>
-              {selected && <p className="text-xs mt-2">رمز الحساب: <AccountCode code={selected} /></p>}
+              {selected && !isPartnerCapital(accountIndex.get(String(selected))) && <p className="text-xs mt-2">رمز الحساب: <AccountCode code={selected} /></p>}
             </div>
             <div>
               <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">من تاريخ</label>
@@ -144,7 +145,7 @@ export default function GeneralLedgerPage() {
 
             <Card className="p-6">
               <SectionHeader
-                title={`${selected} — ${ledger.account?.nameArabic || ''}`}
+                title={accountDisplayLabel(ledger.account || { code: selected })}
                 subtitle={from || to ? `من ${from || 'البداية'} إلى ${to || 'اليوم'}` : 'كل الحركات'}
                 action={ledger.rows.length > 0 ? (
                   <SecondaryButton icon={Download} onClick={handleExport}>تصدير CSV</SecondaryButton>

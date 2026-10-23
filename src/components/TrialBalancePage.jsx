@@ -1,4 +1,5 @@
 import AccountCode from './AccountCode';
+import { accountDisplayName, isPartnerCapital } from '../lib/accountDisplay';
 import ScrollableTable from './ScrollableTable';
 import { useMemo, useState } from 'react';
 import { Scale, Download, CheckCircle2, AlertTriangle } from 'lucide-react';
@@ -163,9 +164,9 @@ export default function TrialBalancePage() {
                     <tbody>
                       {tb.rows.map((r) => (
                         <tr key={r.code} className="border-b border-slate-50 dark:border-slate-800/60 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
-                          <td className="py-3 px-4 whitespace-nowrap tabular-nums font-semibold text-slate-700 dark:text-slate-300"><AccountCode code={r.code} /></td>
+                          <td className="py-3 px-4 whitespace-nowrap tabular-nums font-semibold text-slate-700 dark:text-slate-300">{!isPartnerCapital(r) && <AccountCode code={r.code} />}</td>
                           <td className="py-3 px-4 text-slate-700 dark:text-slate-300">
-                            {r.nameArabic}
+                            {accountDisplayName(r)}
                             {!r.known && (
                               <span className="mr-2 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-100 dark:border-amber-500/30">
                                 خارج الدليل

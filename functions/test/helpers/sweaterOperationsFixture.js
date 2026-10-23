@@ -12,6 +12,7 @@ export function syncDb() {
   const writes = []; const snapshot = path => ({ exists: rows.has(path), id: path.split('/').at(-1), data: () => structuredClone(rows.get(path)) });
   const ref = path => ({ path, get: async () => snapshot(path) }); let queue = Promise.resolve();
   return { rows, writes, collection: name => ({ doc: id => ref(`${name}/${id}`),
+    select() { return this; },
     get: async () => ({ docs: [...rows.keys()].filter(p => p.startsWith(`${name}/`)).map(snapshot) }) }),
     runTransaction: fn => { const result = queue.then(async () => {
       const pending = []; const out = await fn({ get: ref => ref.get(), set: (ref, value, options) => pending.push([ref.path, value, options]) });

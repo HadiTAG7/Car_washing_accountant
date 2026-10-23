@@ -20,16 +20,16 @@ export function hasProtectedIdentityEffect(value) {
   if (!value || typeof value !== 'object') return false;
   return Object.entries(value).some(([key, child]) => (EFFECT.test(key) && Boolean(child)) || hasProtectedIdentityEffect(child));
 }
-const identityReference = value => {
+export const identityReference = (value, number = A.number) => {
   if (typeof value !== 'string') return false;
   let text = value;
   try { text = decodeURIComponent(text); } catch { /* keep malformed text unmodified */ }
   // Existing link IDs wrap a booking/wash ID; the source's letter prefix is
   // not restricted to B/S/C. This recognizes protection, NEVER another grant.
-  return ownerBookingIdentity(text.trim().replace(/^(?:(?:b|w|ssp)__)+/i, '')) === A.number;
+  return ownerBookingIdentity(text.trim().replace(/^(?:(?:b|w|ssp)__)+/i, '')) === number;
 };
 const NUMERIC_REFERENCE = /^(?:ssp_?booking_?(?:id|number)|booking_?(?:id|number)|wash_?id|source_?id|reversed_?source_?id)$/i;
-const referenceMetadata = (value, seen = new WeakSet()) => {
+export const referenceMetadata = (value, seen = new WeakSet()) => {
   if (!value || typeof value !== 'object') return value;
   if (seen.has(value)) throw new Error('Unsupported cyclic identity metadata');
   if (!Array.isArray(value) && Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) {
@@ -43,22 +43,22 @@ const referenceMetadata = (value, seen = new WeakSet()) => {
     : Object.fromEntries(Object.entries(value).map(([key, child]) => [key, referenceMetadata(child, seen)]));
   seen.delete(value); return out;
 };
-const referencesThisIdentity = value => {
-  if (typeof value === 'string') return identityReference(value);
+export const referencesThisIdentity = (value, number = A.number) => {
+  if (typeof value === 'string') return identityReference(value, number);
   return Boolean(value && typeof value === 'object' && Object.entries(value).some(([key, child]) =>
-    (NUMERIC_REFERENCE.test(key) && typeof child === 'number' && String(child) === A.number) || referencesThisIdentity(child)));
+    (NUMERIC_REFERENCE.test(key) && typeof child === 'number' && String(child) === number) || referencesThisIdentity(child, number)));
 };
 // Source metadata only: no balances, amounts, customer/worker names or whole
 // financial rows. Firestore cannot filter an arbitrary source-prefix suffix.
 // This one approved singleton therefore audits the existing identifier columns
 // server-side, then retains ONLY references to this natural identity in CAS.
 // An in(B,S) probe cannot prove absence of a C/other-prefix orphaned journal.
-const REFERENCE_FIELDS = ['sourceId', 'source_id', 'reversedSourceId', 'sourceRef', 'source_ref',
+export const REFERENCE_FIELDS = ['sourceId', 'source_id', 'reversedSourceId', 'sourceRef', 'source_ref',
   'sspBookingId', 'ssp_booking_id', 'sspBookingNumber', 'ssp_booking_number',
   'bookingId', 'booking_id', 'bookingNumber', 'booking_number', 'washId', 'wash_id',
   'record.sspBookingId', 'record.ssp_booking_id', 'evidence.sspBookingId', 'evidence.ssp_booking_id',
   'source.sspBookingId', 'source.bookingNumber', 'source.booking_number', 'source.ref.sspBookingId', 'source.ref.ssp_booking_id'];
-const FINANCIAL_COLLECTIONS = ['journal_entries', 'posting_locks', 'transactions', 'sweater_collections', 'sweater_adjustments'];
+export const FINANCIAL_COLLECTIONS = ['journal_entries', 'posting_locks', 'transactions', 'sweater_collections', 'sweater_adjustments'];
 const allowedKeys = (value, keys) => Boolean(value && Object.keys(value).every(key => keys.has(key)));
 
 export async function inspectIdentity5596423({ db, read, payload, record, documents, naturallyRelated, claim, candidate, established, execution, period, settlement }) {

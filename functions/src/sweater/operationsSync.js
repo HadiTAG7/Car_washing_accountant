@@ -5,6 +5,7 @@ import { bookingDocId, rawDocId, COL, MAX_BODY_BYTES, SweaterIngestError } from 
 import { ownerBookingIdentity } from '../../../src/lib/sweater/bookingIdentity.js';
 import { executionEligibility, executionWash } from './operationsExecution.js';
 import { inspectIdentity5596423, preservedResolutionClaimMatches } from './operationsIdentity5596423.js';
+import { inspectObservationPromotion, preservedPromotionClaimMatches } from './operationsObservationPromotion.js';
 
 export const OPERATIONS_SOURCE = 'operations_sync_v2';
 export const OPERATIONS_MAX_RECORDS = 100; // <= 4 writes/row + run + state, one atomic transaction
@@ -129,9 +130,12 @@ async function plan(db, payload, read) {
       || ['approved', 'invoiced', 'partially_collected', 'collected', 'closed'].includes(settlement.status)));
     const resolution = await inspectIdentity5596423({ db, read, payload, record, documents, naturallyRelated: related, claim, candidate, established, execution,
       period: periodSnap?.data(), settlement });
-    const protectedRecord = resolution ? !resolution.public.eligible
+    const promotion = !resolution ? await inspectObservationPromotion({ db, read, payload, record, documents, claim, candidate, established, execution,
+      period: periodSnap?.data(), settlement }) : null;
+    const protectedRecord = resolution ? !resolution.public.eligible : promotion ? !promotion.public.eligible
       : protectedRows.length > 0 || protectedBooking || claimConflict || alias || washCollision || foreignBooking || periodClosed || settlementProtected;
     if (resolution?.public.eligible) proposedWashId = resolution.public.canonicalWashId;
+    if (promotion?.public.eligible) proposedWashId = promotion.public.canonicalWashId;
     const unchanged = existing?.sourceHash === sourceHash && existing.record && hashRecord(existing.record) === sourceHash
       && (protectedRecord || existing.operationalWorkerId === (established ? candidate : null));
     const missingService = !record.serviceType;
@@ -157,6 +161,7 @@ async function plan(db, payload, read) {
       washId, washCreated: false, bikerId: established ? candidate : null,
       existingLinkRefs: protectedRows.map(d => ({ collection: d.collection, id: d.id, hash: hashBody(d.data) })),
       ...(resolution ? { identityResolution: resolution.public } : {}),
+      ...(promotion ? { observationPromotion: promotion.public } : {}),
       rawStatus: record.rawStatus, serviceDate: record.serviceDate, driverExternalId: record.driverExternalId,
       sourceHash, rawId: rawDocId(payload.importRunId, record.sspBookingId),
       _raw: raw, _record: record, _bookingRef: bookingRef, _claimRef: claimRef, _claim: claim,
@@ -166,6 +171,7 @@ async function plan(db, payload, read) {
     rows.push(row); counts[outcome === 'needs_review' ? 'needsReview' : outcome]++;
     state.push({ id: record.sspBookingId, related, claim, worker, existingWorkerIds: [...existingWorkerIds].sort(),
       ...(resolution ? { identityResolution: resolution.state } : {}),
+      ...(promotion ? { observationPromotion: promotion.state } : {}),
       ...(periodSnap ? { period: periodSnap.data() ?? null, settlement: settlement ?? null } : {}) });
   }
   return { payload, run, runRef, rows, counts, reviewedPayloadHash, previewStateHash: hashBody(state) };
@@ -214,6 +220,12 @@ export async function saveOperations(db, FieldValue, request, actor) {
           // Historical raw, B booking and original reserved claim are kept
           // intact and hash-verified alongside the one new execution.
           for (const ref of row.identityResolution.evidenceRefs) {
+            if (!row.existingLinkRefs.some(link => link.collection === ref.collection && link.id === ref.id)) row.existingLinkRefs.push(ref);
+          }
+        }
+        if (row.observationPromotion?.eligible) {
+          row.observationPromotion.promotionSaved = true;
+          for (const ref of row.observationPromotion.evidenceRefs) {
             if (!row.existingLinkRefs.some(link => link.collection === ref.collection && link.id === ref.id)) row.existingLinkRefs.push(ref);
           }
         }
@@ -271,9 +283,12 @@ export async function operationsStatus(db, payload) {
       currentBookingMatches: booking?.sourceHash === row.sourceHash && Boolean(booking?.record)
         && hashRecord(booking.record) === row.sourceHash,
       currentWorkerId: booking?.operationalWorkerId ?? null,
-      currentNaturalClaimMatches: claim?.sspBookingId === row.sspBookingId || preservedResolutionClaimMatches(row, claim),
+      currentNaturalClaimMatches: claim?.sspBookingId === row.sspBookingId || preservedResolutionClaimMatches(row, claim)
+        || preservedPromotionClaimMatches(row, claim),
       ...(row.identityResolution ? { identityResolutionSaved: row.identityResolution.resolutionSaved === true,
         identityResolutionVerified: preservedResolutionClaimMatches(row, claim) && linkChecks.every(link => link.unchanged) } : {}),
+      ...(row.observationPromotion ? { observationPromotionSaved: row.observationPromotion.promotionSaved === true,
+        observationPromotionVerified: preservedPromotionClaimMatches(row, claim) && linkChecks.every(link => link.unchanged) } : {}),
       existingLinks: linkChecks,
       washId: row.washId, existingWashVerified: row.washId ? identityOf(wash ?? {}) === row.bookingNumber : null,
       washCreated: row.washCreated === true };

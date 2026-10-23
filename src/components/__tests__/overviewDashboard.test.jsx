@@ -28,6 +28,18 @@ beforeEach(() => {
     washes: { loading: false, error: null }, workers: { bikers: [biker], loading: false, error: null }, bookings: { loading: false, error: null }, retry: vi.fn() };
 });
 afterEach(cleanup);
+it.each([true, false])('removes only the selected financial card notes, retaining amounts and drill-down (estimated payroll: %s)', estimated => {
+  state.data.finance.statement.salaryAccrual.estimated = estimated;
+  render(<OverviewPage />);
+  for (const label of ['صافي الإيرادات', 'المصروفات والتكاليف', 'صافي الربح']) {
+    const metric = screen.getByRole('button', { name: label, exact: true });
+    expect(metric.querySelector('.sw-overview-metric__note')).toBeNull();
+    expect(metric.querySelector('strong')).toBeTruthy();
+  }
+  expect(screen.getByRole('button', { name: 'صافي الربح', exact: true }).textContent).toContain('-900');
+  fireEvent.click(screen.getByRole('button', { name: 'المصروفات والتكاليف', exact: true }));
+  expect(screen.getByTestId('statement-detail-amount').textContent).toContain('900');
+});
 it('removes the routine financial prose but preserves load failures and tax issue warnings', () => {
   const { unmount } = render(<OverviewPage />);
   expect(screen.queryByText(/نفس قائمة الدخل:/)).toBeNull();

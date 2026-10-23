@@ -64,11 +64,9 @@ export function ManagementOverview({ onNavigate }) {
   }
   const action = (ar, en, tab) => <button type="button" className="sw-overview__link" onClick={() => navigate(tab)}>{text(ar, en)}<ArrowUpRight size={16} aria-hidden="true" /></button>;
   const financialCards = [
-    { key: 'netRevenue', label: text('صافي الإيرادات', 'Net revenue'), icon: TrendingUp, tone: 'green', note: text('بعد المرتجعات، دون ضريبة المخرجات', 'After returns, excluding output VAT') },
-    { key: 'totalCosts', label: text('المصروفات والتكاليف', 'Expenses and costs'), icon: Receipt, tone: 'orange', note: st?.salaryAccrual?.estimated
-      ? text('تشمل رواتب تقديرية حتى اعتماد المسير · قبل رسوم الإدارة والإشراف', 'Includes estimated salaries until payroll approval · before management and supervision fees')
-      : text('تشمل الرواتب المستحقة · قبل رسوم الإدارة والإشراف', 'Includes accrued salaries · before management and supervision fees') },
-    { key: 'netProfit', label: text('صافي الربح', 'Net profit'), icon: Wallet, tone: st?.netProfit < 0 ? 'amber' : 'green', note: text('بعد التكاليف ورسوم الإدارة والإشراف', 'After costs, management and supervision fees') },
+    { key: 'netRevenue', label: text('صافي الإيرادات', 'Net revenue'), icon: TrendingUp, tone: 'green' },
+    { key: 'totalCosts', label: text('المصروفات والتكاليف', 'Expenses and costs'), icon: Receipt, tone: 'orange' },
+    { key: 'netProfit', label: text('صافي الربح', 'Net profit'), icon: Wallet, tone: st?.netProfit < 0 ? 'amber' : 'green' },
   ];
   const detailRows = detail?.kind === 'day' ? detail.rows : ['month', 'bikerAverage'].includes(detail?.kind) ? ops?.rows
     : detail?.kind === 'yesterday' ? ops?.yesterdayRows : detail?.kind === 'workers' ? ops?.workingIds.map(id => workers.bikers.find(biker => biker.id === id)
@@ -100,8 +98,8 @@ export function ManagementOverview({ onNavigate }) {
 
       <section aria-labelledby="overview-finance-title" className="sw-overview__section">
         <SectionHeader title={<span id="overview-finance-title">{text('النتيجة المالية', 'Financial performance')}</span>} action={action('فتح قائمة الدخل', 'Open income statement', 'summary')} />
-        <div className="sw-overview__financial-grid">{financialCards.map(({ key, label, icon, tone, note }) => <Metric key={key} label={label} icon={icon} tone={tone}
-          value={st ? formatCurrencyPrecise(st[key]) : finance.loading ? '…' : unavailable} note={note} disabled={!st}
+        <div className="sw-overview__financial-grid">{financialCards.map(({ key, label, icon, tone }) => <Metric key={key} label={label} icon={icon} tone={tone}
+          value={st ? formatCurrencyPrecise(st[key]) : finance.loading ? '…' : unavailable} disabled={!st}
           onClick={() => setDetail({ kind: 'financial', key })}
           comparison={st && finance.previous ? `${text('التغير عن الشهر السابق', 'Change from previous month')}: ${formatCurrencyPrecise(st[key] - finance.previous[key])}` : null} />)}</div>
         {(!st || st.issues?.length > 0) && <div className="sw-overview__source-note" role={finance.error ? 'alert' : undefined}>
@@ -193,6 +191,6 @@ function Metric({ label, value, icon: Icon, tone = 'orange', note, comparison, o
   return <button type="button" className="sw-overview-metric" disabled={disabled} onClick={onClick} aria-label={label}>
     <span className={`sw-overview-metric__icon sw-overview-metric__icon--${tone}`}><Icon size={22} aria-hidden="true" /></span>
     <span className="sw-overview-metric__label">{label}</span><strong className="tabular-nums"><bdi>{value}</bdi></strong>
-    <span className="sw-overview-metric__note">{note}</span>{comparison && <small>{comparison}</small>}
+    {note && <span className="sw-overview-metric__note">{note}</span>}{comparison && <small>{comparison}</small>}
   </button>;
 }

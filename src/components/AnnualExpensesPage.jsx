@@ -1,4 +1,3 @@
-import { translate } from '../i18n/locale';
 import ScrollableTable from './ScrollableTable';
 import { useCallback, useMemo, useState } from 'react';
 import {
@@ -17,10 +16,13 @@ import LoadingState from './LoadingState';
 import ErrorState, { SetupRequiredCard } from './ErrorState';
 import Toast from './Toast';
 import { useAnnualExpenses } from '../hooks/useAnnualExpenses';
-import { useAnnualExpenseEntries } from '../hooks/useAnnualExpenseEntries';
+import { useAnnualExpenseEntries, useAllAnnualEntries } from '../hooks/useAnnualExpenseEntries';
 import { useAnnualExpenseCategories } from '../hooks/useAnnualExpenseCategories';
 import { isFirebaseConfigured, missingEnvNames, describeBackendError } from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
+import ExpenseChangeConfirmation from './ExpenseChangeConfirmation';
+import { useExpenseConfirmation } from '../hooks/useExpenseConfirmation';
+import { paidWithoutEntries, planHasFinancialHistory, paymentParentIds } from '../lib/expensePageSafety';
 
 // True when today's month + day match the row's recurring payment date.
 function isAnnualDueToday(paymentMonth, paymentDay) {
@@ -53,6 +55,9 @@ function formatAnnualPaymentDate(month, day) {
 }
 
 export default function AnnualExpensesPage({ embedded = false } = {}) {
+  const confirmation = useExpenseConfirmation();
+  const allPayments = useAllAnnualEntries();
+  const paymentParents = paymentParentIds(allPayments.entries, 'annual');
   const {
     items, loading, error,
     addItem, updateItem, updateStatus, deleteItem, refetch,
@@ -142,8 +147,12 @@ export default function AnnualExpensesPage({ embedded = false } = {}) {
     catch (e) { setMutationError(e); throw e; }
   }
   async function handleUpdateItem(id, updates) {
-    try { await updateItem(id, updates); showToast('تم حفظ التعديلات'); }
-    catch (e) { setMutationError(e); throw e; }
+    try {
+      const item = items.find(row => row.id === id);
+      const consent = await confirmation.confirm({ title: 'تأكيد تعديل المصروف السنوي', reasonRequired: true,
+        description: `${item?.expenseName || ''} — التكلفة السنوية: ${formatCurrency(item?.annualCost || 0)} ← ${formatCurrency(updates.annualCost ?? item?.annualCost ?? 0)}. الحالة: ${updates.paymentStatus === 'paid' ? 'مدفوع' : 'غير مدفوع'}.` });
+      await updateItem(id, updates, { ...consent, expected: { annual_cost: item.annualCost, payment_status: item.paymentStatus } }); showToast('تم حفظ التعديلات مع سببها في سجل التغييرات');
+    } catch (e) { if (e.code !== 'cancelled') setMutationError(e); throw e; }
   }
   async function handleAddCategory(label) {
     try {
@@ -167,16 +176,19 @@ export default function AnnualExpensesPage({ embedded = false } = {}) {
     }
   }
   async function handleUpdateStatus(id, status) {
-    try { await updateStatus(id, status); }
-    catch (e) { setMutationError(e); }
+    try {
+      const item = items.find(row => row.id === id);
+      const consent = await confirmation.confirm({ title: 'تأكيد تغيير حالة المصروف', reasonRequired: true,
+        description: `${item.expenseName} — ${item.paymentStatus === 'paid' ? 'مدفوع' : 'غير مدفوع'} ← ${status === 'paid' ? 'مدفوع' : 'غير مدفوع'}. لن تُنشأ دفعة أو قيد.` });
+      await updateStatus(id, status, { ...consent, expected: { annual_cost: item.annualCost, payment_status: item.paymentStatus } }); showToast('تم حفظ التعديلات مع سببها في سجل التغييرات');
+    } catch (e) { if (e.code !== 'cancelled') setMutationError(e); }
   }
   async function handleDelete(item) {
-    const confirmed = typeof window !== 'undefined'
-      ? window.confirm(translate(`هل تريد حذف "${item.expenseName}"؟ لا يمكن التراجع.`))
-      : true;
-    if (!confirmed) return;
-    try { await deleteItem(item.id); }
-    catch (e) { setMutationError(e); }
+    try {
+      if (allPayments.loading || allPayments.error || planHasFinancialHistory(item, paymentParents)) return;
+      const consent = await confirmation.confirm({ title: 'تأكيد حذف مصروف سنوي', description: `${item.expenseName} — الحذف لبند بلا دفعات أو قيد فقط.`, reasonRequired: false });
+      await deleteItem(item.id, consent);
+    } catch (e) { if (e.code !== 'cancelled') setMutationError(e); }
   }
 
   return (
@@ -187,6 +199,12 @@ export default function AnnualExpensesPage({ embedded = false } = {}) {
       />}
 
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
+        {!allPayments.loading && !allPayments.error && paidWithoutEntries(items, paymentParents, 'annual').length > 0 && <div role="alert" className="rounded-card border border-amber-400 bg-amber-50 dark:bg-amber-950/30 p-4">
+          <strong>مدفوع بلا دفعات مسجلة: {paidWithoutEntries(items, paymentParents, 'annual').length}</strong>
+          <p>{paidWithoutEntries(items, paymentParents, 'annual').map(item => item.expenseName).join('، ')}</p>
+          <p>الحالة وحدها لا تثبت السداد. راجع سجل الدفعات؛ لم تتغير الأرقام أو الحالة.</p>
+        </div>}
+        {allPayments.error && <p role="alert">تعذرت قراءة الدفعات؛ لا يمكن تأكيد التنبيه أو السماح بالحذف الآن.</p>}
         {!isFirebaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
 
         {mutationError && (
@@ -346,9 +364,10 @@ export default function AnnualExpensesPage({ embedded = false } = {}) {
                             <button
                               type="button"
                               onClick={() => handleDelete(i)}
+                              disabled={allPayments.loading || Boolean(allPayments.error) || planHasFinancialHistory(i, paymentParents)}
                               className="sw-tap inline-flex items-center justify-center p-1.5 rounded-control text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/15 transition-colors"
                               aria-label={`حذف ${i.expenseName}`}
-                              title="حذف المصروف"
+                              title={planHasFinancialHistory(i, paymentParents) ? 'الحذف ممنوع لبند له دفعات أو مبلغ فعلي' : 'حذف المصروف'}
                             >
                               <Trash2 size={15} />
                             </button>
@@ -398,6 +417,7 @@ export default function AnnualExpensesPage({ embedded = false } = {}) {
         duration={toast.duration}
         onClose={closeToast}
       />
+      {confirmation.request && <ExpenseChangeConfirmation key={confirmation.request.title} request={confirmation.request} onFinish={confirmation.finish} />}
     </>
   );
 }

@@ -20,6 +20,8 @@ import {
   isFirebaseConfigured, missingEnvNames, describeBackendError,
 } from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
+import { useBikers } from '../hooks/useBikers';
+import { advanceBikerState, riskyAdvances, ownerAdvanceTaskComplete } from '../lib/expensePageSafety';
 
 export default function TemporaryExpensesPage({ embedded = false } = {}) {
   const {
@@ -32,10 +34,13 @@ export default function TemporaryExpensesPage({ embedded = false } = {}) {
     refetch,
   } = useTemporaryExpenses();
   const { scalingFactor, canMutate, role } = usePartnerView();
+  const bikers = useBikers();
+  const risk = riskyAdvances(expenses, bikers.bikers);
+  const taskComplete = !loading && !error && ownerAdvanceTaskComplete(expenses);
 
   const canCorrectMonth = canMutate && ['admin', 'accountant'].includes(role);
   const [monthEditor, setMonthEditor] = useState(null);
-  const [assignmentFilter, setAssignmentFilter] = useState(todayISO().slice(0, 7));
+  const [assignmentFilter, setAssignmentFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const filteredExpenses = expenses.filter((e) => (assignmentFilter === 'all' || e.assignmentMonth === assignmentFilter) && (statusFilter === 'all' || e.status === statusFilter) && `${e.title || ''} ${e.notes || ''}`.toLocaleLowerCase('ar').includes(search.trim().toLocaleLowerCase('ar')));
@@ -124,6 +129,10 @@ export default function TemporaryExpensesPage({ embedded = false } = {}) {
       />}
 
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
+        <StatCard icon={Hourglass} tone="rose" label="سلف معلقة لبايكرية هرب أو مشيناه أو محذوفين"
+          value={loading || bikers.loading ? '…' : error || bikers.error ? 'غير متاح' : formatCurrency(risk.amount * scalingFactor)}
+          sub={loading || bikers.loading || error || bikers.error ? 'لا تُعتبر القراءة المتعذرة صفرًا.' : `${risk.count} سلفة · بعد خصم المبالغ المستردة المسجلة، دون تغيير أي سجل.`} />
+        {bikers.error && <p role="alert">تعذرت قراءة حالات البايكرز؛ العداد والحالات غير متاحة، وليست أصفارًا.</p>}
         {!isFirebaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
 
         {error && (
@@ -183,11 +192,13 @@ export default function TemporaryExpensesPage({ embedded = false } = {}) {
           </div>
         </div>
 
-        {canCorrectMonth && <Card className="p-4 space-y-2">
+        {canCorrectMonth && (taskComplete ? <details className="p-4 border rounded-card"><summary className="cursor-pointer font-semibold">مهام سابقة</summary>
+          <p className="mt-3 font-semibold">تصحيح إسناد سلف أكتوبر إلى سبتمبر</p><p>اكتمل إسناد السجلات العشرة إلى سبتمبر في البيانات المقروءة. لم تتغير المبالغ أو حالة الاسترداد.</p>
+        </details> : <Card className="p-4 space-y-2">
           <p className="font-semibold">تصحيح إسناد سلف أكتوبر إلى سبتمبر</p>
           <p className="text-sm">السلف العشر التي حددها المالك: إجمالي 599، منها 399 معلقة و200 مستردة. لا يتغير تاريخ الدفع أو حالة الاسترداد.</p>
           <button className="sw-button sw-button--secondary" onClick={() => setMonthEditor({ ownerCorrection: true })}>مراجعة إسناد السلف العشر</button>
-        </Card>}
+        </Card>)}
 
         {/* ── Tracking table ───────────────────────────────── */}
         <Card className="p-6">
@@ -231,6 +242,7 @@ export default function TemporaryExpensesPage({ embedded = false } = {}) {
                 <thead>
                   <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
                     <th className="py-3 px-4 whitespace-nowrap">البند</th>
+                    <th className="py-3 px-4 whitespace-nowrap">حالة البايكر</th>
                     <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">المبلغ</th>
                     <th className="py-3 px-4 whitespace-nowrap">تاريخ الصرف</th>
                     <th className="py-3 px-4 whitespace-nowrap">شهر إسناد السلفة</th>
@@ -255,6 +267,7 @@ export default function TemporaryExpensesPage({ embedded = false } = {}) {
                             </div>
                           )}
                         </td>
+                        <td className="py-3 px-4 whitespace-nowrap">{bikers.loading ? '…' : bikers.error ? 'غير متاح' : <span className={advanceBikerState(e, bikers.bikers).risky ? 'font-semibold text-rose-700 dark:text-rose-300' : ''}>{advanceBikerState(e, bikers.bikers).label}</span>}</td>
                         <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums font-bold text-slate-900 dark:text-slate-100">
                           {formatCurrency((e.amount || 0) * scalingFactor)}
                         </td>

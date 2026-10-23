@@ -42,14 +42,14 @@ export function useStartupCosts() {
    * server re-derives it from the entries and the new budget, so a name change
    * leaves the total alone and a budget change moves the badge by itself.
    */
-  const updateItem = useCallback(async (id, updates) => {
+  const updateItem = useCallback(async (id, updates, confirmation = {}) => {
     if (!isFirebaseConfigured) return null;
     const patch = {};
     for (const key of ['category', 'itemName', 'quantity', 'plannedAmount', 'units']) {
       if (updates[key] !== undefined) patch[key] = updates[key];
     }
     if (Object.keys(patch).length === 0) return null;
-    const res = await callServer('startupUpdatePlan', { parentId: id, patch });
+    const res = await callServer('startupUpdatePlan', { parentId: id, patch, ...(confirmation.reason ? { reason: confirmation.reason } : {}) });
     const fresh = await refetch();
 
     // ── كاشف الإسقاط الصامت ──

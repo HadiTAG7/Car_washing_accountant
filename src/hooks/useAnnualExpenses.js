@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { isFirebaseConfigured } from '../lib/firebaseClient';
-import { fetchRows, insertRow, updateRow, deleteRow, sortBy } from '../lib/firestoreCrud';
+import { fetchRows, insertRow, sortBy } from '../lib/firestoreCrud';
+import { callServer } from '../lib/ledgerTransport';
 import {
   mapAnnualExpense,
   toAnnualExpenseInsert,
@@ -26,24 +27,24 @@ export function useAnnualExpenses() {
     await refetch();
   }, [refetch]);
 
-  const updateItem = useCallback(async (id, updates) => {
+  const updateItem = useCallback(async (id, updates, confirmation = {}) => {
     if (!isFirebaseConfigured) return null;
     const payload = toAnnualExpenseUpdate(updates);
     if (Object.keys(payload).length === 0) return null;
-    await updateRow('annual_expenses', id, payload);
+    await callServer('annualPlanAction', { ...confirmation, action: 'update', parentId: id, patch: payload });
     await refetch();
   }, [refetch]);
 
-  const updateStatus = useCallback(async (id, paymentStatus) => {
+  const updateStatus = useCallback(async (id, paymentStatus, confirmation = {}) => {
     if (!isFirebaseConfigured) return null;
     const safe = paymentStatus === 'paid' ? 'paid' : 'pending';
-    await updateRow('annual_expenses', id, { payment_status: safe });
+    await callServer('annualPlanAction', { ...confirmation, action: 'update', parentId: id, patch: { payment_status: safe } });
     await refetch();
   }, [refetch]);
 
-  const deleteItem = useCallback(async (id) => {
+  const deleteItem = useCallback(async (id, confirmation = {}) => {
     if (!isFirebaseConfigured) return null;
-    await deleteRow('annual_expenses', id);
+    await callServer('annualPlanAction', { ...confirmation, action: 'delete', parentId: id });
     await refetch();
   }, [refetch]);
 

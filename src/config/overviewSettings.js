@@ -17,4 +17,6 @@ export const OVERVIEW_SETTINGS = Object.freeze({
   documentWarningDays: 30,
   forecastWindowDays: 7,
   statementDay: 5,
+  // On returning to the overview, refresh only if its reading is this old.
+  refreshOnReturnAfterMs: 5 * 60 * 1000,
 });

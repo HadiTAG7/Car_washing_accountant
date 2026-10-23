@@ -144,6 +144,8 @@ d('سجل الأصول والإهلاك على Firestore الحقيقي', () => 
     await assetsApi.postDepreciationForPeriod('2026-01', { userId: 'u1' });
     await expect(assetsApi.updateAsset(id, { cost: 20000 }, { userId: 'u1' }))
       .rejects.toThrow(/بعد ترحيل قيود إهلاك/);
+    await expect(assetsApi.updateAsset(id, { assetKind: 'intangible' }, { userId: 'u1' }))
+      .rejects.toThrow(/بعد ترحيل قيود إهلاك/);
     // A non-structural edit still goes through.
     await assetsApi.updateAsset(id, { name: 'ماكينة ضغط — الفرع' }, { userId: 'u1' });
     expect((await assetsApi.fetchAsset(id)).name).toBe('ماكينة ضغط — الفرع');
@@ -240,6 +242,27 @@ d('سجل الأصول والإهلاك على Firestore الحقيقي', () => 
     expect(again.created).toBe(false);
     expect(again.id).toBe(first.id);
     expect(await assetsApi.fetchAssets()).toHaveLength(1);
+  }, 90_000);
+
+  it('يرفض فحص الترحيل من الصفحة إذا لم تطابق تكلفة السجل الدفتر', async () => {
+    await assetsApi.createAsset(WASHER, { userId: 'u1' });
+    await expect(assetsApi.assertAssetCostMatches()).rejects.toThrow(/لا تطابق/);
+    await ledger.postEntry({ entry: { entryDate: '2026-01-01', sourceType: 'opening', description: 'رصيد أصل اصطناعي للاختبار' }, lines: [
+      { accountId: '1500', debit: 12000, credit: 0 }, { accountId: '1010', debit: 0, credit: 12000 },
+    ] });
+    expect(await assetsApi.assertAssetCostMatches()).toMatchObject({ matched: true, registerCost: 12000, ledgerCost: 12000 });
+    expect((await ledger.fetchEntries()).filter(e => e.sourceType === 'depreciation')).toHaveLength(0);
+  }, 90_000);
+
+  it('يرحل إطفاء الامتياز في حسابين مستقلين عبر نفس مسار القيود', async () => {
+    const { id } = await assetsApi.createAsset({ ...WASHER, name: 'امتياز اصطناعي', assetKind: 'intangible', usefulLifeMonths: 12 });
+    expect(await assetsApi.fetchAsset(id)).toMatchObject({ assetKind: 'intangible', expenseAccount: '5410', accumulatedAccount: '1511' });
+    const result = await assetsApi.postDepreciationForPeriod('2026-01');
+    const lines = await ledger.fetchLinesOf(result.entryId);
+    expect(lines.find(line => line.accountId === '5410')?.debit).toBe(1000);
+    expect(lines.find(line => line.accountId === '1511')?.credit).toBe(1000);
+    expect(lines.some(line => ['5400', '1510'].includes(line.accountId))).toBe(false);
+    await expect(assetsApi.postDepreciationForPeriod('2026-01')).rejects.toThrow(/مُرحّل بالفعل/);
   }, 90_000);
 
   it('لا يُرحَّل الإهلاك في فترة مقفلة، ويستأنف المتأخر بعد تخطّيها', async () => {

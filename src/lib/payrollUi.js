@@ -34,3 +34,12 @@ export function automaticPayrollAdjustments(run, items = []) {
   return rows.map(row => ({ bikerId: row.bikerId, bonus: Number(row.bonus) || 0,
     bonusReason: row.bonusReason || '', deduction: Number(row.deduction) || 0, deductionReason: row.deductionReason || '' }));
 }
+
+// Preserve manual choices, including an explicit zero, without expanding the
+// existing cap beyond the advances assigned to this payroll month.
+export function manualPayrollAdjustments(run, items = []) {
+  if (items.length) return payrollAdjustmentPayload(adjustmentsFromPayrollLines(items)).map(row => ({
+    ...row, advanceDeduction: Number(items.find(item => item.bikerId === row.bikerId)?.advanceDeduction) || 0,
+  }));
+  return (run?.inputAdjustments || []).map(row => ({ ...row }));
+}

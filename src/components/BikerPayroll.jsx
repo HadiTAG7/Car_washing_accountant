@@ -13,8 +13,9 @@ import { describeBackendError } from '../lib/firebaseClient';
 import { downloadCsv } from '../lib/exportCsv';
 import { formatCurrency, formatCurrencyPrecise, formatDate, formatNumber } from '../data/initialData';
 import {
-  adjustmentsFromPayrollLines, payrollAdjustmentPayload, payrollAdvanceMax, automaticPayrollAdjustments,
+  adjustmentsFromPayrollLines, payrollAdjustmentPayload, payrollAdvanceMax, manualPayrollAdjustments,
 } from '../lib/payrollUi';
+import { payrollPreapproval, payrollApprovalAllowed } from '../../functions/src/payrollPreapproval';
 import { downloadPayrollPdf } from '../lib/payrollPdf';
 import { useLanguage } from '../i18n/useLanguage';
 import { useBikers } from '../hooks/useBikers';
@@ -105,11 +106,11 @@ function previewFromRun(run, items) {
   };
 }
 
-function PayrollActionDialog({ action, run, busy, onClose, onSubmit }) {
+function PayrollActionDialog({ action, run, busy, onClose, onSubmit, review, role, reviewLoading, reviewError }) {
   const today = todayLocalIso();
   const earlyPay = action === 'pay' && today < (run?.distributionDate || '');
   const [reason, setReason] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('bank');
+  const [paymentMethod, setPaymentMethod] = useState('');
   const [date, setDate] = useState(action === 'pay'
     ? (earlyPay ? today : (run?.distributionDate || today)) : today);
   if (!action) return null;
@@ -121,8 +122,9 @@ function PayrollActionDialog({ action, run, busy, onClose, onSubmit }) {
     cancel: ['إلغاء المسودة', 'يُحفظ الإلغاء والسبب ولا يُحذف المسير.'],
   }[action];
   const reasonRequired = ['unapprove', 'reverse', 'cancel'].includes(action) || earlyPay;
-  const valid = action === 'approve' || (!reasonRequired || reason.trim())
-    && (action !== 'pay' || Boolean(date)) && (action !== 'reverse' || Boolean(date));
+  const override = action === 'approve' && review?.approvalBlocked;
+  const valid = action === 'approve' ? payrollApprovalAllowed({ loading: reviewLoading, error: reviewError, review, override: true, role, reason }) : (!reasonRequired || reason.trim())
+    && (action !== 'pay' || (Boolean(date) && Boolean(paymentMethod))) && (action !== 'reverse' || Boolean(date));
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center px-4" role="dialog" aria-modal="true" aria-label={meta[0]}>
       <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm" onClick={onClose} />
@@ -134,7 +136,7 @@ function PayrollActionDialog({ action, run, busy, onClose, onSubmit }) {
             <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
               طريقة الصرف
               <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} className={`mt-1 ${INPUT}`}>
-                <option value="bank">بنكي</option><option value="cash">نقدي</option>
+                <option value="">اختر حساب الدفع</option><option value="bank">البنك 1020</option><option value="cash">الصندوق 1010</option>
               </select>
             </label>
             <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
@@ -149,9 +151,9 @@ function PayrollActionDialog({ action, run, busy, onClose, onSubmit }) {
             <DateField ariaLabel="تاريخ عكس الصرف" value={date} onChange={(e) => setDate(e.target.value)} />
           </label>
         )}
-        {action !== 'approve' && (
+        {(action !== 'approve' || override) && (
           <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mt-4">
-            السبب {reasonRequired && <span className="text-rose-600">— إلزامي</span>}
+            السبب {(reasonRequired || override) && <span className="text-rose-600">— إلزامي</span>}
             <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} className={`mt-1 ${INPUT} resize-none`} placeholder="اكتب سبباً واضحاً للتدقيق" />
           </label>
         )}
@@ -172,7 +174,7 @@ function AdjustmentInputs({ line, adjustment, disabled, onChange, compact = fals
   const moneyInput = (key, label, max) => (
     <div className={compact ? '' : 'min-w-36'}>
       <label className="sr-only">{label} <span translate="no">{line.name}</span></label>
-      <input type="number" min="0" max={max} step="0.01" disabled={disabled || key === 'advanceDeduction'} value={key === 'advanceDeduction' ? line.advanceDeduction : adjustment[key] ?? 0}
+      <input type="number" min="0" max={max} step="0.01" disabled={disabled} value={adjustment[key] ?? (key === 'advanceDeduction' ? line.advanceDeduction : 0)}
         onChange={(e) => onChange(key, e.target.value)} className={inputClass} aria-label={`${label} ${line.name}`} />
     </div>
   );
@@ -275,6 +277,9 @@ export default function BikerPayroll({ role, previewMode = false, bikers: suppli
   const [adjustments, setAdjustments] = useState(() => adjustmentsFromPayrollLines(previewMode ? DEMO_LINES : []));
   const [busy, setBusy] = useState(null);
   const [action, setAction] = useState(null);
+  const [review, setReview] = useState(null);
+  const [reviewLoading, setReviewLoading] = useState(true);
+  const [reviewError, setReviewError] = useState(null);
   const [partialPaymentOpen, setPartialPaymentOpen] = useState(false);
   const [error, setError] = useState(null);
   const [toast, setToast] = useState({ open: false, message: '', tone: 'success' });
@@ -312,8 +317,8 @@ export default function BikerPayroll({ role, previewMode = false, bikers: suppli
     } else {
       // Recalculate in memory, with no draft save or debt/status mutation.
       api.preview({ periodKey, periodStart: activeRun?.periodStart || bounds.start,
-        periodEnd: activeRun?.periodEnd || bounds.end, automaticAdvanceDeduction: true,
-        adjustments: automaticPayrollAdjustments(activeRun, itemsQuery.data || []) }).then(result => {
+        periodEnd: activeRun?.periodEnd || bounds.end, automaticAdvanceDeduction: false,
+        adjustments: manualPayrollAdjustments(activeRun, itemsQuery.data || []) }).then(result => {
         if (!alive) return;
         setPreview({ ...result, status: result.status || 'draft', runId: activeRun?.runId || null });
         setPeriodStart(result.periodStart); setPeriodEnd(result.periodEnd);
@@ -331,9 +336,33 @@ export default function BikerPayroll({ role, previewMode = false, bikers: suppli
 
   const payload = useCallback(() => ({
     periodKey, periodStart, periodEnd,
-    automaticAdvanceDeduction: true,
-    adjustments: payrollAdjustmentPayload(adjustments, { automaticAdvances: true }),
+    automaticAdvanceDeduction: false,
+    adjustments: payrollAdjustmentPayload(adjustments),
   }), [periodKey, periodStart, periodEnd, adjustments]);
+
+  const reviewInput = JSON.stringify(preview);
+  useEffect(() => {
+    let alive = true;
+    setReview(null); setReviewError(null); setReviewLoading(true);
+    if (!preview) return () => { alive = false; };
+    if (previewMode) {
+      setReview(payrollPreapproval({ bikers: (suppliedBikers || DEMO_LINES.map(line => ({ id: line.bikerId, name: line.name }))),
+        lines: preview.lines, periodKey, today: todayLocalIso() }));
+      setReviewLoading(false); return () => { alive = false; };
+    }
+    if (typeof api.preapproval !== 'function') {
+      setReviewError(new Error('تعذّر تحميل فحص ما قبل الاعتماد.')); setReviewLoading(false);
+      return () => { alive = false; };
+    }
+    api.preapproval(payload()).then(result => { if (alive) setReview(result); })
+      .catch(error => { if (alive) setReviewError(error); })
+      .finally(() => { if (alive) setReviewLoading(false); });
+    return () => { alive = false; };
+  // Review follows the server-returned preview, not unsaved keystrokes or API wrapper identity.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reviewInput, periodKey, previewMode]);
+  const reviewByBiker = new Map((review?.byBiker || []).map(row => [row.bikerId, row]));
+  const approvalReady = payrollApprovalAllowed({ loading: reviewLoading, error: reviewError, review });
 
   const guarded = useCallback(async (name, fn, message) => {
     if (previewMode) return null;
@@ -407,7 +436,7 @@ export default function BikerPayroll({ role, previewMode = false, bikers: suppli
   async function submitAction(values) {
     const current = action;
     let result = null;
-    if (current === 'approve') result = await guarded('approve', () => api.approve(preview.runId), 'اعتُمد المسير دون قيد');
+    if (current === 'approve') result = await guarded('approve', () => api.approve(preview.runId, values.reason), 'اعتُمد المسير دون قيد');
     if (current === 'unapprove') result = await guarded('unapprove', () => api.unapprove(preview.runId, values.reason), 'أُلغي الاعتماد وعاد المسير مسودة');
     if (current === 'pay') result = await guarded('pay', () => api.pay({
       runId: preview.runId, paymentMethod: values.paymentMethod, payDate: values.date, earlyReason: values.reason,
@@ -479,8 +508,32 @@ export default function BikerPayroll({ role, previewMode = false, bikers: suppli
         <StatCard icon={Landmark} tone="accent" label="صافي الرواتب" value={summaryValue('net')} />
       </div>
 
+      <Card className="p-4 sm:p-6 space-y-3" aria-label="قبل الاعتماد">
+        <SectionHeader title="قبل الاعتماد" subtitle="تنبيهات للمراجعة؛ لا تغيّر الاستحقاق ولا تخصم سلفًا تلقائيًا" />
+        {reviewLoading && <p>جارٍ فحص ما قبل الاعتماد...</p>}
+        {reviewError && <p role="alert" className="text-rose-500">تعذّر تحميل فحص ما قبل الاعتماد.</p>}
+        {review && <>
+          <p className="text-xs text-slate-500">مبالغ الحالات من صافي المعاينة، وليست أمر صرف أو إثبات غياب.</p>
+          <div className="grid sm:grid-cols-2 gap-3">
+            {[
+              ['missingEndDates', 'هرب أو مشيناه بلا تاريخ نهاية', 'text-rose-500'],
+              ['noWashes', 'بلا غسلات مسجلة للشهر — تنبيه فقط', 'text-amber-500'],
+              ['pendingUnDeducted', 'سلف معلقة لم تُخصم', 'text-amber-500'],
+              ['futureStarts', 'مباشرة بعد اليوم — تنبيه فقط', 'text-amber-500'],
+            ].map(([key, label, tone]) => <details key={key} className="border border-slate-300 dark:border-slate-700 rounded-control p-3">
+              <summary className={tone}>{label} · {review[key].count} · {formatCurrency(review[key].amount)}</summary>
+              <ul className="text-xs mt-2 space-y-2">{review[key].rows.map(row => <li key={row.bikerId}><span translate="no">{row.name}</span> · {row.currentStatus} · {formatCurrency(row.amount)}{key === 'futureStarts' ? ` · ${row.startDate}` : ''}</li>)}</ul>
+            </details>)}
+          </div>
+          {review.approvalBlocked && <p role="alert" className="text-rose-500">{status === 'draft'
+            ? 'الاعتماد متوقف حتى توثيق تواريخ النهاية، أو استثناء المدير بسبب محفوظ. لا تُستنتج النهاية من غياب الغسلات.'
+            : 'الفحص الحالي يتضمن حالات بلا تاريخ نهاية؛ هذا تنبيه للمراجعة ولا يغيّر المسير المحفوظ.'}</p>}
+          {review.unassignedAdvances.count > 0 && <p className="text-sm text-amber-500">عهد معلقة غير مرتبطة ببايكر: {review.unassignedAdvances.count} · {formatCurrency(review.unassignedAdvances.amount)}. لا تدخل خصم الرواتب.</p>}
+        </>}
+      </Card>
+
       <Card className="p-4 sm:p-6">
-        <SectionHeader title="تفاصيل الاستحقاق" subtitle="خصم السلف وعمولة الغسلات يُحسبان تلقائيًا للشهر؛ السلف المستردة والأشهر الأخرى لا تُخصم. البونص هنا إضافة يدوية مستقلة عن عمولة الغسلات." action={preview?.lines?.length ? (
+        <SectionHeader title="تفاصيل الاستحقاق" subtitle="خصم السلف قابل للتعديل يدويًا ضمن حد الشهر الحالي؛ عرض السلف التاريخية لا يخصمها تلقائيًا. عمولة الغسلات مستقلة عن البونص." action={preview?.lines?.length ? (
           <div className="flex gap-2 payroll-no-print">
             <button type="button" onClick={exportCsv} className="sw-button sw-button--sm sw-button--secondary"><Download size={16} /> CSV</button>
             <button type="button" disabled={printing} onClick={printPayroll} className="sw-button sw-button--sm sw-button--secondary"><Printer size={16} /> {printing ? 'جارٍ تجهيز PDF…' : 'طباعة PDF'}</button>
@@ -495,7 +548,7 @@ export default function BikerPayroll({ role, previewMode = false, bikers: suppli
             <div className="hidden lg:block overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
               <table className="w-full min-w-[1900px] text-xs">
                 <thead><tr className="text-right text-[10px] font-bold text-slate-500 uppercase border-b border-slate-100 dark:border-slate-800">
-                  {['العامل','الراتب / المباشرة','الأيام','الأساسي','العمولة','البونص + السبب','الخصم + السبب','السلف القائمة','خصم السلفة','الصافي','الحالة'].map((h) => <th key={h} className="py-3 px-3">{h}</th>)}
+                  {['العامل','الراتب / المباشرة','الأيام','الأساسي','العمولة','البونص + السبب','الخصم + السبب','السلف القائمة','المسند لهذا الشهر','خصم السلفة','الصافي','الحالة'].map((h) => <th key={h} className="py-3 px-3">{h}</th>)}
                 </tr></thead>
                 <tbody>{displayPreview.lines.map((line) => {
                   const adj = adjustments[line.bikerId] || adjustmentsFromPayrollLines([line])[line.bikerId];
@@ -508,8 +561,9 @@ export default function BikerPayroll({ role, previewMode = false, bikers: suppli
                     <td className="py-3 px-3 tabular-nums">{formatCurrency(line.commission)}</td>
                     <td className="py-3 px-3 min-w-40"><input type="number" min="0" step="0.01" disabled={locked} value={adj.bonus ?? 0} onChange={(e) => updateAdjustment(line, 'bonus', e.target.value)} className={INPUT} aria-label={`بونص ${line.name}`} />{(Number(adj.bonus) || 0) > 0 && <input disabled={locked} value={adj.bonusReason || ''} onChange={(e) => updateAdjustment(line, 'bonusReason', e.target.value)} className={`${INPUT} mt-1`} placeholder="سبب إلزامي" aria-label={`سبب بونص ${line.name}`} />}</td>
                     <td className="py-3 px-3 min-w-40"><input type="number" min="0" step="0.01" disabled={locked} value={adj.deduction ?? 0} onChange={(e) => updateAdjustment(line, 'deduction', e.target.value)} className={INPUT} aria-label={`خصم ${line.name}`} />{(Number(adj.deduction) || 0) > 0 && <input disabled={locked} value={adj.deductionReason || ''} onChange={(e) => updateAdjustment(line, 'deductionReason', e.target.value)} className={`${INPUT} mt-1`} placeholder="سبب إلزامي" aria-label={`سبب خصم ${line.name}`} />}</td>
-                    <td className="py-3 px-3 font-semibold text-amber-700 tabular-nums">{formatCurrency(line.advanceOutstanding)}</td>
-                    <td className="py-3 px-3"><input type="number" min="0" max={advanceMax} step="0.01" disabled value={line.advanceDeduction ?? 0} readOnly className={`${INPUT} w-28`} aria-label={`خصم السلفة ${line.name}`} /><span className="block text-[10px] text-slate-500 mt-1">الحد {formatCurrency(advanceMax)}</span></td>
+                    <td className="py-3 px-3 font-semibold text-amber-700 tabular-nums">{reviewByBiker.has(line.bikerId) ? formatCurrency(reviewByBiker.get(line.bikerId).outstanding) : '—'}</td>
+                    <td className="py-3 px-3 tabular-nums">{reviewByBiker.has(line.bikerId) ? formatCurrency(reviewByBiker.get(line.bikerId).assigned) : '—'}</td>
+                    <td className="py-3 px-3"><input type="number" min="0" max={advanceMax} step="0.01" disabled={locked} value={adj.advanceDeduction ?? line.advanceDeduction ?? 0} onChange={e => updateAdjustment(line, 'advanceDeduction', e.target.value)} className={`${INPUT} w-28`} aria-label={`خصم السلفة ${line.name}`} /><span className="block text-[10px] text-slate-500 mt-1">الحد {formatCurrency(advanceMax)}</span></td>
                     <td className="py-3 px-3 font-extrabold text-primary-700 dark:text-primary-300 tabular-nums">{formatCurrency(line.netDue)}</td>
                     <td className="py-3 px-3"><StatusChip status={line.status || status} /></td>
                   </tr>;
@@ -523,6 +577,7 @@ export default function BikerPayroll({ role, previewMode = false, bikers: suppli
                 <div className="flex justify-between gap-3"><div><h3 translate="no" className="font-bold text-slate-900 dark:text-slate-100">{line.name}</h3><p className="text-[11px] text-slate-500">{formatCurrency(line.monthlySalary)} · {line.daysEntitled}/{line.monthDays} يوماً</p></div><StatusChip status={line.status || status} /></div>
                 <div className="grid grid-cols-3 gap-2 text-center text-[11px]"><div className="bg-slate-50 dark:bg-slate-800 rounded-control p-2"><span className="block text-slate-500">الأساسي</span><strong>{formatCurrency(line.basicDue)}</strong></div><div className="bg-slate-50 dark:bg-slate-800 rounded-control p-2"><span className="block text-slate-500">العمولة</span><strong>{formatCurrency(line.commission)}</strong></div><div className="bg-primary-50 dark:bg-primary-500/10 rounded-control p-2"><span className="block text-slate-500">الصافي</span><strong>{formatCurrency(line.netDue)}</strong></div></div>
                 <p className="text-[10px] text-slate-500">الفترة المستحقة: {formatDate(line.eligibleStart)} — {formatDate(line.eligibleEnd)}{line.endDate ? ` · نهاية الخدمة ${formatDate(line.endDate)}` : ''}</p>
+                <p className="text-xs text-amber-500">السلف القائمة: {reviewByBiker.has(line.bikerId) ? formatCurrency(reviewByBiker.get(line.bikerId).outstanding) : '—'} · المسند لهذا الشهر: {reviewByBiker.has(line.bikerId) ? formatCurrency(reviewByBiker.get(line.bikerId).assigned) : '—'}</p>
                 <div className="grid grid-cols-1 gap-3"><AdjustmentInputs line={line} adjustment={adj} disabled={locked} onChange={(k, v) => updateAdjustment(line, k, v)} compact /></div>
               </article>;
             })}</div>
@@ -535,7 +590,8 @@ export default function BikerPayroll({ role, previewMode = false, bikers: suppli
           {preview.paymentSummary && <p className="text-sm mb-3">المسدّدون: {preview.paymentSummary.paidCount} · المتبقون: {preview.paymentSummary.remainingCount}</p>}
           <div className="flex flex-wrap items-center gap-2">
             {isAdmin && ['draft', 'approved', 'partially_paid'].includes(status) && <button type="button" disabled={busy || itemsQuery.loading || !itemsQuery.data?.length} onClick={() => setPartialPaymentOpen(true)} className="sw-button sw-button--sm sw-button--primary">تسجيل دفعة لعمال محددين</button>}
-            {status === 'draft' && <button type="button" disabled={!isAdmin || busy} onClick={() => setAction('approve')} className="sw-button sw-button--sm sw-button--primary"><CheckCircle2 size={16} /> اعتماد المسير</button>}
+            {status === 'draft' && <button type="button" disabled={!isAdmin || busy || !approvalReady} onClick={() => setAction('approve')} className="sw-button sw-button--sm sw-button--primary"><CheckCircle2 size={16} /> اعتماد المسير</button>}
+            {status === 'draft' && isAdmin && review?.approvalBlocked && <button type="button" disabled={busy || reviewLoading || Boolean(reviewError)} onClick={() => setAction('approve')} className="sw-button sw-button--sm sw-button--secondary">استثناء المدير للاعتماد</button>}
             {status === 'draft' && <button type="button" disabled={!isAdmin || busy} onClick={() => setAction('cancel')} className="sw-button sw-button--sm sw-button--secondary"><Undo2 size={16} /> إلغاء المسودة</button>}
             {status === 'approved' && <button type="button" disabled={!isAdmin || busy} onClick={() => setAction('pay')} className="sw-button sw-button--sm sw-button--primary"><Landmark size={16} /> صرف نقدي/بنكي</button>}
             {status === 'approved' && <button type="button" disabled={!isAdmin || busy} onClick={() => setAction('unapprove')} className="sw-button sw-button--sm sw-button--secondary"><LockKeyhole size={16} /> إلغاء الاعتماد</button>}
@@ -546,7 +602,8 @@ export default function BikerPayroll({ role, previewMode = false, bikers: suppli
       )}
 
       {partialPaymentOpen && activeRun && <PayrollPartialPaymentDialog run={activeRun} items={itemsQuery.data || []} api={api} onClose={() => setPartialPaymentOpen(false)} onRecorded={async () => { setPartialPaymentOpen(false); await Promise.all([api.refetch(), itemsQuery.refetch()]); setToast({ open: true, tone: 'success', message: 'سُجلت دفعة العمال المحددين دون سداد بقية المسير' }); }} />}
-      <PayrollActionDialog key={action || 'none'} action={action} run={preview} busy={busy !== null} onClose={() => setAction(null)} onSubmit={submitAction} />
+      <PayrollActionDialog review={review} role={role} reviewLoading={reviewLoading} reviewError={reviewError} key={action || 'none'} action={action} run={preview} busy={busy !== null} onClose={() => setAction(null)} onSubmit={submitAction} />
+      <p className="text-xs text-slate-500 payroll-no-print">الاعتماد يثبّت المسير بلا قيد. عند السداد: مدين رواتب 5010 وعمولات 5000، ودائن مستحقات 2010؛ ثم مدين 2010 ودائن السلف 1300 والحساب المختار 1010 أو 1020، في القيد نفسه.</p>
       {/* Audited printouts retain the name captured in the payroll snapshot. */}
       <PayrollPrintSheet preview={preview} periodKey={periodKey} periodStart={periodStart} periodEnd={periodEnd} totals={totals} status={status} printRef={printRef} />
       <Toast open={toast.open} message={toast.message} tone={toast.tone} duration={toast.tone === 'error' ? 8000 : 3000} onClose={() => setToast((t) => ({ ...t, open: false }))} />

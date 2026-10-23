@@ -18,17 +18,17 @@ it('automatically previews without saving and does not loop on fresh empty item 
   render(<BikerPayroll role="admin" />);
   await screen.findAllByText('Synthetic worker');
   expect(state.preview).toHaveBeenCalledTimes(1);
-  expect(state.preview.mock.calls[0][0]).toMatchObject({ automaticAdvanceDeduction: true });
+  expect(state.preview.mock.calls[0][0]).toMatchObject({ automaticAdvanceDeduction: false });
   expect(state.saveDraft).not.toHaveBeenCalled(); expect(state.refetch).not.toHaveBeenCalled();
-  expect(screen.getAllByLabelText(/خصم السلفة/).every(input => input.disabled && input.value === '200')).toBe(true);
+  expect(screen.getAllByLabelText(/خصم السلفة/).every(input => !input.disabled && input.value === '200')).toBe(true);
 });
-it('keeps real manual bonus but drops stale zero advance override; preview does not refetch old saved totals', async () => {
+it('preserves manual bonus and explicit zero advance; preview does not refetch old saved totals', async () => {
   const month = new Date().toISOString().slice(0, 7);
   state.runs = [{ runId: 'old', periodKey: month, status: 'draft', inputAdjustments: [{ bikerId: 'a', bonus: 20, bonusReason: 'Real bonus', advanceDeduction: 0 }] }];
   state.items = result(month).lines.map(row => ({ ...row, commission: 0, advanceDeduction: 0 }));
   render(<BikerPayroll role="admin" />); await screen.findAllByText('Synthetic worker');
   expect(state.preview.mock.calls[0][0].adjustments[0]).toMatchObject({ bonus: 20, bonusReason: 'Real bonus' });
-  expect(state.preview.mock.calls[0][0].adjustments[0]).not.toHaveProperty('advanceDeduction');
+  expect(state.preview.mock.calls[0][0].adjustments[0].advanceDeduction).toBe(0);
   fireEvent.click(screen.getByRole('button', { name: /^معاينة$/ }));
   await waitFor(() => expect(state.preview).toHaveBeenCalledTimes(2));
   expect(state.refetch).not.toHaveBeenCalled(); expect(state.saveDraft).not.toHaveBeenCalled();

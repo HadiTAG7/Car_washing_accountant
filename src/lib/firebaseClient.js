@@ -25,7 +25,7 @@ import { invalidateAllReads } from './readCache';
 // collections at once (a posting writes the entry, its lock and the period),
 // so after it succeeds every cached read is dropped and re-read on next use.
 const READ_ONLY_OPERATIONS = new Set([
-  'payrollPreview', 'payrollPreviews', 'payrollReadStatus', 'payrollPreviewAdvanceMonth',
+  'payrollPreview', 'payrollPreviews', 'payrollPreapproval', 'payrollReadStatus', 'payrollPreviewAdvanceMonth',
   'payrollPreviewPartialPayment', 'expenseCorrectionOptions', 'expensePreviewCorrection',
   'supervisorOverview', 'supervisorRecords', 'partnerEligibilityGet', 'partnerInsights',
   'partnerProfile', 'sweaterPreviewImport', 'sweaterPreviewOwnerWashTax',

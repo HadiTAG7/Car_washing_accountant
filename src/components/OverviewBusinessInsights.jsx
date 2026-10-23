@@ -58,8 +58,8 @@ export default function OverviewBusinessInsights({ data, periodKey, washReady, l
         <p>{text('سعر الغسلة قبل الضريبة', 'Net wash price')}: <bdi>{currency(settings.washNetPrice)}</bdi></p>
         {(sourceGap || partial) && <small>{sourceGap || partial}</small>}
       </Insight>
-      <Insight title={text('استغلال الطاقة', 'Capacity utilization')} value={m?.capacityUtilization == null ? unavailable : `${num(m.capacityUtilization)}%`}>
-        <p>{text('المواعيد اليومية لكل بايكر', 'Daily appointments per biker')}: <bdi>{num(settings.dailyAppointmentsPerBiker)}</bdi></p>
+      <Insight title={text('الإنتاج مقارنة بالطاقة اليومية', 'Output vs daily capacity')} value={m?.capacityUtilization == null ? unavailable : `${num(m.capacityUtilization)}%`}>
+        <p>{text('الطاقة المفترضة لكل بايكر', 'Assumed capacity per biker')}: <bdi>{num(settings.dailyAppointmentsPerBiker)}</bdi> {text('غسلات / يوم', 'washes / day')}</p>
         {m?.capacityUtilization == null && <small>{text('لا يوجد متوسط بايكر مؤكّد لأيام مكتملة، أو ربط الغسلات ناقص.', 'No confirmed biker average for completed days, or wash identities are incomplete.')}</small>}
       </Insight>
       <Insight title={ops?.completeMonth ? text('نتيجة الشهر الفعلية', 'Actual month result') : text('توقع نهاية الشهر', 'Month-end forecast')}

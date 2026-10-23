@@ -52,9 +52,11 @@ describe('overview-only business metrics', () => {
   });
   it('uses exactly the existing daily biker average for approximate capacity, without capping or inventing missing averages', () => {
     const ops = operations([wash('a', '2026-10-20', 1)]);
-    expect(overviewBusinessMetrics({ ...ops, averagePerBikerDay: 4.84 }, statement).capacityUtilization).toBeCloseTo(48.4);
+    expect(OVERVIEW_SETTINGS.dailyAppointmentsPerBiker).toBe(8);
+    expect(overviewBusinessMetrics({ ...ops, averagePerBikerDay: 4.84 }, statement).capacityUtilization).toBeCloseTo(60.5);
+    expect(overviewBusinessMetrics({ ...ops, averagePerBikerDay: 8 }, statement).capacityUtilization).toBe(100);
     expect(overviewBusinessMetrics({ ...ops, averagePerBikerDay: null }, statement).capacityUtilization).toBeNull();
-    expect(overviewBusinessMetrics({ ...ops, averagePerBikerDay: 12 }, statement).capacityUtilization).toBe(120);
+    expect(overviewBusinessMetrics({ ...ops, averagePerBikerDay: 12 }, statement).capacityUtilization).toBe(150);
     expect(overviewBusinessMetrics(ops, statement, { ...OVERVIEW_SETTINGS, dailyAppointmentsPerBiker: 0 }).capacityUtilization).toBeNull();
     expect(overviewBusinessMetrics({ ...ops, averagePerBikerDay: 4.84 }, statement, { ...OVERVIEW_SETTINGS, dailyAppointmentsPerBiker: 20 }).capacityUtilization).toBeCloseTo(24.2);
   });

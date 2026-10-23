@@ -11,6 +11,7 @@ import Toast from './Toast';
 import SweaterActionDialog from './SweaterActionDialog';
 import {
   useSweaterSettlements, useSweaterBookings, useSweaterAdjustments, useSweaterVariances,
+  useSweaterMetrics, useSweaterFirstPeriod,
 } from '../hooks/useSweater';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 import { describeBackendError } from '../lib/firebaseClient';
@@ -22,6 +23,9 @@ import {
   SETTLEMENT_STATUS_AR, BOOKING_STATUS_AR, ADJUSTMENT_KIND_AR,
   ADJUSTMENT_APPROVAL_AR, REVIEW_REASON_AR, labelOf,
 } from '../lib/sweater/labels';
+import { settlementApprovalReadiness } from '../../functions/src/sweater/settlementReadiness.js';
+import { SWEATER_METRICS } from '../../functions/src/sweater/metricsContract.js';
+import { reviewGroups, dataPeriods, registeredMetric, METRIC_ADJUSTMENT_KEYS } from '../lib/sweater/settlementDisplay';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // تسويات سويتر — المطابقة الرباعية، والمراجعة، والاعتماد الشهري الواحد
@@ -42,7 +46,7 @@ function currentPeriod() {
 }
 
 /** الحالة كشارة — اللون يقول أين نحن من الرحلة بلا قراءة. */
-function StatusChip({ status }) {
+function StatusChip({ status, reviewCount = 0 }) {
   const tone = {
     draft: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
     calculated: 'bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300',
@@ -58,6 +62,7 @@ function StatusChip({ status }) {
   return (
     <span className={`px-2.5 py-1 rounded-control text-[11px] font-bold whitespace-nowrap ${tone}`}>
       {labelOf(SETTLEMENT_STATUS_AR, status)}
+      {reviewCount > 0 && ` · ${formatNumber(reviewCount)} تحتاج مراجعة`}
     </span>
   );
 }
@@ -80,6 +85,8 @@ export default function SweaterSettlementsPage() {
   const { bookings, loading: bLoading, error: bError, refetch: refetchBookings } = useSweaterBookings(periodKey);
   const adjustmentsApi = useSweaterAdjustments(periodKey);
   const variancesApi = useSweaterVariances(periodKey);
+  const metricsApi = useSweaterMetrics(periodKey);
+  const firstPeriodApi = useSweaterFirstPeriod();
 
   const settlement = useMemo(
     () => settlements.find((s) => s.periodKey === periodKey) ?? null,
@@ -126,17 +133,15 @@ export default function SweaterSettlementsPage() {
   const unresolved = variancesApi.variances.filter((v) => v.resolution === 'unresolved');
   const loading = sLoading || bLoading;
   const queryError = sError || bError;
+  const approval = settlementApprovalReadiness({ settlement, variances: variancesApi.variances, bookings,
+    readsPending: loading || variancesApi.loading || adjustmentsApi.loading,
+    readError: Boolean(queryError || variancesApi.error || adjustmentsApi.error) });
+  const groups = reviewGroups(figures);
+  const allKpis = useMemo(() => operationalKpis(bookings), [bookings]);
 
   const periods = useMemo(() => {
-    const set = new Set(settlements.map((s) => s.periodKey));
-    set.add(periodKey);
-    const now = new Date();
-    for (let i = 0; i < 12; i += 1) {
-      const dt = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      set.add(`${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`);
-    }
-    return [...set].sort().reverse();
-  }, [settlements, periodKey]);
+    return dataPeriods(firstPeriodApi.firstPeriod, settlements.map(s => s.periodKey), currentPeriod());
+  }, [settlements, firstPeriodApi.firstPeriod]);
 
   return (
     <>
@@ -166,7 +171,7 @@ export default function SweaterSettlementsPage() {
             >
               {periods.map((p) => <option key={p} value={p}>{p}</option>)}
             </select>
-            <StatusChip status={settlement?.status ?? 'draft'} />
+            <StatusChip status={settlement?.status ?? 'draft'} reviewCount={approval.reviewCount} />
             {settlement?.journalEntryNumber && (
               <span className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
                 قيد رقم {settlement.journalEntryNumber}
@@ -178,6 +183,12 @@ export default function SweaterSettlementsPage() {
               </span>
             )}
           </div>
+          {firstPeriodApi.error && <p role="alert" className="mt-2 text-xs">تعذرت قراءة أول شهر للبيانات؛ قائمة الأشهر قد تكون غير مكتملة.</p>}
+          <p className="mt-3 text-sm leading-relaxed" aria-label="أعداد الشهر">
+            حجوزات سويتر المستوردة: {bLoading || bError ? 'غير متاح' : formatNumber(bookings.length)} · المكتملة بالحالة المسجلة: {bLoading || bError ? 'غير متاح' : formatNumber(allKpis.completed.value)} · المؤهلة للإيراد حسب آخر احتساب: {figures ? formatNumber(figures.counts.eligible) : 'لم يُحتسب'} · عدد سويتر من اللقطة: {metricsApi.loading ? 'جارٍ القراءة' : metricsApi.error ? 'تعذرت قراءة اللقطة' : metricsApi.snapshot?.metrics?.completedWashes == null ? 'ما وصلت بيانات سويتر' : formatNumber(metricsApi.snapshot.metrics.completedWashes)}
+          </p>
+          {settlement?.calculatedAtIso && <p className="mt-1 text-xs text-slate-500">آخر احتساب محفوظ: {new Date(settlement.calculatedAtIso).toLocaleString('en-GB', { timeZone: 'Asia/Riyadh' })} · الأعداد الحالية قد تكون أحدث منه.</p>}
+          {metricsApi.snapshot?.metricSources?.completedWashes && <p className="mt-1 text-xs text-slate-500">وقت قراءة عدد سويتر: {new Date(metricsApi.snapshot.metricSources.completedWashes.extractedAtIso).toLocaleString('en-GB', { timeZone: 'Asia/Riyadh' })} · لقطة شهرية، وليست حجوزات مستوردة أو إيرادًا مرحلًا.</p>}
         </Card>
 
         {loading && !settlement ? (
@@ -189,7 +200,7 @@ export default function SweaterSettlementsPage() {
               <StatCard
                 icon={Handshake} tone="primary" label="خدمات مؤهّلة"
                 value={formatNumber(figures?.counts?.eligible ?? 0)}
-                sub={`من ${formatNumber(figures?.counts?.imported ?? bookings.length)} حجزاً مستورداً`}
+                sub={figures ? `من ${formatNumber(figures.counts.imported)} حجزًا وقت آخر احتساب محفوظ، لا العدد الحالي` : 'احتسب الشهر أولاً'}
               />
               <StatCard
                 icon={TrendingUp} tone="emerald" label="الإيراد قبل الضريبة"
@@ -281,8 +292,9 @@ export default function SweaterSettlementsPage() {
                   </button>
                   <button
                     type="button"
-                    disabled={busy !== null || !figures}
-                    onClick={() => guarded('approve', () => settlementsApi.approve(periodKey))}
+                    disabled={busy !== null || !approval.allowed}
+                    aria-describedby="settlement-approval-gaps"
+                    onClick={() => { if (approval.allowed) guarded('approve', () => settlementsApi.approve(periodKey)); }}
                     className="sw-button sw-button--sm sw-button--primary"
                   >
                     <CheckCircle2 size={16} /> اعتمد وارحّل الشهر
@@ -303,6 +315,10 @@ export default function SweaterSettlementsPage() {
                   >
                     <Lock size={16} /> أقفل التسوية
                   </button>
+                </div>
+                <div id="settlement-approval-gaps" className="mt-3 text-sm leading-relaxed">
+                  <strong>{approval.allowed ? 'متطلبات الاعتماد مكتملة؛ الترحيل يحتاج قرارك.' : 'الناقص قبل الاعتماد والترحيل:'}</strong>
+                  {approval.problems.length > 0 && <ul className="mt-2 list-disc ps-5 space-y-1">{approval.problems.map(problem => <li key={problem}>{problem}</li>)}</ul>}
                 </div>
                 <p className="mt-3 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
                   الاعتماد يُثبت إيراد الشهر في الدفاتر (مدين ذمم سويتر · دائن إيراد سويتر · دائن ضريبة
@@ -335,12 +351,12 @@ export default function SweaterSettlementsPage() {
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 {[
                   { icon: Handshake, label: 'إجمالي الحجوزات', v: formatNumber(kpis.totalBookings.value), sub: `مكتملة: ${formatNumber(kpis.completed.value)}` },
-                  { icon: Star, label: 'متوسط التقييم', v: kpis.averageRating.value ?? '—', sub: kpis.averageRating.denominator ? `من ${formatNumber(kpis.averageRating.denominator)} تقييماً · ٥ نجوم: ${formatNumber(kpis.fiveStarCount.value)}` : 'لا تقييمات' },
+                  { icon: Star, label: 'متوسط التقييم', v: kpis.averageRating.value ?? 'ما وصلت التقييمات', sub: kpis.averageRating.denominator ? `من ${formatNumber(kpis.averageRating.denominator)} تقييماً · ٥ نجوم: ${formatNumber(kpis.fiveStarCount.value)}` : 'غير المتاح ليس تقييمًا منخفضًا' },
                   { icon: Timer, label: 'الالتزام بالوقت', v: kpis.onTimeRate.value == null ? '—' : `${kpis.onTimeRate.value}٪`, sub: kpis.onTimeRate.note || `تأخّر ${formatNumber(kpis.lateCount.value)} مرة` },
                   { icon: Ban, label: 'الإلغاءات الإدارية', v: formatNumber(kpis.cancelled.value), sub: kpis.cancellationRate.value == null ? '—' : `${kpis.cancellationRate.value}٪ من الحجوزات` },
                   { icon: AlertTriangle, label: 'مخالفات وأضرار', v: formatNumber(kpis.violations.value), sub: `المعتمد منها ${MONEY(kpis.violations.amount)}` },
                   { icon: Inbox, label: 'شكاوى وتعويضات', v: formatNumber(kpis.complaints.value), sub: `المعتمد منها ${MONEY(kpis.complaints.amount)}` },
-                  { icon: CheckCircle2, label: 'حجوزات بلا خصومات', v: formatNumber(kpis.withoutDeductions.value), sub: `تقييم منخفض: ${formatNumber(kpis.lowRatedCount.value)}` },
+                  { icon: CheckCircle2, label: 'حجوزات بلا خصومات', v: formatNumber(kpis.withoutDeductions.value), sub: kpis.averageRating.denominator ? `تقييم منخفض: ${formatNumber(kpis.lowRatedCount.value)}` : 'ما وصلت التقييمات' },
                   { icon: AlertTriangle, label: 'حالات غير معروفة', v: formatNumber(kpis.unknownStatus.value), sub: 'لا يُعترف بإيرادها حتى تُصنَّف' },
                 ].map((c) => (
                   <div key={c.label} className="border border-slate-100 dark:border-slate-800 rounded-smallcard p-3">
@@ -355,21 +371,19 @@ export default function SweaterSettlementsPage() {
             </Card>
 
             {/* ── قائمة المراجعة ── */}
-            {figures?.lines?.review?.length > 0 && (
+            {groups.length > 0 && (
               <Card className="p-4 sm:p-6">
                 <SectionHeader
-                  title={`تحتاج مراجعة (${formatNumber(figures.lines.review.length)})`}
+                  title={`تحتاج مراجعة (${formatNumber(approval.reviewCount)})`}
                   subtitle="لا يُعترف بإيرادها — وهي وحدها ما يُعرض عليك، لا كل حجز"
                 />
                 <div className="mt-4 space-y-2">
-                  {figures.lines.review.slice(0, 40).map((r) => (
-                    <div key={r.sspBookingId} className="flex items-start justify-between gap-3 border border-amber-100 dark:border-amber-500/30 bg-amber-50/50 dark:bg-amber-500/5 rounded-control px-3 py-2">
-                      <span className="text-[12px] font-mono text-slate-700 dark:text-slate-300 shrink-0">{r.sspBookingId}</span>
-                      <span className="text-[12px] text-amber-800 dark:text-amber-300 text-left flex-1">
-                        {r.reasonAr || labelOf(REVIEW_REASON_AR, r.reasonCode)}
-                      </span>
-                    </div>
-                  ))}
+                  {groups.map(group => <details key={group.key} className="border border-amber-200 dark:border-amber-700 rounded-control p-3">
+                    <summary className="cursor-pointer font-semibold">{labelOf(REVIEW_REASON_AR, group.key)} · {formatNumber(group.rows.length)} حجزًا</summary>
+                    <p className="mt-2 text-sm">{group.reason}</p>
+                    <a className="inline-block mt-2 text-primary-500 underline" href={group.href}>فتح مسار الإصلاح</a>
+                    <ul className="mt-3 max-h-64 overflow-auto text-sm space-y-2">{group.rows.map(row => <li key={row.sspBookingId}><span dir="ltr">{row.sspBookingId}</span> · {row.reasonAr || labelOf(REVIEW_REASON_AR, row.reasonCode)}</li>)}</ul>
+                  </details>)}
                 </div>
               </Card>
             )}
@@ -380,6 +394,19 @@ export default function SweaterSettlementsPage() {
                 title="الخصومات والحوافز والتعويضات"
                 subtitle="لا يُرحَّل شيءٌ منها بمجرد استيراده — الاعتماد قرارٌ بمستنده"
               />
+              <div className="mt-4 overflow-x-auto" aria-label="مقارنة بنود سويتر">
+                <table className="w-full text-sm min-w-[600px]"><thead><tr><th className="text-right p-2">البند والوحدة</th><th className="text-right p-2">سويتر من اللقطة</th><th className="text-right p-2">المسجل هنا قبل الاعتماد</th></tr></thead>
+                  <tbody>{Object.keys(METRIC_ADJUSTMENT_KEYS).map(key => {
+                    const labels = { violations: 'المخالفات', damages: 'الأضرار', compensations: 'التعويضات', freeWashCompensation: 'الغسلات المجانية', cancelledByCustomer: 'إلغاء العميل', cancelledByBiker: 'إلغاء البايكر', cancelledMaintenance: 'إلغاء الصيانة' };
+                    const unit = SWEATER_METRICS[key].unit, source = metricsApi.snapshot?.metricSources?.[key], value = metricsApi.snapshot?.metrics?.[key];
+                    const registered = registeredMetric(adjustmentsApi.adjustments, key, unit);
+                    const display = n => unit === 'sar' ? formatCurrency(n) : `${formatNumber(n)} حجز`;
+                    return <tr key={key} className="border-t border-slate-200 dark:border-slate-700"><td className="p-2">{labels[key]} · {unit === 'sar' ? 'ريال' : 'عدد'} · {SWEATER_METRICS[key].direction === 'addition' ? 'إضافة' : 'خصم'}</td>
+                      <td className="p-2">{metricsApi.loading ? 'جارٍ القراءة' : metricsApi.error ? 'تعذرت قراءة اللقطة' : value == null ? 'ما وصلت بيانات سويتر' : display(value)}{source && <small className="block text-slate-500">{new Date(source.extractedAtIso).toLocaleString('en-GB', { timeZone: 'Asia/Riyadh' })}</small>}</td>
+                      <td className="p-2">{adjustmentsApi.loading || adjustmentsApi.error ? 'غير متاح' : registered.value == null ? `العدد غير مسجل · ${registered.records} بند · ${formatCurrency(registered.amount)}` : display(registered.value)}</td></tr>;
+                  })}</tbody></table>
+                <p className="mt-2 text-xs text-slate-500">المقارنة للعرض فقط؛ لا تحول الأعداد إلى ريالات ولا تنشئ خصمًا أو قيدًا. البنود العامة غير المصنفة لا توزّع بالافتراض.</p>
+              </div>
               {adjustmentsApi.adjustments.length === 0 ? (
                 <div className="mt-4">
                   <EmptyState compact icon={Inbox} title="لا تسويات في هذا الشهر" hint="تُسجَّل يدوياً أو تصل من كشف سويتر." />
@@ -435,7 +462,7 @@ export default function SweaterSettlementsPage() {
             </Card>
 
             {/* ── الحجوزات ── */}
-            <Card className="p-4 sm:p-6">
+            <Card className="p-4 sm:p-6" id="settlement-bookings">
               <SectionHeader
                 title={`حجوزات ${periodKey}`}
                 subtitle={`${formatNumber(visible.length)} من ${formatNumber(bookings.length)} بعد الترشيح`}

@@ -33,6 +33,9 @@ const state = {
   canMutate: true,
   settlement: { periodKey: PERIOD, status: 'calculated', figures: FIGURES },
   variances: [],
+  bookings: [],
+  snapshot: null,
+  approve: vi.fn(),
   recordStatement: vi.fn(),
   recordCollection: vi.fn(),
   close: vi.fn(),
@@ -43,15 +46,17 @@ vi.mock('../../contexts/PartnerViewContext', () => ({
 }));
 
 vi.mock('../../hooks/useSweater', () => ({
+  useSweaterMetrics: () => ({ snapshot: state.snapshot, loading: false, error: null }),
+  useSweaterFirstPeriod: () => ({ firstPeriod: PERIOD, loading: false, error: null }),
   useSweaterSettlements: () => ({
     settlements: state.settlement ? [state.settlement] : [],
     loading: false, error: null, refetch: vi.fn(),
-    calculate: vi.fn(), approve: vi.fn(),
+    calculate: vi.fn(), approve: state.approve,
     recordStatement: state.recordStatement,
     recordCollection: state.recordCollection,
     close: state.close,
   }),
-  useSweaterBookings: () => ({ bookings: [], loading: false, error: null, refetch: vi.fn() }),
+  useSweaterBookings: () => ({ bookings: state.bookings, loading: false, error: null, refetch: vi.fn() }),
   useSweaterAdjustments: () => ({ adjustments: [], loading: false, error: null, refetch: vi.fn(), create: vi.fn(), approve: vi.fn() }),
   useSweaterVariances: () => ({ variances: state.variances, loading: false, error: null, refetch: vi.fn(), resolve: vi.fn() }),
 }));
@@ -60,6 +65,7 @@ beforeEach(() => {
   state.canMutate = true;
   state.settlement = { periodKey: PERIOD, status: 'calculated', figures: FIGURES };
   state.variances = [];
+  state.bookings = []; state.snapshot = null; state.approve = vi.fn().mockResolvedValue({});
   state.recordStatement = vi.fn().mockResolvedValue({});
   state.recordCollection = vi.fn().mockResolvedValue({});
   state.close = vi.fn().mockResolvedValue({});
@@ -253,5 +259,41 @@ describe('من لا يملك التعديل لا يرى الأفعال', () => {
     expect(screen.queryByRole('button', { name: /سجّل كشف سويتر/ })).toBeNull();
     expect(screen.queryByRole('button', { name: /أقفل التسوية/ })).toBeNull();
     expect(dialog()).toBeNull();
+  });
+});
+
+describe('وضوح التسوية وحماية الاعتماد', () => {
+  it('disables approval, explains the gaps and groups all review reasons including unknown statuses', () => {
+    const review = Array.from({ length: 112 }, (_, i) => ({ sspBookingId: `S-${i}`, reasonCode: 'no_recognition_policy', reasonAr: 'لا سياسة اعتراف معرّفة لهذا التاريخ.' }));
+    state.settlement.figures = { ...FIGURES, counts: { ...FIGURES.counts, needsReview: 112, unknownStatus: 1 },
+      lines: { ...FIGURES.lines, review, unknown: [{ sspBookingId: 'U', reasonCode: 'unknown_status' }] } };
+    openPage();
+    expect(btn(/اعتمد وارحّل الشهر/).disabled).toBe(true);
+    fireEvent.click(btn(/اعتمد وارحّل الشهر/)); expect(state.approve).not.toHaveBeenCalled();
+    expect(screen.getByText(/محتسبة · 113 تحتاج مراجعة/)).toBeTruthy();
+    const group = screen.getByText('لا سياسة اعتراف سارية · 112 حجزًا').closest('details');
+    expect(group.open).toBe(false); fireEvent.click(group.querySelector('summary'));
+    expect(group.querySelectorAll('li')).toHaveLength(112);
+    expect(screen.getAllByRole('link', { name: 'فتح مسار الإصلاح' })).toHaveLength(2);
+    expect(screen.getByText('كشف سويتر لم يُسجّل.')).toBeTruthy();
+  });
+  it('shows absent ratings as absent, and snapshot counts without treating them as saved services', () => {
+    state.bookings = [{ sspBookingId: 'S-1', normalizedStatus: 'payment_collection', rating: null }];
+    state.snapshot = { metrics: { completedWashes: 501, violations: 530, cancelledByBiker: 13 }, metricSources: {} };
+    openPage();
+    expect(screen.getAllByText('ما وصلت التقييمات').length).toBeGreaterThan(0);
+    expect(screen.queryByText(/تقييم منخفض: 1/)).toBeNull();
+    expect(screen.getByLabelText('أعداد الشهر').textContent).toContain('501');
+    expect(screen.getByLabelText('أعداد الشهر').textContent).toContain('المستوردة: 1');
+    expect(screen.getByLabelText('مقارنة بنود سويتر').textContent).toContain('13 حجز');
+  });
+  it('only enables approval after the existing statement state and all four conditions are satisfied', () => {
+    const row = { sspBookingId: 'S-1', normalizedStatus: 'payment_collection' };
+    state.bookings = [row];
+    state.settlement = { periodKey: PERIOD, status: 'statement_received', statement: { statedNetDue: 23 },
+      figures: { ...FIGURES, counts: { imported: 1, eligible: 1, needsReview: 0, unknownStatus: 0 },
+        services: { net: 20, vat: 3, gross: 23, count: 1 }, netDue: 23, lines: { eligible: [{ sspBookingId: 'S-1' }], review: [], unknown: [] } } };
+    openPage(); expect(btn(/اعتمد وارحّل الشهر/).disabled).toBe(false);
+    fireEvent.click(btn(/اعتمد وارحّل الشهر/)); expect(state.approve).toHaveBeenCalledWith(PERIOD);
   });
 });

@@ -16,6 +16,7 @@ import { resolveDatedRow } from './datedConfig.js';
 import { COL as INGEST_COL } from './ingest.js';
 import { LINKS_COL } from './revenueOrigin.js';
 import { adjustmentTypeProblems } from './adjustmentTypes.js';
+import { settlementApprovalReadiness } from './settlementReadiness.js';
 
 const PRICES = 'sweater_price_list';
 const POLICIES = 'sweater_recognition_policy';
@@ -138,23 +139,28 @@ export async function sweaterRecordStatement(db, FieldValue, {
 export async function sweaterApproveSettlement(db, FieldValue, { periodKey, note = null }, { userId = null } = {}) {
   const pk = String(periodKey ?? '').trim();
   const ref = db.collection(SETTLEMENTS_COL).doc(pk);
-  const snap = await ref.get();
-  if (!snap.exists) throw new SweaterSettlementError('لا تسوية بهذا الشهر.', { code: 'not-found' });
-  const s = snap.data();
-
-  const problem = transitionProblem(s.status, 'approved');
-  if (problem) throw new SweaterSettlementError(problem, { code: 'failed-precondition' });
-  if (!(Number(s.figures?.services?.gross) > 0)) {
-    throw new SweaterSettlementError('لا خدمات مؤهّلة — لا شيء يُعتمد.');
-  }
-
-  await ref.set({
-    status: 'approved',
-    approvedAt: FieldValue.serverTimestamp(),
-    approvedAtIso: new Date().toISOString(),
-    approvedBy: userId,
-    approvalNote: note,
-  }, { merge: true });
+  const s = await db.runTransaction(async tx => {
+    const [snap, bookingDocs, varianceDocs, prices, policies, adjustments, links] = await Promise.all([
+      tx.get(ref), tx.get(db.collection(INGEST_COL.BOOKINGS).where('periodKey', '==', pk)),
+      tx.get(db.collection(VARIANCES_COL).where('periodKey', '==', pk)),
+      tx.get(db.collection(PRICES)), tx.get(db.collection(POLICIES)),
+      tx.get(db.collection(ADJUSTMENTS_COL).where('periodKey', '==', pk)),
+      tx.get(db.collection(LINKS_COL).where('side', '==', 'booking')),
+    ]);
+    if (!snap.exists) throw new SweaterSettlementError('لا تسوية بهذا الشهر.', { code: 'not-found' });
+    const current = snap.data();
+    const rows = docs => docs.docs.map(d => ({ id: d.id, ...d.data() }));
+    const bookings = rows(bookingDocs);
+    const freshFigures = computeSettlement({ bookings, priceRows: rows(prices), policyRows: rows(policies),
+      adjustments: rows(adjustments), linkedBookingIds: new Set(rows(links).map(row => row.sspBookingId)) });
+    const readiness = settlementApprovalReadiness({ settlement: current, variances: rows(varianceDocs), bookings, freshFigures });
+    if (!readiness.allowed) throw new SweaterSettlementError(readiness.problems.join(' '), { code: 'failed-precondition' });
+    const problem = transitionProblem(current.status, 'approved');
+    if (problem) throw new SweaterSettlementError(problem, { code: 'failed-precondition' });
+    tx.set(ref, { status: 'approved', approvedAt: FieldValue.serverTimestamp(), approvedAtIso: new Date().toISOString(),
+      approvedBy: userId, approvalNote: note }, { merge: true });
+    return current;
+  });
 
   const posted = await postSource(db, FieldValue, { kind: 'sweater_settlement', sourceId: pk }, { userId });
 

@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from 'react';
 import { isFirebaseConfigured } from '../lib/firebaseClient';
-import { fetchRows, sortBy, where } from '../lib/firestoreCrud';
+import { fetchRows, sortBy, where, orderBy, limit } from '../lib/firestoreCrud';
 import { callServer } from '../lib/ledgerTransport';
 import { useFirestoreQuery } from './useFirestoreQuery';
 import { composeSweaterMetricReadings } from '../lib/sweaterMetricReadings';
@@ -15,6 +15,18 @@ import { composeSweaterMetricReadings } from '../lib/sweaterMetricReadings';
 // ═══════════════════════════════════════════════════════════════════════════
 
 const enabled = isFirebaseConfigured;
+
+/** Earliest evidence only: two bounded reads, not a second full booking download. */
+export function useSweaterFirstPeriod() {
+  const query = useFirestoreQuery(async () => {
+    const [bookings, metrics] = await Promise.all([
+      fetchRows('sweater_bookings', [orderBy('serviceDate', 'asc'), limit(1)]),
+      fetchRows('sweater_metric_snapshots', [orderBy('periodKey', 'asc'), limit(1)]),
+    ]);
+    return [...bookings.map(b => String(b.periodKey || (b.record ?? b).serviceDate || '').slice(0, 7)), ...metrics.map(row => row.periodKey)].filter(Boolean).sort();
+  }, { cacheKey: 'sweater_first_period', enabled, fallback: [] });
+  return { firstPeriod: query.data?.[0] || null, loading: query.loading, error: query.error };
+}
 
 /** حجوزات شهرٍ واحد. */
 export function useSweaterBookings(periodKey) {

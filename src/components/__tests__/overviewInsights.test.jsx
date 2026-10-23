@@ -93,6 +93,18 @@ it('shows only evidence-backed attention items and does not attribute an unfinis
   expect(idle.textContent).not.toContain('2026-10-21'); expect(idle.textContent).not.toContain('لم يكتمل');
   expect(card('إقامات تنتهي خلال 30 يومًا').textContent).toContain('2026-11-01');
 });
+it('lists departed bikers with no end date for review only, and links to the register', () => {
+  const d = data(); const onNavigate = vi.fn();
+  d.workers.bikers = [biker, { ...biker, id: 'r1', name: 'هارب بلا تاريخ', driverExternalId: '3001', currentStatus: 'هرب مع الشريحة', startDate: '2026-09-01' },
+    { ...biker, id: 'r2', name: 'منتهي بتاريخ', driverExternalId: '3002', currentStatus: 'مشيناه', endDate: '2026-10-05' }];
+  render(<OverviewOperationalAttention data={d} periodKey="2026-10" today="2026-10-21" washReady workerReady language="ar" onNavigate={onNavigate} />);
+  const list = card('يحتاج تاريخ نهاية');
+  expect(list.textContent).toContain('هارب بلا تاريخ'); expect(list.textContent).toContain('هرب مع الشريحة');
+  expect(list.textContent).toContain('2026-09-01'); expect(list.textContent).toContain('لا يُعدَّل شيء');
+  expect(list.textContent).not.toContain('منتهي بتاريخ'); expect(list.textContent).not.toContain('عامل اختبار');
+  fireEvent.click(within(list).getByRole('button', { name: 'فتح سجل البايكر' }));
+  expect(onNavigate).toHaveBeenCalledWith('bikers');
+});
 it('omits alerts when timestamps/expiry are missing rather than inferring a short wash or expired document', () => {
   const d = data(); d.bookings.items[0].record.startedAt = null; d.workers.bikers = [{ ...biker, iqamaExpiry: '' }];
   render(<OverviewOperationalAttention data={d} periodKey="2026-10" today="2026-10-21" washReady workerReady language="ar" />);

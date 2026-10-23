@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
-export default function ScrollableTable({ children, className = '', stickyIdentity = false }) {
+// identityColumn: which column stays pinned with stickyIdentity — 1, or 2 where a code column comes first.
+export default function ScrollableTable({ children, className = '', stickyIdentity = false, identityColumn = 1 }) {
   const ref = useRef(null);
   const [overflow, setOverflow] = useState(false);
   useEffect(() => {
@@ -18,6 +19,6 @@ export default function ScrollableTable({ children, className = '', stickyIdenti
       <button type="button" className="sw-button sw-button--sm sw-button--secondary" aria-label="تمرير الجدول يمينًا" onClick={() => ref.current.scrollBy({ left: 240, behavior: 'smooth' })}>→</button>
       <button type="button" className="sw-button sw-button--sm sw-button--secondary" aria-label="تمرير الجدول يسارًا" onClick={() => ref.current.scrollBy({ left: -240, behavior: 'smooth' })}>←</button>
     </div>}
-    <div ref={ref} className={`${className} ${stickyIdentity ? 'sw-table-sticky-identity' : ''}`} role="region" aria-label="جدول قابل للتمرير" tabIndex={overflow ? 0 : undefined}>{children}</div>
+    <div ref={ref} className={`${className} ${stickyIdentity ? `sw-table-sticky-identity${identityColumn === 2 ? ' sw-table-sticky-identity--second' : ''}` : ''}`} role="region" aria-label="جدول قابل للتمرير" tabIndex={overflow ? 0 : undefined}>{children}</div>
   </div>;
 }

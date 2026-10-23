@@ -29,6 +29,12 @@ export default function OverviewOperationalAttention({ data, periodKey, today, w
       {workerReady && a.iqamas.length > 0 && <section><h3>{text(`إقامات تنتهي خلال ${settings.documentWarningDays} يومًا`, `Iqamas expiring within ${settings.documentWarningDays} days`)}</h3>
         <ul>{a.iqamas.map(({ biker, daysLeft }) => <li key={biker.id}>{bikerLabel(biker)}<bdi>{biker.iqamaExpiry}</bdi><span>{formatNumber(daysLeft)} {text('يوم', 'days')}</span></li>)}</ul>
       </section>}
+      {workerReady && a.missingEndDate.length > 0 && <section><h3>{text('يحتاج تاريخ نهاية', 'Needs an end date')}</h3>
+        <small>{text(`حالتهم ${settings.departedStatuses.join(' / ')} ولا تاريخ نهاية لهم، فرواتبهم تُحسب في مسير الشهر. للعرض فقط؛ لا يُعدَّل شيء تلقائيًا.`,
+          `Their status is ${settings.departedStatuses.join(' / ')} with no end date, so the month’s payroll still counts them. For review only; nothing is changed automatically.`)}</small>
+        <ul>{a.missingEndDate.map(biker => <li key={biker.id}>{bikerLabel(biker)}<span translate="no">{biker.currentStatus}</span>{biker.startDate && <bdi>{biker.startDate}</bdi>}</li>)}</ul>
+        <button className="sw-overview__link" type="button" onClick={() => onNavigate?.('bikers')}>{text('فتح سجل البايكر', 'Open the bikers register')}</button>
+      </section>}
     </div>
     <details className="sw-overview__disclosure sw-overview__data-gaps"><summary>{text('تغطية التنبيهات والبيانات الناقصة', 'Alert coverage and missing data')}</summary>
       <p>{!bookingReady ? text('قراءة حجوزات سويتر غير متاحة؛ لا يمكن فحص مدد الغسيل.', 'Sweater bookings are unavailable; durations cannot be checked.')

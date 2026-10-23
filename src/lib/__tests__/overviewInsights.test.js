@@ -117,6 +117,14 @@ describe('evidenced, month-scoped attention items', () => {
     const a = overviewAttention({ ops: operations([wash('unlinked', '2026-10-20', 1, null)]), today: '2026-10-21', bikers: [biker] });
     expect(a.idle).toEqual([]);
   });
+  it('lists bikers who left (هرب / مشيناه) with no end date, whatever the wash state, without changing them', () => {
+    const left = [{ ...biker, id: 'r1', currentStatus: 'هرب' }, { ...biker, id: 'r2', currentStatus: 'هرب مع الشريحة' }, { ...biker, id: 'r3', currentStatus: 'مشيناه' },
+      { ...biker, id: 'r4', currentStatus: 'مشيناه', endDate: '2026-10-05' }, { ...biker, id: 'r5', currentStatus: 'شغال' }];
+    const before = JSON.stringify(left);
+    expect(overviewAttention({ ops: ops(), today: '2026-10-21', bikers: left }).missingEndDate.map(b => b.id)).toEqual(['r1', 'r2', 'r3']);
+    expect(overviewAttention({ ops: null, today: '2026-10-21', bikers: left }).missingEndDate.map(b => b.id)).toEqual(['r1', 'r2', 'r3']);
+    expect(JSON.stringify(left)).toBe(before);
+  });
   it('checks yesterday only — the last completed day, never the running one', () => {
     const today = '2026-10-21'; const yesterday = '2026-10-20';
     const idle = (washes, bikers = [biker], day = today) => overviewAttention({ ops: operations(washes, day), today: day, bikers }).idle;

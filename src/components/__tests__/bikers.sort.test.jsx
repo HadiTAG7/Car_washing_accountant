@@ -62,7 +62,7 @@ it('shows Sweater ID before the name, searchable and sortable with missing IDs l
   const rows = [...container.querySelectorAll('tbody tr')];
   expect(rows.find(tr => tr.cells[1].textContent.includes('خالد')).cells[0].textContent).toBe('001986');
   expect(rows.find(tr => tr.cells[1].textContent.includes('سالم')).cells[0].textContent).toBe('—');
-  // The sticky cell inherits table direction; only the identifier text is LTR.
+  // The cell inherits table direction; only the identifier text is LTR.
   expect(rows[0].cells[0].getAttribute('dir')).toBeNull();
   expect(rows[0].cells[0].querySelector('span').getAttribute('dir')).toBe('ltr');
   fireEvent.click(header('Sweater ID'));
@@ -71,6 +71,15 @@ it('shows Sweater ID before the name, searchable and sortable with missing IDs l
   expect(namesInTable()).toEqual(['خالد', 'أحمد', 'سالم']);
   fireEvent.change(screen.getByRole('searchbox', { name: 'البحث في سجل العمال' }), { target: { value: '001986' } });
   expect(namesInTable()).toEqual(['خالد']);
+});
+
+it('pins the name, not Sweater ID, while the table scrolls sideways', () => {
+  const { container } = render(<BikersPage role="admin" />);
+  // index.css pins the second column of a --second table (the name here).
+  const box = container.querySelector('table').parentElement;
+  expect(box.classList.contains('sw-table-sticky-identity')).toBe(true);
+  expect(box.classList.contains('sw-table-sticky-identity--second')).toBe(true);
+  expect(container.querySelectorAll('thead th')[1].textContent).toBe('الاسم');
 });
 
 it('shows current status beside the name and searches/sorts it without changing summary amounts', () => {

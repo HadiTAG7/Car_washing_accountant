@@ -19,6 +19,8 @@ import AddBikerModal from './AddBikerModal';
 import AddBikerAdvanceModal from './AddBikerAdvanceModal';
 import BikerPayroll from './BikerPayroll';
 import BikerProfile from './BikerProfile';
+import { BikerBreakEvenLoader, BreakEvenCells, BreakEvenHeaders, BreakEvenReconciliation, BREAK_EVEN_COLUMNS, IdleSalariesCard } from './BikerBreakEven';
+import { riyadhToday } from '../lib/bikerProfile';
 import { useBikers } from '../hooks/useBikers';
 import { useWashes } from '../hooks/useWashes';
 import { useTemporaryExpenses } from '../hooks/useTemporaryExpenses';
@@ -134,6 +136,10 @@ export default function BikersPage({ role, payrollPreview = false, initialSectio
   const closeToast = useCallback(() => setToast((t) => ({ ...t, open: false })), []);
 
   const month = todayMonth();
+  // Break-even per biker reads the month's statement and payroll: admin and accountant only.
+  const showBreakEven = ['admin', 'accountant'].includes(role) && !isPartnerView;
+  const [breakEven, setBreakEven] = useState({ status: 'loading' });
+  const columnCount = 13 + (showBreakEven ? BREAK_EVEN_COLUMNS : 0);
 
   // One derived bundle per biker — stats, advances, iqama — computed from the
   // same rows every other page reads, so no number here can disagree with them.
@@ -312,9 +318,10 @@ export default function BikersPage({ role, payrollPreview = false, initialSectio
             ) : null}
           />
 
+          {showBreakEven && <IdleSalariesCard state={breakEven} monthLabel={formatMonthLabel(month)} />}
           <TableSearch id="biker-search" label="البحث في سجل العمال" value={search} onChange={setSearch} shown={filteredRows.length} total={rows.length} hint="الملخصات تشمل جميع العمال" />
-          <ScrollableTable stickyIdentity className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
-            <table className="w-full min-w-[1440px] text-sm">
+          <ScrollableTable stickyIdentity identityColumn={2} className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
+            <table className={`w-full ${showBreakEven ? 'min-w-[2160px]' : 'min-w-[1440px]'} text-sm`}>
               <thead>
                 <tr className="text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase border-b border-slate-100 dark:border-slate-800">
                   <SortableTh sort={sort} onSort={applySort} id="sweaterId" />
@@ -329,20 +336,21 @@ export default function BikersPage({ role, payrollPreview = false, initialSectio
                   <SortableTh sort={sort} onSort={applySort} id="washCount" className="text-center" />
                   <SortableTh sort={sort} onSort={applySort} id="commission" className="text-left tabular-nums" />
                   <SortableTh sort={sort} onSort={applySort} id="iqamaExpiry" />
+                  {showBreakEven && <BreakEvenHeaders />}
                   <th className="py-3 px-4 whitespace-nowrap text-left w-36">إجراءات</th>
                 </tr>
               </thead>
               <tbody>
                 {loading && bikers.length === 0 && (
                   <tr>
-                    <td colSpan={13} className="py-10">
+                    <td colSpan={columnCount} className="py-10">
                       <LoadingState message="جارٍ تحميل سجل البايكرات..." />
                     </td>
                   </tr>
                 )}
                 {!loading && bikers.length === 0 && !error && (
                   <tr>
-                    <td colSpan={13}>
+                    <td colSpan={columnCount}>
                       <EmptyState
                         compact
                         icon={Bike}
@@ -356,7 +364,7 @@ export default function BikersPage({ role, payrollPreview = false, initialSectio
                     </td>
                   </tr>
                 )}
-                {bikers.length > 0 && filteredRows.length === 0 && <tr><td colSpan={13} className="py-8 text-center text-slate-500 dark:text-slate-400">لا توجد نتائج مطابقة للبحث</td></tr>}
+                {bikers.length > 0 && filteredRows.length === 0 && <tr><td colSpan={columnCount} className="py-8 text-center text-slate-500 dark:text-slate-400">لا توجد نتائج مطابقة للبحث</td></tr>}
                 {filteredRows.map((r) => (
                   <tr key={r.id} className="border-b border-slate-50 dark:border-slate-800/60 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
                     <td className="py-3 px-4 min-w-[110px] whitespace-nowrap text-center tabular-nums text-slate-600 dark:text-slate-400">
@@ -420,6 +428,7 @@ export default function BikersPage({ role, payrollPreview = false, initialSectio
                     <td className="py-3 px-4 whitespace-nowrap">
                       <IqamaBadge expiry={r.iqamaExpiry} />
                     </td>
+                    {showBreakEven && <BreakEvenCells state={breakEven} bikerId={r.id} />}
                     <td className="py-3 px-4 whitespace-nowrap text-left">
                       <div className="inline-flex items-center gap-1">
                         {canMutate && (
@@ -460,6 +469,10 @@ export default function BikersPage({ role, payrollPreview = false, initialSectio
               </tbody>
             </table>
           </ScrollableTable>
+          {showBreakEven && <>
+            <BikerBreakEvenLoader periodKey={month} today={riyadhToday()} onResult={setBreakEven} />
+            <BreakEvenReconciliation state={breakEven} monthLabel={formatMonthLabel(month)} />
+          </>}
         </Card>
           </>
         )}

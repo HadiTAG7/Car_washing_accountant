@@ -49,6 +49,20 @@
 .sw-overview__bars button { display: flex; flex-direction: column; align-items: center; gap: 7px; min-width: 28px; font-size: .7rem; border-radius: 6px; }
 .sw-overview__bar-count { font-weight: 600; }
 .sw-overview__bar-track { display: flex; align-items: end; height: 125px; width: min(18px, 80%); border-radius: 4px; background: #64748b0c; }
+/* Daily break-even: one dashed line across the days (a segment per day at the same height), green/red bars. */
+.sw-overview__bar-plot { position: relative; display: flex; justify-content: center; width: 100%; }
+.sw-overview__breakeven-line { position: absolute; inset-inline: -3px; height: 0; border-top: 2px dashed var(--sw-text-secondary); pointer-events: none; }
+.sw-overview__breakeven-line em { position: absolute; inset-inline-start: 4px; bottom: 3px; white-space: nowrap; font-style: normal; font-size: .68rem; font-weight: 600;
+  color: var(--sw-text-secondary); background: var(--sw-surface, #fff); padding: 0 4px; border-radius: 4px; }
+.sw-overview__bars .sw-overview__day-reached .sw-overview__bar-track > span { background: var(--sw-success); }
+.sw-overview__bars .sw-overview__day-below .sw-overview__bar-track > span { background: var(--sw-danger); }
+.sw-overview__breakeven { display: grid; gap: 6px; margin: 4px 0 10px; padding: 10px 12px; border-radius: 10px; background: #64748b0a; }
+.sw-overview__breakeven-legend { display: flex; align-items: center; gap: 8px; margin: 0; font-weight: 600; }
+.sw-overview__breakeven-legend > span { width: 22px; border-top: 2px dashed var(--sw-text-secondary); }
+.sw-overview__breakeven dl { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 0; }
+.sw-overview__breakeven dt { font-size: .75rem; color: var(--sw-text-secondary); }
+.sw-overview__breakeven dd { margin: 0; font-weight: 600; }
+.sw-overview__breakeven small, .sw-overview__breakeven-missing { color: var(--sw-text-secondary); font-size: .75rem; }
 .sw-overview__bar-track > span { width: 100%; min-height: 2px; border-radius: 4px; background: var(--sw-brand-500); }
 .sw-overview__bars button:hover .sw-overview__bar-track { background: #f9731620; }
 .sw-overview__disclosure { margin-top: 12px; font-size: .8rem; }

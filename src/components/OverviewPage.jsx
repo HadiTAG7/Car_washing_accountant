@@ -13,6 +13,7 @@ import CapitalOverviewPage from './CapitalOverviewPage';
 import OverviewBikerQuality from './OverviewBikerQuality';
 import OverviewBusinessInsights from './OverviewBusinessInsights';
 import OverviewOperationalAttention from './OverviewOperationalAttention';
+import { dailyBreakEven, dailyBreakEvenDays } from '../lib/breakEven';
 import BikerProfileMonthPicker from './BikerProfileMonthPicker';
 import IncomeStatementDetailsModal from './IncomeStatementDetailsModal';
 import ModalSurface from './ModalSurface';
@@ -21,6 +22,9 @@ import { Card, SectionHeader } from './UI';
 import { SetupRequiredCard } from './ErrorState';
 import './BikerProfile.css';
 import './OverviewPage.css';
+
+// Layout only: the daily chart's scale leaves room above the break-even line for its label.
+const BREAK_EVEN_LABEL_ROOM = 1.16;
 
 export default function OverviewPage(props) {
   const { role, isPartnerView } = usePartnerView();
@@ -70,6 +74,14 @@ export function ManagementOverview({ onNavigate }) {
     : detail?.kind === 'yesterday' ? ops?.yesterdayRows : detail?.kind === 'workers' ? ops?.workingIds.map(id => workers.bikers.find(biker => biker.id === id)
       || { id, name: ops.rows.find(row => row.bikerId === id)?.bikerName || '—' }) : [];
   const isWashDetail = ['day', 'month', 'yesterday', 'bikerAverage'].includes(detail?.kind);
+  // Daily break-even: the month's statement costs ÷ net wash price ÷ calendar days.
+  const breakEven = washReady ? dailyBreakEven({ statement: st, periodKey, completeMonth: ops.completeMonth }) : null;
+  const breakEvenDays = breakEven ? dailyBreakEvenDays(ops.daily, breakEven.required) : null;
+  const chartMax = Math.max(1, ...(washReady ? ops.daily.map(d => d.quantity) : []), (breakEven?.required ?? 0) * BREAK_EVEN_LABEL_ROOM);
+  const breakEvenLabel = breakEven && `${text('نقطة التعادل', 'Break-even')}: ${formatNumber(Math.round(breakEven.required * 100) / 100)} ${text('غسلة/يوم', 'washes/day')}`;
+  const breakEvenBasis = breakEven && `${breakEven.basis === 'month' ? text('مصروفات الشهر', 'The month’s costs') : text('مصروفات الشهر حتى اليوم', 'The month’s costs to date')} `
+    + `${formatCurrencyPrecise(breakEven.costs)} ÷ ${text('سعر الغسلة قبل الضريبة', 'net wash price')} ${formatCurrencyPrecise(breakEven.price)} ÷ ${breakEven.monthDays} ${text('يومًا', 'days')}`
+    + `${breakEven.estimated ? ` · ${text('تشمل رواتب تقديرية', 'includes estimated salaries')}` : ''}${breakEven.partial ? ` · ${text('التكلفة جزئية', 'partial costs')}` : ''}`;
   return <>
     <TopBar title={text('نظرة عامة', 'Overview')} subtitle={text('صورة المشروع: المال، التشغيل والجودة', 'Your business at a glance: finance, operations and quality')}
       actions={canMutate && isFirebaseConfigured ? <button type="button" onClick={backup} disabled={backupBusy}
@@ -115,12 +127,21 @@ export function ManagementOverview({ onNavigate }) {
         </div>
         {(washes.error || ops?.conflicts.length > 0) && <p role="alert" className="sw-overview__notice">{text('تعذّر تأكيد إجمالي الغسلات؛ راجع المصدر أو تعارض التكرار.', 'Wash totals are unconfirmed. Review source availability or conflicting duplicates.')}</p>}
         <Card className="sw-overview__panel sw-overview__daily"><SectionHeader title={text('الغسلات يومًا بيوم', 'Daily washes')} subtitle={text('اضغط على اليوم لعرض الغسلات المسجلة فيه.', 'Select a day to view its recorded washes.')} />
-          {washReady ? <><div className="sw-overview__bars" role="group" aria-label={text('رسم الغسلات اليومية', 'Daily washes chart')}>
-            {ops.daily.map(day => <button type="button" key={day.date} className={day.incomplete ? 'sw-overview__day-incomplete' : undefined}
-              title={day.incomplete ? text('لم يكتمل؛ مستبعد من المتوسطات', 'Incomplete; excluded from averages') : date(day.date)}
-              aria-label={`${date(day.date)}: ${number(day.quantity)} ${text('غسلة', 'washes')}${day.incomplete ? text(' — لم يكتمل', ' — incomplete') : ''}`}
+          {washReady ? <>{breakEven ? <div className="sw-overview__breakeven" title={breakEvenBasis}>
+            <p className="sw-overview__breakeven-legend"><span aria-hidden="true" />{breakEvenLabel}</p>
+            <dl><div><dt>{text('أيام وصلت نقطة التعادل', 'Days at break-even')}</dt><dd><bdi>{formatNumber(breakEvenDays.reached)}</bdi> {text('من', 'of')} <bdi>{formatNumber(breakEvenDays.completed)}</bdi> {text('يومًا مكتملًا', 'completed days')}</dd></div>
+              <div><dt>{text('متوسط الفجوة', 'Average gap')}</dt><dd><bdi dir="ltr">{breakEvenDays.averageGap == null ? unavailable : `${breakEvenDays.averageGap > 0 ? '+' : ''}${formatNumber(Math.round(breakEvenDays.averageGap * 100) / 100)}`}</bdi> {text('غسلة/يوم', 'washes/day')}</dd></div></dl>
+            <small>{breakEvenBasis}</small>
+          </div> : <p className="sw-overview__breakeven-missing">{text('نقطة التعادل غير متاحة لحين تأكيد مصروفات الشهر.', 'Break-even is unavailable until the month’s costs are confirmed.')}</p>}
+          <div className="sw-overview__bars" role="group" aria-label={text('رسم الغسلات اليومية', 'Daily washes chart')}>
+            {ops.daily.map((day, i) => { const reached = breakEvenDays?.days[i].reached ?? null;
+              return <button type="button" key={day.date} className={day.incomplete ? 'sw-overview__day-incomplete' : reached === true ? 'sw-overview__day-reached' : reached === false ? 'sw-overview__day-below' : undefined}
+              title={day.incomplete ? text('لم يكتمل؛ مستبعد من المتوسطات', 'Incomplete; excluded from averages') : `${date(day.date)}${reached === null ? '' : reached ? ` · ${text('وصل نقطة التعادل', 'At or above break-even')}` : ` · ${text('تحت نقطة التعادل', 'Below break-even')}`}`}
+              aria-label={`${date(day.date)}: ${number(day.quantity)} ${text('غسلة', 'washes')}${day.incomplete ? text(' — لم يكتمل', ' — incomplete') : reached === null ? '' : reached ? text(' — وصل نقطة التعادل', ' — at or above break-even') : text(' — تحت نقطة التعادل', ' — below break-even')}`}
               onClick={() => setDetail({ kind: 'day', title: date(day.date), rows: day.rows })}>
-              <span className="sw-overview__bar-count">{number(day.quantity)}</span><span className="sw-overview__bar-track"><span style={{ height: `${day.quantity / Math.max(1, ...ops.daily.map(d => d.quantity)) * 100}%` }} /></span><time dateTime={day.date}>{Number(day.date.slice(8))}</time>{day.incomplete && <small>{text('لم يكتمل', 'Incomplete')}</small>}</button>)}
+              <span className="sw-overview__bar-count">{number(day.quantity)}</span><span className="sw-overview__bar-plot"><span className="sw-overview__bar-track"><span style={{ height: `${day.quantity / chartMax * 100}%` }} /></span>
+                {breakEven && <span className="sw-overview__breakeven-line" style={{ bottom: `${breakEven.required / chartMax * 100}%` }} aria-hidden="true">{i === 0 && <em>{breakEvenLabel}</em>}</span>}</span>
+              <time dateTime={day.date}>{Number(day.date.slice(8))}</time>{day.incomplete && <small>{text('لم يكتمل', 'Incomplete')}</small>}</button>; })}
           </div><details className="sw-overview__disclosure"><summary>{text('عرض البيانات كجدول', 'View data as a table')}</summary><table><thead><tr><th>{text('التاريخ', 'Date')}</th><th>{text('الغسلات', 'Washes')}</th></tr></thead><tbody>{ops.daily.map(day => <tr key={day.date}><td>{date(day.date)}{day.incomplete && ` · ${text('لم يكتمل', 'Incomplete')}`}</td><td>{number(day.quantity)}</td></tr>)}</tbody></table></details></>
             : <p role="status">{washes.loading ? text('جارٍ تحميل الغسلات…', 'Loading washes…') : unavailable}</p>}
         </Card>

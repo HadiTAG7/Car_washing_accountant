@@ -1,5 +1,30 @@
 # Agent 7 operational sync v2 — raw facts and evidenced wash executions
 
+## Later completion after a started observation (24 October 2026)
+
+The same v2 preview/save/status workflow can promote an earlier `washing_started`
+observation when SSP reports a different prefix for the same numeric booking.
+There is no new input flag, permission, signer, sender or owner assertion.
+The earlier observation must be an intact operations-only `execution_not_final`
+record with the same worker, service day, service type and actual Start Service.
+The later observation must satisfy all existing genuine End Service checks.
+The closed earlier run and immutable raw must prove that no execution was made,
+and its extraction must precede the newly observed completion.
+
+Any existing wash, owner decision/link, ambiguous alias, financial reference,
+closed period or protected settlement continues to block promotion. These facts
+are rechecked inside the existing transaction; changed previews fail closed.
+The one new wash uses the original reserved wash ID from the natural-number
+claim. The B booking, historical raw, original claim and closed run are never
+rewritten. A new current-prefix booking and raw retain the later source facts.
+`observationPromotion` in the result exposes the checks and hashed evidence;
+`status` verifies preservation separately from the later booking.
+
+The existing 20/3/23 pricing and unpaid 4.50 commission representation are
+unchanged. No collection, payroll payment or journal is created. Replaying the
+same run or another prefix cannot create a second wash. This is source-proven
+execution, not the distinct administrative cancellation/owner-decision route.
+
 ## Existing paths and the change
 
 The original `/api/integrations/sweater/import` authenticates the restricted

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { bikerBreakEven, coverageTone, dailyBreakEven, dailyBreakEvenDays } from '../breakEven';
 import { OVERVIEW_SETTINGS } from '../../config/overviewSettings';
+import { overviewOperations } from '../overviewDashboard';
 
 const line = (bikerId, basicDue, daysEntitled = 31, extra = {}) => ({ bikerId, name: bikerId, basicDue, bonus: 0, deduction: 0, daysEntitled, monthDays: 31, ...extra });
 const wash = (bikerId, washDate, quantity = 1) => ({ bikerId, washDate, quantity });
@@ -72,9 +73,12 @@ describe('break-even per biker, payroll basis (optional)', () => {
     expect([b.actualDaily, c.washes, c.actualDaily, c.coverage, c.tone]).toEqual([1, 0, null, 0, 'red']);
     expect(c.overCapacity).toBe(true); expect(a.overCapacity).toBe(false);
     expect(r.unlinkedWashes).toBe(3);
-    // c has no wash: 0 a day in the average, as in its coverage.
-    expect(r.averageActualDaily).toBeCloseTo((2 + 1 + 0) / 3, 10);
-    expect(r.averageCoverage).toBeCloseTo(r.averageActualDaily / r.averageRequiredDaily, 10);
+    // The overview's average per biker day: unknown while a completed wash has no biker.
+    expect(r.averageActualDaily).toBeNull(); expect(r.averageCoverage).toBeNull();
+    // Linked only: (2 + 2 + 1) washes ÷ 3 biker days (a on the 1st and 2nd, b on the 1st); today's 9 excluded.
+    const linked = bikerBreakEven({ statement: { totalCosts: 61800 }, payrollLines: lines, washes: washes.filter(w => w.bikerId), periodKey: '2026-10', today: '2026-10-05', settings: payroll });
+    expect(linked.averageActualDaily).toBeCloseTo(5 / 3, 10);
+    expect(linked.averageCoverage).toBeCloseTo((5 / 3) / linked.averageRequiredDaily, 10);
   });
   it('lists bikers who washed but have no eligible payroll days, with no cost', () => {
     const r = bikerBreakEven({ statement, payrollLines: [line('a', 900)], washes: [wash('x', '2026-10-01', 4)], periodKey: '2026-10' });
@@ -131,6 +135,17 @@ describe('break-even per biker, washers basis (the default)', () => {
     expect(full.share + late.share).toBe(900 + 390);
     expect(late.workDays).toBeCloseTo(29 * 8 / 31, 10);
     expect(r.difference).toBe(0);
+  });
+  it('its average actual is the overview’s «متوسط غسلات البايكر»: washes ÷ biker wash days, from the same rows', () => {
+    // a: 4 and 6 on two days (5 a day); b: 15 on one day; c: 3 today, still running.
+    const rows = [['w1', 'a', '2026-10-01', 4], ['w2', 'a', '2026-10-02', 6], ['w3', 'b', '2026-10-03', 15], ['w4', 'c', '2026-10-23', 3]]
+      .map(([id, bikerId, washDate, quantity]) => ({ id, bikerId, washDate, quantity, status: 'مكتملة' }));
+    const ops = overviewOperations({ washes: rows, periodKey: '2026-10', today: '2026-10-23' });
+    const r = bikerBreakEven({ statement: { totalCosts: 3000 }, payrollLines: [line('a', 900), line('b', 900), line('c', 900)], washes: ops.rows, periodKey: '2026-10', today: '2026-10-23' });
+    // 25 washes ÷ 3 biker days, not the mean of each biker's own average ((5 + 15) ÷ 2 = 10).
+    expect(r.averageActualDaily).toBeCloseTo(25 / 3, 10);
+    expect(ops.averagePerBikerDay).toBe(8.33);
+    expect(r.averageCoverage).toBeCloseTo((25 / 3) / r.averageRequiredDaily, 10);
   });
   it('with no washer yet nothing is allocated, and the difference says so', () => {
     const r = bikerBreakEven({ statement: { totalCosts: 900 }, payrollLines: [line('a', 900)], washes: [wash('a', '2026-10-01')], periodKey: '2026-10', today: '2026-10-01' });

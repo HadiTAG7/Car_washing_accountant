@@ -26,6 +26,25 @@ export function overviewWindow(periodKey, today) {
     completeMonth: range.to < today };
 }
 
+/**
+ * The average biker's washes a day: completed washes ÷ completed biker wash
+ * days (one per biker per day with washes; today is still running). Unknown
+ * (null) while a completed wash has no biker, since its day cannot be counted.
+ * The overview's «متوسط غسلات البايكر» and break-even per biker both use it.
+ */
+export function averageWashesPerBikerDay(rows = [], today) {
+  const bikerDays = new Set(); let washes = 0; let unlinked = false;
+  for (const row of rows) {
+    const quantity = Math.max(0, Number(row.quantity) || 0);
+    const day = row.washDate ?? row.wash_date;
+    if (!quantity || !day || (today && day >= today)) continue;
+    const bikerId = String(row.bikerId ?? row.biker_id ?? '').trim();
+    if (!bikerId) { unlinked = true; continue; }
+    washes += quantity; bikerDays.add(JSON.stringify([bikerId, day]));
+  }
+  return { washes, bikerDays: bikerDays.size, average: bikerDays.size && !unlinked ? washes / bikerDays.size : null };
+}
+
 // Descriptive, read-only operational aggregation. Raw booking status never
 // creates a wash or revenue. Reuse the same execution deduplication as profiles.
 export function overviewOperations({ washes = [], bikers = [], periodKey, today }) {
@@ -48,22 +67,21 @@ export function overviewOperations({ washes = [], bikers = [], periodKey, today 
   const washDays = completedDays.filter(day => day.quantity > 0).length;
   // One denominator unit per biker on a day with positive washes. Do not use
   // today's status or calendar days as a proxy for historic work/attendance.
-  const bikerDays = new Set(); const washingBikers = new Set(); let unlinkedBikerWashes = 0;
+  const perBikerDay = averageWashesPerBikerDay(selected, today);
+  const washingBikers = new Set(); let unlinkedBikerWashes = 0;
   for (const row of selected.filter(row => Number(row.quantity) > 0)) {
     const bikerId = String(row.bikerId ?? row.biker_id ?? '').trim();
     if (!bikerId) { unlinkedBikerWashes++; continue; }
     washingBikers.add(bikerId);
-    if (row.washDate < today) bikerDays.add(JSON.stringify([bikerId, row.washDate ?? row.wash_date]));
   }
   const yesterdayRows = selected.filter(row => row.washDate === yesterday);
-  const unlinkedCompleted = selected.some(row => row.washDate < today && Number(row.quantity) > 0 && !String(row.bikerId ?? row.biker_id ?? '').trim());
   return { ...window, rows: selected, daily, completedDays, completedQuantity, quantity: sum(selected),
     previousQuantity: previous.length ? sum(previous) : null, hasPreviousData: previous.length > 0,
     yesterday, yesterdayInPeriod: yesterday >= window.from && yesterday <= window.to, yesterdayRows,
     yesterdayQuantity: yesterday >= window.from && yesterday <= window.to ? sum(yesterdayRows) : null,
     washDays, average: washDays ? round(completedQuantity / washDays) : null,
-    bikerWashDays: bikerDays.size, washingBikers: washingBikers.size, unlinkedBikerWashes,
-    averagePerBikerDay: bikerDays.size && !unlinkedCompleted ? round(completedQuantity / bikerDays.size) : null,
+    bikerWashDays: perBikerDay.bikerDays, washingBikers: washingBikers.size, unlinkedBikerWashes,
+    averagePerBikerDay: perBikerDay.average === null ? null : round(perBikerDay.average),
     working: washingBikers.size, workingIds: [...washingBikers],
     unspecified: bikers.filter(biker => !String(biker.currentStatus || '').trim()).length,
     conflicts: [...new Set(conflicts)] };

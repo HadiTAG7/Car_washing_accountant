@@ -1,5 +1,6 @@
 import { OVERVIEW_SETTINGS } from '../config/overviewSettings.js';
 import { monthRange } from './accounting/monthlyStatement.js';
+import { averageWashesPerBikerDay } from './overviewDashboard.js';
 
 // Break-even, read-only and display-only. Costs are the statement's own
 // (monthlyStatement.totalCosts: direct costs + operating expenses), so these
@@ -134,12 +135,15 @@ export function bikerBreakEven({ statement, payrollLines = [], washes = [], bike
 
   const allocated = rows.reduce((sum, row) => sum + cents(row.direct) + cents(row.share), 0);
   const withRequired = rows.filter(row => row.requiredDaily !== null);
-  const average = pick => withRequired.length ? withRequired.reduce((sum, row) => sum + pick(row), 0) / withRequired.length : null;
-  // A biker with no wash counts as 0 a day, as in coverage.
-  const averageRequiredDaily = average(row => row.requiredDaily);
-  const averageActualDaily = average(row => row.actualDaily ?? 0);
+  const averageRequiredDaily = withRequired.length ? withRequired.reduce((sum, row) => sum + row.requiredDaily, 0) / withRequired.length : null;
+  // The overview's «متوسط غسلات البايكر»: one definition for both.
+  const averageActualDaily = averageWashesPerBikerDay(washes.filter(wash => {
+    const day = wash.washDate ?? wash.wash_date;
+    return day && day >= from && day <= to;
+  }), today).average;
   return { periodKey, basis: settings.bikerBreakEvenBasis, total, monthDays, directTotal: directTotal / 100, shared: shared / 100, allocatedTotal: allocated / 100,
     difference: (cents(total) - allocated) / 100, approximateTotal: rows.reduce((sum, row) => sum + row.approxDirect, 0),
-    averageRequiredDaily, averageActualDaily, averageCoverage: averageRequiredDaily ? averageActualDaily / averageRequiredDaily : null,
+    averageRequiredDaily, averageActualDaily,
+    averageCoverage: averageRequiredDaily && averageActualDaily !== null ? averageActualDaily / averageRequiredDaily : null,
     rows, idle: idleSummary, outside, unlinkedWashes, estimated: Boolean(statement?.salaryAccrual?.estimated) };
 }

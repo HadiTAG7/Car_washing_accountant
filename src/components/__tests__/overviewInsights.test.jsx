@@ -29,15 +29,24 @@ it('shows the daily and per-biker break-even boxes from breakEven.js, red below 
   const box = title => screen.getByRole('heading', { name: title, exact: true }).closest('section');
   const first = box('نقطة التعادل اليومية');
   expect(first.querySelector('strong').textContent).toBe('0.16 غسلة / يوم');
-  expect(first.textContent).toContain('المتوسط الفعلي: 0.05'); expect(first.textContent).toMatch(/الفرق: \u200e?-0\.11/);
-  expect(first.textContent).toContain('وصلها: 1 من 20 يومًا مكتملًا');
+  expect(first.textContent).not.toMatch(/المتوسط الفعلي|الفرق|وصلها/);
+  expect(first.querySelector('small')).toBeNull();
   expect(first.textContent).toContain('تحت نقطة التعادل'); expect(first.className).toContain('sw-overview-insight--bad');
   const second = box('نقطة التعادل لكل بايكر');
   expect(second.querySelector('strong').textContent).toBe('0.17 غسلة / يوم');
-  expect(second.textContent).toContain('متوسط الفعلي لكل بايكر: 1'); expect(second.textContent).toContain('التغطية: 580%');
-  expect(second.textContent).toContain('البايكرية المحسوبون: 1');
+  expect(second.textContent).not.toMatch(/متوسط الفعلي لكل بايكر|التغطية|البايكرية المحسوبون/);
+  expect(second.querySelector('small')).toBeNull();
   expect(second.textContent).toContain('وصل نقطة التعادل'); expect(second.className).toContain('sw-overview-insight--good');
   fireEvent.click(within(second).getByRole('button', { name: 'تفاصيل كل بايكر' })); expect(navigate).toHaveBeenCalledWith('bikers');
+});
+
+it.each(['ar', 'en'])('keeps the monthly target and remaining washes without the selected explanatory details (%s)', language => {
+  render(<OverviewBusinessInsights data={data()} periodKey="2026-10" washReady language={language} />);
+  const monthly = card(language === 'ar' ? 'نقطة التعادل' : 'Break-even');
+  expect(monthly.querySelector('strong').textContent).toBe(language === 'ar' ? '5 غسلة / شهر' : '5 washes / month');
+  expect(monthly.querySelector('p').textContent).toBe(language === 'ar' ? 'المتبقي للوصول: 4' : 'Washes to break even: 4');
+  expect(monthly.querySelectorAll('p')).toHaveLength(1);
+  expect(monthly.querySelector('small')).toBeNull();
 });
 
 it('break-even boxes stay neutral and unavailable without confirmed figures', () => {

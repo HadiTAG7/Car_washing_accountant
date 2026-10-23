@@ -32,34 +32,20 @@ export default function OverviewBusinessInsights({ data, periodKey, washReady, l
   const link = (label, tab) => <button className="sw-overview__link" type="button" onClick={() => onNavigate?.(tab)}>{label}</button>;
   // Break-even boxes: breakEven.js through the page (daily: the chart's line; perBiker: the bikers page's columns).
   const { daily, days, perBiker } = breakEven;
-  const signed = value => value == null ? unavailable : `${value > 0 ? '+' : ''}${num(value)}`;
   const dailyReached = daily && days?.averageActual != null ? days.averageActual >= daily.required : null;
   const bikerReached = perBiker?.averageCoverage != null ? perBiker.averageCoverage >= 1 : null;
   const status = reached => reached !== null && <p className="sw-overview-insight__status">{reached ? text('وصل نقطة التعادل', 'At or above break-even') : text('تحت نقطة التعادل', 'Below break-even')}</p>;
-  const dailyBasis = daily && `${daily.basis === 'month' ? text('مصروفات الشهر', 'The month’s costs') : text('مصروفات الشهر حتى اليوم', 'The month’s costs to date')} `
-    + `${currency(daily.costs)} ÷ ${text('سعر الغسلة قبل الضريبة', 'net wash price')} ${currency(daily.price)} ÷ ${daily.monthDays} ${text('يومًا', 'days')}. `
-    + text('الفعلي على الأيام المكتملة؛ اليوم مستبعد.', 'Actual over completed days; today excluded.');
   return <div className="sw-overview__insights">
     <div className="sw-overview__financial-grid sw-overview__insight-grid">
       <Insight title={text('نقطة التعادل', 'Break-even')} value={m?.monthlyRequired == null ? unavailable : `${num(m.monthlyRequired)} ${text('غسلة / شهر', 'washes / month')}`}>
-        <p>{text('المطلوب يوميًا', 'Required daily')}: <bdi>{num(m?.dailyRequired)}</bdi> · {text('المعدل الحالي', 'Current daily rate')}: <bdi>{num(m?.currentDailyRate)}</bdi></p>
         <p>{text('المتبقي للوصول', 'Washes to break even')}: <bdi>{num(m?.remainingWashes)}</bdi></p>
-        <small>{sourceGap || text('مصاريف التشغيل ÷ سعر الغسلة قبل الضريبة؛ دون التأسيس. المعدل على الأيام المكتملة، بما فيها الأيام بلا غسلات مسجلة.', 'Operating costs ÷ net wash price; setup excluded. Pace uses completed calendar days, including days with no recorded washes.')} {estimated} {partial}</small>
       </Insight>
       <Insight title={text('نقطة التعادل اليومية', 'Daily break-even')} tone={dailyReached} value={daily ? `${num(daily.required)} ${text('غسلة / يوم', 'washes / day')}` : unavailable}>
         {status(dailyReached)}
-        <p>{text('المتوسط الفعلي', 'Actual average')}: <bdi>{num(days?.averageActual)}</bdi> · {text('الفرق', 'Gap')}: <bdi dir="ltr">{signed(days?.averageGap)}</bdi></p>
-        <p>{text('وصلها', 'Reached on')}: <bdi>{days ? formatNumber(days.reached) : unavailable}</bdi> {text('من', 'of')} <bdi>{days ? formatNumber(days.completed) : unavailable}</bdi> {text('يومًا مكتملًا', 'completed days')}</p>
-        <small>{dailyBasis || sourceGap} {estimated} {partial}</small>
       </Insight>
       <Insight title={text('نقطة التعادل لكل بايكر', 'Break-even per biker')} tone={bikerReached}
         value={perBiker?.averageRequiredDaily == null ? unavailable : `${num(perBiker.averageRequiredDaily)} ${text('غسلة / يوم', 'washes / day')}`}>
         {status(bikerReached)}
-        <p>{text('متوسط الفعلي لكل بايكر', 'Average actual per biker')}: <bdi>{num(perBiker?.averageActualDaily)}</bdi> · {text('التغطية', 'Coverage')}: <bdi>{perBiker?.averageCoverage == null ? unavailable : `${formatNumber(Math.round(perBiker.averageCoverage * 100))}%`}</bdi></p>
-        <p>{text('البايكرية المحسوبون', 'Bikers counted')}: <bdi>{perBiker ? formatNumber(perBiker.rows.length) : unavailable}</bdi></p>
-        <small>{!perBiker ? sourceGap || text('مسير الشهر غير متاح بعد.', 'The month’s payroll is not available yet.')
-          : perBiker.basis === 'washers' ? text('على من سجّل غسلة في يوم مكتمل من الشهر: تكلفة الشهر كاملة موزعة بالتساوي على أيام المسير. الفعلي = غسلات الأيام المكتملة ÷ أيام غسيل البايكرية، نفس «متوسط غسلات البايكر».', 'Bikers with a wash on a completed day of the month carry the month’s full cost, shared equally by payroll days. Actual = washes on completed days ÷ biker wash days, the same as «Average washes per biker».')
-            : text('على كل من في مسير الشهر، بالتناسب مع أيام المسير. الفعلي = غسلات الأيام المكتملة ÷ أيام غسيل البايكرية، نفس «متوسط غسلات البايكر».', 'Everyone on the month’s payroll, prorated by payroll days. Actual = washes on completed days ÷ biker wash days, the same as «Average washes per biker».')} {estimated}</small>
         {link(text('تفاصيل كل بايكر', 'Per-biker details'), 'bikers')}
       </Insight>
       <Insight title={text('تكلفة الغسلة', 'Cost per wash')} value={currency(m?.costPerWash)}>

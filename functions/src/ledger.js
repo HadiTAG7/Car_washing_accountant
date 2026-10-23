@@ -34,6 +34,7 @@ import {
 import { ADAPTERS, legacyLockIdFor } from './posting.js';
 import { taxPolicyAt } from './taxPolicy.js';
 import { assertFinanceApproval, financeHash } from './financeReview.js';
+import { readCloseData, periodReadiness } from './periodReadiness.js';
 
 export const COL = {
   ACCOUNTS: 'chart_of_accounts',
@@ -696,7 +697,7 @@ export async function reverseEntry(db, FieldValue, entryId, { entryDate, descrip
  * Every posted entry in the month must balance ON ITS OWN: two opposite
  * errors can cancel out across a month and hide both.
  */
-export async function closePeriod(db, FieldValue, periodKey, { userId = null } = {}) {
+export async function closePeriod(db, FieldValue, periodKey, { userId = null, overrideReason = '' } = {}) {
   if (!isValidPeriodKey(periodKey)) {
     throw new LedgerError('مفتاح الفترة غير صالح (المطلوب YYYY-MM بشهر 01–12).', { code: 'invalid-argument' });
   }
@@ -730,6 +731,26 @@ export async function closePeriod(db, FieldValue, periodKey, { userId = null } =
   if (problems.length) throw new LedgerError(problems[0], { problems });
 
   return db.runTransaction(async (tx) => {
+    const data = await readCloseData(db, tx);
+    const readiness = periodReadiness(periodKey, data);
+    // The current/future month and accounting-integrity failures cannot be overridden.
+    if (!readiness.checks.find(c => c.id === 'ended').ok) {
+      throw new LedgerError('لا يمكن إقفال الشهر قبل انتهائه.');
+    }
+    if (!readiness.preflight.ok) throw new LedgerError(readiness.preflight.problems[0], { problems: readiness.preflight.problems });
+    const reason = String(overrideReason || '').trim();
+    if (!readiness.ok) {
+      if (!reason) throw new LedgerError(`غير جاهزة: ${readiness.failedCount} بنود.`, {
+        problems: readiness.checks.filter(c => !c.ok).map(c => c.label),
+      });
+      const [membership, admin] = await Promise.all([
+        tx.get(db.collection('users').doc(String(userId))), tx.get(db.collection('app_admins').doc(String(userId))),
+      ]);
+      if (!(membership.exists && membership.data().role === 'admin')
+        && !(admin.exists && (!membership.exists || membership.data().role === 'admin'))) {
+        throw new LedgerError('تجاوز قائمة الإقفال للمدير فقط.', { code: 'permission-denied' });
+      }
+    }
     const ref = db.collection(COL.PERIODS).doc(periodKey);
     const cur = await tx.get(ref);
     if (cur.exists && cur.data().status === 'closed') {
@@ -738,10 +759,11 @@ export async function closePeriod(db, FieldValue, periodKey, { userId = null } =
     tx.set(ref, {
       periodKey, status: 'closed',
       closedAt: FieldValue.serverTimestamp(), closedBy: userId,
+      closeChecklist: readiness.checks, closeOverrideReason: readiness.ok ? null : reason,
     }, { merge: true });
     tx.set(db.collection(COL.AUDIT).doc(), auditRecord({
       action: 'close', collectionName: COL.PERIODS, documentId: periodKey, userId,
-      before: { status: 'open' }, after: { status: 'closed' },
+      before: { status: 'open' }, after: { status: 'closed', checklist: readiness.checks, overrideReason: readiness.ok ? null : reason },
       note: `إقفال الفترة ${periodKey} — ${snap.size} قيد، إجمالي ${round2(debit).toFixed(2)}`,
     }, FieldValue));
     return { periodKey, entryCount: snap.size, totals: { debit: round2(debit), credit: round2(credit) } };

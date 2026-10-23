@@ -14,7 +14,8 @@ import DateField from './DateField';
 import { useLedger } from '../hooks/useLedger';
 import { useAuth } from '../hooks/useAuth';
 import { closePreflight, currentPeriodKey } from '../lib/accounting/periods';
-import { closePeriod, reopenPeriod, seedChartOfAccounts } from '../lib/accounting/firestoreLedger';
+import { closePeriod, reopenPeriod, seedChartOfAccounts, fetchCloseReadiness } from '../lib/accounting/firestoreLedger';
+import { useFirestoreQuery } from '../hooks/useFirestoreQuery';
 import { collectUnposted, postUnposted } from '../lib/accounting/postOperations';
 import {
   previewGeneration, generateVouchers, fetchVoucherBundle, setVoucherInvoice,
@@ -34,7 +35,14 @@ import { usePartnerView } from '../contexts/PartnerViewContext';
 export default function PeriodClosePage() {
   const { entries, periods, linesByEntry, needsSeeding, loading, error, refetch } = useLedger();
   const { user } = useAuth();
-  const { canMutate } = usePartnerView();
+  const { canMutate, role } = usePartnerView();
+  const readinessQuery = useFirestoreQuery(fetchCloseReadiness, {
+    enabled: isFirebaseConfigured, fallback: null, preserveResult: true,
+  });
+  const readinessByKey = new Map((readinessQuery.data?.periods || []).map(p => [p.periodKey, p]));
+  const [editingSettings, setEditingSettings] = useState(false);
+  const [pendingSetting, setPendingSetting] = useState(null);
+  const [overrideReason, setOverrideReason] = useState('');
   const {
     settings, update: updateSettings, setPolicy, seedPolicy,
     baselineFrom, policyConfigured,
@@ -60,7 +68,7 @@ export default function PeriodClosePage() {
   // The date a tax-switch change takes effect from. Today by default, because
   // a change made today applies from today — back-dating one restates a period
   // that has already been filed, so it has to be typed on purpose.
-  const [policyFrom, setPolicyFrom] = useState(() => new Date().toISOString().slice(0, 10));
+  const [policyFrom, setPolicyFrom] = useState('');
   // The date the CURRENT policy started, asked for once. Never inferred: a
   // guessed baseline is the same bug wearing a timestamp.
   const [baselineDraft, setBaselineDraft] = useState('');
@@ -154,7 +162,8 @@ export default function PeriodClosePage() {
    * as well: storing only the new row would leave every earlier month either
    * unanswerable or, worse, answered by the new policy.
    */
-  async function handlePolicy(patch) {
+  async function handlePolicy(patch, confirmed = false) {
+    if (!confirmed) { setPendingSetting({ kind: 'policy', patch }); return; }
     setBusy('settings');
     try {
       await setPolicy({
@@ -173,7 +182,8 @@ export default function PeriodClosePage() {
   }
 
   /** Records the baseline without changing anything — makes the past readable. */
-  async function handleSeedPolicy() {
+  async function handleSeedPolicy(confirmed = false) {
+    if (confirmed !== true) { setPendingSetting({ kind: 'seed' }); return; }
     setBusy('settings');
     try {
       await seedPolicy({ baselineFrom: baselineDraft, note: policyReason.trim() || null });
@@ -184,7 +194,8 @@ export default function PeriodClosePage() {
   }
 
   /** The switches that move no past figure. */
-  async function handleSetting(patch) {
+  async function handleSetting(patch, confirmed = false) {
+    if (!confirmed) { setPendingSetting({ kind: 'setting', patch }); return; }
     setBusy('settings');
     try {
       await updateSettings(patch);
@@ -195,15 +206,7 @@ export default function PeriodClosePage() {
   }
 
   async function handleToggleAutoPost(next) {
-    setBusy('autopost');
-    try {
-      await updateSettings({ autoPost: next });
-      showToast(next
-        ? 'الترحيل التلقائي مفعّل — ستُرحَّل الغسلة عند إتمامها والمصروف عند سداده.'
-        : 'الترحيل التلقائي موقوف — الترحيل يتم من هذه الصفحة.');
-    } catch (e) {
-      showToast(describeBackendError(e) || e?.message || 'تعذّر الحفظ', 'error');
-    } finally { setBusy(''); }
+    setPendingSetting({ kind: 'setting', patch: { autoPost: next } });
   }
 
   /**
@@ -303,9 +306,11 @@ export default function PeriodClosePage() {
   async function handleClose(key) {
     setBusy(key);
     try {
-      await closePeriod(key);
+      await closePeriod(key, { overrideReason });
       showToast(`تم إقفال الفترة ${key}.`);
       setCloseKey('');
+      setOverrideReason('');
+      await readinessQuery.refetch();
       await refetch();
     } catch (e) {
       showToast(e?.message || 'تعذّر الإقفال', 'error');
@@ -339,6 +344,24 @@ export default function PeriodClosePage() {
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
         {!isFirebaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
         {error && <ErrorState title="تعذّر تحميل الفترات" error={error} onRetry={refetch} />}
+        {readinessQuery.error && <ErrorState title="تعذّر فحص جاهزية الإقفال" error={readinessQuery.error} onRetry={readinessQuery.refetch} />}
+        <Card className="p-5 space-y-4">
+          <SectionHeader title="قائمة فحص الإقفال" subtitle="قراءة فقط؛ لا تُرحّل عمليات ولا تغيّر الفترات"
+            action={<SecondaryButton onClick={readinessQuery.refetch} disabled={readinessQuery.loading}>تحديث الفحص</SecondaryButton>} />
+          {readinessQuery.loading && <p>جارٍ فحص الجاهزية...</p>}
+          {(readinessQuery.data?.periods || []).map(period => <details key={period.periodKey} open={period.periodKey === currentPeriodKey()} className="rounded-control border border-slate-300 dark:border-slate-700 p-3">
+            <summary className={period.ok ? 'text-emerald-500 font-bold cursor-pointer' : 'text-rose-500 font-bold cursor-pointer'}>
+              {period.periodKey} · {period.ok ? 'جاهزة للإقفال' : `غير جاهزة: ${period.failedCount} بنود`}
+            </summary>
+            <ul className="mt-3 space-y-2 text-sm">
+              {period.checks.map(check => <li key={check.id} className={!check.applicable ? 'text-slate-500' : check.ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
+                <a href={check.href}>{!check.applicable ? '—' : check.ok ? '✓' : '✗'} {check.label} · {check.count}{check.amount != null ? ` · ${formatCurrency(check.amount)}` : ''}</a>
+                {check.note && <small className="block text-slate-500 mt-1 break-words">{check.note}</small>}
+              </li>)}
+            </ul>
+            <p className="text-xs text-slate-500 mt-3">تاريخ الفحص: {period.today}</p>
+          </details>)}
+        </Card>
 
         {needsSeeding && (
           <Card className="p-5">
@@ -384,6 +407,7 @@ export default function PeriodClosePage() {
             <Card className="p-6">
               <SectionHeader
                 title="إعدادات المحاسبة"
+                action={canMutate && <SecondaryButton onClick={() => { setEditingSettings(!editingSettings); setPendingSetting(null); }}>{editingSettings ? 'إنهاء التعديل' : 'تعديل الإعدادات'}</SecondaryButton>}
                 subtitle="تحكم في احتساب الضريبة ودورية الإقرار — تنعكس مباشرة على تقرير ضريبة القيمة المضافة والقيود"
               />
               {/* ── السجل التاريخي للسياسة ────────────────────────────
@@ -393,6 +417,11 @@ export default function PeriodClosePage() {
                   month, not a record of one. The date is asked for, never
                   inferred: a guessed baseline is the same bug with a
                   timestamp on it. */}
+              <details className="my-3 text-xs"><summary className="cursor-pointer">سجل تغييرات الإعدادات وتواريخ السريان</summary>
+                <ul className="mt-2 space-y-2">{(settings.taxPolicyHistory || []).map((row, index) => <li key={`${row.effectiveFrom}-${index}`}>
+                  {row.effectiveFrom} · {row.vatRegistered ? 'مسجّل' : 'غير مسجّل'} · {row.washPriceMode} · {Number(row.vatRate) * 100}% · {row.reason || row.note || '—'}
+                </li>)}</ul>
+              </details>
               {!policyConfigured ? (
                 <div role="note" className="flex flex-col gap-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/30 text-amber-800 dark:text-amber-300 text-xs px-4 py-3 rounded-control leading-relaxed mb-4">
                   <div className="flex items-start gap-2.5">
@@ -420,7 +449,7 @@ export default function PeriodClosePage() {
                       <PrimaryButton
                         icon={busy === 'settings' ? Loader2 : ShieldCheck}
                         onClick={handleSeedPolicy}
-                        disabled={busy === 'settings' || !baselineDraft}
+                        disabled={!editingSettings || busy === 'settings' || !baselineDraft}
                       >
                         تسجيل السياسة القائمة
                       </PrimaryButton>
@@ -441,7 +470,7 @@ export default function PeriodClosePage() {
                   </label>
                   <label className="flex items-center gap-2.5 min-h-touch cursor-pointer select-none">
                     <input type="checkbox" checked={Boolean(settings.vatRegistered)}
-                      disabled={!canMutate || busy === 'settings'}
+                      disabled={!editingSettings || !canMutate || busy === 'settings'}
                       onChange={(e) => handlePolicy({ vatRegistered: e.target.checked })}
                       className="w-4 h-4 accent-primary-600" />
                     <span className="text-sm text-slate-700 dark:text-slate-300">
@@ -457,7 +486,7 @@ export default function PeriodClosePage() {
                     سعر الغسلة
                   </label>
                   <select id="wash-price-mode" value={settings.washPriceMode}
-                    disabled={!canMutate || busy === 'settings'}
+                    disabled={!editingSettings || !canMutate || busy === 'settings'}
                     onChange={(e) => handlePolicy({ washPriceMode: e.target.value })}
                     className="w-full min-h-touch px-3 py-2 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-slate-900 dark:text-slate-100">
                     <option value="inclusive">شامل الضريبة</option>
@@ -475,11 +504,11 @@ export default function PeriodClosePage() {
                     name="policyFrom" value={policyFrom}
                     onChange={(e) => setPolicyFrom(e.target.value)}
                     ariaLabel="تاريخ سريان تغيير إعدادات الضريبة"
-                    disabled={!canMutate || busy === 'settings'}
+                    disabled={!editingSettings || !canMutate || busy === 'settings'}
                   />
                   <input
                     type="text" value={policyReason}
-                    disabled={!canMutate || busy === 'settings'}
+                    disabled={!editingSettings || !canMutate || busy === 'settings'}
                     onChange={(e) => setPolicyReason(e.target.value)}
                     placeholder="سبب التغيير (مطلوب للتاريخ الرجعي)"
                     className="w-full min-h-touch mt-2 px-3 py-2 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-slate-900 dark:text-slate-100"
@@ -494,7 +523,7 @@ export default function PeriodClosePage() {
                     نسبة الضريبة
                   </label>
                   <select id="vat-rate" value={String(settings.vatRate)}
-                    disabled={!canMutate || busy === 'settings' || !settings.vatRegistered}
+                    disabled={!editingSettings || !canMutate || busy === 'settings' || !settings.vatRegistered}
                     onChange={(e) => handlePolicy({ vatRate: Number(e.target.value) })}
                     className="w-full min-h-touch px-3 py-2 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-slate-900 dark:text-slate-100">
                     <option value="0.15">15%</option>
@@ -510,7 +539,7 @@ export default function PeriodClosePage() {
                     دورية الإقرار الضريبي
                   </label>
                   <select id="vat-filing" value={settings.vatFilingPeriod}
-                    disabled={!canMutate || busy === 'settings'}
+                    disabled={!editingSettings || !canMutate || busy === 'settings'}
                     onChange={(e) => handleSetting({ vatFilingPeriod: e.target.value })}
                     className="w-full min-h-touch px-3 py-2 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-slate-900 dark:text-slate-100">
                     <option value="quarterly">ربع سنوي</option>
@@ -539,6 +568,7 @@ export default function PeriodClosePage() {
                   </span>
                   <div className="min-w-0">
                     <p className="text-sm font-bold text-slate-900 dark:text-slate-100">الترحيل التلقائي عند الاعتماد</p>
+                    <a className="text-primary-500 text-sm" href="#unposted-scan">{readinessQuery.loading ? 'جارٍ فحص الجاهزية...' : readinessQuery.data ? `${readinessQuery.data.periods.filter(p => statusOf(p.periodKey) !== 'closed').reduce((sum, p) => sum + p.unposted.filter(r => r.approved).length, 0)} عملية تنتظر الترحيل اليدوي` : 'لم يكتمل فحص الجاهزية'}</a>
                     <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mt-0.5">
                       يُرحَّل القيد لحظة إتمام الغسلة أو سداد المصروف — لا عند كل حفظ،
                       بل عند الانتقال إلى الحالة المعتمدة فقط. تُطبَّق نفس الضوابط:
@@ -551,7 +581,7 @@ export default function PeriodClosePage() {
                 </div>
                 {canMutate && (
                   <label className="flex items-center gap-2.5 min-h-touch cursor-pointer select-none shrink-0">
-                    <input type="checkbox" checked={Boolean(settings.autoPost)} disabled={busy === 'autopost'}
+                    <input type="checkbox" checked={Boolean(settings.autoPost)} disabled={!editingSettings || Boolean(busy)}
                       onChange={(e) => handleToggleAutoPost(e.target.checked)}
                       className="w-4 h-4 accent-primary-600" />
                     <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">
@@ -569,7 +599,7 @@ export default function PeriodClosePage() {
                 month turns it into ordinary business the rest of the system
                 already knows how to handle. Runs BEFORE the posting sweep,
                 because the sweep is what carries the vouchers into the books. */}
-            <Card className="p-6">
+            <Card className="p-6" id="recurring-vouchers">
               <SectionHeader
                 title="سندات المصاريف المتكررة"
                 subtitle="سند مؤرَّخ لكل شهر من كل مصروف متكرر — رقمه مشتق من المصروف والفترة فلا يتكرر"
@@ -728,6 +758,7 @@ export default function PeriodClosePage() {
                 skipped — so it doubles as the migration path for the backlog
                 that predates the ledger. */}
             <Card className="p-6">
+              <span id="unposted-scan" />
               <SectionHeader
                 title="ترحيل العمليات إلى دفتر الأستاذ"
                 subtitle="تحويل الغسلات والمصروفات والدفعات والعهد إلى قيود مزدوجة — آمن وقابل للتكرار"
@@ -917,6 +948,9 @@ export default function PeriodClosePage() {
                       {periodKeys.map((key) => {
                         const status = statusOf(key);
                         const pre = preflights.get(key);
+                        const readiness = readinessByKey.get(key);
+                        const ready = readiness?.ok === true && !readinessQuery.loading && !readinessQuery.error;
+                        const ended = !readinessQuery.loading && !readinessQuery.error && readiness?.checks.find(c => c.id === 'ended')?.ok === true;
                         const isClosed = status === 'closed';
                         return (
                           <tr key={key} className="border-b border-slate-50 dark:border-slate-800/60 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors align-top">
@@ -934,12 +968,13 @@ export default function PeriodClosePage() {
                             <td className="py-3 px-4 text-center tabular-nums text-slate-700 dark:text-slate-300">{pre.entryCount}</td>
                             <td className="py-3 px-4 text-left tabular-nums text-slate-700 dark:text-slate-300">{formatCurrency(pre.totals.debit)}</td>
                             <td className="py-3 px-4">
-                              {pre.ok ? (
+                              {ready ? (
                                 <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">
                                   <CheckCircle2 size={12} /> جاهزة للإقفال
                                 </span>
                               ) : (
                                 <ul className="space-y-1">
+                                  <li className="text-rose-500">{readiness ? `غير جاهزة: ${readiness.failedCount} بنود` : 'لم يكتمل فحص الجاهزية'}</li>
                                   {pre.problems.map((p) => (
                                     <li key={p} className="flex items-start gap-1.5 text-[11px] text-rose-700 dark:text-rose-300 leading-relaxed">
                                       <AlertTriangle size={12} className="shrink-0 mt-0.5" />
@@ -983,27 +1018,30 @@ export default function PeriodClosePage() {
                                     إعادة فتح
                                   </SecondaryButton>
                                 )
-                              ) : (
+                              ) : !ended ? <span className="text-xs text-slate-500">{readinessQuery.loading || readinessQuery.error ? 'لم يكتمل فحص الجاهزية' : 'الإقفال متاح بعد نهاية الشهر'}</span> : (
                                 closeKey === key ? (
                                   <div className="min-w-[17rem] space-y-2 text-right">
                                     <p className="text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">
                                       تأكيد إقفال {key}: {pre.entryCount} قيد، وإجمالي المدين {formatCurrency(pre.totals.debit)}.
                                       بعد الإقفال لا يمكن الترحيل أو التعديل في هذه الفترة.
                                     </p>
+                                    {!ready && role === 'admin' && <label className="block text-xs">سبب تجاوز قائمة الإقفال
+                                      <textarea aria-label="سبب تجاوز قائمة الإقفال" value={overrideReason} onChange={e => setOverrideReason(e.target.value)} className="block w-full bg-slate-900 p-2 border rounded-control" />
+                                    </label>}
                                     <div className="flex gap-2 justify-end">
                                       <SecondaryButton onClick={() => setCloseKey('')}
                                         disabled={busy === key}>إلغاء</SecondaryButton>
                                       <PrimaryButton icon={busy === key ? Loader2 : Lock}
-                                        onClick={() => handleClose(key)} disabled={busy === key}>
+                                        onClick={() => handleClose(key)} disabled={busy === key || (!ready && (role !== 'admin' || !overrideReason.trim()))}>
                                         {busy === key ? '...' : 'تأكيد الإقفال'}
                                       </PrimaryButton>
                                     </div>
                                   </div>
                                 ) : (
-                                  <PrimaryButton icon={Lock} onClick={() => setCloseKey(key)}
-                                    disabled={busy === key || !pre.ok}
-                                    title={pre.ok ? undefined : 'صحّح المشاكل أعلاه أولاً'}>
-                                    إقفال
+                                  <PrimaryButton icon={Lock} onClick={() => { setOverrideReason(''); setCloseKey(key); }}
+                                    disabled={busy === key || (!ready && role !== 'admin') || !pre.ok}
+                                    title={ready ? undefined : 'صحّح المشاكل أعلاه أولاً'}>
+                                    {ready ? 'إقفال' : 'تجاوز المدير'}
                                   </PrimaryButton>
                                 )
                               )}
@@ -1024,6 +1062,20 @@ export default function PeriodClosePage() {
         voucher={invoiceFor} onClose={() => setInvoiceFor(null)}
         onSave={handleSaveVoucherInvoice} />
 
+      {pendingSetting && <div role="dialog" aria-modal="true" aria-label="تأكيد تعديل الإعدادات" className="fixed inset-0 z-50 bg-black/70 grid place-items-center p-4">
+        <Card className="p-5 max-w-lg space-y-4">
+          <h2>تأكيد تعديل الإعدادات</h2>
+          <p>لن يتغير الإعداد قبل تأكيدك. تغيير السياسة يحتاج تاريخ سريان صريح.</p>
+          <pre dir="ltr" className="text-xs whitespace-pre-wrap">{JSON.stringify(pendingSetting.patch || {}, null, 2)}</pre>
+          <SecondaryButton onClick={() => setPendingSetting(null)}>إلغاء</SecondaryButton>
+          <PrimaryButton disabled={Boolean(busy) || (pendingSetting.kind === 'policy' && !policyFrom)} onClick={async () => {
+            if (pendingSetting.kind === 'policy') await handlePolicy(pendingSetting.patch, true);
+            else if (pendingSetting.kind === 'seed') await handleSeedPolicy(true);
+            else await handleSetting(pendingSetting.patch, true);
+            setPendingSetting(null);
+          }}>تأكيد حفظ الإعدادات</PrimaryButton>
+        </Card>
+      </div>}
       <Toast open={toast.open} message={toast.message} tone={toast.tone}
         duration={toast.duration} onClose={closeToast} />
     </>

@@ -70,6 +70,7 @@ export const ledgerReverseEntry = callable('ledgerReverseEntry');
 
 // ─── الفترات ─────────────────────────────────────────────────────────────
 export const ledgerClosePeriod = callable('ledgerClosePeriod');
+export const ledgerCloseReadiness = callable('ledgerCloseReadiness');
 export const ledgerReopenPeriod = callable('ledgerReopenPeriod');
 
 // ─── المستندات الضريبية ──────────────────────────────────────────────────

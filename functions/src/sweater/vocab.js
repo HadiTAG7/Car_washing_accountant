@@ -70,6 +70,9 @@ export const ADJUSTMENT_APPROVAL = Object.freeze([
 
 /** رموز أسباب المراجعة — تُترجَم في الواجهة، وتُبحَث في السجلّات. */
 export const REVIEW_REASON = Object.freeze([
+  'no_recognition_policy',
+  'not_final_status',
+  'payment_not_recorded',
   'unknown_status',
   'unknown_service_type',
   'no_price_for_date',

@@ -91,6 +91,9 @@ export const BEARER_AR = Object.freeze({
 });
 
 export const REVIEW_REASON_AR = Object.freeze({
+  no_recognition_policy: 'لا سياسة اعتراف سارية',
+  not_final_status: 'الخدمة لم تُغلق بعد',
+  payment_not_recorded: 'تسجيل الدفع مطلوب بالسياسة',
   unknown_status:         'حالة تشغيل غير معروفة',
   unknown_service_type:   'نوع خدمة غير معروف',
   no_price_for_date:      'لا سعر تعاقدي ساري لهذا التاريخ',

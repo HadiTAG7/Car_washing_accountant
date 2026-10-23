@@ -6,7 +6,7 @@
 // الحجوزات التي كوّنته، لا وصفٌ لها. فالنقر على البطاقة يعرض الصفوف نفسها.
 // ═══════════════════════════════════════════════════════════════════════════
 
-const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : null);
+const num = (v) => (v != null && String(v).trim() !== '' && Number.isFinite(Number(v)) && Number(v) >= 1 && Number(v) <= 5 ? Number(v) : null);
 const pct = (part, whole) => (whole > 0 ? Math.round((part / whole) * 1000) / 10 : null);
 
 /** ترشيحٌ مشترك: الفترة والسائق والمنطقة ونوع الخدمة. */

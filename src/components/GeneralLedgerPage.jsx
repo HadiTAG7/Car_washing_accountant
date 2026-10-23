@@ -11,16 +11,13 @@ import DateField from './DateField';
 import LoadingState from './LoadingState';
 import ErrorState, { SetupRequiredCard } from './ErrorState';
 import { useLedger } from '../hooks/useLedger';
+import { useLedgerSourceDocuments } from '../hooks/useLedgerSourceDocuments';
+import JournalEntryDetails from './JournalEntryDetails';
+import { balanceNature, ledgerAccountGroups, ledgerMovementContext, matchesLedgerMovement, referencedLedgerEntry, LEDGER_SOURCE_LABELS as SOURCE_LABELS } from '../lib/ledgerPresentation';
 import { generalLedger } from '../lib/accounting/reports';
 import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
 
 const PAGE_SIZE = 100;
-
-const SOURCE_LABELS = {
-  wash: 'غسلة', expense: 'مصروف', partner_payment: 'دفعة شريك',
-  temporary_expense: 'عهدة', recovery: 'استرداد', manual: 'يدوي',
-  adjustment: 'تسوية', opening: 'رصيد افتتاحي',
-};
 
 /**
  * دفتر الأستاذ — every posted movement on one account, in order, with a
@@ -32,10 +29,15 @@ export default function GeneralLedgerPage() {
   const [accountCode, setAccountCode] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  const [search, setSearch] = useState('');
+  const [sourceType, setSourceType] = useState('');
+  const [openedEntryId, setOpenedEntryId] = useState(null);
+  const entryIndex = useMemo(() => new Map(entries.map((entry) => [entry.id, entry])), [entries]);
 
   // Default to the first account that actually has movement, so the page is
   // useful on arrival instead of showing an empty picker.
   const usedCodes = useMemo(() => new Set(lines.map((l) => String(l.accountId))), [lines]);
+  const accountGroups = useMemo(() => ledgerAccountGroups(accounts, usedCodes), [accounts, usedCodes]);
   const selected = accountCode
     || accounts.find((a) => usedCodes.has(String(a.code)))?.code
     || accounts[0]?.code
@@ -51,10 +53,21 @@ export default function GeneralLedgerPage() {
   );
   // Rows on screen, 100 at a time; the balances and totals still cover every
   // row, and the CSV export carries them all.
-  const viewKey = `${selected}|${from}|${to}`;
+  const sourceEntries = useMemo(() => {
+    const ids = new Set((ledger?.rows || []).map((row) => row.entryId));
+    if (openedEntryId) ids.add(openedEntryId);
+    return [...ids].map((id) => entryIndex.get(id)).filter(Boolean);
+  }, [ledger, openedEntryId, entryIndex]);
+  const sourceDocuments = useLedgerSourceDocuments(sourceEntries, entryIndex);
+  const contexts = useMemo(() => new Map((ledger?.rows || []).map((row) => [row, ledgerMovementContext(row, entryIndex, sourceDocuments.documents)])), [ledger, entryIndex, sourceDocuments.documents]);
+  const filteredRows = useMemo(() => (ledger?.rows || []).filter((row) => matchesLedgerMovement(row, contexts.get(row), search, sourceType)), [ledger, contexts, search, sourceType]);
+  const nature = balanceNature(ledger?.closing || 0, ledger?.account);
+  const openedEntry = entryIndex.get(openedEntryId);
+  const openedLines = useMemo(() => lines.filter((line) => line.entryId === openedEntryId), [lines, openedEntryId]);
+  const viewKey = `${selected}|${from}|${to}|${search}|${sourceType}`;
   const [paging, setPaging] = useState({ key: viewKey, count: PAGE_SIZE });
   const visible = paging.key === viewKey ? paging.count : PAGE_SIZE;
-  const shownRows = ledger ? ledger.rows.slice(0, visible) : [];
+  const shownRows = filteredRows.slice(0, visible);
 
   function handleExport() {
     if (!ledger) return;
@@ -104,11 +117,11 @@ export default function GeneralLedgerPage() {
                 className="w-full px-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:border-primary-500 transition-colors"
               >
                 {accounts.length === 0 && <option value="">— لا توجد حسابات —</option>}
-                {accounts.map((a) => (
+                {accountGroups.map((group) => <optgroup key={group.key} label={group.label}>{group.accounts.map((a) => (
                   <option key={a.code} value={a.code}>
                     {accountDisplayLabel(a)}{isPartnerCapital(a) || usedCodes.has(String(a.code)) ? '' : ' (بلا حركة)'}
                   </option>
-                ))}
+                ))}</optgroup>)}
               </select>
               {selected && !isPartnerCapital(accountIndex.get(String(selected))) && <p className="text-xs mt-2">رمز الحساب: <AccountCode code={selected} /></p>}
             </div>
@@ -121,6 +134,21 @@ export default function GeneralLedgerPage() {
               <DateField name="to" value={to} onChange={(e) => setTo(e.target.value)} ariaLabel="إلى تاريخ" />
             </div>
           </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
+            <div className="sm:col-span-2">
+              <label htmlFor="glSearch" className="block text-sm font-semibold mb-1.5">بحث بالمبلغ أو المورد أو الوصف أو رقم المستند</label>
+              <input id="glSearch" type="search" value={search} onChange={(event) => setSearch(event.target.value)} className="w-full px-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800" />
+            </div>
+            <div>
+              <label htmlFor="glSource" className="block text-sm font-semibold mb-1.5">نوع المصدر</label>
+              <select id="glSource" value={sourceType} onChange={(event) => setSourceType(event.target.value)} className="w-full px-4 py-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+                <option value="">كل المصادر</option>
+                {Object.entries(SOURCE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              </select>
+            </div>
+          </div>
+          {sourceDocuments.loading && <p role="status" className="text-xs mt-3">جارٍ قراءة أوصاف المستندات ومورديها...</p>}
+          {sourceDocuments.error && <p role="alert" className="text-xs mt-3 text-amber-700 dark:text-amber-300">تعذّرت قراءة تفاصيل المستندات؛ البحث يعرض بيانات القيود المتاحة فقط. <button type="button" className="underline" onClick={sourceDocuments.refetch}>إعادة المحاولة</button></p>}
         </Card>
 
         {loading ? (
@@ -138,9 +166,9 @@ export default function GeneralLedgerPage() {
                 value={formatCurrency(ledger.totalDebit)} sub={`${ledger.rows.length} حركة`} />
               <StatCard icon={ArrowUpRight} tone="rose" label="إجمالي الدائن"
                 value={formatCurrency(ledger.totalCredit)} />
-              <StatCard icon={BookOpen} tone="primary" label="الرصيد الختامي"
+              <StatCard icon={BookOpen} tone={nature.abnormal ? 'rose' : 'primary'} label="الرصيد الختامي"
                 value={formatCurrency(ledger.closing)}
-                sub={ledger.account?.normalBalance === 'credit' ? 'رصيد دائن طبيعي' : 'رصيد مدين طبيعي'} />
+                sub={<span className={nature.abnormal ? 'text-rose-700 dark:text-rose-300 font-bold' : ''}>{nature.label}</span>} />
             </div>
 
             <Card className="p-6">
@@ -151,6 +179,7 @@ export default function GeneralLedgerPage() {
                   <SecondaryButton icon={Download} onClick={handleExport}>تصدير CSV</SecondaryButton>
                 ) : null}
               />
+              {(search || sourceType) && <p role="status" className="text-xs mb-4 text-slate-500">نتائج البحث: {formatNumber(filteredRows.length)} حركة. الأرصدة والإجماليات والتصدير تشمل كامل الفترة؛ البحث لا يغيّرها.</p>}
               {ledger.rows.length === 0 ? (
                 <EmptyState icon={BookOpen} title="لا توجد حركات على هذا الحساب"
                   hint="جرّب توسيع نطاق التاريخ أو اختيار حساب آخر." compact />
@@ -177,17 +206,26 @@ export default function GeneralLedgerPage() {
                           {formatCurrency(ledger.opening)}
                         </td>
                       </tr>
-                      {shownRows.map((r) => (
-                        <tr key={`${r.entryId}-${r.entryNumber}-${r.description}`}
+                      {shownRows.map((r, index) => {
+                        const context = contexts.get(r);
+                        const original = referencedLedgerEntry(context.originalId, entryIndex);
+                        return <tr key={`${r.entryId}-${index}`}
                           className="border-b border-slate-50 dark:border-slate-800/60 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
                           <td className="py-3 px-4 whitespace-nowrap tabular-nums text-slate-600 dark:text-slate-400">{formatDate(r.entryDate)}</td>
-                          <td className="py-3 px-4 whitespace-nowrap tabular-nums text-slate-500 dark:text-slate-400">#{r.entryNumber}</td>
+                          <td className="py-3 px-4 whitespace-nowrap tabular-nums text-slate-500 dark:text-slate-400"><button type="button" className="text-primary-600 dark:text-primary-400 underline" aria-label={`فتح القيد ${r.entryNumber}`} onClick={() => setOpenedEntryId(r.entryId)}>#{r.entryNumber}</button></td>
                           <td className="py-3 px-4 whitespace-nowrap">
                             <span className="inline-flex text-[10px] font-bold px-1.5 py-0.5 rounded-full border bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700">
                               {SOURCE_LABELS[r.sourceType] || r.sourceType}
                             </span>
                           </td>
-                          <td className="py-3 px-4 text-slate-700 dark:text-slate-300">{r.description}</td>
+                          <td className="py-3 px-4 text-slate-700 dark:text-slate-300 min-w-64 max-w-md break-words">
+                            <p>{context.description}</p>
+                            {context.supplier && <p className="text-xs mt-1">المورد: {context.supplier}</p>}
+                            {context.documentNumber && <p className="text-xs mt-1">المستند: {context.documentNumber}</p>}
+                            {context.url && <a href={context.url} target="_blank" rel="noreferrer" className="text-xs text-primary-600 underline">فتح المستند</a>}
+                            {context.reason && <p className="text-xs mt-1">سبب التسوية: {context.reason}</p>}
+                            {original && <button type="button" className="block text-xs mt-1 text-primary-600 underline" onClick={() => setOpenedEntryId(original.id)}>القيد الأصلي #{original.entryNumber}</button>}
+                          </td>
                           <td className="py-3 px-4 text-left tabular-nums text-emerald-700 dark:text-emerald-300">
                             {r.debit ? formatCurrency(r.debit) : '—'}
                           </td>
@@ -197,8 +235,9 @@ export default function GeneralLedgerPage() {
                           <td className="py-3 px-4 text-left tabular-nums font-bold text-slate-900 dark:text-slate-100">
                             {formatCurrency(r.balance)}
                           </td>
-                        </tr>
-                      ))}
+                        </tr>;
+                      })}
+                      {!shownRows.length && <tr><td colSpan={7} className="p-4 text-center">لا توجد حركات تطابق البحث</td></tr>}
                     </tbody>
                     <tfoot>
                       <tr className="bg-slate-50 dark:bg-slate-800 font-bold">
@@ -211,9 +250,9 @@ export default function GeneralLedgerPage() {
                   </table>
                 </ScrollableTable>
               )}
-              {ledger.rows.length > shownRows.length && (
+              {filteredRows.length > shownRows.length && (
                 <div className="flex items-center justify-between gap-3 p-4">
-                  <span className="text-xs text-slate-500 dark:text-slate-400 tabular-nums">{formatNumber(shownRows.length)} / {formatNumber(ledger.rows.length)}</span>
+                  <span className="text-xs text-slate-500 dark:text-slate-400 tabular-nums">{formatNumber(shownRows.length)} / {formatNumber(filteredRows.length)}</span>
                   <PrimaryButton onClick={() => setPaging({ key: viewKey, count: visible + PAGE_SIZE })}>عرض المزيد</PrimaryButton>
                 </div>
               )}
@@ -221,6 +260,7 @@ export default function GeneralLedgerPage() {
           </>
         )}
       </main>
+      {openedEntry && <JournalEntryDetails entry={openedEntry} entryIndex={entryIndex} lines={openedLines} accountIndex={accountIndex} documents={sourceDocuments.documents} onOpen={setOpenedEntryId} onClose={() => setOpenedEntryId(null)} />}
     </>
   );
 }

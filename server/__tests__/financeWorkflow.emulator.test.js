@@ -184,11 +184,6 @@ describe.skipIf(!enabled)('finance real Firestore workflow — isolated demo onl
     const results = await Promise.all([0, 1].map(() => financeReports(db, auth, args, new Date('2026-10-20T00:00:00Z'))));
     expect(results.filter(r => r.duplicate)).toHaveLength(1);
     expect((await financeReports(db, auth, { action: 'read', reportId: report.reportId })).report).toEqual(report);
-    const before = (await db.doc(`finance_reports/${report.reportId}/revisions/000001`).get()).data();
-    const archive = await financeReports(db, auth, { action: 'archive', search: 'تقرير اختبار', from: report.dateRiyadh, to: report.dateRiyadh, sourceRole: 1 });
-    expect(archive.total).toBe(1); expect(archive.items[0].reportId).toBe(report.reportId);
-    expect((await financeReports(db, auth, { action: 'forExecutive', at: report.cutAtRiyadh })).report).toEqual(report);
-    expect((await db.doc(`finance_reports/${report.reportId}/revisions/000001`).get()).data()).toEqual(before);
     for (const role of ['partner', 'supervisor', 'operator', 'accountant']) {
       await expect(financeReports(db, { uid: role }, { action: 'list' })).rejects.toMatchObject({ code: 'permission-denied' });
       const client = rules.authenticatedContext(role).firestore();

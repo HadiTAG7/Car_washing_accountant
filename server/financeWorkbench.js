@@ -7,6 +7,8 @@ import { taxPolicyAt } from '../functions/src/taxPolicy.js';
 import { startupRollup, startupParentHasLegacyTaxFields } from '../functions/src/startupMigration.js';
 import { isRealDate, postingLockId, round2 } from '../functions/src/invariants.js';
 import { FINANCE_KINDS, financeHash, financeSourceHash, financeReviewId, financeProblems, journalMatchesFinanceSource, assertFinanceDocumentUniqueness, FinanceReviewError } from '../functions/src/financeReview.js';
+import { financeReadSnapshot } from './financeReadSnapshot.js';
+import { filterWorkbenchItems, hasPaymentConflict, documentDay } from '../src/lib/financeWorkbenchView.js';
 
 const kindSchema = z.enum(['variable', 'monthly', 'annual', 'startup']);
 const id = z.string().regex(/^[\p{L}\p{N}_.:-]{1,160}$/u);
@@ -30,6 +32,7 @@ const common = { kind: kindSchema, sourceId: id };
 const correction = { ...common, patch: patchSchema, sourceHash: hash };
 const capture = { kind: kindSchema, requestId: id, patch: patchSchema };
 const requestSchema = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('browse') }).strict(),
   z.object({ action: z.literal('list'), kind: kindSchema, after: id.optional() }).strict(),
   z.object({ action: z.literal('options'), kind: kindSchema }).strict(),
   z.object({ action: z.literal('read'), ...common }).strict(),
@@ -127,15 +130,71 @@ function publicRow(kind, sourceId, row, state, preview) {
     issues: state.approved && !approved ? ['تغيرت معاينة الحسابات أو المعالجة الضريبية بعد الاعتماد؛ أعد المراجعة.', ...preview.issues] : preview.issues,
     postingPreview: preview, stage: state.protectedSource ? 'protected' : state.closed ? 'closed_period' : approved ? 'approved' : preview.ready ? 'review_ready' : 'incomplete' };
 }
+async function workflowDocument(db, tx, kind, sourceId, row, currentState = null) {
+  const state = currentState || await readState(db, tx, kind, sourceId, row);
+  const preview = await postingPreview(db, tx, kind, sourceId, row);
+  const detail = publicRow(kind, sourceId, row, state, preview);
+  // Reporting the current checks, not replacing or relaxing any write gate.
+  const additionalIssues = [];
+  if (!state.protectedSource && !state.closed && preview.ready) {
+    try { await validateClassification(db, tx, kind, row); await checkDuplicate(db, tx, kind, sourceId, row); }
+    catch (error) { if (!(error instanceof FinanceReviewError)) throw error; additionalIssues.push(error.message); }
+  }
+  const journals = await Promise.all(state.journalIds.map(id => tx.get(db.collection('journal_entries').doc(id))));
+  const reversed = journals.some(journal => journal.data()?.status === 'reversed' || journal.data()?.reversalOf);
+  const posted = journals.some(journal => journal.data()?.status === 'posted') && !reversed;
+  const evidence = row.finance_metadata || {};
+  const paymentProven = row.payment_status === 'paid' && isRealDate(row.paid_date)
+    && typeof evidence.fundingReference === 'string' && Boolean(evidence.fundingReference.trim())
+    && Array.isArray(evidence.evidenceRefs) && evidence.evidenceRefs.length > 0 && evidence.evidenceRefs.every(ref => typeof ref === 'string' && ref.trim())
+    && ((evidence.fundingType === 'company_cash' && row.payment_method === 'cash')
+      || (evidence.fundingType === 'company_bank' && ['transfer', 'card'].includes(row.payment_method)));
+  const safeUnposted = !state.protectedSource && !state.closed && preview.ready && !additionalIssues.length && !detail.issues.length;
+  const workflowStage = posted ? paymentProven ? 'complete' : 'posted_unproven'
+    : safeUnposted ? detail.approved ? 'approved' : 'ready' : 'incomplete';
+  return { ...detail, issues: [...detail.issues, ...additionalIssues], workflowStage,
+    approvalReady: safeUnposted && !detail.approved && !detail.issues.length,
+    postingReady: safeUnposted && detail.approved && !detail.issues.length,
+    paymentProven, paymentConflict: hasPaymentConflict(row),
+    workflowNote: reversed ? 'له قيد معكوس؛ المصدر محمي ويحتاج مراجعة.' : state.closed ? 'الفترة مقفلة؛ العرض فقط.'
+      : state.protectedSource && !posted ? 'المصدر محمي؛ لم يثبت قيد مرحّل صالح في القراءة الحالية.' : null,
+    journalNumbers: journals.map(j => j.data()?.entryNumber).filter(Number.isFinite) };
+}
+async function browseDocuments(db) {
+  const names = [...Object.values(FINANCE_KINDS).flatMap(spec => [spec.collection, spec.parent || spec.category]),
+    'journal_entries', 'posting_locks', 'finance_reviews', 'accounting_periods', 'app_settings', 'chart_of_accounts'];
+  const snapshot = await financeReadSnapshot(db, names);
+  const tx = { get: reference => reference.get() };
+  const items = [];
+  // The snapshot is request-local and read-only. Reuse the exact read/preview,
+  // classification and duplicate checks without one network query per record.
+  for (const [kind, spec] of Object.entries(FINANCE_KINDS)) {
+    const records = await snapshot.collection(spec.collection).get();
+    for (const doc of records.docs) {
+      const row = doc.data(), detail = await workflowDocument(snapshot, tx, kind, doc.id, row);
+      items.push({ kind, sourceId: doc.id, title: row[spec.title] || 'بلا عنوان', amount: row[spec.amount] ?? null,
+        date: documentDay(row[spec.date]) || row[spec.date] || null, supplier: row.supplier || '', documentNumber: row.invoice_number || row.receipt_number || '',
+        paymentStatus: row.payment_status || 'unknown', workflowStage: detail.workflowStage, paymentConflict: detail.paymentConflict,
+        approvalReady: detail.approvalReady, sourceHash: detail.sourceHash, postingHash: detail.postingPreview.postingHash || null,
+        issueCount: detail.issues.length, workflowNote: detail.workflowNote });
+    }
+  }
+  return { items: filterWorkbenchItems(items), readAt: new Date().toISOString(), complete: true };
+}
 export async function financeWorkbench(db, auth, input) {
   await adminOnly(db, auth);
   const parsed = requestSchema.safeParse(input);
   if (!parsed.success) fail(parsed.error.issues.map(i => i.message).join(' '), 'invalid-argument');
   const r = parsed.data, spec = FINANCE_KINDS[r.kind];
+  if (r.action === 'browse') {
+    const result = await browseDocuments(db);
+    await adminOnly(db, auth);
+    return result;
+  }
   if (r.action === 'options') {
     const snap = await db.collection(spec.parent || spec.category).limit(101).get();
     return { items: snap.docs.slice(0, 100).map(doc => ({ id: doc.id,
-      label: doc.data().label || doc.data().name || doc.data().item_name || doc.data().expense_name || doc.data().title || doc.data().description || doc.id })),
+      label: doc.data().label || doc.data().name || doc.data().item_name || doc.data().expense_name || doc.data().title || doc.data().description || 'تصنيف بدون اسم' })),
     limited: snap.size > 100, parent: Boolean(spec.parent) };
   }
   if (r.action === 'list') {
@@ -191,7 +250,7 @@ export async function financeWorkbench(db, auth, input) {
     if (!isCapture && !snap.exists) fail('المصروف غير موجود.', 'not-found');
     const before = snap.exists ? snap.data() : {};
     const state = await readState(db, tx, r.kind, sourceId, before);
-    if (r.action === 'read') return publicRow(r.kind, sourceId, before, state, await postingPreview(db, tx, r.kind, sourceId, before));
+    if (r.action === 'read') return workflowDocument(db, tx, r.kind, sourceId, before, state);
     if (state.protectedSource) fail('مصدر له قيد أو قفل أو تاريخ ترحيل؛ التصحيح وإعادة الاعتماد مرفوضان.');
     if (state.closed) fail('الفترة مقفلة.');
     if (!isCapture && state.sourceHash !== r.sourceHash) fail('تغير السجل؛ أعد القراءة والمعاينة.');

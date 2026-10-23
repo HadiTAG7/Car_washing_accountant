@@ -8,6 +8,7 @@ import { financeWorkbench } from '../financeWorkbench.js';
 import { financeReports } from '../financeReports.js';
 import { postSource } from '../../functions/src/ledger.js';
 import { expensePatch, financeFixture } from './financeFixtures.js';
+import { approveFinanceSelection } from '../../src/lib/financeWorkbenchActions.js';
 
 const projectId = 'demo-sweater-finance';
 const enabled = /^(127\.0\.0\.1|localhost):19080$/.test(process.env.FIRESTORE_EMULATOR_HOST || '');
@@ -44,6 +45,21 @@ describe.skipIf(!enabled)('finance real Firestore workflow — isolated demo onl
     return { input, preview, result, read, common: { kind: 'variable', sourceId: result.sourceId, sourceHash: read.sourceHash } };
   }
   const approve = data => call({ action: 'approve', ...data.common, postingHash: data.read.postingPreview.postingHash, reason: 'اعتماد مستند الاختبار', confirm: true });
+
+  it('bulk approval calls the original transactional path per eligible version and never posts or proves payment', async () => {
+    await captured({ invoiceNumber: 'BULK-A', invoiceUrl: 'https://example.org/bulk-a' }, 'BULK-A');
+    await captured({ invoiceNumber: 'BULK-B', invoiceUrl: 'https://example.org/bulk-b' }, 'BULK-B');
+    const before = await call({ action: 'browse' });
+    expect(before.items.every(item => item.workflowStage === 'ready')).toBe(true);
+    const result = await approveFinanceSelection({ items: before.items, confirmed: true, reason: 'اعتماد مجموعة اختبار معزولة', call: (_endpoint, request) => call(request) });
+    expect(result.verified).toHaveLength(2); expect(result.uncertain).toHaveLength(0);
+    expect((await call({ action: 'browse' })).items.every(item => item.workflowStage === 'approved')).toBe(true);
+    expect((await db.collection('journal_entries').get()).size).toBe(0);
+    expect((await db.collection('variable_expenses').get()).docs.every(doc => doc.data().payment_status === 'unpaid')).toBe(true);
+    expect((await db.collection('finance_reviews').get()).size).toBe(2);
+    const attemptAgain = await approveFinanceSelection({ items: before.items, confirmed: true, reason: 'اختبار إعادة مجموعة قديمة', call: (_endpoint, request) => call(request) });
+    expect(attemptAgain.skipped).toHaveLength(2); expect((await db.collection('finance_reviews').get()).size).toBe(2);
+  }, 120000);
 
   it('captures then approves then posts the canonical stored lines; duplicate post cannot create a second journal', async () => {
     const data = await captured();

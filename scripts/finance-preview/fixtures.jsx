@@ -32,12 +32,12 @@ export const useFinanceHomeData = month => ({ today: '2026-10-23', month, loadin
   workbench: { unknownPayment: { count: 4, amount: 410 }, pending: { count: 3, amount: 300 } },
   budget: { month: '2026-10', cards: [{ budget: { amount: 0 }, spent: 100 }], totals: { remaining: -100 } } });
 // Dense, long mixed-direction labels reproduce the shrinking flex-list defect.
-const recordItems = Array.from({ length: 20 }, (_, index) => ({ sourceId: `TEST-${index}`, title: `${index + 1} — مصروف اختبار طويل لصيانة المعدات وباقة الاتصالات (مستند Q4-TEST) — مرجع ${'SYNTHETIC'.repeat(8)}`, date: '2026-10-19', amount: 57.34, paymentStatus: 'unpaid' }));
+const recordItems = Array.from({ length: 75 }, (_, index) => ({ kind: 'variable', sourceId: `TEST-${index}`, title: `${index + 1} — مصروف اختبار طويل لصيانة المعدات وباقة الاتصالات (مستند Q4-TEST) — تحويل بنكي ${'SYNTHETIC '.repeat(4)}`, date: index < 40 ? '2026-10-19' : '2026-05-18', amount: 57.34, supplier: 'مورد اختبار', documentNumber: `TEST-${index}`, paymentStatus: 'unpaid', workflowStage: 'incomplete', paymentConflict: index % 3 === 0 }));
 export const useFinanceRead = (endpoint, request) => ({ allowed: true, loading: false, error: null, refresh: () => {},
   data: endpoint === 'finance-reports' ? request.action === 'list' ? { items: [corrected, intake] }
     : request.reportId === intake.reportId ? { report: intake, currentRevision: 1, history: [{ revision: 1, reason: 'الإصدار الأول' }] }
       : { report: request.revision === 1 ? report : corrected, currentRevision: 2, history: [{ revision: 2, reason: corrected.correctionReason }, { revision: 1, reason: 'الإصدار الأول' }] }
-    : request.action === 'list' ? { items: recordItems, coverage: '20 سجلًا اصطناعيًا معزولًا فقط' }
+    : request.action === 'browse' ? { items: recordItems, complete: true, readAt: '2026-10-23T15:00:00Z' }
       : request.action === 'options' ? { items: [{ id: 'TEST', label: 'تصنيف اختبار' }] } : { ...detail, sourceId: request.sourceId, row: { ...detail.row, expense_name: recordItems.find(item => item.sourceId === request.sourceId)?.title || detail.row.expense_name } } });
 export const callFinanceApi = async () => { throw new Error('لا حفظ في الاختبار البصري؛ استخدم اختبارات المحاكي.'); };
 export default function PreviewTopBar({ title, subtitle, isOpen }) {

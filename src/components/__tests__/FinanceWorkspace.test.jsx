@@ -114,37 +114,38 @@ describe('finance report UI and access boundaries', () => {
   });
   it('keeps long record titles and metadata separate and selects a record without a write', () => {
     const title = `مصروف طويل — مستند Q4 — ${'REFERENCE'.repeat(20)}`;
-    const items = Array.from({ length: 20 }, (_, i) => ({ sourceId: `TEST-${i}`, title: `${title} ${i}`, amount: 57.34, date: '2026-10-19', paymentStatus: 'unpaid' }));
-    mock.read.mockImplementation((_e, r) => base(r.action === 'list' ? { items } : r.action === 'options' ? { items: [] } : null));
+    const items = Array.from({ length: 45 }, (_, i) => ({ kind: 'variable', sourceId: `TEST-${i}`, title: `${title} ${i}`, amount: 57.34, date: '2026-10-19', paymentStatus: 'unpaid', workflowStage: 'incomplete' }));
+    mock.read.mockImplementation((_e, r) => base(r.action === 'browse' ? { items } : r.action === 'options' ? { items: [] } : null));
     render(<FinanceWorkbenchPage />);
     const list = screen.getByLabelText('سجلات المصروفات');
-    expect(list.querySelectorAll('button')).toHaveLength(20);
-    const last = list.querySelectorAll('button')[19];
-    expect(last.querySelector('strong').textContent).toBe(`${title} 19`);
-    expect(last.querySelector('span').textContent).toBe('57.34 ر.س · 2026-10-19');
-    expect(last.querySelector('small').textContent).toContain('غير مسدد');
+    expect(list.querySelectorAll('article')).toHaveLength(15);
+    fireEvent.click(screen.getByRole('button', { name: 'صفحة 3' }));
+    const last = list.querySelectorAll('article button')[14];
+    expect(last.querySelector('strong').textContent).toContain(title);
+    expect(last.querySelector('span').textContent).toBe('57.34 ر.س');
+    expect(last.querySelector('small').textContent).toContain('2026-10-19');
     last.focus(); fireEvent.click(last);
     expect(document.activeElement).toBe(last);
-    expect(last.className).toBe('fw-selected');
-    expect(mock.read).toHaveBeenLastCalledWith('finance-workbench', { action: 'options', kind: 'variable' });
-    expect(mock.read).toHaveBeenCalledWith('finance-workbench', { action: 'read', kind: 'variable', sourceId: 'TEST-19' }, true);
+    expect(last.closest('article').className).toContain('fw-selected');
+    expect(mock.read).toHaveBeenLastCalledWith('finance-workbench', { action: 'options', kind: 'variable' }, true);
+    expect(mock.read).toHaveBeenCalledWith('finance-workbench', { action: 'read', kind: 'variable', sourceId: 'TEST-9' }, true);
     expect(mock.api).not.toHaveBeenCalled();
   });
   it('requires separate confirmation for approval and disables posting after a form edit', async () => {
-    const detail = { sourceId: 'SYNTHETIC', sourceHash: 'a'.repeat(64), stage: 'approved', approved: true,
+    const detail = { sourceId: 'SYNTHETIC', sourceHash: 'a'.repeat(64), workflowStage: 'approved', approved: true, postingReady: true,
       row: { expense_name: 'مصروف اختبار', total_variable_cost: 100, quantity: 2, logged_date: '2026-10-19' },
       postingPreview: { ready: true, lines: [] }, issues: [], journalIds: [] };
-    mock.read.mockImplementation((_e, r) => base(r.action === 'list' ? { items: [{ sourceId: 'SYNTHETIC', title: 'اختبار' }] }
+    mock.read.mockImplementation((_e, r) => base(r.action === 'browse' ? { items: [{ kind: 'variable', sourceId: 'SYNTHETIC', title: 'اختبار' }] }
       : r.action === 'options' ? { items: [] } : detail)); render(<FinanceWorkbenchPage />);
-    const post = screen.getByRole('button', { name: 'ترحيل المصروف المعتمد' }); expect(post.disabled).toBe(true);
-    fireEvent.click(screen.getByRole('checkbox')); expect(post.disabled).toBe(false);
-    fireEvent.change(screen.getByLabelText('وصف المصروف'), { target: { value: 'تغيير قيد المراجعة' } });
-    expect(post.disabled).toBe(true); expect(mock.api).not.toHaveBeenCalled();
+    const post = screen.getByRole('button', { name: 'رحّل' }); expect(post.disabled).toBe(true);
+    fireEvent.click(screen.getByRole('checkbox', { name: /أؤكد ترحيل/ })); expect(post.disabled).toBe(false);
+    fireEvent.change(screen.getByLabelText('الوصف'), { target: { value: 'تغيير قيد المراجعة' } });
+    expect(screen.queryByRole('button', { name: 'رحّل' })).toBeNull(); expect(mock.api).not.toHaveBeenCalled();
   });
   it('never offers mutation controls for posted sources', () => {
-    mock.read.mockImplementation((_e, r) => base(r.action === 'list' ? { items: [{ sourceId: 'TEST', title: 'اختبار' }] } : r.action === 'options' ? { items: [] }
+    mock.read.mockImplementation((_e, r) => base(r.action === 'browse' ? { items: [{ kind: 'variable', sourceId: 'TEST', title: 'اختبار' }] } : r.action === 'options' ? { items: [] }
       : { sourceId: 'TEST', sourceHash: 'a'.repeat(64), row: {}, stage: 'protected', protectedSource: true, journalIds: ['ENTRY'], postingPreview: { lines: [] } }));
     render(<FinanceWorkbenchPage />); expect(screen.queryByText('حفظ المصدر غير المرحّل')).toBeNull();
-    expect(screen.getByLabelText('وصف المصروف').disabled).toBe(true);
+    expect(screen.getByLabelText('الوصف').disabled).toBe(true);
   });
 });

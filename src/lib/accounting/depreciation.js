@@ -27,6 +27,8 @@ export const DEPRECIATION_METHODS = ['straight_line'];
 
 /** Sensible default lives, in months — a starting point, always editable. */
 export const USEFUL_LIFE_PRESETS = [
+  { label: 'دبابات توصيل (4 سنوات — قابل للتعديل)', months: 48 },
+  { label: 'جوالات (سنتان — قابل للتعديل)', months: 24 },
   { label: 'أجهزة ومعدات غسيل (5 سنوات)', months: 60 },
   { label: 'أثاث وتجهيزات (5 سنوات)',      months: 60 },
   { label: 'حاسبات وأجهزة (3 سنوات)',      months: 36 },
@@ -64,7 +66,7 @@ export function periodEndDate(periodKey) {
 // ─── الأصل ───────────────────────────────────────────────────────────────
 /** Fills the fields a schedule needs, without overwriting anything supplied. */
 export function normalizeAsset(asset) {
-  return {
+  const normalized = {
     method: 'straight_line',
     salvageValue: 0,
     assetAccount: ACC.FIXED_ASSETS,
@@ -77,6 +79,13 @@ export function normalizeAsset(asset) {
     cost: round2(Number(asset?.cost) || 0),
     usefulLifeMonths: Math.trunc(Number(asset?.usefulLifeMonths) || 0),
   };
+  // Keep the capitalised cost in its existing account until an approved
+  // reclassification. Amortisation is always separate from tangible charges.
+  if (normalized.assetKind === 'intangible') {
+    normalized.accumulatedAccount = ACC.ACCUM_AMORTIZATION;
+    normalized.expenseAccount = ACC.AMORTIZATION;
+  }
+  return normalized;
 }
 
 /** Arabic problems with an asset; empty array = safe to schedule. */
@@ -199,6 +208,7 @@ export function depreciationForPeriod(assets, periodKey) {
     rows.push({
       assetId: a.id ?? null,
       name: a.name || 'أصل ثابت',
+      assetKind: a.assetKind || 'tangible',
       amount: hit.amount,
       accumulated: hit.accumulated,
       netBookValue: hit.netBookValue,
@@ -230,11 +240,11 @@ export function buildDepreciationEntry(periodKey, assets, { createdBy = null } =
   const lines = [];
   for (const r of rows) {
     lines.push({ accountId: r.expenseAccount, debit: r.amount, credit: 0,
-      description: `إهلاك — ${r.name}` });
+      description: `${r.assetKind === 'intangible' ? 'إطفاء' : 'إهلاك'} — ${r.name}` });
   }
   for (const r of rows) {
     lines.push({ accountId: r.accumulatedAccount, debit: 0, credit: r.amount,
-      description: `مجمع إهلاك — ${r.name}` });
+      description: `مجمع ${r.assetKind === 'intangible' ? 'إطفاء' : 'إهلاك'} — ${r.name}` });
   }
 
   const entryDate = periodEndDate(periodKey);

@@ -2,7 +2,7 @@ import { defineConfig, mergeConfig } from 'vite';
 import { fileURLToPath } from 'node:url';
 import base from '../../vite.config.js';
 // Separate test entry/config, never imported by the production application.
-export default mergeConfig(base, defineConfig({
+export default defineConfig(env => mergeConfig(base(env), {
   appType: 'mpa',
   plugins: [{ name: 'isolated-overview-visual-fixture', enforce: 'pre',
     load(id) {

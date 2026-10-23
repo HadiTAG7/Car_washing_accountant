@@ -3,6 +3,7 @@ import { isFirebaseConfigured } from '../lib/firebaseClient';
 import { fetchRows, sortBy, where } from '../lib/firestoreCrud';
 import { callServer } from '../lib/ledgerTransport';
 import { useFirestoreQuery } from './useFirestoreQuery';
+import { composeSweaterMetricReadings } from '../lib/sweaterMetricReadings';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // خطّافات سويتر — قراءةٌ مباشرة، وكتابةٌ عبر الخادم دائماً
@@ -55,13 +56,14 @@ export function useSweaterSettlements() {
   };
 }
 
-/** The month's latest reading of Sweater's dashboards (the operations agent sends them), or null. */
+/** Latest available reading per metric, retaining its original source and time. */
 export function useSweaterMetrics(periodKey) {
   const { data, loading, error, refetch } = useFirestoreQuery(
     async () => sortBy(await fetchRows('sweater_metric_snapshots', [where('periodKey', '==', periodKey)]), [{ key: 'extractedAtIso', dir: 'desc' }]),
     { cacheKey: `sweater_metric_snapshots:${periodKey}`, enabled: enabled && Boolean(periodKey), deps: [periodKey], fallback: [] },
   );
-  return { snapshot: data?.[0] ?? null, loading, error, refetch };
+  const snapshot = useMemo(() => composeSweaterMetricReadings(data, periodKey), [data, periodKey]);
+  return { snapshot, loading, error, refetch };
 }
 
 export function useSweaterAdjustments(periodKey) {

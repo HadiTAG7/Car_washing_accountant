@@ -3254,5 +3254,14 @@
   "مجمع": "Accumulated",
   "الترحيل متوقف: تكلفة سجل الأصول لا تطابق رصيد 1500 في الدفتر.": "Posting is blocked: asset register cost does not match ledger account 1500.",
   "تفاصيل الخصومات والإضافات": "Deduction and addition details",
-  "الحساب المحفوظ لم يحتسب خدمات بسبب حجوزات تحتاج مراجعة؛ لا يعني أن المستحق صفر.": "The saved calculation excluded services requiring review; this does not establish a zero amount due."
+  "الحساب المحفوظ لم يحتسب خدمات بسبب حجوزات تحتاج مراجعة؛ لا يعني أن المستحق صفر.": "The saved calculation excluded services requiring review; this does not establish a zero amount due.",
+  "عرض من 100 بقرار هادي: المعيار غير المتوفر يأخذ وزنه كاملًا افتراضيًا، وليس درجة مقاسة. تعذّر القراءة لا يأخذ درجة.": "Overview out of 100 by owner instruction: unavailable components receive full weight by assumption, not measurement. Read failures receive no score.",
+  "تفاصيل معيار": "Criterion details",
+  "منها افتراضي": "Assumed portion",
+  "درجة البروفايل المقاسة أعلاه لم تتغير؛ التفصيل التالي يوضح الإضافات الافتراضية في النظرة العامة فقط.": "The measured profile score above is unchanged; the breakdown below explains overview-only assumptions.",
+  "غير متوفر · كامل افتراضيًا": "Unavailable · full weight assumed",
+  "المتوسط من الدرجات المقاسة فقط، لكل بايكر وزن واحد. القيم الافتراضية لا تدخل هذا المتوسط.": "The average includes measured scores only, with one vote per biker. Assumed points are excluded.",
+  "مقاس": "Measured",
+  "تقدير غير معتمد · قبل الضريبة والخصومات والإضافات": "Unapproved estimate · before VAT, deductions and additions",
+  "من الغسلات المسجلة وسعر النظرة العامة. ليس صافي دفعة نهائيًا؛ قد يتغير بعد المطابقة والمراجعة.": "From recorded washes and the overview price. Not final net payment; reconciliation and review may change it."
 }

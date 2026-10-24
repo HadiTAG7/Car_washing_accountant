@@ -41,6 +41,12 @@ export default function OverviewBusinessInsights({ data, periodKey, washReady, l
   const link = (label, tab) => <button className="sw-overview__link" type="button" onClick={() => onNavigate?.(tab)}>{label}</button>;
   // Break-even boxes: breakEven.js through the page (daily: the chart's line; perBiker: the bikers page's columns).
   const { daily, days, perBiker } = breakEven;
+  // Owner-approved, display-only service estimate. Not settlement net due:
+  // do not guess VAT or monetary rates for count-based deductions/additions.
+  const provisional = sReady && !settlement?.ambiguous && ops && !ops.conflicts?.length
+    && (settlement?.unresolvedZero || settlement?.expected == null)
+    && Number.isFinite(ops.quantity) && ops.quantity >= 0;
+  const serviceEstimate = provisional ? Math.round(ops.quantity * settings.washNetPrice * 100) / 100 : null;
   const dailyReached = daily && days?.averageActual != null ? days.averageActual >= daily.required : null;
   const bikerReached = perBiker?.averageCoverage != null ? perBiker.averageCoverage >= 1 : null;
   const status = reached => reached !== null && <p className="sw-overview-insight__status">{reached ? text('وصل نقطة التعادل', 'At or above break-even') : text('تحت نقطة التعادل', 'Below break-even')}</p>;
@@ -87,15 +93,16 @@ export default function OverviewBusinessInsights({ data, periodKey, washReady, l
         {link(text('تفاصيل تسويات سويتر', 'Sweater settlement details'), 'sweater_settlements')}
       </Insight>
       <Insight title={text('البقشيش', 'Tips')} titleHint={updated(['tipsNet'])} onOpen={() => setDetail('tips')} value={fromSweater(sweater?.tipsNet, currency)} />
-    </div>
-    <div className="sw-overview__financial-grid sw-overview__insight-grid">
-      <Insight title={text('الدفعة المتوقعة من سويتر', 'Expected Sweater payment')} value={sReady && settlement?.unresolvedZero ? text('تحتاج مراجعة', 'Needs review') : currency(sReady && ops ? settlement.expected : null)}>
-        <small>{!sReady ? text('قراءة التسوية غير متاحة بعد.', 'Settlement read is not available yet.') : settlement?.ambiguous ? text('أكثر من تسوية للشهر؛ يلزم حسم المصدر.', 'Multiple settlements exist for the month; the source needs review.')
+      <Insight title={text('الدفعة المتوقعة من سويتر', 'Expected Sweater payment')} value={provisional ? currency(serviceEstimate) : sReady && settlement?.unresolvedZero ? text('تحتاج مراجعة', 'Needs review') : currency(sReady && ops ? settlement.expected : null)}>
+        {provisional && <><p>{text('تقدير غير معتمد · قبل الضريبة والخصومات والإضافات', 'Unapproved estimate · before VAT, deductions and additions')}</p>
+          <p><bdi>{num(ops.quantity)} × {currency(settings.washNetPrice)}</bdi> · <bdi dir="ltr">{ops.from} — {ops.to}</bdi></p></>}
+        <small>{provisional ? text('من الغسلات المسجلة وسعر النظرة العامة. ليس صافي دفعة نهائيًا؛ قد يتغير بعد المطابقة والمراجعة.', 'From recorded washes and the overview price. Not final net payment; reconciliation and review may change it.')
+          : !sReady ? text('قراءة التسوية غير متاحة بعد.', 'Settlement read is not available yet.') : settlement?.ambiguous ? text('أكثر من تسوية للشهر؛ يلزم حسم المصدر.', 'Multiple settlements exist for the month; the source needs review.')
           : !settlement?.settlement ? text('لم تُسجّل تسوية محسوبة لهذا الشهر.', 'No calculated settlement is recorded for this month.')
             : settlement?.unresolvedZero ? text('الحساب المحفوظ لم يحتسب خدمات بسبب حجوزات تحتاج مراجعة؛ لا يعني أن المستحق صفر.', 'The saved calculation excluded services requiring review; this does not establish a zero amount due.')
             : settlement?.expected === null ? text('التسوية موجودة، لكن صافي المستحق لم يُحسب أو يُحفظ بعد.', 'A settlement exists, but net due has not been calculated or saved yet.')
               : text('صافي المستحق من آخر حساب محفوظ للتسوية، وليس إثبات تحويل. قد يتغير بعد المراجعة.', 'Net due from the last saved settlement calculation, not proof of transfer. It may change after review.')}</small>
-        {sReady && settlement?.collected !== null && settlement?.collected !== undefined && <p>{text('المحصّل المسجل', 'Recorded collected')}: <bdi>{currency(settlement.collected)}</bdi> · {text('المتبقي', 'Remaining')}: <bdi>{currency(settlement.remaining)}</bdi></p>}
+        {!provisional && sReady && settlement?.collected !== null && settlement?.collected !== undefined && <p>{text('المحصّل المسجل', 'Recorded collected')}: <bdi>{currency(settlement.collected)}</bdi> · {text('المتبقي', 'Remaining')}: <bdi>{currency(settlement.remaining)}</bdi></p>}
         {link(text('مطابقة الدفعة', 'Reconcile payment'), 'sweater_settlements')}
       </Insight>
     </div>

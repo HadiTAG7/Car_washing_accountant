@@ -149,7 +149,7 @@ it('removes the selected explanations without changing the displayed calculation
   expect(card('توقع نهاية الشهر').querySelector('small')).toBeNull();
   expect(card('توقع نهاية الشهر').textContent).not.toContain('الأيام غير المكتملة المتبقية');
   expect(screen.queryByRole('heading', { name: 'الفلوس والمواعيد' })).toBeNull();
-  expect(card('الدفعة المتوقعة من سويتر').textContent).toContain('لم تُسجّل تسوية');
+  expect(card('الدفعة المتوقعة من سويتر').textContent).toContain('تقدير غير معتمد');
   expect(card('الخصومات والتعويضات').textContent).toContain('غير مسجلة');
   expect(card('الخصومات والتعويضات').textContent).not.toContain('0.00');
 });
@@ -192,11 +192,42 @@ it.each(['ar', 'en'])('does not present an unresolved saved settlement as a conf
   d.settlements.items = [row];
   const { rerender } = render(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language={language} />);
   const box = card(language === 'ar' ? 'الدفعة المتوقعة من سويتر' : 'Expected Sweater payment');
-  expect(box.querySelector('strong').textContent).toBe(language === 'ar' ? 'تحتاج مراجعة' : 'Needs review');
+  expect(box.querySelector('strong').textContent).toContain('20.00');
+  expect(box.textContent).toContain(language === 'ar' ? 'تقدير غير معتمد' : 'Unapproved estimate');
+  expect(box.textContent).toContain(language === 'ar' ? 'قبل الضريبة والخصومات والإضافات' : 'before VAT, deductions and additions');
   expect(row.figures.netDue).toBe(0); // No recalculation or saved-record mutation.
   d.settlements.items = [{ ...row, figures: { netDue: 0, counts: { eligible: 1, needsReview: 0, unknownStatus: 0 } } }];
   rerender(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language={language} />);
   expect(box.querySelector('strong').textContent).toContain('0.00');
+});
+it('places the provisional payment beside tips and deductions, without mixing count adjustments into money', () => {
+  const d = data();
+  d.sweaterMetrics = { snapshot: october, loading: false, error: null };
+  const before = JSON.stringify(d);
+  const { rerender } = render(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language="ar" />);
+  const payment = card('الدفعة المتوقعة من سويتر');
+  expect(payment.parentElement).toBe(card('البقشيش').parentElement);
+  expect(payment.parentElement).toBe(card('الخصومات والتعويضات').parentElement);
+  expect(payment.querySelector('strong').textContent).toContain('20.00');
+  expect(payment.textContent).toContain('2026-10-01 — 2026-10-21');
+  expect(JSON.stringify(d)).toBe(before);
+  d.settlements.items = [{ periodKey: '2026-10', figures: { netDue: 17 } }];
+  rerender(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language="ar" />);
+  expect(payment.querySelector('strong').textContent).toContain('17.00');
+  expect(payment.textContent).not.toContain('تقدير غير معتمد');
+});
+it('does not invent an estimate during wash failure, settlement failure or conflicting settlement sources', () => {
+  const d = data();
+  const { rerender } = render(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady={false} language="ar" />);
+  const payment = card('الدفعة المتوقعة من سويتر');
+  expect(payment.querySelector('strong').textContent).toBe('غير متاح');
+  d.settlements.error = new Error('failed');
+  rerender(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language="ar" />);
+  expect(payment.querySelector('strong').textContent).toBe('غير متاح');
+  d.settlements.error = null;
+  d.settlements.items = [{ periodKey: '2026-10' }, { periodKey: '2026-10' }];
+  rerender(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language="ar" />);
+  expect(payment.querySelector('strong').textContent).toBe('غير متاح');
 });
 it('distinguishes no records, explicit approved zero, pending deductions and credit-only records', () => {
   const d = data();

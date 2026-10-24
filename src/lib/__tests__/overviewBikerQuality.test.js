@@ -9,6 +9,8 @@ it('uses the exact profile projection, not saved historical/manual points or a r
   const result = overviewBikerQuality([biker('a'), biker('b')], data, '2026-10', '2026-10-16');
   expect(result).toMatchObject({ available: 1, partial: 1, complete: 0, missing: 1, failed: 0 });
   expect(result.rows.find(r => r.biker.id === 'a').summary).toMatchObject({ points: 8, weight: 10 });
+  expect(result.rows.find(r => r.biker.id === 'a').display).toMatchObject({ points: 98, assumedWeight: 90 });
+  expect(result.rows.find(r => r.biker.id === 'b').display).toMatchObject({ points: 100, assumedWeight: 100 });
   expect(result.rows.map(r => r.biker.id)).toEqual(['b', 'a']);
   expect(JSON.stringify(data)).toBe(before);
 });
@@ -17,6 +19,8 @@ it('keeps a measured zero, missing evidence and a failed read distinct', () => {
     { bikerUID: 'a', data: { reports: [report('a', { components: [{ key: 'duration', points: 0, weight: 10, n: 3 }] })] } },
     { bikerUID: 'b', data: { reports: [] } }, { bikerUID: 'c', failed: true }], '2026-10', '2026-10-16');
   expect(result).toMatchObject({ available: 1, partial: 1, missing: 1, failed: 1, read: 2 });
+  expect(result.rows.find(r => r.biker.id === 'a').display.points).toBe(90);
+  expect(result.rows.find(r => r.biker.id === 'c').display).toBeNull();
 });
 it('never falls back to the wrong identity/month/future or combines overlapping snapshots', () => {
   const result = overviewBikerQuality([biker('a')], [{ bikerUID: 'a', data: { reports: [report('other'), report('a', { periodKey: '2026-09' }), report('a', { to: '2026-10-17' })] } }], '2026-10', '2026-10-16');
@@ -47,6 +51,7 @@ it('keeps all eight agreed denominators, includes measured zero and excludes abs
   expect(result.criteria.find(c => c.key === 'duration')).toMatchObject({ average: 0, count: 1 });
   expect(result.criteria.find(c => c.key === 'behavior')).toMatchObject({ average: null, count: 0 });
   expect(result.criteria.find(c => c.key === 'statusUpdates')).toMatchObject({ average: null, count: 0 });
+  expect(result.rows.find(r => r.biker.id === 'b').display).toBeNull();
 });
 it('uses only the current month snapshot and current manual review for the component means', () => {
   const manual = { policy: 'manual-status-20261015-v1', bikerUID: 'a', periodKey: '2026-10', from: '2026-10-01', to: '2026-10-14', confirmed: true,

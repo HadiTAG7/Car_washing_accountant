@@ -18,7 +18,7 @@ beforeEach(() => {
 afterEach(cleanup);
 it('shows real partial profile points and their window, without customer-star substitution or normalization', () => {
   render(<OverviewBikerQuality {...props} />);
-  expect(screen.getByRole('button', { name: 'عرض تقييم: 1984' }).textContent).toBe('8 / 10');
+  expect(screen.getByRole('button', { name: 'عرض تقييم: 1984' }).textContent).toBe('98 / 100');
   expect(screen.queryByRole('button', { name: 'تقييم العملاء' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'عرض تقييم: 1984' }));
   const dialog = screen.getByRole('dialog');
@@ -26,12 +26,14 @@ it('shows real partial profile points and their window, without customer-star su
   expect(dialog.textContent).toContain('مدة الغسلة'); expect(dialog.textContent).toContain('جزئي');
   expect(within(dialog).queryByRole('textbox')).toBeNull();
 });
-it('shows missing workers on request and does not invent a score for them', () => {
+it('shows fully assumed scores on request without claiming measured profile evidence', () => {
   render(<OverviewBikerQuality {...props} />);
   expect(screen.queryByText('Missing worker')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'عرض جميع البايكرز' }));
   expect(screen.getByText('Missing worker')).toBeTruthy();
-  expect(screen.queryByRole('button', { name: 'عرض تقييم: 1982' })).toBeNull();
+  expect(screen.getByRole('button', { name: 'عرض تقييم: 1982' }).textContent).toBe('100 / 100');
+  fireEvent.click(screen.getByRole('button', { name: 'عرض تقييم: 1982' }));
+  expect(screen.getByRole('dialog').textContent).toContain('غير متوفر · كامل افتراضيًا');
 });
 it.each(['accountant', 'partner', 'supervisor'])('keeps profile assessments admin-only for %s', role => {
   state.role = role; render(<OverviewBikerQuality {...props} />); expect(read).not.toHaveBeenCalled();
@@ -47,7 +49,22 @@ it('distinguishes read failure from missing scores and keeps retry available', (
 });
 it('supports English display with the exact same score', () => {
   render(<LanguageContext.Provider value={{ language: 'en' }}><OverviewBikerQuality {...props} /></LanguageContext.Provider>);
-  expect(screen.getByRole('button', { name: 'View assessment: 1984' }).textContent).toBe('8 / 10');
+  expect(screen.getByRole('button', { name: 'View assessment: 1984' }).textContent).toBe('98 / 100');
+});
+it('opens all eight criterion details, shows original evidence and closes without mutations', () => {
+  const before = JSON.stringify(state.query.data);
+  render(<OverviewBikerQuality {...props} />);
+  const openers = screen.getAllByRole('button', { name: /^تفاصيل معيار:/ });
+  expect(openers).toHaveLength(8);
+  for (const opener of openers) {
+    fireEvent.click(opener);
+    const dialog = screen.getByRole('dialog');
+    expect(dialog.textContent).toContain('Missing worker');
+    expect(dialog.textContent).toContain('القيم الافتراضية لا تدخل هذا المتوسط');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'إغلاق التفاصيل' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+  }
+  expect(JSON.stringify(state.query.data)).toBe(before);
 });
 it('shows eight criterion means up top and moves profile counts into collapsed coverage details', () => {
   render(<OverviewBikerQuality {...props} />);

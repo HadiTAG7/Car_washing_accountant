@@ -36,7 +36,7 @@ function AdminQuality({ workers, periodKey, today, onNavigate }) {
   const criterion = ready && summary.criteria.find(item => item.key === criterionKey);
   const assumedNote = text('عرض من 100 بقرار هادي: المعيار غير المتوفر يأخذ وزنه كاملًا افتراضيًا، وليس درجة مقاسة. تعذّر القراءة لا يأخذ درجة.', 'Overview out of 100 by owner instruction: unavailable components receive full weight by assumption, not measurement. Read failures receive no score.');
   const shown = showAll ? summary.rows : summary.rows.filter(row => !row.failed && row.summary.points !== null);
-  const status = row => row.failed ? text('تعذّر التحميل', 'Read failed') : row.summary.points === null
+  const status = row => row.failed ? text('تعذّر التحميل', 'Read failed') : row.invalid ? text('بيانات التقييم غير صالحة', 'Invalid assessment data') : row.summary.points === null
     ? row.summary.report?.status === 'outside-period' ? text('خارج فترة التقرير', 'Outside report period') : text('بدون درجة متاحة', 'No available score')
     : row.summary.incomplete ? text('جزئي', 'Partial') : text('مكتمل', 'Complete');
   return <section className="sw-overview__section" aria-labelledby="overview-quality-title">

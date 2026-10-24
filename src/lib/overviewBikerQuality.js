@@ -29,7 +29,12 @@ export function overviewBikerQuality(bikers, results, periodKey, today) {
     const result = byId.get(biker.id);
     const failed = !result || result.failed || !Array.isArray(result.data?.reports);
     const summary = bikerQualitySummary(failed ? [] : result.data.reports, biker.id, periodKey, today, failed ? null : result.data.manual);
-    return { biker, failed: Boolean(failed), data: failed ? null : result.data, summary, display: displayScore(summary, failed) };
+    // A rejected snapshot for this biker/month is corrupt/unusable evidence,
+    // not an absent criterion. Never reward it as a fully assumed 100.
+    const rejected = !failed && !summary.report && result.data.reports.some(report => report?.bikerUID === biker.id && report.periodKey === periodKey);
+    const display = displayScore(summary, failed || rejected);
+    return { biker, failed: Boolean(failed), invalid: !failed && !display && summary.report?.status !== 'outside-period',
+      data: failed ? null : result.data, summary, display };
   }).sort((a, b) => String(a.biker.driverExternalId || '\uffff').localeCompare(String(b.biker.driverExternalId || '\uffff'), undefined, { numeric: true })
     || String(a.biker.id).localeCompare(String(b.biker.id)));
   const scored = rows.filter(row => !row.failed && row.summary.points !== null);

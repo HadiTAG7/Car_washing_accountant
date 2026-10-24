@@ -25,6 +25,11 @@ it('keeps a measured zero, missing evidence and a failed read distinct', () => {
 it('never falls back to the wrong identity/month/future or combines overlapping snapshots', () => {
   const result = overviewBikerQuality([biker('a')], [{ bikerUID: 'a', data: { reports: [report('other'), report('a', { periodKey: '2026-09' }), report('a', { to: '2026-10-17' })] } }], '2026-10', '2026-10-16');
   expect(result.available).toBe(0); expect(result.missing).toBe(1);
+  expect(result.rows[0].display).toBeNull();
+});
+it.each([{ rulesVersion: 'unsupported' }, { from: '2026-10-99' }, { to: 'bad-date' }, { to: '2026-11-01' }])('never credits rejected current-month evidence as missing (%j)', extra => {
+  const result = overviewBikerQuality([biker('a')], [{ bikerUID: 'a', data: { reports: [report('a', extra)] } }], '2026-10', '2026-10-16');
+  expect(result.rows[0]).toMatchObject({ invalid: true, failed: false, display: null });
 });
 it('averages each available biker score once, not customer stars or sample-weighted values', () => {
   const data = [{ bikerUID: 'a', data: { reports: [report('a', { components: [

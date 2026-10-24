@@ -3257,6 +3257,7 @@
   "الحساب المحفوظ لم يحتسب خدمات بسبب حجوزات تحتاج مراجعة؛ لا يعني أن المستحق صفر.": "The saved calculation excluded services requiring review; this does not establish a zero amount due.",
   "عرض من 100 بقرار هادي: المعيار غير المتوفر يأخذ وزنه كاملًا افتراضيًا، وليس درجة مقاسة. تعذّر القراءة لا يأخذ درجة.": "Overview out of 100 by owner instruction: unavailable components receive full weight by assumption, not measurement. Read failures receive no score.",
   "تفاصيل معيار": "Criterion details",
+  "بيانات التقييم غير صالحة": "Invalid assessment data",
   "منها افتراضي": "Assumed portion",
   "درجة البروفايل المقاسة أعلاه لم تتغير؛ التفصيل التالي يوضح الإضافات الافتراضية في النظرة العامة فقط.": "The measured profile score above is unchanged; the breakdown below explains overview-only assumptions.",
   "غير متوفر · كامل افتراضيًا": "Unavailable · full weight assumed",

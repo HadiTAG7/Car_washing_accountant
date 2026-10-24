@@ -58,18 +58,43 @@ export default function TopBar({ title, subtitle, actions, hidePartnerSelector =
 
   return (
     <header className="sticky top-0 z-20 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800 transition-colors duration-200">
-      <div className="px-4 sm:px-6 lg:px-8 py-3 sm:py-4 flex items-center justify-between gap-3 sm:gap-6">
+      {/* Start beside the rail (right in Arabic, mirrored in English).
+          Stay outside it so the same control can always restore it. */}
+      <div dir="rtl" className="px-4 sm:px-6 lg:px-8 py-3 sm:py-4 flex items-center justify-between gap-3 sm:gap-6">
+        <div className="shrink-0">
+          <button
+            type="button"
+            onClick={toggleDesktop}
+            aria-label={desktopHidden ? 'إظهار القائمة الجانبية' : 'إخفاء القائمة الجانبية'}
+            title={desktopHidden ? 'إظهار القائمة الجانبية' : 'إخفاء القائمة الجانبية'}
+            aria-expanded={!desktopHidden}
+            aria-controls="app-sidebar"
+            className="sw-tap hidden md:flex w-10 h-10 rounded-lg bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-100 dark:border-slate-700 items-center justify-center text-slate-700 dark:text-slate-200 transition-colors duration-200 shrink-0"
+          >
+            {desktopHidden ? <PanelRightOpen size={20} /> : <PanelRightClose size={20} />}
+          </button>
+          <button
+            type="button"
+            onClick={toggleMobileMenu}
+            aria-label={mobileMenuOpen ? 'إغلاق القائمة' : 'فتح القائمة'}
+            aria-expanded={mobileMenuOpen}
+            aria-controls="app-sidebar"
+            className="sw-tap md:hidden w-10 h-10 rounded-lg bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-100 dark:border-slate-700 flex items-center justify-center text-slate-700 dark:text-slate-200 transition-colors duration-200 shrink-0"
+          >
+            <Menu size={20} />
+          </button>
+        </div>
         {/* Title */}
-        <div className="min-w-0 flex-1">
+        <div dir="auto" className="min-w-0 flex-1">
           <h1 className={`text-lg sm:text-xl font-extrabold text-slate-900 dark:text-slate-100 tracking-tight ${wrapTitle ? 'whitespace-normal break-words' : 'truncate'}`}>{title}</h1>
           {subtitle && <p className="hidden sm:block text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">{subtitle}</p>}
         </div>
 
-        {/* Right cluster: hamburger (mobile) + actions + icons + date.
+        {/* Secondary actions + icons + date, away from the sidebar edge.
             No search box and no notifications bell — neither feature
             exists behind them, and dead controls erode trust in the
             ones that work. */}
-        <div className="flex items-center gap-2 sm:gap-3">
+        <div dir="auto" className="flex items-center gap-2 sm:gap-3">
           {actions}
           <RefreshDataButton />
           <LanguageSwitcher />
@@ -109,30 +134,6 @@ export default function TopBar({ title, subtitle, actions, hidePartnerSelector =
             {(session?.user?.email || 'س').trim().charAt(0)}
           </div>
 
-          {/* Desktop toggle stays outside the rail so it can always restore it. */}
-          <button
-            type="button"
-            onClick={toggleDesktop}
-            aria-label={desktopHidden ? 'إظهار القائمة الجانبية' : 'إخفاء القائمة الجانبية'}
-            title={desktopHidden ? 'إظهار القائمة الجانبية' : 'إخفاء القائمة الجانبية'}
-            aria-expanded={!desktopHidden}
-            aria-controls="app-sidebar"
-            className="sw-tap hidden md:flex w-10 h-10 rounded-lg bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-100 dark:border-slate-700 items-center justify-center text-slate-700 dark:text-slate-200 transition-colors duration-200 shrink-0"
-          >
-            {desktopHidden ? <PanelRightOpen size={20} /> : <PanelRightClose size={20} />}
-          </button>
-
-          {/* Hamburger — mobile only, on the far edge (left in RTL) */}
-          <button
-            type="button"
-            onClick={toggleMobileMenu}
-            aria-label={mobileMenuOpen ? 'إغلاق القائمة' : 'فتح القائمة'}
-            aria-expanded={mobileMenuOpen}
-            aria-controls="app-sidebar"
-            className="sw-tap md:hidden w-10 h-10 rounded-lg bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-100 dark:border-slate-700 flex items-center justify-center text-slate-700 dark:text-slate-200 transition-colors duration-200 shrink-0"
-          >
-            <Menu size={20} />
-          </button>
         </div>
       </div>
       {/* Separate row keeps partner preview usable on mobile without crowding title controls. */}

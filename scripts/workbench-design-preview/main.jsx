@@ -1,5 +1,5 @@
 import { createRoot } from 'react-dom/client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import LanguageProvider from '../../src/i18n/LanguageProvider';
 import { MobileMenuProvider, useMobileMenu } from '../../src/contexts/MobileMenuContext';
 import Sidebar from '../../src/components/Sidebar';
@@ -10,6 +10,14 @@ import '../../src/index.css';
 import '../../src/components/OverviewPage.css';
 document.documentElement.classList.add('dark');
 export default function Preview() {
+  useEffect(() => {
+    // Append after Vite's injected styles: exercise the actual minified CSS
+    // with shared finance styles last, where the first release failed.
+    const link = document.createElement('link');
+    link.rel = 'stylesheet'; link.href = '/__built-workbench-css';
+    document.head.append(link);
+    return () => link.remove();
+  }, []);
   const [page, setPage] = useState('finance_workbench');
   const { open, setOpen, desktopHidden } = useMobileMenu();
   return <><Sidebar groups={visibleGroupsFor({ role: 'admin' })} activeTab={page} onSelectTab={setPage}

@@ -1,15 +1,16 @@
 /* The workbench uses Overview's shared tokens, not a separate navy palette.
    These overrides are scoped to this page; workflow rules remain unchanged. */
-.fw-page.fw-workbench { max-width: none; padding: 28px 32px; color: var(--sw-text-primary); }
+:is(main, dialog).fw-page.fw-workbench { max-width: none; padding: 28px 32px; color: var(--sw-text-primary); }
 .fw-workbench .fw-toolbar { margin-top: 0; }
 .fw-workbench h1 { font-size: clamp(22px, 2.4vw, 30px); }
 .fw-workbench h2 { font-size: 1rem; }
-.fw-page.fw-workbench small, .fw-workbench .fw-meta { color: var(--sw-text-secondary); }
-.fw-page.fw-workbench :is(button, select, input, textarea) {
+:is(main, dialog).fw-page.fw-workbench small, .fw-workbench .fw-meta { color: var(--sw-text-secondary); }
+/* Outrank shared .dark .fw-page rules regardless of production chunk order. */
+:is(main, dialog).fw-page.fw-workbench :is(button, select, input, textarea) {
   background: var(--sw-surface-raised); color: var(--sw-text-primary);
   border-color: var(--sw-border-subtle); border-radius: var(--sw-radius-control); font-size: .85rem;
 }
-.fw-page.fw-workbench button { border-radius: var(--sw-radius-pill); }
+:is(main, dialog).fw-page.fw-workbench button { border-radius: var(--sw-radius-pill); }
 .fw-page.fw-workbench button:hover:not(:disabled) { background: var(--sw-brand-soft); border-color: var(--sw-action); }
 .fw-page.fw-workbench :focus-visible { outline: 2px solid var(--sw-action); outline-offset: 3px; }
 .fw-page.fw-workbench :is(input, textarea)::placeholder { color: var(--sw-text-muted); opacity: 1; }

@@ -6,7 +6,7 @@ import { previewOperations, saveOperations } from '../src/sweater/operationsSync
 import { hashRecord, normalizeRecord } from '../src/sweater/record.js';
 import { calculatePayrollPreview } from '../src/payroll.js';
 import { dispatch } from '../src/handlers.js';
-import { completionFixture } from './administrativeCompletionFixture.js';
+import { completionFixture, missingStartCompletionFixture } from './administrativeCompletionFixture.js';
 const host = process.env.FIRESTORE_EMULATOR_HOST;
 if (host && !/^(127\.0\.0\.1|localhost):\d+$/.test(host)) throw new Error('Local demo emulator required');
 const suite = host ? describe : describe.skip;
@@ -93,5 +93,80 @@ suite('administrative completion — isolated transactions and integration regre
     const a=await previewAdministrativeCompletion(db,p,'admin'), b=await previewAdministrativeCompletion(db,second,'admin');
     const results=await Promise.allSettled([[p,a],[second,b]].map(([payload,v])=>saveAdministrativeCompletion(db,FieldValue,{payload,reviewedPayloadHash:v.reviewedPayloadHash,previewStateHash:v.previewStateHash},'admin')));
     expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(1); expect((await db.collection('washes').get()).size).toBe(4);
+  });
+});
+
+suite('one-time missing-start approval — isolated transactions',()=>{
+  const worker='5MMg7pj0wjYM06NLuzS7', bookingId='S-5655042';
+  async function seedMissing(){
+    await seed();
+    const p=missingStartCompletionFixture(), record=normalizeRecord(p.records[0]);
+    await db.collection('bikers').doc(worker).set({name:'Synthetic missing-start worker',driver_external_id:'1988',salary:900,start_date:'2026-08-01'});
+    await db.collection('sweater_bookings').doc(bookingId).set({sspBookingId:bookingId,source:'operations_sync_v2',record,sourceHash:hashRecord(record),
+      lastImportRunId:'closed-raw-run',serviceDate:record.serviceDate,operationalWorkerId:worker,processingStatus:'needs_review',reviewReasonCode:'missing_execution_evidence'});
+    await db.collection('sweater_owner_booking_claims').doc('5655042').set({bookingNumber:'5655042',sspBookingId:bookingId,washId:`ssp__${bookingId}`,source:'operations_sync_v2',importRunId:'closed-raw-run'});
+  }
+  beforeAll(()=>{app=initializeApp({projectId:'demo-sweater'},'missing-start-completion');db=getFirestore(app);});
+  afterAll(async()=>{if(app)await deleteApp(app);});
+  beforeEach(seedMissing,60000);
+  it('preserves source/claim, creates one unpaid commission, and replays/duplicates without another wash or side effect',async()=>{
+    const p=missingStartCompletionFixture(), ref=db.collection('sweater_bookings').doc(bookingId);
+    const old=(await ref.get()).data(), claim=(await db.collection('sweater_owner_booking_claims').doc('5655042').get()).data();
+    const saved=await save(p);expect(saved.washesCreated).toBe(1);
+    const after=(await ref.get()).data();for(const k of Object.keys(old))expect(after[k]).toEqual(old[k]);
+    expect(after.ownerCompletionDecision).toMatchObject({messageId:p.decision.messageId,rawStatus:'Collecting Payment'});
+    expect((await db.collection('sweater_owner_booking_claims').doc('5655042').get()).data()).toEqual(claim);
+    const wash=(await db.collection('washes').doc(`ssp__${bookingId}`).get()).data();
+    expect(wash).toMatchObject({biker_id:worker,quantity:1,net_amount:20,vat_amount:3,gross_amount:23,ssp_raw_status:'Collecting Payment',
+      collection_status:'pending',payment_method:null,worker_commission_per_wash:4.5,worker_commission_paid:false,completion_basis:'owner_administrative_decision'});
+    const raw=(await db.collection('sweater_raw_payloads').doc(`${p.importRunId}__${bookingId}`).get()).data();
+    expect(raw.normalizedRecord).toMatchObject({startedAt:null,completedAt:'2026-10-24T14:48:00+03:00',rawStatus:'Collecting Payment'});
+    for(const name of ['journal_entries','payroll_runs','sweater_owner_collection_confirmations'])expect((await db.collection(name).get()).empty).toBe(true);
+    const workers=(await db.collection('bikers').get()).docs.map(d=>({id:d.id,...d.data()}));
+    expect(calculatePayrollPreview({periodKey:'2026-10',bikers:workers,washes:[{id:`ssp__${bookingId}`,...wash}],advances:[],adjustments:[]}).totals.commissions).toBe(4.5);
+    expect((await saveAdministrativeCompletion(db,FieldValue,{payload:p,reviewedPayloadHash:saved.reviewedPayloadHash,previewStateHash:saved.previewStateHash},'admin')).replay).toBe(true);
+    expect((await save({...p,importRunId:'synthetic-missing-start-second'})).washesCreated).toBe(0);
+    expect((await db.collection('washes').get()).size).toBe(1);
+    expect((await db.collection('washes').doc(`ssp__${bookingId}`).get()).data()).toEqual(wash);
+  });
+  it('later real completion under either prefix never duplicates the wash/commission or rewrites the owner decision',async()=>{
+    const p=missingStartCompletionFixture();await save(p);
+    const before=(await db.collection('washes').doc(`ssp__${bookingId}`).get()).data(), source=(await db.collection('sweater_bookings').doc(bookingId).get()).data();
+    for(const prefix of ['S','B']){
+      const body={contractVersion:2,importRunId:`synthetic-late-missing-start-${prefix}`,agentStatus:'partial',workerLinks:p.workerLinks,
+        coverage:{rangeFrom:'2026-10-24',rangeTo:'2026-10-24',extractedAt:'2026-10-25T00:30:00+03:00',pageCount:1,pagesFetched:1,recordCount:1,isComplete:false,
+          sourceUrl:p.coverage.sourceUrl,modules:{individual:'partial',corporate:'unavailable'},gaps:['Targeted synthetic observation only']},
+        records:[{...p.records[0],sspBookingId:`${prefix}-5655042`,startedAt:'2026-10-24T14:00:00+03:00'}]};
+      const preview=await previewOperations(db,body),actual=await saveOperations(db,FieldValue,{payload:body,reviewedPayloadHash:preview.reviewedPayloadHash,previewStateHash:preview.previewStateHash},'admin');
+      expect(actual.washesCreated).toBe(0);expect((await db.collection('washes').get()).size).toBe(1);
+      expect((await db.collection('washes').doc(`ssp__${bookingId}`).get()).data()).toEqual(before);
+      expect((await db.collection('sweater_bookings').doc(bookingId).get()).data()).toEqual(source);
+    }
+  });
+  it('simultaneous runs, stale evidence and alias collisions cannot create a duplicate',async()=>{
+    const p=missingStartCompletionFixture(),second={...p,importRunId:'synthetic-missing-start-concurrent'};
+    const a=await previewAdministrativeCompletion(db,p,'admin'),b=await previewAdministrativeCompletion(db,second,'admin');
+    const results=await Promise.allSettled([[p,a],[second,b]].map(([payload,v])=>saveAdministrativeCompletion(db,FieldValue,{payload,reviewedPayloadHash:v.reviewedPayloadHash,previewStateHash:v.previewStateHash},'admin')));
+    expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(1);expect((await db.collection('washes').get()).size).toBe(1);
+    await seedMissing();
+    const stale=await previewAdministrativeCompletion(db,p,'admin');
+    await db.collection('sweater_bookings').doc(bookingId).update({'record.startedAt':'2026-10-24T14:00:00+03:00'});
+    await expect(saveAdministrativeCompletion(db,FieldValue,{payload:p,reviewedPayloadHash:stale.reviewedPayloadHash,previewStateHash:stale.previewStateHash},'admin')).rejects.toThrow();
+    expect((await db.collection('washes').get()).empty).toBe(true);
+    await seedMissing();await db.collection('washes').doc('legacy-alias').set({ssp_booking_id:'B-5655042',biker_id:worker,quantity:1});
+    expect((await previewAdministrativeCompletion(db,p,'admin')).canSave).toBe(false);
+  });
+  it.each(['closed-period','approved-settlement','financial-link','wrong-claim'])('rejects %s without a wash',async kind=>{
+    if(kind==='closed-period')await db.collection('accounting_periods').doc('2026-10').set({status:'closed'});
+    if(kind==='approved-settlement')await db.collection('sweater_settlements').doc('2026-10').set({status:'approved'});
+    if(kind==='financial-link')await db.collection('sweater_bookings').doc(bookingId).update({postedEntryId:'synthetic-journal'});
+    if(kind==='wrong-claim')await db.collection('sweater_owner_booking_claims').doc('5655042').update({sspBookingId:'B-5655042'});
+    const p=missingStartCompletionFixture();let rejected=false;
+    try{rejected=!(await previewAdministrativeCompletion(db,p,'admin')).canSave;}catch{rejected=true;}
+    expect(rejected).toBe(true);expect((await db.collection('washes').get()).empty).toBe(true);
+  });
+  it.each(['accountant','operator','partner'])('does not grant %s access to the scoped exception',async role=>{
+    await expect(dispatch(db,FieldValue,'sweaterPreviewAdministrativeCompletion',missingStartCompletionFixture(),{uid:role,token:{role:'admin'}})).rejects.toMatchObject({code:'permission-denied'});
+    expect((await db.collection('washes').get()).empty).toBe(true);
   });
 });

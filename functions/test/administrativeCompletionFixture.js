@@ -10,3 +10,18 @@ export function completionFixture() {
       conversationId: 'test-thread', messageId: 'test-message', decidedAt: '2026-10-24T00:50:00+03:00', decidedAtBasis: 'request_received_at', approved: true,
       decision: 'record_as_completed_wash', serviceDate: '2026-10-21', bookingIds: records.map(r => r.sspBookingId), excludedBookingIds: ['C-990005'] } };
 }
+
+// Synthetic isolated fixture using the exact identity of the one-time contract.
+// It is never a production save request or evidence of source/authentication.
+export function missingStartCompletionFixture() {
+  const p = completionFixture();
+  const r = { sspBookingId:'S-5655042',driverExternalId:'1988',bookingKind:'individual',
+    serviceType:'interior_exterior_wash',serviceDate:'2026-10-24',rawStatus:'Collecting Payment',
+    startedAt:null,completedAt:'2026-10-24T14:48:00+03:00',sourceUrl:p.coverage.sourceUrl };
+  return { ...p,importRunId:'synthetic-missing-start-5655042',records:[r],workerLinks:{'1988':'5MMg7pj0wjYM06NLuzS7'},
+    coverage:{...p.coverage,rangeFrom:r.serviceDate,rangeTo:r.serviceDate,recordCount:1,extractedAt:'2026-10-25T00:04:45.955+03:00'},
+    decision:{...p.decision,statement:'Synthetic isolated test of the bounded owner approval; no collection assertion.',
+      serviceDate:r.serviceDate,bookingIds:[r.sspBookingId],excludedBookingIds:[],
+      conversationId:'01a04f9f-cdbe-7213-bf1b-eee76eb35b38',messageId:'01a16fb9-0e70-7203-b117-6f8c2fe44a8c',
+      decidedAt:'2026-10-25T00:03:19+03:00'} };
+}

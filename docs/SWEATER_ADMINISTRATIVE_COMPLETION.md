@@ -1,6 +1,16 @@
 # Administrative completion without collection
 
-This admin workflow records an explicit owner decision for named cancelled SSP bookings. It creates one operational wash with unpaid commission, preserves the source cancellation, and does not confirm collection or create a journal, payment, payroll run, recognition policy or integration key. It is separate from the historical collection handoff and the pinned operations v2 sender.
+This admin workflow records an explicit owner decision for named cancelled SSP bookings, plus the single missing-start exception below. It creates one operational wash with unpaid commission, preserves the source facts, and does not confirm collection or create a journal, payment, payroll run, recognition policy or integration key. It is separate from the historical collection handoff and the pinned operations v2 sender.
+
+## One-time missing-start exception approved 25 October 2026
+
+Hadi approved only `S-5655042`, service day `2026-10-24`, external driver `1988`, verified internal worker `5MMg7pj0wjYM06NLuzS7`. The original SSP observation is `Collecting Payment`, `startedAt: null`, `completedAt: "2026-10-24T14:48:00+03:00"`, type `interior_exterior_wash`. Never substitute Arrival for Start, invent Start, or relabel CP as a cancellation. Automatic operations v2 eligibility is unchanged and still rejects a missing real Start.
+
+Use the same `kind`, preview/save actions and review hashes below, with exactly one record and one `decision.bookingIds` entry (`S-5655042`). The decision must reference conversation `01a04f9f-cdbe-7213-bf1b-eee76eb35b38`, actual owner message `01a16fb9-0e70-7203-b117-6f8c2fe44a8c`, and his exact statement: «ايه كلف التقنية وخلصها وسجل غسلة أخيل الناقصة، بدون اختلاق وقت بداية ولا تكرار الغسلة والعمولة». Operations verified request receipt at `2026-10-25T00:03:19+03:00`; use `decidedAtBasis: "request_received_at"`, not an invented exact message timestamp. Use actual source coverage and a new stable administrative run ID; do not replay or edit an old signed operations batch. Include `startedAt: null` explicitly in this request, even if the source extractor omitted the missing field.
+
+The server additionally requires the existing operations booking to match these source facts and its verified worker. An absent booking, a real Start now present, changed End/worker/source, different booking/prefix/day, another owner-message reference, or a mixed batch is not this exception. Original `record`, `sourceHash`, raw/run references, review fields and natural claim stay unchanged. The separate decision and `completion_basis: "owner_administrative_decision"` explain why one wash exists despite missing execution evidence. The versioned administrative raw record retains null Start and the actual End.
+
+For this record use the already deployed Integration JSON review card. Review locally, then server-preview; expect one existing booking modified and one wash `ssp__S-5655042` to be created, worker `1988`, net 20 / VAT 3 / gross 23 / unpaid commission 4.50, pending collection, payment method null. Operations alone saves after checking both review boxes. If already saved, inspect the existing wash instead of using a new identity. Read back one natural identity across all prefixes, one commission, source CP/null Start/14:48 End and separate owner decision. With no other concurrent import, day 24 should move 49→50 and total 581→582; these counts are diagnostics, not write authorization or a substitute for identity checks.
 
 ## Review and save through Integration
 

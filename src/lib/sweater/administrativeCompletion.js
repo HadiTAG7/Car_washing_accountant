@@ -3,6 +3,24 @@ import { ownerBookingIdentity } from './bookingIdentity.js';
 
 export const ADMIN_COMPLETION_KIND = 'owner_administrative_completion_v1';
 export const ADMIN_COMPLETION_WARNING = 'اكتمال إداري بقرار المالك، لا اكتمال من SSP ولا إثبات تحصيل. التغطية للحجوزات المحددة فقط.';
+// Hadi's 25 Oct approval is for this observation only, not a new CP policy.
+export const MISSING_START_OWNER_APPROVAL = Object.freeze({
+  sspBookingId: 'S-5655042', serviceDate: '2026-10-24', driverExternalId: '1988',
+  workerId: '5MMg7pj0wjYM06NLuzS7', rawStatus: 'Collecting Payment',
+  completedAt: '2026-10-24T14:48:00+03:00',
+  conversationId: '01a04f9f-cdbe-7213-bf1b-eee76eb35b38',
+  messageId: '01a16fb9-0e70-7203-b117-6f8c2fe44a8c',
+});
+export function isApprovedMissingStartCompletion(input, record) {
+  const a = MISSING_START_OWNER_APPROVAL;
+  return input.records?.length === 1 && input.decision?.bookingIds?.length === 1
+    && input.decision.bookingIds[0] === a.sspBookingId
+    && input.decision.conversationId === a.conversationId && input.decision.messageId === a.messageId
+    && input.decision.serviceDate === a.serviceDate
+    && ['sspBookingId', 'serviceDate', 'driverExternalId', 'rawStatus', 'completedAt'].every(k => record?.[k] === a[k])
+    && record.startedAt === null && record.serviceType === 'interior_exterior_wash'
+    && input.workerLinks?.[a.driverExternalId] === a.workerId;
+}
 const object = x => x && typeof x === 'object' && !Array.isArray(x);
 const exact = (x, keys) => object(x) && Object.keys(x).every(k => keys.includes(k));
 const text = (x, max = 1000) => typeof x === 'string' && x.trim().length > 0 && x.length <= max;
@@ -43,7 +61,7 @@ export function reviewAdministrativeCompletion(input) {
   for (const [index, r] of records.entries()) {
     const problems = recordProblems(r).filter(p => p.code !== 'unknown_service_type').map(p => ({ code: p.code, message: p.ar }));
     if (!object(r) || !approvedIds.includes(r.sspBookingId) || excluded.has(ownerBookingIdentity(r?.sspBookingId))
-      || r?.serviceDate !== d?.serviceDate || r?.rawStatus !== 'Cancelled by Admin' || r?.bookingKind !== 'individual'
+      || r?.serviceDate !== d?.serviceDate || (r?.rawStatus !== 'Cancelled by Admin' && !isApprovedMissingStartCompletion(input, r)) || r?.bookingKind !== 'individual'
       || !id(r?.driverExternalId) || !input.workerLinks?.[r?.driverExternalId] || !url(r?.sourceUrl)) problems.push({ code: 'outside_decision', message: 'الحجز خارج قرار المالك أو مستثنى أو حالته/عامله غير موثقين.' });
     if (object(r) && ALLOWED_RECORD_FIELDS.some(k => r[k] != null && (typeof r[k] === 'object' || typeof r[k] === 'boolean' || String(r[k]).length > 2000))) problems.push({ code: 'bad_shape', message: 'حقول المصدر يجب أن تبقى قيمًا بسيطة دون بيانات جلسة.' });
     rows.push({ index: index + 1, sspBookingId: r?.sspBookingId || '—', problems });

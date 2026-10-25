@@ -8,7 +8,7 @@
  * والادعاء الحامل هو الاستثناء: **المجموعة التي فيها التبويب النشط تُعرض
  * مفتوحةً ولو كانت محفوظةً مطويّة**. بدونه يختفي التبويب الحالي — والشريط
  * البرتقالي الذي يدلّ عليه — خلف رأسٍ مطوي، فتكذب القائمة عن مكان المستخدم.
- * وهو تجاوزٌ عند العرض لا مسحٌ للتفضيل: تعود المجموعة إلى الطي حين يغادرها.
+ * ويظل الكشف الأولي خاضعًا لقرار المستخدم: ضغطة الطي الصريحة تعمل حتى داخل المجموعة النشطة.
  *
  * Run: npm test
  */
@@ -59,6 +59,37 @@ const tabButton = (label) => screen.queryByRole('button', { name: label });
 const groupHeader = (title) => screen.getByRole('button', { name: title });
 
 describe('Sidebar — المجموعات', () => {
+  it.each(['finance', 'annual'])('lets an explicit fold hide the active finance group and reopen it with one click (%s)', activeTab => {
+    localStorage.setItem('mw:navCollapsed',JSON.stringify(['finance','finance:daily']));
+    const select=renderSidebar({activeTab,groups:visibleGroupsFor({role:'admin'})});
+    const header=groupHeader('المالية');
+    expect(header.getAttribute('aria-expanded')).toBe('true');
+    fireEvent.click(header);
+    expect(header.getAttribute('aria-expanded')).toBe('false');
+    expect(document.getElementById(header.getAttribute('aria-controls'))).toBeNull();
+    expect(tabButton('ملخص المالية')).toBeNull();
+    expect(JSON.parse(localStorage.getItem('mw:navCollapsed'))).toContain('finance');
+    fireEvent.click(header);
+    expect(header.getAttribute('aria-expanded')).toBe('true');
+    expect(tabButton('ملخص المالية')).toBeTruthy();
+    expect(select).not.toHaveBeenCalled();
+  });
+  it('folds the active finance subsection without leaving the page or losing focus',()=>{
+    const select=renderSidebar({activeTab:'finance',groups:visibleGroupsFor({role:'admin'})});
+    const section=groupHeader('القوائم');section.focus();fireEvent.click(section);
+    expect(section.getAttribute('aria-expanded')).toBe('false');
+    expect(tabButton('ملخص المالية')).toBeNull();expect(document.activeElement).toBe(section);
+    fireEvent.click(section);expect(tabButton('ملخص المالية').getAttribute('aria-current')).toBe('page');
+    expect(select).not.toHaveBeenCalled();
+  });
+  it('uses the finance heading only for folding even from a different page',()=>{
+    const select=renderSidebar({groups:visibleGroupsFor({role:'admin'})});
+    fireEvent.click(groupHeader('المالية'));
+    expect(groupHeader('المالية').getAttribute('aria-expanded')).toBe('false');
+    expect(select).not.toHaveBeenCalled();
+    fireEvent.click(groupHeader('المالية'));fireEvent.click(tabButton('ملخص المالية'));
+    expect(select).toHaveBeenCalledWith('finance');
+  });
   it('shows one expense destination inside daily entry, retaining the three finance sections', () => {
     const select = renderSidebar({ groups: visibleGroupsFor({ role: 'admin' }) });
     const finance = screen.getByRole('group', { name: 'المالية', exact: true });

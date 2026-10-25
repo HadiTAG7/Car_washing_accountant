@@ -68,12 +68,15 @@ export default function Sidebar({
   // flow on LoginScreen.
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(readCollapsed);
+  // Reveal the active destination initially, but an explicit fold wins thereafter.
+  const [toggled, setToggled] = useState(() => new Set());
 
-  const toggleGroup = useCallback((groupId) => {
+  const toggleGroup = useCallback((groupId, isOpen) => {
+    setToggled(prev => new Set(prev).add(groupId));
     setCollapsed((prev) => {
       const next = new Set(prev);
-      if (next.has(groupId)) next.delete(groupId);
-      else next.add(groupId);
+      if (isOpen) next.add(groupId);
+      else next.delete(groupId);
       try { window.localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...next])); }
       catch { /* localStorage might be blocked */ }
       return next;
@@ -193,25 +196,19 @@ export default function Sidebar({
         <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
           {groups.map((group) => {
             const holdsActive = group.tabs.some((t) => t.id === activeTab);
-            // ── المجموعة النشطة تُعرض مفتوحةً ولو كانت مطويّة ──
-            // An override at RENDER time, not a write to the preference: the
-            // group re-collapses the moment the user navigates away. Without
-            // it the active tab — and the orange bar marking it — could sit
-            // hidden behind a folded header, and the nav would be lying about
-            // where the user is.
-            const isOpen = !collapsed.has(group.id) || holdsActive;
+            // Initial active-page reveal must never cancel the user's next click.
+            const isOpen = !collapsed.has(group.id) || (holdsActive && !toggled.has(group.id));
+            const groupListId = `nav-group-${group.id}`;
             return (
               <div key={group.id} role={group.title ? 'group' : undefined} aria-label={group.title || undefined}
                 className={group.sections ? 'mt-3 border-t border-slate-200 dark:border-slate-700 pt-2' : undefined}>
                 {group.title && (
                   <button
                     type="button"
-                    onClick={() => {
-                      if (group.homeTab && group.tabs.some(tab => tab.id === group.homeTab) && !holdsActive) onSelectTab(group.homeTab);
-                      else toggleGroup(group.id);
-                    }}
+                    onClick={() => toggleGroup(group.id, isOpen)}
                     aria-expanded={isOpen}
-                    className={`w-full flex items-center gap-2 px-3 py-2 font-bold hover:text-slate-700 dark:hover:text-slate-200 transition-colors ${group.sections
+                    aria-controls={groupListId}
+                    className={`w-full min-h-11 flex items-center gap-2 px-3 py-2 font-bold hover:text-slate-700 dark:hover:text-slate-200 transition-colors ${group.sections
                       ? 'text-sm text-slate-800 dark:text-slate-100'
                       : 'text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-widest'}`}
                   >
@@ -223,15 +220,15 @@ export default function Sidebar({
                   </button>
                 )}
                 {isOpen && (
-                  <ul className="space-y-0.5">
+                  <ul id={groupListId} className="space-y-0.5">
                     {sidebarItems(group).map(item => {
                       if (item.tab) return <SidebarTab key={item.tab.id} tab={item.tab} activeTab={activeTab} onSelectTab={onSelectTab} />;
                       const key = `${group.id}:${item.section.id}`;
-                      const open = !collapsed.has(key) || item.tabs.some(tab => tab.id === activeTab || tab.activeTabIds?.includes(activeTab));
+                      const open = !collapsed.has(key) || (!toggled.has(key) && item.tabs.some(tab => tab.id === activeTab || tab.activeTabIds?.includes(activeTab)));
                       const listId = `nav-${group.id}-${item.section.id}`;
                       return <li key={key} className="my-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/40">
                         <div role="group" aria-label={item.section.title}>
-                          <button type="button" onClick={() => toggleGroup(key)} aria-expanded={open} aria-controls={listId}
+                          <button type="button" onClick={() => toggleGroup(key, open)} aria-expanded={open} aria-controls={listId}
                             className="w-full min-h-11 flex items-center gap-2 px-3 py-2 text-sm font-bold text-slate-700 dark:text-slate-200">
                             <ChevronDown size={15} className={`transition-transform ${open ? '' : '-rotate-90'}`} />
                             <span className="flex-1 text-right">{item.section.title}</span>

@@ -158,8 +158,14 @@ suite('production operations sync in isolated demo Firestore', () => {
     const b = payload(); await save(b); const changed = structuredClone(b); changed.coverage.extractedAt = '2026-10-09T00:05:00+03:00';
     await expect(operationsStatus(db, changed)).rejects.toMatchObject({ code: 'already-exists' });
     expect((await operationsStatus(db, b)).verified).toBe(true);
-    const raws = await db.collection('sweater_raw_payloads').get(); await raws.docs[0].ref.delete(); // demo only, deliberate corruption regression
-    expect((await operationsStatus(db, b)).verified).toBe(false);
+    const raws = await db.collection('sweater_raw_payloads').get(), missingId = raws.docs[0].id;
+    // Simulate a missing read without deleting append-protected evidence.
+    // The production PG role correctly has no DELETE grant on raw payloads.
+    const missingRawView = { collection: name => name !== 'sweater_raw_payloads' ? db.collection(name) : {
+      doc: id => ({ get: () => id === missingId ? Promise.resolve({ exists: false }) : db.collection(name).doc(id).get() }),
+    } };
+    expect((await operationsStatus(missingRawView, b)).verified).toBe(false);
+    expect((await operationsStatus(db, b)).verified).toBe(true);
   });
   it('full-envelope HMAC protects metadata/actions and scopes, with no operational write on preview', async () => {
     const key = await createIntegrationKey(db, FieldValue, { label: 'Synthetic demo-only key' });

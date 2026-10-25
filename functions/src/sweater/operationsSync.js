@@ -6,6 +6,7 @@ import { ownerBookingIdentity } from '../../../src/lib/sweater/bookingIdentity.j
 import { executionEligibility, executionWash } from './operationsExecution.js';
 import { inspectIdentity5596423, preservedResolutionClaimMatches } from './operationsIdentity5596423.js';
 import { inspectObservationPromotion, preservedPromotionClaimMatches } from './operationsObservationPromotion.js';
+import { inspectIdentity5643311, preservedHistorical5643311ClaimMatches } from './operationsIdentity5643311.js';
 
 export const OPERATIONS_SOURCE = 'operations_sync_v2';
 export const OPERATIONS_MAX_RECORDS = 100; // <= 4 writes/row + run + state, one atomic transaction
@@ -130,11 +131,14 @@ async function plan(db, payload, read) {
       || ['approved', 'invoiced', 'partially_collected', 'collected', 'closed'].includes(settlement.status)));
     const resolution = await inspectIdentity5596423({ db, read, payload, record, documents, naturallyRelated: related, claim, candidate, established, execution,
       period: periodSnap?.data(), settlement });
-    const promotion = !resolution ? await inspectObservationPromotion({ db, read, payload, record, documents, claim, candidate, established, execution,
+    const historicalResolution = !resolution ? await inspectIdentity5643311({ db, read, payload, record, documents, naturallyRelated: related,
+      claim, candidate, established, execution, period: periodSnap?.data(), settlement }) : null;
+    const promotion = !resolution && !historicalResolution ? await inspectObservationPromotion({ db, read, payload, record, documents, claim, candidate, established, execution,
       period: periodSnap?.data(), settlement }) : null;
-    const protectedRecord = resolution ? !resolution.public.eligible : promotion ? !promotion.public.eligible
+    const protectedRecord = resolution ? !resolution.public.eligible : historicalResolution ? !historicalResolution.public.eligible : promotion ? !promotion.public.eligible
       : protectedRows.length > 0 || protectedBooking || claimConflict || alias || washCollision || foreignBooking || periodClosed || settlementProtected;
     if (resolution?.public.eligible) proposedWashId = resolution.public.canonicalWashId;
+    if (historicalResolution?.public.eligible) proposedWashId = historicalResolution.public.canonicalWashId;
     if (promotion?.public.eligible) proposedWashId = promotion.public.canonicalWashId;
     const unchanged = existing?.sourceHash === sourceHash && existing.record && hashRecord(existing.record) === sourceHash
       && (protectedRecord || existing.operationalWorkerId === (established ? candidate : null));
@@ -161,16 +165,20 @@ async function plan(db, payload, read) {
       washId, washCreated: false, bikerId: established ? candidate : null,
       existingLinkRefs: protectedRows.map(d => ({ collection: d.collection, id: d.id, hash: hashBody(d.data) })),
       ...(resolution ? { identityResolution: resolution.public } : {}),
+      ...(historicalResolution ? { historicalIdentityResolution: historicalResolution.public } : {}),
       ...(promotion ? { observationPromotion: promotion.public } : {}),
       rawStatus: record.rawStatus, serviceDate: record.serviceDate, driverExternalId: record.driverExternalId,
       sourceHash, rawId: rawDocId(payload.importRunId, record.sspBookingId),
       _raw: raw, _record: record, _bookingRef: bookingRef, _claimRef: claimRef, _claim: claim,
       _writeBooking: writeBooking, _protected: protectedRecord, _writeWash: writeWash,
       _washRef: writeWash ? db.collection('washes').doc(proposedWashId) : null,
-      _wash: writeWash ? executionWash(record, candidate, worker.name) : null };
+      _wash: writeWash ? { ...executionWash(record, candidate, historicalResolution?.public.eligible
+        ? historicalResolution.public.acceptance.acceptedSourceName : worker.name),
+        ...(historicalResolution?.public.eligible ? { historical_identity_acceptance: historicalResolution.public.acceptance } : {}) } : null };
     rows.push(row); counts[outcome === 'needs_review' ? 'needsReview' : outcome]++;
     state.push({ id: record.sspBookingId, related, claim, worker, existingWorkerIds: [...existingWorkerIds].sort(),
       ...(resolution ? { identityResolution: resolution.state } : {}),
+      ...(historicalResolution ? { historicalIdentityResolution: historicalResolution.state } : {}),
       ...(promotion ? { observationPromotion: promotion.state } : {}),
       ...(periodSnap ? { period: periodSnap.data() ?? null, settlement: settlement ?? null } : {}) });
   }
@@ -229,6 +237,13 @@ export async function saveOperations(db, FieldValue, request, actor) {
             if (!row.existingLinkRefs.some(link => link.collection === ref.collection && link.id === ref.id)) row.existingLinkRefs.push(ref);
           }
         }
+        if (row.historicalIdentityResolution?.eligible) {
+          row.historicalIdentityResolution.resolutionSaved = true;
+          row.historicalIdentityResolution.recordedAt = now;
+          for (const ref of row.historicalIdentityResolution.evidenceRefs) {
+            if (!row.existingLinkRefs.some(link => link.collection === ref.collection && link.id === ref.id)) row.existingLinkRefs.push(ref);
+          }
+        }
         row.existingLinkRefs.push({ collection: 'washes', id: row.washId, hash: hashBody(wash) });
       }
       if (row._writeBooking) {
@@ -284,7 +299,9 @@ export async function operationsStatus(db, payload) {
         && hashRecord(booking.record) === row.sourceHash,
       currentWorkerId: booking?.operationalWorkerId ?? null,
       currentNaturalClaimMatches: claim?.sspBookingId === row.sspBookingId || preservedResolutionClaimMatches(row, claim)
-        || preservedPromotionClaimMatches(row, claim),
+        || preservedPromotionClaimMatches(row, claim) || preservedHistorical5643311ClaimMatches(row, claim),
+      ...(row.historicalIdentityResolution ? { historicalIdentityResolutionSaved: row.historicalIdentityResolution.resolutionSaved === true,
+        historicalIdentityResolutionVerified: preservedHistorical5643311ClaimMatches(row, claim) && linkChecks.every(link => link.unchanged) } : {}),
       ...(row.identityResolution ? { identityResolutionSaved: row.identityResolution.resolutionSaved === true,
         identityResolutionVerified: preservedResolutionClaimMatches(row, claim) && linkChecks.every(link => link.unchanged) } : {}),
       ...(row.observationPromotion ? { observationPromotionSaved: row.observationPromotion.promotionSaved === true,

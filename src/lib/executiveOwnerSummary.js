@@ -1,3 +1,5 @@
+import { newerOperationsReview } from './latestOperationsReview.js';
+
 // Presentation only: never rewrite the archived report or infer an approval.
 export function readableExecutiveText(value = '') {
   return String(value)
@@ -47,18 +49,25 @@ export function executiveOwnerDecisions(report) {
   }));
 }
 
-export function executiveProblems(report, cash = {}) {
+export function executiveProblems(report, cash = {}, operations) {
   const problems = [];
   if (cash.error) problems.push({ id: 'cash-read', severity: 'open', text: 'تعذرت قراءة أرصدة الحسابات النقدية؛ لا يمكن تأكيد الرصيد الحالي.', current: true });
   else if (!cash.loading && cash.balances?.some(row => row.balance < 0)) problems.push({
     id: 'negative-cash', severity: 'critical', current: true,
     text: 'رصيد نقدي سالب يحتاج مراجعة:', balances: cash.balances.filter(row => row.balance < 0),
   });
+  const newer = newerOperationsReview(operations, report);
+  if (newer && (operations.report.status !== 'reviewed' || Object.values(operations.report.coverage).some(c => c.status !== 'verified')
+    || operations.report.metrics.some(m => m.basis === 'unavailable') || operations.report.cases.some(c => c.status !== 'verified_closed'))) problems.push({
+    id: 'operations', severity: 'open', operations: operations.report,
+    text: 'تغطية التشغيل جزئية؛ راجع النطاق والفجوات أدناه.', current: false,
+  });
   const seen = new Set();
   const warnings = [...(report?.visibleWarnings || [])].sort((a, b) => (a.severity === 'critical' ? 0 : 1) - (b.severity === 'critical' ? 0 : 1));
   for (const warning of warnings) {
     let key, text;
     if (/تشغيل.*غير مقروء|أيام.*مفقودة/u.test(warning.text)) {
+      if (newer) continue;
       key = 'operations'; text = 'بيانات التشغيل غير مكتملة؛ الأرقام التشغيلية في التقرير تحتاج تحديثًا.';
     } else if (/حد الاستخدام|جولات|أداة|أحداث|504|المراجعة الآلية/u.test(warning.text)) continue;
     else if (/جودة|النجوم|النهائي.*غير مكتمل/u.test(warning.text)) {

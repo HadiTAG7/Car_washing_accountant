@@ -38,7 +38,7 @@ describe('finance MCP uses the same authenticated application service', () => {
     mocks.fetch.mockResolvedValueOnce(result({ sourceId: 'TEST', sourceHash: 'first' })).mockResolvedValueOnce(result({ sourceId: 'TEST', sourceHash: 'changed' }));
     await expect(financeWriteTools[1].run({ action: 'save', request: { kind: 'variable' }, confirm: true })).rejects.toThrow(/تتطابق/);
   });
-  it.each(['cash_bank_correction','payroll_cash_funding'])('supports %s through the existing save and status-read workflow',async kind=>{
+  it.each(['cash_bank_correction','payroll_cash_funding','cash_residual_correction'])('supports %s through the existing save and status-read workflow',async kind=>{
     const sourceId='CEO-CASH-NEGATIVE-20261025-v1',receipt={sourceId,sourceHash:'receipt-proof',entryId:'single-entry',financialPosting:true};
     mocks.fetch.mockResolvedValueOnce(result(receipt)).mockResolvedValueOnce(result({...receipt,completed:true,status:'completed'}));
     const output=await financeWriteTools[1].run({action:'save',request:{kind,sourceId,previewHash:'reviewed'},confirm:true});

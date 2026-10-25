@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import FinanceReportsPage from '../FinanceReportsPage';
 import FinanceHomePage from '../FinanceHomePage';
@@ -25,11 +25,33 @@ function reports(report = financeFixture()) {
     ? base({ items: [report] }) : base({ report, currentRevision: 1, history: [{ revision: 1, reason: 'الإصدار الأول' }] }));
 }
 describe('finance report UI and access boundaries', () => {
+  it('shows six saved financial rows and keeps technical identifiers collapsed without writes', () => {
+    const report=financeFixture(); reports(report); render(<FinanceReportsPage />);
+    const table=screen.getByRole('table',{name:'الأرقام المالية المحفوظة — ريال'});
+    expect(within(table).getAllByRole('row')).toHaveLength(7);
+    expect(within(table).getAllByText('غير محفوظ')).toHaveLength(6);
+    expect(screen.getByText('ما انحفظت أرقام مع هذا التقرير')).toBeTruthy();
+    expect(document.querySelector('.finance-report-technical').open).toBe(false);
+    expect(mock.api).not.toHaveBeenCalled();
+  });
+  it('sends archive-wide filters before pagination and resets the page when filters change', () => {
+    const report=financeFixture();
+    mock.read.mockImplementation((_e,r)=>r.action==='list'?base({items:[report],total:40,page:r.page,pageCount:5}):base({report,currentRevision:1,history:[]}));
+    render(<FinanceReportsPage />);
+    fireEvent.click(screen.getByRole('button',{name:'صفحة 5'}));
+    expect(mock.read).toHaveBeenCalledWith('finance-reports',{action:'list',page:5,pageSize:8});
+    fireEvent.change(screen.getByLabelText('بحث في كل التقارير'),{target:{value:'مستند قديم'}});
+    fireEvent.change(screen.getByLabelText('تصفية الفريق في صفحة الأرشيف'),{target:{value:'1'}});
+    fireEvent.change(screen.getByLabelText('من تاريخ'),{target:{value:'2026-10-01'}});
+    expect(mock.read).toHaveBeenCalledWith('finance-reports',{action:'list',page:1,pageSize:8,query:'مستند قديم',sourceRole:1,from:'2026-10-01'});
+    expect(mock.api).not.toHaveBeenCalled();
+  });
   it('clearly labels an old revision and returns to the latest without restating historical content', () => {
     const first = financeFixture(), latest = financeFixture({ revision: 2, summary: 'ملخص النسخة الثانية', correctionReason: 'تصحيح اختباري' });
     mock.read.mockImplementation((_e, r) => r.action === 'list' ? base({ items: [latest] })
       : base({ report: r.revision === 1 ? first : latest, currentRevision: 2, history: [{ revision: 2, reason: 'تصحيح' }, { revision: 1, reason: 'أول' }] }));
     render(<FinanceReportsPage />); expect(screen.getByText('ملخص النسخة الثانية')).toBeTruthy();
+    fireEvent.click(screen.getByText('التفاصيل التقنية والتقرير المحفوظ'));
     fireEvent.change(screen.getByLabelText('نسخة التقرير'), { target: { value: '1' } });
     expect(screen.getByText(/نسخة تاريخية معروضة/)).toBeTruthy(); expect(screen.getByText('النسخة المعروضة: 1')).toBeTruthy();
     expect(screen.getByText(first.summary)).toBeTruthy(); fireEvent.click(screen.getByRole('button', { name: 'عرض أحدث نسخة' }));
@@ -37,21 +59,22 @@ describe('finance report UI and access boundaries', () => {
     expect(screen.getByText('ملخص النسخة الثانية')).toBeTruthy();
   });
   it('shows a zero-match filter state without claiming cases were closed and restores all cases', () => {
-    reports(); render(<FinanceReportsPage />); fireEvent.click(screen.getByRole('tab', { name: 'المتابعات' }));
+    reports(); render(<FinanceReportsPage />); fireEvent.click(screen.getByText('التفاصيل التقنية والتقرير المحفوظ'));fireEvent.click(screen.getByRole('tab', { name: 'المتابعات' }));
     fireEvent.change(screen.getByLabelText('حالة المتابعة'), { target: { value: 'verified_closed' } });
-    expect(screen.getByRole('status').textContent).toContain('0 / 1');
+    expect(screen.getByRole('status',{name:'عدد الحالات المطابقة'}).textContent).toContain('0 / 1');
     expect(screen.getByText(/لا حالات تطابق التصفية الحالية/)).toBeTruthy(); expect(screen.queryByText('TEST-CASE')).toBeNull();
     fireEvent.change(screen.getByLabelText('حالة المتابعة'), { target: { value: 'all' } });
-    expect(screen.getByText('TEST-CASE')).toBeTruthy(); expect(screen.getByRole('status').textContent).toContain('1 / 1');
+    expect(screen.getByText('TEST-CASE')).toBeTruthy(); expect(screen.getByRole('status',{name:'عدد الحالات المطابقة'}).textContent).toContain('1 / 1');
   });
   it('renders reviewed Arabic verbatim, missing metrics as unavailable, warnings outside tabs, with keyboard interaction', () => {
     reports(); render(<LanguageContext.Provider value={{ language: 'en' }}><FinanceReportsPage /></LanguageContext.Provider>);
     expect(screen.getByText(financeFixture().summary)).toBeTruthy();
     expect(screen.getAllByText('غير متاح').length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByText('التفاصيل التقنية والتقرير المحفوظ'));
     const first = screen.getByRole('tab', { name: 'الملخص' }); first.focus(); fireEvent.keyDown(first, { key: 'ArrowLeft' });
     expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'المتابعات' }));
     expect(screen.getByRole('tabpanel').id).toBe('finance-report-cases');
-    expect(screen.getByText(financeFixture().visibleWarnings[0].text)).toBeTruthy();
+    expect(screen.getAllByText(financeFixture().visibleWarnings[0].text).length).toBeGreaterThan(0);
     fireEvent.keyDown(document.activeElement, { key: 'End' });
     expect(screen.getByRole('tabpanel').id).toBe('finance-report-evidence');
     expect(screen.getByText('المصادر وحدود التغطية')).toBeTruthy();

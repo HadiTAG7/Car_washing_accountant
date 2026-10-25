@@ -10,6 +10,7 @@ import { FINANCE_KINDS, financeHash, financeSourceHash, financeReviewId, finance
 import { financeReadSnapshot } from './financeReadSnapshot.js';
 import { filterWorkbenchItems, hasPaymentConflict, documentDay } from '../src/lib/financeWorkbenchView.js';
 import { cashBankCorrection } from './cashBankCorrection.js';
+import {cashResidualCorrection} from './cashResidualCorrection.js';
 import { payrollCashFunding } from './payrollCashFunding.js';
 
 const kindSchema = z.enum(['variable', 'monthly', 'annual', 'startup']);
@@ -186,6 +187,7 @@ async function browseDocuments(db) {
 export async function financeWorkbench(db, auth, input) {
   await adminOnly(db, auth);
   if(input?.kind==='cash_bank_correction')return cashBankCorrection(db,auth,input);
+  if(input?.kind==='cash_residual_correction')return cashResidualCorrection(db,auth,input);
   if(input?.kind==='payroll_cash_funding')return payrollCashFunding(db,auth,input);
   const parsed = requestSchema.safeParse(input);
   if (!parsed.success) fail(parsed.error.issues.map(i => i.message).join(' '), 'invalid-argument');

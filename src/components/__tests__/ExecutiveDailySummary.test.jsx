@@ -5,6 +5,7 @@ import ExecutiveDailySummary from '../ExecutiveDailySummary';
 import { executiveFixture } from '../../../server/__tests__/executiveFixture';
 import { overviewOperations } from '../../lib/overviewDashboard';
 import { executiveOwnerDecisions, executiveProblems, readableExecutiveText } from '../../lib/executiveOwnerSummary';
+import { operationsFixture } from '../../../server/__tests__/operationsFixture';
 
 afterEach(cleanup);
 const fixture = () => ({ today: '2026-10-23', cash: { balances: [{ code: '1010', name: 'الصندوق', balance: -123.45 }], loading: false }, overview: {
@@ -88,4 +89,39 @@ it('only normalizes presentation spacing/old hosts, preserving amounts, dates an
 it('does not claim today is absent merely because the selected archived report is older', () => {
   render(<ExecutiveDailySummary report={executiveFixture()} data={fixture()} latestReportDate="2026-10-23" />);
   expect(screen.queryByRole('note')).toBeNull();
+});
+
+it('replaces only the old operational projection with newer broad coverage, preserving both snapshots and distinct metrics', () => {
+  const report = executiveFixture({ cutAtRiyadh: '2026-10-17T23:00:00+03:00', visibleWarnings: [
+    { id: 'ops', severity: 'open', text: 'تشغيل 16 غير مقروء؛ أيام مفقودة.' },
+    { id: 'quality', severity: 'open', text: 'الجودة جزئية والنهائي غير مكتمل.' },
+  ] });
+  const operations = operationsFixture({ metrics: [
+    { id: 'saved', label: 'المحفوظ للفترة', value: 285, unit: 'غسلة', basis: 'operational', coverage: 'هويات الفترة فقط', asOf: '2026-10-18T09:00:00+03:00' },
+    { id: 'business', label: 'مكتمل سويتر', value: 575, unit: 'غسلة', basis: 'operational', coverage: 'تعريف مختلف عن المحفوظ الشهري 582', asOf: '2026-10-18T09:00:00+03:00' },
+    { id: 'capacity', label: 'السعة الفعلية', value: null, unit: 'ساعات', basis: 'unavailable', coverage: 'لا ساعات موثقة', asOf: '2026-10-18T09:00:00+03:00' },
+  ] });
+  const original = JSON.stringify([report, operations]);
+  render(<ExecutiveDailySummary report={report} data={fixture()} operationsReview={{ report: operations, loading: false }} />);
+  const problems = screen.getByRole('region', { name: 'أهم المشاكل' });
+  expect(problems.textContent).not.toContain('الأرقام التشغيلية في التقرير تحتاج تحديثًا');
+  expect(problems.textContent).toContain('تغطية التشغيل جزئية');
+  expect(problems.textContent).toContain('تقييم الجودة غير مكتمل');
+  const scope = screen.getByRole('region', { name: 'نطاق مراجعة التشغيل' });
+  expect(scope.textContent).toContain('خدمات الشركات: غير متاح');
+  expect(scope.textContent).toContain('ليست مراجعة اليوم');
+  expect(within(scope).getByRole('region', { name: 'السعة الفعلية' }).textContent).toContain('غير متاح');
+  expect(within(scope).getByRole('region', { name: 'السعة الفعلية' }).textContent).not.toContain('0');
+  expect(scope.textContent).toContain('285'); expect(scope.textContent).toContain('575'); expect(scope.textContent).toContain('582');
+  expect(scope.textContent).toContain('حالة اختبار');
+  expect(screen.getByText('تشغيل 16 غير مقروء؛ أيام مفقودة.').closest('details').open).toBe(false);
+  expect(JSON.stringify([report, operations])).toBe(original);
+});
+it('keeps the dated historical warning on failed or older operations reads and never claims current coverage', () => {
+  const report = executiveFixture({ visibleWarnings: [{ id: 'ops', severity: 'open', text: 'تشغيل غير مقروء' }] });
+  for (const state of [{ error: 'تعذرت القراءة' }, { loading: true }, { report: operationsFixture() }]) {
+    expect(executiveProblems(report, {}, state).some(p => p.id === 'operations' && !p.operations)).toBe(true);
+  }
+  render(<ExecutiveDailySummary report={report} data={fixture()} operationsReview={{ error: 'تعذرت القراءة' }} />);
+  expect(screen.getByRole('alert').textContent).toBe('تعذرت القراءة');
 });

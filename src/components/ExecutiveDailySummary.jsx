@@ -2,15 +2,22 @@ import { useExecutiveDailyMetrics } from '../hooks/useExecutiveDailyMetrics';
 import { executiveOwnerDecisions, executiveProblems, readableExecutiveText } from '../lib/executiveOwnerSummary';
 import { formatCurrencyPrecise, formatNumber } from '../data/initialData';
 import { riyadhTodayISO } from '../lib/washesYesterday';
+import { useLatestOperationsReview } from '../hooks/useLatestOperationsReview';
+import { OPERATIONS_STATUSES } from '../lib/operationsReportContract';
 
 const dayLabel = day => new Intl.DateTimeFormat('ar-SA-u-ca-gregory', { dateStyle: 'medium', numberingSystem: 'latn', timeZone: 'UTC' }).format(new Date(`${day}T00:00:00Z`));
+const operationsMetricLabels = { 'business-month': 'غسلات سويتر للشهر حسب تعريف المصدر', 'tips-net': 'صافي البقشيش بعد الرسوم', 'actual-capacity': 'السعة الفعلية والتعطل' };
+const operationsCaseLabel = item => /ملغ.*معتمد.*حفظ/u.test(item.title) ? 'حجوزات ملغاة معتمدة تنتظر الحفظ.'
+  : /ربط.*تاريخ/u.test(item.title) ? 'ربط حجز تاريخي يحتاج مراجعة.'
+    : /جاهزية.*مخزون/u.test(item.title) ? 'جاهزية الأصول والمخزون غير متحققة.' : readableExecutiveText(item.title);
 
 export function ExecutiveDailySummaryLive({ report, latestReportDate }) {
   const data = useExecutiveDailyMetrics();
-  return <ExecutiveDailySummary report={report} data={data} latestReportDate={latestReportDate} />;
+  const operationsReview = useLatestOperationsReview(data?.today || riyadhTodayISO());
+  return <ExecutiveDailySummary report={report} data={data} latestReportDate={latestReportDate} operationsReview={operationsReview} />;
 }
 
-export default function ExecutiveDailySummary({ report, data, latestReportDate = report?.dateRiyadh }) {
+export default function ExecutiveDailySummary({ report, data, latestReportDate = report?.dateRiyadh, operationsReview }) {
   const today = data?.today || riyadhTodayISO(), periodKey = today.slice(0, 7);
   const overview = data?.overview, statement = overview?.finance.statement;
   const ops = data?.yesterdayOperations || overview?.operations;
@@ -28,7 +35,7 @@ export default function ExecutiveDailySummary({ report, data, latestReportDate =
     { label: 'صافي الربح', value: money('netProfit'), date: periodLabel, day: today,
       note: statement?.salaryAccrual?.estimated ? 'تقديري حتى اعتماد مسير الرواتب.' : null },
   ];
-  const problems = executiveProblems(report, data?.cash);
+  const problems = executiveProblems(report, data?.cash, operationsReview);
   const decisions = executiveOwnerDecisions(report);
   return <div className="sw-executive-daily">
     {latestReportDate && latestReportDate !== today && <p className="sw-executive-daily__stale" role="note">آخر تقرير: <time dateTime={latestReportDate}>{dayLabel(latestReportDate)}</time> — لم يُحفظ تقرير اليوم؛ سبب عدم صدوره غير مسجل.</p>}
@@ -45,9 +52,10 @@ export default function ExecutiveDailySummary({ report, data, latestReportDate =
       {problems.length ? <ul>{problems.map(problem => <li key={problem.id} data-severity={problem.severity}>
         <span className="sw-executive-daily__severity">{problem.severity === 'critical' ? 'عاجل' : problem.severity === 'open' ? 'يحتاج متابعة' : 'تنبيه'}</span>
         <p>{problem.text}{problem.balances?.map(row => <span key={row.code}> {row.name} <bdi>{formatCurrencyPrecise(row.balance)}</bdi>؛</span>)}</p>
-        <small>{problem.current ? `الدفتر الحالي · ${dayLabel(today)}` : `بحسب تقرير ${dayLabel(report.dateRiyadh)}`}</small>
+        <small>{problem.operations ? `مراجعة التشغيل · ${dayLabel(problem.operations.dateRiyadh)}` : problem.current ? `الدفتر الحالي · ${dayLabel(today)}` : `بحسب تقرير ${dayLabel(report.dateRiyadh)}`}</small>
       </li>)}</ul> : <p>{data?.cash.loading ? 'جارٍ فحص الأرصدة النقدية…' : 'لا توجد مشاكل إضافية مسجلة في المصادر المقروءة.'}</p>}
     </section>
+    <OperationsCoverage state={operationsReview} today={today} />
     <section aria-label="المطلوب مني" className="sw-executive-daily__owner"><h2>المطلوب مني</h2>
       {decisions.length ? <><div className="sw-executive-daily__decisions">{decisions.map(decision => <article key={decision.id}>
         <h3>{decision.question}</h3><p>{decision.reason}</p>
@@ -70,4 +78,34 @@ export default function ExecutiveDailySummary({ report, data, latestReportDate =
       </>}
     </details>
   </div>;
+}
+
+function OperationsCoverage({ state, today }) {
+  if (!state) return null;
+  const report = state.report;
+  const statuses = { verified: 'متحقق ضمن النطاق', partial: 'جزئي', unavailable: 'غير متاح' };
+  return <section aria-label="نطاق مراجعة التشغيل" className="sw-executive-daily__operations">
+    <h2>نطاق مراجعة التشغيل</h2>
+    {state.loading ? <p>جارٍ قراءة آخر مراجعة شاملة للتشغيل…</p> : state.error ? <p role="alert">{state.error}</p> : !report ? <p>لا توجد مراجعة شاملة متاحة؛ لا يمكن تأكيد اكتمال التشغيل.</p> : <>
+      <p>مراجعة <time dateTime={report.dateRiyadh}>{dayLabel(report.dateRiyadh)}</time> · {OPERATIONS_STATUSES[report.status]} · آخر خدمة: <time dateTime={report.serviceDateRiyadh}>{dayLabel(report.serviceDateRiyadh)}</time></p>
+      <p>النطاق: {dayLabel(report.period.from)} — {dayLabel(report.period.to)} · وقت القطع: <time dateTime={report.cutAtRiyadh}>{new Date(report.cutAtRiyadh).toLocaleString('ar-SA-u-ca-gregory', { numberingSystem: 'latn', timeZone: 'Asia/Riyadh' })}</time></p>
+      {report.dateRiyadh !== today && <p role="note">هذه آخر مراجعة متاحة؛ ليست مراجعة اليوم.</p>}
+      <p>الخدمات الفردية: {statuses[report.coverage.individual.status]} · خدمات الشركات: {statuses[report.coverage.b2b.status]}</p>
+      <div className="sw-executive-daily__operations-metrics">{report.metrics.map(m => <section key={m.id} aria-label={operationsMetricLabels[m.id] || readableExecutiveText(m.label)}>
+        <h3>{operationsMetricLabels[m.id] || readableExecutiveText(m.label)}</h3><strong><bdi>{m.value === null ? 'غير متاح' : `${formatNumber(m.value)} ${m.unit}`}</bdi></strong>
+      </section>)}</div>
+      <p>كل مؤشر له تعريفه وفترته؛ الأعداد لا تمثل مطابقة مالية.</p>
+      <h3>الفجوات المسجلة عند القطع</h3>
+      <ul>{report.cases.filter(c => c.status !== 'verified_closed').map(c => <li key={c.caseId}>{operationsCaseLabel(c)}</li>)}</ul>
+      <details><summary>أدلة مراجعة التشغيل وحدودها</summary>
+        <p>الخدمات الفردية: {readableExecutiveText(report.coverage.individual.detail)}</p>
+        <p>خدمات الشركات: {readableExecutiveText(report.coverage.b2b.detail)}</p>
+        {report.metrics.map(m => <p key={m.id}>{readableExecutiveText(m.label)}: {readableExecutiveText(m.coverage)} · <time dateTime={m.asOf}>{m.asOf}</time></p>)}
+        {report.cases.filter(c => c.status !== 'verified_closed').map(c => <p key={c.caseId}>{readableExecutiveText(c.title)}: {readableExecutiveText(c.evidence)}</p>)}
+        {report.visibleWarnings.map(w => <p key={w.id}>{readableExecutiveText(w.text)}</p>)}
+        <p>{readableExecutiveText(report.historicalIntegrity)}</p>
+        <p><bdi>{report.reportId}</bdi> · نسخة {report.revision}</p>
+      </details>
+    </>}
+  </section>;
 }

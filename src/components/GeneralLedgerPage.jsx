@@ -14,6 +14,7 @@ import { useLedger } from '../hooks/useLedger';
 import { useLedgerSourceDocuments } from '../hooks/useLedgerSourceDocuments';
 import JournalEntryDetails from './JournalEntryDetails';
 import CashBankCorrectionCard from './CashBankCorrectionCard';
+import PayrollCashFundingCard from './PayrollCashFundingCard';
 import { balanceNature, ledgerAccountGroups, ledgerLocationFilters, ledgerMovementContext, matchesLedgerMovement, referencedLedgerEntry, LEDGER_SOURCE_LABELS as SOURCE_LABELS } from '../lib/ledgerPresentation';
 import { generalLedger } from '../lib/accounting/reports';
 import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
@@ -99,6 +100,7 @@ export default function GeneralLedgerPage() {
       <TopBar title="دفتر الأستاذ" subtitle="حركات كل حساب بالتفصيل مع الرصيد التراكمي" />
 
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
+        <PayrollCashFundingCard onSaved={id=>{refetch();setOpenedEntryId(id);}} />
         <CashBankCorrectionCard onSaved={id=>{refetch();setOpenedEntryId(id);}} />
         {!isFirebaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
         {error && <ErrorState title="تعذّر تحميل دفتر الأستاذ" error={error} onRetry={refetch} />}

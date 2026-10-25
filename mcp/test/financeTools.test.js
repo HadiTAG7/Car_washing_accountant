@@ -38,6 +38,14 @@ describe('finance MCP uses the same authenticated application service', () => {
     mocks.fetch.mockResolvedValueOnce(result({ sourceId: 'TEST', sourceHash: 'first' })).mockResolvedValueOnce(result({ sourceId: 'TEST', sourceHash: 'changed' }));
     await expect(financeWriteTools[1].run({ action: 'save', request: { kind: 'variable' }, confirm: true })).rejects.toThrow(/تتطابق/);
   });
+  it('supports the approved correction through the existing save and status-read workflow',async()=>{
+    const sourceId='CEO-CASH-NEGATIVE-20261025-v1',receipt={sourceId,sourceHash:'receipt-proof',entryId:'single-entry',financialPosting:true};
+    mocks.fetch.mockResolvedValueOnce(result(receipt)).mockResolvedValueOnce(result({...receipt,completed:true,status:'completed'}));
+    const output=await financeWriteTools[1].run({action:'save',request:{kind:'cash_bank_correction',sourceId,previewHash:'reviewed'},confirm:true});
+    expect(JSON.parse(output.content[0].text).readbackVerified).toBe(true);
+    expect(JSON.parse(mocks.fetch.mock.calls[1][1].body)).toEqual({action:'read',kind:'cash_bank_correction',sourceId});
+    expect(mocks.fetch).toHaveBeenCalledTimes(2);
+  });
   it('does not blindly retry a network failure or ignore HTTP authorization errors', async () => {
     mocks.fetch.mockRejectedValue(new Error('Synthetic offline')); await expect(callFinanceServer('finance-reports', {})).rejects.toMatchObject({ code: 'unavailable' });
     expect(mocks.fetch).toHaveBeenCalledTimes(1); mocks.fetch.mockResolvedValue({ ok: false, json: async () => ({ error: { code: 'permission-denied', message: 'مرفوض' } }) });

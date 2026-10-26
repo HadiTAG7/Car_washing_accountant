@@ -3,6 +3,7 @@ import { OVERVIEW_SETTINGS as settings } from '../config/overviewSettings';
 import { overviewBusinessMetrics, overviewSettlements, overviewSweaterMetrics } from '../lib/overviewInsights';
 import { formatCurrencyPrecise, formatNumber } from '../data/initialData';
 import OverviewBikerDetails from './OverviewBikerDetails';
+import OverviewDeductionsDetails from './OverviewDeductionsDetails';
 
 export default function OverviewBusinessInsights({ data, periodKey, washReady, language, onNavigate, breakEven = {} }) {
   const text = (ar, en) => language === 'en' ? en : ar;
@@ -19,7 +20,7 @@ export default function OverviewBusinessInsights({ data, periodKey, washReady, l
     settlements: sReady ? data.settlements.items : [], periodKey, to: ops.to }) : null;
   // Each metric keeps the time of its own last actual source reading.
   const sweaterRead = data.sweaterMetrics;
-  const sweater = overviewSweaterMetrics(sweaterRead?.snapshot, ops);
+  const sweater = overviewSweaterMetrics(sweaterRead?.snapshot?.periodKey === periodKey ? sweaterRead.snapshot : null, ops);
   const noSweater = sweaterRead?.error ? text('تعذّرت قراءة أرقام سويتر', 'Sweater numbers could not be read')
     : sweaterRead?.loading && !sweaterRead.snapshot ? '…' : text('ما وصلت بيانات سويتر', 'No Sweater data received');
   const fromSweater = (value, format) => value === null || value === undefined ? noSweater : format(value);
@@ -67,7 +68,7 @@ export default function OverviewBusinessInsights({ data, periodKey, washReady, l
         <p>{text('سعر الغسلة قبل الضريبة', 'Net wash price')}: <bdi>{currency(settings.washNetPrice)}</bdi></p>
         {(sourceGap || partial) && <small>{sourceGap || partial}</small>}
       </Insight>
-      <Insight title={text('الإنتاج مقارنة بالطاقة اليومية', 'Output vs daily capacity')} onOpen={() => setDetail('capacity')} value={m?.capacityUtilization == null ? unavailable : `${num(m.capacityUtilization)}%`}>
+      <Insight title={text('الإنتاج مقارنة بالطاقة اليومية', 'Output vs daily capacity')} moreLabel={text('عرض التفاصيل', 'View details')} onOpen={() => setDetail('capacity')} value={m?.capacityUtilization == null ? unavailable : `${num(m.capacityUtilization)}%`}>
         <p>{text('الطاقة المفترضة لكل بايكر', 'Assumed capacity per biker')}: <bdi>{num(settings.dailyAppointmentsPerBiker)}</bdi> {text('غسلات / يوم', 'washes / day')}</p>
         {m?.capacityUtilization == null && <small>{text('لا يوجد متوسط بايكر مؤكّد لأيام مكتملة، أو ربط الغسلات ناقص.', 'No confirmed biker average for completed days, or wash identities are incomplete.')}</small>}
       </Insight>
@@ -76,23 +77,16 @@ export default function OverviewBusinessInsights({ data, periodKey, washReady, l
         <p>{text('الإيراد قبل الضريبة', 'Revenue excluding VAT')}: <bdi>{currency(m?.forecastRevenue)}</bdi></p>
         {!ops?.completeMonth && <p>{text('متوسط آخر أيام مكتملة', 'Recent completed-day average')}: <bdi>{num(m?.recentAverage)}</bdi> · <bdi>{num(m?.sampleDays)}</bdi> {text('أيام', 'days')}</p>}
       </Insight>
-      <Insight title={text('الخصومات والتعويضات', 'Deductions and compensation')} titleHint={updated(Object.keys(metricLabels))} value={sweater ? fromSweater(sweater.deductionMoney, currency) : noSweater}>
-        {sweater && <details className="sw-overview-insight__details">
-          <summary>{text('تفاصيل الخصومات والإضافات', 'Deduction and addition details')}</summary>
-          <p className="sw-overview-insight__group">{text('الخصومات', 'Deductions')}</p>
-          <ul className="sw-overview-insight__items">{sweater.deductions.map(metricItem)}</ul>
-          <p className="sw-overview-insight__group">{text('الإضافات', 'Additions')}</p>
-          <ul className="sw-overview-insight__items">{sweater.additions.map(metricItem)}</ul>
-        </details>}
+      <Insight title={text('الخصومات والتعويضات', 'Deductions and compensation')} titleHint={updated(Object.keys(metricLabels))}
+        moreLabel={text('عرض تفاصيل الخصومات', 'View deduction details')} onOpen={() => setDetail('deductions')} value={sweater ? fromSweater(sweater.deductionMoney, currency) : noSweater}>
         <p>{text('المعتمد في الدفتر', 'Approved in the ledger')}: <bdi>{!aReady || !ops || settlement.malformed ? unavailable
           : !settlement.deductionRecordCount ? text('غير مسجلة', 'Not recorded')
             : settlement.deductionTotal === null ? text('لا خصومات معتمدة', 'No approved deductions') : currency(settlement.deductionTotal)}</bdi></p>
         {!aReady ? <small>{text('تعذّرت قراءة تسويات الخصم أو ما زالت تُحمّل.', 'Deduction adjustments are unavailable or still loading.')}</small>
           : settlement?.malformed && <small>{text('تسويات ذات تاريخ أو مبلغ غير صالح؛ راجع التفاصيل.', 'Adjustments contain invalid dates or amounts; review details.')}</small>}
         {aReady && settlement?.pending.length > 0 && <p>{text('خصومات معلّقة، غير داخلة في الإجمالي', 'Pending deductions, excluded from total')}: <bdi>{currency(settlement.pendingTotal)}</bdi></p>}
-        {link(text('تفاصيل تسويات سويتر', 'Sweater settlement details'), 'sweater_settlements')}
       </Insight>
-      <Insight title={text('البقشيش', 'Tips')} titleHint={updated(['tipsNet'])} onOpen={() => setDetail('tips')} value={fromSweater(sweater?.tipsNet, currency)} />
+      <Insight title={text('البقشيش', 'Tips')} titleHint={updated(['tipsNet'])} moreLabel={text('عرض البايكرية والمبالغ', 'View bikers and amounts')} onOpen={() => setDetail('tips')} value={fromSweater(sweater?.tipsNet, currency)} />
       <Insight title={text('الدفعة المتوقعة من سويتر', 'Expected Sweater payment')} value={provisional ? currency(serviceEstimate) : sReady && settlement?.unresolvedZero ? text('تحتاج مراجعة', 'Needs review') : currency(sReady && ops ? settlement.expected : null)}>
         {provisional && <><p>{text('تقدير غير معتمد · قبل الضريبة والخصومات والإضافات', 'Unapproved estimate · before VAT, deductions and additions')}</p>
           <p><bdi>{num(ops.quantity)} × {currency(settings.washNetPrice)}</bdi> · <bdi dir="ltr">{ops.from} — {ops.to}</bdi></p></>}
@@ -106,21 +100,19 @@ export default function OverviewBusinessInsights({ data, periodKey, washReady, l
         {link(text('مطابقة الدفعة', 'Reconcile payment'), 'sweater_settlements')}
       </Insight>
     </div>
-    <section className="sw-overview__reconciliation" aria-label={text('مطابقة الغسلات مع سويتر', 'Sweater wash reconciliation')}>
-      <h3>{text('عدد غسلات الشهر حسب سويتر — Metabase', 'Monthly wash count in Sweater — Metabase')}</h3>
-      <strong className="tabular-nums"><bdi>{fromSweater(sweater?.completedWashes, num)}</bdi></strong>
-      {sweater?.washDifference != null && <p className={sweater.washDifference ? 'sw-overview__reconciliation-warning' : ''} role="status">
-        {`${text('الفرق: سويتر − المسجّل', 'Difference: Sweater − recorded')}: ${sweater.washDifference > 0 ? '+' : ''}${num(sweater.washDifference)} · ${sweater.washDifference ? text('يوجد فرق يحتاج مطابقة', 'Mismatch to reconcile') : text('متطابق', 'Matched')}`}
-      </p>}
-      <small>{periodKey} · {text('من Business Dashboard في سويتر، يصل تلقائيًا مع تكامل التشغيل.', 'From Sweater’s Business Dashboard, sent automatically by the operations integration.')} {updated(['completedWashes'])}</small>
-    </section>
-    {detail && <OverviewBikerDetails key={`${periodKey}:${detail}`} kind={detail} ops={ops} bikers={data.workers?.error || data.workers?.loading ? [] : data.workers?.bikers || []}
+    {detail === 'deductions' && <OverviewDeductionsDetails key={`${periodKey}:deductions`} sweater={sweater} renderItem={metricItem}
+      sourceTime={updated(Object.keys(metricLabels))}
+      records={settlement?.malformed ? [] : settlement?.violations || []} recordsUnavailable={!aReady || !ops || settlement?.malformed}
+      bikers={data.workers?.error || data.workers?.loading ? [] : data.workers?.bikers || []}
+      periodKey={periodKey} language={language} noSweater={noSweater} onNavigate={onNavigate} onClose={() => setDetail(null)} />}
+    {detail && detail !== 'deductions' && <OverviewBikerDetails key={`${periodKey}:${detail}`} kind={detail} ops={ops} bikers={data.workers?.error || data.workers?.loading ? [] : data.workers?.bikers || []}
       snapshot={sweaterRead?.snapshot} periodKey={periodKey} language={language} onClose={() => setDetail(null)} />}
   </div>;
 }
 
 // tone: true (reached, green), false (below, red), or none.
-function Insight({ title, titleHint, value, tone = null, onOpen, children }) {
+function Insight({ title, titleHint, value, tone = null, moreLabel, onOpen, children }) {
   return <section className={`sw-overview-metric sw-overview-insight${tone === true ? ' sw-overview-insight--good' : tone === false ? ' sw-overview-insight--bad' : ''}`}>
-    <h3 title={titleHint || undefined}>{onOpen ? <button type="button" className="sw-overview-insight__opener" onClick={onOpen} aria-haspopup="dialog">{title}</button> : title}</h3><strong className="tabular-nums"><bdi>{value}</bdi></strong>{children}</section>;
+    <h3 title={titleHint || undefined}>{onOpen ? <button type="button" className="sw-overview-insight__opener" onClick={onOpen} aria-haspopup="dialog">{title}</button> : title}</h3><strong className="tabular-nums"><bdi>{value}</bdi></strong>{children}
+    {onOpen && moreLabel && <span className="sw-overview-insight__more" aria-hidden="true">{moreLabel}</span>}</section>;
 }

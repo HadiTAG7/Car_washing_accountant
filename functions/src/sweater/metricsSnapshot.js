@@ -39,6 +39,7 @@ export async function saveMetricsSnapshot(db, FieldValue, payload, { keyId, nowM
       contractVersion: payload.contractVersion, periodKey: payload.periodKey, extractedAtIso, sourceUrl: payload.sourceUrl,
       payloadHash, keyId, metrics: payload.metrics,
       ...(Object.hasOwn(payload, 'tipsByBiker') ? { tipsByBiker: payload.tipsByBiker } : {}),
+      ...(Object.hasOwn(payload, 'deductionDetails') ? { deductionDetails: payload.deductionDetails } : {}),
       receivedAt: FieldValue.serverTimestamp(), receivedAtIso: new Date(nowMs).toISOString(),
     });
     return answer(true);

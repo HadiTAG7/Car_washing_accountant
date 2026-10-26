@@ -61,7 +61,6 @@ it('break-even boxes stay neutral and unavailable without confirmed figures', ()
 
 const october = { periodKey: '2026-10', extractedAtIso: '2026-10-23T05:00:00.000Z', metrics: { completedWashes: 480, tipsNet: 68, violations: 530,
   damages: 0, compensations: 0, freeWashCompensation: 8, cancelledByCustomer: 10, cancelledByBiker: 13, cancelledMaintenance: 4 } };
-const region = name => screen.getByRole('region', { name });
 it.each(['ar', 'en'])('keeps separate source times after partial snapshots and does not stamp older tips/washes as fresh (%s)', language => {
   const d = data();
   d.sweaterMetrics = { snapshot: composeSweaterMetricReadings([
@@ -71,16 +70,13 @@ it.each(['ar', 'en'])('keeps separate source times after partial snapshots and d
   render(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language={language} />);
   const tips = card(language === 'ar' ? 'البقشيش' : 'Tips');
   const deductions = card(language === 'ar' ? 'الخصومات والتعويضات' : 'Deductions and compensation');
-  const washes = region(language === 'ar' ? 'مطابقة الغسلات مع سويتر' : 'Sweater wash reconciliation');
   expect(tips.querySelector('h3').title).toMatch(/9:00|09:00/);
   expect(tips.querySelector('h3').title).not.toContain('10:00');
-  expect(washes.textContent).toMatch(/9:00|09:00/);
-  expect(washes.textContent).not.toContain('10:00');
   expect(deductions.querySelector('h3').title).toContain('10:00');
   expect(deductions.querySelector('h3').title).not.toMatch(/9:00|09:00/);
   expect(deductions.querySelector('strong').textContent).toContain('530.00');
   expect(tips.querySelector('strong').textContent).toContain('68.00');
-  expect(washes.querySelector('strong').textContent).toBe('480');
+  expect(screen.queryByRole('region', { name: language === 'ar' ? 'مطابقة الغسلات مع سويتر' : 'Sweater wash reconciliation' })).toBeNull();
 });
 it('dates each compensation item when that group contains readings taken at different times', () => {
   const d = data();
@@ -89,37 +85,37 @@ it('dates each compensation item when that group contains readings taken at diff
     { ...october, extractedAtIso: '2026-10-23T07:00:00Z', metrics: { violations: 535 } },
   ], '2026-10'), loading: false, error: null };
   render(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language="en" />);
-  fireEvent.click(within(card('Deductions and compensation')).getByText('Deduction and addition details'));
-  const items = within(card('Deductions and compensation')).getAllByRole('listitem');
+  fireEvent.click(within(card('Deductions and compensation')).getByRole('button', { name: 'Deductions and compensation' }));
+  const items = within(screen.getByRole('dialog')).getAllByRole('listitem');
   expect(items.find(item => item.textContent.includes('Violations')).textContent).toContain('10:00');
   expect(items.find(item => item.textContent.includes('Damages')).textContent).toContain('08:00');
   expect(card('Deductions and compensation').querySelector('h3').title).toContain('each item retains its time');
 });
-it('fills Sweater’s count, tips and itemized deductions from the latest reading, each with its time', () => {
+it('keeps the stored numbers while removing wash reconciliation and opening itemized money details', () => {
   const d = data(); d.sweaterMetrics = { snapshot: october, loading: false, error: null }; const navigate = vi.fn();
+  const before = JSON.stringify(d);
   render(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language="ar" onNavigate={navigate} />);
-  const count = region('مطابقة الغسلات مع سويتر');
-  expect(count.querySelector('strong').textContent).toBe('480');
-  // One recorded wash in the fixture: Sweater − recorded = +479, flagged for reconciliation.
-  expect(screen.getByRole('status').textContent).toContain('+479'); expect(screen.getByRole('status').className).toContain('warning');
-  expect(count.textContent).toContain('آخر تحديث من سويتر'); expect(screen.queryByRole('textbox')).toBeNull();
+  expect(screen.queryByRole('region', { name: 'مطابقة الغسلات مع سويتر' })).toBeNull();
+  expect(screen.queryByText(/Metabase/)).toBeNull();
+  expect(screen.queryByRole('textbox')).toBeNull();
   const tips = card('البقشيش');
   expect(tips.querySelector('strong').textContent).toContain('68.00'); expect(tips.textContent).not.toContain('منفصل عن الإيراد');
   expect(tips.querySelector('h3').title).toContain('آخر تحديث من سويتر');
   const deductions = card('الخصومات والتعويضات');
   expect(deductions.querySelector('strong').textContent).toContain('530.00');
-  const disclosure = deductions.querySelector('details');
-  expect(disclosure.open).toBe(false);
-  fireEvent.click(within(deductions).getByText('تفاصيل الخصومات والإضافات'));
-  expect(disclosure.open).toBe(true);
-  const [taken, added] = within(deductions).getAllByRole('list');
+  expect(screen.queryByRole('dialog')).toBeNull();
+  fireEvent.click(within(deductions).getByRole('button', { name: 'الخصومات والتعويضات' }));
+  const dialog = screen.getByRole('dialog');
+  const [taken, added] = within(dialog).getAllByRole('list');
   expect([...taken.querySelectorAll('li')].map(li => li.textContent.replace(/\s+/g, ' ').replace(/[\u200e\u200f]/g, '')))
     .toEqual(['المخالفات530.00 ر.س', 'الأضرار0.00 ر.س', 'التعويضات0.00 ر.س', 'غسلات مجانية تعويض8', 'إلغاء من البايكر13', 'إلغاء بسبب الصيانة4']);
   expect(added.textContent).toBe('إلغاء من العميل10');
   expect(deductions.textContent).toContain('المعتمد في الدفتر: غير مسجلة');
-  fireEvent.click(within(deductions).getByRole('button', { name: 'تفاصيل تسويات سويتر' })); expect(navigate).toHaveBeenCalledWith('sweater_settlements');
-  fireEvent.click(within(deductions).getByText('تفاصيل الخصومات والإضافات'));
-  expect(disclosure.open).toBe(false);
+  expect(dialog.textContent).toContain('دون أسماء أو حجوزات');
+  expect(dialog.textContent).not.toContain('عامل اختبار');
+  fireEvent.click(within(dialog).getByRole('button', { name: 'تفاصيل تسويات سويتر' })); expect(navigate).toHaveBeenCalledWith('sweater_settlements');
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(JSON.stringify(d)).toBe(before);
   expect(screen.queryByRole('heading', { name: 'رصيد صندوق العمل المالي' })).toBeNull();
   expect(screen.queryByRole('heading', { name: 'الفلوس والمواعيد' })).toBeNull();
   expect(deductions.textContent).not.toContain('من لوحة Compensations');
@@ -128,13 +124,13 @@ it('without Sweater data says so instead of zero, item by item', () => {
   const d = data(); d.sweaterMetrics = { snapshot: null, loading: false, error: null };
   const { rerender } = render(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language="ar" />);
   for (const box of [card('البقشيش'), card('الخصومات والتعويضات')]) expect(box.querySelector('strong').textContent).toBe('ما وصلت بيانات سويتر');
-  expect(region('مطابقة الغسلات مع سويتر').querySelector('strong').textContent).toBe('ما وصلت بيانات سويتر');
+  expect(screen.queryByRole('region', { name: 'مطابقة الغسلات مع سويتر' })).toBeNull();
   expect(screen.queryByRole('status')).toBeNull();
   d.sweaterMetrics = { snapshot: { ...october, metrics: { completedWashes: 480 } }, loading: false, error: null };
   rerender(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language="ar" />);
   expect(card('البقشيش').querySelector('strong').textContent).toBe('ما وصلت بيانات سويتر');
-  fireEvent.click(within(card('الخصومات والتعويضات')).getByText('تفاصيل الخصومات والإضافات'));
-  expect(within(card('الخصومات والتعويضات')).getAllByRole('listitem').every(li => li.textContent.includes('ما وصلت بيانات سويتر'))).toBe(true);
+  fireEvent.click(within(card('الخصومات والتعويضات')).getByRole('button', { name: 'الخصومات والتعويضات' }));
+  expect(within(screen.getByRole('dialog')).getAllByRole('listitem').every(li => li.textContent.includes('ما وصلت بيانات سويتر'))).toBe(true);
   expect(card('الخصومات والتعويضات').textContent).not.toContain('0.00');
   d.sweaterMetrics = { snapshot: null, loading: false, error: new Error('denied') };
   rerender(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language="ar" />);
@@ -186,6 +182,58 @@ it('does not attribute an aggregate-only or wrong-month tips snapshot to a biker
   d.sweaterMetrics.snapshot = { ...october, tipsByBiker: [{ driverExternalId: '1984', netAmount: 68 }] };
   rerender(<OverviewBusinessInsights data={d} periodKey="2026-09" washReady language="ar" />);
   expect(screen.getByRole('dialog').textContent).not.toContain('1984');
+});
+it.each(['ar', 'en'])('shows tip recipients and source precision without turning rounded rows into a new total (%s)', language => {
+  const d = data();
+  const allocations = [{ driverExternalId: '1984', netAmount: 4.875 }, { driverExternalId: '1986', netAmount: 39 },
+    { driverExternalId: '1989', netAmount: 19.5 }, { driverExternalId: '1998', netAmount: 34.125 },
+    { driverExternalId: '2009', netAmount: 14.625 }, { driverExternalId: '2007', netAmount: 0 }];
+  d.sweaterMetrics = { snapshot: { ...october, metrics: { tipsNet: 112.13 }, tipsByBiker: allocations }, loading: false };
+  d.workers.bikers = [biker, { id: 'b2', name: 'عامل ثان', driverExternalId: '1986' }];
+  const before = JSON.stringify(d);
+  render(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language={language} />);
+  const opener = screen.getByRole('button', { name: language === 'ar' ? 'البقشيش' : 'Tips', exact: true });
+  expect(card(language === 'ar' ? 'البقشيش' : 'Tips').textContent).toContain(language === 'ar' ? 'عرض البايكرية والمبالغ' : 'View bikers and amounts');
+  opener.focus(); fireEvent.click(opener);
+  const dialog = screen.getByRole('dialog'), table = within(dialog).getByRole('table');
+  expect(within(table).getAllByRole('row')).toHaveLength(6);
+  expect(table.textContent).toContain('4.875'); expect(table.textContent).toContain('34.125'); expect(table.textContent).toContain('14.625');
+  expect(table.textContent).toContain('عامل اختبار'); expect(table.textContent).toContain('عامل ثان');
+  expect(table.textContent).not.toContain('2007'); // Zero is stored, but not a recipient.
+  expect(dialog.textContent).toContain('112.13'); expect(dialog.textContent).not.toContain('112.14');
+  expect(dialog.textContent).toContain(language === 'ar' ? 'لا يعني صرفه' : 'not proof of payment');
+  fireEvent(dialog, new Event('cancel', { bubbles: true, cancelable: true }));
+  expect(screen.queryByRole('dialog')).toBeNull(); expect(document.activeElement).toBe(opener);
+  expect(JSON.stringify(d)).toBe(before);
+});
+it('does not guess a tip recipient from duplicate mappings or mismatched source totals', () => {
+  const d = data(); d.workers.bikers = [biker, { ...biker, id: 'other', name: 'عامل آخر' }];
+  d.sweaterMetrics = { snapshot: { ...october, metrics: { tipsNet: 68 }, tipsByBiker: [{ driverExternalId: '1984', netAmount: 68 }] } };
+  const { rerender } = render(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language="ar" />);
+  fireEvent.click(screen.getByRole('button', { name: 'البقشيش', exact: true }));
+  expect(screen.getByRole('dialog').textContent).toContain('الاسم غير مربوط');
+  expect(screen.getByRole('dialog').textContent).not.toContain('عامل اختبار');
+  d.sweaterMetrics.snapshot.tipsByBiker[0].netAmount = 67;
+  rerender(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language="ar" />);
+  expect(within(screen.getByRole('dialog')).queryByRole('table')).toBeNull();
+  expect(screen.getByRole('dialog').textContent).toContain('المحفوظ إجمالي فقط');
+});
+it('separates named internal records from aggregate Sweater deductions and pending approvals', () => {
+  const d = data(); d.sweaterMetrics = { snapshot: october };
+  d.adjustments.items = [{ id: 'approved', periodKey: '2026-10', effectiveDate: '2026-10-19', kind: 'deduction', typeKey: 'operational_or_traffic_violation',
+    driverExternalId: '1984', amount: 25, approvalStatus: 'approved', sspBookingId: 'S-123' },
+  { id: 'pending', periodKey: '2026-10', effectiveDate: '2026-10-20', kind: 'deduction', typeKey: 'proven_damage', amount: 50, approvalStatus: 'pending_review' },
+  { id: 'different-month', periodKey: '2026-09', effectiveDate: '2026-09-20', kind: 'deduction', typeKey: 'proven_damage', amount: 99, approvalStatus: 'approved', driverName: 'شهر آخر' }];
+  const before = JSON.stringify(d);
+  render(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language="ar" />);
+  fireEvent.click(screen.getByRole('button', { name: 'الخصومات والتعويضات', exact: true }));
+  const dialog = screen.getByRole('dialog'), table = within(dialog).getByRole('table');
+  expect(dialog.textContent).toContain('530.00');
+  expect(table.textContent).toContain('عامل اختبار'); expect(table.textContent).toContain('S-123'); expect(table.textContent).toContain('25.00');
+  expect(table.textContent).toContain('50.00'); expect(table.textContent).toContain('بانتظار المراجعة');
+  expect(table.textContent).toContain('البايكر غير محدد في السجل'); expect(table.textContent).not.toContain('شهر آخر');
+  expect(dialog.textContent).toContain('لا ننسب المبلغ لبايكر بالتخمين');
+  expect(JSON.stringify(d)).toBe(before);
 });
 it.each(['ar', 'en'])('does not present an unresolved saved settlement as a confirmed zero payment (%s)', language => {
   const d = data(); const row = { id: 's', periodKey: '2026-10', status: 'calculated', figures: { netDue: 0, counts: { eligible: 0, needsReview: 2, unknownStatus: 1 } } };
@@ -288,4 +336,27 @@ it('does not mix pending deduction notices into approved totals', () => {
   const d = data(); d.adjustments.items = [{ id: 'v1', periodKey: '2026-10', effectiveDate: '2026-10-19', kind: 'deduction', typeKey: 'operational_or_traffic_violation', amount: 25, approvalStatus: 'pending_review', driverName: biker.name }];
   render(<OverviewOperationalAttention data={d} periodKey="2026-10" today="2026-10-21" washReady workerReady language="en" />);
   expect(within(card('Monthly violations and compensation')).getByText(/Pending \/ disputed/)).toBeTruthy();
+});
+it.each(['ar', 'en'])('shows reconciled source cases by biker with reasons and original links (%s)', language => {
+  const d = data();
+  const cases = [
+    { sourceId: 'case-a', driverExternalId: '1984', amount: 150 },
+    { sourceId: 'case-b', driverExternalId: '1984', amount: 50 },
+    { sourceId: 'case-c', driverExternalId: 'TEST-B', amount: 30 },
+  ].map(row => ({ metricKey: 'violations', date: '2026-10-20', category: 'Damaged Motorcycle Stickers', bookingId: null,
+    sourceUrl: `https://ssp-portal.sweater.sa/violations/${row.sourceId}`, ...row }));
+  d.workers.bikers.push({ id: 'b2', driverExternalId: 'TEST-B', name: 'عامل ثان', nameEnglish: 'Second worker' });
+  d.sweaterMetrics = { snapshot: composeSweaterMetricReadings([{ ...october, metrics: { violations: 230 }, deductionDetails: cases }], '2026-10') };
+  const before = JSON.stringify(d);
+  render(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language={language} />);
+  fireEvent.click(within(card(language === 'ar' ? 'الخصومات والتعويضات' : 'Deductions and compensation')).getByRole('button'));
+  const dialog = screen.getByRole('dialog');
+  const table = within(dialog).getByRole('table', { name: language === 'ar' ? 'الخصومات حسب البايكر' : 'Deductions by biker' });
+  expect(table.textContent).toContain('200.00'); expect(table.textContent).toContain('30.00');
+  expect(table.textContent).toContain('1984'); expect(table.textContent).toContain('TEST-B');
+  expect(within(dialog).getByText(language === 'ar' ? 'عرض كل مخالفة وسببها' : 'View each violation and its reason')).toBeTruthy();
+  const links = dialog.querySelectorAll('a[target="_blank"]');
+  expect(links).toHaveLength(3); expect(links[0].getAttribute('href')).toMatch(/^https:\/\/ssp-portal.sweater.sa\/violations\/case-/);
+  expect(dialog.textContent).toContain(language === 'ar' ? 'هذا ليس خصمًا معتمدًا من الراتب' : 'This is not an approved payroll deduction');
+  expect(JSON.stringify(d)).toBe(before);
 });

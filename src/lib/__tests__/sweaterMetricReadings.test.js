@@ -7,6 +7,19 @@ const early = { id: 'early', periodKey: period, extractedAtIso: '2026-10-23T06:0
 const later = { id: 'later', periodKey: period, extractedAtIso: '2026-10-23T07:00:00Z', sourceUrl: 'https://ssp-portal.sweater.sa/dashboards/compensations', metrics: { violations: 100, damages: 0, compensations: 0, freeWashCompensation: 2, cancelledByBiker: 3, cancelledMaintenance: 1, cancelledByCustomer: 4 } };
 
 describe('monthly source readings, composed independently per metric', () => {
+  it('keeps deduction details with their exact source cut and never borrows older attribution', () => {
+    const detail = { metricKey: 'violations', sourceId: 'case-a', driverExternalId: 'TEST-A', date: '2026-10-20', amount: 100,
+      category: 'Test reason', sourceUrl: 'https://ssp-portal.sweater.sa/violations/case-a', bookingId: null };
+    const detailed = { ...later, deductionDetails: [detail] };
+    const result = composeSweaterMetricReadings([early, detailed], period);
+    expect(result.deductionDetails.violations).toEqual([detail]);
+    expect(overviewSweaterMetrics(result).deductionDetails.violations).toEqual([detail]);
+    expect(result.metricSources.tipsNet.extractedAtIso).toBe(early.extractedAtIso);
+    const newer = { ...later, extractedAtIso: '2026-10-23T08:00:00Z' };
+    expect(composeSweaterMetricReadings([detailed, newer], period).deductionDetails.violations).toBeUndefined();
+    expect(composeSweaterMetricReadings([{ ...detailed, deductionDetails: [{ ...detail, amount: 99 }] }], period).deductionDetails).toEqual({});
+    expect(overviewSweaterMetrics({ ...detailed, periodKey: '2026-09' }).deductionDetails).toEqual({});
+  });
   it('binds biker attribution to the exact selected net-tips reading, never another snapshot or month', () => {
     const detailed = { ...early, tipsByBiker: [{ driverExternalId: '1984', netAmount: 50 }] };
     expect(composeSweaterMetricReadings([detailed, later], period).tipsByBiker).toEqual(detailed.tipsByBiker);

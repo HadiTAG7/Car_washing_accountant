@@ -61,6 +61,23 @@ suite('Sweater metrics readings in an isolated demo store', () => {
     await expect(saveMetricsSnapshot(db, FieldValue, { ...payload, tipsByBiker: [{ driverExternalId: '1989', netAmount: 73.125 }] }, { keyId: 'k', nowMs: NOW })).rejects.toMatchObject({ code: 'already-exists' });
   });
 
+  it('persists itemized monetary deductions immutably without changing another reading or any financial record', async () => {
+    await saveMetricsSnapshot(db, FieldValue, reading(), { keyId: 'k', nowMs: NOW });
+    const old = (await db.collection(COL).doc(reading().importRunId).get()).data();
+    const payload = reading({ importRunId: 'details-only', metrics: { violations: 150 }, deductionDetails: [
+      { metricKey: 'violations', sourceId: 'case-a', driverExternalId: 'TEST-A', date: '2026-10-20', amount: 150,
+        category: 'Test reason', sourceUrl: 'https://ssp-portal.sweater.sa/violations/case-a', bookingId: null },
+    ] });
+    const first = await saveMetricsSnapshot(db, FieldValue, payload, { keyId: 'k', nowMs: NOW });
+    expect(first).toMatchObject({ stored: true, payloadHash: hashBody(payload) });
+    expect((await db.collection(COL).doc(payload.importRunId).get()).data().deductionDetails).toEqual(payload.deductionDetails);
+    expect(await saveMetricsSnapshot(db, FieldValue, payload, { keyId: 'k', nowMs: NOW })).toMatchObject({ stored: false });
+    const changed = structuredClone(payload); changed.deductionDetails[0].driverExternalId = 'TEST-B';
+    await expect(saveMetricsSnapshot(db, FieldValue, changed, { keyId: 'k', nowMs: NOW })).rejects.toMatchObject({ code: 'already-exists' });
+    expect((await db.collection(COL).doc(reading().importRunId).get()).data()).toEqual(old);
+    for (const col of ['journal_entries', 'washes', 'sweater_adjustments', 'payroll_runs']) expect((await db.collection(col).get()).size).toBe(0);
+  });
+
   it('arrives through the operations endpoint only under the agent key and the full-request signature', async () => {
     const key = await createIntegrationKey(db, FieldValue, { label: 'Synthetic demo-only key' });
     const handler = operationsHandler({ getDb: () => db, FieldValue });

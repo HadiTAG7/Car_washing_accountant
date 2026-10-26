@@ -11,6 +11,30 @@ const reading = (extra = {}) => ({ contractVersion: 'sweater-metrics-v1', import
 const response = () => ({ setHeader: vi.fn(), status(n) { this.code = n; return this; }, json(v) { this.body = v; return this; } });
 
 describe('Sweater metrics contract', () => {
+  const deduction = (extra = {}) => ({ metricKey: 'violations', sourceId: 'case-a', driverExternalId: 'TEST-A', date: '2026-10-20', amount: 150,
+    category: 'Test violation', sourceUrl: 'https://ssp-portal.sweater.sa/violations/case-a', bookingId: null, ...extra });
+  it('accepts complete source deduction rows without payroll approval, including several cases for one biker', () => {
+    const deductionDetails = [deduction(), deduction({ sourceId: 'case-b', amount: 50 })];
+    expect(validateMetricsSnapshot(reading({ metrics: { violations: 200 }, deductionDetails })).deductionDetails).toEqual(deductionDetails);
+    expect(() => validateMetricsSnapshot(reading({ metrics: { violations: 0 }, deductionDetails: [] }))).not.toThrow();
+  });
+  it.each([
+    { amount: 149.99 }, { amount: -150 }, { amount: 150.001 }, { amount: '150' }, { date: '2026-09-20' }, { date: '2026-10-32' },
+    { metricKey: 'tipsNet' }, { sourceUrl: 'https://example.com/case-a' }, { sourceUrl: 'https://ssp-portal.sweater.sa/violations/1?token=private' },
+    { driverExternalId: '' }, { category: '' }, { bookingId: '' }, { customerName: 'not permitted' }, { approvalStatus: 'approved' },
+  ])('rejects partial, malformed or extra deduction fields before signing %#', extra => {
+    expect(() => validateMetricsSnapshot(reading({ metrics: { violations: 150 }, deductionDetails: [deduction(extra)] }))).toThrow();
+  });
+  it('rejects duplicate cases, an unreconciled included metric, and details without a monetary deduction', () => {
+    for (const extra of [
+      { metrics: { violations: 300 }, deductionDetails: [deduction(), deduction()] },
+      { metrics: { violations: 150, damages: 20 }, deductionDetails: [deduction()] },
+      { metrics: { completedWashes: 150 }, deductionDetails: [deduction()] },
+    ]) expect(() => validateMetricsSnapshot(reading(extra))).toThrow();
+    const body = { action: 'metrics', payload: reading({ metrics: { violations: 150 }, deductionDetails: [deduction()] }) };
+    const altered = structuredClone(body); altered.payload.deductionDetails[0].driverExternalId = 'TEST-B';
+    expect(operationsSigningHash(altered)).not.toBe(operationsSigningHash(body));
+  });
   it('accepts optional source-precision biker tips only with the same reading and a reconciled net total', () => {
     const tipsByBiker = [{ driverExternalId: '1984', netAmount: 73.125 }];
     expect(validateMetricsSnapshot(reading({ metrics: { tipsNet: 73.13 }, tipsByBiker })).tipsByBiker).toEqual(tipsByBiker);

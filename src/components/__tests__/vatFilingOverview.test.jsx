@@ -28,5 +28,14 @@ it('does not label a missing report as a confirmed unfiled Q3 or manufacture zer
   expect(rows[2].textContent).toContain('حالة التقديم غير موثقة');
   expect(rows[2].textContent).toContain('غير متاح');
   expect(rows[2].textContent).not.toContain('0.00');
+  expect(rows[3].textContent).toContain('حالة التقديم غير موثقة');
+  expect(rows[3].textContent).not.toContain('لم يُقدَّم');
   read.error=null;
+});
+it('keeps current submission undocumented for a role without archive access',()=>{
+  read.allowed=false; read.data=null;
+  render(<VatFilingOverview {...props}/>);
+  expect(screen.queryByText('لم يُقدَّم')).toBeNull();
+  expect(screen.getAllByText('حالة التقديم غير موثقة')).toHaveLength(3);
+  read.allowed=true;
 });

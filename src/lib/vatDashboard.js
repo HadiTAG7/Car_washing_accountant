@@ -56,6 +56,7 @@ export function buildVatDashboardReport({ inputs = [], washes = [], entries = []
   let settlementMonths = 0;
   const approved = settlements.filter(row => APPROVED_SETTLEMENT_STATUSES.has(row.status)
     && /^\d{4}-(0[1-9]|1[0-2])$/.test(row.periodKey || '')
+    && (!today || row.periodKey <= today.slice(0, 7))
     && (!period || periodKeyFor(`${row.periodKey}-01`, filing) === period));
   const duplicates = approved.some(row => approved.filter(other => other.periodKey === row.periodKey).length !== 1);
   const invalid = approved.some(row => ['vat', 'gross', 'net', 'count'].some(key => typeof row.figures?.services?.[key] !== 'number' || !Number.isFinite(row.figures.services[key]) || row.figures.services[key] < 0));

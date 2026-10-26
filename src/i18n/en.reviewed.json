@@ -3600,5 +3600,6 @@
   "ضريبة المخرجات: التشغيلي مقابل الدفتر": "Output VAT: operational vs ledger",
   "الصافي أعلاه من التشغيلي؛ الدفتر للمقارنة فقط، دون جمع المصدرين.": "Net above uses operational figures; the ledger is a comparison, without adding the sources together.",
   "من الغسلات أو التسوية المعتمدة:": "From washes or approved settlement:",
-  "المرحّل في الدفتر (2100):": "Posted in the ledger (2100):"
+  "المرحّل في الدفتر (2100):": "Posted in the ledger (2100):",
+  "التسوية المعتمدة تُعرض بمبالغ لقطتها المحفوظة؛ لا يعاد توزيعها على الأيام. الأشهر المستقبلية مستبعدة.": "Approved settlements use their stored snapshot amounts without daily redistribution. Future months are excluded."
 }

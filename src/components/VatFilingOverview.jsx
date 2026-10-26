@@ -35,7 +35,7 @@ export default function VatFilingOverview({ sources, settings, today, ready, sca
             <td className="p-3 tabular-nums">{available ? money(row.report.output.tax) : 'غير متاح'}</td><td className="p-3 tabular-nums">{money(row.report.input.tax)}</td>
             <td className="p-3 tabular-nums">{available ? <>{money(Math.abs(row.report.netTax))}<small className="block">{row.report.direction === 'refundable' ? 'مسترد تقديري' : row.report.direction === 'payable' ? 'مستحق تقديري' : 'لا مستحق ولا مسترد'}</small></> : 'غير متاح'}</td>
             <td className="p-3">{evidence ? <><strong className="text-emerald-700 dark:text-emerald-300">مقدّم حسب تقرير وكيل الضرائب</strong><small className="block">بانتظار تأكيد هادي · تقرير {formatDate(evidence.reportDate)}</small></>
-              : row.period === current && !read.loading ? <>لم يُقدَّم<small className="block">لا يوجد إثبات محفوظ؛ الفترة جارية</small></> : 'حالة التقديم غير موثقة'}</td>
+              : row.period === current && read.allowed && !read.error && !read.loading ? <>لم يُقدَّم<small className="block">لا يوجد إثبات محفوظ؛ الفترة جارية</small></> : 'حالة التقديم غير موثقة'}</td>
             <td className="p-3 whitespace-nowrap">{evidence ? formatDate(evidence.submittedAt) : '—'}</td><td className="p-3 tabular-nums"><bdi>{evidence?.reference || '—'}</bdi></td>
           </tr>; })}</tbody>
       </table></div>}

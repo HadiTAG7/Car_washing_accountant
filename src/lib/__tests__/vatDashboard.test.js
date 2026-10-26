@@ -39,6 +39,12 @@ it('excludes future records and separates undated gaps from the selected quarter
   const report = buildVatDashboardReport({ ...sources, washes: [wash('future', '2026-10-27'), wash('now', '2026-10-26')], inputs: [{ id: 'x', sourceKind: 'variable', amount: 115, isTaxInvoice: true, supplier: 'شركة', vatAmount: 15, invoiceNumber: '1' }] });
   expect(report.output.tax).toBe(3); expect(report.ineligible).toHaveLength(0); expect(report.unassigned).toHaveLength(1); expect(report.forfeitedTax).toBe(0);
 });
+it('excludes a future approved settlement in the same quarter while retaining the current approved snapshot', () => {
+  const settlements = [{ periodKey: '2026-11', status: 'approved', figures: { services: { vat: 90, net: 600, gross: 690, count: 30 } } },
+    { periodKey: '2026-10', status: 'approved', figures: { services: { vat: 9, net: 60, gross: 69, count: 3 } } }];
+  expect(buildVatDashboardReport({ ...sources, settlements, washes: [wash('now', '2026-10-01')] }).output.tax).toBe(9);
+  expect(buildVatDashboardReport({ ...sources, settlements: [settlements[0]], washes: [wash('now', '2026-10-01')] }).output.tax).toBe(3);
+});
 it('groups overlapping missing fields explicitly but counts suppliers once per invoice', () => {
   const result = groupVatGaps([{ id: 'a', supplier: 'شركة', amount: 115, documentVat: 15, missing: ['رقم الفاتورة', 'تاريخ الفاتورة'] }, { id: 'b', supplier: 'شركة', amount: 230, documentVat: 30, missing: ['رقم الفاتورة'] }]);
   expect(result.reasons.find(row => row.key === 'رقم الفاتورة')).toMatchObject({ count: 2, amount: 345, tax: 45 });

@@ -326,6 +326,7 @@ export default function VatRecoveryPage() {
 
         <Card className="p-4 sm:p-6">
           <SectionHeader title="ضريبة المخرجات: التشغيلي مقابل الدفتر" subtitle="الصافي أعلاه من التشغيلي؛ الدفتر للمقارنة فقط، دون جمع المصدرين." />
+          {report.settlementMonths > 0 && <p className="text-xs text-slate-500 mb-2">التسوية المعتمدة تُعرض بمبالغ لقطتها المحفوظة؛ لا يعاد توزيعها على الأيام. الأشهر المستقبلية مستبعدة.</p>}
           <p>من الغسلات أو التسوية المعتمدة: <strong>{reportReady && !report.outputUnavailable ? formatCurrencyPrecise(outputTax) : 'غير متاح'}</strong></p>
           <p>المرحّل في الدفتر (2100): <strong>{reportReady ? formatCurrencyPrecise(report.ledgerOutput.tax * s) : 'غير متاح'}</strong></p>
           <p>الفرق: <strong>{reportReady && !report.outputUnavailable ? formatCurrencyPrecise(report.outputMismatch * s) : 'غير متاح'}</strong></p>

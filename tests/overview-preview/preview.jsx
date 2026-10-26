@@ -6,7 +6,7 @@ import { bikerBreakEven } from '../../src/lib/breakEven';
 import { useOverviewDashboard } from './fixture';
 import '../../src/index.css';
 
-function BikerTableFixture() {
+export function BikerTableFixture() {
   const data = useOverviewDashboard('2026-10');
   const value = bikerBreakEven({ statement: data.finance.statement, payrollLines: data.payroll.data[0].lines,
     washes: data.operations.rows, bikers: data.workers.bikers, periodKey: '2026-10', today: '2026-10-21' });

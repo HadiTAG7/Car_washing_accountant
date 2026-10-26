@@ -30,7 +30,7 @@ export function overviewWindow(periodKey, today) {
  * The average biker's washes a day: completed washes ÷ completed biker wash
  * days (one per biker per day with washes; today is still running). Unknown
  * (null) while a completed wash has no biker, since its day cannot be counted.
- * The overview's «متوسط غسلات البايكر» and break-even per biker both use it.
+ * Informational wash-day average only; never used for break-even coverage.
  */
 export function averageWashesPerBikerDay(rows = [], today) {
   const bikerDays = new Set(); let washes = 0; let unlinked = false;

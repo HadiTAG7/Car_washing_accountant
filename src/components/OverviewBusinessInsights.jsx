@@ -4,6 +4,7 @@ import { overviewBusinessMetrics, overviewSettlements, overviewSweaterMetrics } 
 import { formatCurrencyPrecise, formatNumber } from '../data/initialData';
 import OverviewBikerDetails from './OverviewBikerDetails';
 import OverviewDeductionsDetails from './OverviewDeductionsDetails';
+import { overviewBikerCapacity } from '../lib/overviewBikerCapacity';
 
 export default function OverviewBusinessInsights({ data, periodKey, washReady, language, onNavigate, breakEven = {} }) {
   const text = (ar, en) => language === 'en' ? en : ar;
@@ -13,7 +14,8 @@ export default function OverviewBusinessInsights({ data, periodKey, washReady, l
   const currency = value => value == null ? unavailable : formatCurrencyPrecise(value);
   const ops = washReady ? data.operations : null;
   const st = data.finance.statement;
-  const m = overviewBusinessMetrics(ops, st);
+  const capacity = overviewBikerCapacity(ops, data.workers?.error || data.workers?.loading ? [] : data.workers?.bikers || [], settings, breakEven.perBiker);
+  const m = overviewBusinessMetrics(ops, st, settings, capacity?.averageActualDaily);
   const aReady = data.adjustments && !data.adjustments.loading && !data.adjustments.error;
   const sReady = data.settlements && !data.settlements.loading && !data.settlements.error;
   const settlement = ops ? overviewSettlements({ adjustments: aReady ? data.adjustments.items : [],
@@ -62,6 +64,8 @@ export default function OverviewBusinessInsights({ data, periodKey, washReady, l
       <Insight title={text('نقطة التعادل لكل بايكر', 'Break-even per biker')} tone={bikerReached}
         value={perBiker?.averageRequiredDaily == null ? unavailable : `${num(perBiker.averageRequiredDaily)} ${text('غسلة / يوم', 'washes / day')}`}>
         {status(bikerReached)}
+        <p>{text('الفعلي لكل يوم عمل متاح', 'Actual per available workday')}: <bdi>{num(perBiker?.averageActualDaily)}</bdi> · {text('التغطية', 'Coverage')}: <bdi>{perBiker?.averageCoverage == null ? unavailable : `${num(perBiker.averageCoverage * 100)}%`}</bdi></p>
+        <small>{text('متوسط الغسلات في أيام الغسيل', 'Average washes on wash days')}: <bdi>{num(perBiker?.averagePerWashDay)}</bdi> · {text('للمعلومة فقط', 'For information only')}</small>
         {link(text('تفاصيل كل بايكر', 'Per-biker details'), 'bikers')}
       </Insight>
       <Insight title={text('تكلفة الغسلة', 'Cost per wash')} value={currency(m?.costPerWash)}>
@@ -107,7 +111,7 @@ export default function OverviewBusinessInsights({ data, periodKey, washReady, l
       bikers={data.workers?.error || data.workers?.loading ? [] : data.workers?.bikers || []}
       periodKey={periodKey} language={language} noSweater={noSweater} onNavigate={onNavigate} onClose={() => setDetail(null)} />}
     {detail && detail !== 'deductions' && <OverviewBikerDetails key={`${periodKey}:${detail}`} kind={detail} ops={ops} bikers={data.workers?.error || data.workers?.loading ? [] : data.workers?.bikers || []}
-      snapshot={sweaterRead?.snapshot} periodKey={periodKey} language={language} onClose={() => setDetail(null)} />}
+      snapshot={sweaterRead?.snapshot} perBiker={perBiker} periodKey={periodKey} language={language} onClose={() => setDetail(null)} />}
   </div>;
 }
 

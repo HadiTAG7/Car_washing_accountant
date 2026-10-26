@@ -1,6 +1,7 @@
 import { OVERVIEW_SETTINGS } from '../config/overviewSettings.js';
 import { monthRange } from './accounting/monthlyStatement.js';
 import { averageWashesPerBikerDay } from './overviewDashboard.js';
+import { availableWorkDays } from './availableWorkDays.js';
 
 // Break-even, read-only and display-only. Costs are the statement's own
 // (monthlyStatement.totalCosts: direct costs + operating expenses), so these
@@ -73,7 +74,10 @@ export function bikerBreakEven({ statement, payrollLines = [], washes = [], bike
     const days = Math.min(monthDays, Math.max(0, finite(line.daysEntitled) ?? 0));
     const direct = cents(finite(line.basicDue) + (finite(line.bonus) ?? 0) - (finite(line.deduction) ?? 0));
     const prior = lines.get(line.bikerId);
-    lines.set(line.bikerId, { bikerId: line.bikerId, name: line.name, days: (prior?.days ?? 0) + days, direct: (prior?.direct ?? 0) + direct });
+    const biker = names.get(line.bikerId);
+    lines.set(line.bikerId, { bikerId: line.bikerId, name: line.name, days: (prior?.days ?? 0) + days, direct: (prior?.direct ?? 0) + direct,
+      startDate: line.eligibleStart || line.startDate || biker?.startDate || null,
+      endDate: line.eligibleEnd || line.endDate || biker?.endDate || null });
   }
 
   // Completed days only (today is still running), as the overview averages.
@@ -105,21 +109,29 @@ export function bikerBreakEven({ statement, payrollLines = [], washes = [], bike
   const recorded = active.filter(row => row.direct > 0);
   const directPerDay = recorded.length ? recorded.reduce((sum, row) => sum + row.direct, 0) / recorded.reduce((sum, row) => sum + row.days, 0) : null;
 
-  const workDaysFull = monthDays - (finite(settings.monthlyDaysOff) ?? 0);
   const rows = active.map((row, i) => {
     const approximate = row.direct <= 0 && directPerDay !== null;
     const approxDirect = approximate ? Math.round(directPerDay * row.days) : 0;
     const cost = row.direct + approxDirect + shares[i];
     const requiredMonthly = cost / 100 / settings.washNetPrice;
-    const workDays = workDaysFull * row.days / monthDays;
+    const availability = { periodKey, startDate: row.startDate, endDate: row.endDate, monthlyDaysOff: settings.monthlyDaysOff };
+    const full = availableWorkDays(availability);
+    // A partial payroll line without its dated eligibility cannot locate the
+    // elapsed days. Do not place those days at the start/end by guesswork.
+    const consistent = full?.calendarDays === row.days;
+    const elapsed = today && consistent ? availableWorkDays({ ...availability, beforeDate: today }) : null;
+    const workDays = consistent ? full.workDays : null;
     const requiredDaily = workDays > 0 ? requiredMonthly / workDays : null;
     const done = byBiker.get(row.bikerId);
-    const actualDaily = done?.days.size ? done.washes / done.days.size : null;
-    const coverage = requiredDaily ? (actualDaily ?? 0) / requiredDaily : null;
+    const outsideAvailability = full && done ? [...done.days].some(day => day < full.from || day > full.to) : false;
+    const actualDaily = elapsed?.workDays > 0 && !outsideAvailability ? (done?.washes ?? 0) / elapsed.workDays : null;
+    const coverage = requiredDaily && actualDaily !== null ? actualDaily / requiredDaily : null;
     const biker = names.get(row.bikerId);
     return { bikerId: row.bikerId, biker: biker || null, name: biker?.name || row.name || row.bikerId,
       activeDays: row.days, monthDays, direct: row.direct / 100, approximate, approxDirect: approxDirect / 100, share: shares[i] / 100,
       cost: cost / 100, requiredMonthly, workDays, requiredDaily, washes: done?.washes ?? 0, washDays: done?.days.size ?? 0,
+      elapsedWorkDays: elapsed?.workDays ?? null, elapsedCalendarDays: elapsed?.calendarDays ?? null,
+      averagePerWashDay: done?.days.size ? done.washes / done.days.size : null, outsideAvailability,
       actualDaily, coverage, tone: coverageTone(coverage), overCapacity: requiredDaily !== null && requiredDaily > settings.dailyAppointmentsPerBiker };
   });
   // Bikers with washes but no eligible payroll days carry no cost here.
@@ -134,16 +146,20 @@ export function bikerBreakEven({ statement, payrollLines = [], washes = [], bike
     dailyWithout: (cents(total) - idleSalaries) / 100 / settings.washNetPrice / monthDays };
 
   const allocated = rows.reduce((sum, row) => sum + cents(row.direct) + cents(row.share), 0);
-  const withRequired = rows.filter(row => row.requiredDaily !== null);
-  const averageRequiredDaily = withRequired.length ? withRequired.reduce((sum, row) => sum + row.requiredDaily, 0) / withRequired.length : null;
-  // The overview's «متوسط غسلات البايكر»: one definition for both.
-  const averageActualDaily = averageWashesPerBikerDay(washes.filter(wash => {
+  const fullWorkDays = rows.reduce((sum, row) => sum + (row.workDays ?? 0), 0);
+  const elapsedWorkDays = rows.reduce((sum, row) => sum + (row.elapsedWorkDays ?? 0), 0);
+  const averageRequiredDaily = rows.length && rows.every(row => row.requiredDaily !== null) && fullWorkDays > 0
+    ? rows.reduce((sum, row) => sum + row.requiredMonthly, 0) / fullWorkDays : null;
+  const averageActualDaily = rows.length && !unlinkedWashes && !outside.length && rows.every(row => row.actualDaily !== null) && elapsedWorkDays > 0
+    ? rows.reduce((sum, row) => sum + row.washes, 0) / elapsedWorkDays : null;
+  // Descriptive wash-day average is retained separately; never a coverage input.
+  const averagePerWashDay = averageWashesPerBikerDay(washes.filter(wash => {
     const day = wash.washDate ?? wash.wash_date;
     return day && day >= from && day <= to;
   }), today).average;
   return { periodKey, basis: settings.bikerBreakEvenBasis, total, monthDays, directTotal: directTotal / 100, shared: shared / 100, allocatedTotal: allocated / 100,
     difference: (cents(total) - allocated) / 100, approximateTotal: rows.reduce((sum, row) => sum + row.approxDirect, 0),
-    averageRequiredDaily, averageActualDaily,
+    averageRequiredDaily, averageActualDaily, averagePerWashDay, fullWorkDays, elapsedWorkDays,
     averageCoverage: averageRequiredDaily && averageActualDaily !== null ? averageActualDaily / averageRequiredDaily : null,
     rows, idle: idleSummary, outside, unlinkedWashes, estimated: Boolean(statement?.salaryAccrual?.estimated) };
 }

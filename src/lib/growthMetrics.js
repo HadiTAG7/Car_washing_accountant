@@ -1,87 +1,79 @@
-// Read-only analytical projection. No attendance, payroll or source mutations.
-const DAY = 86_400_000;
+import { availableWorkDays } from './availableWorkDays.js';
+import { monthsBetween, nextMonthKey } from './accounting/incomeStatementScope.js';
+const DAY = 86400000;
 export function growthDay(value) {
-  const day = String(value || '');
-  const ms = Date.parse(`${day}T00:00:00Z`);
-  return /^\d{4}-\d{2}-\d{2}$/.test(day) && Number.isFinite(ms)
-    && new Date(ms).toISOString().slice(0, 10) === day ? day : null;
+  const day = String(value || ''), ms = Date.parse(`${day}T00:00:00Z`);
+  return /^\d{4}-\d{2}-\d{2}$/.test(day) && Number.isFinite(ms) && new Date(ms).toISOString().slice(0, 10) === day ? day : null;
 }
 export const shiftGrowthDay = (day, amount) => new Date(Date.parse(`${day}T00:00:00Z`) + amount * DAY).toISOString().slice(0, 10);
-
 export function growthDifference(current, previous) {
-  if (!Number.isFinite(current) || !Number.isFinite(previous)) return { delta: null, percent: null };
-  return { delta: current - previous, percent: previous > 0 ? 100 * (current - previous) / previous : null };
+  return !Number.isFinite(current) || !Number.isFinite(previous) ? { delta: null, percent: null }
+    : { delta: current - previous, percent: previous > 0 ? 100 * (current - previous) / previous : null };
 }
 
-// Never jump over an unknown day to select seven conveniently positive days.
-// A documented non-workday may be skipped; a documented workday with zero
-// washes must stay in the denominator. Working status alone is not evidence.
-export function verifiedWorkdayBaseline(days, measurementDay, requestedDays = 7) {
-  const prior = [...days].filter(d => d.date < measurementDay).sort((a, b) => b.date.localeCompare(a.date));
-  const sample = [];
-  let expected = shiftGrowthDay(measurementDay, -1);
-  let gap = false;
-  for (const day of prior) {
-    if (sample.length === requestedDays) break;
-    if (day.date !== expected || day.coverage !== 'complete' || day.workEligible == null) { gap = true; break; }
-    expected = shiftGrowthDay(expected, -1);
-    if (day.workEligible === false) continue;
-    if (!Number.isFinite(day.count) || day.count < 0) { gap = true; break; }
-    sample.push(day);
+/** Same fractional days off, payroll dated eligibility and completed-day
+ * cutoff as biker break-even. Subtract two readings of the shared function
+ * to obtain an arbitrary window, including windows crossing month boundaries. */
+export function growthAvailableDays(worker, from, to) {
+  let total = 0;
+  for (const periodKey of monthsBetween(from.slice(0, 7), to.slice(0, 7))) {
+    const p = worker.availability?.find(p => p.periodKey === periodKey);
+    if (!p) {
+      const segmentFrom = from > `${periodKey}-01` ? from : `${periodKey}-01`;
+      const segmentTo = to.slice(0,7) === periodKey ? to : shiftGrowthDay(`${nextMonthKey(periodKey)}-01`,-1);
+      if ((worker.startDate && worker.startDate > segmentTo) || (worker.endDate && worker.endDate < segmentFrom)) continue;
+      return null;
+    }
+    const args = { periodKey, startDate: p.startDate || worker.startDate, endDate: p.endDate || worker.endDate };
+    const full = availableWorkDays(args);
+    if (!full || full.calendarDays !== p.daysEntitled) return null;
+    const before = availableWorkDays({ ...args, beforeDate: from });
+    const through = availableWorkDays({ ...args, beforeDate: shiftGrowthDay(to, 1) });
+    if (!before || !through) return null;
+    total += Math.max(0, through.workDays - before.workDays);
   }
-  if (gap || !sample.length) return { available: false, mean: null, total: null, dates: [], sampleSize: null, provisional: false };
-  const total = sample.reduce((n, d) => n + d.count, 0);
-  return { available: true, mean: total / sample.length, total, dates: sample.map(d => d.date).sort(), sampleSize: sample.length,
-    provisional: sample.length < requestedDays };
+  return total;
 }
-
-function recordedAverage(days) {
-  const recorded = days.map(d => ({...d,count:recordedValue(d)})).filter(d => Number.isFinite(d.count) && d.count > 0);
-  const total = recorded.reduce((n, d) => n + d.count, 0);
-  return { total, dayCount: recorded.length, dates: recorded.map(d => d.date), mean: recorded.length ? total / recorded.length : null };
-}
-const recordedValue = day => Object.hasOwn(day, 'recordedCount') ? day.recordedCount : day.count;
-
-// Input is already authoritatively scoped by the read adapter: explicit roster
-// state, stable identity, unique completed services, coverage and exact period.
-// This module deliberately cannot turn a roster snapshot into a live status.
+const value = d => d && (Object.hasOwn(d, 'recordedCount') ? d.recordedCount : d.count);
+const rate = (count, days) => Number.isFinite(count) && days > 0 ? count / days : null;
 export function growthMetrics({ workers = [], from, to, measurementDay, workerId = 'all', region = 'all' }) {
   if (![from, to, measurementDay].every(growthDay) || from > to || measurementDay < from || measurementDay > to
-    || (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY > 92) throw new Error('Invalid growth period');
-  const identities = new Set();
-  const active = workers.filter(w => {
-    if (w.status !== 'Active' || !w.id || identities.has(w.id)) return false;
-    identities.add(w.id); return true;
-  });
-  const regions = [...new Set(active.map(w => w.region).filter(Boolean))].sort();
-  const selection = active.filter(w => (workerId === 'all' || w.id === workerId) && (region === 'all' || w.region === region));
+    || Date.parse(to) - Date.parse(from) > 92 * DAY) throw Error('Invalid growth period');
+  const unique = [...new Map(workers.map(w => [w.id, w])).values()];
+  const regions = [...new Set(unique.map(w => w.region))].sort();
+  const selected = unique.filter(w => (workerId === 'all' || w.id === workerId) && (region === 'all' || w.region === region));
   const dates = [];
-  for (let date = from; date <= to; date = shiftGrowthDay(date, 1)) dates.push(date);
-  const rows = selection.map(worker => {
-    const byDate = new Map(worker.days.map(d => [d.date, d]));
-    const days = dates.map(date => byDate.get(date) || { date, count: null, coverage: 'unavailable', workEligible: null });
-    const currentDay = byDate.get(measurementDay);
-    const previousDay = byDate.get(shiftGrowthDay(measurementDay, -1));
-    const dailyValue = d => d?.coverage === 'complete' && Number.isFinite(d.count) ? d.count : null;
-    const current = dailyValue(currentDay), previous = dailyValue(previousDay);
-    const baseline = verifiedWorkdayBaseline(worker.days, measurementDay);
-    return { id: worker.id, code: worker.code, name: worker.name, region: worker.region, days, current, previous,
-      daily: growthDifference(current, previous), baseline: { ...baseline, ...growthDifference(current, baseline.mean) },
-      generalAverage: recordedAverage(days) };
-  });
+  for (let d = from; d <= to; d = shiftGrowthDay(d, 1)) dates.push(d);
+  const previousDay = shiftGrowthDay(measurementDay, -1), sampleFrom = shiftGrowthDay(measurementDay, -7);
+  const sumWindow = (w, a, b) => {
+    const days = w.days.filter(d => d.date >= a && d.date <= b);
+    const expected = Math.round((Date.parse(b) - Date.parse(a)) / DAY) + 1;
+    return days.length === expected && days.every(d => Number.isFinite(value(d))) ? days.reduce((n, d) => n + value(d), 0) : null;
+  };
+  const windowRate = (w, a, b, count, days) => w.days.filter(d => d.date >= a && d.date <= b && value(d) > 0)
+    .every(d => growthAvailableDays(w, d.date, d.date) > 0) ? rate(count, days) : null;
+  const rows = selected.map(w => {
+    const current = sumWindow(w, measurementDay, measurementDay), previous = sumWindow(w, previousDay, previousDay);
+    const workDays = growthAvailableDays(w, from, to), currentDays = growthAvailableDays(w, measurementDay, measurementDay), previousDays = growthAvailableDays(w, previousDay, previousDay);
+    const total = sumWindow(w, from, to), baselineTotal = sumWindow(w, sampleFrom, previousDay), baselineDays = growthAvailableDays(w, sampleFrom, previousDay);
+    const actualDaily = windowRate(w,from,to,total,workDays), currentRate = windowRate(w,measurementDay,measurementDay,current,currentDays),
+      previousRate = windowRate(w,previousDay,previousDay,previous,previousDays), baselineRate = windowRate(w,sampleFrom,previousDay,baselineTotal,baselineDays);
+    return { ...w, days: w.days.filter(d => d.date >= from && d.date <= to), total, workDays, actualDaily, current, previous,
+      currentDays, previousDays, currentRate, previousRate, baselineTotal, baselineDays, baselineRate,
+      daily: growthDifference(currentRate, previousRate), baseline: growthDifference(currentRate, baselineRate) };
+  }).sort((a, b) => (b.actualDaily ?? -1) - (a.actualDaily ?? -1) || (b.total ?? 0) - (a.total ?? 0) || String(a.name).localeCompare(String(b.name), 'ar'));
+  const sum = key => rows.length && rows.every(r => Number.isFinite(r[key])) ? rows.reduce((n, r) => n + r[key], 0) : null;
   const timeline = dates.map(date => {
-    const entries = rows.map(row => row.days.find(d => d.date === date));
-    const known = entries.filter(d => Number.isFinite(recordedValue(d)));
-    const complete = entries.length > 0 && entries.every(d => d.coverage === 'complete' && Number.isFinite(d.count) && Number.isFinite(recordedValue(d)));
-    return { date, count: known.length ? known.reduce((n, d) => n + recordedValue(d), 0) : null, coverage: complete ? 'complete' : 'partial' };
+    const count = rows.length && rows.every(w => w.days.some(d => d.date === date && Number.isFinite(value(d))))
+      ? rows.reduce((n, w) => n + value(w.days.find(d => d.date === date)), 0) : null;
+    const workDays = rows.map(w => growthAvailableDays(w, date, date));
+    const denominator = workDays.every((n,i) => Number.isFinite(n) && (!(value(rows[i].days.find(d=>d.date===date)) > 0) || n > 0)) ? workDays.reduce((n, d) => n + d, 0) : null;
+    return { date, count, workDays: denominator, rate: rate(count, denominator) };
   });
-  const completeSum = key => rows.length && rows.every(row => Number.isFinite(row[key])) ? rows.reduce((n, row) => n + row[key], 0) : null;
-  const current = completeSum('current'), previous = completeSum('previous');
-  const availableBaselines = rows.filter(row => row.baseline.available).length;
-  // There is intentionally no synthetic team "personal" baseline assembled
-  // from the two workers whose evidence happens to be complete.
-  const baseline = rows.length === 1 ? rows[0].baseline : { available: false, mean: null, sampleSize: null,
-    dates: [], availableWorkers: availableBaselines, totalWorkers: rows.length, delta: null, percent: null };
-  return { from, to, measurementDay, activeCount: active.length, regions, selectedCount: rows.length, rows, timeline,
-    current, previous, daily: growthDifference(current, previous), baseline, generalAverage: recordedAverage(timeline) };
+  const pooledRate = (numerator,denominator,personal) => rows.some(r=>r[numerator]>0&&r[personal]==null) ? null : rate(sum(numerator),sum(denominator));
+  const currentRate = pooledRate('current','currentDays','currentRate'), previousRate = pooledRate('previous','previousDays','previousRate'), baselineRate = pooledRate('baselineTotal','baselineDays','baselineRate');
+  return { rows, regions, activeCount: unique.length, selectedCount: rows.length, timeline, total: sum('total'), workDays: sum('workDays'),
+    actualDaily: pooledRate('total','workDays','actualDaily'), current: sum('current'), previous: sum('previous'), currentRate, previousRate,
+    baselineRate, daily: growthDifference(currentRate, previousRate), baseline: growthDifference(currentRate, baselineRate), sampleFrom,
+    unavailableAvailability: rows.filter(r => r.workDays == null || (r.total > 0 && r.actualDaily == null)).length };
 }

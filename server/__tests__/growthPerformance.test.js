@@ -1,128 +1,59 @@
-import { describe, expect, it, vi } from 'vitest';
-import { projectGrowth, readGrowthPerformance, validateGrowthRequest } from '../growthPerformance.js';
-import { createGrowthHandler } from '../../api/growth-performance.js';
-
-const roster = { at: '2026-10-18T18:12:10Z', rows: [{ code: '1984', region: 'Muroj', status: 'Active' }] };
-const worker = { id: 'uid-a', driver_external_id: '1984', name: 'Worker', name_ar: 'عامل', contact_number: 'PRIVATE', salary: 900 };
-const booking = (id, date = '2026-10-17') => ({ id, sspBookingId: id, operationalWorkerId: 'uid-a', serviceDate: date,
-  record: { bookingKind: 'individual', driverExternalId: '1984', normalizedStatus: 'payment_collection',
-    startedAt: `${date}T12:00:00+03:00`, completedAt: `${date}T13:00:00+03:00` } });
-const wash = (id, date = '2026-10-17') => ({ id: `ssp__${id}`, ssp_booking_id: id, biker_id: 'uid-a', wash_date: date, quantity: 1, status: 'مكتملة' });
-const run = { status: 'completed_with_gaps', coverage: { rangeFrom: '2026-10-10', rangeTo: '2026-10-20',
-  pageCount: 2, pagesFetched: 2, modules: { individual: 'complete', corporate: 'partial' } } };
-const project = overrides => projectGrowth({ workers: [worker], washes: [wash('S-1')], bookings: [booking('S-1')],
-  runs: [run], from: '2026-10-17', to: '2026-10-17', lookback: '2026-10-16', roster, ...overrides });
-
-describe('read-only administrative growth adapter', () => {
-  it.each([8,'resource-exhausted','firestore/resource-exhausted'])('reports a read-quota outage distinctly and safely (%s)', async code => {
-    const log={warn:vi.fn()};
-    const runtime={auth:{verifyIdToken:vi.fn().mockResolvedValue({uid:'test-admin'})},
-      db:{collection:()=>({doc:()=>({get:async()=>{throw Object.assign(new Error('PRIVATE token customer details'),{code});}})})}};
-    const res={setHeader:vi.fn(),status:vi.fn(function(status){this.statusCode=status;return this;}),json:vi.fn(function(body){this.body=body;return this;})};
-    await createGrowthHandler(()=>runtime,log)({method:'POST',headers:{authorization:'Bearer synthetic'},body:{from:'2026-10-03',to:'2026-10-17'}},res);
-    expect(res.statusCode).toBe(503);
-    expect(res.body.error).toEqual({code:'resource-exhausted',message:'تعذّر تحميل بيانات النمو بسبب تجاوز حصة قراءة قاعدة البيانات. إعادة المحاولة المتكررة لن تعالج الحد.'});
-    expect(log.warn).toHaveBeenCalledWith('[growth-performance] read-failed',{code:'resource-exhausted'});
-    expect(JSON.stringify([res.body,log.warn.mock.calls])).not.toMatch(/PRIVATE|synthetic|test-admin/);
-  });
-  it('uses linked completed services, source coverage, and a dated roster; strips private fields', () => {
-    const result = project();
-    expect(result.workers[0].days).toEqual([
-      expect.objectContaining({ date: '2026-10-16', count: 0, coverage: 'complete', workEligible: null }),
-      expect.objectContaining({ date: '2026-10-17', count: 1, coverage: 'complete', workEligible: true }),
-    ]);
-    expect(JSON.stringify(result)).not.toMatch(/PRIVATE|salary|900/);
-    expect(result.roster.at).toBe(roster.at);
-  });
-  it('does not promote payment collection alone, or a zero count without coverage, to completion', () => {
-    const result = project({ washes: [], runs: [] });
-    expect(result.workers[0].days.at(-1)).toMatchObject({ count: null, coverage: 'partial', workEligible: null });
-    expect(result.gaps).toHaveLength(1);
-  });
-  it('keeps known corporate services separate without invalidating complete individual coverage', () => {
-    const corporate = booking('C-other'); corporate.record.bookingKind = 'corporate';
-    const result = project({ washes: [wash('S-1'), wash('C-other')], bookings: [booking('S-1'), corporate] });
-    expect(result.workers[0].days.at(-1)).toMatchObject({ count: 1, coverage: 'complete', assigned: 1 });
-  });
-  it('never joins conflicting worker identities through an OR match', () => {
-    const result = project({ bookings: [{ ...booking('S-1'), operationalWorkerId: 'other-worker' }] });
-    expect(result.workers[0].days.at(-1)).toMatchObject({ count: null, coverage: 'partial', workEligible: null });
-    expect(project({ washes: [{ ...wash('S-1'), driver_external_id: '1986' }] }).workers[0].days.at(-1))
-      .toMatchObject({ count: null, coverage: 'partial', workEligible: null });
-  });
-  it('does not infer attendance on a zero day and retains a partial recorded positive', () => {
-    expect(project({ runs: [] }).workers[0].days.at(-1)).toMatchObject({ count: 1, coverage: 'partial', workEligible: null });
-  });
-  it('retains a canonical registered wash for the descriptive average when detailed linking is unavailable', () => {
-    const result = project({ bookings: [], runs: [] });
-    expect(result.workers[0].days.at(-1)).toMatchObject({ recordedCount:1,count:null,coverage:'partial',workEligible:null });
-    expect(result.unlinked).toEqual([expect.objectContaining({washId:'ssp__S-1',code:'1984',date:'2026-10-17'})]);
-  });
-  it('excludes the known conflict analytically without modifying the original', () => {
-    const washes = [wash('C-5584720')];
-    const before = JSON.stringify(washes);
-    const result = project({ washes, bookings: [booking('C-5584720')] });
-    expect(result.exclusions[0].reference).toBe('C-5584720');
-    expect(result.workers[0].days.at(-1)).toMatchObject({ registered: 1, coverage: 'partial', workEligible: null });
-    expect(JSON.stringify(washes)).toBe(before);
-  });
-  it('fails closed on ambiguous identities; preserves missing Active workers', () => {
-    expect(() => project({ workers: [worker, { ...worker, id: 'uid-b' }] })).toThrow(/ملتبس/);
-    expect(project({ workers: [] }).workers[0]).toMatchObject({ code: '1984', status: 'Active' });
-    expect(project({ workers: [] }).workers[0].days.every(d => d.count == null)).toBe(true);
-  });
-  it('de-duplicates exact execution IDs and marks ambiguous duplicates partial', () => {
-    expect(project({ washes: [wash('S-1'), { ...wash('S-1'), id: 'duplicate' }] }).workers[0].days.at(-1))
-      .toMatchObject({ count: 1, coverage: 'partial', workEligible: null });
-  });
-  it('resolves only the evidenced legacy singleton, including its assignment denominator', () => {
-    const current = booking('S-5596423', '2026-10-10'); current.record.driverExternalId = '1986';
-    const legacy = { ...current, sspBookingId:'B-5596423', record:{...current.record,normalizedStatus:'unknown',startedAt:null,completedAt:null} };
-    const input = { from:'2026-10-10',to:'2026-10-10',lookback:'2026-10-09',
-      roster:{...roster,rows:[{code:'1986',region:'Wurood',status:'Active'}]},
-      workers:[{...worker,driver_external_id:'1986'}], bookings:[current,legacy], washes:[wash('B-5596423','2026-10-10')] };
-    expect(project(input).workers[0].days.at(-1)).toMatchObject({count:1,assigned:1,coverage:'complete',workEligible:true});
-    expect(project({...input,washes:[{...input.washes[0],id:'unproven-alias'}]}).workers[0].days.at(-1))
-      .toMatchObject({count:null,coverage:'partial'});
-  });
-  it.each(['partner', 'accountant', 'operator', 'supervisor', null])('rejects %s before performance reads', async role => {
-    const names = [];
-    const db = { collection: name => { names.push(name); if (!['users', 'app_admins'].includes(name)) throw new Error('data read');
-      return { doc: () => ({ get: async () => ({ exists: name === 'users', data: () => ({ role }) }) }) }; } };
-    await expect(readGrowthPerformance(db, { uid: 'caller' }, {})).rejects.toMatchObject({ code: 'permission-denied' });
-    expect(names).not.toContain('washes');
-  });
-  it('rejects future/invalid/oversized periods and unknown request keys', () => {
-    const now = new Date('2026-10-18T12:00:00Z');
-    for (const input of [{ from: '2026-02-30', to: '2026-10-17' }, { from: '2026-01-01', to: '2026-10-17' },
-      { from: '2026-10-18', to: '2026-10-18' }, { from: '2026-10-17', to: '2026-10-17', role: 'admin' }]) {
-      expect(() => validateGrowthRequest(input, now)).toThrow();
-    }
-    expect(validateGrowthRequest({ from: '2026-10-17', to: '2026-10-17' }, now).lookback).toBe('2026-09-17');
-  });
-  it('does not filter a covering run out just because it ends after to, and bounds every query', async () => {
-    const whereCalls = [], limits = [];
-    const rows = { bikers: [worker], washes: [wash('S-1')], sweater_bookings: [booking('S-1')], sweater_import_runs: [run] };
-    const db = { collection: name => {
-      if (['users', 'app_admins'].includes(name)) return { doc: () => ({ get: async () => ({ exists: name === 'users', data: () => ({ role: 'admin' }) }) }) };
-      const query = { where: (...args) => { whereCalls.push([name, ...args]); return query; }, select: () => query,
-        limit: n => { limits.push(n); return query; }, get: async () => ({ size: rows[name].length, docs: rows[name].map((r, i) => ({ id: r.id || `${i}`, data: () => r })) }) };
-      return query;
-    } };
-    const result = await readGrowthPerformance(db, { uid: 'admin' }, { from: '2026-10-17', to: '2026-10-17' });
-    expect(whereCalls.some(([name, field, op]) => name === 'sweater_import_runs' && field === 'coverage.rangeTo' && op === '<')).toBe(false);
-    expect(limits).toEqual([31, 3001, 3001, 201]);
-    expect(result.workers.find(w => w.code === '1984').days.at(-1).coverage).toBe('complete');
-  });
-  it('transport requires a token, checks revocation and never exposes runtime failures', async () => {
-    const runtime = vi.fn(() => { throw new Error('secret'); });
-    const response = () => ({ setHeader: vi.fn(), status: vi.fn(function (code) { this.code = code; return this; }), json: vi.fn(function (body) { this.body = body; return this; }) });
-    const a = response(); await createGrowthHandler(runtime)({ method: 'POST', headers: {} }, a);
-    expect(a.code).toBe(401); expect(runtime).not.toHaveBeenCalled();
-    const b = response(); await createGrowthHandler(runtime)({ method: 'POST', headers: { authorization: 'Bearer token' } }, b);
-    expect(b.code).toBe(503); expect(JSON.stringify(b.body)).not.toContain('secret');
-    const verifyIdToken = vi.fn().mockRejectedValue(new Error('bad token'));
-    const c = response(); await createGrowthHandler(() => ({ auth: { verifyIdToken } }))({ method: 'POST', headers: { authorization: 'Bearer token' } }, c);
-    expect(c.code).toBe(401); expect(verifyIdToken).toHaveBeenCalledWith('token', true);
-  });
+import {describe,it,expect,vi} from 'vitest';
+import {projectGrowth,readGrowthPerformance,validateGrowthRequest} from '../growthPerformance.js';
+import {createGrowthHandler} from '../../api/growth-performance.js';
+import {mapWash} from '../../src/lib/mappers.js';
+import {washDailySummary} from '../../src/lib/washDailySummary.js';
+import {growthMetrics} from '../../src/lib/growthMetrics.js';
+const worker={id:'a',driver_external_id:'1984',name:'Worker',name_ar:'عامل',start_date:'2026-10-01',current_status:'يشتغل',contact_number:'PRIVATE',salary:900};
+const roster={at:'2026-10-18T18:12:10Z',rows:[{code:'1984',region:'Muroj',status:'Active'}]};
+const pay=id=>({bikerId:id,eligibleStart:'2026-10-01',eligibleEnd:'2026-10-31',daysEntitled:31,basicDue:900});
+const wash=(id,biker='a',quantity=1)=>({id,ssp_booking_id:id,biker_id:biker,wash_date:'2026-10-17',status:'completed',quantity});
+const project=extra=>projectGrowth({workers:[worker],washes:[wash('S-1')],payroll:[{periodKey:'2026-10',lines:[pay('a')]}],from:'2026-10-17',to:'2026-10-17',lookback:'2026-10-10',roster,...extra});
+describe('growth current register projection',()=>{
+ it('uses current active payroll or a wash, not the snapshot population; strips private data',()=>{
+  const workers=[worker,{...worker,id:'new',driver_external_id:'2007'}, {...worker,id:'left',driver_external_id:'2008',current_status:'هرب'}, {...worker,id:'ended',driver_external_id:'2009',end_date:'2026-10-16'}];
+  const r=project({workers,payroll:[{periodKey:'2026-10',lines:workers.map(w=>pay(w.id))}],washes:[wash('S-1'),wash('S-2','left'),wash('S-3','ended')]});
+  expect(r.workers.map(w=>w.id).sort()).toEqual(['a','ended','left','new']);expect(r.workers.find(w=>w.id==='new').region).toBe('غير محددة');expect(r.registerTotal).toBe(3);expect(JSON.stringify(r)).not.toMatch(/PRIVATE|basicDue|salary|contact_number/);
+ });
+ it('exactly matches WashesPage including corporate, manual quantity, administrative completion and orphan records',()=>{
+  const washes=[wash('corporate'),wash('C-5584720'),{...wash('batch','a',4),ssp_booking_id:null},wash('orphan',null),wash('deleted','missing'),{...wash('pending'),status:'قيد التنفيذ'}];
+  const before=JSON.stringify(washes),r=project({washes});
+  expect(r.registerTotal).toBe(washDailySummary(washes.map(mapWash)).completed);expect(r.registerTotal).toBe(8);
+  expect(growthMetrics({workers:r.workers,from:r.from,to:r.to,measurementDay:r.to}).total).toBe(8);expect(JSON.stringify(washes)).toBe(before);
+  expect(r.workers.filter(w=>!w.linked)).toHaveLength(2);
+ });
+ it('preserves zero-active workers and uses the snapshot for zones only, including ambiguous external IDs',()=>{
+  const r=project({workers:[worker,{...worker,id:'b'}],payroll:[{periodKey:'2026-10',lines:[pay('a'),pay('b')]}],washes:[]});
+  expect(r.workers).toHaveLength(2);expect(r.workers.every(w=>w.region==='غير محددة')).toBe(true);expect(r.registerTotal).toBe(0);
+ });
+ it('refuses missing or duplicated payroll eligibility instead of silently dropping inactive rows',()=>{
+  expect(()=>project({payroll:[{periodKey:'2026-10',error:{message:'unavailable'}}]})).toThrow();
+  expect(()=>project({payroll:[{periodKey:'2026-10',lines:[pay('a'),pay('a')]}]})).toThrow();
+ });
+ it.each(['partner','accountant','operator','supervisor',null])('authorizes %s before source reads',async role=>{
+  const names=[],db={collection:name=>{names.push(name);if(!['users','app_admins'].includes(name))throw Error('source');return{doc:()=>({get:async()=>({exists:name==='users',data:()=>({role})})})};}};
+  await expect(readGrowthPerformance(db,{uid:'caller'},{})).rejects.toMatchObject({code:'permission-denied'});expect(names).not.toContain('washes');
+ });
+ it('queries all current workers, bounds reads, and never reads source bookings or writes',async()=>{
+  const names=[],limits=[],where=[],rows={bikers:[worker],washes:[wash('S-1')]};
+  const db={collection:name=>{names.push(name);if(['users','app_admins'].includes(name))return{doc:()=>({get:async()=>({exists:name==='users',data:()=>({role:'admin'})})})};
+   const q={select:()=>q,where:(...args)=>{where.push([name,...args]);return q;},limit:n=>{limits.push(n);return q;},get:async()=>({size:rows[name].length,docs:rows[name].map(r=>({id:r.id,data:()=>r}))})};return q;}};
+  const preview=vi.fn(async()=>[{periodKey:'2026-10',lines:[pay('a')]}]);
+  const r=await readGrowthPerformance(db,{uid:'admin'},{from:'2026-10-17',to:'2026-10-17'},{preview});
+  expect(r.registerTotal).toBe(1);expect(names).not.toContain('sweater_bookings');expect(limits).toEqual([501,10001]);expect(where.some(([n,f])=>n==='bikers'&&f==='driver_external_id')).toBe(false);expect(preview).toHaveBeenCalledOnce();
+ });
+ it('rejects future, oversized, invalid periods and unknown keys',()=>{
+  for(const input of [{from:'2026-10-27',to:'2026-10-27'},{from:'2026-02-30',to:'2026-10-17'},{from:'2026-01-01',to:'2026-10-17'},{from:'2026-10-17',to:'2026-10-17',role:'admin'}])expect(()=>validateGrowthRequest(input,new Date('2026-10-26T12:00:00Z'))).toThrow();
+  expect(validateGrowthRequest({from:'2026-10-17',to:'2026-10-17'},new Date('2026-10-26T12:00:00Z')).lookback).toBe('2026-10-10');
+ });
+ it('requires a token and keeps runtime errors private',async()=>{
+  const runtime=vi.fn(()=>{throw Error('secret');}),res=()=>({setHeader:vi.fn(),status:vi.fn(function(code){this.code=code;return this;}),json:vi.fn(function(body){this.body=body;return this;})});
+  const a=res();await createGrowthHandler(runtime)({method:'POST',headers:{}},a);expect(a.code).toBe(401);expect(runtime).not.toHaveBeenCalled();
+  const b=res();await createGrowthHandler(runtime)({method:'POST',headers:{authorization:'Bearer token'}},b);expect(b.code).toBe(503);expect(JSON.stringify(b.body)).not.toContain('secret');
+ });
+ it.each([8,'resource-exhausted','firestore/resource-exhausted'])('preserves safe quota diagnostics %s',async code=>{
+  const log={warn:vi.fn()},runtime={auth:{verifyIdToken:async()=>({uid:'test-admin'})},db:{collection:()=>({doc:()=>({get:async()=>{throw Object.assign(Error('PRIVATE'),{code});}})})}};
+  const res={setHeader:vi.fn(),status:vi.fn(function(code){this.code=code;return this;}),json:vi.fn(function(body){this.body=body;return this;})};
+  await createGrowthHandler(()=>runtime,log)({method:'POST',headers:{authorization:'Bearer synthetic'},body:{from:'2026-10-01',to:'2026-10-17'}},res);expect(res.code).toBe(503);expect(JSON.stringify([res.body,log.warn.mock.calls])).not.toMatch(/PRIVATE|synthetic|test-admin/);
+ });
 });

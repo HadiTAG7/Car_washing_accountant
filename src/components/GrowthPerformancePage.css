@@ -7,7 +7,9 @@
 .sw-growth__date-trigger { box-sizing: border-box; width: 100%; min-width: 0; min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px; font: inherit; color: inherit; background: var(--sw-surface, #292929); border: 1px solid var(--sw-border-subtle, #5558); border-radius: 12px; cursor: pointer; }
 .sw-growth__notice { border-inline-start: 3px solid #ff6b09; padding-inline-start: 12px; margin: 0; }
 .sw-growth__meta { opacity: .75; font-size: .88rem; margin: 0; }
-.sw-growth__cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+.sw-growth__cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; }
+.sw-growth__warnings { font-size:.82rem; color:var(--sw-text-secondary,inherit); }
+.sw-growth__warnings summary { font-weight:400; }
 .sw-growth__card, .sw-growth__panel { background: var(--sw-surface, #292929); border: 1px solid var(--sw-border-subtle, #7773); border-radius: 20px; padding: 22px; min-width: 0; }
 .sw-growth__card h2, .sw-growth__panel h2 { font-size: 1rem; margin-block: 0 16px; }
 .sw-growth__card strong { display: block; font-size: clamp(1.6rem, 3vw, 2.3rem); font-weight: 800; }

@@ -49,13 +49,17 @@ export function executiveOwnerDecisions(report) {
   }));
 }
 
-export function executiveProblems(report, cash = {}, operations) {
+export function executiveProblems(report, cash = {}, operations, qualityState) {
   const problems = [];
   if (cash.error) problems.push({ id: 'cash-read', severity: 'open', text: 'تعذرت قراءة أرصدة الحسابات النقدية؛ لا يمكن تأكيد الرصيد الحالي.', current: true });
   else if (!cash.loading && cash.balances?.some(row => row.balance < 0)) problems.push({
     id: 'negative-cash', severity: 'critical', current: true,
     text: 'رصيد نقدي سالب يحتاج مراجعة:', balances: cash.balances.filter(row => row.balance < 0),
   });
+  if (qualityState?.loading) problems.push({ id: 'quality-read', severity: 'limitation', qualityRead: true, text: 'جارٍ التحقق من تقارير الجودة المنشورة؛ اكتمالها غير مؤكد بعد.' });
+  else if (qualityState?.error) problems.push({ id: 'quality-read', severity: 'open', qualityRead: true, text: 'تعذرت قراءة الجودة المنشورة؛ لا يمكن تأكيد حالتها الحالية.' });
+  else if (qualityState?.review?.hasIssues) problems.push({ id: 'quality', severity: 'open', quality: qualityState.review,
+    text: 'تقارير الجودة المنشورة لا تغطي تقييمًا نهائيًا مكتملًا؛ راجع النطاق والنواقص أدناه.' });
   const newer = newerOperationsReview(operations, report);
   if (newer && (operations.report.status !== 'reviewed' || Object.values(operations.report.coverage).some(c => c.status !== 'verified')
     || operations.report.metrics.some(m => m.basis === 'unavailable') || operations.report.cases.some(c => c.status !== 'verified_closed'))) problems.push({
@@ -71,6 +75,7 @@ export function executiveProblems(report, cash = {}, operations) {
       key = 'operations'; text = 'بيانات التشغيل غير مكتملة؛ الأرقام التشغيلية في التقرير تحتاج تحديثًا.';
     } else if (/حد الاستخدام|جولات|أداة|أحداث|504|المراجعة الآلية/u.test(warning.text)) continue;
     else if (/جودة|النجوم|النهائي.*غير مكتمل/u.test(warning.text)) {
+      if (qualityState?.loading || qualityState?.error || qualityState?.review) continue;
       key = 'quality'; text = 'تقييم الجودة غير مكتمل؛ لا تعتمد عليه لتقييم جميع البايكرز.';
     } else if (/الصندوق|البنك/u.test(warning.text)) continue; // Current ledger, not archived cash figures, governs the alert.
     else { key = warning.id; text = executiveSentence(warning.text); }

@@ -6,6 +6,7 @@ import { executiveFixture } from '../../../server/__tests__/executiveFixture';
 import { overviewOperations } from '../../lib/overviewDashboard';
 import { executiveOwnerDecisions, executiveProblems, readableExecutiveText } from '../../lib/executiveOwnerSummary';
 import { operationsFixture } from '../../../server/__tests__/operationsFixture';
+import { publishedQualityReview } from '../../lib/executiveQualityReview';
 
 afterEach(cleanup);
 const fixture = () => ({ today: '2026-10-23', cash: { balances: [{ code: '1010', name: 'الصندوق', balance: -123.45 }], loading: false }, overview: {
@@ -124,4 +125,34 @@ it('keeps the dated historical warning on failed or older operations reads and n
   }
   render(<ExecutiveDailySummary report={report} data={fixture()} operationsReview={{ error: 'تعذرت القراءة' }} />);
   expect(screen.getByRole('alert').textContent).toBe('تعذرت القراءة');
+});
+
+it('replaces the quality warning with dated published profile evidence while retaining the CEO archive verbatim', () => {
+  const report = executiveFixture({ visibleWarnings: [{ id: 'old-quality', text: 'الجودة من تقرير الرئيس القديم', severity: 'open' }] });
+  const published = { id: 'SAVED-TEST', bikerUID: 'A', periodKey: '2026-10', rulesVersion: 'cqo-20261015-v3', from: '2026-10-01', to: '2026-10-19',
+    sourceReadDate: '2026-10-20', snapshotAt: '2026-10-20T08:02:57Z', createdAt: '2026-10-20T08:08:13Z', contentHash: 'b'.repeat(64),
+    status: 'incomplete', finalScore: null, components: [{ key: 'duration', weight: 10, points: 8, n: 5 }], coverage: { criteria: { duration: true } } };
+  const source = [{ bikerUID: 'A', data: { reports: [published], source: { available: true } } }];
+  const review = publishedQualityReview([{ id: 'A' }, { id: 'B' }], source, '2026-10', '2026-10-26');
+  const before = JSON.stringify([report, source]);
+  render(<ExecutiveDailySummary report={report} data={{ ...fixture(), today: '2026-10-26' }} qualityReview={{ review, loading: false }} />);
+  const problems = screen.getByRole('region', { name: 'أهم المشاكل' });
+  expect(problems.textContent).toContain('المصدر: تقارير الجودة المنشورة أدناه');
+  expect(problems.textContent).not.toContain('الجودة من تقرير الرئيس القديم');
+  const section = screen.getByRole('region', { name: 'حالة الجودة المنشورة' });
+  expect(section.textContent).toContain('التقييم النهائي غير مكتمل');
+  expect(section.textContent).toContain('جزئي: 1'); expect(section.textContent).toContain('تعذرت قراءتهم: 1');
+  expect(section.querySelector('time[datetime="2026-10-20T08:08:13Z"]')).toBeTruthy();
+  expect(section.querySelector('time[datetime="2026-10-19"]')).toBeTruthy();
+  expect(within(section).getByRole('link').getAttribute('href')).toBe('/?page=bikers');
+  expect(screen.getByText('الجودة من تقرير الرئيس القديم').closest('details').open).toBe(false);
+  expect(section.textContent).not.toContain('/100'); expect(JSON.stringify([report, source])).toBe(before);
+});
+
+it.each([{ loading: true }, { error: 'قراءة الجودة مرفوضة' }])('labels unavailable quality without substituting an old or calculated report %#', state => {
+  render(<ExecutiveDailySummary report={executiveFixture()} data={fixture()} qualityReview={state} />);
+  const section = screen.getByRole('region', { name: 'حالة الجودة المنشورة' });
+  expect(section.textContent).not.toContain('آخر حفظ'); expect(section.querySelector('time')).toBeNull();
+  expect(section.textContent).toContain(state.loading ? 'جارٍ قراءة' : 'قراءة الجودة مرفوضة');
+  expect(screen.getByRole('region', { name: 'أهم المشاكل' }).textContent).toContain(state.loading ? 'غير مؤكد' : 'لا يمكن تأكيد');
 });

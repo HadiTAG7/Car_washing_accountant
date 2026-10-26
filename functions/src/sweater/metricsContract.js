@@ -51,10 +51,35 @@ export function validTipsByBiker(rows, total) {
   return Math.round(sum * 100) === Math.round(total * 100);
 }
 
+// Optional source records for monetary deductions only. This is attribution
+// for the dashboard, not approval, attendance evidence or a payroll deduction.
+// Every included monetary metric must be fully reconciled in this SAME read.
+export function validDeductionDetails(rows, metrics, periodKey) {
+  if (!Array.isArray(rows) || rows.length > 5000 || !object(metrics) || !month(periodKey)) return false;
+  const keys = Object.keys(metrics).filter(key => SWEATER_METRICS[key]?.unit === 'sar' && SWEATER_METRICS[key]?.direction === 'deduction');
+  if (!keys.length) return false;
+  const sums = Object.fromEntries(keys.map(key => [key, 0])), ids = new Set();
+  for (const row of rows) {
+    if (!exactKeys(row, ['metricKey', 'sourceId', 'driverExternalId', 'date', 'amount', 'category', 'sourceUrl', 'bookingId'])
+      || !keys.includes(row.metricKey) || !docId(row.sourceId) || !docId(row.driverExternalId)
+      || typeof row.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(row.date) || row.date.slice(0, 7) !== periodKey
+      || !Number.isFinite(Date.parse(`${row.date}T00:00:00Z`)) || new Date(`${row.date}T00:00:00Z`).toISOString().slice(0, 10) !== row.date
+      || typeof row.amount !== 'number' || !Number.isFinite(row.amount) || row.amount < 0 || row.amount > 1e9 || !halalas(row.amount)
+      || typeof row.category !== 'string' || !row.category.trim() || row.category.length > 250
+      || !sspSourceUrl(row.sourceUrl) || (row.bookingId !== null && !docId(row.bookingId))) return false;
+    const identity = `${row.metricKey}:${row.sourceId}`;
+    if (ids.has(identity)) return false;
+    ids.add(identity); sums[row.metricKey] += Math.round(row.amount * 100);
+  }
+  return keys.every(key => typeof metrics[key] === 'number' && Number.isFinite(metrics[key]) && metrics[key] >= 0
+    && halalas(metrics[key]) && sums[key] === Math.round(metrics[key] * 100));
+}
+
 /** One month's reading: known metrics only, counts as whole numbers, money to the halala. */
 export function validateMetricsSnapshot(payload) {
   const fields = ['contractVersion', 'importRunId', 'periodKey', 'extractedAt', 'sourceUrl', 'metrics'];
   if (object(payload) && Object.hasOwn(payload, 'tipsByBiker')) fields.push('tipsByBiker');
+  if (object(payload) && Object.hasOwn(payload, 'deductionDetails')) fields.push('deductionDetails');
   if (!exactKeys(payload, fields)
     || payload.contractVersion !== METRICS_CONTRACT || !docId(payload.importRunId) || !month(payload.periodKey)
     || !instant(payload.extractedAt) || !sspSourceUrl(payload.sourceUrl)) fail('عقد لقطة أرقام سويتر أو معرّفها أو شهرها أو وقتها أو رابطها غير صالح.');
@@ -72,6 +97,9 @@ export function validateMetricsSnapshot(payload) {
   }
   if (Object.hasOwn(payload, 'tipsByBiker') && !validTipsByBiker(payload.tipsByBiker, payload.metrics.tipsNet)) {
     fail('تفاصيل البقشيش تحتاج معرفات بايكر فريدة ومبالغ فعلية يطابق مجموعها صافي اللقطة نفسها.');
+  }
+  if (Object.hasOwn(payload, 'deductionDetails') && !validDeductionDetails(payload.deductionDetails, payload.metrics, payload.periodKey)) {
+    fail('تفاصيل الخصومات تحتاج سجلات مصدر فريدة للشهر نفسه، ومعرف بايكر ومبلغ وسبب ورابط، ومجموعًا مطابقًا للقطة.');
   }
   return payload;
 }

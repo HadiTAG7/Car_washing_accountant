@@ -16,9 +16,15 @@ export function useOverviewDashboard(periodKey) {
     workers: { bikers, loading: false, error: null }, washes: ready(washes), dueVouchers: [], retry: () => {},
     bookings: ready([{ record: { sspBookingId: 'TEST-19-0', serviceDate: '2026-10-20', driverExternalId: 'TEST-A', startedAt: '2026-10-20T09:00:00+03:00', completedAt: '2026-10-20T09:09:00+03:00' } }]),
     sweaterMetrics: { snapshot: composeSweaterMetricReadings([
-      { id: 'TEST-BUSINESS', periodKey: '2026-10', extractedAtIso: '2026-10-21T06:00:00Z', metrics: { completedWashes: 400, tipsNet: 50 } },
+      { id: 'TEST-BUSINESS', periodKey: '2026-10', extractedAtIso: '2026-10-21T06:00:00Z', metrics: { completedWashes: 400, tipsNet: 50 },
+        tipsByBiker: [{ driverExternalId: 'TEST-A', netAmount: 17.125 }, { driverExternalId: 'TEST-B', netAmount: 32.875 }] },
       { id: 'TEST-COMPENSATIONS', periodKey: '2026-10', extractedAtIso: '2026-10-21T07:00:00Z', metrics: { violations: 100, damages: 0, compensations: 0,
-        freeWashCompensation: 2, cancelledByBiker: 3, cancelledMaintenance: 1, cancelledByCustomer: 4 } },
+        freeWashCompensation: 2, cancelledByBiker: 3, cancelledMaintenance: 1, cancelledByCustomer: 4 }, deductionDetails: [
+          { metricKey: 'violations', sourceId: 'TEST-1', driverExternalId: 'TEST-A', date: '2026-10-20', amount: 60,
+            category: 'Damaged Motorcycle Stickers', sourceUrl: 'https://ssp-portal.sweater.sa/violations/TEST-1', bookingId: null },
+          { metricKey: 'violations', sourceId: 'TEST-2', driverExternalId: 'TEST-B', date: '2026-10-19', amount: 40,
+            category: 'Loss or Damage of Tools and Materials', sourceUrl: 'https://ssp-portal.sweater.sa/violations/TEST-2', bookingId: null },
+        ] },
     ], periodKey), loading: false, error: null },
     settlements: ready([]), adjustments: ready([]) };
 }

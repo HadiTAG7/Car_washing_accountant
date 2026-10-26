@@ -2,7 +2,7 @@ import { OVERVIEW_SETTINGS } from '../config/overviewSettings.js';
 import { monthRange } from './accounting/monthlyStatement.js';
 import { isDepartedStatus, isOverviewWorkingBiker } from './overviewDashboard.js';
 import { ADJUSTMENT_KIND, ADJUSTMENT_APPROVAL } from '../../functions/src/sweater/vocab.js';
-import { SWEATER_METRICS } from '../../functions/src/sweater/metricsContract.js';
+import { SWEATER_METRICS, validDeductionDetails } from '../../functions/src/sweater/metricsContract.js';
 
 const money = n => Math.round(n * 100) / 100;
 const number = value => value !== null && value !== undefined && String(value).trim() !== '' && Number.isFinite(Number(value)) ? Number(value) : null;
@@ -132,8 +132,14 @@ export function overviewSweaterMetrics(snapshot, ops) {
   const completedWashes = value('completedWashes');
   const updatedAtByMetric = Object.fromEntries(Object.keys(SWEATER_METRICS).map(key => [key, value(key) === null ? null
     : snapshot.metricSources ? snapshot.metricSources[key]?.extractedAtIso ?? null : snapshot.extractedAtIso || null]));
+  const deductionDetails = Object.fromEntries(deductions.filter(item => item.unit === 'sar').flatMap(({ key }) => {
+    const rows = Array.isArray(snapshot.deductionDetails)
+      ? validDeductionDetails(snapshot.deductionDetails, snapshot.metrics, snapshot.periodKey) ? snapshot.deductionDetails.filter(row => row.metricKey === key) : undefined
+      : snapshot.deductionDetails?.[key];
+    return validDeductionDetails(rows, { [key]: value(key) }, snapshot.periodKey) ? [[key, rows]] : [];
+  }));
   return { updatedAtIso: snapshot.extractedAtIso || null, updatedAtByMetric, completedWashes, tipsNet: value('tipsNet'),
     washDifference: completedWashes !== null && ops ? completedWashes - ops.quantity : null,
-    deductions, additions: items('addition'),
+    deductions, additions: items('addition'), deductionDetails,
     deductionMoney: money.length ? money.reduce((sum, item) => sum + item.value, 0) : null };
 }

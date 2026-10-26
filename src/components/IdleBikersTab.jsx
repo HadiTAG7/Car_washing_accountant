@@ -1,4 +1,5 @@
 import ScrollableTable from './ScrollableTable';
+import './IdleBikersTab.css';
 import DateField from './DateField';
 import { useState } from 'react';
 import { useOverviewDashboard } from '../hooks/useOverviewDashboard';
@@ -52,7 +53,7 @@ function IdleContent() {
       </Card>
       <div className="flex flex-wrap gap-3 text-sm" aria-label="تنبيهات الخمول"><span>بدون سبب: {value.alerts.missingReason}</span><span>تاريخ البدء المتوقع فات: {value.alerts.overdue}</span><span>خامل أكثر من 14 يوم: {value.alerts.over14Days}</span></div>
       <Card className="p-4"><p className="text-xs mb-4 text-slate-500 dark:text-slate-400">اليوم الجاري مستبعد. المتوقف لم يغسل في آخر 3 أيام مكتملة أو أكثر. تكلفة حتى اليوم تقدير نسبي من استحقاق المسير حتى أمس.</p>
-        {!value.count ? <p>ما فيه بايكر خامل حسب التعريف الحالي.</p> : <ScrollableTable stickyIdentity identityColumn={1} className="overflow-x-auto"><table className="w-full min-w-[1500px] text-sm"><caption className="text-right font-bold mb-3">قائمة الخاملين</caption>
+        {!value.count ? <p>ما فيه بايكر خامل حسب التعريف الحالي.</p> : <ScrollableTable stickyIdentity identityColumn={1} className="idle-bikers-table overflow-x-auto"><table className="w-full min-w-[1500px] text-sm"><caption className="text-right font-bold mb-3">قائمة الخاملين</caption>
           <thead><tr>{['الاسم', 'Sweater ID', 'المباشرة', 'السكن', 'آخر غسلة', 'أيام بدون غسلات', 'تكلفة الشهر', 'التكلفة حتى أمس', 'السبب', 'يبدأ متوقعًا', 'الملاحظة والمتابعة'].map(title => <th className="p-3 text-right" key={title}>{title}</th>)}</tr></thead>
           <tbody>{value.rows.map(row => <IdleRow key={`${row.bikerId}:${row.followup.revision || 0}`} row={row} language={language} canMutate={canMutate} onSaved={(id, followup) => setFollowupOverrides(previous => ({ ...previous, [id]: followup }))} />)}</tbody>
         </table></ScrollableTable>}
@@ -86,9 +87,9 @@ function IdleRow({ row, language, canMutate, onSaved }) {
     <td className="p-3 whitespace-nowrap">{row.biker.startDate ? formatDate(row.biker.startDate) : 'غير مسجلة'}</td><td className="p-3">{row.biker.residence || 'غير مسجل'}</td>
     <td className="p-3 whitespace-nowrap">{row.lastWash ? formatDate(row.lastWash) : 'ما له غسلات مسجلة'}</td><td className="p-3 tabular-nums">{row.silentDays}{row.alerts.over14Days && <small className="block text-rose-500">أكثر من 14 يوم</small>}</td>
     <td className="p-3 whitespace-nowrap">{formatCurrencyPrecise(row.monthlyCost)}</td><td className="p-3 whitespace-nowrap">{formatCurrencyPrecise(row.costToDate)}</td>
-    <td className="p-3 min-w-52"><select className={field} aria-label={`سبب خمول ${name}`} value={reasonKey} onChange={event => setReason(event.target.value)} disabled={!canMutate || busy}><option value="">اختر السبب</option>{IDLE_REASONS.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>{row.alerts.missingReason && <small className="text-amber-600 dark:text-amber-400">بدون سبب مسجل</small>}</td>
-    <td className="p-3 min-w-44"><DateField id={`idle-date-${row.bikerId}`} name="expectedStartDate" className={field} ariaLabel={`تاريخ البدء المتوقع ${name}`} value={expectedStartDate} onChange={event => setDate(event.target.value)} disabled={!canMutate || busy} />{row.alerts.overdue && <small className="text-rose-500">تاريخ البدء المتوقع فات</small>}</td>
-    <td className="p-3 min-w-72"><textarea className={field} aria-label={`ملاحظة ${name}`} maxLength={1000} value={note} onChange={event => setNote(event.target.value)} disabled={!canMutate || busy} />
+    <td className="p-3 min-w-52"><small className="block sm:hidden mb-2" translate="no">{name}</small><select className={field} aria-label={`سبب خمول ${name}`} value={reasonKey} onChange={event => setReason(event.target.value)} disabled={!canMutate || busy}><option value="">اختر السبب</option>{IDLE_REASONS.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>{row.alerts.missingReason && <small className="text-amber-600 dark:text-amber-400">بدون سبب مسجل</small>}</td>
+    <td className="p-3 min-w-44"><small className="block sm:hidden mb-2" translate="no">{name}</small><DateField id={`idle-date-${row.bikerId}`} name="expectedStartDate" className={field} ariaLabel={`تاريخ البدء المتوقع ${name}`} value={expectedStartDate} onChange={event => setDate(event.target.value)} disabled={!canMutate || busy} />{row.alerts.overdue && <small className="text-rose-500">تاريخ البدء المتوقع فات</small>}</td>
+    <td className="p-3 min-w-72"><small className="block sm:hidden mb-2" translate="no">{name}</small><textarea className={field} aria-label={`ملاحظة ${name}`} maxLength={1000} value={note} onChange={event => setNote(event.target.value)} disabled={!canMutate || busy} />
       {canMutate && <button type="button" className="sw-button sw-button--primary sw-button--sm mt-2" onClick={save} disabled={!changed || busy || (reasonKey === 'other' && !note.trim())}>{busy ? 'جارٍ الحفظ…' : 'احفظ المتابعة'}</button>}
       {error && <p role="alert" className="text-rose-500">{error}</p>}
       {row.followup.updatedAtIso && <small className="block mt-2 text-slate-500">آخر تعديل: {row.followup.updatedByName || row.followup.updatedBy} · <bdi>{auditTime(row.followup.updatedAtIso)}</bdi></small>}

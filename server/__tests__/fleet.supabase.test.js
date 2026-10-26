@@ -17,7 +17,7 @@ describe.skipIf(process.env.FLEET_PG_TESTS!=='1')('fleet actions with isolated P
     const target=new URL(url); if(target.hostname!=='127.0.0.1'||target.pathname!=='/sweater_report_snapshot_test_20261026')throw Error('Isolation guard');
     pool=new pg.Pool({connectionString:url}); expect((await pool.query('select current_database() as name')).rows[0].name).toBe('sweater_report_snapshot_test_20261026');
     const existing=(await pool.query("select tablename from pg_tables where schemaname='public' and tablename like 'fleet_%'")).rows;
-    if(!existing.length)await pool.query(await readFile(new URL('../../supabase/migrations/20261026211311_fleet.sql',import.meta.url),'utf8'));
+    if(!existing.length)await pool.query(await readFile(new URL('../../supabase/migrations/20261026214026_fleet.sql',import.meta.url),'utf8'));
     else expect(existing).toHaveLength(6);
     db=createStore({connectionString:url,role:'ledger_server',max:6}); originalControl=await db.collection('fleet_control').doc('registry').get();
     for(const [id,role]of [[uid,'admin'],[accountant,'accountant'],[operator,'operator']]){

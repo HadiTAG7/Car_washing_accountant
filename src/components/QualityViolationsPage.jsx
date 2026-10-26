@@ -1,3 +1,4 @@
+import SweaterFreshnessBar from './SweaterFreshnessBar';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 import { useQualityViolations } from '../hooks/useQualityViolations';
@@ -36,7 +37,7 @@ export function QualityViolationsContent() {
   const eventCount = rows.reduce((sum, row) => sum + row.events.length, 0);
   const loading = read.current.loading || read.workers.loading, error = read.current.error || read.workers.error;
   return <><TopBar title="الجودة والمخالفات" subtitle="تفاصيل سويتر ومتابعة الاعتراضات" />
-    <main className="qv-page" dir="rtl"><div className="qv-toolbar"><div><h2>الجودة والمخالفات</h2><p>من اللقطات المحفوظة · بدون اتصال مباشر بسويتر</p></div>
+    <main className="qv-page" dir="rtl"><SweaterFreshnessBar /><div className="qv-toolbar"><div><h2>الجودة والمخالفات</h2><p>من اللقطات المحفوظة · بدون اتصال مباشر بسويتر</p></div>
       <BikerProfileMonthPicker value={month} max={today.slice(0, 7)} language="ar" onChange={value => { setMonth(value); setSelected(null); }} />
       <button className={button} onClick={read.refresh}>تحديث البيانات</button></div>
       <Card className="qv-panel"><SectionHeader title="مهلة الاعتراض" subtitle="متابعة داخلية فقط؛ تغيير الحالة هنا لا يرسل اعتراضًا إلى سويتر." />

@@ -1,3 +1,4 @@
+import SweaterFreshnessBar from './SweaterFreshnessBar';
 import IdleBikersAttention from './IdleBikersAttention';
 import { useMemo, useState } from 'react';
 import { Activity, ArrowUpRight, Bike, CalendarDays, CheckCircle2, DatabaseBackup, Loader2, Receipt, TrendingUp, Wallet, X } from 'lucide-react';
@@ -149,6 +150,7 @@ export function ManagementOverview({ onNavigate }) {
       <OverviewBikerQuality workers={workers} periodKey={periodKey} today={today} onNavigate={onNavigate} />
 
       <Card className="sw-overview__panel"><SectionHeader title={text('يحتاج انتباهك', 'Needs your attention')} subtitle={text('ملاحظات من المصادر المقروءة فقط، لا قائمة شاملة بكل التزامات المشروع.', 'Findings from the read sources only, not a complete list of business obligations.')} />
+        <SweaterFreshnessBar attention onNavigate={onNavigate} />
         <IdleBikersAttention data={data} periodKey={periodKey} today={today} onNavigate={onNavigate} />
         <OverviewOperationalAttention data={data} periodKey={periodKey} today={today} washReady={washReady} workerReady={workerReady} language={language} onNavigate={onNavigate} />
         <div className="sw-overview__attention">

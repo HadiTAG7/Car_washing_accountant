@@ -12,6 +12,7 @@ vi.mock('../../hooks/useOverviewBikerQuality', () => ({ useOverviewBikerQuality:
 vi.mock('../../contexts/PartnerViewContext', () => ({ usePartnerView: () => ({ role: state.role, isPartnerView: state.partner, canMutate: false }) }));
 vi.mock('../../lib/firebaseClient', () => ({ isFirebaseConfigured: true, missingEnvNames: [] }));
 vi.mock('../IdleBikersAttention', () => ({ default: () => null }));
+vi.mock('../../hooks/useSweaterFreshness', () => ({ useSweaterFreshness: () => ({ loading: false, value: { savedAt: '2026-10-16T08:00:00Z', savedAgeHours: 1 } }) }));
 vi.mock('../TopBar', () => ({ default: ({ title }) => <h1>{title}</h1> }));
 vi.mock('../CapitalOverviewPage', () => ({ default: () => <p>Isolated capital panel</p> }));
 vi.mock('../../lib/backupZip', () => ({ downloadFullBackup: vi.fn() }));

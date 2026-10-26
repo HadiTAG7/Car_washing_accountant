@@ -1,3 +1,4 @@
+import SweaterFreshnessBar from './SweaterFreshnessBar';
 import { translate } from '../i18n/locale';
 import { getLocale } from '../i18n/locale';
 import { useCallback, useMemo, useState } from 'react';
@@ -169,6 +170,7 @@ export default function WashesPage() {
       />
 
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
+        <SweaterFreshnessBar />
         <Card className="p-4 flex flex-wrap items-center gap-3">
           <label htmlFor="washes-month" className="text-sm font-semibold text-slate-700 dark:text-slate-300">الشهر</label>
           <select id="washes-month" value={month}

@@ -19,7 +19,7 @@ export function useOperationsToday(day, today, now) {
     { enabled, cacheKey: `operationsTodayBookings:${from}:${day}`, cacheTags: ['sweater_bookings'], queryKey: user?.id, deps: [from, day], fallback: [] });
   // Do not mount integration keys, heartbeat, probe, sync or any write action.
   const state = useFirestoreQuery(() => fetchRows('sweater_integration_state'),
-    { enabled, cacheKey: 'operationsTodayState', cacheTags: ['sweater_integration_state'], queryKey: user?.id, fallback: [] });
+    { enabled, cacheTags: ['sweater_integration_state'], queryKey: user?.id, fallback: [] });
   const loading = data.washes.loading || data.workers.loading;
   const error = data.washes.error || data.workers.error;
   const payroll = !data.payroll.loading && !data.payroll.error ? data.payroll.data?.find(p => p.periodKey === periodKey && !p.unavailable) : null;

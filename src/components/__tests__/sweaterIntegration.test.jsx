@@ -38,6 +38,7 @@ const state = {
   createKey: vi.fn(),
   revokeKey: vi.fn(),
   keys: [],
+  runs: [],
   current: { lastAgentStatus: 'ok', lastSuccessAtIso: new Date().toISOString(), source: 'browser_agent' },
 };
 
@@ -48,7 +49,7 @@ vi.mock('../../contexts/PartnerViewContext', () => ({
 vi.mock('../../hooks/useSweater', () => ({
   useSweaterIntegration: () => ({
     current: state.current,
-    runs: [],
+    runs: state.runs,
     keys: state.keys,
     loading: false,
     error: null,
@@ -62,7 +63,7 @@ vi.mock('../../hooks/useSweater', () => ({
 
 beforeEach(() => {
   state.canMutate = true; state.role = 'admin'; state.isPartnerView = false;
-  state.keys = [];
+  state.keys = []; state.runs = [];
   state.createKey = vi.fn().mockResolvedValue(NEW_KEY);
   state.revokeKey = vi.fn().mockResolvedValue({ status: 'revoked' });
   // المسبار لا يُجيب في jsdom — الصفحة تتجاهل فشله عمداً.
@@ -277,9 +278,9 @@ describe('نافذة إلغاء المفتاح', () => {
 describe('آخر استيراد ناجح', () => {
   const lastImport = () => screen.getByText('آخر استيراد ناجح').closest('div').parentElement.textContent;
   it.each([
-    ['the operations agent saved after the last staff import', { lastSuccessAtIso: '2026-10-10T04:49:35.401Z', lastOperationalSuccessAtIso: '2026-10-20T19:10:15.520Z' }, '2026-10-20 19:10'],
-    ['a staff import came after the agent', { lastSuccessAtIso: '2026-10-21T08:00:00.000Z', lastOperationalSuccessAtIso: '2026-10-20T19:10:15.520Z' }, '2026-10-21 08:00'],
-    ['only the agent has saved', { lastOperationalSuccessAtIso: '2026-10-20T19:10:15.520Z' }, '2026-10-20 19:10'],
+    ['the operations agent saved after the last staff import', { lastSuccessAtIso: '2026-10-10T04:49:35.401Z', lastOperationalSuccessAtIso: '2026-10-20T19:10:15.520Z' }, '22:10 (الرياض)'],
+    ['a staff import came after the agent', { lastSuccessAtIso: '2026-10-21T08:00:00.000Z', lastOperationalSuccessAtIso: '2026-10-20T19:10:15.520Z' }, '11:00 (الرياض)'],
+    ['only the agent has saved', { lastOperationalSuccessAtIso: '2026-10-20T19:10:15.520Z' }, '22:10 (الرياض)'],
   ])('shows the later of both paths when %s', (_, times, shown) => {
     const before = state.current; state.current = { lastAgentStatus: 'ok', ...times };
     try { render(<SweaterIntegrationPage />); expect(lastImport()).toContain(shown); } finally { state.current = before; }
@@ -301,5 +302,18 @@ describe('معاينة التسليم تستخدم الأدوار الحالية
     state.isPartnerView = true;
     render(<SweaterIntegrationPage />);
     expect(screen.queryByText('مراجعة ملف SSP ومعاينة الاستيراد')).toBeNull();
+  });
+});
+
+describe('سجل التشغيلات المحفوظة', () => {
+  it('shows more than thirty runs with recorded failures and unknown counts clearly', () => {
+    state.runs = Array.from({ length: 45 }, (_, i) => ({ id: `run-${i}`, startedAtIso: '2026-10-27T08:00:00Z', status: 'completed', result: { counts: { new: i, modified: 0, rejected: 0 } } }));
+    state.runs.push({ id: 'failed-run', startedAtIso: '2026-10-27T09:00:00Z', status: 'failed', error: { message: 'تعذّر حفظ الدفعة' } });
+    render(<SweaterIntegrationPage />);
+    const table = screen.getByRole('columnheader', { name: 'الأخطاء' }).closest('table');
+    expect(table.querySelectorAll('tbody tr')).toHaveLength(46);
+    expect(table.textContent).toContain('تعذّر حفظ الدفعة'); expect(table.textContent).toContain('غير مسجل');
+    expect(screen.getByText(/آخر 7 أيام/)).toBeTruthy();
+    expect(state.createKey).not.toHaveBeenCalled(); expect(state.revokeKey).not.toHaveBeenCalled();
   });
 });

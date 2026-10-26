@@ -3,8 +3,6 @@ import { Upload, ShieldCheck } from 'lucide-react';
 import { parseOperationsReport } from '../lib/operationsReportContract';
 import { callOperationsApi } from '../lib/operationsApi';
 import { LanguageContext } from '../i18n/LanguageContext';
-import { sameOperationsSubmission } from '../lib/operationsReportPublication';
-import { needsReportWording } from '../lib/reportPublication';
 export default function OperationsReportPublisher({ onPublished, canPublish = false }) {
   const [report, setReport] = useState(null), [error, setError] = useState(''), [busy, setBusy] = useState(false);
   const [uncertain, setUncertain] = useState(false), [notice, setNotice] = useState('');
@@ -28,7 +26,7 @@ export default function OperationsReportPublisher({ onPublished, canPublish = fa
       const result = await callOperationsApi('operations-reports', { action: 'save', report, expectedRevision: report.revision - 1 });
       if (result?.reportId !== report.reportId || result?.revision !== report.revision || typeof result?.duplicate !== 'boolean') throw new Error('إيصال الحفظ غير متحقق.');
       const after = await callOperationsApi('operations-reports', { action: 'read', reportId: report.reportId, revision: report.revision });
-      if (!sameOperationsSubmission(parseOperationsReport(after.report),report)) throw new Error('لم تتطابق قراءة التقرير المحفوظ؛ اقرأ الأرشيف قبل الإعادة.');
+      if (JSON.stringify(parseOperationsReport(after.report)) !== JSON.stringify(report)) throw new Error('لم تتطابق قراءة التقرير المحفوظ؛ اقرأ الأرشيف قبل الإعادة.');
       setNotice(`تمت مطابقة النسخة المحفوظة: ${result.reportId} / ${result.revision}${result.duplicate ? ' — موجودة مسبقًا دون تكرار' : ''}`);
       setReport(null); onPublished(result.reportId);
     } catch (e) { setUncertain(true); setError(`${e.message} لا تعِد الحفظ قبل قراءة المعرف في الأرشيف.`); }
@@ -61,7 +59,7 @@ export default function OperationsReportPublisher({ onPublished, canPublish = fa
       <p>{report.period.from || 'غير موثق'} — {report.period.to || 'غير موثق'} · {report.cutAtRiyadh || 'وقت القطع غير موثق بدقة'} · النسخة {report.revision}</p>
       <p>تاريخ الخدمة: {report.serviceDateRiyadh || 'غير موثق'} · الجولة {report.round} · {report.archiveMode === 'historical_imported' ? 'أرشيف تاريخي منقول، ليس حالة حالية' : 'تقرير حالي مراجع'}</p>
       {report.historicalImported && <p className="fw-warning">{report.historicalImported.timeNote} — دقة القطع: {report.historicalImported.cutPrecision} · آخر يوم دليل: {report.historicalImported.evidenceThroughDate}</p>}
-      {report.visibleWarnings.map(w => <p className="fw-warning" key={w.id}>{w.text} {needsReportWording(w.text)&&<span className="report-wording-warning">تحتاج صياغة</span>}</p>)}
+      {report.visibleWarnings.map(w => <p className="fw-warning" key={w.id}>{w.text}</p>)}
       <p>مرجع المراجعة: {report.review.sourceRef} · {report.review.at}</p>
       <button type="button" className="fw-primary" disabled={busy || uncertain || !canPublish} onClick={publish}>{busy ? 'جارٍ الحفظ والتحقق...' : 'نشر التقرير المراجع والتحقق من حفظه'}</button>
     </section></LanguageContext.Provider>}

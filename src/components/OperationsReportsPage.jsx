@@ -73,14 +73,14 @@ export default function OperationsReportsPage() {
         <section aria-label="التقرير المختار" className="fw-report">
           {read.loading && <LoadingState message="جارٍ قراءة نسخة التقرير..." />}
           {report && !error && <LanguageContext.Provider value={{ ...language, language: 'ar' }}>
+            {report.revision < read.data.currentRevision && <div className="fw-warning" role="note"><div>
+              <p>نسخة تاريخية معروضة. أحدث نسخة محفوظة: {read.data.currentRevision} — لا تعتبر هذه آخر نتيجة.</p>
+              <button type="button" onClick={() => setRevision(undefined)}>عرض أحدث نسخة</button>
+            </div></div>}
             <OperationsReportOverview report={report}/>
             <details className="fw-panel finance-report-technical"><summary>التفاصيل التقنية والتقرير المحفوظ</summary>
             <header className="fw-panel fw-report-head"><div className="fw-eyebrow"><ShieldCheck size={16} /> تقرير عمليات مراجع · {report.sourceLabel} · الدور الأصلي {report.sourceRole}</div>
               <h1>{report.title}</h1><span className="fw-badge">النسخة المعروضة: {report.revision}</span><p>{report.summary}</p>
-              {report.revision < read.data.currentRevision && <div className="fw-warning" role="note"><div>
-                <p>نسخة تاريخية معروضة. أحدث نسخة محفوظة: {read.data.currentRevision} — لا تعتبر هذه آخر نتيجة.</p>
-                <button type="button" onClick={() => setRevision(undefined)}>عرض أحدث نسخة</button>
-              </div></div>}
               <div className="fw-meta"><span>الفترة {report.period.from || 'غير موثق'} — {report.period.to || 'غير موثق'}</span><span>القطع: {dateText(report.cutAtRiyadh)} — الرياض</span></div>
               <div className="fw-meta"><span>تاريخ الخدمة: {report.serviceDateRiyadh || 'غير موثق'}</span><span>إصدار المصدر الأصلي: {dateText(report.issuedAtRiyadh)}</span><span>حفظ النسخة في سويتر: {dateText(read.data.savedAt)}</span><span>مراجعة النقل/النشر: {dateText(report.review.at)}</span></div>
               <p>{OPERATIONS_KINDS[report.kind]} · الجولة {report.round} · {OPERATIONS_STATUSES[report.status]}</p>

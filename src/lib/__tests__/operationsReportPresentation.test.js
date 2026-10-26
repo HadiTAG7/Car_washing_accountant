@@ -11,3 +11,8 @@ it('orders critical observations first and flags programming without rejecting o
   const notes=operationsNotes(r);expect(notes[0].id).toBe('urgent');expect(notes.find(n=>n.id==='code').needsWording).toBe(true);
   expect(r.visibleWarnings[1].text).toBe('policyUnconfigured=true');
 });
+it('keeps source identifiers in technical details rather than the owner summary',()=>{
+  const report=operationsFixture({summary:'أُغلقت حالة5643311 بعد التحقق من الغسلة. الموضعssp__B-5643311 والعامل2007مثبتان؛Start21:18/End22:10منSSP.'});
+  const summary=operationsSummary(report).join(' ');expect(summary).toContain('أُغلقت حالة بعد التحقق');expect(summary).not.toContain('5643311');expect(summary).not.toContain('ssp__B');expect(summary).not.toContain('Start');
+  expect(report.summary).toContain('ssp__B-5643311');
+});

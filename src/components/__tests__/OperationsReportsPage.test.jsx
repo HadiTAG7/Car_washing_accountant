@@ -23,6 +23,8 @@ it('preserves Arabic content, separate coverage/stages and historical revision w
   expect(screen.getAllByText('ملخص النسخة الثانية').length).toBeGreaterThan(0); expect(screen.getByText('معاينة لا تثبت الحفظ')).toBeTruthy(); expect(screen.getByText('تغطية الشركات غير متاحة في المصدر')).toBeTruthy();
   fireEvent.change(screen.getByLabelText('نسخة التقرير'), { target: { value: '1' } });
   expect(screen.getByText(/نسخة تاريخية معروضة/)).toBeTruthy(); expect(screen.getByText(operationsFixture().summary)).toBeTruthy();
+  expect(screen.getByText(/نسخة تاريخية معروضة/).closest('details')).toBeNull();
+  expect(screen.getByRole('button',{name:'عرض أحدث نسخة'}).closest('details')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'عرض أحدث نسخة' })); expect(screen.queryByText(/نسخة تاريخية معروضة/)).toBeNull();
   fireEvent.click(screen.getByRole('tab', { name: 'المتابعات' }));
   fireEvent.change(screen.getByLabelText('حالة المتابعة'), { target: { value: 'verified_closed' } });

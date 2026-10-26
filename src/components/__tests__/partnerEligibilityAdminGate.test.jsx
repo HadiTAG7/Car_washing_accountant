@@ -42,7 +42,7 @@ describe('إدارة الشركاء للمدير فقط', () => {
     expect(Boolean(screen.queryByRole('button', { name: 'إضافة شريك جديد' }))).toBe(admin);
     expect(Boolean(screen.queryByRole('button', { name: 'تعديل هادي' }))).toBe(admin);
     expect(Boolean(screen.queryByRole('button', { name: 'حذف هادي' }))).toBe(admin);
-    expect(Boolean(screen.queryByRole('columnheader', { name: 'المساعد الذكي' }))).toBe(admin);
+    expect(screen.queryByRole('columnheader', { name: 'المساعد الذكي' })).toBeNull();
     // Printing a partner's statement stays available to staff.
     expect(screen.getByRole('button', { name: 'كشف حساب هادي' })).toBeTruthy();
   });

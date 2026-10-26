@@ -37,7 +37,7 @@ export function subledgerReconciliation({ accounts, entries, lines, today, tempo
   add('vat', 'ضريبة المدخلات المؤهلة', '1200', sum(code => code === '1200'), vat,
     '?page=vat', 'كل الفواتير المؤهلة في صفحة الضريبة، مقابل رصيد 1200؛ لا يشمل تغييرًا في التسجيل الضريبي.');
   add('capital', 'رأس مال الشركاء', '3000', sum(code => code === '3000' || code.startsWith('3000-')),
-    partners.reduce((total, row) => total + Number(row.paidAmount || 0), 0), '?page=partners',
+    partners.reduce((total, row) => total + Number(row.paidAmount || 0), 0), '?page=partner_capital',
     'المدفوع في إدارة الشركاء مقابل حسابات رأس المال؛ العرض لا يسجل دفعات أو قيودًا.');
   const monthly = [];
   const incomeState = status.income || {};

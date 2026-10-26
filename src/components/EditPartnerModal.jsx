@@ -13,7 +13,7 @@ import CreatedCredentials from './CreatedCredentials';
 
 const EMPTY = { partnerName: '', workersCount: '', email: '' };
 
-export default function EditPartnerModal({ isOpen, partner, onClose, onSave, showToast }) {
+export default function EditPartnerModal({ isOpen, partner, onClose, onSave, showToast, accountOnly = false, showAccountFields = true }) {
   const [form, setForm] = useState(EMPTY);
   const [submitting, setSubmitting] = useState(false);
   // Tri-state link control:
@@ -61,7 +61,7 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave, sho
   const settled       = workersCount > 0 && remaining === 0;
   const trimmedEmail  = form.email.trim();
   const emailOk       = trimmedEmail === '' || isValidEmail(trimmedEmail);
-  const isValid       = form.partnerName.trim().length > 0 && emailOk;
+  const isValid       = form.partnerName.trim().length > 0 && emailOk && (!accountOnly || Boolean(trimmedEmail) || unlinkRequested);
   const currentlyLinked = Boolean(partner?.userId);
 
   // Build the update payload once a userId decision has been made and
@@ -69,7 +69,7 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave, sho
   // path so they stay in lock-step. closeAfter=false leaves the modal
   // open so the credentials step can render.
   async function persistPatch(resolvedUserId, { closeAfter = true } = {}) {
-    const patch = {
+    const patch = accountOnly ? {} : {
       partnerName:  form.partnerName.trim(),
       workersCount,
     };
@@ -163,7 +163,7 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave, sho
             <span className="bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300 w-9 h-9 rounded-control flex items-center justify-center shrink-0">
               <Pencil size={18} />
             </span>
-            تعديل بيانات الشريك
+            {accountOnly ? `حساب دخول ${partner.partnerName}` : 'تعديل بيانات الشريك'}
           </h3>
           <button
             type="button"
@@ -176,6 +176,7 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave, sho
         </div>
 
         <form onSubmit={handleSubmit} className="p-5 sm:p-6 space-y-5">
+          {!accountOnly && <>
           <div>
             <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5" htmlFor="partnerName">
               اسم الشريك
@@ -246,11 +247,13 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave, sho
             </p>
           </div>
 
+          </>}
           {/* Link to a Supabase user via email. The admin types the
               email; we resolve it to a UUID on submit via the
               `get_user_id_by_email` RPC and persist that UUID under
               partners.user_id. Empty + currently-linked → keep the
               existing link; empty + unlinkRequested → explicitly clear. */}
+          {showAccountFields && <>
           <div>
             <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5" htmlFor="email">
               البريد الإلكتروني لحساب الشريك في سويتر
@@ -330,7 +333,9 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave, sho
             )}
           </div>
 
+          </>}
           {/* Capital & receivable summary */}
+          {!accountOnly && <>
           <div className="rounded-smallcard border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 divide-y divide-slate-100 dark:divide-slate-700 text-sm overflow-hidden">
             <div className="flex items-baseline justify-between gap-3 px-4 py-2.5">
               <span className="text-slate-500 dark:text-slate-400">إجمالي الرسوم المطلوبة</span>
@@ -372,6 +377,7 @@ export default function EditPartnerModal({ isOpen, partner, onClose, onSave, sho
             </div>
           </div>
 
+          </>}
           {createdCreds ? (
             <CreatedCredentials
               email={createdCreds.email}

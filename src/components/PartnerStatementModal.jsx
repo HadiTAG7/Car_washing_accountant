@@ -1,3 +1,4 @@
+import { partnerPaymentDescription } from '../lib/partnerCapitalReconciliation';
 import ModalSurface from './ModalSurface';
 import { useMemo } from 'react';
 import { X, Printer, Wallet } from 'lucide-react';
@@ -155,7 +156,7 @@ export default function PartnerStatementModal({ isOpen, onClose, partner }) {
                     >
                       <td className="py-2 px-2 tabular-nums text-slate-500 dark:text-slate-400 whitespace-nowrap">{formatDate(r.paymentDate)}</td>
                       <td className="py-2 px-2 text-slate-500 dark:text-slate-400 whitespace-nowrap">{METHOD_LABEL[r.paymentMethod] || r.paymentMethod}</td>
-                      <td className="py-2 px-2 text-slate-500 dark:text-slate-400">{r.notes || '—'}</td>
+                      <td className="py-2 px-2 text-slate-500 dark:text-slate-400">{partnerPaymentDescription(r)}</td>
                       <td className="py-2 px-2 text-left tabular-nums font-bold">{formatCurrency(r.amount)}</td>
                     </tr>
                   ))}

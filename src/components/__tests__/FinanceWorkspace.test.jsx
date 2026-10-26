@@ -108,7 +108,7 @@ describe('finance report UI and access boundaries', () => {
     expect(screen.getByRole('alert').textContent).toContain('الدفتر');
     expect(screen.getByRole('status').textContent).toContain('لم يكتمل فحص');
     fireEvent.click(screen.getByRole('button', { name: /^النقد المتاح/ })); expect(navigate).toHaveBeenCalledWith('ledger');
-    fireEvent.click(screen.getByRole('button', { name: /^رأس المال المدفوع/ })); expect(navigate).toHaveBeenCalledWith('balance');
+    fireEvent.click(screen.getByRole('button', { name: /^رأس المال المدفوع/ })); expect(navigate).toHaveBeenCalledWith('partner_capital');
     fireEvent.click(screen.getByRole('button', { name: /^الضريبة المستحقة/ })); expect(navigate).toHaveBeenCalledWith('vat');
   });
   it('uses the branded English calendar and filters posted revenue without refetching or writing', () => {

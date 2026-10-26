@@ -201,14 +201,14 @@ export default function Sidebar({
             const groupListId = `nav-group-${group.id}`;
             return (
               <div key={group.id} role={group.title ? 'group' : undefined} aria-label={group.title || undefined}
-                className={group.sections ? 'mt-3 border-t border-slate-200 dark:border-slate-700 pt-2' : undefined}>
+                className={(group.sections || group.major) ? 'mt-3 border-t border-slate-200 dark:border-slate-700 pt-2' : undefined}>
                 {group.title && (
                   <button
                     type="button"
                     onClick={() => toggleGroup(group.id, isOpen)}
                     aria-expanded={isOpen}
                     aria-controls={groupListId}
-                    className={`w-full min-h-11 flex items-center gap-2 px-3 py-2 font-bold hover:text-slate-700 dark:hover:text-slate-200 transition-colors ${group.sections
+                    className={`w-full min-h-11 flex items-center gap-2 px-3 py-2 font-bold hover:text-slate-700 dark:hover:text-slate-200 transition-colors ${(group.sections || group.major)
                       ? 'text-sm text-slate-800 dark:text-slate-100'
                       : 'text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-widest'}`}
                   >

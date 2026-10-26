@@ -36,7 +36,7 @@ it('lets admin preview every partner, including inactive ones, then switch and r
   expect(screen.getByText('معاينة حساب الشريك:')).toBeTruthy();
   pick('شريك أول'); expect(read('partner')).toBe('p1');
   fireEvent.click(screen.getByRole('button', { name: 'الرجوع إلى حساب الأدمن', exact: true }));
-  expect(read('partner')).toBe('admin'); expect(read('write')).toBe('true'); expect(read('route')).toBe('partners');
+  expect(read('partner')).toBe('admin'); expect(read('write')).toBe('true'); expect(read('route')).toBe('partners_list');
 });
 it('restores the selected preview after reload and can return through the picker', () => {
   const first = render(view()); pick('شريك ثان'); first.unmount(); render(view());

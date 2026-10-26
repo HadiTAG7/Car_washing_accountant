@@ -78,6 +78,28 @@ suite('Sweater metrics readings in an isolated demo store', () => {
     for (const col of ['journal_entries', 'washes', 'sweater_adjustments', 'payroll_runs']) expect((await db.collection(col).get()).size).toBe(0);
   });
 
+  it('persists partial count evidence once under concurrent retries, without replacing old or financial records', async () => {
+    await saveMetricsSnapshot(db, FieldValue, reading(), { keyId: 'k', nowMs: NOW });
+    const old = (await db.collection(COL).doc(reading().importRunId).get()).data();
+    const payload = reading({ importRunId: 'TEST-count-evidence', metrics: { freeWashCompensation: 9, cancelledByBiker: 16, cancelledMaintenance: 4 }, countDetails: [
+      { metricKey: 'freeWashCompensation', sourceId: 'TEST-ticket', driverExternalId: null, date: null, quantity: 2, amount: null,
+        reason: null, sourceUrl: 'https://ssp-portal.sweater.sa/tickets/TEST-ticket', bookingId: null },
+      { metricKey: 'cancelledByBiker', sourceId: 'TEST-event', driverExternalId: 'TEST-A', date: '2026-10-20', quantity: 1, amount: 0,
+        reason: 'Synthetic reason', sourceUrl: 'https://ssp-portal.sweater.sa/bookings/TEST-event', bookingId: 'TEST-event' },
+    ] });
+    const receipts = await Promise.all(Array.from({ length: 4 }, () => saveMetricsSnapshot(db, FieldValue, payload, { keyId: 'k', nowMs: NOW })));
+    expect(receipts.filter(r => r.stored)).toHaveLength(1);
+    expect(receipts.every(r => r.payloadHash === hashBody(payload))).toBe(true);
+    const saved = (await db.collection(COL).doc(payload.importRunId).get()).data();
+    expect(saved.countDetails).toEqual(payload.countDetails);
+    const changed = structuredClone(payload); changed.countDetails[0].amount = 40;
+    await expect(saveMetricsSnapshot(db, FieldValue, changed, { keyId: 'k', nowMs: NOW })).rejects.toMatchObject({ code: 'already-exists' });
+    expect((await db.collection(COL).doc(payload.importRunId).get()).data()).toEqual(saved);
+    expect((await db.collection(COL).doc(reading().importRunId).get()).data()).toEqual(old);
+    expect((await db.collection(COL).get()).size).toBe(2);
+    for (const col of ['journal_entries', 'washes', 'sweater_adjustments', 'payroll_runs', 'transactions']) expect((await db.collection(col).get()).size).toBe(0);
+  });
+
   it('arrives through the operations endpoint only under the agent key and the full-request signature', async () => {
     const key = await createIntegrationKey(db, FieldValue, { label: 'Synthetic demo-only key' });
     const handler = operationsHandler({ getDb: () => db, FieldValue });

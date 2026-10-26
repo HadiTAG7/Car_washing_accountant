@@ -23,7 +23,7 @@ it('shows the daily and per-biker break-even boxes from breakEven.js, red below 
   // Costs 100: 100 ÷ 20 ÷ 31 = 0.16 a day; one wash on the 20th of 20 completed days = 0.05 a day.
   const daily = dailyBreakEven({ statement: d.finance.statement, periodKey: '2026-10', completeMonth: false });
   const days = dailyBreakEvenDays(d.operations.daily, daily.required);
-  // b1 washed (1 on one day) and carries the month: 100 ÷ 20 ÷ 29 work days = 0.17 a day; coverage 580%.
+  // One wash / (20 completed days × 29/31): the same 31% company coverage.
   const perBiker = bikerBreakEven({ statement: d.finance.statement, washes: d.operations.rows, bikers: [biker], periodKey: '2026-10', today: '2026-10-21',
     payrollLines: [{ bikerId: 'b1', name: biker.name, basicDue: 50, bonus: 0, deduction: 0, daysEntitled: 31, monthDays: 31 }] });
   render(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language="ar" onNavigate={navigate} breakEven={{ daily, days, perBiker }} />);
@@ -35,9 +35,11 @@ it('shows the daily and per-biker break-even boxes from breakEven.js, red below 
   expect(first.textContent).toContain('تحت نقطة التعادل'); expect(first.className).toContain('sw-overview-insight--bad');
   const second = box('نقطة التعادل لكل بايكر');
   expect(second.querySelector('strong').textContent).toBe('0.17 غسلة / يوم');
-  expect(second.textContent).not.toMatch(/متوسط الفعلي لكل بايكر|التغطية|البايكرية المحسوبون/);
-  expect(second.querySelector('small')).toBeNull();
-  expect(second.textContent).toContain('وصل نقطة التعادل'); expect(second.className).toContain('sw-overview-insight--good');
+  expect(second.textContent).not.toMatch(/البايكرية المحسوبون/);
+  expect(second.querySelector('small').textContent).toContain('للمعلومة فقط');
+  expect(second.textContent).toContain('تحت نقطة التعادل'); expect(second.className).toContain('sw-overview-insight--bad');
+  expect(second.textContent).toContain('التغطية: 31%');
+  expect(second.textContent).toContain('متوسط الغسلات في أيام الغسيل: 1');
   fireEvent.click(within(second).getByRole('button', { name: 'تفاصيل كل بايكر' })); expect(navigate).toHaveBeenCalledWith('bikers');
 });
 
@@ -138,7 +140,7 @@ it('without Sweater data says so instead of zero, item by item', () => {
 });
 it('removes the selected explanations without changing the displayed calculations', () => {
   render(<OverviewBusinessInsights data={data()} periodKey="2026-10" washReady language="ar" />);
-  expect(card('الإنتاج مقارنة بالطاقة اليومية').textContent).toContain('12.5%'); expect(card('البقشيش').textContent).toContain('ما وصلت بيانات سويتر');
+  expect(card('الإنتاج مقارنة بالطاقة اليومية').textContent).toContain('0.67%'); expect(card('البقشيش').textContent).toContain('ما وصلت بيانات سويتر');
   expect(card('الإنتاج مقارنة بالطاقة اليومية').textContent).not.toContain('تقريبي · على أيام الغسيل، مو الحضور');
   expect(card('تكلفة الغسلة').querySelector('small')).toBeNull();
   expect(card('تكلفة الغسلة').textContent).not.toContain('تقديري');
@@ -152,7 +154,7 @@ it('removes the selected explanations without changing the displayed calculation
 it.each(['ar', 'en'])('labels daily capacity clearly and displays eight assumed washes per biker (%s)', language => {
   render(<OverviewBusinessInsights data={data()} periodKey="2026-10" washReady language={language} />);
   const box = card(language === 'ar' ? 'الإنتاج مقارنة بالطاقة اليومية' : 'Output vs daily capacity');
-  expect(box.querySelector('strong').textContent).toBe('12.5%');
+  expect(box.querySelector('strong').textContent).toBe('0.67%');
   expect(box.querySelector('p bdi').textContent).toBe('8');
   expect(box.textContent).toContain(language === 'ar' ? 'غسلات / يوم' : 'washes / day');
   expect(screen.queryByRole('heading', { name: language === 'ar' ? 'استغلال الطاقة' : 'Capacity utilization' })).toBeNull();
@@ -163,7 +165,7 @@ it.each(['ar', 'en'])('opens capacity and tips details without navigation or rec
   render(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language={language} onNavigate={navigate} />);
   fireEvent.click(screen.getByRole('button', { name: language === 'ar' ? 'الإنتاج مقارنة بالطاقة اليومية' : 'Output vs daily capacity' }));
   let dialog = screen.getByRole('dialog');
-  expect(dialog.textContent).toContain('1984'); expect(dialog.textContent).toContain('12.5%');
+  expect(dialog.textContent).toContain('1984'); expect(dialog.textContent).toContain('0.67%');
   expect(within(dialog).getByRole('table')).toBeTruthy();
   fireEvent.click(within(dialog).getByRole('button', { name: language === 'ar' ? 'إغلاق التفاصيل' : 'Close details' }));
   expect(screen.queryByRole('dialog')).toBeNull();
@@ -172,6 +174,18 @@ it.each(['ar', 'en'])('opens capacity and tips details without navigation or rec
   expect(dialog.textContent).toContain('1984'); expect(dialog.textContent).toContain('عامل اختبار'); expect(dialog.textContent).toContain('73.13');
   expect(navigate).not.toHaveBeenCalled();
   expect(card(language === 'ar' ? 'البقشيش' : 'Tips').querySelector('p')).toBeNull();
+});
+it.each(['ar', 'en'])('does not call missing eligibility no completed days when recorded wash days exist (%s)', language => {
+  const d = data();
+  const perBiker = bikerBreakEven({ statement: d.finance.statement, washes: d.operations.rows, bikers: [biker], periodKey: '2026-10', today: '2026-10-21',
+    payrollLines: [{ bikerId: 'b1', basicDue: 50, daysEntitled: 6 }] });
+  expect(perBiker.rows[0]).toMatchObject({ actualDaily: null, washDays: 1, washes: 1 });
+  render(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language={language} breakEven={{ perBiker }} />);
+  fireEvent.click(screen.getByRole('button', { name: language === 'ar' ? 'الإنتاج مقارنة بالطاقة اليومية' : 'Output vs daily capacity' }));
+  const table = within(screen.getByRole('dialog')).getByRole('table');
+  expect(table.textContent).toContain(language === 'ar' ? 'غير متاح' : 'Unavailable');
+  expect(table.textContent).not.toContain(language === 'ar' ? 'لا أيام مكتملة' : 'No completed days');
+  expect(within(table).getAllByRole('row')[1].textContent).toContain('1984');
 });
 it('does not attribute an aggregate-only or wrong-month tips snapshot to a biker', () => {
   const d = data(); d.sweaterMetrics = { snapshot: october, loading: false };

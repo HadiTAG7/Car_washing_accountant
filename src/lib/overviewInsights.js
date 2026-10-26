@@ -13,7 +13,7 @@ const dayMs = day => {
 
 // The statement remains the existing ledger + registered operations engine.
 // All new math is read-only and scoped to this page, not a second P&L.
-export function overviewBusinessMetrics(ops, statement, settings = OVERVIEW_SETTINGS) {
+export function overviewBusinessMetrics(ops, statement, settings = OVERVIEW_SETTINGS, actualPerAvailableDay = null) {
   if (!ops) return null;
   const lastDay = monthRange(ops.from.slice(0, 7)).to;
   const monthDays = Number(lastDay.slice(8));
@@ -31,8 +31,8 @@ export function overviewBusinessMetrics(ops, statement, settings = OVERVIEW_SETT
     remainingWashes: monthlyRequired === null ? null : Math.max(0, monthlyRequired - ops.quantity),
     currentDailyRate: ops.completedDays.length ? ops.completedQuantity / ops.completedDays.length : null,
     costPerWash: costs !== null && costs >= 0 && ops.quantity > 0 ? costs / ops.quantity : null,
-    capacityUtilization: number(ops.averagePerBikerDay) !== null && settings.dailyAppointmentsPerBiker > 0
-      ? Number(ops.averagePerBikerDay) / settings.dailyAppointmentsPerBiker * 100 : null,
+    capacityUtilization: number(actualPerAvailableDay) !== null && settings.dailyAppointmentsPerBiker > 0
+      ? Number(actualPerAvailableDay) / settings.dailyAppointmentsPerBiker * 100 : null,
     estimated: Boolean(statement?.salaryAccrual?.estimated), partialCosts: Boolean(statement?.issues?.length),
     forecastQuantity, forecastRevenue: ops.completeMonth ? number(statement?.netRevenue)
       : forecastQuantity === null ? null : forecastQuantity * settings.washNetPrice,

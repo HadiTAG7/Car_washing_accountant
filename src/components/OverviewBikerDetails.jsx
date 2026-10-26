@@ -5,10 +5,10 @@ import { validTipsByBiker } from '../../functions/src/sweater/metricsContract';
 import { displayBikerName } from '../lib/bikerNames';
 import { formatCurrencyPrecise, formatNumber } from '../data/initialData';
 
-export default function OverviewBikerDetails({ kind, ops, bikers = [], snapshot, periodKey, language, onClose }) {
+export default function OverviewBikerDetails({ kind, ops, bikers = [], snapshot, perBiker, periodKey, language, onClose }) {
   const text = (ar, en) => language === 'en' ? en : ar;
   const num = value => value == null ? '—' : formatNumber(Math.round(value * 100) / 100);
-  const capacity = kind === 'capacity' ? overviewBikerCapacity(ops, bikers) : null;
+  const capacity = kind === 'capacity' ? overviewBikerCapacity(ops, bikers, undefined, perBiker) : null;
   const tips = snapshot?.periodKey === periodKey && validTipsByBiker(snapshot.tipsByBiker, snapshot.metrics?.tipsNet)
     ? snapshot.tipsByBiker.filter(row => row.netAmount !== 0) : null;
   const name = biker => biker ? displayBikerName(biker, language) : text('الاسم غير مربوط', 'Name not linked');
@@ -22,13 +22,13 @@ export default function OverviewBikerDetails({ kind, ops, bikers = [], snapshot,
       <button type="button" aria-label={text('إغلاق التفاصيل', 'Close details')} onClick={onClose}><X size={20} /></button></header>
     <p><bdi>{periodKey}</bdi></p>
     {kind === 'capacity' ? <>
-      <p>{text('غسلات البايكر ÷ أيام غسيله المكتملة ÷ الطاقة اليومية × 100. اليوم الجاري مستبعد؛ ليست نسبة حضور.', 'Biker washes ÷ completed wash days ÷ daily capacity × 100. Today is excluded; this is not attendance.')}</p>
+      <p>{text('غسلات البايكر ÷ أيام العمل المتاحة المنقضية بعد الإجازة النسبية ÷ الطاقة اليومية × 100. اليوم الجاري مستبعد؛ ليست نسبة حضور.', 'Biker washes ÷ elapsed available workdays after prorated leave ÷ daily capacity × 100. Today is excluded; this is not attendance.')}</p>
       {capacity?.unlinked > 0 && <p role="status">{text('غسلات بلا ربط بايكر مؤكّد', 'Washes without a confirmed biker link')}: {num(capacity.unlinked)}</p>}
       {!capacity?.rows.length ? <p>{text('لا توجد غسلات مرتبطة ببايكر في الشهر المختار.', 'No biker-linked washes in the selected month.')}</p>
         : <div className="sw-overview-detail__table"><table><thead><tr>
-          {[text('البايكر', 'Biker'), text('الغسلات', 'Washes'), text('أيام الغسيل', 'Wash days'), text('المتوسط اليومي', 'Daily average'), text('نسبة الإنتاج', 'Output percentage')].map(label => <th key={label} scope="col">{label}</th>)}
+          {[text('البايكر', 'Biker'), text('الغسلات', 'Washes'), text('أيام الغسيل', 'Wash days'), text('أيام العمل المتاحة المنقضية', 'Elapsed available workdays'), text('المتوسط اليومي', 'Daily average'), text('متوسط الغسلات في أيام الغسيل', 'Average washes on wash days'), text('نسبة الإنتاج', 'Output percentage')].map(label => <th key={label} scope="col">{label}</th>)}
         </tr></thead><tbody>{capacity.rows.map(row => <tr key={row.id}><th scope="row"><bdi>{row.biker?.driverExternalId || '—'}</bdi> · <span translate="no">{name(row.biker)}</span></th>
-          <td>{num(row.washes)}</td><td>{num(row.washDays)}</td><td>{num(row.average)}</td><td>{row.percentage === null ? text('لا أيام مكتملة', 'No completed days') : `${num(row.percentage)}%`}</td></tr>)}</tbody></table></div>}
+          <td>{num(row.washes)}</td><td>{num(row.washDays)}</td><td>{num(row.elapsedWorkDays)}</td><td>{num(row.average)}</td><td>{num(row.averagePerWashDay)}</td><td>{row.percentage === null ? text('غير متاح', 'Unavailable') : `${num(row.percentage)}%`}</td></tr>)}</tbody></table></div>}
     </> : <>
       {updated && <p>{text('آخر قراءة للبقشيش', 'Tips last read')}: <bdi>{updated}</bdi> {text('(الرياض)', '(Riyadh)')}</p>}
       {tips !== null && <p>{text('إجمالي صافي البقشيش', 'Total net tips')}: <strong><bdi>{formatCurrencyPrecise(snapshot.metrics.tipsNet)}</bdi></strong> · {text('البايكرية المسجل لهم بقشيش', 'Bikers with recorded tips')}: <bdi>{tips.length}</bdi></p>}

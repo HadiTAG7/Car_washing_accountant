@@ -14,6 +14,8 @@ export function useOverviewDashboard(periodKey) {
   const statement = { periodKey, netRevenue: selected ? 7640 : 0, totalCosts: selected ? 30036.57 : 0, netProfit: selected ? -22396.57 : 0, salaryAccrual: { estimated: true }, issues: [] };
   return { finance: { statement, previous: null, loading: false }, operations: overviewOperations({ washes, bikers, periodKey, today }),
     workers: { bikers, loading: false, error: null }, washes: ready(washes), dueVouchers: [], retry: () => {},
+    payroll: { data: [{ periodKey, lines: bikers.map(biker => ({ bikerId: biker.id, basicDue: 900, bonus: 0, deduction: 0,
+      daysEntitled: 31, eligibleStart: '2026-10-01', eligibleEnd: '2026-10-31' })) }], loading: false, error: null },
     bookings: ready([{ record: { sspBookingId: 'TEST-19-0', serviceDate: '2026-10-20', driverExternalId: 'TEST-A', startedAt: '2026-10-20T09:00:00+03:00', completedAt: '2026-10-20T09:09:00+03:00' } }]),
     sweaterMetrics: { snapshot: composeSweaterMetricReadings([
       { id: 'TEST-BUSINESS', periodKey: '2026-10', extractedAtIso: '2026-10-21T06:00:00Z', metrics: { completedWashes: 400, tipsNet: 50 },

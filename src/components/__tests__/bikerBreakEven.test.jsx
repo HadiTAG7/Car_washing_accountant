@@ -38,10 +38,10 @@ it('a washer carries the month; a biker paid without a wash shows no figures of 
   const s = state();
   // a: 900 direct + 2100 shared = 3000 → 150 a month ÷ 29 work days = 5.17; actual 5 → 97%.
   const a = cells(s, 'a');
-  expect(a.map(td => td.textContent)).toEqual([sar(900), sar(2100), '150', '5.17', '5', '97%']);
+  expect(a.map(td => td.textContent)).toEqual([sar(900), sar(2100), '150', '5.17', '0.24متوسط الغسلات في أيام الغسيل: 5', '1', '5%']);
   cleanup();
   const b = cells(s, 'b');
-  expect(b.map(td => td.textContent)).toEqual(['—', '—', '—', '—', 'لا غسلات', '—']);
+  expect(b.map(td => td.textContent)).toEqual(['—', '—', '—', '—', 'لا غسلات', '0', '—']);
   expect(b[0].title).toContain('ضمن التكاليف المشتركة على من غسلوا');
   cleanup();
   expect(cells(s, 'z')[0].title).toContain('غير مدرج في مسير الشهر');

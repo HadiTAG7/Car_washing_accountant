@@ -3533,5 +3533,16 @@
   "المبلغ المبيّن في سويتر": "Amount shown in Sweater",
   "فتح دليل سويتر": "Open Sweater evidence",
   "هذه معلومات المصدر فقط؛ لا تثبت اعتمادًا في الدفتر، أو خصم راتب، أو صرف تعويض.": "This is source information only; it does not establish ledger approval, a payroll deduction or compensation payment.",
-  "تفاصيل الأعداد تحتاج وقائع مصدر فريدة من الشهر والقراءة نفسهما، وكمية لا تتجاوز العدد؛ المبلغ المفقود يبقى غير متاح.": "Count details require unique source events from the same month and reading, and units within the total; missing amounts remain unavailable."
+  "تفاصيل الأعداد تحتاج وقائع مصدر فريدة من الشهر والقراءة نفسهما، وكمية لا تتجاوز العدد؛ المبلغ المفقود يبقى غير متاح.": "Count details require unique source events from the same month and reading, and units within the total; missing amounts remain unavailable.",
+  "غسلاته ÷ أيام العمل المتاحة المنقضية بعد الإجازة النسبية؛ اليوم الجاري مستبعد": "Washes ÷ elapsed available workdays after prorated leave; today is excluded",
+  "عدد الأيام المكتملة التي سجل فيها غسلات؛ للمعلومة فقط": "Completed days with recorded washes; for information only",
+  "فترة النشاط غير مؤكدة أو توجد غسلات خارجها؛ الفعلي غير متاح": "The active period is unconfirmed or washes fall outside it; actual output is unavailable",
+  "[VAR0] غسلة ÷ [VAR1] يوم عمل متاح منقضٍ": "[VAR0] washes ÷ [VAR1] elapsed available workdays",
+  "يوم عمل متاح منقضٍ": "elapsed available workdays",
+  "متوسط الغسلات في أيام الغسيل:": "Average washes on wash days:",
+  "غسلات البايكر ÷ أيام العمل المتاحة المنقضية بعد الإجازة النسبية ÷ الطاقة اليومية × 100. اليوم الجاري مستبعد؛ ليست نسبة حضور.": "Biker washes ÷ elapsed available workdays after prorated leave ÷ daily capacity × 100. Today is excluded; this is not attendance.",
+  "أيام العمل المتاحة المنقضية": "Elapsed available workdays",
+  "متوسط الغسلات في أيام الغسيل": "Average washes on wash days",
+  "الفعلي لكل يوم عمل متاح": "Actual per available workday",
+  "للمعلومة فقط": "For information only"
 }

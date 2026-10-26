@@ -34,7 +34,7 @@ export function BikerBreakEvenLoader({ periodKey, today, onResult }) {
   useEffect(() => {
     const v = result.value;
     const key = result.status !== 'ready' ? result.status : JSON.stringify([v.basis, v.total, v.allocatedTotal,
-      v.rows.map(r => [r.bikerId, r.cost, r.washes, r.washDays, r.activeDays]), v.idle.rows.map(r => [r.bikerId, r.salary]), v.outside.length, v.unlinkedWashes]);
+      v.rows.map(r => [r.bikerId, r.cost, r.washes, r.washDays, r.activeDays, r.elapsedWorkDays, r.actualDaily]), v.idle.rows.map(r => [r.bikerId, r.salary]), v.outside.length, v.unlinkedWashes]);
     if (sent.current === key) return;
     sent.current = key;
     onResult(result);
@@ -42,7 +42,7 @@ export function BikerBreakEvenLoader({ periodKey, today, onResult }) {
   return null;
 }
 
-export const BREAK_EVEN_COLUMNS = 6;
+export const BREAK_EVEN_COLUMNS = 7;
 
 export function BreakEvenHeaders() {
   const th = 'py-3 px-4 whitespace-nowrap text-left tabular-nums';
@@ -53,7 +53,8 @@ export function BreakEvenHeaders() {
       : 'التكاليف غير المربوطة ببايكر، موزعة بالتساوي على أيام الأهلية في المسير'}>نصيبه من الثابتة</th>
     <th className={th} title={`(المباشرة + نصيبه من الثابتة) ÷ سعر الغسلة قبل الضريبة ${settings.washNetPrice}`}>المطلوب شهريًا</th>
     <th className={th} title={`المطلوب شهريًا ÷ أيام العمل (أيام الشهر − ${settings.monthlyDaysOff} إجازة، بالتناسب للشهر الجزئي)`}>المطلوب يوميًا</th>
-    <th className={th} title="غسلاته في الأيام المكتملة ÷ الأيام التي غسل فيها">الفعلي يوميًا</th>
+    <th className={th} title="غسلاته ÷ أيام العمل المتاحة المنقضية بعد الإجازة النسبية؛ اليوم الجاري مستبعد">الفعلي يوميًا</th>
+    <th className={th} title="عدد الأيام المكتملة التي سجل فيها غسلات؛ للمعلومة فقط">أيام الغسيل</th>
     <th className="py-3 px-4 whitespace-nowrap text-center" title="الفعلي ÷ المطلوب: الأخضر من 100%، الأصفر 80–99%، الأحمر تحت 80%">التغطية</th>
   </>;
 }
@@ -70,7 +71,7 @@ export function BreakEvenCells({ state, bikerId }) {
     const idle = state.value.idle.rows.find(r => r.bikerId === bikerId);
     const title = idle ? `لا غسلات له في الأيام المكتملة من الشهر؛ راتبه ${formatCurrencyPrecise(idle.salary)} ضمن التكاليف المشتركة على من غسلوا`
       : 'غير مدرج في مسير الشهر، فلا تكاليف له هنا';
-    return Array.from({ length: BREAK_EVEN_COLUMNS }, (_, i) => <td key={i} className={`${td} text-slate-400`} title={title}>{idle && i === 4 ? 'لا غسلات' : '—'}</td>);
+    return Array.from({ length: BREAK_EVEN_COLUMNS }, (_, i) => <td key={i} className={`${td} text-slate-400`} title={title}>{idle && i === 4 ? 'لا غسلات' : idle && i === 5 ? '0' : '—'}</td>);
   }
   return <>
     <td className={td} title={row.approximate
@@ -86,7 +87,10 @@ export function BreakEvenCells({ state, bikerId }) {
       {row.overCapacity && <span className="mr-1 rounded-control bg-rose-50 px-1.5 py-0.5 text-[11px] font-semibold text-rose-700 dark:bg-rose-500/15 dark:text-rose-300"
         title={`أكثر من الطاقة اليومية ${settings.dailyAppointmentsPerBiker} غسلات`}>فوق الطاقة</span>}
     </td>
-    <td className={td} title={`${formatNumber(row.washes)} غسلة ÷ ${formatNumber(row.washDays)} يوم غسيل مكتمل`}>{row.actualDaily == null ? 'لا غسلات' : two(row.actualDaily)}</td>
+    <td className={td} title={row.elapsedWorkDays == null || row.outsideAvailability ? 'فترة النشاط غير مؤكدة أو توجد غسلات خارجها؛ الفعلي غير متاح'
+      : `${formatNumber(row.washes)} غسلة ÷ ${two(row.elapsedWorkDays)} يوم عمل متاح منقضٍ`}>{row.actualDaily == null ? '—' : two(row.actualDaily)}
+      <small className="block text-[10px] text-slate-500">متوسط الغسلات في أيام الغسيل: {row.averagePerWashDay == null ? '—' : two(row.averagePerWashDay)}</small></td>
+    <td className={td}>{formatNumber(row.washDays)}</td>
     <td className="py-3 px-4 whitespace-nowrap text-center tabular-nums">
       {row.coverage == null ? '—' : <span className={`inline-block rounded-control px-2 py-0.5 text-xs font-semibold ${TONES[row.tone]}`}>{formatNumber(Math.round(row.coverage * 100))}%</span>}
     </td>

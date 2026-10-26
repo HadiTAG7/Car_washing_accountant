@@ -175,6 +175,18 @@ it.each(['ar', 'en'])('opens capacity and tips details without navigation or rec
   expect(navigate).not.toHaveBeenCalled();
   expect(card(language === 'ar' ? 'البقشيش' : 'Tips').querySelector('p')).toBeNull();
 });
+it.each(['ar', 'en'])('does not call missing eligibility no completed days when recorded wash days exist (%s)', language => {
+  const d = data();
+  const perBiker = bikerBreakEven({ statement: d.finance.statement, washes: d.operations.rows, bikers: [biker], periodKey: '2026-10', today: '2026-10-21',
+    payrollLines: [{ bikerId: 'b1', basicDue: 50, daysEntitled: 6 }] });
+  expect(perBiker.rows[0]).toMatchObject({ actualDaily: null, washDays: 1, washes: 1 });
+  render(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language={language} breakEven={{ perBiker }} />);
+  fireEvent.click(screen.getByRole('button', { name: language === 'ar' ? 'الإنتاج مقارنة بالطاقة اليومية' : 'Output vs daily capacity' }));
+  const table = within(screen.getByRole('dialog')).getByRole('table');
+  expect(table.textContent).toContain(language === 'ar' ? 'غير متاح' : 'Unavailable');
+  expect(table.textContent).not.toContain(language === 'ar' ? 'لا أيام مكتملة' : 'No completed days');
+  expect(within(table).getAllByRole('row')[1].textContent).toContain('1984');
+});
 it('does not attribute an aggregate-only or wrong-month tips snapshot to a biker', () => {
   const d = data(); d.sweaterMetrics = { snapshot: october, loading: false };
   const { rerender } = render(<OverviewBusinessInsights data={d} periodKey="2026-10" washReady language="ar" />);

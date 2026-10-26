@@ -28,7 +28,7 @@ export default function OverviewBikerDetails({ kind, ops, bikers = [], snapshot,
         : <div className="sw-overview-detail__table"><table><thead><tr>
           {[text('البايكر', 'Biker'), text('الغسلات', 'Washes'), text('أيام الغسيل', 'Wash days'), text('أيام العمل المتاحة المنقضية', 'Elapsed available workdays'), text('المتوسط اليومي', 'Daily average'), text('متوسط الغسلات في أيام الغسيل', 'Average washes on wash days'), text('نسبة الإنتاج', 'Output percentage')].map(label => <th key={label} scope="col">{label}</th>)}
         </tr></thead><tbody>{capacity.rows.map(row => <tr key={row.id}><th scope="row"><bdi>{row.biker?.driverExternalId || '—'}</bdi> · <span translate="no">{name(row.biker)}</span></th>
-          <td>{num(row.washes)}</td><td>{num(row.washDays)}</td><td>{num(row.elapsedWorkDays)}</td><td>{num(row.average)}</td><td>{num(row.averagePerWashDay)}</td><td>{row.percentage === null ? text('لا أيام مكتملة', 'No completed days') : `${num(row.percentage)}%`}</td></tr>)}</tbody></table></div>}
+          <td>{num(row.washes)}</td><td>{num(row.washDays)}</td><td>{num(row.elapsedWorkDays)}</td><td>{num(row.average)}</td><td>{num(row.averagePerWashDay)}</td><td>{row.percentage === null ? text('غير متاح', 'Unavailable') : `${num(row.percentage)}%`}</td></tr>)}</tbody></table></div>}
     </> : <>
       {updated && <p>{text('آخر قراءة للبقشيش', 'Tips last read')}: <bdi>{updated}</bdi> {text('(الرياض)', '(Riyadh)')}</p>}
       {tips !== null && <p>{text('إجمالي صافي البقشيش', 'Total net tips')}: <strong><bdi>{formatCurrencyPrecise(snapshot.metrics.tipsNet)}</bdi></strong> · {text('البايكرية المسجل لهم بقشيش', 'Bikers with recorded tips')}: <bdi>{tips.length}</bdi></p>}

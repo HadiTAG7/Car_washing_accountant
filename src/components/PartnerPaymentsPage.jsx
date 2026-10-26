@@ -1,5 +1,6 @@
+import { partnerPaymentDescription } from '../lib/partnerCapitalReconciliation';
 import { translate } from '../i18n/locale';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Plus, Trash2, Building2, Coins, Wallet, Landmark, CreditCard, History,
 } from 'lucide-react';
@@ -84,7 +85,7 @@ export default function PartnerPaymentsPage() {
   // partner row got deleted while we were viewing it). The derived
   // `selectedPartner` below resolves these cases by falling back to the
   // first available partner.
-  const [pickedPartnerId, setPickedPartnerId] = useState(null);
+  const [pickedPartnerId, setPickedPartnerId] = useState(() => new URLSearchParams(window.location.search).get('partnerId'));
   const [addOpen, setAddOpen] = useState(false);
   const [mutationError, setMutationError] = useState(null);
   const [toast, setToast] = useState({ open: false, message: '', tone: 'success', duration: 3000 });
@@ -107,6 +108,13 @@ export default function PartnerPaymentsPage() {
     () => payments.filter((p) => p.partnerId === selectedPartnerId),
     [payments, selectedPartnerId],
   );
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get('paymentId');
+    if (id && partnerPayments.some(payment => payment.id === id)) {
+      document.getElementById(`partner-payment-${id}`)?.scrollIntoView?.({ block: 'center' });
+    }
+  }, [partnerPayments]);
+
 
   // Capital tracking summed from the receipts, never partners.paid_amount
   // (a stale cache nothing writes any more).
@@ -298,7 +306,8 @@ export default function PartnerPaymentsPage() {
                   {partnerPayments.map((p) => (
                     <tr
                       key={p.id}
-                      className="border-b border-slate-50 dark:border-slate-800/60 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors"
+                      id={`partner-payment-${p.id}`}
+                      className="target:bg-primary-50 dark:target:bg-slate-800 border-b border-slate-50 dark:border-slate-800/60 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors"
                     >
                       <td className="py-3 px-4 whitespace-nowrap tabular-nums text-slate-700 dark:text-slate-300">
                         {formatDate(p.paymentDate)}
@@ -310,7 +319,7 @@ export default function PartnerPaymentsPage() {
                         <MethodPill method={p.paymentMethod} />
                       </td>
                       <td className="py-3 px-4 whitespace-normal break-words text-slate-600 dark:text-slate-400 min-w-[200px] leading-relaxed">
-                        {p.notes || <span className="text-slate-300 dark:text-slate-600">—</span>}
+                        {partnerPaymentDescription(p) || <span className="text-slate-300 dark:text-slate-600">—</span>}
                       </td>
                       <td className="py-3 px-4 whitespace-nowrap text-left">
                         {canMutate && (

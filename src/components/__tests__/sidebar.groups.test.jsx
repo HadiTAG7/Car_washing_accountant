@@ -102,7 +102,7 @@ describe('Sidebar — المجموعات', () => {
     fireEvent.click(within(expenses).getByRole('button', { name: 'المصاريف', exact: true }));
     expect(select).toHaveBeenCalledWith('expenses');
     expect(within(finance).getByRole('group', { name: 'القوائم' })).toBeTruthy();
-    expect(within(finance).getByRole('group', { name: 'الشركاء والضريبة والإقفال' })).toBeTruthy();
+    expect(within(finance).getByRole('group', { name: 'الضريبة والإقفال' })).toBeTruthy();
   });
 
   it('keeps both finance and expenses expanded for an active legacy expense URL without erasing preferences', () => {

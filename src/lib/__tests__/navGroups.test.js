@@ -9,7 +9,7 @@ describe('من يرى أي تبويب', () => {
   it('consolidates finance without duplicating or renaming old route ids and keeps new pages admin-only', () => {
     const finance = TAB_GROUPS.find(g => g.id === 'finance'), ids = idsOf(TAB_GROUPS);
     expect(finance.homeTab).toBe('finance'); expect(ids.length).toBe(new Set(ids).size);
-    for (const old of ['startup', 'annual', 'monthly', 'variable', 'temporary_expenses', 'partners', 'payments', 'ledger', 'vat', 'assets', 'sweater_settlements']) {
+    for (const old of ['startup', 'annual', 'monthly', 'variable', 'temporary_expenses', 'ledger', 'vat', 'assets', 'sweater_settlements']) {
       expect(finance.tabs.some(t => t.id === old)).toBe(true); expect(resolveTab(old, { allowedTabIds: ids })).toBe(old);
     }
     for (const role of ['partner', 'accountant', 'operator', 'supervisor']) for (const page of ['finance', 'finance_reports', 'finance_workbench', 'finance_payroll']) {

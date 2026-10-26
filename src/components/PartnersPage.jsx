@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
-  Plus, Users, UserCheck, Briefcase, Trash2, Pencil, Building2, Coins, FileText, Bot, Ban, Eye,
+  Plus, Users, Briefcase, Trash2, Pencil, Building2, Coins, FileText, Eye,
 } from 'lucide-react';
 import { formatNumber, formatCurrency, PER_WORKER_FEE } from '../data/initialData';
 import TopBar from './TopBar';
@@ -16,10 +16,8 @@ import PartnerEligibilityModal from './PartnerEligibilityModal';
 import LoadingState from './LoadingState';
 import ErrorState from './ErrorState';
 import Toast from './Toast';
-import SweaterActionDialog from './SweaterActionDialog';
 import { usePartners } from '../hooks/usePartners';
 import { usePartnerPayments } from '../hooks/usePartnerPayments';
-import { usePartnerMcpKeys, activeKeyFor } from '../hooks/usePartnerMcpKeys';
 import { paidByPartner } from '../lib/accounting/partnerTotals';
 import { describeBackendError } from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
@@ -48,14 +46,6 @@ export default function PartnersPage() {
   // client-side read-then-sum and can drift from its own evidence.
   const { payments: partnerPayments } = usePartnerPayments();
   const paidTotals = useMemo(() => paidByPartner(partnerPayments), [partnerPayments]);
-
-  // ── روابط المساعد الذكي ──
-  // المدير يرى الحالة ويُلغي، ولا يرى الرمز — المستند لا يحمله أصلاً. تُقرأ
-  // للمدير وحده: الشريك في عرض القراءة يرى رابطه من صفحته هو.
-  const mcp = usePartnerMcpKeys({ scope: 'all', enabled: canManagePartners });
-  const [revokeTarget, setRevokeTarget] = useState(null);   // { partner, key }
-  const [revokeBusy, setRevokeBusy] = useState(false);
-  const [revokeError, setRevokeError] = useState(null);
 
   // Partner view filters the page to just the viewed partner's row — they
   // shouldn't see the rest of the fleet's data. Admin (no partner view)
@@ -86,13 +76,12 @@ export default function PartnersPage() {
   const kpis = useMemo(() => {
     const totalPartners     = partners.length;
     const totalWorkers      = partners.reduce((s, p) => s + (p.workersCount || 0), 0);
-    const activeCount       = partners.filter((p) => p.status === 'active').length;
     // Capital fee × headcount across the entire fleet — the receivable
     // ceiling, in other words.
     const totalProjectValue = totalWorkers * PER_WORKER_FEE;
     // Cash actually collected, summed from the receipts themselves.
     const totalPaidTillNow  = partners.reduce((s, p) => s + (paidTotals.get(String(p.id)) || 0), 0);
-    return { totalPartners, totalWorkers, activeCount, totalProjectValue, totalPaidTillNow };
+    return { totalPartners, totalWorkers, totalProjectValue, totalPaidTillNow };
   }, [partners, paidTotals]);
 
   async function handleAdd(partner) {
@@ -119,17 +108,6 @@ export default function PartnersPage() {
       throw e;
     }
   }
-  async function handleRevokeMcp({ reason }) {
-    if (!revokeTarget) return;
-    setRevokeBusy(true); setRevokeError(null);
-    try {
-      await mcp.revokeKey(revokeTarget.key.keyId, reason);
-      setRevokeTarget(null);
-      showToast(`أُوقف رابط المساعد الذكي لـ ${revokeTarget.partner.partnerName}`);
-    } catch (e) {
-      setRevokeError(describeBackendError(e) || e?.message || 'تعذّر إيقاف الرابط');
-    } finally { setRevokeBusy(false); }
-  }
   async function handleDelete(id) {
     try {
       setMutationError(null);
@@ -145,7 +123,7 @@ export default function PartnersPage() {
   return (
     <>
       <TopBar
-        title="إدارة الشركاء"
+        title="قائمة الشركاء"
         subtitle="متابعة الشركاء وعدد العمالة لكل شريك ورأس المال المُسدَّد"
       />
 
@@ -166,7 +144,7 @@ export default function PartnersPage() {
         )}
 
         {/* ── KPI row ─────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-5">
+        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-5">
           <StatCard
             className="col-span-2 lg:col-span-1"
             icon={Briefcase}
@@ -183,13 +161,6 @@ export default function PartnersPage() {
             sub="مجموع عمالة جميع الشركاء"
           />
           <StatCard
-            icon={UserCheck}
-            tone="emerald"
-            label="الشركاء النشطين"
-            value={formatNumber(kpis.activeCount)}
-            sub={`${kpis.totalPartners > 0 ? ((kpis.activeCount / kpis.totalPartners) * 100).toFixed(0) : 0}% من إجمالي الشركاء`}
-          />
-          <StatCard
             icon={Building2}
             tone="indigo"
             label="إجمالي قيمة المشروع"
@@ -199,9 +170,9 @@ export default function PartnersPage() {
           <StatCard
             icon={Coins}
             tone="emerald"
-            label="إجمالي المبالغ المدفوعة"
+            label="رأس المال المحصّل من الشركاء"
             value={formatCurrency(kpis.totalPaidTillNow)}
-            sub="السيولة المحصلة في الخزينة إلى الآن"
+            sub="مجموع سندات قبض رأس المال؛ ليس رصيدًا نقديًا"
           />
         </div>
 
@@ -231,7 +202,6 @@ export default function PartnersPage() {
                   <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">الرسوم المطلوبة</th>
                   <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">المبلغ المدفوع</th>
                   <th className="py-3 px-4 whitespace-nowrap text-left tabular-nums">المبلغ المتبقي</th>
-                  {canManagePartners && <th className="py-3 px-4 whitespace-nowrap text-center">المساعد الذكي</th>}
                   <th className="py-3 px-4 whitespace-nowrap text-left w-24">إجراءات</th>
                 </tr>
               </thead>
@@ -240,14 +210,14 @@ export default function PartnersPage() {
               <tbody>
                 {loading && partners.length === 0 && (
                   <tr>
-                    <td colSpan={canManagePartners ? 8 : 7} className="py-10">
+                    <td colSpan={7} className="py-10">
                       <LoadingState message="جارٍ تحميل بيانات الشركاء..." />
                     </td>
                   </tr>
                 )}
                 {!loading && partners.length === 0 && !error && (
                   <tr>
-                    <td colSpan={canManagePartners ? 8 : 7}>
+                    <td colSpan={7}>
                       <EmptyState
                         compact
                         icon={Briefcase}
@@ -269,7 +239,6 @@ export default function PartnersPage() {
                   const paid     = paidTotals.get(String(p.id)) || 0;
                   const balance  = Math.max(0, required - paid);
                   const settled  = balance === 0;
-                  const mcpKey   = canManagePartners ? activeKeyFor(mcp.keys, p.id) : null;
 
                   return (
                     <tr
@@ -330,33 +299,6 @@ export default function PartnersPage() {
                         )}
                       </td>
 
-                      {/* 7. المساعد الذكي — حالةٌ وإيقاف، بلا رمز */}
-                      {canManagePartners && (
-                        <td className="py-3 px-4 whitespace-nowrap text-center">
-                          {mcpKey ? (
-                            <span className="inline-flex items-center gap-1.5">
-                              <span
-                                className="inline-flex items-center gap-1 text-[12px] font-bold px-2 py-1 rounded-control bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-100 dark:border-emerald-500/30"
-                                title={mcpKey.lastUsedAtIso ? `آخر استعمال ${mcpKey.lastUsedAtIso.slice(0, 10)}` : 'لم يُستعمل بعد'}
-                              >
-                                <Bot size={13} /> فعّال منذ {String(mcpKey.createdAtIso || '').slice(0, 10)}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => { setRevokeError(null); setRevokeTarget({ partner: p, key: mcpKey }); }}
-                                className="sw-tap inline-flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 p-1.5 rounded-control hover:bg-rose-50 dark:hover:bg-rose-500/15 transition-colors"
-                                aria-label={`إيقاف رابط المساعد الذكي لـ ${p.partnerName}`}
-                                title="إيقاف رابط المساعد الذكي"
-                              >
-                                <Ban size={15} />
-                              </button>
-                            </span>
-                          ) : (
-                            <span className="text-slate-400 dark:text-slate-500 text-[12px]">—</span>
-                          )}
-                        </td>
-                      )}
-
                       {/* 8. إجراءات */}
                       <td className="py-3 px-4 whitespace-nowrap text-left">
                         <div className="inline-flex items-center gap-1">
@@ -413,6 +355,7 @@ export default function PartnersPage() {
       {canManagePartners && (
         <>
           <AddPartnerModal
+            showAccountFields={false}
             isOpen={isModalOpen}
             onClose={() => setIsModalOpen(false)}
             onAdd={handleAdd}
@@ -421,6 +364,7 @@ export default function PartnersPage() {
 
           {/* Paid-to-date summed from the receipts, never the stored cache. */}
           <EditPartnerModal
+            showAccountFields={false}
             isOpen={Boolean(editingPartner)}
             partner={editingPartner && { ...editingPartner, paidAmount: paidTotals.get(String(editingPartner.id)) || 0 }}
             onClose={() => setEditingPartner(null)}
@@ -437,21 +381,6 @@ export default function PartnersPage() {
       />
 
       {canManageEligibility && eligibilityPartner && <PartnerEligibilityModal key={eligibilityPartner.id} partner={eligibilityPartner} onClose={() => setEligibilityPartner(null)} onSaved={() => { setEligibilityPartner(null); showToast('تم حفظ أهلية البايكرز للتشغيل'); }} />}
-
-      <SweaterActionDialog
-        open={Boolean(revokeTarget)}
-        title={`إيقاف رابط ${revokeTarget?.partner?.partnerName ?? ''}`}
-        subtitle="سينقطع مساعده فوراً. يستطيع الشريك إنشاء رابطٍ جديد من صفحته."
-        icon={Ban}
-        tone="danger"
-        fields={[{ name: 'reason', label: 'السبب', type: 'textarea', placeholder: 'اختياري', hint: 'يُسجَّل مع الإلغاء للمراجعة.' }]}
-        confirmLabel="أوقف الرابط"
-        busyLabel="جارٍ الإيقاف…"
-        busy={revokeBusy}
-        error={revokeError}
-        onConfirm={handleRevokeMcp}
-        onClose={() => setRevokeTarget(null)}
-      />
 
       <Toast
         open={toast.open}

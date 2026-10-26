@@ -103,7 +103,7 @@ function FinanceHomeContent({ onNavigate }) {
             {hasNegativeCash && <span className="fm-negative fm-cash-alert"><AlertTriangle size={14} />يوجد حساب نقدي بالسالب</span>}
           </Metric>
           <Metric label="رأس المال المدفوع" value={ledger?.capital} icon={Users} date={cumulativeDate}
-            note="من حسابات رأس مال الشركاء في المركز المالي" onClick={() => onNavigate('balance')} />
+            note="من حسابات رأس مال الشركاء في المركز المالي" onClick={() => onNavigate('partner_capital')} />
           <Metric label="الضريبة المستحقة" value={vat?.netTax} icon={Percent} date={monthDate}
             note={vat?.direction === 'refundable' ? 'صافي الشهر قابل للاسترداد' : 'صافي ضريبة الشهر من صفحة الضريبة'} onClick={() => onNavigate('vat')} />
         </div>

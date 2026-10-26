@@ -20,12 +20,12 @@ afterEach(cleanup);
 
 describe('finance presentation without new financial calculations or writes', () => {
   it('orders owner navigation and the three finance sections, retaining legacy role checks', () => {
-    expect(TAB_GROUPS.map(group => group.id)).toEqual(['top', 'finance', 'management', 'ops', 'sweater']);
+    expect(TAB_GROUPS.map(group => group.id)).toEqual(['top', 'finance', 'partners', 'management', 'ops', 'sweater']);
     expect(TAB_GROUPS[0].tabs.map(tab => tab.id)).toEqual(['overview', 'executive_reports']);
-    expect(TAB_GROUPS[2].tabs.map(tab => tab.id)).toEqual(['growth_performance', 'agent_command_center']);
+    expect(TAB_GROUPS[3].tabs.map(tab => tab.id)).toEqual(['growth_performance', 'agent_command_center']);
     const finance = TAB_GROUPS[1];
-    expect(finance.sections.map(section => section.title)).toEqual(['الإدخال اليومي', 'القوائم', 'الشركاء والضريبة والإقفال']);
-    expect(finance.sections.flatMap(section => section.tabIds)).toHaveLength(17);
+    expect(finance.sections.map(section => section.title)).toEqual(['الإدخال اليومي', 'القوائم', 'الضريبة والإقفال']);
+    expect(finance.sections.flatMap(section => section.tabIds)).toHaveLength(15);
     expect(finance.tabs.filter(tab => !tab.hidden).map(tab => tab.id)).not.toContain('annual');
     const adminIds = visibleGroupsFor({ role: 'admin' }).flatMap(group => group.tabs.map(tab => tab.id));
     for (const id of EXPENSE_TAB_IDS) expect(resolveTab(id, { allowedTabIds: adminIds })).toBe(id);

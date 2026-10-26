@@ -36,6 +36,8 @@ const FinancialSummaryPage = lazy(() => import('./components/FinancialSummaryPag
 const VatRecoveryPage      = lazy(() => import('./components/VatRecoveryPage'));
 const BudgetsPage          = lazy(() => import('./components/BudgetsPage'));
 const PartnersPage         = lazy(() => import('./components/PartnersPage'));
+const PartnerCapitalPage = lazy(() => import('./components/PartnerCapitalPage'));
+const PartnerAccountsPage = lazy(() => import('./components/PartnerAccountsPage'));
 const PartnerPaymentsPage  = lazy(() => import('./components/PartnerPaymentsPage'));
 const BikersPage           = lazy(() => import('./components/BikersPage'));
 const HousingPage          = lazy(() => import('./components/HousingPage'));
@@ -240,8 +242,10 @@ function AppShell({ membership }) {
             {effectiveTab === 'summary'   && <FinancialSummaryPage />}
             {effectiveTab === 'vat'       && <VatRecoveryPage />}
             {effectiveTab === 'budgets'   && <BudgetsPage />}
-            {effectiveTab === 'partners'  && <PartnersPage />}
-            {effectiveTab === 'payments'  && <PartnerPaymentsPage />}
+            {effectiveTab === 'partners_list'  && <PartnersPage />}
+            {effectiveTab === 'partner_capital' && <PartnerCapitalPage />}
+            {effectiveTab === 'partner_accounts' && <PartnerAccountsPage />}
+            {effectiveTab === 'partner_payments'  && <PartnerPaymentsPage />}
             {effectiveTab === 'ledger'    && <GeneralLedgerPage />}
             {effectiveTab === 'trial'     && <TrialBalancePage />}
             {effectiveTab === 'balance'   && <BalanceSheetPage />}

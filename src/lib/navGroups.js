@@ -85,7 +85,7 @@ const LEGACY_TAB_GROUPS = [
   },
 ];
 
-export const FINANCE_TAB_IDS = ['sweater_settlements', 'startup', 'annual', 'monthly', 'variable', 'temporary_expenses', 'partners', 'payments',
+export const FINANCE_TAB_IDS = ['sweater_settlements', 'startup', 'annual', 'monthly', 'variable', 'temporary_expenses',
   'summary', 'vat', 'budgets', 'ledger', 'trial', 'balance', 'documents', 'assets', 'periods'];
 const oldFinanceTabs = LEGACY_TAB_GROUPS.flatMap(group => group.tabs).filter(tab => FINANCE_TAB_IDS.includes(tab.id));
 export const EXPENSE_TAB_IDS = ['startup', 'annual', 'monthly', 'variable', 'temporary_expenses'];
@@ -104,8 +104,14 @@ export const TAB_GROUPS = [
     sections: [
       { id: 'daily', title: 'الإدخال اليومي', tabIds: ['finance_workbench', 'expenses', 'sweater_settlements', 'finance_payroll'] },
       { id: 'statements', title: 'القوائم', tabIds: ['finance', 'summary', 'balance', 'trial', 'ledger', 'finance_reports'] },
-      { id: 'partners-tax-close', title: 'الشركاء والضريبة والإقفال', tabIds: ['partners', 'payments', 'vat', 'documents', 'assets', 'budgets', 'periods'] },
+      { id: 'tax-close', title: 'الضريبة والإقفال', tabIds: ['vat', 'documents', 'assets', 'budgets', 'periods'] },
     ], tabs: financeTabs },
+  { id: 'partners', title: 'الشركاء', major: true, tabs: [
+    { id: 'partners_list', label: 'قائمة الشركاء', icon: Handshake },
+    { id: 'partner_payments', label: 'مدفوعات الشركاء', icon: HandCoins },
+    { id: 'partner_capital', label: 'مطابقة رأس المال', icon: Scale, roles: ['admin', 'accountant'] },
+    { id: 'partner_accounts', label: 'الحسابات والمساعد الذكي', icon: Bot, roles: ['admin'] },
+  ] },
   { id: 'management', title: null, tabs: top.tabs.filter(tab => !['overview', 'executive_reports'].includes(tab.id)) },
   ...LEGACY_TAB_GROUPS.filter(group => ['ops', 'sweater'].includes(group.id))
     .map(group => ({ ...group, tabs: group.tabs.filter(tab => !FINANCE_TAB_IDS.includes(tab.id)) })),
@@ -170,7 +176,10 @@ export function investorViewFor(tabId) {
  * تبويبات المستثمر، فإذا أنهى المحاكاة بقي `activeTab` على معرّفٍ لا تصيّره
  * الواجهة الإدارية — شاشةٌ بيضاء. فيعود إلى «نظرة عامة».
  */
+export const canonicalTabId = tab => tab === 'partners' ? 'partners_list' : tab === 'payments' ? 'partner_payments' : tab;
+
 export function resolveTab(activeTab, { investorMode = false, allowedTabIds } = {}) {
+  activeTab = canonicalTabId(activeTab);
   const isInvestorTab = INVESTOR_TAB_IDS.includes(activeTab);
   const fallback = investorMode ? INVESTOR_HOME_TAB : 'overview';
   const tab = investorMode

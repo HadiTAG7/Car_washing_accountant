@@ -46,12 +46,12 @@ describe('بقاء الصفحة عند إعادة التحميل', () => {
     await screen.findByRole('heading', { name: 'قائمة دخل الشركة للاختبار' });
     state.partnerView = true; page.rerender(<App />);
     await screen.findByRole('heading', { name: 'حساب الشريك: overview' });
-    expect(screen.queryByRole('button', { name: 'إدارة الشركاء' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'قائمة الشركاء' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'قائمة الدخل' }));
     await screen.findByRole('heading', { name: 'حساب الشريك: income' });
     state.partnerView = false; page.rerender(<App />);
     await screen.findByRole('heading', { name: 'صفحة الرئيسية للاختبار' });
-    expect(screen.getByRole('button', { name: 'إدارة الشركاء' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'قائمة الشركاء' })).toBeTruthy();
   });
   it.each(['admin', 'operator', 'partner', 'supervisor'])('يستعيد مساحة القائمة المخفية دون تغيير وجهة الدور: %s', async (role) => {
     Object.assign(state, { role, partnerView: role === 'partner', desktopHidden: true });

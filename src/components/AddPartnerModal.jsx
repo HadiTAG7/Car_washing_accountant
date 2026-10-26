@@ -11,7 +11,7 @@ import CreatedCredentials from './CreatedCredentials';
 
 const EMPTY = { partnerName: '', workersCount: '', email: '' };
 
-export default function AddPartnerModal({ isOpen, onClose, onAdd, showToast }) {
+export default function AddPartnerModal({ isOpen, onClose, onAdd, showToast, showAccountFields = true }) {
   const [form, setForm] = useState(EMPTY);
   const [submitting, setSubmitting] = useState(false);
   // Sub-state ladder for the bottom action area:
@@ -224,6 +224,7 @@ export default function AddPartnerModal({ isOpen, onClose, onAdd, showToast }) {
           {/* Link to a Supabase user via email — the RPC resolves the
               UUID at submit time. Mirrors the Edit modal but doesn't
               need an unlink toggle (the row is brand new). */}
+          {showAccountFields && <>
           <div>
             <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5" htmlFor="email">
               البريد الإلكتروني لحساب الشريك في سويتر
@@ -257,6 +258,7 @@ export default function AddPartnerModal({ isOpen, onClose, onAdd, showToast }) {
             )}
           </div>
 
+          </>}
           {/* Capital & receivable summary */}
           <div className="rounded-smallcard border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 divide-y divide-slate-100 dark:divide-slate-700 text-sm overflow-hidden">
             <div className="flex items-baseline justify-between gap-3 px-4 py-2.5">

@@ -44,7 +44,7 @@ function AccountsContent() {
     <main className="p-4 sm:p-6 lg:p-8 space-y-6">
       {notice && <p role="status">{notice}</p>}
       {loading ? <LoadingState /> : error ? <ErrorState error={error} onRetry={() => { partners.refetch(); directory.refetch(); mcp.refetch(); }} /> : <>
-        <Card className="p-5"><h2 className="font-bold">حسابات دخول مفعّلة</h2><strong className="block text-3xl mt-3">{count} / {partners.partners.length}</strong>
+        <Card className="p-5"><h2 className="font-bold">حسابات دخول مفعّلة</h2><strong className="block text-3xl mt-3">{count} من {partners.partners.length}</strong>
           <p className="text-sm mt-3 text-slate-500 dark:text-slate-400">العدد يبيّن الشركاء المرتبطين بحساب دخول في دليل التطبيق. لا يعبّر عن النشاط التجاري أو آخر دخول.</p></Card>
         <p className="text-sm text-slate-500 dark:text-slate-400">تاريخ آخر دخول غير متاح من مصدر التطبيق الحالي. تاريخ استخدام المساعد ليس تاريخ تسجيل الدخول.</p>
         <p className="text-sm">يفعّل الشريك المساعد من «المساعد الذكي» في بوابته. يستطيع المدير مراجعة الحالة وإيقاف الرابط الحالي.</p>

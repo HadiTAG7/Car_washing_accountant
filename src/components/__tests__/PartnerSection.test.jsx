@@ -8,6 +8,7 @@ vi.mock('../../hooks/useLedger', () => ({ useLedger: () => state.ledger() }));
 vi.mock('../../hooks/usePartnerPayments', () => ({ usePartnerPayments: () => state.payments() }));
 vi.mock('../../hooks/useAuth', () => ({ useAuth: () => ({ user: { id: 'admin' } }) }));
 vi.mock('../../hooks/usePartnerMcpKeys', () => ({ usePartnerMcpKeys: () => ({ keys: [] }), activeKeyFor: () => null }));
+vi.mock('../../hooks/useFirestoreQuery', () => ({ useFirestoreQuery: () => ({ data: [{ id: 'linked', role: 'partner' }], loading: false }) }));
 vi.mock('../../lib/firestoreCrud', () => ({ fetchRows: vi.fn() }));
 vi.mock('../TopBar', () => ({ default: ({ title }) => <h1>{title}</h1> }));
 vi.mock('../ModalSurface', () => ({ default: ({ children }) => <div>{children}</div> }));
@@ -33,6 +34,12 @@ describe('partners pages do not widen access or writes', () => {
     expect(screen.getByText('لا يوجد قيد مرتبط بسند القبض', { exact: false })).toBeTruthy();
     state.ledger.mockReturnValue({ entries: [], lines: [], error: new Error('تعذرت قراءة الدفتر') });
     page.rerender(<PartnerCapitalPage />); expect(screen.queryByRole('table')).toBeNull();
+  });
+  it('states linked account counts unambiguously in RTL without claiming last sign-in', () => {
+    state.partners.mockReturnValue({ partners: [{ id: 'a', partnerName: 'أول', userId: 'linked' }, { id: 'b', partnerName: 'ثان' }] });
+    render(<PartnerAccountsPage />);
+    expect(screen.getByText('1 من 2')).toBeTruthy();
+    expect(screen.getByText('تاريخ آخر دخول غير متاح من مصدر التطبيق الحالي. تاريخ استخدام المساعد ليس تاريخ تسجيل الدخول.')).toBeTruthy();
   });
   it('account-only editing submits only a user link, not ownership or capital fields', async () => {
     const save = vi.fn(); state.lookup.mockResolvedValue('existing-partner-user');

@@ -2,6 +2,7 @@
 import {afterEach,expect,it,vi} from 'vitest';
 import {cleanup,render,screen,within} from '@testing-library/react';
 import VatFilingOverview from '../VatFilingOverview';
+import VatInvoiceGaps from '../VatInvoiceGaps';
 import {TAX_FILING_REPORT_ID} from '../../lib/vatDashboard';
 const read=vi.hoisted(()=>({allowed:true,loading:false,error:null,data:null}));
 vi.mock('../../hooks/useFinanceRead',()=>({useFinanceRead:()=>read}));
@@ -38,4 +39,11 @@ it('keeps current submission undocumented for a role without archive access',()=
   expect(screen.queryByText('لم يُقدَّم')).toBeNull();
   expect(screen.getAllByText('حالة التقديم غير موثقة')).toHaveLength(3);
   read.allowed=true;
+});
+it('does not claim invoice completeness when reads fail, but retains partial gaps',()=>{
+  const {rerender}=render(<VatInvoiceGaps rows={[]} unassigned={[]} ready={false}/>);
+  expect(screen.getByRole('alert').textContent).toContain('تغطية الفواتير غير مكتملة');
+  expect(screen.queryByText('لا فواتير غير مؤهلة مؤرخة ضمن هذه الفترة.')).toBeNull();
+  rerender(<VatInvoiceGaps rows={[{id:'test',sourceKind:'variable',amount:115,documentVat:15,supplier:'مورد اختبار',missing:['رقم الفاتورة']}]} unassigned={[]} ready={false}/>);
+  expect(screen.getByRole('table').textContent).toContain('مورد اختبار');
 });

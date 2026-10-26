@@ -22,7 +22,7 @@ import { useWashes } from '../hooks/useWashes';
 import { useLedger } from '../hooks/useLedger';
 import { useAccountingSettings } from '../hooks/useAccountingSettings';
 import {
-  periodLabel, availablePeriods, currentPeriodKey,
+  availablePeriods, currentPeriodKey,
   FILING_PERIOD_LABELS,
 } from '../lib/accounting/vatReturn';
 import { amountRoleOf } from '../lib/accounting/purchaseDisplay';
@@ -32,7 +32,8 @@ import { useSweaterSettlements } from '../hooks/useSweater';
 import { useFirestoreQuery } from '../hooks/useFirestoreQuery';
 import { fetchSellerProfile } from '../lib/accounting/firestoreInvoicing';
 import { riyadhToday } from '../lib/bikerProfile';
-import { buildVatDashboardReport } from '../lib/vatDashboard';
+import { buildVatDashboardReport, vatPeriodLabel } from '../lib/vatDashboard';
+import { useLanguage } from '../i18n/useLanguage';
 import VatFilingOverview from './VatFilingOverview';
 import VatInvoiceGaps from './VatInvoiceGaps';
 
@@ -87,6 +88,7 @@ function SourceBadge({ source }) {
  * excluded from the claim, but never hidden.
  */
 export default function VatRecoveryPage() {
+  const { language } = useLanguage();
   const { invoices, loading, error, sourceErrors, coverage, refetch } = useTaxInvoices({ includeNonTax: true });
   const { items: startupItems } = useStartupCosts();
   const { items: annualItems }  = useAnnualExpenses();
@@ -248,7 +250,7 @@ export default function VatRecoveryPage() {
         </Card>
         <div className="flex flex-wrap gap-3 items-center">
           <label className="text-sm">الفترة <select value={selected} onChange={e => setPeriod(e.target.value)} aria-label="فترة الضريبة" className="rounded-control border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 p-2 mr-2">
-            {periods.map(key => <option key={key} value={key}>{periodLabel(key)}</option>)}<option value="__all__">كل الفترات</option>
+            {periods.map(key => <option key={key} value={key}>{vatPeriodLabel(key, language)}</option>)}<option value="__all__">كل الفترات</option>
           </select></label>
           <span className="text-xs text-slate-500">كل الأرقام أدناه تتبع الفترة المختارة؛ لا تشمل التواريخ المستقبلية.</span>
         </div>
@@ -331,7 +333,7 @@ export default function VatRecoveryPage() {
           <p>المرحّل في الدفتر (2100): <strong>{reportReady ? formatCurrencyPrecise(report.ledgerOutput.tax * s) : 'غير متاح'}</strong></p>
           <p>الفرق: <strong>{reportReady && !report.outputUnavailable ? formatCurrencyPrecise(report.outputMismatch * s) : 'غير متاح'}</strong></p>
         </Card>
-        <VatInvoiceGaps rows={report.ineligible} unassigned={report.unassigned} scalingFactor={s} />
+        <VatInvoiceGaps rows={report.ineligible} unassigned={report.unassigned} ready={reportReady} scalingFactor={s} />
 
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3 sm:gap-5">
           <StatCard
@@ -352,7 +354,7 @@ export default function VatRecoveryPage() {
             tone={report.ineligible.length ? 'amber' : 'slate'}
             label="ضريبة غير مطالَب بها"
             value={reportReady ? formatCurrencyPrecise(report.forfeitedTax * s) : 'غير متاح'}
-            sub={report.ineligible.length
+            sub={!reportReady ? 'تغطية الفواتير غير مكتملة' : report.ineligible.length
               ? `${formatNumber(report.ineligible.length)} فاتورة غير مؤهلة للخصم`
               : 'كل الفواتير مستوفية'}
           />
@@ -434,18 +436,18 @@ export default function VatRecoveryPage() {
         <Card className="p-6">
           <SectionHeader
             title="فواتير المدخلات المؤهلة للخصم"
-            subtitle={activePeriod ? periodLabel(activePeriod) : 'كل الفترات'}
+            subtitle={activePeriod ? vatPeriodLabel(activePeriod, language) : 'كل الفترات'}
             action={
-              <div className="flex items-center gap-2">
-                <div className="relative">
+              <div className="flex flex-wrap items-center gap-2 min-w-0 max-w-full">
+                <div className="relative min-w-0 max-w-full">
                   <Calendar size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 pointer-events-none" />
                   <select
                     value={selected}
                     onChange={(e) => setPeriod(e.target.value)}
-                    className="appearance-none h-10 pr-8 pl-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs font-semibold tabular-nums focus:outline-none focus:border-primary-500 transition-colors"
+                    className="appearance-none h-10 pr-8 pl-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs font-semibold tabular-nums focus:outline-none focus:border-primary-500 transition-colors max-w-full"
                     aria-label="فلترة حسب الفترة"
                   >
-                    {periods.map((p) => <option key={p} value={p}>{periodLabel(p)}</option>)}
+                    {periods.map((p) => <option key={p} value={p}>{vatPeriodLabel(p, language)}</option>)}
                     <option value="__all__">كل الفترات</option>
                   </select>
                 </div>

@@ -1,9 +1,17 @@
-import { buildVatReport, outputTaxFromWashes, periodKeyFor, periodRange } from './accounting/vatReturn';
+import { buildVatReport, outputTaxFromWashes, periodKeyFor, periodRange, periodLabel } from './accounting/vatReturn';
 import { taxPolicyAt, normalizeTaxPolicyHistory } from './accounting/taxPolicy';
 import { round2 } from './accounting/journal';
 import { APPROVED_SETTLEMENT_STATUSES } from './financeHome';
 
 export const TAX_FILING_REPORT_ID = 'finance-2026-10-24-3-weekly-2026-10-18-2026-10-24';
+export function vatPeriodLabel(period, language = 'ar') {
+  if (language !== 'en') return periodLabel(period);
+  const range = periodRange(period);
+  if (!range.from) return period;
+  const month = date => new Intl.DateTimeFormat('en-GB', { month: 'long', timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`));
+  return period.includes('-Q') ? `Q${period.at(-1)} ${period.slice(0, 4)} · ${month(range.from)} – ${month(range.to)}`
+    : `${month(range.from)} ${period.slice(0, 4)}`;
+}
 
 // Last calendar day of the month following the period, including year rollover.
 export function vatFilingDeadline(period) {
@@ -72,8 +80,8 @@ export function buildVatDashboardReport({ inputs = [], washes = [], entries = []
   const netTax = round2(tax - base.input.tax);
   // Undated documents cannot belong to a selected quarter. Keep them visible
   // separately rather than charging their counts/amounts to every quarter.
-  const unassigned = period ? base.ineligible.filter(row => !row.claimDate) : [];
-  const ineligible = period ? base.ineligible.filter(row => row.claimDate) : base.ineligible;
+  const unassigned = base.ineligible.filter(row => !row.claimDate);
+  const ineligible = base.ineligible.filter(row => row.claimDate);
   return { ...base, output, operationalOutput: output, netTax,
     direction: netTax > 0.005 ? 'payable' : netTax < -0.005 ? 'refundable' : 'nil',
     outputMismatch: round2(tax - base.ledgerOutput.tax), ineligible, unassigned,

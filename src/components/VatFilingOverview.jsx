@@ -1,11 +1,13 @@
 import { useMemo } from 'react';
 import { Card, SectionHeader } from './UI';
 import { formatCurrencyPrecise, formatDate, formatNumber } from '../data/initialData';
-import { periodLabel, periodKeyFor } from '../lib/accounting/vatReturn';
-import { buildVatDashboardReport, registeredVatPeriods, vatFilingDeadline, vatDaysRemaining, reportedVatFilings, TAX_FILING_REPORT_ID } from '../lib/vatDashboard';
+import { periodKeyFor } from '../lib/accounting/vatReturn';
+import { buildVatDashboardReport, registeredVatPeriods, vatFilingDeadline, vatDaysRemaining, reportedVatFilings, TAX_FILING_REPORT_ID, vatPeriodLabel } from '../lib/vatDashboard';
 import { useFinanceRead } from '../hooks/useFinanceRead';
+import { useLanguage } from '../i18n/useLanguage';
 
 export default function VatFilingOverview({ sources, settings, today, ready, scalingFactor = 1 }) {
+  const { language } = useLanguage();
   const read = useFinanceRead('finance-reports', { action: 'read', reportId: TAX_FILING_REPORT_ID, revision: 1 });
   const filings = reportedVatFilings(read.data?.report);
   const periods = useMemo(() => registeredVatPeriods(settings, today), [settings, today]);
@@ -19,7 +21,7 @@ export default function VatFilingOverview({ sources, settings, today, ready, sca
   const money = value => ready ? formatCurrencyPrecise(value * scalingFactor) : 'غير متاح';
   return <>
     {read.loading ? <p role="status">جارٍ التحقق من إثباتات تقديم الإقرارات…</p> : read.allowed && !read.error && next && <div role="status" className={`rounded-control border px-4 py-3 text-sm ${days < 10 ? 'border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-300' : 'border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-300'}`}>
-      إقرار {periodLabel(next.period).split(' · ')[0]}: آخر موعد {formatDate(next.deadline)}، باقي {formatNumber(days)} يوم.
+      إقرار{' '}<bdi>{vatPeriodLabel(next.period, language).split(' · ')[0]}</bdi>{': آخر موعد'}{' '}<bdi>{formatDate(next.deadline)}</bdi>{'، باقي'}{' '}<bdi>{formatNumber(days)}</bdi>{' '}يوم.
       {next.period === current && <span className="block text-xs mt-1">الفترة لم تنتهِ؛ الأرقام حتى اليوم.</span>}
     </div>}
     <Card className="p-4 sm:p-6">
@@ -31,7 +33,7 @@ export default function VatFilingOverview({ sources, settings, today, ready, sca
         <tbody>{rows.map(row => { const evidence = filings[row.period];
           const available = ready && !row.report.outputUnavailable;
           return <tr key={row.period} className="border-t border-slate-200 dark:border-slate-700">
-            <th scope="row" className="p-3">{periodLabel(row.period).split(' · ')[0]}</th><td className="p-3 whitespace-nowrap">{formatDate(row.deadline)}</td>
+            <th scope="row" className="p-3"><bdi>{vatPeriodLabel(row.period, language).split(' · ')[0]}</bdi></th><td className="p-3 whitespace-nowrap">{formatDate(row.deadline)}</td>
             <td className="p-3 tabular-nums">{available ? money(row.report.output.tax) : 'غير متاح'}</td><td className="p-3 tabular-nums">{money(row.report.input.tax)}</td>
             <td className="p-3 tabular-nums">{available ? <>{money(Math.abs(row.report.netTax))}<small className="block">{row.report.direction === 'refundable' ? 'مسترد تقديري' : row.report.direction === 'payable' ? 'مستحق تقديري' : 'لا مستحق ولا مسترد'}</small></> : 'غير متاح'}</td>
             <td className="p-3">{evidence ? <><strong className="text-emerald-700 dark:text-emerald-300">مقدّم حسب تقرير وكيل الضرائب</strong><small className="block">بانتظار تأكيد هادي · تقرير {formatDate(evidence.reportDate)}</small></>

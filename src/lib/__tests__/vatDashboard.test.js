@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { vatFilingDeadline, vatDaysRemaining, registeredVatPeriods, reportedVatFilings, TAX_FILING_REPORT_ID, buildVatDashboardReport, groupVatGaps } from '../vatDashboard';
+import { vatFilingDeadline, vatDaysRemaining, registeredVatPeriods, reportedVatFilings, TAX_FILING_REPORT_ID, buildVatDashboardReport, groupVatGaps, vatPeriodLabel } from '../vatDashboard';
 import { composeTaxInvoices } from '../taxInvoiceFeed';
 const settings = { vatRegistered: true, vatRate: .15, washPriceMode: 'inclusive', vatFilingPeriod: 'quarterly', taxPolicyHistory: [{ effectiveFrom: '2026-05-01', vatRegistered: true, vatRate: .15, washPriceMode: 'inclusive' }] };
 const wash = (id, date, origin = 'sweater') => ({ id, washDate: date, price: 23, quantity: 1, status: 'مكتملة', revenueOrigin: origin });
@@ -38,6 +38,13 @@ it('replaces only Sweater VAT for approved months, preserves direct sales and do
 it('excludes future records and separates undated gaps from the selected quarter totals', () => {
   const report = buildVatDashboardReport({ ...sources, washes: [wash('future', '2026-10-27'), wash('now', '2026-10-26')], inputs: [{ id: 'x', sourceKind: 'variable', amount: 115, isTaxInvoice: true, supplier: 'شركة', vatAmount: 15, invoiceNumber: '1' }] });
   expect(report.output.tax).toBe(3); expect(report.ineligible).toHaveLength(0); expect(report.unassigned).toHaveLength(1); expect(report.forfeitedTax).toBe(0);
+  const all = buildVatDashboardReport({ ...sources, period: '', inputs: [{ id: 'x', sourceKind: 'variable', amount: 115, isTaxInvoice: true, supplier: 'شركة', vatAmount: 15, invoiceNumber: '1' }] });
+  expect(all.ineligible).toHaveLength(0); expect(all.unassigned).toHaveLength(1); expect(all.forfeitedTax).toBe(0);
+});
+it('renders quarter and month labels fully in the selected language', () => {
+  expect(vatPeriodLabel('2026-Q4', 'en')).toBe('Q4 2026 · October – December');
+  expect(vatPeriodLabel('2026-09', 'en')).toBe('September 2026');
+  expect(vatPeriodLabel('2026-Q4', 'ar')).toContain('الربع الرابع');
 });
 it('excludes a future approved settlement in the same quarter while retaining the current approved snapshot', () => {
   const settlements = [{ periodKey: '2026-11', status: 'approved', figures: { services: { vat: 90, net: 600, gross: 690, count: 30 } } },

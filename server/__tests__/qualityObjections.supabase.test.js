@@ -17,7 +17,7 @@ describe.skipIf(process.env.QUALITY_OBJECTIONS_PG_TESTS !== '1')('quality object
     pool = new pg.Pool({ connectionString: url });
     expect((await pool.query('select current_database() as name')).rows[0].name).toBe('sweater_report_snapshot_test_20261026');
     if (!(await pool.query("select to_regclass('public.sweater_metric_snapshots') as name")).rows[0].name) await pool.query(await readFile(new URL('../../supabase/migrations/20261023000000_sweater_metric_snapshots.sql', import.meta.url), 'utf8'));
-    if (!(await pool.query("select to_regclass('public.quality_objections') as name")).rows[0].name) await pool.query(await readFile(new URL('../../supabase/migrations/20261026203950_quality_objections.sql', import.meta.url), 'utf8'));
+    if (!(await pool.query("select to_regclass('public.quality_objections') as name")).rows[0].name) await pool.query(await readFile(new URL('../../supabase/migrations/20261026210339_quality_objections.sql', import.meta.url), 'utf8'));
     await pool.query("insert into auth.users(id,email) values ($1,'quality@isolated.test'),($2,'quality-other@isolated.test') on conflict(id) do nothing", [uid, other]);
     db = createStore({ connectionString: url, role: 'ledger_server', max: 4 });
     await db.collection('users').doc(uid).set({ role: 'admin', displayName: 'Isolated reviewer' });

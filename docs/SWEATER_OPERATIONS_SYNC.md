@@ -363,7 +363,7 @@ instructions at `07-sweater-operations-sync/references/dashboard-metrics.md`
 to follow this section once those reviewed files are installed.
 
 Before UI release, apply the additive generated migration
-`20261026203950_quality_objections.sql`. It contains only admin-readable internal
+`20261026210339_quality_objections.sql`. It contains only admin-readable internal
 objection metadata; browser writes are denied. Both narrow server actions recheck
 admin membership, source freshness and revision. Detailed before/after history
 stays inside the admin-only objection record. The shared accountant-readable

@@ -110,7 +110,7 @@
 .sw-overview-detail li { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 14px 0; border-bottom: 1px solid var(--sw-border-subtle); font-size: .85rem; overflow-wrap: anywhere; }
 .sw-overview-detail .sw-overview-insight__items li { padding-block: 8px; flex-wrap: nowrap; }
 .sw-overview-detail__source-records ol { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); gap: 12px; list-style: none; padding: 0; }
-.sw-overview-detail__source-records li { border: 1px solid var(--border-color); border-radius: 12px; padding: 12px; }
+.sw-overview-detail__source-records li { flex-direction: column; flex-wrap: nowrap; border: 1px solid var(--sw-border-subtle); border-radius: 12px; padding: 12px; }
 .sw-overview-detail__source-records li > div { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
 .sw-overview-detail__source-records li > div > bdi { white-space: nowrap; }
 @media (max-width: 1100px) { .sw-overview__metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .sw-overview__operations-grid > :last-child { grid-column: 1 / -1; } }

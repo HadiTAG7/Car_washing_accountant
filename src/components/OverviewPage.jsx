@@ -114,7 +114,7 @@ export function ManagementOverview({ onNavigate }) {
       </section>
 
       <section aria-labelledby="overview-operations-title" className="sw-overview__section">
-        <SectionHeader title={<span id="overview-operations-title">{text('حركة التشغيل', 'Operations')}</span>} subtitle={text('الغسلات المكتملة المسجلة، وليست الحجوزات الخام أو إثبات اكتمال الاستيراد.', 'Recorded completed washes, not raw bookings or proof of import completeness.')} action={action('فتح الغسلات', 'Open washes', 'washes')} />
+        <SectionHeader title={<span id="overview-operations-title">{text('حركة التشغيل', 'Operations')}</span>} subtitle={text('الغسلات المكتملة المسجلة، وليست الحجوزات الخام أو إثبات اكتمال الاستيراد.', 'Recorded completed washes, not raw bookings or proof of import completeness.')} action={<div className="flex gap-3 flex-wrap">{action('اليوم', 'Today', 'today')}{action('فتح الغسلات', 'Open washes', 'washes')}</div>} />
         <div className="sw-overview__metric-grid sw-overview__operations-grid">
           <Metric icon={CalendarDays} label={text('غسلات أمس', 'Yesterday’s washes')} value={washReady ? number(ops.yesterdayQuantity) : unavailable}
             note={ops?.yesterdayInPeriod ? date(ops.yesterday) : text('أمس خارج الشهر المختار', 'Yesterday is outside the selected month')} disabled={!washReady || !ops?.yesterdayInPeriod} onClick={() => setDetail({ kind: 'yesterday', title: text('غسلات أمس', 'Yesterday’s washes') })} />

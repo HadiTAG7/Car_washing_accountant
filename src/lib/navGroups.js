@@ -9,7 +9,7 @@
 import {
   LayoutDashboard, Landmark, Repeat, Receipt, Activity, Car, Bike, Home,
   BarChart3, Target, Handshake, Plug, HandCoins, RefreshCw, Percent,
-  BookOpen, Scale, Lock, FileText, Boxes, Gauge, TrendingUp, Bot,
+  BookOpen, Scale, Lock, FileText, Boxes, Gauge, TrendingUp, Bot, CalendarDays,
 } from 'lucide-react';
 
 // Tab ids are untouched: the render chain below keys off them, so regrouping
@@ -29,6 +29,7 @@ const LEGACY_TAB_GROUPS = [
     id: 'ops',
     title: 'التشغيل اليومي',
     tabs: [
+      { id: 'today', label: 'اليوم', icon: CalendarDays, roles: ['admin', 'accountant'] },
       { id: 'washes',    label: 'الغسلات',                icon: Car         },
       { id: 'operations_reports', label: 'تقارير العمليات والأرشيف', icon: FileText, roles: ['admin'] },
       { id: 'bikers',    label: 'البايكر',                 icon: Bike        },

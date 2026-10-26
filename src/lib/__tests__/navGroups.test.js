@@ -6,6 +6,11 @@ import {
 const idsOf = (groups) => groups.flatMap((g) => g.tabs.map((t) => t.id));
 
 describe('من يرى أي تبويب', () => {
+  it('puts Today first in daily operations and retains the company-read role guard', () => {
+    expect(TAB_GROUPS.find(g => g.id === 'ops').tabs[0].id).toBe('today');
+    for (const role of ['admin', 'accountant']) expect(idsOf(visibleGroupsFor({ role }))).toContain('today');
+    for (const role of ['partner', 'operator', 'supervisor', null]) expect(idsOf(visibleGroupsFor({ role }))).not.toContain('today');
+  });
   it('consolidates finance without duplicating or renaming old route ids and keeps new pages admin-only', () => {
     const finance = TAB_GROUPS.find(g => g.id === 'finance'), ids = idsOf(TAB_GROUPS);
     expect(finance.homeTab).toBe('finance'); expect(ids.length).toBe(new Set(ids).size);

@@ -121,7 +121,7 @@ export default function BikersPage({ role, payrollPreview = false, initialSectio
   const { expenses: temps, addTemporaryExpense, loading: advancesLoading, error: advancesError } = useTemporaryExpenses();
   const { canMutate, isPartnerView } = usePartnerView();
   const canViewProfile = role === 'admin' && !isPartnerView;
-  const [profileBikerId, setProfileBikerId] = useState(null);
+  const [profileBikerId, setProfileBikerId] = useState(() => new URLSearchParams(window.location.search).get('bikerId') || null);
 
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [editingBiker, setEditingBiker] = useState(null);

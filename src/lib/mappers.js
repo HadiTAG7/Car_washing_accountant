@@ -133,6 +133,11 @@ export function mapAnnualExpenseEntry(row) {
   return {
     id:               row.id,
     annualExpenseId:  row.annual_expense_id,
+    // Read-only evidence for housing; never written by the entry mapper.
+    housingEvidence: {
+      paymentStatus: row.payment_status || '',
+      purpose: row.finance_metadata?.purpose || '',
+    },
     description:      row.description || '',
     amount:           Number(row.amount) || 0,
     spentDate:        row.spent_date || '',

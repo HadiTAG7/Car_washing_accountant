@@ -1,15 +1,15 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { Home, Users, BedDouble, AlertTriangle, Wallet, RefreshCw, Pencil } from 'lucide-react';
 import { useLanguage } from '../i18n/useLanguage';
 import { displayBikerName } from '../lib/bikerNames';
-import {
-  Home, Users, Wallet, Scale, Pencil, UserPlus, X as XIcon, Inbox, KeyRound,
-} from 'lucide-react';
+import { riyadhToday } from '../lib/bikerProfile';
+import { housingOverview, housingBikerHref } from '../lib/housingOverview';
 import TopBar from './TopBar';
 import { Card, SectionHeader, StatCard, EmptyState } from './UI';
 import LoadingState from './LoadingState';
 import ErrorState from './ErrorState';
-import Toast from './Toast';
 import EditHousingUnitModal from './EditHousingUnitModal';
+import ModalSurface from './ModalSurface';
 import { useBikers } from '../hooks/useBikers';
 import { useStartupCosts } from '../hooks/useStartupCosts';
 import { useAllStartupEntries } from '../hooks/useStartupCostEntries';
@@ -17,471 +17,156 @@ import { useAnnualExpenses } from '../hooks/useAnnualExpenses';
 import { useAllAnnualEntries } from '../hooks/useAnnualExpenseEntries';
 import { useHousingUnits } from '../hooks/useHousingUnits';
 import { usePartnerView } from '../contexts/PartnerViewContext';
-import { describeBackendError } from '../lib/firebaseClient';
 import { formatCurrencyPrecise, formatNumber } from '../data/initialData';
-import { buildHousingRows, unhousedBikers, rentByUnit, rentOnlyUnits } from '../lib/housingStats';
 
-// ═══════════════════════════════════════════════════════════════════════════
-// السكن — من يسكن أين، وكم كلّف السكن للساكن الواحد مقابل التقدير
-// ═══════════════════════════════════════════════════════════════════════════
-// Everything here is a JOIN over data other tabs already own: the unit list
-// from the startup plan, each unit's cost from the expense ledger, the
-// residents from the bikers registry (`residence`). Assigning a man to a
-// unit WRITES TO HIS BIKER ROW — so this tab and the bikers tab can never
-// tell two different stories about where he lives. The only thing stored
-// here is what nothing else knows: planned capacity and notes per unit.
-//
-// ── لا scalingFactor هنا، عمداً ──
-// The same argument BikersPage makes for salaries: «التكلفة للساكن» is a
-// fact about a housing unit, not a share of anything. Scaling it by a
-// partner's percentage would show ٩٨ for housing that cost ٣٩١ a head and
-// make the whole comparison against the ٣٠٠ estimate meaningless. Partner
-// view reads this page unscaled; mutations stay behind canMutate.
-// ═══════════════════════════════════════════════════════════════════════════
+const financialHref = '?page=annual';
+const value = n => n === null ? 'غير متاح' : formatCurrencyPrecise(n);
+const count = n => n === null ? 'غير مسجلة' : formatNumber(n);
 
-/** لون الفارق عن التقدير: أخضر تحته، كهرمان حتى +١٠٪، وردي فوق ذلك. */
-function deltaTone(pct) {
-  if (pct === null) return 'text-slate-500 dark:text-slate-400';
-  if (pct <= 0) return 'text-emerald-700 dark:text-emerald-400';
-  if (pct <= 10) return 'text-amber-700 dark:text-amber-400';
-  return 'text-rose-700 dark:text-rose-400';
+function HousingConfirmation({ request, onCancel, onConfirm, busy, error }) {
+  const [confirmed, setConfirmed] = useState(false);
+  return <ModalSurface onClose={busy ? undefined : onCancel} className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4">
+    <form onSubmit={e => { e.preventDefault(); if (confirmed && !busy) onConfirm(); }} className="bg-white dark:bg-slate-900 rounded-card p-6 w-full max-w-lg space-y-4">
+      <h2 className="text-lg font-bold">{request.title}</h2>
+      <p>{request.description}</p>
+      <p className="text-sm text-slate-500 dark:text-slate-400">تاريخ النهاية لا يلغي السكن تلقائيًا. هذا التغيير يخص ربط السكن فقط.</p>
+      <label className="flex gap-2"><input type="checkbox" checked={confirmed} disabled={busy} onChange={e => setConfirmed(e.target.checked)} />أؤكد تنفيذ تغيير السكن الموضح</label>
+      {error && <p role="alert" className="text-rose-600 dark:text-rose-300">{error.message || 'تعذّر تنفيذ العملية'}</p>}
+      <div className="flex flex-wrap gap-3"><button className="sw-button sw-button--primary" disabled={!confirmed || busy}>تأكيد تغيير السكن</button>
+        <button type="button" className="sw-button sw-button--secondary" disabled={busy} onClick={onCancel}>إلغاء دون تغيير</button></div>
+    </form>
+  </ModalSurface>;
 }
 
 export default function HousingPage() {
   const { language } = useLanguage();
-  const { bikers, loading: bikersLoading, error: bikersError, updateBiker } = useBikers();
-  const { items, loading: itemsLoading, error: itemsError, refetch: refetchItems } = useStartupCosts();
-  const { entries, loading: entriesLoading, error: entriesError, refetch: refetchEntries } = useAllStartupEntries();
-  // الإيجار يُقرأ من الدفاتر حيث هو مسجَّل — لا يُكتب هنا مرةً ثانية.
-  const { items: annualItems, error: annualError, refetch: refetchAnnual } = useAnnualExpenses();
-  const { entries: annualEntries, refetch: refetchAnnualEntries } = useAllAnnualEntries();
-  const { metaRows, error: metaError, upsertUnitMeta, refetch: refetchMeta } = useHousingUnits();
-  const { canMutate } = usePartnerView();
-
-  const [editingUnit, setEditingUnit] = useState(null);
-  const [mutationError, setMutationError] = useState(null);
-  const [toast, setToast] = useState({ open: false, message: '', tone: 'success', duration: 3000 });
-
-  const showToast = useCallback((message, tone = 'success') => {
-    setToast({ open: true, message, tone, duration: tone === 'error' ? 8000 : 3000 });
-  }, []);
-  const closeToast = useCallback(() => setToast((t) => ({ ...t, open: false })), []);
-
-  const loading = bikersLoading || itemsLoading || entriesLoading;
-  const queryError = bikersError || itemsError || entriesError || annualError;
-
-  const rentIndex = useMemo(
-    () => rentByUnit({ annualItems, annualEntries }),
-    [annualItems, annualEntries],
-  );
-
-  // الصورة كلها مشتقة في خطوة واحدة — البنود ذات التقسيمات، بساكنيها وتكلفتها.
-  const housingRows = useMemo(
-    () => buildHousingRows({ items, entries, bikers, metaRows, rentIndex }),
-    [items, entries, bikers, metaRows, rentIndex],
-  );
-
-  const allUnitNames = useMemo(
-    () => housingRows.flatMap((r) => r.units.map((u) => u.name)),
-    [housingRows],
-  );
-
-  const unhoused = useMemo(
-    () => unhousedBikers(bikers, allUnitNames),
-    [bikers, allUnitNames],
-  );
-
-  // إيجارٌ لسكنٍ لا بطاقة له — لأن التجهيز لم يُقسَّم عليه. يُسمّى بدل أن يسقط.
-  const strayRent = useMemo(
-    () => rentOnlyUnits(rentIndex, allUnitNames),
-    [rentIndex, allUnitNames],
-  );
-
-  const kpis = useMemo(() => {
-    const units = housingRows.flatMap((r) => r.units);
-    const residents = units.reduce((s, u) => s + u.residents.length, 0);
-    const capacity = units.reduce((s, u) => s + (u.capacity ?? 0), 0);
-    const cost = units.reduce((s, u) => s + u.cost, 0)
-      + housingRows.reduce((s, r) => s + r.unassignedCost, 0);
-    const per = residents > 0
-      ? units.reduce((s, u) => s + u.cost, 0) / residents
-      : null;
-    // التقدير المعروض إجمالاً هو تقدير أول بندٍ له تقسيمات — عملياً بند واحد.
-    const benchmark = housingRows[0]?.benchmark ?? null;
-    // الإيجار لا يُجمع مع التجهيز — رأسماليٌّ مرةً واحدة مقابل سنويٍّ متكرر.
-    const rent = units.reduce((s, u) => s + u.rent, 0) + rentIndex.unassigned;
-    const rentPer = residents > 0
-      ? units.reduce((s, u) => s + u.rent, 0) / residents
-      : null;
-    return { unitCount: units.length, residents, capacity, cost, per, benchmark, rent, rentPer };
-  }, [housingRows, rentIndex]);
-
-  async function guarded(label, fn) {
-    try {
-      setMutationError(null);
-      await fn();
-      showToast(label);
-      return true;
-    } catch (e) {
-      console.error('🔥 Firestore Error (HousingPage):', e);
-      setMutationError(e);
-      showToast(describeBackendError(e) || e?.message || 'تعذّر تنفيذ العملية', 'error');
-      return false;
+  const bikerState = useBikers(), startupState = useStartupCosts(), setupState = useAllStartupEntries();
+  const annualState = useAnnualExpenses(), rentState = useAllAnnualEntries(), metaState = useHousingUnits();
+  const { canMutate, role } = usePartnerView();
+  const canConfirmResidence = canMutate && role === 'admin';
+  const [editingUnit, setEditingUnit] = useState(null), [request, setRequest] = useState(null);
+  const [busy, setBusy] = useState(false), [mutationError, setMutationError] = useState(null);
+  const states = [bikerState,startupState,setupState,annualState,rentState,metaState];
+  const loading = states.some(s => s.loading), error = states.find(s => s.error)?.error;
+  const today = riyadhToday();
+  const model = useMemo(() => housingOverview({ items: startupState.items, entries: setupState.entries,
+    bikers: bikerState.bikers, annualItems: annualState.items, annualEntries: rentState.entries, metaRows: metaState.metaRows, today }),
+  [startupState.items,setupState.entries,bikerState.bikers,annualState.items,rentState.entries,metaState.metaRows,today]);
+  const refresh = () => states.forEach(s => s.refetch?.());
+  const residents = model.rows.reduce((n,u) => n + u.residents.length,0);
+  const inactive = model.rows.reduce((n,u) => n + u.inactive.length,0);
+  const capacityKnown = model.rows.every(u => u.capacity !== null);
+  const capacity = capacityKnown ? model.rows.reduce((n,u) => n + u.capacity,0) : null;
+  const vacant = capacityKnown ? model.rows.reduce((n,u) => n + u.vacant,0) : null;
+  const nameOf = b => displayBikerName(b,language);
+  const propose = (biker, destination) => {
+    setMutationError(null);
+    setRequest({ biker, destination, originalResidence: biker.residence || '',
+      title: destination ? 'تأكيد إسناد السكن' : 'اقتراح إخلاء السكن',
+      description: destination ? `${nameOf(biker)} ← ${destination}` : `${nameOf(biker)} — ${biker.residence} — سيصبح بلا سكن مرتبط بعد تأكيدك.` });
+  };
+  async function confirm() {
+    if (!canConfirmResidence || !request || busy) return;
+    const current = bikerState.bikers.find(b => b.id === request.biker.id);
+    if (!current || (current.residence || '') !== request.originalResidence) {
+      setMutationError(new Error('تغير سكن البايكر؛ أغلق الاقتراح وراجع البيانات الجديدة.')); return;
     }
+    setBusy(true); setMutationError(null);
+    try { await bikerState.updateBiker(current.id,{ residence: request.destination }); setRequest(null); }
+    catch (e) { setMutationError(e); }
+    finally { setBusy(false); }
   }
-
-  // الإسكان كتابةٌ على صف البايكر نفسه — المصدر الواحد الذي يقرأه التابان.
-  const houseBiker = (bikerId, unitName) => guarded(
-    `أُسكن في «${unitName}»`,
-    () => updateBiker(bikerId, { residence: unitName }),
-  );
-
-  const unhouseBiker = (biker) => guarded(
-    `أُخرج ${displayBikerName(biker, language)} من سكنه — صار «بلا سكن مرتبط»`,
-    () => updateBiker(biker.id, { residence: '' }),
-  );
-
-  const saveUnitMeta = async (patch) => {
-    const ok = await guarded('حُفظت بيانات السكن', () => upsertUnitMeta(editingUnit.name, patch));
-    if (!ok) throw new Error('save-failed'); // المودال يبقى مفتوحاً عند الفشل
-  };
-
-  const refetchAll = () => {
-    refetchItems(); refetchEntries(); refetchMeta();
-    refetchAnnual(); refetchAnnualEntries();
-  };
-
-  /** منتقي إسكانٍ يُقرأ كزرّ: يعود فارغاً بعد كل اختيار، كمنتقي التعيين الجماعي. */
-  function AssignSelect({ unitName, exclude }) {
-    const excludeIds = new Set(exclude.map((b) => b.id));
-    const candidates = bikers.filter((b) => !excludeIds.has(b.id));
-    if (!candidates.length) return null;
-    return (
-      <select
-        value=""
-        onChange={(e) => e.target.value && houseBiker(e.target.value, unitName)}
-        aria-label={`أسكِن بايكراً في ${unitName}`}
-        className="text-[11px] px-2 py-1.5 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 focus:outline-none focus:border-primary-500 transition-colors max-w-[11rem]"
-      >
-        <option value="">+ أسكِن بايكراً…</option>
-        {candidates.map((b) => (
-          <option key={b.id} value={b.id}>
-            {displayBikerName(b, language)}{b.residence ? ` — ${b.residence}` : ''}
-          </option>
-        ))}
-      </select>
-    );
-  }
-
-  return (
-    <>
-      <TopBar
-        title="السكن"
-        subtitle="من يسكن أين، وكم كلّف تجهيز كل سكن للساكن الواحد مقابل التقدير"
-      />
-      <main className="p-4 sm:p-6 lg:p-8 space-y-6">
-        {mutationError && (
-          <ErrorState title="تعذّر تنفيذ العملية" error={mutationError} onRetry={() => setMutationError(null)} />
-        )}
-        {queryError && (
-          <ErrorState title="تعذّر تحميل بيانات السكن" error={queryError} onRetry={refetchAll} />
-        )}
-        {/* ميتا السكنات لها خانتها: فشلُها لا يمنع عرض بقية الصفحة —
-            الأسماء والتكاليف تأتي من مجموعات أخرى مسموحة أصلاً. */}
-        {metaError && !queryError && (
-          <ErrorState
-            title="تعذّر تحميل سعات السكنات وملاحظاتها"
-            error={metaError}
-            onRetry={refetchMeta}
-          />
-        )}
-
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
-          <StatCard
-            icon={Home}
-            tone="primary"
-            label="عدد السكنات"
-            value={formatNumber(kpis.unitCount)}
-            sub="التقسيمات المعرَّفة على بنود التجهيز"
-          />
-          <StatCard
-            icon={Users}
-            tone="indigo"
-            label="الساكنون المرتبطون"
-            value={kpis.capacity > 0
-              ? `${formatNumber(kpis.residents)} ساكنًا، السعة ${formatNumber(kpis.capacity)}`
-              : formatNumber(kpis.residents)}
-            sub={kpis.capacity > 0 ? 'من السعة المخطّطة' : 'من سجل البايكر'}
-          />
-          <StatCard
-            icon={Wallet}
-            tone="emerald"
-            label="تكلفة التجهيز"
-            value={formatCurrencyPrecise(kpis.cost)}
-            sub="كل مصاريف بنود السكن حتى اليوم"
-          />
-          <StatCard
-            icon={Scale}
-            tone={kpis.per !== null && kpis.benchmark && kpis.per > kpis.benchmark ? 'amber' : 'emerald'}
-            label="تجهيز · للساكن"
-            value={kpis.per === null ? '—' : formatCurrencyPrecise(kpis.per)}
-            sub={kpis.benchmark
-              ? `التقدير: ${formatCurrencyPrecise(kpis.benchmark)} للساكن`
-              : 'اربط الساكنين ليُحسب'}
-          />
-          {/* الإيجار بطاقتان مستقلتان، لا يُضاف إلى التجهيز: ذاك رأسمالٌ صُرف
-              مرةً وهذا تكلفةٌ تتكرر كل سنة. جمعهما يعطي رقماً بلا معنى.
-              و«للساكن» بطاقةٌ كاملة لا سطرٌ صغير — التوازي نفسه الذي بين
-              «تكلفة التجهيز» و«تجهيز · للساكن». */}
-          <StatCard
-            icon={KeyRound}
-            label="الإيجار السنوي"
-            value={kpis.rent > 0 ? formatCurrencyPrecise(kpis.rent) : '—'}
-            sub={kpis.rent > 0
-              ? 'من المصاريف السنوية — دفعات بند الإيجار الموسومة بسكناتها'
-              : 'من المصاريف السنوية — قسِّم بند الإيجار على السكنات'}
-          />
-          <StatCard
-            icon={KeyRound}
-            tone="indigo"
-            label="الإيجار · للساكن"
-            value={kpis.rentPer !== null && kpis.rentPer > 0
-              ? formatCurrencyPrecise(kpis.rentPer) : '—'}
-            sub={kpis.rentPer !== null && kpis.rentPer > 0
-              ? `سنوياً · ${formatCurrencyPrecise(kpis.rentPer / 12)} ر.س شهرياً`
-              : (kpis.rent > 0 ? 'اربط الساكنين ليُحسب' : 'يظهر بعد وسم دفعات الإيجار')}
-          />
+  return <>
+    <TopBar title="السكن" subtitle="الإشغال الفعلي، وتكاليف السكن، وعقود الإيجار" />
+    <main className="p-4 sm:p-6 lg:p-8 space-y-5">
+      <SectionHeader title="وضع السكن" subtitle={`قراءة ${today} · من سجل البايكر والمصاريف المسجلة`}
+        action={<button type="button" onClick={refresh} className="sw-button sw-button--secondary"><RefreshCw size={14}/>تحديث البيانات</button>} />
+      {loading ? <LoadingState message="جارٍ تحميل بيانات السكن..." /> : error ? <ErrorState title="تعذّر تحميل بيانات السكن" error={error} onRetry={refresh}/> : <>
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+          <StatCard icon={Home} label="السعة الكلية" value={count(capacity)} sub={`${model.rows.length} سكنات`} />
+          <StatCard icon={Users} label="الساكنون النشطون" value={count(residents-inactive)} sub={`${residents} مرتبطًا بالسكن في السجل`} />
+          <StatCard icon={AlertTriangle} tone={inactive ? 'amber':'slate'} label="يحتاج إخلاء" value={count(inactive)} sub="اقتراحات للمراجعة؛ لا إخلاء تلقائي" />
+          <StatCard icon={BedDouble} label="أسرّة غير مرتبطة" value={count(vacant)} sub="لا تشمل أسرّة غير النشطين قبل تأكيد إخلائهم" />
         </div>
-
-        {loading && housingRows.length === 0 ? (
-          <Card className="p-6"><LoadingState message="جارٍ تحميل بيانات السكن..." /></Card>
-        ) : housingRows.length === 0 ? (
-          <Card className="p-6">
-            <EmptyState
-              icon={Inbox}
-              title="لا سكنات معرَّفة بعد"
-              hint="أضِف التقسيمات على بند تجهيز السكن (رسوم التأسيس ← تعديل البند) وستظهر هنا ببطاقاتها."
-            />
-          </Card>
-        ) : housingRows.map((row) => (
-          <Card key={row.itemId} className="p-6">
-            <SectionHeader
-              title={row.itemName}
-              subtitle={row.benchmark
-                ? `التقدير: ${formatCurrencyPrecise(row.benchmark)} للساكن الواحد`
-                : undefined}
-            />
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-              {row.units.map((u) => {
-                const over = u.capacity !== null && u.residents.length > u.capacity;
-                return (
-                  <div
-                    key={u.key}
-                    className="border border-slate-100 dark:border-slate-800 rounded-smallcard p-4 space-y-3 bg-white dark:bg-slate-900"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                          <Home size={15} className="text-primary-600 dark:text-primary-400 shrink-0" />
-                          <span className="truncate">{u.name}</span>
-                        </p>
-                        <p className={`mt-0.5 text-[12px] tabular-nums ${over ? 'text-amber-700 dark:text-amber-400 font-semibold' : 'text-slate-500 dark:text-slate-400'}`}>
-                          {formatNumber(u.residents.length)}
-                          {u.capacity !== null && <> ساكنًا، السعة {formatNumber(u.capacity)}</>}
-                          {' '}ساكناً{over && ' — فوق السعة'}
-                        </p>
-                      </div>
-                      {canMutate && (
-                        <button
-                          type="button"
-                          onClick={() => setEditingUnit(u)}
-                          title="السعة والملاحظات"
-                          aria-label={`تعديل بيانات ${u.name}`}
-                          className="sw-tap inline-flex items-center justify-center p-1.5 rounded-control text-slate-500 dark:text-slate-400 hover:text-primary-700 dark:hover:text-primary-300 hover:bg-primary-50 dark:hover:bg-primary-500/15 transition-colors shrink-0"
-                        >
-                          <Pencil size={14} />
-                        </button>
-                      )}
-                    </div>
-
-                    {/* الساكنون — شارات من سجل البايكر، والإخراج كتابةٌ عليه */}
-                    <div className="flex flex-wrap gap-1.5">
-                      {u.residents.length === 0 && (
-                        <span className="text-[12px] text-slate-500 dark:text-slate-400">
-                          لا ساكن مرتبطاً بعد — أسكِن من القائمة أدناه.
-                        </span>
-                      )}
-                      {u.residents.map((b) => (
-                        <span
-                          key={b.id}
-                          className="inline-flex items-center gap-1 text-[12px] px-2 py-1 rounded-control bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"
-                        >
-                          {displayBikerName(b, language)}
-                          {canMutate && (
-                            <button
-                              type="button"
-                              onClick={() => unhouseBiker(b)}
-                              title={`إخراج ${displayBikerName(b, language)} من ${u.name}`}
-                              aria-label={`إخراج ${displayBikerName(b, language)} من ${u.name}`}
-                              className="sw-tap text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors"
-                            >
-                              <XIcon size={12} />
-                            </button>
-                          )}
-                        </span>
-                      ))}
-                    </div>
-
-                    {canMutate && (
-                      <AssignSelect unitName={u.name} exclude={u.residents} />
-                    )}
-
-                    <div className="grid grid-cols-2 gap-3 text-sm border-t border-slate-100 dark:border-slate-800 pt-3">
-                      <div>
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400">تكلفة التجهيز ({formatNumber(u.entryCount)} فاتورة)</p>
-                        <p className="font-bold text-slate-900 dark:text-slate-100 tabular-nums">{formatCurrencyPrecise(u.cost)}</p>
-                      </div>
-                      <div>
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400">للساكن الواحد</p>
-                        <p className={`font-bold tabular-nums ${deltaTone(u.vsBenchmarkPct)}`}>
-                          {u.perResident === null ? '—' : formatCurrencyPrecise(u.perResident)}
-                          {u.vsBenchmarkPct !== null && (
-                            <span className="mr-1 text-[11px] font-semibold">
-                              ({u.vsBenchmarkPct > 0 ? '+' : ''}{u.vsBenchmarkPct.toFixed(0)}%)
-                            </span>
-                          )}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* ── الإيجار: سطرٌ ثانٍ لا يُجمع مع الأول ──
-                        التجهيز صرفةٌ رأسمالية مرةً واحدة، والإيجار تكلفةٌ
-                        سنوية تتكرر. لهما مرجعان مختلفان، فيُعرضان منفصلين. */}
-                    <div className="grid grid-cols-2 gap-3 text-sm border-t border-slate-100 dark:border-slate-800 pt-3">
-                      <div>
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1">
-                          <KeyRound size={11} className="shrink-0" />
-                          الإيجار السنوي
-                          {u.rentEntryCount > 0 && <> ({formatNumber(u.rentEntryCount)} دفعة)</>}
-                        </p>
-                        <p className="font-bold text-slate-900 dark:text-slate-100 tabular-nums">
-                          {u.rent > 0 ? formatCurrencyPrecise(u.rent) : '—'}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400">إيجار الساكن</p>
-                        <p className="font-bold text-slate-900 dark:text-slate-100 tabular-nums">
-                          {u.rentPerResident === null || u.rent === 0
-                            ? '—'
-                            : <>
-                                {formatCurrencyPrecise(u.rentPerResident)}
-                                <span className="mr-1 text-[11px] font-normal text-slate-500 dark:text-slate-400">
-                                  ({formatCurrencyPrecise(u.rentPerResident / 12)} شهرياً)
-                                </span>
-                              </>}
-                        </p>
-                      </div>
-                    </div>
-
-                    {u.notes && (
-                      <p className="text-[12px] text-slate-600 dark:text-slate-400 leading-relaxed border-t border-slate-100 dark:border-slate-800 pt-2 whitespace-pre-wrap">
-                        {u.notes}
-                      </p>
-                    )}
-                  </div>
-                );
-              })}
+        <Card className="p-4 space-y-2">
+          <h2 className="font-bold">تنبيهات السكن</h2>
+          <p className="text-sm text-slate-500 dark:text-slate-400">الخلو محسوب من السعة ناقص كل المرتبطين. يلزم التحقق الميداني قبل تسكين ساكن جديد.</p>
+          {model.alerts.map(a => <p key={`${a.kind}:${a.unit}`} className="text-sm text-amber-700 dark:text-amber-300"><AlertTriangle size={14} className="inline ml-1"/>
+            {a.kind === 'due' ? <a href={financialHref}>{a.unit}: دفعة إيجار {value(a.amount)} · {a.date} · {a.days<0?'متأخرة':`خلال ${a.days} أيام`}</a>
+              : a.kind === 'inactive' ? <a href={`#housing-${encodeURIComponent(a.unit)}`}>{a.unit}: {a.count} يحتاجون مراجعة الإخلاء</a>
+              : <a href="#housing-unhoused">{a.unit} ممتلئ، ويوجد {a.count} بايكر نشط بلا سكن معروف</a>}</p>)}
+          {!model.alerts.length && <p>ما فيه تنبيهات إشغال</p>}
+          {model.rows.some(u=>!u.nextPayment) && <p className="text-sm text-amber-700 dark:text-amber-300">لا يمكن تأكيد دفعات خلال 30 يومًا للسكنات التي ينقصها جدول دفعات.</p>}
+        </Card>
+        {!model.rows.length && <EmptyState icon={Home} title="لا سكنات معرَّفة بعد" hint="أضف السكنات إلى بنود التجهيز أو بيانات السكن."/>}
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
+          {model.rows.map(u => <Card key={u.key} id={`housing-${u.name}`} className="p-4 sm:p-5 space-y-4 min-w-0">
+            <SectionHeader title={u.name} action={canMutate && <button type="button" aria-label={`تعديل بيانات ${u.name}`} onClick={() => setEditingUnit(u)} className="sw-button sw-button--secondary"><Pencil size={14}/></button>}/>
+            <dl className="grid grid-cols-2 gap-3 text-sm">
+              <Metric label="السعة" number={count(u.capacity)}/><Metric label="الساكنون النشطون" number={count(u.active.length)}/>
+              <Metric label="غير نشطين · يحتاج إخلاء" number={count(u.inactive.length)} warning={u.inactive.length>0}/><Metric label="أسرّة غير مرتبطة فعليًا" number={count(u.vacant)}/>
+            </dl>
+            {u.overCapacity && <p className="text-rose-600 dark:text-rose-300">عدد المرتبطين أكبر من السعة المسجلة</p>}
+            {u.inactive.length>0 && <p className="text-xs text-slate-500 dark:text-slate-400">بعد تأكيد الإخلاء قد تتاح {count(u.afterEviction)} أسرّة؛ ليست متاحة مؤكدًا الآن.</p>}
+            <div className="border-t border-slate-200 dark:border-slate-700 pt-3">
+              <h3 className="font-bold text-sm mb-2">التكلفة الشهرية</h3>
+              <dl className="grid grid-cols-2 gap-3 text-sm"><Metric label="الإيجار الشهري" number={value(u.monthly)}/><Metric label="للساكن النشط شهريًا" number={value(u.perActiveMonthly)}/>
+                <Metric label="التجهيز · مرة واحدة" number={value(u.cost)}/><Metric label="دفعات إيجار مسجلة" number={value(u.recorded)}/></dl>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">الشهري = قيمة العقد السنوية ÷ 12. التجهيز منفصل ولا يُضاف إلى تكلفة الشهر.</p>
             </div>
-
-            {row.unassignedCost > 0 && (
-              <p className="mt-4 text-[12px] text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/30 rounded-control px-3 py-2.5 leading-relaxed">
-                {formatNumber(row.unassignedCount)} مصروفاً بمجموع{' '}
-                <strong className="tabular-nums">{formatCurrencyPrecise(row.unassignedCost)}</strong>{' '}
-                بلا تقسيم — وزّعها من سجل مصاريف البند في تاب رسوم التأسيس.
-              </p>
-            )}
-          </Card>
-        ))}
-
-        {/* ── إيجارٌ في الدفاتر لم يصل بطاقةً ──
-            دفعةٌ بلا تقسيم، أو تقسيمٌ باسمٍ لا بطاقة له. الرقمان يُقالان
-            صراحةً: إيجارٌ مسجَّل لا يراه أحد أسوأ من إيجارٍ لم يُسجَّل. */}
-        {housingRows.length > 0 && (rentIndex.unassigned > 0 || strayRent.length > 0) && (
-          <Card className="p-4">
-            <div className="space-y-2 text-[12px] leading-relaxed">
-              {rentIndex.unassigned > 0 && (
-                <p className="text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/30 rounded-control px-3 py-2.5">
-                  {formatNumber(rentIndex.unassignedCount)} دفعة إيجار بمجموع{' '}
-                  <strong className="tabular-nums">{formatCurrencyPrecise(rentIndex.unassigned)}</strong>{' '}
-                  بلا سكن — افتح بند الإيجار في تاب «المصاريف السنوية» وأسنِد كل دفعة لسكنها.
-                </p>
-              )}
-              {strayRent.length > 0 && (
-                <p className="text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/30 rounded-control px-3 py-2.5">
-                  إيجارٌ مُسنَد إلى سكناتٍ لا بطاقة لها هنا:{' '}
-                  {strayRent.map((u) => (
-                    <strong key={u.key} className="whitespace-nowrap">
-                      {u.name} ({formatCurrencyPrecise(u.total)})
-                    </strong>
-                  )).reduce((acc, el) => (acc === null ? [el] : [...acc, '، ', el]), null)}
-                  {' '}— الاسم غير مذكور في تقسيمات بند التجهيز، فوحِّد التسمية بين البندين.
-                </p>
-              )}
+            <div className="border-t border-slate-200 dark:border-slate-700 pt-3">
+              <h3 className="font-bold text-sm mb-2">عقد الإيجار</h3>
+              <dl className="grid grid-cols-2 gap-3 text-sm"><Metric label="المبلغ السنوي" number={value(u.annual)}/><Metric label="مدفوع بإثبات مسجل" number={value(u.unconfirmed && !u.paid ? null : u.paid)}/>
+                <Metric label="المتبقي من العقد" number={value(u.remaining)}/><Metric label="الدفعة القادمة" number={u.nextPayment?.date || 'غير مسجلة'}/></dl>
+              {u.contract && <p className="text-xs mt-2">الفترة: <span dir="ltr">{u.contract.from} — {u.contract.to}</span></p>}
+              <p className="text-xs text-amber-700 dark:text-amber-300 mt-2">ناقص: {u.missing.join('، ')}.</p>
+              <a className="text-sm text-primary-700 dark:text-primary-300 underline mt-2 inline-block" href={financialHref}>تفاصيل الإيجار والدفعات</a>
+              <details className="mt-2 text-xs"><summary className="cursor-pointer">مصادر العقد والتكلفة</summary>
+                <p className="my-2">التجهيز: {u.entryCount} مستندات مسندة لهذا السكن.</p>
+                {u.payments.map(e => <div key={e.id} className="py-2 border-t border-slate-200 dark:border-slate-700 break-words space-y-1">
+                  <p>{e.description} · {value(e.amount)} · {e.spentDate}</p>
+                  {e.housingEvidence?.purpose && <p className="leading-relaxed">{e.housingEvidence.purpose}</p>}
+                  {e.invoiceUrl && <a className="underline" href={e.invoiceUrl} target="_blank" rel="noreferrer">فتح مستند الإيجار</a>}
+                </div>)}
+                {!u.payments.length && <p>لا دفعات مسندة لهذا السكن</p>}
+              </details>
             </div>
-          </Card>
-        )}
+            <details open={u.inactive.length>0} className="border-t border-slate-200 dark:border-slate-700 pt-3">
+              <summary className="cursor-pointer font-bold text-sm">الساكنون ({u.residents.length})</summary>
+              <ul className="mt-2 divide-y divide-slate-200 dark:divide-slate-700">
+                {[...u.inactive,...u.active].map(b => { const needs=u.inactive.includes(b); return <li key={b.id} className="py-2 space-y-1 text-sm">
+                  <div className="flex flex-wrap justify-between gap-2"><a href={housingBikerHref(b.id)} className="underline" translate="no" dir="auto">{nameOf(b)}</a>
+                    {needs && <span className="text-amber-700 dark:text-amber-300">يحتاج إخلاء</span>}</div>
+                  {needs && <p className="text-xs text-slate-500 dark:text-slate-400">{b.currentStatus}{b.endDate ? ` · نهاية العمل: ${b.endDate}` : ''}</p>}
+                  {canConfirmResidence && <button type="button" className="text-xs text-primary-700 dark:text-primary-300 underline" onClick={() => propose(b,'')}>{needs ? 'مراجعة اقتراح الإخلاء':'مراجعة إخلاء السكن'}</button>}
+                </li>; })}
+              </ul>
+            </details>
+            {u.notes && <p className="text-sm whitespace-pre-wrap">{u.notes}</p>}
+          </Card>)}
+        </div>
+        <Card className="p-4 space-y-2">
+          <h2 className="font-bold flex items-center gap-2"><Wallet size={16}/>مصادر التكلفة والبيانات الناقصة</h2>
+          {model.sharedPlans.map(p => <p key={p.id} className="text-sm">{p.expenseName}: {value(p.annualCost)} ميزانية سنوية مشتركة؛ لا تُقسم بالتساوي على السكنات.</p>)}
+          <p className="text-sm">تجهيز غير مسند لسكن: {value(model.setupUnassigned)} · إيجار غير مسند: {value(model.rentUnassigned)}.</p>
+          <p className="text-sm">قيمة العقد من وصف العقد المراجع متى كانت صريحة. الدفعات المسجلة وحدها لا تثبت قيمة الإيجار السنوي.</p>
+        </Card>
+        <Card id="housing-unhoused" className="p-4">
+          <SectionHeader title="نشطون بلا سكن معروف" subtitle={`${model.unhoused.length} بايكر؛ لا تشمل الهاربين أو من انتهى عمله`}/>
+          {!model.unhoused.length ? <p className="text-sm">كل البايكرية النشطين مرتبطون بسكن</p> : <ul className="space-y-3">{model.unhoused.map(b => <li key={b.id} className="flex flex-wrap gap-3 items-center justify-between">
+            <a className="underline" href={housingBikerHref(b.id)}>{nameOf(b)}</a><span className="text-xs">{b.residence || 'لم يُذكر سكن'}</span>
+            {canConfirmResidence && <select aria-label={`اقتراح سكن ${nameOf(b)}`} value="" onChange={e => e.target.value && propose(b,e.target.value)} className="p-2 rounded-control bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600">
+              <option value="">اختر سكنًا للمراجعة</option>{model.rows.filter(u => u.vacant>0).map(u => <option key={u.key} value={u.name}>{u.name} · {u.vacant} أسرّة غير مرتبطة</option>)}
+            </select>}
+          </li>)}</ul>}
+        </Card>
+      </>}
+    </main>
+    {editingUnit && canMutate && <EditHousingUnitModal isOpen unit={editingUnit} onClose={() => setEditingUnit(null)} onSave={patch => metaState.upsertUnitMeta(editingUnit.name,patch)}/>}
+    {request && canConfirmResidence && <HousingConfirmation key={`${request.biker.id}:${request.destination}`} request={request} busy={busy} error={mutationError} onCancel={() => setRequest(null)} onConfirm={confirm}/>}
+  </>;
+}
 
-        {/* من لا سكن معروفاً له — بنصّه الخام، فلا يختفي «حي النسيم» القديم */}
-        {unhoused.length > 0 && housingRows.length > 0 && (
-          <Card className="p-6">
-            <SectionHeader
-              title="بلا سكن مرتبط"
-              subtitle="بايكرية حقل سكنهم فارغ أو لا يطابق أي سكن معرَّف"
-            />
-            <ul className="mt-3 divide-y divide-slate-100 dark:divide-slate-800">
-              {unhoused.map(({ biker, residenceText }) => (
-                <li key={biker.id} className="flex items-center justify-between gap-3 py-2.5">
-                  <div className="min-w-0">
-                    <p translate="no" dir="auto" className="text-sm font-semibold text-slate-900 dark:text-slate-100">{displayBikerName(biker, language)}</p>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                      {residenceText ? `مكتوب حالياً: ${residenceText}` : 'لم يُذكر سكن'}
-                    </p>
-                  </div>
-                  {canMutate && (
-                    <select
-                      value=""
-                      onChange={(e) => e.target.value && houseBiker(biker.id, e.target.value)}
-                      aria-label={`أسكِن ${displayBikerName(biker, language)}`}
-                      className="shrink-0 text-[11px] px-2 py-1.5 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 focus:outline-none focus:border-primary-500 transition-colors max-w-[10rem]"
-                    >
-                      <option value="">أسكِنه في…</option>
-                      {allUnitNames.map((n) => (
-                        <option key={n} value={n}>{n}</option>
-                      ))}
-                    </select>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </Card>
-        )}
-      </main>
-
-      <EditHousingUnitModal
-        isOpen={Boolean(editingUnit)}
-        onClose={() => setEditingUnit(null)}
-        unit={editingUnit}
-        onSave={saveUnitMeta}
-      />
-
-      <Toast
-        open={toast.open}
-        message={toast.message}
-        tone={toast.tone}
-        duration={toast.duration}
-        onClose={closeToast}
-      />
-    </>
-  );
+function Metric({ label, number, warning = false }) {
+  return <div className="min-w-0"><dt className="text-xs text-slate-500 dark:text-slate-400">{label}</dt><dd className={`font-bold mt-1 tabular-nums break-words ${warning?'text-amber-700 dark:text-amber-300':''}`}>{number}</dd></div>;
 }

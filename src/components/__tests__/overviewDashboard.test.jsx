@@ -11,6 +11,7 @@ vi.mock('../../hooks/useOverviewDashboard', () => ({ useOverviewDashboard: (...a
 vi.mock('../../hooks/useOverviewBikerQuality', () => ({ useOverviewBikerQuality: () => ({ available: true, data: [], loading: false, error: null, refetch: vi.fn() }) }));
 vi.mock('../../contexts/PartnerViewContext', () => ({ usePartnerView: () => ({ role: state.role, isPartnerView: state.partner, canMutate: false }) }));
 vi.mock('../../lib/firebaseClient', () => ({ isFirebaseConfigured: true, missingEnvNames: [] }));
+vi.mock('../IdleBikersAttention', () => ({ default: () => null }));
 vi.mock('../TopBar', () => ({ default: ({ title }) => <h1>{title}</h1> }));
 vi.mock('../CapitalOverviewPage', () => ({ default: () => <p>Isolated capital panel</p> }));
 vi.mock('../../lib/backupZip', () => ({ downloadFullBackup: vi.fn() }));

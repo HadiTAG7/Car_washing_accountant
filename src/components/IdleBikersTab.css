@@ -1,0 +1,7 @@
+/* Editing controls must remain touchable even at the horizontal scroll end.
+ * Narrow screens repeat the biker's name beside the editable fields instead. */
+@media (max-width: 639px) {
+  .idle-bikers-table.sw-table-sticky-identity :is(th, td):first-child:not([colspan]) {
+    position: static;
+  }
+}

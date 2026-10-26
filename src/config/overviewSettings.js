@@ -13,6 +13,7 @@ export const OVERVIEW_SETTINGS = Object.freeze({
   // A biker whose status is one of these (alone or followed by more words, as in
   // «هرب مع الشريحة») has left; with no end date on record, the overview lists them.
   departedStatuses: ['هرب', 'مشيناه'],
+  idleStoppedDays: 3,
   shortWashMinutes: 10,
   documentWarningDays: 30,
   forecastWindowDays: 7,

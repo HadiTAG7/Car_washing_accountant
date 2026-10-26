@@ -1,3 +1,4 @@
+import IdleBikersTab from './IdleBikersTab';
 import { translate } from '../i18n/locale';
 import { useLanguage } from '../i18n/useLanguage';
 import { bikerCurrentStatusLabel } from '../lib/bikerCurrentStatus';
@@ -125,7 +126,7 @@ export default function BikersPage({ role, payrollPreview = false, initialSectio
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [editingBiker, setEditingBiker] = useState(null);
   const [advanceBiker, setAdvanceBiker] = useState(null);
-  const [activeSection, setActiveSection] = useState(payrollPreview ? 'payroll' : initialSection);
+  const [activeSection, setActiveSection] = useState(() => payrollPreview ? 'payroll' : (new URLSearchParams(window.location.search).get('bikerTab') === 'idle' && ['admin', 'accountant'].includes(role) ? 'idle' : initialSection));
   const [importing, setImporting] = useState(false);
   const [mutationError, setMutationError] = useState(null);
   const [toast, setToast] = useState({ open: false, message: '', tone: 'success', duration: 3000 });
@@ -250,13 +251,16 @@ export default function BikersPage({ role, payrollPreview = false, initialSectio
           <ErrorState title="تعذّر تحميل سجل البايكرات" error={error} onRetry={refetch} />
         )}
 
-        <div className="inline-flex items-center gap-1 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-control p-1 payroll-no-print" role="tablist" aria-label="أقسام صفحة البايكر">
+        <div className="inline-flex max-w-full flex-wrap items-center gap-1 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-control p-1 payroll-no-print" role="tablist" aria-label="أقسام صفحة البايكر">
           <button type="button" role="tab" aria-selected={activeSection === 'registry'} onClick={() => setActiveSection('registry')} className={`sw-button sw-button--sm ${activeSection === 'registry' ? 'sw-button--primary' : 'sw-button--secondary'}`}><Bike size={16} /> سجل البايكرات</button>
+          {showBreakEven && <button type="button" role="tab" aria-selected={activeSection === 'idle'} onClick={() => setActiveSection('idle')} className={`sw-button sw-button--sm ${activeSection === 'idle' ? 'sw-button--primary' : 'sw-button--secondary'}`}><Users size={16} /> الخاملين</button>}
           <button type="button" role="tab" aria-selected={activeSection === 'payroll'} onClick={() => setActiveSection('payroll')} className={`sw-button sw-button--sm ${activeSection === 'payroll' ? 'sw-button--primary' : 'sw-button--secondary'}`}><ClipboardList size={16} /> مسير الرواتب</button>
         </div>
 
         {activeSection === 'payroll' ? (
           <BikerPayroll role={role} previewMode={payrollPreview} bikers={bikers} />
+        ) : activeSection === 'idle' && showBreakEven ? (
+          <IdleBikersTab role={role} />
         ) : (
           <>
 

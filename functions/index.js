@@ -60,6 +60,7 @@ export const supervisorRecords = callable('supervisorRecords');
 export const expenseCorrectionOptions = callable('expenseCorrectionOptions');
 export const expensePreviewCorrection = callable('expensePreviewCorrection');
 export const expenseSaveCorrection = callable('expenseSaveCorrection');
+export const bikerIdleFollowupSave = callable('bikerIdleFollowupSave');
 export const payrollReadStatus = callable('payrollReadStatus');
 export const workerRecordAdvance = callable('workerRecordAdvance');
 

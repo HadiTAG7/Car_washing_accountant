@@ -1,3 +1,4 @@
+import { saveBikerIdleFollowup } from './bikerIdleFollowup.js';
 import { previewAdvanceMonth, saveAdvanceMonth } from './advanceMonth.js';
 import { annualPlanAction } from './annualPlans.js';
 import { ExpenseCorrectionError, previewExpenseCorrection, saveExpenseCorrection, recordWorkerAdvance, expenseCorrectionOptions, payrollReadStatus } from './expenseCorrections.js';
@@ -628,6 +629,7 @@ export const HANDLERS = {
   // ── مسير رواتب البايكر ─────────────────────────────────────────────
   // المعاينة والمسودة حسابٌ خادمي ولا تمسان الدفاتر. الاعتماد والصرف والعكس
   // قرارات مدير، ولا يحمل أي طلبٍ من العميل مبلغاً نهائياً أو سطر قيد.
+  bikerIdleFollowupSave: { guard: 'accountant', run: ({ db, FieldValue, data, uid }) => saveBikerIdleFollowup(db, FieldValue, data, { userId: uid }) },
   payrollPreview: {
     guard: 'accountant',
     run: ({ db, data }) => previewPayroll(db, data || {}),

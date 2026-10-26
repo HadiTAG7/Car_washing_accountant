@@ -810,6 +810,7 @@ export function mapBiker(row) {
     sponsor:       row.sponsor || '',
     nationality:   row.nationality || '',
     currentStatus: String(row.current_status || '').trim(),
+    idleFollowup: row.idle_follow_up || null,
     salary:        Math.max(0, Number(row.salary) || 0),
     startDate:     row.start_date || '',
     endDate:       row.end_date || '',

@@ -55,7 +55,11 @@ describe.skipIf(process.env.QUALITY_OBJECTIONS_PG_TESTS !== '1')('quality object
     const result = await saveQualityObjection(db, FieldValue, input, { userId: uid });
     expect(result.objection).toMatchObject({ revision: 1, status: 'submitted', updatedBy: uid });
     expect((await db.collection('sweater_metric_snapshots').doc(snapshotId).get()).data()).toEqual(before);
-    expect((await db.collection('audit_logs').doc(`quality-objection-${docId}__1`).get()).data()).toMatchObject({ before: {}, after: { status: 'submitted' }, userId: uid });
+    expect((await db.collection('quality_objections').doc(docId).get()).data().history).toMatchObject([{ before: {}, after: { status: 'submitted', note: input.note }, userId: uid }]);
+    const audit = (await db.collection('audit_logs').doc(`quality-objection-${docId}__1`).get()).data();
+    expect(audit).toMatchObject({ before: { revision: 0 }, after: { revision: 1 }, userId: uid });
+    expect(JSON.stringify(audit)).not.toContain(input.note);
+    expect(JSON.stringify(audit)).not.toContain('submitted');
   });
   it('only one concurrent revision commits, and stale source snapshots cannot be saved', async () => {
     const outcomes = await Promise.allSettled(['one', 'two'].map(note => saveQualityObjection(db, FieldValue, { ...input, expectedRevision: 1, note }, { userId: uid })));
@@ -76,8 +80,15 @@ describe.skipIf(process.env.QUALITY_OBJECTIONS_PG_TESTS !== '1')('quality object
       await client.query('begin'); await client.query('set local role authenticated');
       await client.query("select set_config('request.jwt.claim.sub',$1,true)", [other]);
       expect((await client.query('select id from public.quality_objections where id=$1', [docId])).rows).toHaveLength(0);
+      const audit = (await client.query('select app.doc_audit_logs(a) as doc from public.audit_logs a where document_id=$1', [docId])).rows;
+      expect(audit.length).toBe(2);
+      expect(audit[0].doc.before).toEqual({ revision: 0 });
+      expect(JSON.stringify(audit)).not.toContain(input.note);
+      expect(JSON.stringify(audit)).not.toContain('submitted');
       await client.query("select set_config('request.jwt.claim.sub',$1,true)", [uid]);
       expect((await client.query('select id from public.quality_objections where id=$1', [docId])).rows).toHaveLength(1);
+      const full = (await client.query('select app.doc_quality_objections(q) as doc from public.quality_objections q where id=$1', [docId])).rows[0].doc;
+      expect(full.history).toHaveLength(2); expect(full.history[0].after.note).toBe(input.note);
       await expect(client.query('update public.quality_objections set note=$1 where id=$2', ['forbidden', docId])).rejects.toMatchObject({ code: '42501' });
     } finally { await client.query('rollback'); client.release(); }
   });

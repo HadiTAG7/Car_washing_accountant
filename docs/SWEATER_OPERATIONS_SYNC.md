@@ -365,7 +365,9 @@ to follow this section once those reviewed files are installed.
 Before UI release, apply the additive generated migration
 `20261026203950_quality_objections.sql`. It contains only admin-readable internal
 objection metadata; browser writes are denied. Both narrow server actions recheck
-admin membership, source freshness and revision and write a before/after audit.
+admin membership, source freshness and revision. Detailed before/after history
+stays inside the admin-only objection record. The shared accountant-readable
+audit contains revision numbers only, never the objection status or note.
 The deadline is unset until Hadi saves it in the page; no guessed default is seeded.
 
 After the signer gate is resolved, add this document/command as the general

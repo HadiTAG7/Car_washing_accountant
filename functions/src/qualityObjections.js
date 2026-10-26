@@ -29,22 +29,26 @@ export async function saveQualityObjection(db, FieldValue, input, { userId, now 
   const audit = db.collection('audit_logs').doc(`quality-objection-${documentId}__${input.expectedRevision + 1}`);
   return db.runTransaction(async tx => {
     const name = await memberIn(tx, db, userId);
-    const [old, history, readings] = await Promise.all([tx.get(ref), tx.get(audit),
+    const [old, auditSnapshot, readings] = await Promise.all([tx.get(ref), tx.get(audit),
       tx.get(db.collection('sweater_metric_snapshots').where('periodKey', '==', input.periodKey))]);
     const snapshot = composeSweaterMetricReadings(readings.docs.map(d => ({ ...d.data(), id: d.id })), input.periodKey);
     const row = snapshot?.eventGroups[input.metricKey]?.rows.find(r => r.sourceId === input.sourceId);
     if (!row || snapshot.metricSources[input.metricKey].snapshotId !== input.snapshotId) fail('تغيّرت قراءة سويتر؛ أعد تحميلها وراجع الصف قبل الحفظ.', 'aborted');
     const before = old.exists ? old.data() : {};
-    if ((before.revision || 0) !== input.expectedRevision || history.exists) fail('تغيّرت متابعة الاعتراض؛ أعد تحميلها قبل الحفظ.', 'aborted');
+    if ((before.revision || 0) !== input.expectedRevision || auditSnapshot.exists) fail('تغيّرت متابعة الاعتراض؛ أعد تحميلها قبل الحفظ.', 'aborted');
     const sourceHash = hashBody(row), note = input.note.trim();
     if (before.status === input.status && before.note === note && before.sourceHash === sourceHash && before.snapshotId === input.snapshotId) return { unchanged: true, objection: { ...before, id: documentId } };
     const atIso = now.toISOString(), after = { periodKey: input.periodKey, metricKey: input.metricKey, sourceId: input.sourceId,
       snapshotId: input.snapshotId, sourceHash, status: input.status, note, revision: input.expectedRevision + 1,
       updatedBy: userId, updatedByName: name, updatedAtIso: atIso };
-    tx.set(ref, after);
+    // Detailed before/after belongs to the admin-only record. The shared
+    // accountant-readable audit must never copy the objection note/status.
+    const beforeState = Object.fromEntries(Object.entries(before).filter(([key]) => key !== 'history'));
+    const history = [...(Array.isArray(before.history) ? before.history : []), { before: beforeState, after, userId, atIso }];
+    tx.set(ref, { ...after, history });
     tx.set(audit, { action: 'quality-objection-followup', collectionName: 'quality_objections', documentId,
-      userId, atIso, createdAt: FieldValue.serverTimestamp(), before, after });
-    return { objection: { ...after, id: documentId } };
+      userId, atIso, createdAt: FieldValue.serverTimestamp(), before: { revision: before.revision || 0 }, after: { revision: after.revision } });
+    return { objection: { ...after, history, id: documentId } };
   });
 }
 

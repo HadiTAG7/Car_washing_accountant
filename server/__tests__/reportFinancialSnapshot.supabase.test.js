@@ -23,7 +23,7 @@ describe.skipIf(!enabled)('report publication on isolated Postgres schema', () =
     // optional application migrations are not prerequisites for report capture.
     const available = new Set((await pool.query("select tablename from pg_tables where schemaname='public'")).rows.map(r=>r.tablename));
     const tables = [...new Set([...SCHEMA.map(t=>t.table),...SCHEMA.filter(t=>t.lines).map(t=>t.lines),'firebase_uid_map'])].filter(t=>available.has(t));
-    await pool.query(`truncate ${tables.map(t=>`public.\"${t}\"`).join(', ')} cascade`);
+    await pool.query(`truncate ${tables.map(t=>`public."${t}"`).join(', ')} cascade`);
     await pool.query("insert into auth.users(id,email) values ($1,'report-test@isolated.test') on conflict(id) do nothing", [uid]);
     db = createStore({ connectionString: url, role: 'ledger_server', max: 8 });
     const batch = db.batch();

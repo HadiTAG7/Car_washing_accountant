@@ -30,7 +30,7 @@ const docId = x => typeof x === 'string' && /^[A-Za-z0-9_-][A-Za-z0-9_.:-]{0,159
 const month = x => typeof x === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(x);
 const instant = x => typeof x === 'string' && /T.*(?:Z|[+-]\d{2}:\d{2})$/.test(x) && Number.isFinite(Date.parse(x));
 // The same source rule as the operations contract: Sweater's portal only, no credentials in the URL.
-const sspSourceUrl = x => {
+export const sspSourceUrl = x => {
   try { const u = new URL(x); return u.protocol === 'https:' && u.hostname === 'ssp-portal.sweater.sa'
     && !u.username && !u.password && !u.hash && ![...u.searchParams.keys()].some(k => /token|session|auth|cookie|secret/i.test(k)); }
   catch { return false; }
@@ -75,11 +75,42 @@ export function validDeductionDetails(rows, metrics, periodKey) {
     && halalas(metrics[key]) && sums[key] === Math.round(metrics[key] * 100));
 }
 
+// Optional event evidence for these three COUNT metrics only. A partial read
+// stays partial: quantity is source units, never converted to money. Nullable
+// fields mean unavailable, not zero, responsibility, approval or payroll.
+export const COUNT_DETAIL_KEYS = Object.freeze(['freeWashCompensation', 'cancelledByBiker', 'cancelledMaintenance']);
+export function validCountDetails(rows, metrics, periodKey) {
+  if (!Array.isArray(rows) || rows.length > 5000 || !object(metrics) || !month(periodKey)) return false;
+  const keys = COUNT_DETAIL_KEYS.filter(key => Object.hasOwn(metrics, key));
+  if (!keys.length || keys.some(key => !Number.isSafeInteger(metrics[key]) || metrics[key] < 0)) return false;
+  const sums = Object.fromEntries(keys.map(key => [key, 0])), ids = new Set(), bookings = new Set();
+  for (const row of rows) {
+    if (!exactKeys(row, ['metricKey', 'sourceId', 'driverExternalId', 'date', 'quantity', 'amount', 'reason', 'sourceUrl', 'bookingId'])
+      || !keys.includes(row.metricKey) || !docId(row.sourceId)
+      || (row.driverExternalId !== null && !docId(row.driverExternalId))
+      || (row.date !== null && (typeof row.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(row.date)
+        || row.date.slice(0, 7) !== periodKey || !Number.isFinite(Date.parse(`${row.date}T00:00:00Z`))
+        || new Date(`${row.date}T00:00:00Z`).toISOString().slice(0, 10) !== row.date))
+      || !Number.isSafeInteger(row.quantity) || row.quantity < 1
+      || (row.metricKey !== 'freeWashCompensation' && row.quantity !== 1)
+      || (row.amount !== null && (typeof row.amount !== 'number' || !Number.isFinite(row.amount)
+        || row.amount < 0 || row.amount > 1e9 || !halalas(row.amount)))
+      || (row.reason !== null && (typeof row.reason !== 'string' || !row.reason.trim() || row.reason.length > 250))
+      || !sspSourceUrl(row.sourceUrl) || (row.bookingId !== null && !docId(row.bookingId))) return false;
+    const identity = `${row.metricKey}:${row.sourceId}`, booking = `${row.metricKey}:${row.bookingId}`;
+    if (ids.has(identity) || (row.bookingId !== null && bookings.has(booking))) return false;
+    ids.add(identity); if (row.bookingId !== null) bookings.add(booking);
+    sums[row.metricKey] += row.quantity;
+  }
+  return keys.every(key => Number.isSafeInteger(sums[key]) && sums[key] <= metrics[key]);
+}
+
 /** One month's reading: known metrics only, counts as whole numbers, money to the halala. */
 export function validateMetricsSnapshot(payload) {
   const fields = ['contractVersion', 'importRunId', 'periodKey', 'extractedAt', 'sourceUrl', 'metrics'];
   if (object(payload) && Object.hasOwn(payload, 'tipsByBiker')) fields.push('tipsByBiker');
   if (object(payload) && Object.hasOwn(payload, 'deductionDetails')) fields.push('deductionDetails');
+  if (object(payload) && Object.hasOwn(payload, 'countDetails')) fields.push('countDetails');
   if (!exactKeys(payload, fields)
     || payload.contractVersion !== METRICS_CONTRACT || !docId(payload.importRunId) || !month(payload.periodKey)
     || !instant(payload.extractedAt) || !sspSourceUrl(payload.sourceUrl)) fail('عقد لقطة أرقام سويتر أو معرّفها أو شهرها أو وقتها أو رابطها غير صالح.');
@@ -100,6 +131,9 @@ export function validateMetricsSnapshot(payload) {
   }
   if (Object.hasOwn(payload, 'deductionDetails') && !validDeductionDetails(payload.deductionDetails, payload.metrics, payload.periodKey)) {
     fail('تفاصيل الخصومات تحتاج سجلات مصدر فريدة للشهر نفسه، ومعرف بايكر ومبلغ وسبب ورابط، ومجموعًا مطابقًا للقطة.');
+  }
+  if (Object.hasOwn(payload, 'countDetails') && !validCountDetails(payload.countDetails, payload.metrics, payload.periodKey)) {
+    fail('تفاصيل الأعداد تحتاج وقائع مصدر فريدة من الشهر والقراءة نفسهما، وكمية لا تتجاوز العدد؛ المبلغ المفقود يبقى غير متاح.');
   }
   return payload;
 }

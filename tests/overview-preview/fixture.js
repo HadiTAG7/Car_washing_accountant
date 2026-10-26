@@ -18,13 +18,20 @@ export function useOverviewDashboard(periodKey) {
     sweaterMetrics: { snapshot: composeSweaterMetricReadings([
       { id: 'TEST-BUSINESS', periodKey: '2026-10', extractedAtIso: '2026-10-21T06:00:00Z', metrics: { completedWashes: 400, tipsNet: 50 },
         tipsByBiker: [{ driverExternalId: 'TEST-A', netAmount: 17.125 }, { driverExternalId: 'TEST-B', netAmount: 32.875 }] },
-      { id: 'TEST-COMPENSATIONS', periodKey: '2026-10', extractedAtIso: '2026-10-21T07:00:00Z', metrics: { violations: 100, damages: 0, compensations: 0,
+      { id: 'TEST-COMPENSATIONS', periodKey: '2026-10', extractedAtIso: '2026-10-21T07:00:00Z', sourceUrl: 'https://ssp-portal.sweater.sa/dashboards/compensations', metrics: { violations: 100, damages: 0, compensations: 0,
         freeWashCompensation: 2, cancelledByBiker: 3, cancelledMaintenance: 1, cancelledByCustomer: 4 }, deductionDetails: [
           { metricKey: 'violations', sourceId: 'TEST-1', driverExternalId: 'TEST-A', date: '2026-10-20', amount: 60,
             category: 'Damaged Motorcycle Stickers', sourceUrl: 'https://ssp-portal.sweater.sa/violations/TEST-1', bookingId: null },
           { metricKey: 'violations', sourceId: 'TEST-2', driverExternalId: 'TEST-B', date: '2026-10-19', amount: 40,
             category: 'Loss or Damage of Tools and Materials', sourceUrl: 'https://ssp-portal.sweater.sa/violations/TEST-2', bookingId: null },
-        ] },
+        ], ...(new URLSearchParams(window.location.search).get('countDetails') === 'missing' ? {} : { countDetails: [
+          { metricKey: 'freeWashCompensation', sourceId: 'TEST-FREE-1', driverExternalId: 'TEST-A', date: '2026-10-20', quantity: 2, amount: null,
+            reason: 'سبب تعويض تجريبي من المصدر', bookingId: 'TEST-FREE-BOOKING', sourceUrl: 'https://ssp-portal.sweater.sa/tickets/TEST-FREE-1' },
+          { metricKey: 'cancelledByBiker', sourceId: 'TEST-CANCEL-1', driverExternalId: 'TEST-B', date: '2026-10-19', quantity: 1, amount: 15,
+            reason: 'سبب إلغاء تجريبي من المصدر', bookingId: 'TEST-CANCEL-BOOKING', sourceUrl: 'https://ssp-portal.sweater.sa/bookings/TEST-CANCEL-1' },
+          { metricKey: 'cancelledMaintenance', sourceId: 'TEST-MAINT-1', driverExternalId: null, date: null, quantity: 1, amount: 0,
+            reason: null, bookingId: null, sourceUrl: 'https://ssp-portal.sweater.sa/bookings/TEST-MAINT-1' },
+        ] }) },
     ], periodKey), loading: false, error: null },
     settlements: ready([]), adjustments: ready([]) };
 }

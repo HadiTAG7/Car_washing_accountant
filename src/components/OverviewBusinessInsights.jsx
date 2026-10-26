@@ -102,6 +102,7 @@ export default function OverviewBusinessInsights({ data, periodKey, washReady, l
     </div>
     {detail === 'deductions' && <OverviewDeductionsDetails key={`${periodKey}:deductions`} sweater={sweater} renderItem={metricItem}
       sourceTime={updated(Object.keys(metricLabels))}
+      countSourceTime={key => updated([key])}
       records={settlement?.malformed ? [] : settlement?.violations || []} recordsUnavailable={!aReady || !ops || settlement?.malformed}
       bikers={data.workers?.error || data.workers?.loading ? [] : data.workers?.bikers || []}
       periodKey={periodKey} language={language} noSweater={noSweater} onNavigate={onNavigate} onClose={() => setDetail(null)} />}

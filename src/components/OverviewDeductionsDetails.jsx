@@ -2,8 +2,10 @@ import { X } from 'lucide-react';
 import ModalSurface from './ModalSurface';
 import { displayBikerName } from '../lib/bikerNames';
 import { formatCurrencyPrecise } from '../data/initialData';
+import OverviewCountDeductionDetails from './OverviewCountDeductionDetails';
+import { COUNT_DETAIL_KEYS } from '../../functions/src/sweater/metricsContract.js';
 
-export default function OverviewDeductionsDetails({ sweater, renderItem, sourceTime, records = [], recordsUnavailable, bikers = [],
+export default function OverviewDeductionsDetails({ sweater, renderItem, sourceTime, countSourceTime, records = [], recordsUnavailable, bikers = [],
   periodKey, language, noSweater, onNavigate, onClose }) {
   const text = (ar, en) => language === 'en' ? en : ar;
   const status = { approved: text('معتمد', 'Approved'), pending_review: text('بانتظار المراجعة', 'Pending review'), disputed: text('محل اعتراض', 'Disputed') };
@@ -12,6 +14,11 @@ export default function OverviewDeductionsDetails({ sweater, renderItem, sourceT
     'Biker Inactivity for 3 Consecutive Days Without a Replacement': text('انقطاع 3 أيام متتالية دون بديل، بحسب سويتر', 'Three consecutive days inactive without a replacement, according to Sweater'),
     'Loss or Damage of Tools and Materials': text('فقد أو تلف أدوات ومواد', 'Loss or damage of tools and materials'),
     'Damaged Motorcycle Stickers': text('تلف ملصقات الدباب', 'Damaged motorcycle stickers'),
+  };
+  const countLabels = {
+    freeWashCompensation: text('غسلات مجانية تعويض', 'Free compensation washes'),
+    cancelledByBiker: text('إلغاء من البايكر', 'Cancelled by the biker'),
+    cancelledMaintenance: text('إلغاء بسبب الصيانة', 'Cancelled for maintenance'),
   };
   const sourceRows = Object.values(sweater?.deductionDetails || {}).flat().sort((a, b) => b.date.localeCompare(a.date) || b.sourceId.localeCompare(a.sourceId));
   const byBiker = new Map();
@@ -51,7 +58,11 @@ export default function OverviewDeductionsDetails({ sweater, renderItem, sourceT
         </details>
       </>}
     {sweater && <>
-      <h3>{text('الخصومات', 'Deductions')}</h3><ul className="sw-overview-insight__items">{sweater.deductions.map(renderItem)}</ul>
+      <h3>{text('الخصومات', 'Deductions')}</h3><ul className="sw-overview-insight__items">{sweater.deductions.map(item => COUNT_DETAIL_KEYS.includes(item.key)
+        ? <li className="sw-overview-count-detail-row" key={item.key}><OverviewCountDeductionDetails item={item} label={countLabels[item.key]}
+          rows={sweater.countDetails?.[item.key]} bikers={bikers} sourceTime={countSourceTime?.(item.key)} sourceUrl={sweater.sourceUrlsByMetric?.[item.key]}
+          periodKey={periodKey} language={language} noSweater={noSweater} /></li>
+        : renderItem(item))}</ul>
       <h3>{text('الإضافات', 'Additions')}</h3><ul className="sw-overview-insight__items">{sweater.additions.map(renderItem)}</ul>
       <p>{text('المخالفات والأضرار والتعويضات بالريال. بقية البنود أعداد، ولا تدخل في إجمالي المبلغ.', 'Violations, damages and compensation are in SAR. Other items are counts and are excluded from the monetary total.')}</p>
     </>}

@@ -7,6 +7,21 @@ const early = { id: 'early', periodKey: period, extractedAtIso: '2026-10-23T06:0
 const later = { id: 'later', periodKey: period, extractedAtIso: '2026-10-23T07:00:00Z', sourceUrl: 'https://ssp-portal.sweater.sa/dashboards/compensations', metrics: { violations: 100, damages: 0, compensations: 0, freeWashCompensation: 2, cancelledByBiker: 3, cancelledMaintenance: 1, cancelledByCustomer: 4 } };
 
 describe('monthly source readings, composed independently per metric', () => {
+  it('keeps count-event evidence with the selected metric only, including partial coverage and missing money', () => {
+    const countDetails = [{ metricKey: 'freeWashCompensation', sourceId: 'TEST-ticket', driverExternalId: 'TEST-A', date: '2026-10-20',
+      quantity: 1, amount: null, reason: null, bookingId: null, sourceUrl: 'https://ssp-portal.sweater.sa/tickets/TEST-ticket' }];
+    const detailed = { ...later, countDetails }; const before = JSON.stringify(detailed);
+    const composed = composeSweaterMetricReadings([early, detailed], period);
+    expect(composed.countDetails.freeWashCompensation).toEqual(countDetails);
+    expect(overviewSweaterMetrics(composed).countDetails.freeWashCompensation).toEqual(countDetails);
+    expect(composed.metrics.freeWashCompensation).toBe(2);
+    const newTotal = { ...later, id: 'newer', extractedAtIso: '2026-10-23T08:00:00Z', metrics: { freeWashCompensation: 3 } };
+    expect(composeSweaterMetricReadings([newTotal, detailed], period).countDetails.freeWashCompensation).toBeUndefined();
+    expect(composeSweaterMetricReadings([detailed, { ...newTotal, metrics: { violations: 100 } }], period).countDetails.freeWashCompensation).toEqual(countDetails);
+    expect(overviewSweaterMetrics({ ...detailed, periodKey: '2026-09' }).countDetails).toEqual({});
+    expect(composeSweaterMetricReadings([{ ...detailed, countDetails: [countDetails[0], countDetails[0]] }], period).countDetails).toEqual({});
+    expect(JSON.stringify(detailed)).toBe(before);
+  });
   it('keeps deduction details with their exact source cut and never borrows older attribution', () => {
     const detail = { metricKey: 'violations', sourceId: 'case-a', driverExternalId: 'TEST-A', date: '2026-10-20', amount: 100,
       category: 'Test reason', sourceUrl: 'https://ssp-portal.sweater.sa/violations/case-a', bookingId: null };

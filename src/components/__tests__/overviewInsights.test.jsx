@@ -107,7 +107,7 @@ it('keeps the stored numbers while removing wash reconciliation and opening item
   fireEvent.click(within(deductions).getByRole('button', { name: 'الخصومات والتعويضات' }));
   const dialog = screen.getByRole('dialog');
   const [taken, added] = within(dialog).getAllByRole('list');
-  expect([...taken.querySelectorAll('li')].map(li => li.textContent.replace(/\s+/g, ' ').replace(/[\u200e\u200f]/g, '')))
+  expect([...taken.children].map(li => (li.querySelector('summary')?.textContent.replace('عرض التفاصيل', '') || li.textContent).replace(/\s+/g, ' ').replace(/[\u200e\u200f]/g, '')))
     .toEqual(['المخالفات530.00 ر.س', 'الأضرار0.00 ر.س', 'التعويضات0.00 ر.س', 'غسلات مجانية تعويض8', 'إلغاء من البايكر13', 'إلغاء بسبب الصيانة4']);
   expect(added.textContent).toBe('إلغاء من العميل10');
   expect(deductions.textContent).toContain('المعتمد في الدفتر: غير مسجلة');

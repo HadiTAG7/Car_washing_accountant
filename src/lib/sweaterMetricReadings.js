@@ -1,4 +1,4 @@
-import { SWEATER_METRICS, validTipsByBiker, validDeductionDetails } from '../../functions/src/sweater/metricsContract.js';
+import { SWEATER_METRICS, validTipsByBiker, validDeductionDetails, validCountDetails, COUNT_DETAIL_KEYS } from '../../functions/src/sweater/metricsContract.js';
 
 const instant = value => typeof value === 'string' && /T.*(?:Z|[+-]\d{2}:\d{2})$/.test(value)
   && Number.isFinite(Date.parse(value)) ? Date.parse(value) : null;
@@ -13,7 +13,7 @@ export function composeSweaterMetricReadings(rows, periodKey) {
     .sort((a, b) => instant(b.extractedAtIso) - instant(a.extractedAtIso)
       || (instant(b.receivedAtIso) ?? 0) - (instant(a.receivedAtIso) ?? 0)
       || String(b.id ?? '').localeCompare(String(a.id ?? '')));
-  const metrics = {}; const metricSources = {}; const deductionDetails = {}; let tipsByBiker = null;
+  const metrics = {}; const metricSources = {}; const deductionDetails = {}; const countDetails = {}; let tipsByBiker = null;
   for (const row of readings) {
     for (const [key, { unit }] of Object.entries(SWEATER_METRICS)) {
       const value = row.metrics[key];
@@ -24,6 +24,9 @@ export function composeSweaterMetricReadings(rows, periodKey) {
         metrics[key] = value;
         metricSources[key] = { extractedAtIso: row.extractedAtIso, sourceUrl: row.sourceUrl ?? null, snapshotId: row.id ?? null };
         if (key === 'tipsNet' && validTipsByBiker(row.tipsByBiker, value)) tipsByBiker = row.tipsByBiker;
+        if (COUNT_DETAIL_KEYS.includes(key) && validCountDetails(row.countDetails, row.metrics, periodKey)) {
+          countDetails[key] = row.countDetails.filter(item => item.metricKey === key);
+        }
         if (unit === 'sar' && SWEATER_METRICS[key].direction === 'deduction'
           && validDeductionDetails(row.deductionDetails, row.metrics, periodKey)) {
           deductionDetails[key] = row.deductionDetails.filter(item => item.metricKey === key);
@@ -32,5 +35,5 @@ export function composeSweaterMetricReadings(rows, periodKey) {
     }
   }
   if (!Object.keys(metrics).length) return null;
-  return { periodKey, metrics, metricSources, tipsByBiker, deductionDetails };
+  return { periodKey, metrics, metricSources, tipsByBiker, deductionDetails, countDetails };
 }

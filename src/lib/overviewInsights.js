@@ -2,7 +2,7 @@ import { OVERVIEW_SETTINGS } from '../config/overviewSettings.js';
 import { monthRange } from './accounting/monthlyStatement.js';
 import { isDepartedStatus, isOverviewWorkingBiker } from './overviewDashboard.js';
 import { ADJUSTMENT_KIND, ADJUSTMENT_APPROVAL } from '../../functions/src/sweater/vocab.js';
-import { SWEATER_METRICS, validDeductionDetails } from '../../functions/src/sweater/metricsContract.js';
+import { SWEATER_METRICS, validDeductionDetails, validCountDetails, COUNT_DETAIL_KEYS, sspSourceUrl } from '../../functions/src/sweater/metricsContract.js';
 
 const money = n => Math.round(n * 100) / 100;
 const number = value => value !== null && value !== undefined && String(value).trim() !== '' && Number.isFinite(Number(value)) ? Number(value) : null;
@@ -138,7 +138,17 @@ export function overviewSweaterMetrics(snapshot, ops) {
       : snapshot.deductionDetails?.[key];
     return validDeductionDetails(rows, { [key]: value(key) }, snapshot.periodKey) ? [[key, rows]] : [];
   }));
-  return { updatedAtIso: snapshot.extractedAtIso || null, updatedAtByMetric, completedWashes, tipsNet: value('tipsNet'),
+  const countDetails = Object.fromEntries(COUNT_DETAIL_KEYS.flatMap(key => {
+    const rows = Array.isArray(snapshot.countDetails)
+      ? validCountDetails(snapshot.countDetails, snapshot.metrics, snapshot.periodKey) ? snapshot.countDetails.filter(row => row.metricKey === key) : undefined
+      : snapshot.countDetails?.[key];
+    return validCountDetails(rows, { [key]: value(key) }, snapshot.periodKey) ? [[key, rows]] : [];
+  }));
+  const sourceUrlsByMetric = Object.fromEntries(COUNT_DETAIL_KEYS.map(key => {
+    const url = snapshot.metricSources ? snapshot.metricSources[key]?.sourceUrl : snapshot.sourceUrl;
+    return [key, sspSourceUrl(url) ? url : null];
+  }));
+  return { updatedAtIso: snapshot.extractedAtIso || null, updatedAtByMetric, completedWashes, tipsNet: value('tipsNet'), countDetails, sourceUrlsByMetric,
     washDifference: completedWashes !== null && ops ? completedWashes - ops.quantity : null,
     deductions, additions: items('addition'), deductionDetails,
     deductionMoney: money.length ? money.reduce((sum, item) => sum + item.value, 0) : null };

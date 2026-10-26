@@ -4,3 +4,4 @@
 .report-financial-numbers p { font-size: .85rem; line-height: 1.7; }
 .report-wording-warning { display: inline-block; border: 1px solid currentColor; color: var(--color-orange-400, #fb923c); border-radius: .4rem; padding: .15rem .45rem; margin-inline: .4rem; font-size: .8rem; white-space: nowrap; }
 .finance-report-table td small { display: block; line-height: 1.6; margin-block-start: .25rem; }
+.report-financial-numbers td bdi { white-space: nowrap; overflow-wrap: normal; word-break: normal; }

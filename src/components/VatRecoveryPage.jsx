@@ -22,13 +22,20 @@ import { useWashes } from '../hooks/useWashes';
 import { useLedger } from '../hooks/useLedger';
 import { useAccountingSettings } from '../hooks/useAccountingSettings';
 import {
-  buildVatReport, periodLabel, availablePeriods, currentPeriodKey,
+  availablePeriods, currentPeriodKey,
   FILING_PERIOD_LABELS,
 } from '../lib/accounting/vatReturn';
-import { taxPolicyAt } from '../lib/accounting/taxPolicy';
 import { amountRoleOf } from '../lib/accounting/purchaseDisplay';
 import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
 import { usePartnerView } from '../contexts/PartnerViewContext';
+import { useSweaterSettlements } from '../hooks/useSweater';
+import { useFirestoreQuery } from '../hooks/useFirestoreQuery';
+import { fetchSellerProfile } from '../lib/accounting/firestoreInvoicing';
+import { riyadhToday } from '../lib/bikerProfile';
+import { buildVatDashboardReport, vatPeriodLabel } from '../lib/vatDashboard';
+import { useLanguage } from '../i18n/useLanguage';
+import VatFilingOverview from './VatFilingOverview';
+import VatInvoiceGaps from './VatInvoiceGaps';
 
 /** Where a deducted VAT figure actually came from — shown, never inferred. */
 const TAX_SOURCE_LABELS = {
@@ -81,14 +88,18 @@ function SourceBadge({ source }) {
  * excluded from the claim, but never hidden.
  */
 export default function VatRecoveryPage() {
-  const { invoices, loading, error, sourceErrors, refetch } = useTaxInvoices();
+  const { language } = useLanguage();
+  const { invoices, loading, error, sourceErrors, coverage, refetch } = useTaxInvoices({ includeNonTax: true });
   const { items: startupItems } = useStartupCosts();
   const { items: annualItems }  = useAnnualExpenses();
   const { items: monthlyItems } = useMonthlyExpenses();
   const { items: variableItems } = useVariableExpenses();
-  const { items: washes } = useWashes();
-  const { entries, lines } = useLedger();
-  const { settings } = useAccountingSettings();
+  const { items: washes, loading: washesLoading, error: washesError } = useWashes();
+  const { entries, lines, loading: ledgerLoading, error: ledgerError } = useLedger();
+  const { settings, loading: policyLoading, error: policyError } = useAccountingSettings();
+  const settlementRead = useSweaterSettlements();
+  const sellerRead = useFirestoreQuery(fetchSellerProfile, { enabled: isFirebaseConfigured, preserveResult: true, fallback: null });
+  const today = riyadhToday();
   const { scalingFactor } = usePartnerView();
 
   const filing = settings.vatFilingPeriod || 'quarterly';
@@ -107,34 +118,23 @@ export default function VatRecoveryPage() {
   // rendering a select with no matching option.
   const selected = period === '__all__' || periods.includes(period)
     ? period
-    : currentPeriodKey(filing);
+    : currentPeriodKey(filing, new Date(`${today}T12:00:00Z`));
   const activePeriod = selected === '__all__' ? '' : selected;
 
   // A posted wash reports what its own entry froze; an unposted one is split
   // under the policy in force on ITS date. Neither is re-derived from today's
   // switches — that is what made a July figure move when August changed.
-  const washEntryBySource = useMemo(() => {
-    const m = new Map();
-    for (const e of entries) {
-      if (e.status !== 'posted' || e.reversalOf) continue;
-      if ((e.sourceKind || e.sourceType) !== 'wash') continue;
-      m.set(String(e.sourceId ?? ''), e);
-    }
-    return m;
-  }, [entries]);
-
-  const report = useMemo(() => buildVatReport({
+  const report = useMemo(() => buildVatDashboardReport({
     inputs: invoices,
     washes,
     entries,
     lines,
     period: activePeriod,
     filing,
-    policyAt: (date) => taxPolicyAt(date, settings),
-    postedEntryOf: (w) => washEntryBySource.get(String(w.id)),
-    vatRegistered: settings.vatRegistered,
-    washPriceMode: settings.washPriceMode,
-  }), [invoices, washes, entries, lines, activePeriod, filing, settings, washEntryBySource]);
+    settings, settlements: settlementRead.settlements, today,
+  }), [invoices, washes, entries, lines, activePeriod, filing, settings, settlementRead.settlements, today]);
+  const vatSources = useMemo(() => ({ inputs: invoices, washes, entries, lines, settlements: settlementRead.settlements }), [invoices, washes, entries, lines, settlementRead.settlements]);
+  const reportReady = !loading && !coverage?.loading && !coverage?.error && !washesLoading && !washesError && !ledgerLoading && !ledgerError && !policyLoading && !policyError && !settlementRead.loading && !settlementRead.error;
 
   // Resolve parentId → item name across all sources (uuids can't collide, so
   // one merged map is enough).
@@ -241,6 +241,20 @@ export default function VatRecoveryPage() {
       />
 
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
+        <VatFilingOverview sources={vatSources} settings={settings} today={today} ready={reportReady} scalingFactor={scalingFactor} />
+        <Card className="p-4 sm:p-6">
+          <SectionHeader title="مصادر التسجيل الضريبي" subtitle="عرض فقط؛ لا تُعدّل القيم تلقائيًا ولا تثبت تاريخ التسجيل من إعدادات الدفتر وحدها." />
+          <p>ملف البائع: {sellerRead.loading ? 'جارٍ التحميل' : sellerRead.error ? 'تعذر التحقق' : sellerRead.data?.vatRegistered ? 'مسجّل' : 'غير مسجّل في الملف أو الملف غير مهيأ'} · الرقم الضريبي: <bdi>{sellerRead.data?.vatNumber || 'غير مُدخل'}</bdi></p>
+          <p>سياسة الدفتر: {settings.vatRegistered ? 'مسجّلة' : 'غير مسجّلة'} · {settings.taxPolicyHistory?.filter(row => row.vatRegistered).map(row => row.effectiveFrom).join('، ') || 'تاريخ السريان غير متاح'}</p>
+          {settings.taxPolicyHistory?.some(row => row.vatRegistered && row.effectiveFrom === '2026-05-01') && <p className="text-xs text-amber-700 dark:text-amber-300 mt-2">تقرير الضرائب بتاريخ 24 أكتوبر يذكر نفاذ 1 يونيو 2026، وسياسة الدفتر تبدأ 1 مايو. الاسم والرقم وتاريخ التسجيل بانتظار تأكيد هادي.</p>}
+        </Card>
+        <div className="flex flex-wrap gap-3 items-center">
+          <label className="text-sm">الفترة <select value={selected} onChange={e => setPeriod(e.target.value)} aria-label="فترة الضريبة" className="rounded-control border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 p-2 mr-2">
+            {periods.map(key => <option key={key} value={key}>{vatPeriodLabel(key, language)}</option>)}<option value="__all__">كل الفترات</option>
+          </select></label>
+          <span className="text-xs text-slate-500">كل الأرقام أدناه تتبع الفترة المختارة؛ لا تشمل التواريخ المستقبلية.</span>
+        </div>
+        {!reportReady && <p role="status" className="text-amber-700 dark:text-amber-300">قراءة الضريبة غير مكتملة؛ لا تُعتبر القيم المعروضة أصفارًا مؤكدة.</p>}
         {!isFirebaseConfigured && <SetupRequiredCard missing={missingEnvNames} />}
         {error && (
           <ErrorState title="تعذّر تحميل الفواتير الضريبية" error={error} onRetry={refetch} />
@@ -290,16 +304,14 @@ export default function VatRecoveryPage() {
             icon={ArrowUpRight}
             tone="indigo"
             label="ضريبة المخرجات (المبيعات)"
-            value={formatCurrencyPrecise(outputTax)}
-            sub={report.output.source === 'ledger'
-              ? 'من حركة حساب 2100 المُرحّلة — شاملة الإشعارات'
-              : `${formatNumber(report.output.count)} غسلة مكتملة (لا توجد قيود بعد)`}
+            value={reportReady && !report.outputUnavailable ? formatCurrencyPrecise(outputTax) : 'غير متاح'}
+            sub={report.settlementMonths ? 'من التسويات المعتمدة والغسلات غير المشمولة بها' : `${formatNumber(report.output.count)} غسلة مكتملة — الأساس التشغيلي`}
           />
           <StatCard
             icon={ArrowDownLeft}
             tone="emerald"
             label="ضريبة المدخلات المؤهلة"
-            value={formatCurrencyPrecise(inputTax)}
+            value={reportReady ? formatCurrencyPrecise(inputTax) : 'غير متاح'}
             sub={`${formatNumber(report.input.count)} فاتورة مستوفية`}
           />
           <StatCard
@@ -307,33 +319,42 @@ export default function VatRecoveryPage() {
             icon={Percent}
             tone={report.direction === 'refundable' ? 'emerald' : 'primary'}
             label={report.direction === 'refundable' ? 'صافي الضريبة المستردة' : 'صافي الضريبة المستحقة'}
-            value={formatCurrencyPrecise(Math.abs(netTax))}
+            value={reportReady && !report.outputUnavailable ? formatCurrencyPrecise(Math.abs(netTax)) : 'غير متاح'}
             sub={report.direction === 'refundable'
               ? 'المدخلات تفوق المخرجات'
               : report.direction === 'nil' ? 'لا مستحق ولا مسترد' : 'تُسدَّد للهيئة'}
           />
         </div>
 
+        <Card className="p-4 sm:p-6">
+          <SectionHeader title="ضريبة المخرجات: التشغيلي مقابل الدفتر" subtitle="الصافي أعلاه من التشغيلي؛ الدفتر للمقارنة فقط، دون جمع المصدرين." />
+          {report.settlementMonths > 0 && <p className="text-xs text-slate-500 mb-2">التسوية المعتمدة تُعرض بمبالغ لقطتها المحفوظة؛ لا يعاد توزيعها على الأيام. الأشهر المستقبلية مستبعدة.</p>}
+          <p>من الغسلات أو التسوية المعتمدة: <strong>{reportReady && !report.outputUnavailable ? formatCurrencyPrecise(outputTax) : 'غير متاح'}</strong></p>
+          <p>المرحّل في الدفتر (2100): <strong>{reportReady ? formatCurrencyPrecise(report.ledgerOutput.tax * s) : 'غير متاح'}</strong></p>
+          <p>الفرق: <strong>{reportReady && !report.outputUnavailable ? formatCurrencyPrecise(report.outputMismatch * s) : 'غير متاح'}</strong></p>
+        </Card>
+        <VatInvoiceGaps rows={report.ineligible} unassigned={report.unassigned} ready={reportReady} scalingFactor={s} />
+
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3 sm:gap-5">
           <StatCard
             icon={Receipt}
             tone="slate"
             label="مشتريات مؤهلة (شامل الضريبة)"
-            value={formatCurrency(report.input.gross * s)}
+            value={reportReady ? formatCurrency(report.input.gross * s) : 'غير متاح'}
           />
           <StatCard
             icon={Coins}
             tone="slate"
             label="صافي المشتريات (قبل الضريبة)"
-            value={formatCurrency(report.input.net * s)}
+            value={reportReady ? formatCurrency(report.input.net * s) : 'غير متاح'}
           />
           <StatCard
             className="col-span-2 md:col-span-1"
             icon={AlertTriangle}
             tone={report.ineligible.length ? 'amber' : 'slate'}
             label="ضريبة غير مطالَب بها"
-            value={formatCurrencyPrecise(report.forfeitedTax * s)}
-            sub={report.ineligible.length
+            value={reportReady ? formatCurrencyPrecise(report.forfeitedTax * s) : 'غير متاح'}
+            sub={!reportReady ? 'تغطية الفواتير غير مكتملة' : report.ineligible.length
               ? `${formatNumber(report.ineligible.length)} فاتورة غير مؤهلة للخصم`
               : 'كل الفواتير مستوفية'}
           />
@@ -415,22 +436,22 @@ export default function VatRecoveryPage() {
         <Card className="p-6">
           <SectionHeader
             title="فواتير المدخلات المؤهلة للخصم"
-            subtitle={activePeriod ? periodLabel(activePeriod) : 'كل الفترات'}
+            subtitle={activePeriod ? vatPeriodLabel(activePeriod, language) : 'كل الفترات'}
             action={
-              <div className="flex items-center gap-2">
-                <div className="relative">
+              <div className="flex flex-wrap items-center gap-2 min-w-0 max-w-full">
+                <div className="relative min-w-0 max-w-full">
                   <Calendar size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 pointer-events-none" />
                   <select
                     value={selected}
                     onChange={(e) => setPeriod(e.target.value)}
-                    className="appearance-none h-10 pr-8 pl-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs font-semibold tabular-nums focus:outline-none focus:border-primary-500 transition-colors"
+                    className="appearance-none h-10 pr-8 pl-3 rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs font-semibold tabular-nums focus:outline-none focus:border-primary-500 transition-colors max-w-full"
                     aria-label="فلترة حسب الفترة"
                   >
-                    {periods.map((p) => <option key={p} value={p}>{periodLabel(p)}</option>)}
+                    {periods.map((p) => <option key={p} value={p}>{vatPeriodLabel(p, language)}</option>)}
                     <option value="__all__">كل الفترات</option>
                   </select>
                 </div>
-                <SecondaryButton icon={Download} onClick={handleExport} disabled={!anyRows}>
+                <SecondaryButton icon={Download} onClick={handleExport} disabled={!anyRows || !reportReady || report.outputUnavailable}>
                   تصدير CSV
                 </SecondaryButton>
               </div>

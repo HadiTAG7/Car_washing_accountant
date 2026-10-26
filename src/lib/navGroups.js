@@ -31,6 +31,7 @@ const LEGACY_TAB_GROUPS = [
     tabs: [
       { id: 'today', label: 'اليوم', icon: CalendarDays, roles: ['admin', 'accountant'] },
       { id: 'quality_violations', label: 'الجودة والمخالفات', icon: Target, roles: ['admin'] },
+      { id: 'fleet', label: 'الأسطول', icon: Bike, roles: ['admin', 'accountant'] },
       { id: 'washes',    label: 'الغسلات',                icon: Car         },
       { id: 'operations_reports', label: 'تقارير العمليات والأرشيف', icon: FileText, roles: ['admin'] },
       { id: 'bikers',    label: 'البايكر',                 icon: Bike        },

@@ -1,5 +1,6 @@
 import { saveBikerIdleFollowup } from './bikerIdleFollowup.js';
 import { saveQualityObjection, saveQualityObjectionSettings } from './qualityObjections.js';
+import { saveFleet } from './fleet.js';
 import { previewAdvanceMonth, saveAdvanceMonth } from './advanceMonth.js';
 import { annualPlanAction } from './annualPlans.js';
 import { ExpenseCorrectionError, previewExpenseCorrection, saveExpenseCorrection, recordWorkerAdvance, expenseCorrectionOptions, payrollReadStatus } from './expenseCorrections.js';
@@ -633,6 +634,7 @@ export const HANDLERS = {
   bikerIdleFollowupSave: { guard: 'accountant', run: ({ db, FieldValue, data, uid }) => saveBikerIdleFollowup(db, FieldValue, data, { userId: uid }) },
   qualityObjectionSave: { guard: 'admin', run: ({ db, FieldValue, data, uid }) => saveQualityObjection(db, FieldValue, data, { userId: uid }) },
   qualityObjectionSettingsSave: { guard: 'admin', run: ({ db, FieldValue, data, uid }) => saveQualityObjectionSettings(db, FieldValue, data, { userId: uid }) },
+  fleetSave: { guard: 'admin', run: ({ db, FieldValue, data, uid }) => saveFleet(db, FieldValue, data, { userId: uid }) },
   payrollPreview: {
     guard: 'accountant',
     run: ({ db, data }) => previewPayroll(db, data || {}),

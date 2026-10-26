@@ -189,6 +189,13 @@ export const TABLES = [
     policy: { read: 'staff', write: 'none' }, migration: '20261023000000_sweater_metric_snapshots' },
   { collection: 'quality_objections', columns: 'periodKey:month! metricKey sourceId:id snapshotId:id sourceHash status note revision:int updatedBy:id updatedByName updatedAtIso',
     policy: { read: 'admin', write: 'none' }, migration: '20261026210339_quality_objections' },
+  // Operational fleet metadata only; no accounting/assets ledger writes.
+  { collection: 'fleet_bikes', columns: 'internalNumber plate model purchasedOn:day startupItemId:id status statusSince:day currentBikerId:id activeAssignmentId:id policyId:id revision:int updatedBy:id updatedByName updatedAtIso', policy: { read: 'accountant', write: 'none' }, migration: '20261026211311_fleet' },
+  { collection: 'fleet_assignments', columns: 'bikeId:id! bikerId:id! bikerName receivedOn:day! returnedOn:day note revision:int updatedBy:id updatedByName updatedAtIso', policy: { read: 'accountant', write: 'none' }, migration: '20261026211311_fleet' },
+  { collection: 'fleet_maintenance', columns: 'bikeId:id! startedOn:day! endedOn:day description cost:money expenseUrl revision:int updatedBy:id updatedByName updatedAtIso', policy: { read: 'accountant', write: 'none' }, migration: '20261026211311_fleet' },
+  { collection: 'fleet_incidents', columns: 'bikeId:id! bikerId:id bikerName happenedOn:day! bookingId description cost:money claimStatus claimNote revision:int updatedBy:id updatedByName updatedAtIso', policy: { read: 'accountant', write: 'none' }, migration: '20261026211311_fleet' },
+  { collection: 'fleet_policies', columns: 'number company startsOn:day expiresOn:day! wholeFleet:bool revision:int updatedBy:id updatedByName updatedAtIso', policy: { read: 'accountant', write: 'none' }, migration: '20261026211311_fleet' },
+  { collection: 'fleet_control', columns: 'revision:int', policy: { read: 'none', write: 'none' }, migration: '20261026211311_fleet' },
 
   // ── مركز قيادة الوكلاء ──
   { collection: 'agent_command_agents', columns: '', policy: { read: 'accountant', write: 'none' }, realtime: true },

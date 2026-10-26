@@ -17,6 +17,7 @@ import { formatCurrencyPrecise, formatDate, formatNumber } from '../data/initial
 import { callServer } from '../lib/ledgerTransport';
 import { invalidateCollections } from '../lib/readCache';
 import { fetchRows, where } from '../lib/firestoreCrud';
+import { useFleetAvailability } from '../hooks/useFleet';
 
 const auditTime = value => new Date(value).toLocaleString('ar-SA-u-ca-gregory', { timeZone: 'Asia/Riyadh' });
 const number = n => n == null ? 'غير متاح' : formatNumber(Math.round(n * 100) / 100);
@@ -35,6 +36,7 @@ function IdleContent() {
   const state = useIdleBikersData(data, { periodKey: month, today, followupOverrides });
   const { canMutate } = usePartnerView();
   const value = state.value;
+  const fleet = useFleetAvailability(value?.rows.some(row => row.reasonKey === 'no_bike'));
   return <section className="space-y-5" aria-label="الخاملين">
     <div className="flex flex-wrap gap-3 justify-between items-center"><div><h2 className="text-xl font-bold">الخاملين</h2><p className="text-sm text-slate-500 dark:text-slate-400">في مسير الشهر، بلا تاريخ نهاية، مع استبعاد الهاربين واللي مشيناهم.</p></div>
       <BikerProfileMonthPicker value={month} max={today.slice(0, 7)} language={language} onChange={setMonth} /></div>
@@ -52,6 +54,7 @@ function IdleContent() {
         <p className="text-sm mt-1 text-slate-500 dark:text-slate-400">المتوسط × {number(value.forecast.remainingDays)} يوم عمل متبقٍ للخاملين × {value.forecast.price} ريال قبل الضريبة. الإجازة النسبية محسوبة؛ التقدير ليس إيرادًا معتمدًا.</p>
       </Card>
       <div className="flex flex-wrap gap-3 text-sm" aria-label="تنبيهات الخمول"><span>بدون سبب: {value.alerts.missingReason}</span><span>تاريخ البدء المتوقع فات: {value.alerts.overdue}</span><span>خامل أكثر من 14 يوم: {value.alerts.over14Days}</span></div>
+      {value.rows.some(row => row.reasonKey === 'no_bike') && <Card className="p-4"><a href="?page=fleet" className="text-primary-500">الأسطول: {fleet.loading ? 'جارٍ القراءة…' : fleet.error || !fleet.data ? 'تعذّر تأكيد المتاح' : !fleet.data.registered ? 'ما تسجلت الدبابات بعد؛ المتاح غير معروف' : `${fleet.data.available} دباب متاح بدون بايكر`}</a></Card>}
       <Card className="p-4"><p className="text-xs mb-4 text-slate-500 dark:text-slate-400">اليوم الجاري مستبعد. المتوقف لم يغسل في آخر 3 أيام مكتملة أو أكثر. تكلفة حتى اليوم تقدير نسبي من استحقاق المسير حتى أمس.</p>
         {!value.count ? <p>ما فيه بايكر خامل حسب التعريف الحالي.</p> : <ScrollableTable stickyIdentity identityColumn={1} className="idle-bikers-table overflow-x-auto"><table className="w-full min-w-[1500px] text-sm"><caption className="text-right font-bold mb-3">قائمة الخاملين</caption>
           <thead><tr>{['الاسم', 'Sweater ID', 'المباشرة', 'السكن', 'آخر غسلة', 'أيام بدون غسلات', 'تكلفة الشهر', 'التكلفة حتى أمس', 'السبب', 'يبدأ متوقعًا', 'الملاحظة والمتابعة'].map(title => <th className="p-3 text-right" key={title}>{title}</th>)}</tr></thead>

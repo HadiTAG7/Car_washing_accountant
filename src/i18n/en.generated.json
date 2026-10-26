@@ -4267,5 +4267,8 @@
   "قيمة العقد السنوية لهذا السكن": "The annual contract value for this residence",
   "بداية العقد ونهايته": "The beginning and end of the contract",
   "إثبات سداد الدفعات": "Proof of payment",
-  "جدول الدفعات القادمة": "Schedule of upcoming payments"
+  "جدول الدفعات القادمة": "Schedule of upcoming payments",
+  "اقتراحات إخلاء بعد نهاية العمل": "Evacuation suggestions after the end of work",
+  "تاريخ النهاية لا يلغي ربط السكن. راجع كل اقتراح وأكّد الإخلاء من صفحة السكن.": "The end date does not cancel the housing link. Review each proposal and confirm the eviction from the accommodation page.",
+  "اقتراحات للمراجعة؛ لا إخلاء تلقائي": "Suggestions for revision; No automatic evacuation"
 }

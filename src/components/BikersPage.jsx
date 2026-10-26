@@ -1,6 +1,7 @@
 import IdleBikersTab from './IdleBikersTab';
 import { translate } from '../i18n/locale';
 import { useLanguage } from '../i18n/useLanguage';
+import HousingEndNotice from './HousingEndNotice';
 import { bikerCurrentStatusLabel } from '../lib/bikerCurrentStatus';
 import { displayBikerName } from '../lib/bikerNames';
 import ScrollableTable from './ScrollableTable';
@@ -244,6 +245,7 @@ export default function BikersPage({ role, payrollPreview = false, initialSectio
         subtitle="سجل العاملين ومسير رواتبهم الشهري من المعاينة حتى الصرف"
       />
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
+        {role === 'admin' && !isPartnerView && <HousingEndNotice bikers={bikers} today={riyadhToday()} language={language}/>}
         {mutationError && (
           <ErrorState title="تعذّر تنفيذ العملية" error={mutationError} onRetry={() => setMutationError(null)} />
         )}

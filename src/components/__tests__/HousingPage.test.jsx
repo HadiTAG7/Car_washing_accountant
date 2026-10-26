@@ -39,8 +39,8 @@ it('rejects a stale proposal when the resident has already moved elsewhere',()=>
   const dialog=screen.getByRole('dialog');fireEvent.click(within(dialog).getByRole('checkbox'));fireEvent.click(within(dialog).getByRole('button',{name:'تأكيد تغيير السكن'}));
   expect(within(dialog).getByRole('alert').textContent).toContain('تغير سكن البايكر');expect(mocks.update).not.toHaveBeenCalled();
 });
-it('has no eviction controls in read-only partner/accountant views',()=>{
-  mocks.view={role:'accountant',canMutate:true};render(<HousingPage/>);expect(screen.queryByRole('button',{name:'مراجعة اقتراح الإخلاء'})).toBeNull();expect(mocks.update).not.toHaveBeenCalled();
+it('keeps existing metadata editing for accountants while reserving move-out confirmation to admin',()=>{
+  mocks.view={role:'accountant',canMutate:true};render(<HousingPage/>);expect(screen.queryByRole('button',{name:'مراجعة اقتراح الإخلاء'})).toBeNull();expect(screen.getByRole('button',{name:'تعديل بيانات سكن الشمال'})).toBeTruthy();expect(mocks.update).not.toHaveBeenCalled();
 });
 it('does not show successful zero figures when rental reads fail or are pending',()=>{
   mocks.states.rent.error=Error('read failed');const page=render(<HousingPage/>);expect(screen.queryByText('الساكنون النشطون')).toBeNull();

@@ -85,7 +85,7 @@ export default function HousingPage() {
         <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
           <StatCard icon={Home} label="السعة الكلية" value={count(capacity)} sub={`${model.rows.length} سكنات`} />
           <StatCard icon={Users} label="الساكنون النشطون" value={count(residents-inactive)} sub={`${residents} مرتبطًا بالسكن في السجل`} />
-          <StatCard icon={AlertTriangle} tone={inactive ? 'amber':'slate'} label="يحتاج إخلاء" value={count(inactive)} sub="اقتراحات للمراجعة؛ لم يتغير أي ساكن" />
+          <StatCard icon={AlertTriangle} tone={inactive ? 'amber':'slate'} label="يحتاج إخلاء" value={count(inactive)} sub="اقتراحات للمراجعة؛ لا إخلاء تلقائي" />
           <StatCard icon={BedDouble} label="أسرّة غير مرتبطة" value={count(vacant)} sub="لا تشمل أسرّة غير النشطين قبل تأكيد إخلائهم" />
         </div>
         <Card className="p-4 space-y-2">

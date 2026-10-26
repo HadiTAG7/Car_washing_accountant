@@ -7,6 +7,7 @@ import { FINANCE_ROLES, FINANCE_STATES, parseFinanceReport } from '../lib/financ
 import { LanguageContext } from '../i18n/LanguageContext';
 import FinanceReportPublisher from './FinanceReportPublisher';
 import FinanceReportOverview from './FinanceReportOverview';
+import { needsReportWording } from '../lib/reportPublication';
 import { readableFinanceText, financeSentence } from '../lib/financeReportPresentation';
 import './FinanceWorkspace.css';
 import './FinanceReportsPage.css';
@@ -83,7 +84,7 @@ export default function FinanceReportsPage() {
               </select></label>
               {read.data.historyLimited && <small>تعرض القائمة حتى30 نسخة حديثة؛ تبقى النسخ الأقدم محفوظة ويمكن قراءتها برقم النسخة من أدوات المالية.</small>}
             </header>
-            {report.visibleWarnings.map(w => <div role="note" className="fw-warning" key={w.id}><AlertTriangle size={18} />{readableFinanceText(w.text)}</div>)}
+            {report.visibleWarnings.map(w => <div role="note" className="fw-warning" key={w.id}><AlertTriangle size={18} />{readableFinanceText(w.text)} {needsReportWording(w.text)&&<span className="report-wording-warning">تحتاج صياغة</span>}</div>)}
             <div className="fw-tabs" role="tablist" aria-label="أقسام تقرير المالية">
               {[['summary', 'الملخص'], ['cases', 'المتابعات'], ['evidence', 'المصادر والتفاصيل']].map(([id, label]) => <button key={id} type="button" role="tab" aria-selected={tab === id}
                 tabIndex={tab === id ? 0 : -1} aria-controls={`finance-report-${id}`} id={`finance-tab-${id}`} onClick={() => setTab(id)}

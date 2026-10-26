@@ -1,3 +1,4 @@
+import { reportSubmission } from '../../src/lib/reportPublication.js';
 import { readFileSync } from 'node:fs';
 import { afterAll,beforeAll,describe,expect,it } from 'vitest';
 import { initializeApp,deleteApp } from 'firebase-admin/app';
@@ -91,7 +92,7 @@ describe.skipIf(!local)('executive administrative persistence — isolated demo 
       await handler({method:'POST',headers:{authorization:`Bearer ${tokens[uid]}`},body},res);return res;
     };
     const saved=await invoke({action:'save',report:r,expectedRevision:0});expect(saved.code).toBe(200);expect(saved.body.result).toMatchObject({revision:1,duplicate:false});
-    const readback=await invoke({action:'read',reportId:r.reportId});expect(readback.code).toBe(200);expect(readback.body.result.report).toEqual(r);
+    const readback=await invoke({action:'read',reportId:r.reportId});expect(readback.code).toBe(200);expect(reportSubmission(readback.body.result.report)).toEqual(r);
     expect((await invoke({action:'save',report:r,expectedRevision:0})).body.result.duplicate).toBe(true);
     const denied=await invoke({action:'read',reportId:r.reportId},'executive-partner');expect(denied.code).toBe(403);expect(denied.body.result).toBeUndefined();
     const forged=await invoke({action:'list'},'missing-token');expect(forged.code).toBe(401);expect(forged.body.result).toBeUndefined();

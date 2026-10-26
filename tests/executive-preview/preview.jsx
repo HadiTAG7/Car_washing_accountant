@@ -1,3 +1,7 @@
+import FinanceReportOverview from '../../src/components/FinanceReportOverview';
+import { financeFixture } from '../../server/__tests__/financeFixtures';
+import { financialPreviewSnapshot } from './financialFixture';
+import '../../src/components/FinanceReportsPage.css';
 import { createRoot } from 'react-dom/client';
 import { useState } from 'react';
 import ExecutiveDailySummary from '../../src/components/ExecutiveDailySummary';
@@ -22,9 +26,12 @@ const states = {
 };
 export default function Preview() {
   const [state, setState] = useState('old');
+  const [page, setPage] = useState('finance');
+  const snapshot = state === 'unavailable' ? undefined : state === 'failed' ? {...financialPreviewSnapshot, metrics: financialPreviewSnapshot.metrics.map(m=>({...m,value:null,basis:'unavailable'}))} : financialPreviewSnapshot;
+  const notes = [{id:'test-note',severity:'open',text:'قراءة 24 أكتوبر تعيد policyUnconfigured=true و ledgerInput/Output'}];
   return <main className="sw-executive-page" dir="rtl"><p>معاينة اختبار معزولة · بيانات وهمية · لا اتصال بالإنتاج</p>
-    <label>حالة اختبار الجودة<select value={state} onChange={e => setState(e.target.value)}><option value="old">منشور قديم جزئي</option><option value="newer">منشور أحدث جزئي</option><option value="unavailable">قراءة غير متاحة</option><option value="loading">جارٍ التحميل</option></select></label>
-    <ExecutiveDailySummary report={report} data={data} operationsReview={{ report: operationsFixture(), loading: false }} qualityReview={states[state]} />
+    <label>الصفحة<select value={page} onChange={e=>setPage(e.target.value)}><option value='finance'>تقارير المالية</option><option value='executive'>التقرير التنفيذي</option></select></label><label>حالة اختبار الجودة<select value={state} onChange={e => setState(e.target.value)}><option value="old">منشور قديم جزئي</option><option value="newer">منشور أحدث جزئي</option><option value="unavailable">قراءة غير متاحة</option><option value="loading">جارٍ التحميل</option><option value="failed">تعذرت الأرقام وقت الحفظ</option></select></label>
+    {page === 'finance' ? <FinanceReportOverview report={financeFixture({financialSnapshot:snapshot,visibleWarnings:notes})}/> : <ExecutiveDailySummary report={{...report,financialSnapshot:snapshot,visibleWarnings:notes}} data={data} operationsReview={{ report: operationsFixture(), loading: false }} qualityReview={states[state]} />}
   </main>;
 }
 createRoot(document.getElementById('root')).render(<Preview />);

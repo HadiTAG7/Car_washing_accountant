@@ -1,0 +1,7 @@
+.report-financial-numbers { border: 1px solid var(--border-color, #444); border-radius: 1rem; padding: 1rem; margin-block: 1rem; }
+.report-financial-numbers table { width: 100%; border-collapse: collapse; }
+.report-financial-numbers td, .report-financial-numbers th { padding: .65rem .4rem; text-align: start; border-bottom: 1px solid var(--border-color, #444); overflow-wrap: anywhere; }
+.report-financial-numbers p { font-size: .85rem; line-height: 1.7; }
+.report-wording-warning { display: inline-block; border: 1px solid currentColor; color: var(--color-orange-400, #fb923c); border-radius: .4rem; padding: .15rem .45rem; margin-inline: .4rem; font-size: .8rem; white-space: nowrap; }
+.finance-report-table td small { display: block; line-height: 1.6; margin-block-start: .25rem; }
+.report-financial-numbers td bdi { white-space: nowrap; overflow-wrap: normal; word-break: normal; }

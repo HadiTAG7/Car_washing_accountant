@@ -1,4 +1,5 @@
 import { newerOperationsReview } from './latestOperationsReview.js';
+import { needsReportWording } from './reportPublication.js';
 
 // Presentation only: never rewrite the archived report or infer an approval.
 export function readableExecutiveText(value = '') {
@@ -80,7 +81,7 @@ export function executiveProblems(report, cash = {}, operations, qualityState) {
     } else if (/الصندوق|البنك/u.test(warning.text)) continue; // Current ledger, not archived cash figures, governs the alert.
     else { key = warning.id; text = executiveSentence(warning.text); }
     if (!text || seen.has(key)) continue;
-    seen.add(key); problems.push({ id: key, severity: warning.severity, text, current: false });
+    seen.add(key); problems.push({ id: key, severity: warning.severity, text, current: false, needsWording: needsReportWording(warning.text) });
   }
   return problems.slice(0, 3);
 }

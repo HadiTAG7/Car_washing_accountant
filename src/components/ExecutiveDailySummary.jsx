@@ -4,6 +4,8 @@ import { formatCurrencyPrecise, formatNumber } from '../data/initialData';
 import { riyadhTodayISO } from '../lib/washesYesterday';
 import { useLatestOperationsReview } from '../hooks/useLatestOperationsReview';
 import { OPERATIONS_STATUSES } from '../lib/operationsReportContract';
+import ReportFinancialNumbers from './ReportFinancialNumbers';
+import { needsReportWording } from '../lib/reportPublication';
 import { useExecutiveQualityReview } from '../hooks/useExecutiveQualityReview';
 
 const dayLabel = day => new Intl.DateTimeFormat('ar-SA-u-ca-gregory', { dateStyle: 'medium', numberingSystem: 'latn', timeZone: 'UTC' }).format(new Date(`${day}T00:00:00Z`));
@@ -54,10 +56,11 @@ export default function ExecutiveDailySummary({ report, data, latestReportDate =
     <section aria-label="أهم المشاكل" className="sw-executive-daily__problems"><h2>أهم المشاكل</h2>
       {problems.length ? <ul>{problems.map(problem => <li key={problem.id} data-severity={problem.severity}>
         <span className="sw-executive-daily__severity">{problem.severity === 'critical' ? 'عاجل' : problem.severity === 'open' ? 'يحتاج متابعة' : 'تنبيه'}</span>
-        <p>{problem.text}{problem.balances?.map(row => <span key={row.code}> {row.name} <bdi>{formatCurrencyPrecise(row.balance)}</bdi>؛</span>)}</p>
+        <p>{problem.text}{problem.balances?.map(row => <span key={row.code}> {row.name} <bdi>{formatCurrencyPrecise(row.balance)}</bdi>؛</span>)} {problem.needsWording&&<span className="report-wording-warning">تحتاج صياغة</span>}</p>
         <small>{problem.quality ? 'المصدر: تقارير الجودة المنشورة أدناه' : problem.qualityRead ? 'المصدر: قراءة الجودة الحالية' : problem.operations ? `مراجعة التشغيل · ${dayLabel(problem.operations.dateRiyadh)}` : problem.current ? `الدفتر الحالي · ${dayLabel(today)}` : `بحسب تقرير ${dayLabel(report.dateRiyadh)}`}</small>
       </li>)}</ul> : <p>{data?.cash.loading ? 'جارٍ فحص الأرصدة النقدية…' : 'لا توجد مشاكل إضافية مسجلة في المصادر المقروءة.'}</p>}
     </section>
+    {report&&<ReportFinancialNumbers report={report}/>}
     <OperationsCoverage state={operationsReview} today={today} />
     <QualityCoverage state={qualityReview} today={today} />
     <section aria-label="المطلوب مني" className="sw-executive-daily__owner"><h2>المطلوب مني</h2>
@@ -74,7 +77,7 @@ export default function ExecutiveDailySummary({ report, data, latestReportDate =
           <h3>{readableExecutiveText(metric.label)}</h3><strong>{metric.value == null ? 'غير متاح' : formatNumber(metric.value)} <small>{metric.unit}</small></strong>
           <p>{readableExecutiveText(metric.coverage)}</p>{metric.asOfRiyadh && <time dateTime={metric.asOfRiyadh}>{metric.asOfRiyadh}</time>}
         </section>)}</div>
-        <h3>القيود وفشل الجولات والأدوات</h3>{report.visibleWarnings.map(warning => <p key={warning.id}>{readableExecutiveText(warning.text)}</p>)}
+        <h3>القيود وفشل الجولات والأدوات</h3>{report.visibleWarnings.map(warning => <p key={warning.id}>{readableExecutiveText(warning.text)} {needsReportWording(warning.text)&&<span className="report-wording-warning">تحتاج صياغة</span>}</p>)}
         <h3>نص طلبات المالك</h3><p>{readableExecutiveText(report.ownerAction.text)}</p>
         {report.decisions.filter(d => d.status === 'awaiting_owner').map(d => <details key={d.caseId}><summary>{readableExecutiveText(d.caseId)}</summary><p>{readableExecutiveText(d.decision)}</p><p>{readableExecutiveText(d.next)}</p></details>)}
         <section className="sw-executive__detail-list" aria-label="تفاصيل الملخص">{report.details.map((detail, i) => <details key={i}><summary>{readableExecutiveText(detail.title)}</summary><p>{readableExecutiveText(detail.text)}</p>{detail.sourceRef && <p>مرجع المصدر: <bdi>{detail.sourceRef}</bdi></p>}</details>)}</section>
@@ -132,7 +135,7 @@ function OperationsCoverage({ state, today }) {
         <p>خدمات الشركات: {readableExecutiveText(report.coverage.b2b.detail)}</p>
         {report.metrics.map(m => <p key={m.id}>{readableExecutiveText(m.label)}: {readableExecutiveText(m.coverage)} · <time dateTime={m.asOf}>{m.asOf}</time></p>)}
         {report.cases.filter(c => c.status !== 'verified_closed').map(c => <p key={c.caseId}>{readableExecutiveText(c.title)}: {readableExecutiveText(c.evidence)}</p>)}
-        {report.visibleWarnings.map(w => <p key={w.id}>{readableExecutiveText(w.text)}</p>)}
+        {report.visibleWarnings.map(w => <p key={w.id}>{readableExecutiveText(w.text)} {needsReportWording(w.text)&&<span className="report-wording-warning">تحتاج صياغة</span>}</p>)}
         <p>{readableExecutiveText(report.historicalIntegrity)}</p>
         <p><bdi>{report.reportId}</bdi> · نسخة {report.revision}</p>
       </details>

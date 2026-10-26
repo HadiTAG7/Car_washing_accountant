@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { AuthError, callerRole } from '../functions/src/handlers.js';
 import { financeDay, parseFinanceReport } from '../src/lib/financeReportContract.js';
 import { financeSearchText, financeSentence } from '../src/lib/financeReportPresentation.js';
+import { reportSubmission, reportWordingWarnings } from '../src/lib/reportPublication.js';
+import { captureReportFinancials, reportReadDb } from './reportFinancialSnapshot.js';
 
 export const FINANCE_REPORTS = 'finance_reports';
 const id = z.string().regex(/^finance-\d{4}-\d{2}-\d{2}-[123]-(daily|weekly|monthly|ad-hoc)-\d{4}-\d{2}-\d{2}-\d{4}-\d{2}-\d{2}$/);
@@ -24,7 +26,9 @@ async function savedReport(db, head) {
 
 /** Administrative snapshots, not financial transactions. Source-role labels
  * are attribution only: authorization is the actual caller's current membership. */
-export async function financeReports(db, auth, input, now = new Date()) {
+export async function financeReports(db, auth, input, now = null, captureClock = null) {
+  const clock = captureClock || (now ? () => now : () => new Date());
+  now ||= new Date();
   await adminOnly(db, auth);
   if (input?.action === 'list') {
     const p = z.object({ action:z.literal('list'),before:id.optional(),page:z.number().int().min(1).max(1000000).optional(),
@@ -76,7 +80,7 @@ export async function financeReports(db, auth, input, now = new Date()) {
       .sort((a,b)=>b.cutAtRiyadh.localeCompare(a.cutAtRiyadh)||b.reportId.localeCompare(a.reportId));
     let previousMetrics=null,comparisonError=false;
     if(priorHeads.length){
-      try{const previous=await savedReport(db,priorHeads[0]);previousMetrics={...metadata(previous),metrics:previous.metrics};}
+      try{const previous=await savedReport(db,priorHeads[0]);previousMetrics={...metadata(previous),metrics:previous.metrics,...(previous.financialSnapshot?{financialSnapshot:previous.financialSnapshot}:{})};}
       catch{comparisonError=true;}
     }
     return { report,previousMetrics,comparisonError,currentRevision: current,
@@ -86,7 +90,7 @@ export async function financeReports(db, auth, input, now = new Date()) {
   const p = z.object({ action: z.literal('save'), report: z.unknown(), expectedRevision: z.number().int().min(0).max(999998) }).strict().safeParse(input);
   if (!p.success) bad('طلب حفظ تقرير المالية غير صالح.');
   let report;
-  try { report = parseFinanceReport(p.data.report); } catch (error) { bad(error.message); }
+  try { report = parseFinanceReport(reportSubmission(p.data.report)); } catch (error) { bad(error.message); }
   if (Date.parse(report.cutAtRiyadh) > now.getTime()) bad('لا يحفظ تقرير بوقت قطع مستقبلي.');
   if (p.data.expectedRevision !== report.revision - 1) bad('النسخة المتوقعة غير صحيحة.');
   const contentHash = hash(report), ref = db.collection(FINANCE_REPORTS).doc(report.reportId);
@@ -100,13 +104,15 @@ export async function financeReports(db, auth, input, now = new Date()) {
       bad('هذه النسخة موجودة بمحتوى مختلف؛ لا يستبدل التاريخ.', 'already-exists');
     }
     if ((head.exists ? head.data().revision : 0) !== p.data.expectedRevision) bad('وصلت نسخة أخرى؛ أعد القراءة قبل الحفظ.', 'failed-precondition');
+    const financialSnapshot = await captureReportFinancials(reportReadDb(db, tx), report.cutAtRiyadh, clock());
+    const storedReport = parseFinanceReport({ ...report, financialSnapshot });
     const savedAt = now.toISOString();
     // JSON preserves table rows (arrays of arrays), which Firestore cannot
     // represent directly. The parsed, bounded contract is validated on read.
-    tx.create(versionRef, { revision: report.revision, reportJson: JSON.stringify(report),
-      correctionReason: report.correctionReason || null, contentHash, savedAt, publishedByUid: auth.uid });
+    tx.create(versionRef, { revision: report.revision, reportJson: JSON.stringify(storedReport),
+      correctionReason: report.correctionReason || null, contentHash, financialSnapshotHash: hash(financialSnapshot), savedAt, publishedByUid: auth.uid });
     tx.set(ref, { reportId: report.reportId, dateRiyadh: report.dateRiyadh, sourceRole: report.sourceRole, period: report.period,
       title: report.title, cutAtRiyadh: report.cutAtRiyadh, revision: report.revision, savedAt, contentHash });
-    return { reportId: report.reportId, revision: report.revision, duplicate: false };
+    return { reportId: report.reportId, revision: report.revision, duplicate: false, wordingWarnings: reportWordingWarnings(report), financialSnapshot };
   });
 }

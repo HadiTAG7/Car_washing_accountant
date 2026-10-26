@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { financialSnapshotSchema, reportSubmission } from './reportPublication.js';
 
 const text = max => z.string().trim().min(1).max(max);
 const ref = z.string().regex(/^[A-Za-z0-9_-]{1,160}$/);
@@ -32,7 +33,7 @@ export const financeReportSchema = z.object({
     basis: z.enum(['ledger', 'operational', 'collected', 'estimate', 'unavailable']), coverage: text(1500), asOf: at }).strict()).max(6),
   visibleWarnings: z.array(z.object({ id: ref, severity: z.enum(['limitation', 'open', 'critical']), text: text(2000) }).strict()).max(30),
   sources: z.array(source).min(1).max(40), cases: z.array(state).max(100), sections: z.array(section).max(24),
-  historicalIntegrity: text(2000), correctionReason: text(1500).optional(),
+  historicalIntegrity: text(2000), correctionReason: text(1500).optional(), financialSnapshot: financialSnapshotSchema.optional(),
 }).strict().superRefine((report, ctx) => {
   const problem = message => ctx.addIssue({ code: 'custom', message });
   const cut = Date.parse(report.cutAtRiyadh);
@@ -63,7 +64,7 @@ export function parseFinanceReport(value) {
   const parsed = financeReportSchema.safeParse(value);
   if (!parsed.success) throw new Error(parsed.error.issues.map(i => i.message).join(' '));
   const serialized = JSON.stringify(parsed.data);
-  if (new TextEncoder().encode(serialized).length > 96000) throw new Error('تقرير المالية يتجاوز 96KB.');
+  if (new TextEncoder().encode(JSON.stringify(reportSubmission(parsed.data))).length > 96000) throw new Error('تقرير المالية يتجاوز 96KB.');
   if (/-----BEGIN [A-Z ]*PRIVATE KEY-----|Bearer\s+[A-Za-z0-9._-]{12,}|https?:\/\/[^\s"<>]+\/api\/mcp\/|(?:^|[\s"'])[A-Z]:[\\/]/i.test(serialized)) {
     throw new Error('يتضمن التقرير سرًا أو مرجع قرص محلي غير صالح للنشر.');
   }

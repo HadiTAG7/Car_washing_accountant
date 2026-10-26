@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { financialSnapshotSchema, reportSubmission } from './reportPublication.js';
 
 const text = max => z.string().trim().min(1).max(max);
 export const executiveDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => {
@@ -28,7 +29,7 @@ export const executiveReportSchema = z.object({schemaVersion:z.literal(1),report
     from:executiveDay.optional(),to:executiveDay.optional(),details:z.array(detail).max(15).default([])}).strict(),
   ownerAction:z.object({requiredAtCut:z.boolean(),text:text(1500)}).strict(),
   provenance:z.object({sourceRef:ref,reviewedByRole:z.literal(0),sourceCutRiyadh:at}).strict(),
-  historicalIntegrity:text(1500),details:z.array(detail).max(20).default([]),correctionReason:text(1500).optional(),
+  historicalIntegrity:text(1500),details:z.array(detail).max(20).default([]),correctionReason:text(1500).optional(),financialSnapshot:financialSnapshotSchema.optional(),
 }).strict().superRefine((report,ctx)=>{
   const issue = message => ctx.addIssue({code:'custom',message});
   if(report.reportId!==`ceo-digest-${report.dateRiyadh}`)issue('معرف التقرير لا يطابق تاريخ الرياض.');
@@ -55,7 +56,7 @@ export function parseExecutiveReport(input) {
   const parsed=executiveReportSchema.safeParse(input);
   if(!parsed.success)throw new Error(parsed.error.issues.map(x=>x.message).join(' '));
   const serialized=JSON.stringify(parsed.data);
-  if(new TextEncoder().encode(serialized).length>64000)throw new Error('التقرير يتجاوز حد 64KB.');
+  if(new TextEncoder().encode(JSON.stringify(reportSubmission(parsed.data))).length>64000)throw new Error('التقرير يتجاوز حد 64KB.');
   if(/-----BEGIN [A-Z ]*PRIVATE KEY-----|Bearer\s+[A-Za-z0-9._-]{12,}|https?:\/\/[^\s"<>]+\/api\/mcp\/|[A-Z]:[\\/]/i.test(serialized))
     throw new Error('التقرير يتضمن سرًا أو مرجعًا محليًا غير صالح للنشر.');
   return parsed.data;

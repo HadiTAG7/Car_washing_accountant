@@ -1,6 +1,7 @@
 // Read-only projections of saved snapshots. Never fetch today's balances for a
 // historical report, parse amounts from prose, or mutate the archived JSON.
 import { readableExecutiveText } from './executiveOwnerSummary.js';
+import { needsReportWording } from './reportPublication.js';
 
 export const FINANCE_SNAPSHOT_ROWS = Object.freeze([
   { id:'revenue', label:'الإيراد', ids:['revenue','net-revenue','monthly-revenue'] },
@@ -22,13 +23,16 @@ export function financeSentence(value, maxWords=20) {
 export const financeSearchText = value => readableFinanceText(value).normalize('NFKC')
   .replace(/[٠-٩]/gu,c=>String('٠١٢٣٤٥٦٧٨٩'.indexOf(c))).toLocaleLowerCase('ar-SA').replace(/\s+/gu,'');
 const moneyUnit = value => /^(?:ريال|ر\.?\s?س\.?|SAR)$/iu.test(value||'');
-const metricFor=(report,row)=>(report?.metrics||[]).find(m=>row.ids.includes(m.id)&&moneyUnit(m.unit));
+const metricFor=(report,row)=>report?.financialSnapshot
+  ? (()=>{const m=report.financialSnapshot.metrics.find(m=>m.id===row.id);return m&&{...m,unit:'ر.س',asOf:report.financialSnapshot.capturedAt};})()
+  : (report?.metrics||[]).find(m=>row.ids.includes(m.id)&&moneyUnit(m.unit));
 export function financeSnapshotRows(report, previous) {
   return FINANCE_SNAPSHOT_ROWS.map(row=>{
     const metric=metricFor(report,row), old=metricFor(previous,row);
     const isMoney=metric&&metric.basis!=='unavailable'&&Number.isFinite(metric.value);
     const comparable=isMoney&&old&&old.basis===metric.basis&&Number.isFinite(old.value)
-      && previous.sourceRole===report.sourceRole && Date.parse(previous.cutAtRiyadh)<Date.parse(report.cutAtRiyadh)
+      && previous.sourceRole===report.sourceRole && (report.financialSnapshot || previous.financialSnapshot
+        ? Date.parse(old.asOf)<Date.parse(metric.asOf) : Date.parse(previous.cutAtRiyadh)<Date.parse(report.cutAtRiyadh))
       // Flows only compare snapshots of the same reporting month; balances can cross months.
       && (['bank-ledger','cash-ledger'].includes(row.id)||old.asOf.slice(0,7)===metric.asOf.slice(0,7));
     return {...row,metric:metric||null,value:isMoney?metric.value:null,delta:comparable?Math.round((metric.value-old.value)*100)/100:null};
@@ -52,7 +56,7 @@ export function financeReportNotes(report) {
     let text=financeSentence(w.text);
     if(/تسوية.*غير جاهزة/u.test(w.text))text='تسوية سويتر غير جاهزة؛ المستحق يحتاج مراجعة.';
     if(/الصندوق.*سالب/u.test(w.text)&&notes.some(n=>n.id==='cash-ledger'))continue;
-    if(text)notes.push({id:w.id,severity:touchesCash||amount>1000||w.severity==='critical'?'critical':'warning',cash:touchesCash,amount,text});
+    if(text)notes.push({id:w.id,severity:touchesCash||amount>1000||w.severity==='critical'?'critical':'warning',cash:touchesCash,amount,text,needsWording:needsReportWording(w.text)});
   }
   return notes.sort((a,b)=>Number(b.cash)-Number(a.cash)||Number(b.severity==='critical')-Number(a.severity==='critical')||b.amount-a.amount);
 }

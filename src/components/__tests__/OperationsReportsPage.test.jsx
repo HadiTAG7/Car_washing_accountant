@@ -14,28 +14,37 @@ const base = data => ({ allowed: true, loading: false, error: null, refresh: vi.
 const file = report => fireEvent.change(screen.getByLabelText('ملف التقرير المراجع من فريق العمليات'), { target: { files: [{ size: 2000, text: async () => typeof report === 'string' ? report : JSON.stringify(report) }] } });
 const publish = () => screen.getByRole('button', { name: 'نشر التقرير المراجع والتحقق من حفظه' });
 function archive(report = operationsFixture()) {
-  mock.read.mockImplementation((_e, r) => r.action === 'list' ? base({ items: [report] })
+  mock.read.mockImplementation((_e, r) => r.action === 'list' ? base({ items: r.kind&&r.kind!==report.kind?[]:[report],page:r.page||1,pageCount:1,total:r.kind&&r.kind!==report.kind?0:1 })
     : base({ report: r.revision === 1 ? report : { ...report, revision: 2, correctionReason: 'تصحيح معزول', summary: 'ملخص النسخة الثانية' }, currentRevision: 2,
       savedAt: '2026-10-19T07:00:00Z', history: [{ revision: 2, reason: 'تصحيح' }, { revision: 1, reason: 'أول' }] }));
 }
 it('preserves Arabic content, separate coverage/stages and historical revision warning', () => {
   archive(); render(<LanguageContext.Provider value={{ language: 'en' }}><OperationsReportsPage /></LanguageContext.Provider>);
-  expect(screen.getByText('ملخص النسخة الثانية')).toBeTruthy(); expect(screen.getByText('معاينة لا تثبت الحفظ')).toBeTruthy(); expect(screen.getByText('تغطية الشركات غير متاحة في المصدر')).toBeTruthy();
+  expect(screen.getAllByText('ملخص النسخة الثانية').length).toBeGreaterThan(0); expect(screen.getByText('معاينة لا تثبت الحفظ')).toBeTruthy(); expect(screen.getByText('تغطية الشركات غير متاحة في المصدر')).toBeTruthy();
   fireEvent.change(screen.getByLabelText('نسخة التقرير'), { target: { value: '1' } });
   expect(screen.getByText(/نسخة تاريخية معروضة/)).toBeTruthy(); expect(screen.getByText(operationsFixture().summary)).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'عرض أحدث نسخة' })); expect(screen.queryByText(/نسخة تاريخية معروضة/)).toBeNull();
   fireEvent.click(screen.getByRole('tab', { name: 'المتابعات' }));
   fireEvent.change(screen.getByLabelText('حالة المتابعة'), { target: { value: 'verified_closed' } });
-  expect(screen.getByText(/لا حالات تطابق التصفية الحالية/)).toBeTruthy(); expect(screen.getByRole('status').textContent).toContain('0 / 1');
+  expect(screen.getByText(/لا حالات تطابق التصفية الحالية/)).toBeTruthy(); expect(screen.getByRole('status',{name:'عدد حالات العمليات المطابقة'}).textContent).toContain('0 / 1');
 });
 it('filters archive type/status without treating zero matches as no data anywhere', () => {
   archive(); render(<OperationsReportsPage />);
   fireEvent.change(screen.getByLabelText('نوع التقرير'), { target: { value: 'assets' } });
-  expect(screen.getByText(/لا تقارير محفوظة في هذا النطاق/)).toBeTruthy(); expect(screen.getByText(/التصفية تخص الصفحة المعروضة/)).toBeTruthy();
+  expect(screen.getByText(/لا تقارير محفوظة في هذا النطاق/)).toBeTruthy(); expect(screen.getByText(/البحث والفلاتر على كامل الأرشيف/)).toBeTruthy();
 });
 it('denies non-admin and hides publisher and archive data', () => {
   mock.read.mockReturnValue({ allowed: false }); render(<OperationsReportsPage />);
   expect(screen.getByRole('alert').textContent).toContain('للإدارة فقط'); expect(screen.queryByText('إضافة تقرير مراجع')).toBeNull();
+});
+it('sends pagination and every filter to the full archive and resets the selection',()=>{
+  const report=operationsFixture();mock.read.mockImplementation((_e,r)=>r.action==='list'?base({items:[report],page:r.page,pageCount:6,total:45}):base({report,currentRevision:1,history:[{revision:1,reason:'الأول'}]}));
+  render(<OperationsReportsPage/>);fireEvent.click(screen.getByRole('button',{name:'التالي'}));
+  expect(mock.read.mock.calls.some(([,r])=>r.action==='list'&&r.page===2)).toBe(true);
+  fireEvent.change(screen.getByRole('searchbox',{name:'بحث في كل التقارير'}),{target:{value:'حالة قديمة'}});
+  expect(mock.read.mock.calls.some(([,r])=>r.action==='list'&&r.query==='حالة قديمة'&&r.page===1)).toBe(true);
+  expect(screen.getByText('ما انحفظت أرقام مع هذا التقرير')).toBeTruthy();
+  expect(screen.getByText('التفاصيل التقنية والتقرير المحفوظ').closest('details').open).toBe(false);
 });
 it('previews then verifies exact revision, with no operation writer request', async () => {
   const report = operationsFixture(), done = vi.fn(); render(<OperationsReportPublisher canPublish onPublished={done} />); file(report);

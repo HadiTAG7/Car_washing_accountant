@@ -2,6 +2,11 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { AuthError, callerRole } from '../functions/src/handlers.js';
 import { parseOperationsReport } from '../src/lib/operationsReportContract.js';
+import { operationsSubmission } from '../src/lib/operationsReportPublication.js';
+import { reportWordingWarnings } from '../src/lib/reportPublication.js';
+import { financeSearchText } from '../src/lib/financeReportPresentation.js';
+import { reportReadDb } from './reportFinancialSnapshot.js';
+import { captureReportOperations } from './reportOperationsSnapshot.js';
 
 export const OPERATIONS_REPORTS = 'operations_reports';
 const id = z.string().regex(/^ops-\d{4}-\d{2}-\d{2}-\d{1,2}-(morning_review|sync|assets|weekly|targeted)-[A-Za-z0-9_-]{1,24}-(?:\d{4}-\d{2}-\d{2}|unknown)-(?:\d{4}-\d{2}-\d{2}|unknown)$/);
@@ -16,11 +21,36 @@ const hash = value => createHash('sha256').update(JSON.stringify(stable(value)))
 
 /** Administrative snapshots, not financial transactions. Source-role labels
  * are attribution only: authorization is the actual caller's current membership. */
-export async function operationsReports(db, auth, input, now = new Date()) {
+export async function operationsReports(db, auth, input, now = null, captureClock = null) {
+  const clock=captureClock||(now?()=>now:()=>new Date()); now ||= new Date();
   await adminOnly(db, auth);
   if (input?.action === 'list') {
-    const p = z.object({ action: z.literal('list'), before: id.optional() }).strict().safeParse(input);
+    const date=z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+    const p = z.object({ action: z.literal('list'), before: id.optional(),page:z.number().int().min(1).max(1000000).optional(),
+      pageSize:z.number().int().min(1).max(30).optional(),query:z.string().trim().max(200).optional(),
+      kind:z.enum(['morning_review','sync','assets','weekly','targeted']).optional(),status:z.enum(['reviewed','partial','blocked']).optional(),
+      sourceRole:z.number().int().min(0).max(13).optional(),from:date.optional(),to:date.optional() }).strict().safeParse(input);
     if (!p.success) bad('طلب أرشيف العمليات غير صالح.');
+    if(['page','pageSize','query','kind','status','sourceRole','from','to'].some(k=>p.data[k]!==undefined)){
+      if(p.data.before||(p.data.from&&p.data.to&&p.data.from>p.data.to))bad('نطاق الأرشيف غير صالح.');
+      const heads=(await db.collection(OPERATIONS_REPORTS).get()).docs.map(d=>d.data());
+      const teams=[...new Map(heads.map(r=>[r.sourceRole,{id:r.sourceRole,label:r.sourceLabel}])).values()];
+      let found=heads.filter(r=>
+        (p.data.sourceRole===undefined||r.sourceRole===p.data.sourceRole)&&(!p.data.kind||r.kind===p.data.kind)
+        &&(!p.data.status||r.status===p.data.status)&&(!p.data.from||r.dateRiyadh>=p.data.from)&&(!p.data.to||r.dateRiyadh<=p.data.to));
+      const needle=financeSearchText(p.data.query||'');
+      if(needle){const matches=[];
+        for(let i=0;i<found.length;i+=12){const batch=await Promise.all(found.slice(i,i+12).map(async head=>{
+          const version=await db.collection(OPERATIONS_REPORTS).doc(head.reportId).collection('revisions').doc(revisionId(head.revision)).get();
+          if(!version.exists)bad('نسخة تقرير العمليات غير متاحة.','failed-precondition');
+          return{head,report:parseOperationsReport(JSON.parse(version.data().reportJson))};
+        }));matches.push(...batch.filter(r=>financeSearchText(JSON.stringify(r.report)).includes(needle)).map(r=>r.head));}found=matches;
+      }
+      found.sort((a,b)=>b.dateRiyadh.localeCompare(a.dateRiyadh)||String(b.cutAtRiyadh||'').localeCompare(String(a.cutAtRiyadh||''))||b.reportId.localeCompare(a.reportId));
+      const pageSize=p.data.pageSize||8,pageCount=Math.max(1,Math.ceil(found.length/pageSize)),page=Math.min(p.data.page||1,pageCount);
+      return{items:found.slice((page-1)*pageSize,page*pageSize).map(({reportId,dateRiyadh,sourceRole,sourceLabel,period,kind,round,status,archiveMode,title,revision,cutAtRiyadh})=>
+        ({reportId,dateRiyadh,sourceRole,sourceLabel,period,kind,round,status,archiveMode,title,revision,cutAtRiyadh})),total:found.length,page,pageCount,pageSize,teams};
+    }
     let query = db.collection(OPERATIONS_REPORTS).orderBy('reportId', 'desc');
     if (p.data.before) query = query.where('reportId', '<', p.data.before);
     const snap = await query.limit(31).get();
@@ -47,7 +77,7 @@ export async function operationsReports(db, auth, input, now = new Date()) {
   const p = z.object({ action: z.literal('save'), report: z.unknown(), expectedRevision: z.number().int().min(0).max(999998) }).strict().safeParse(input);
   if (!p.success) bad('طلب حفظ تقرير العمليات غير صالح.');
   let report;
-  try { report = parseOperationsReport(p.data.report); } catch (error) { bad(error.message); }
+  try { report = parseOperationsReport(operationsSubmission(p.data.report)); } catch (error) { bad(error.message); }
   if ([report.cutAtRiyadh, report.issuedAtRiyadh, report.review.at].filter(Boolean).some(value => Date.parse(value) > now.getTime())
     || (report.historicalImported?.evidenceThroughDate || report.dateRiyadh) > new Date(now.getTime() + 10800000).toISOString().slice(0, 10)) bad('لا يحفظ تقرير أو مراجعة أو دليل بتاريخ مستقبلي.');
   if (p.data.expectedRevision !== report.revision - 1) bad('النسخة المتوقعة غير صحيحة.');
@@ -62,14 +92,16 @@ export async function operationsReports(db, auth, input, now = new Date()) {
       bad('هذه النسخة موجودة بمحتوى مختلف؛ لا يستبدل التاريخ.', 'already-exists');
     }
     if ((head.exists ? head.data().revision : 0) !== p.data.expectedRevision) bad('وصلت نسخة أخرى؛ أعد القراءة قبل الحفظ.', 'failed-precondition');
+    const operationsSnapshot=await captureReportOperations(reportReadDb(db,tx),report.cutAtRiyadh,clock());
+    const storedReport=parseOperationsReport({...report,operationsSnapshot});
     const savedAt = now.toISOString();
     // JSON preserves table rows (arrays of arrays), which Firestore cannot
     // represent directly. The parsed, bounded contract is validated on read.
-    tx.create(versionRef, { revision: report.revision, reportJson: JSON.stringify(report),
+    tx.create(versionRef, { revision: report.revision, reportJson: JSON.stringify(storedReport),
       correctionReason: report.correctionReason || null, contentHash, savedAt, publishedByUid: auth.uid });
     tx.set(ref, { reportId: report.reportId, dateRiyadh: report.dateRiyadh, sourceRole: report.sourceRole, sourceLabel: report.sourceLabel,
       kind: report.kind, round: report.round, status: report.status, archiveMode: report.archiveMode, period: report.period,
       title: report.title, cutAtRiyadh: report.cutAtRiyadh, revision: report.revision, savedAt, contentHash });
-    return { reportId: report.reportId, revision: report.revision, duplicate: false };
+    return { reportId: report.reportId, revision: report.revision, duplicate: false,operationsSnapshot,wordingWarnings:reportWordingWarnings(report) };
   });
 }

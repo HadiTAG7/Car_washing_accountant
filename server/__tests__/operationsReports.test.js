@@ -4,6 +4,7 @@ import { createOperationsReportsHandler } from '../operationsReportsHttp.js';
 import { operationsReportId, parseOperationsReport } from '../../src/lib/operationsReportContract.js';
 import { operationsFixture } from './operationsFixture.js';
 import { memoryFinanceDb } from './financeFixtures.js';
+import { operationsSubmission } from '../../src/lib/operationsReportPublication.js';
 
 const now = new Date('2026-10-20T00:00:00Z'), auth = { uid: 'test-admin' };
 const database = (role = 'admin') => memoryFinanceDb({ 'users/test-admin': { role } });
@@ -19,7 +20,7 @@ describe('operations administrative snapshots — isolated unit storage only', (
     expect(report.cutAtRiyadh).toBeNull(); expect(report.metrics[0].value).toBeNull();
     expect(report.coverage.b2b.status).toBe('unavailable'); expect(report.activity.saved.count).toBe(0);
     const db = database(); await save(db, report);
-    expect((await read(db, report.reportId)).report).toEqual(report);
+    expect(operationsSubmission((await read(db, report.reportId)).report)).toEqual(report);
     expect((await read(db, report.reportId)).savedAt).toBe(now.toISOString());
   });
   it('uses distinct stable identities for 09/22, kinds and original authors', () => {
@@ -65,7 +66,7 @@ describe('operations administrative snapshots — isolated unit storage only', (
     expect(await save(db, report)).toMatchObject({ duplicate: false }); expect(await save(db, report)).toMatchObject({ duplicate: true });
     await expect(save(db, { ...report, summary: 'تعارض' })).rejects.toMatchObject({ code: 'already-exists' });
     const next = { ...report, revision: 2, summary: 'تصحيح عربي موثق', correctionReason: 'تصحيح الدليل' };
-    await save(db, next); expect((await read(db, report.reportId, 1)).report).toEqual(report); expect((await read(db, report.reportId)).report).toEqual(next);
+    await save(db, next); expect(operationsSubmission((await read(db, report.reportId, 1)).report)).toEqual(report); expect(operationsSubmission((await read(db, report.reportId)).report)).toEqual(next);
     await expect(save(db, { ...next, revision: 4 })).rejects.toMatchObject({ code: 'failed-precondition' });
     expect([...db.rows.keys()].every(key => key.startsWith('users/') || key.startsWith('operations_reports/'))).toBe(true);
     expect(db.rows.get(`operations_reports/${report.reportId}/revisions/000001`).publishedByUid).toBe(auth.uid);

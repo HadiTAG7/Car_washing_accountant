@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { connect, readOnly, SweaterMcpError } from './client.js';
 import { operationsReportSchema, parseOperationsReport } from '../../src/lib/operationsReportContract.js';
+import { sameOperationsSubmission } from '../../src/lib/operationsReportPublication.js';
 
 const text = value => ({ content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] });
 export async function callOperationsReports(input, { write = false } = {}) {
@@ -10,7 +11,7 @@ export async function callOperationsReports(input, { write = false } = {}) {
   const token = await auth.currentUser.getIdToken();
   let response;
   try {
-    response = await fetch('https://sweater-hadi-alghanim.vercel.app/api/operations-reports', { method: 'POST', redirect: 'error',
+    response = await fetch('https://app.hadialghanim.com/api/operations-reports', { method: 'POST', redirect: 'error',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(input), signal: AbortSignal.timeout(55000) });
   } catch { throw new SweaterMcpError('تعذر الاتصال؛ اقرأ النسخة قبل إعادة الحفظ.', { code: 'unavailable' }); }
   const body = await response.json().catch(() => null);
@@ -19,8 +20,11 @@ export async function callOperationsReports(input, { write = false } = {}) {
 }
 export const operationsReportReadTools = [{
   name: 'sweater_operations_reports', title: 'أرشيف تقارير العمليات',
-  description: 'يقرأ أرشيف العمليات الإداري ونسخه المحفوظة للأدمن فقط؛ لا يقرأ SSP أو يعيد المزامنة. list محدود30 مع before،read للنسخة. يحفظ تاريخ الخدمة والقطع ودقة التاريخ والأصل وحدود الفردي وB2B.',
-  schema: { action: z.enum(['list', 'read']), reportId: z.string().optional(), revision: z.number().int().positive().optional(), before: z.string().optional() },
+  description: 'يقرأ أرشيف العمليات الإداري ونسخه للأدمن فقط. البحث والفلاتر على كامل الأرشيف قبل ترقيم الصفحات؛ before يبقى للتوافق. لا يتصل بسويتر ولا يعيد المزامنة.',
+  schema: { action: z.enum(['list', 'read']), reportId: z.string().optional(), revision: z.number().int().positive().optional(), before: z.string().optional(),
+    page:z.number().int().positive().optional(),pageSize:z.number().int().min(1).max(30).optional(),query:z.string().max(200).optional(),
+    kind:z.enum(['morning_review','sync','assets','weekly','targeted']).optional(),status:z.enum(['reviewed','partial','blocked']).optional(),
+    sourceRole:z.number().int().min(0).max(13).optional(),from:z.string().optional(),to:z.string().optional() },
   run: input => callOperationsReports(input).then(text), annotations: { readOnlyHint: true, destructiveHint: false },
 }];
 export const operationsReportWriteTools = [{
@@ -32,7 +36,7 @@ export const operationsReportWriteTools = [{
     const result = await callOperationsReports({ action: 'save', report: parsed, expectedRevision }, { write: true });
     if (result?.reportId !== parsed.reportId || result?.revision !== parsed.revision || typeof result?.duplicate !== 'boolean') throw new SweaterMcpError('إيصال الحفظ غير متحقق؛ اقرأ الأرشيف قبل أي إعادة.');
     const after = await callOperationsReports({ action: 'read', reportId: parsed.reportId, revision: parsed.revision });
-    if (JSON.stringify(parseOperationsReport(after.report)) !== JSON.stringify(parsed)) throw new SweaterMcpError('لم تتطابق إعادة قراءة النسخة؛ لا تعد الحفظ عميانيًا.');
+    if (!sameOperationsSubmission(parseOperationsReport(after.report),parsed)) throw new SweaterMcpError('لم تتطابق إعادة قراءة النسخة؛ لا تعد الحفظ عميانيًا.');
     return text({ ...result, verified: true, report: after.report, savedAt: after.savedAt });
   }, annotations: { readOnlyHint: false, destructiveHint: false },
 }];

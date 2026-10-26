@@ -1,3 +1,4 @@
+import { SCHEMA } from '../../src/lib/data/schema/registry.js';
 import { beforeAll, afterAll, describe, expect, it } from 'vitest';
 import pg from 'pg';
 import { createStore } from '../db/pgstore/index.js';
@@ -18,6 +19,8 @@ describe.skipIf(!enabled)('report publication on isolated Postgres schema', () =
     if (target.hostname !== '127.0.0.1' || target.pathname !== '/sweater_report_snapshot_test_20261026') throw new Error('Test isolation guard');
     pool = new pg.Pool({ connectionString: url });
     expect((await pool.query('select current_database() as db')).rows[0].db).toBe('sweater_report_snapshot_test_20261026');
+    const tables = [...new Set([...SCHEMA.map(t=>t.table),...SCHEMA.filter(t=>t.lines).map(t=>t.lines),'firebase_uid_map'])];
+    await pool.query(`truncate ${tables.map(t=>`public.\"${t}\"`).join(', ')} cascade`);
     await pool.query("insert into auth.users(id,email) values ($1,'report-test@isolated.test') on conflict(id) do nothing", [uid]);
     db = createStore({ connectionString: url, role: 'ledger_server', max: 8 });
     const batch = db.batch();

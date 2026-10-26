@@ -1,6 +1,7 @@
 import { useContext, useRef, useState } from 'react';
 import { Upload, ShieldCheck } from 'lucide-react';
 import { parseFinanceReport } from '../lib/financeReportContract';
+import { sameReportSubmission, needsReportWording } from '../lib/reportPublication';
 import { callFinanceApi } from '../lib/financeApi';
 import { LanguageContext } from '../i18n/LanguageContext';
 export default function FinanceReportPublisher({ onPublished }) {
@@ -23,7 +24,7 @@ export default function FinanceReportPublisher({ onPublished }) {
     try {
       const result = await callFinanceApi('finance-reports', { action: 'save', report, expectedRevision: report.revision - 1 });
       const after = await callFinanceApi('finance-reports', { action: 'read', reportId: report.reportId, revision: report.revision });
-      if (JSON.stringify(parseFinanceReport(after.report)) !== JSON.stringify(report)) throw new Error('لم تتطابق قراءة التقرير المحفوظ؛ اقرأ الأرشيف قبل الإعادة.');
+      if (!sameReportSubmission(parseFinanceReport(after.report),report)) throw new Error('لم تتطابق قراءة التقرير المحفوظ؛ اقرأ الأرشيف قبل الإعادة.');
       setReport(null); onPublished(result.reportId);
     } catch (e) { setError(`${e.message} لا تعِد الحفظ قبل قراءة المعرف في الأرشيف.`); }
     finally { setBusy(false); }
@@ -34,7 +35,8 @@ export default function FinanceReportPublisher({ onPublished }) {
     {error && <p className="fw-warning" role="alert">{error}</p>}
     {report && <LanguageContext.Provider value={{ ...language, language: 'ar' }}><section aria-label="معاينة التقرير قبل النشر"><h2><ShieldCheck size={18} />{report.title}</h2><p>{report.summary}</p>
       <p>{report.period.from} — {report.period.to} · {report.cutAtRiyadh} · النسخة {report.revision}</p>
-      {report.visibleWarnings.map(w => <p className="fw-warning" key={w.id}>{w.text}</p>)}
+      <p>عند الحفظ يرفق الموقع الأرقام الست تلقائيًا، مع شهرها ووقت قراءتها الفعلي.</p>
+      {report.visibleWarnings.map(w => <p className="fw-warning" key={w.id}>{w.text} {needsReportWording(w.text)&&<span className="report-wording-warning">تحتاج صياغة</span>}</p>)}
       <p>مرجع المراجعة: {report.review.sourceRef} · {report.review.at}</p>
       <button type="button" className="fw-primary" disabled={busy} onClick={publish}>{busy ? 'جارٍ الحفظ والتحقق...' : 'نشر التقرير المراجع والتحقق من حفظه'}</button>
     </section></LanguageContext.Provider>}

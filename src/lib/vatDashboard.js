@@ -1,7 +1,7 @@
-import { buildVatReport, outputTaxFromWashes, periodKeyFor, periodRange, periodLabel } from './accounting/vatReturn';
-import { taxPolicyAt, normalizeTaxPolicyHistory } from './accounting/taxPolicy';
-import { round2 } from './accounting/journal';
-import { APPROVED_SETTLEMENT_STATUSES } from './financeHome';
+import { buildVatReport, outputTaxFromWashes, periodKeyFor, periodRange, periodLabel } from './accounting/vatReturn.js';
+import { taxPolicyAt, normalizeTaxPolicyHistory } from './accounting/taxPolicy.js';
+import { round2 } from './accounting/journal.js';
+import { APPROVED_SETTLEMENT_STATUSES } from './financeHome.js';
 
 export const TAX_FILING_REPORT_ID = 'finance-2026-10-24-3-weekly-2026-10-18-2026-10-24';
 export function vatPeriodLabel(period, language = 'ar') {

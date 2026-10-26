@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { financeReports } from '../financeReports.js';
+import { reportSubmission } from '../../src/lib/reportPublication.js';
 import { parseFinanceReport } from '../../src/lib/financeReportContract.js';
 import { createFinanceReportsHandler } from '../financeReportsHttp.js';
 import { financeFixture, memoryFinanceDb } from './financeFixtures';
@@ -36,7 +37,7 @@ describe('finance administrative snapshots', () => {
       reportId:'finance-2026-10-20-1-daily-2026-10-20-2026-10-20'});
     await financeReports(db,auth,{action:'save',report:second,expectedRevision:0},now);
     const before=JSON.stringify([...db.rows]),read=await financeReports(db,auth,{action:'read',reportId:second.reportId},now);
-    expect(read.previousMetrics.metrics).toEqual(first.metrics);expect(read.previousMetrics.sourceRole).toBe(1);expect(read.report).toEqual(second);
+    expect(read.previousMetrics.metrics).toEqual(first.metrics);expect(read.previousMetrics.sourceRole).toBe(1);expect(reportSubmission(read.report)).toEqual(second);
     expect(JSON.stringify([...db.rows])).toBe(before);
   });
   it('preserves unavailable instead of inventing zero and accepts reviewed source-period snapshots', () => {
@@ -59,8 +60,8 @@ describe('finance administrative snapshots', () => {
     await expect(financeReports(db, auth, { action: 'save', report: { ...report, summary: 'changed' }, expectedRevision: 0 }, now)).rejects.toMatchObject({ code: 'already-exists' });
     const next = { ...report, revision: 2, correctionReason: 'تصحيح موثق', summary: 'ملخص مصحح' };
     await financeReports(db, auth, { action: 'save', report: next, expectedRevision: 1 }, now);
-    expect((await financeReports(db, auth, { action: 'read', reportId: report.reportId, revision: 1 }, now)).report).toEqual(report);
-    expect((await financeReports(db, auth, { action: 'read', reportId: report.reportId }, now)).report).toEqual(next);
+    expect(reportSubmission((await financeReports(db, auth, { action: 'read', reportId: report.reportId, revision: 1 }, now)).report)).toEqual(report);
+    expect(reportSubmission((await financeReports(db, auth, { action: 'read', reportId: report.reportId }, now)).report)).toEqual(next);
     expect(db.rows.get(`finance_reports/${report.reportId}/revisions/000001`).publishedByUid).toBe(auth.uid);
   });
   it('refuses stale revision/future cut/unreviewed input/local paths and forged independent closure', async () => {

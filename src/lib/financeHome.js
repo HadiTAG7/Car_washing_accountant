@@ -1,9 +1,9 @@
-import { balanceSheet, incomeStatement } from './accounting/reports';
-import { ACC } from './accounting/chartOfAccounts';
-import { round2 } from './accounting/journal';
-import { buildVatReport } from './accounting/vatReturn';
-import { taxPolicyAt } from './accounting/taxPolicy';
-import { indexPeriods, isPeriodClosed } from './accounting/periods';
+import { balanceSheet, incomeStatement } from './accounting/reports.js';
+import { ACC } from './accounting/chartOfAccounts.js';
+import { round2 } from './accounting/journal.js';
+import { buildVatReport } from './accounting/vatReturn.js';
+import { taxPolicyAt } from './accounting/taxPolicy.js';
+import { indexPeriods, isPeriodClosed } from './accounting/periods.js';
 
 // Display aggregation only: the same report engines as the original pages.
 export function financeLedgerSnapshot(ledger, month, cashBalances) {

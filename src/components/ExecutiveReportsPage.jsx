@@ -9,6 +9,7 @@ import { riyadhTodayISO } from '../lib/washesYesterday';
 import { LanguageContext } from '../i18n/LanguageContext';
 import './ExecutiveReportsPage.css';
 import ExecutiveDailySummary, { ExecutiveDailySummaryLive } from './ExecutiveDailySummary';
+import { needsReportWording } from '../lib/reportPublication';
 
 const roleName=role=>AGENT_CATALOG.find(x=>x.number===role)?.name||String(role);
 const number=value=>value==null?'غير متاح':new Intl.NumberFormat('ar-SA',{numberingSystem:'latn',maximumFractionDigits:2}).format(value);
@@ -43,7 +44,7 @@ export function ExecutiveReportView({report,currentRevision=report.revision,sele
     </section>)}</div>
     {!report.metrics.length&&<p>لا توجد مؤشرات متحققة مرفقة؛ لا تُستبدل بأصفار.</p>}
     <section aria-label="التحذيرات وحدود التقرير" className="sw-executive__warnings"><h3>قيود تؤثر في قراءة النتائج</h3><div>
-      {report.visibleWarnings.map(w=><p key={w.id} className="sw-executive__warning" data-severity={w.severity}><span aria-hidden="true">!</span>{w.text}</p>)}
+      {report.visibleWarnings.map(w=><p key={w.id} className="sw-executive__warning" data-severity={w.severity}><span aria-hidden="true">!</span>{w.text} {needsReportWording(w.text)&&<span className="report-wording-warning">تحتاج صياغة</span>}</p>)}
     </div></section>
     <section className="sw-executive__owner" aria-label="قرار المالك عند القطع"><span>{report.ownerAction.requiredAtCut?'يتطلب قرار هادي عند القطع: ':'قرار المالك عند القطع: '}</span><p>{report.ownerAction.text}</p></section></>}
     <div role="tablist" aria-label="أقسام التقارير" className="sw-executive__tabs">

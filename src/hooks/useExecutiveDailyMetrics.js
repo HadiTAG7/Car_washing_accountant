@@ -1,26 +1,10 @@
 import { useMemo } from 'react';
 import { useOverviewDashboard } from './useOverviewDashboard';
 import { useLedger } from './useLedger';
-import { generalLedger } from '../lib/accounting/reports';
-import { ACC } from '../lib/accounting/chartOfAccounts';
+import { cashAccountBalances } from '../lib/accounting/cashBalances';
+export { cashAccountBalances } from '../lib/accounting/cashBalances';
 import { riyadhTodayISO } from '../lib/washesYesterday';
 import { overviewOperations } from '../lib/overviewDashboard';
-
-export function cashAccountBalances(ledger) {
-  const roots = new Set([ACC.CASH, ACC.BANK]);
-  // Include named sub-accounts, without treating every current asset as cash.
-  let added;
-  do {
-    added = false;
-    for (const account of ledger.accounts) if (roots.has(String(account.parentId)) && !roots.has(String(account.code))) {
-      roots.add(String(account.code)); added = true;
-    }
-  } while (added);
-  return ledger.accounts.filter(account => roots.has(String(account.code))).map(account => ({
-    code: account.code, name: account.nameArabic || 'حساب نقدي',
-    balance: generalLedger(account.code, ledger.entries, ledger.lines).closing,
-  }));
-}
 
 export function useExecutiveDailyMetrics() {
   const today = riyadhTodayISO(), periodKey = today.slice(0, 7);

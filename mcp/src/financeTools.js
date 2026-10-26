@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { connect, readOnly, SweaterMcpError } from './client.js';
 import { financeReportSchema, parseFinanceReport } from '../../src/lib/financeReportContract.js';
+import { sameReportSubmission } from '../../src/lib/reportPublication.js';
 
 const text = value => ({ content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] });
 // Fixed same-app endpoints; no tool-controlled origin, account, or secret.
@@ -35,7 +36,7 @@ export const financeWriteTools = [
       const parsed = parseFinanceReport(report);
       const result = await callFinanceServer('finance-reports', { action: 'save', report: parsed, expectedRevision }, { write: true });
       const after = await callFinanceServer('finance-reports', { action: 'read', reportId: parsed.reportId, revision: parsed.revision });
-      if (JSON.stringify(parseFinanceReport(after.report)) !== JSON.stringify(parsed)) throw new SweaterMcpError('حُفظ طلب التقرير لكن لم تتطابق إعادة قراءته؛ لا تعِد الحفظ عميانيًا.');
+      if (!sameReportSubmission(parseFinanceReport(after.report),parsed)) throw new SweaterMcpError('حُفظ طلب التقرير لكن لم تتطابق إعادة قراءته؛ لا تعِد الحفظ عميانيًا.');
       return text({ ...result, verified: true, report: after.report });
     }, annotations: { readOnlyHint: false, destructiveHint: false } },
   { name: 'sweater_finance_workbench_save', title: 'حفظ خطوة مالية محددة', description: 'ينفذ خطوة واحدة: capture تسجيل غيرمرحّل بمفتاحطلب؛ save تصحيح نفس المصدر ببصمة معاينة؛ approve اعتماد النسخة الحالية بعد اكتمال الدليل؛ post ترحيل المصروف المؤهل بمساره القائم. كل خطوة مستقلة بتأكيد صريح وإعادة قراءة. ليس دفعًا أو راتبًا أو عكسًا أو إذن تعديل قيد قائم.',

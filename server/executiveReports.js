@@ -2,9 +2,11 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { AuthError, callerRole } from '../functions/src/handlers.js';
 import { executiveDay, parseExecutiveReport } from '../src/lib/executiveReportContract.js';
+import { reportSubmission, reportWordingWarnings } from '../src/lib/reportPublication.js';
+import { captureReportFinancials, reportReadDb } from './reportFinancialSnapshot.js';
 
-// Administrative snapshots only. No operational/financial collection or
-// business schema is read or mutated. Existing direct-client default-deny stays.
+// Administrative snapshots only. Financial sources are read for the six
+// captured figures; only the report archive is written. Default-deny stays.
 export const EXECUTIVE_REPORTS='executive_reports';
 const id=z.string().regex(/^ceo-digest-\d{4}-\d{2}-\d{2}$/);
 const bad=(message,code='invalid-argument')=>{throw new AuthError(message,{code});};
@@ -12,7 +14,9 @@ async function adminOnly(db,auth){if(await callerRole(db,auth)!=='admin')bad('ا
 const hash=report=>createHash('sha256').update(JSON.stringify(report)).digest('hex');
 const revisionId=n=>String(n).padStart(6,'0');
 
-export async function executiveReports(db,auth,input,now=new Date()){
+export async function executiveReports(db,auth,input,now=null,captureClock=null){
+  const clock=captureClock||(now?()=>now:()=>new Date());
+  now ||= new Date();
   await adminOnly(db,auth); // Includes existence/list checks; never trust UI filters.
   const action=input?.action;
   if(action==='list'){
@@ -43,7 +47,7 @@ export async function executiveReports(db,auth,input,now=new Date()){
   if(action!=='save')bad('عملية تقارير غير مدعومة.');
   const parsed=z.object({action:z.literal('save'),report:z.unknown(),expectedRevision:z.number().int().min(0).max(999998)}).strict().safeParse(input);
   if(!parsed.success)bad('طلب الحفظ غير صالح.');
-  let report;try{report=parseExecutiveReport(parsed.data.report);}catch(error){bad(error.message);}
+  let report;try{report=parseExecutiveReport(reportSubmission(parsed.data.report));}catch(error){bad(error.message);}
   if(Date.parse(report.cutAtRiyadh)>now.getTime())bad('لا يُحفظ تقرير بوقت قطع مستقبلي.');
   if(parsed.data.expectedRevision!==report.revision-1)bad('النسخة المتوقعة لا تطابق نسخة التصحيح.');
   const contentHash=hash(report),ref=db.collection(EXECUTIVE_REPORTS).doc(report.reportId);
@@ -58,10 +62,12 @@ export async function executiveReports(db,auth,input,now=new Date()){
     }
     const current=head.exists?head.data().revision:0;
     if(current!==parsed.data.expectedRevision)bad('وصلت نسخة أحدث؛ أعد قراءة التقرير قبل التصحيح.','failed-precondition');
+    const financialSnapshot=await captureReportFinancials(reportReadDb(db,tx),report.cutAtRiyadh,clock());
+    const storedReport=parseExecutiveReport({...report,financialSnapshot});
     const savedAt=now.toISOString();
-    tx.create(versionRef,{revision:report.revision,report,contentHash,savedAt,publishedByUid:auth.uid});
+    tx.create(versionRef,{revision:report.revision,report:storedReport,contentHash,financialSnapshotHash:hash(financialSnapshot),savedAt,publishedByUid:auth.uid});
     tx.set(ref,{reportId:report.reportId,dateRiyadh:report.dateRiyadh,title:report.title,cutAtRiyadh:report.cutAtRiyadh,
       revision:report.revision,contentHash,savedAt});
-    return {reportId:report.reportId,revision:report.revision,duplicate:false};
+    return {reportId:report.reportId,revision:report.revision,duplicate:false,wordingWarnings:reportWordingWarnings(report),financialSnapshot};
   });
 }

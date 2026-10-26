@@ -1,3 +1,4 @@
+import { reportSubmission } from '../../src/lib/reportPublication.js';
 import { beforeAll, beforeEach, afterAll, describe, it, expect } from 'vitest';
 import { initializeApp, deleteApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
@@ -213,7 +214,7 @@ describe.skipIf(!enabled)('finance real Firestore workflow — isolated demo onl
     const args = { action: 'save', report, expectedRevision: 0 };
     const results = await Promise.all([0, 1].map(() => financeReports(db, auth, args, new Date('2026-10-20T00:00:00Z'))));
     expect(results.filter(r => r.duplicate)).toHaveLength(1);
-    expect((await financeReports(db, auth, { action: 'read', reportId: report.reportId })).report).toEqual(report);
+    expect(reportSubmission((await financeReports(db, auth, { action: 'read', reportId: report.reportId })).report)).toEqual(report);
     for (const role of ['partner', 'supervisor', 'operator', 'accountant']) {
       await expect(financeReports(db, { uid: role }, { action: 'list' })).rejects.toMatchObject({ code: 'permission-denied' });
       const client = rules.authenticatedContext(role).firestore();

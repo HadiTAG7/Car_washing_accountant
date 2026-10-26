@@ -25,7 +25,8 @@ export function sameReportSubmission(a, b) {
 // Nonblocking editorial check. URLs and ordinary decimal amounts are not code.
 export function needsReportWording(value = '') {
   const text = String(value).replace(/https?:\/\/[^\s<>]+/giu, '');
-  return /=|\b(?:true|false|null|undefined)\b|\b[A-Za-z][A-Za-z0-9]*[-_][A-Za-z0-9_-]+\b|\b[a-z]+[A-Z][A-Za-z]*\b|\bQ[1-4]\b|\b[A-Za-z]+\/[A-Za-z]+\b/u.test(text);
+  return /=|\b(?:true|false|null|undefined)\b|\b[A-Za-z][A-Za-z0-9]*[-_][A-Za-z0-9_-]+\b|\b[a-z]+[A-Z][A-Za-z]*\b|\bQ[1-4]\b|\b[A-Za-z][A-Za-z0-9:]*\/[A-Za-z][A-Za-z0-9:]*\b/u.test(text)
+    || /\b(?:MCP|SSP|ERP|PR\d+|RAW\d*|run\d*|v\d+(?:\.\d+)*|Chrome|Codex)\b/iu.test(text);
 }
 export const reportWordingWarnings = report => (report.visibleWarnings || [])
   .filter(w => needsReportWording(w.text)).map(w => ({ id: w.id, message: 'تحتاج صياغة' }));

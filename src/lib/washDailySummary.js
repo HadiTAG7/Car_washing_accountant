@@ -1,4 +1,4 @@
-import { growthDay } from './growthMetrics';
+import { growthDay } from './growthMetrics.js';
 
 // Presentation of the already loaded wash register, not ledger revenue or collection.
 // Keep the same completion/quantity/price and partner scaling as the existing cards.

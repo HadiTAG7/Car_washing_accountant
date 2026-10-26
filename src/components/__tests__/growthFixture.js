@@ -5,7 +5,8 @@ export function growthFixture() {
       id: `fixture-${code}`, code,
       name: i === 1 ? 'بايكر تجريبي باسم طويل لاختبار احتواء القائمة' : `بايكر تجريبي ${i + 1}`,
       nameEnglish: i === 1 ? 'Synthetic biker with a deliberately long display name' : `Test biker ${i + 1}`,
-      region: i < 3 ? 'Muroj' : 'Wurood', status: 'Active',
+      region: i < 3 ? 'Muroj' : 'Wurood', status: 'Active', startDate:'2026-10-01',
+      availability:[{periodKey:'2026-10',startDate:'2026-10-01',endDate:'2026-10-31',daysEntitled:31}],
       days: Array.from({ length: 8 }, (_, day) => ({ date: `2026-10-${10 + day}`, count: i === 0 ? 0 : day === 7 ? 7 : 5,
         coverage: 'complete', workEligible: i > 0 ? true : null, assigned: 8, cancelled: 1 })),
     })) };

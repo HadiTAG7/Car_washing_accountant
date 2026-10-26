@@ -1,90 +1,47 @@
-import { describe, expect, it } from 'vitest';
-import { growthDay, growthDifference, growthMetrics, verifiedWorkdayBaseline } from '../growthMetrics';
-
-const period = { from: '2026-10-10', to: '2026-10-17', measurementDay: '2026-10-17' };
-const dates = Array.from({ length: 8 }, (_, i) => `2026-10-${10 + i}`);
-const worker = (id, counts, extra = {}) => ({ id, code: id, name: id, status: 'Active', region: 'A',
-  days: dates.map((date, i) => ({ date, count: counts[i], coverage: 'complete', workEligible: true })), ...extra });
-
-describe('owner-approved growth metrics', () => {
-  it('uses recorded counts for the descriptive mean but retains verified gates for comparisons', () => {
-    const a = worker('1984', [5,4,5,4,6,7,4,7]);
-    a.days[0] = {...a.days[0],count:null,recordedCount:5,coverage:'partial',workEligible:null};
-    const result = growthMetrics({...period,workers:[a]});
-    expect(result.generalAverage).toMatchObject({total:42,dayCount:8,mean:5.25});
-    expect(result.timeline[0]).toMatchObject({count:5,coverage:'partial'});
-    expect(result.current).toBe(7); expect(result.previous).toBe(4);
-    expect(result.baseline.mean).toBeNull();
-  });
-  it('never labels an unavailable recorded value complete or borrows a verified value for it', () => {
-    const a=worker('1984',[5,4,5,4,6,7,4,7]); a.days.at(-1).recordedCount=null;
-    const result=growthMetrics({...period,workers:[a]});
-    expect(result.current).toBe(7);
-    expect(result.timeline.at(-1)).toMatchObject({count:null,coverage:'partial'});
-    expect(result.generalAverage).toMatchObject({total:35,dayCount:7,mean:5});
-  });
-  it('keeps comparisons from documented lookback when the visible range starts on D', () => {
-    const result = growthMetrics({ ...period, from: period.to, workers: [worker('1984', [5, 4, 5, 4, 6, 7, 4, 7])] });
-    expect(result.previous).toBe(4);
-    expect(result.baseline.mean).toBe(5);
-    expect(result.timeline).toHaveLength(1);
-    expect(result.generalAverage.total).toBe(7);
-  });
-  it('compares D to D-1, not to a more convenient earlier workday', () => {
-    const result = growthMetrics({ ...period, workers: [worker('1984', [5, 4, 5, 4, 6, 7, 4, 7])] });
-    expect(result.current).toBe(7); expect(result.previous).toBe(4);
-    expect(result.daily).toEqual({ delta: 3, percent: 75 });
-    expect(result.baseline.mean).toBe(5);
-    expect(result.baseline.dates).not.toContain('2026-10-17');
-    expect(result.baseline.delta).toBe(2); expect(result.baseline.percent).toBe(40);
-  });
-  it('keeps measured zero and never divides by it for a percentage', () => {
-    expect(growthDifference(7, 0)).toEqual({ delta: 7, percent: null });
-    expect(growthDifference(0, 0)).toEqual({ delta: 0, percent: null });
-    expect(growthDifference(0, 5)).toEqual({ delta: -5, percent: -100 });
-    expect(growthDifference(null, 5)).toEqual({ delta: null, percent: null });
-  });
-  it('includes documented zero-work days and skips only documented non-workdays', () => {
-    const days = worker('a', [2, 3, 4, 5, 0, 2, 5, 7]).days;
-    const baseline = verifiedWorkdayBaseline(days, '2026-10-17');
-    expect(baseline.sampleSize).toBe(7); expect(baseline.mean).toBe(3);
-    days[4].workEligible = false;
-    expect(verifiedWorkdayBaseline(days, '2026-10-17')).toMatchObject({ sampleSize: 6, provisional: true, mean: 3.5 });
-  });
-  it('does not jump over unknown availability or partial completion', () => {
-    const days = worker('a', [5, 5, 5, 5, 5, 5, 5, 7]).days;
-    days[3].workEligible = null;
-    expect(verifiedWorkdayBaseline(days, '2026-10-17').mean).toBeNull();
-    days[3].workEligible = true; days[3].coverage = 'partial';
-    expect(verifiedWorkdayBaseline(days, '2026-10-17').mean).toBeNull();
-  });
-  it('uses the union of recorded dates for the team average, not mean of averages', () => {
-    const a = worker('a', [1, 2, 0, 0, 0, 0, 0, 0]);
-    const b = worker('b', [0, 4, 6, 0, 0, 0, 0, 0]);
-    const result = growthMetrics({ ...period, workers: [a, b] });
-    expect(result.generalAverage).toMatchObject({ total: 13, dayCount: 3, mean: 13 / 3 });
-    expect(result.rows.map(row => row.generalAverage.mean)).toEqual([1.5, 5]);
-  });
-  it('filters every consumer and keeps Active workers without recorded washes', () => {
-    const result = growthMetrics({ ...period, workers: [worker('1982', Array(8).fill(0)),
-      worker('1984', Array(8).fill(5)), worker('1985', Array(8).fill(100), { status: 'Left' }),
-      worker('x', Array(8).fill(20), { region: 'B' })], region: 'A' });
-    expect(result.activeCount).toBe(3); expect(result.selectedCount).toBe(2);
-    expect(result.rows.map(row => row.id)).toEqual(['1982', '1984']);
-    expect(result.current).toBe(5); expect(result.timeline.every(d => d.count === 5)).toBe(true);
-    expect(result.generalAverage.total).toBe(40);
-    expect(result.rows[0].generalAverage.mean).toBeNull();
-    expect(result.baseline.mean).toBeNull();
-  });
-  it('distinguishes a missing daily value from a complete zero and de-duplicates identities', () => {
-    const a = worker('a', Array(8).fill(0)); a.days.at(-1).coverage = 'partial';
-    const result = growthMetrics({ ...period, workers: [a, a] });
-    expect(result.rows).toHaveLength(1); expect(result.current).toBeNull(); expect(result.previous).toBe(0);
-  });
-  it('keeps full precision until display and rejects invalid periods', () => {
-    expect(growthDay('2026-02-30')).toBeNull();
-    expect(() => growthMetrics({ ...period, to: '2026-10-09' })).toThrow();
-    expect(() => growthMetrics({ ...period, measurementDay: '2026-10-18' })).toThrow();
-    expect(growthMetrics({ ...period, workers: [worker('a', [1, 1, 0, 1, 0, 0, 0, 0])] }).generalAverage.mean).toBe(1);
-  });
+import { describe,it,expect } from 'vitest';
+import {growthMetrics,growthAvailableDays,growthDifference,growthDay} from '../growthMetrics.js';
+import {availableWorkDays} from '../availableWorkDays.js';
+const worker=(id,counts,start='2026-10-01')=>({id,name:id,region:'A',startDate:start,availability:[{periodKey:'2026-10',startDate:start,endDate:'2026-10-31',daysEntitled:32-Number(start.slice(8))}],days:counts.map((count,i)=>({date:`2026-10-${10+i}`,count,recordedCount:count}))});
+const period={from:'2026-10-10',to:'2026-10-17',measurementDay:'2026-10-17'};
+describe('current growth uses shared available-day definitions',()=>{
+ it('matches availableWorkDays, includes zeros and excludes the measurement day from the prior seven days',()=>{
+  const w=worker('a',[5,4,5,4,0,7,4,7]),r=growthMetrics({...period,workers:[w]});
+  const expected=availableWorkDays({periodKey:'2026-10',startDate:'2026-10-10',endDate:'2026-10-17'}).workDays;
+  expect(r.total).toBe(36);expect(r.workDays).toBeCloseTo(expected);expect(r.actualDaily).toBeCloseTo(36/expected);
+  expect(r.currentRate).toBeCloseTo(7/(29/31));expect(r.previousRate).toBeCloseTo(4/(29/31));expect(r.baselineRate).toBeCloseTo(29/(7*29/31));
+  expect(r.daily.percent).toBeCloseTo(75);expect(r.sampleFrom).toBe('2026-10-10');
+ });
+ it('sorts by washes per available day rather than totals or days with washes',()=>{
+  const a=worker('a',Array(8).fill(2)),b=worker('b',[0,0,0,0,0,0,3,3],'2026-10-16');
+  const r=growthMetrics({...period,workers:[a,b]});expect(r.rows.map(w=>w.id)).toEqual(['b','a']);expect(r.total).toBe(22);expect(r.rows[0].actualDaily).toBeCloseTo(3/(29/31));
+ });
+ it('pools numerators and available days, not individual averages',()=>{
+  const a=worker('a',Array(8).fill(2)),b=worker('b',[0,0,0,0,0,0,3,3],'2026-10-16');
+  const r=growthMetrics({...period,workers:[a,b]});expect(r.actualDaily).toBeCloseTo(22/(10*29/31));expect(r.actualDaily).not.toBe((r.rows[0].actualDaily+r.rows[1].actualDaily)/2);
+ });
+ it('does not omit ended or unlinked workers with registered washes; missing availability stays unknown',()=>{
+  const a=worker('a',Array(8).fill(1)),u={id:'unlinked',name:'unknown',region:'غير محددة',days:a.days};
+  const r=growthMetrics({...period,workers:[a,u]});expect(r.total).toBe(16);expect(r.actualDaily).toBeNull();expect(r.unavailableAvailability).toBe(1);expect(r.timeline[0].count).toBe(2);
+ });
+ it('uses same worker/zone filter for cards, trend and table',()=>{
+  const a=worker('a',Array(8).fill(2)),b={...worker('b',Array(8).fill(5)),region:'B'};
+  const r=growthMetrics({...period,workers:[a,b],workerId:'b'});expect(r.total).toBe(40);expect(r.rows).toHaveLength(1);expect(r.timeline.every(d=>d.count===5)).toBe(true);
+  expect(growthMetrics({...period,workers:[a,b],region:'A'}).total).toBe(16);
+ });
+ it('retains lookback when the visible period starts on the measurement day',()=>{
+  const r=growthMetrics({...period,from:period.to,workers:[worker('a',[5,4,5,4,6,7,4,7])]});expect(r.total).toBe(7);expect(r.previous).toBe(4);expect(r.baselineRate).toBeCloseTo(5/(29/31));
+ });
+ it('handles prorated days off across month boundaries and zero eligibility before joining',()=>{
+  const w=worker('a',[]);w.startDate='2026-09-01';w.availability.unshift({periodKey:'2026-09',startDate:'2026-09-01',endDate:'2026-09-30',daysEntitled:30});
+  expect(growthAvailableDays(w,'2026-09-30','2026-10-01')).toBeCloseTo(28/30+29/31);
+  expect(growthAvailableDays(worker('new',[],'2026-10-01'),'2026-09-24','2026-09-30')).toBe(0);
+ });
+ it('never invents a rate on unknown days or divides by zero',()=>{
+  const w=worker('a',Array(8).fill(0));w.availability[0].daysEntitled=10;
+  expect(growthMetrics({...period,workers:[w]}).actualDaily).toBeNull();expect(growthDifference(7,0).percent).toBeNull();expect(growthDifference(null,5).delta).toBeNull();
+ });
+ it('validates real dates and bounded periods',()=>{expect(growthDay('2026-02-30')).toBeNull();expect(()=>growthMetrics({...period,to:'2026-10-09'})).toThrow();});
+ it('keeps out-of-eligibility washes in the register total while refusing a misleading workday rate',()=>{
+  const w=worker('a',Array(8).fill(1),'2026-10-16'),r=growthMetrics({...period,workers:[w]});expect(r.total).toBe(8);expect(r.actualDaily).toBeNull();expect(r.rows[0].actualDaily).toBeNull();expect(r.timeline[0].rate).toBeNull();
+ });
 });

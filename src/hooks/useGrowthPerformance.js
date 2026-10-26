@@ -26,8 +26,8 @@ export function useGrowthPerformance(from, to) {
         const value = body.result;
         if (value.from !== from || value.to !== to || !Array.isArray(value.workers)
           || !Array.isArray(value.exclusions) || !Array.isArray(value.gaps)
-          || !Number.isFinite(Date.parse(value.readAt)) || !Number.isFinite(Date.parse(value.roster?.at))
-          || value.workers.some(w => !w.id || !Array.isArray(w.days))) throw new Error('تعذر تحميل بيانات النمو.');
+          || value.version !== 2 || !Array.isArray(value.warnings) || !Number.isFinite(value.registerTotal) || !Number.isFinite(Date.parse(value.readAt))
+          || value.workers.some(w => !w.id || !Array.isArray(w.days) || !Array.isArray(w.availability))) throw new Error('تعذر تحميل بيانات النمو.');
         if (active) setState({ key, data: body.result, error: null });
       } catch (error) {
         if (active) setState({ key, data: null, error: error.name === 'AbortError' ? 'تعذر تحميل بيانات النمو.' : error.message });

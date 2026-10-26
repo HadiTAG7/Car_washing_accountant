@@ -30,8 +30,8 @@ describe.skipIf(!enabled)('growth real Firestore queries (demo only)', () => {
   });
   it('reads real bounded/projection queries and overlapping coverage, preserving zero and privacy', async () => {
     const result = await readGrowthPerformance(db, { uid: 'growth-admin' }, { from: '2026-10-17', to: '2026-10-17' });
-    expect(result.workers).toHaveLength(7);
-    expect(result.workers.find(w => w.code === '1984').days.at(-1)).toMatchObject({ count: 1, coverage: 'complete', workEligible: true });
+    expect(result.workers).toHaveLength(1);
+    expect(result.workers.find(w => w.id === 'growth-worker').days.at(-1)).toMatchObject({ count: 1, recordedCount: 1, coverage: 'registered' });
     expect(JSON.stringify(result)).not.toMatch(/PRIVATE|"salary"|"contact_number"|"customerName"/);
     expect((await db.doc('washes/growth-wash').get()).data().status).toBe('completed');
   });
@@ -39,11 +39,11 @@ describe.skipIf(!enabled)('growth real Firestore queries (demo only)', () => {
     await expect(readGrowthPerformance(db, { uid: 'growth-partner' }, { from: '2026-10-17', to: '2026-10-17' }))
       .rejects.toMatchObject({ code: 'permission-denied' });
   });
-  it('resolves an existing worker through consistent wash UID evidence, without updating the worker', async () => {
+  it('keeps the stable registered worker without inventing an external code or updating the worker', async () => {
     await db.doc('bikers/growth-worker').update({ driver_external_id: FieldValue.delete() });
     try {
       const result = await readGrowthPerformance(db, { uid: 'growth-admin' }, { from: '2026-10-17', to: '2026-10-17' });
-      expect(result.workers.find(w => w.code === '1984')).toMatchObject({ id: 'growth-worker', name: 'Synthetic worker' });
+      expect(result.workers.find(w => w.id === 'growth-worker')).toMatchObject({ code: '—', name: 'Synthetic worker', region: 'غير محددة' });
       expect((await db.doc('bikers/growth-worker').get()).data().driver_external_id).toBeUndefined();
     } finally { await db.doc('bikers/growth-worker').update({ driver_external_id: '1984' }); }
   });
@@ -52,11 +52,10 @@ describe.skipIf(!enabled)('growth real Firestore queries (demo only)', () => {
     await db.doc('sweater_bookings/growth-booking').update({'record.driverExternalId':'historical-code'});
     try {
       const result=await readGrowthPerformance(db,{uid:'growth-admin'},{from:'2026-10-17',to:'2026-10-17'});
-      const w=result.workers.find(w=>w.code==='1984');
-      expect(w.days.at(-1)).toMatchObject({recordedCount:1,count:null,coverage:'partial',workEligible:null});
-      expect(result.unlinked).toEqual([expect.objectContaining({washId:'growth-wash',reason:'historical-external-code-differs'})]);
+      const w=result.workers.find(w=>w.id==='growth-worker');
+      expect(w.days.at(-1)).toMatchObject({recordedCount:1,count:1,coverage:'registered'});
       const metrics=growthMetrics({workers:result.workers,from:result.from,to:result.to,measurementDay:result.to,workerId:w.id});
-      expect(metrics.generalAverage.mean).toBe(1); expect(metrics.current).toBeNull();
+      expect(metrics.total).toBe(1); expect(metrics.current).toBe(1); expect(metrics.actualDaily).toBeGreaterThan(0);
     } finally {
       await db.doc('washes/growth-wash').update({driver_external_id:'1984'});
       await db.doc('sweater_bookings/growth-booking').update({'record.driverExternalId':'1984'});

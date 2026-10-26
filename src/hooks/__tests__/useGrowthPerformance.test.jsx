@@ -7,7 +7,7 @@ vi.mock('../../contexts/PartnerViewContext', () => ({ usePartnerView: () => scop
 vi.mock('../../lib/firebaseClient', () => ({ auth: { currentUser: { getIdToken: async () => 'synthetic-test-token' } } }));
 import { useGrowthPerformance } from '../useGrowthPerformance';
 const response = (result, to = '2026-10-17') => ({ ok: true, json: async () => ({ result: { from:'2026-10-10', to,
-  workers:[], exclusions:[], gaps:[], readAt:'2026-10-18T18:00:00Z', roster:{at:'2026-10-18T18:12:10Z'}, ...result } }) });
+  version:2, workers:[], warnings:[], registerTotal:0, exclusions:[], gaps:[], readAt:'2026-10-18T18:00:00Z', roster:{at:'2026-10-18T18:12:10Z'}, ...result } }) });
 beforeEach(() => { scope.role = 'admin'; scope.isPartnerView = false; scope.uid = 'admin-a'; vi.stubGlobal('fetch', vi.fn()); });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 

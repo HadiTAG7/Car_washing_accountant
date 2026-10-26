@@ -74,6 +74,9 @@ export default function SweaterIntegrationPage() {
   const lastSuccessIso = freshness.savedAt;
   const lastHours = freshness.savedAgeHours == null ? null : Math.floor(freshness.savedAgeHours);
   const stale = freshness.tone !== 'green';
+  const staleSource = freshness.sourceTimeUncertain
+    || (freshness.savedAgeHours <= OPERATIONS_SETTINGS.freshnessWarningHours && freshness.ageHours > OPERATIONS_SETTINGS.freshnessWarningHours)
+    || (freshness.savedAgeHours <= OPERATIONS_SETTINGS.freshnessCriticalHours && freshness.ageHours > OPERATIONS_SETTINGS.freshnessCriticalHours);
   const latestCounts = lastSuccessIso && lastSuccessIso === st?.lastOperationalSuccessAtIso ? st.lastOperationalCounts : st?.lastCounts;
   const agentAlert = ['session_expired', 'otp_required', 'blocked'].includes(st?.lastAgentStatus);
 
@@ -178,8 +181,10 @@ export default function SweaterIntegrationPage() {
               ? `الوكيل توقّف بأمان: ${labelOf(AGENT_STATUS_AR, st.lastAgentStatus)}. `
                 + 'المنصة تطلب تدخّلاً بشرياً — سجّل الدخول عندها ثم أعِد تشغيل الوكيل. '
                 + 'الوكيل لا يتجاوز مصادقةً ولا يخزّن رمز تحقق.'
-              : (lastHours === null ? 'لم يصل أي استيراد ناجح حتى الآن. ' : `لم يصل استيرادٌ ناجح منذ ${formatNumber(lastHours)} ساعة. `)
-                + 'تحقّق من جدولة الوكيل ومن صلاحية مفتاحه.'}
+              : freshness.sourceTimeUncertain ? 'وقت قراءة المصدر غير مؤكد؛ نجاح الحفظ لا يثبت حداثة البيانات. راجع توقيت القراءة ونطاقها.'
+                : staleSource ? `وصل استيراد قبل ${formatNumber(lastHours)} ساعة، لكن قراءة المصدر قديمة؛ عمر البيانات ${formatNumber(Math.floor(freshness.ageHours))} ساعة. راجع توقيت القراءة ونطاقها.`
+                  : (lastHours === null ? 'لم يصل أي استيراد ناجح حتى الآن. ' : `لم يصل استيرادٌ ناجح منذ ${formatNumber(lastHours)} ساعة. `)
+                    + 'تحقّق من جدولة الوكيل ومن صلاحية مفتاحه.'}
           </p>
         )}
 

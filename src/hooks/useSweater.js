@@ -1,4 +1,5 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { onReadRefresh } from '../lib/readCache';
 import { OPERATIONS_SETTINGS } from '../config/operationsSettings';
 import { recentImportRuns } from '../lib/sweaterFreshness';
 import { isFirebaseConfigured } from '../lib/firebaseClient';
@@ -139,6 +140,7 @@ export function useSweaterIntegration() {
   const refetchAll = useCallback(async () => {
     await Promise.all([state.refetch(), runs.refetch(), keys.refetch()]);
   }, [state, runs, keys]);
+  useEffect(() => onReadRefresh(refetchAll), [refetchAll]);
 
   return {
     current: (state.data ?? []).find((s) => s.id === 'current') ?? null,

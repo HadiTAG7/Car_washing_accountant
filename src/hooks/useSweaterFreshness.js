@@ -4,6 +4,11 @@ import { useFirestoreQuery } from './useFirestoreQuery';
 import { fetchRows } from '../lib/firestoreCrud';
 import { isFirebaseConfigured } from '../lib/firebaseClient';
 import { operationFreshness } from '../lib/sweaterFreshness';
+import { onReadRefresh } from '../lib/readCache';
+
+export function useFreshnessRefresh(refetch) {
+  useEffect(() => onReadRefresh(refetch), [refetch]);
+}
 
 export function useFreshnessClock() {
   const [now, setNow] = useState(Date.now);
@@ -20,5 +25,6 @@ export function useSweaterFreshness() {
     // One small current-state read on each page mount, never a session-long cached timestamp.
     cacheTags: ['sweater_integration_state'], fallback: [],
   });
+  useFreshnessRefresh(state.refetch);
   return { ...state, value: operationFreshness(state.error || state.loading ? null : state.data?.find(s => s.id === 'current'), now) };
 }

@@ -4352,5 +4352,10 @@
   "فشل التشغيل؛ تفاصيل الخطأ غير مسجلة": "Run failed; error details were not recorded",
   "لا أخطاء مسجلة": "No recorded errors",
   "مهام سابقة · توضيح ضريبة الغسلات مكتمل": "Past tasks · wash tax clarification completed",
-  "سجل مرفوض": "Rejected record"
+  "سجل مرفوض": "Rejected record",
+  "وقت قراءة المصدر غير مؤكد؛ نجاح الحفظ لا يثبت حداثة البيانات. راجع توقيت القراءة ونطاقها.": "Source reading time is unconfirmed; a successful save does not prove fresh data. Check the reading time and scope.",
+  "وصل استيراد قبل [VAR0] ساعة، لكن قراءة المصدر قديمة؛ عمر البيانات [VAR1] ساعة. راجع توقيت القراءة ونطاقها.": "An import arrived [VAR0] hours ago, but the source reading is old; data age is [VAR1] hours. Check the reading time and scope.",
+  "وصل استيراد قبل": "An import arrived",
+  "ساعة، لكن قراءة المصدر قديمة؛ عمر البيانات": "hours ago, but the source reading is old; data age is",
+  "ساعة. راجع توقيت القراءة ونطاقها.": "hours. Check the reading time and scope."
 }

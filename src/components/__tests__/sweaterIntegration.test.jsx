@@ -306,6 +306,16 @@ describe('معاينة التسليم تستخدم الأدوار الحالية
 });
 
 describe('سجل التشغيلات المحفوظة', () => {
+  it('distinguishes a recent save with stale source data from an interrupted import schedule', () => {
+    const before = state.current;
+    state.current = { lastOperationalSuccessAtIso: new Date(Date.now() - 36e5).toISOString(), lastOperationalCoverage: { extractedAt: new Date(Date.now() - 20 * 36e5).toISOString() } };
+    try {
+      render(<SweaterIntegrationPage />);
+      expect(screen.getByText(/وصل استيراد قبل.*لكن قراءة المصدر قديمة/)).toBeTruthy();
+      expect(screen.queryByText(/تحقّق من جدولة الوكيل ومن صلاحية مفتاحه/)).toBeNull();
+      expect(screen.getByRole('region', { name: 'حداثة بيانات سويتر' }).dataset.tone).toBe('red');
+    } finally { state.current = before; }
+  });
   it('shows more than thirty runs with recorded failures and unknown counts clearly', () => {
     state.runs = Array.from({ length: 45 }, (_, i) => ({ id: `run-${i}`, startedAtIso: '2026-10-27T08:00:00Z', status: 'completed', result: { counts: { new: i, modified: 0, rejected: 0 } } }));
     state.runs.push({ id: 'failed-run', startedAtIso: '2026-10-27T09:00:00Z', status: 'failed', error: { message: 'تعذّر حفظ الدفعة' } });

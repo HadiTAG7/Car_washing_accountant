@@ -4,6 +4,7 @@ import { formatCurrencyPrecise, formatNumber } from '../data/initialData';
 import { riyadhTodayISO } from '../lib/washesYesterday';
 import { useLatestOperationsReview } from '../hooks/useLatestOperationsReview';
 import { OPERATIONS_STATUSES } from '../lib/operationsReportContract';
+import { useExecutiveQualityReview } from '../hooks/useExecutiveQualityReview';
 
 const dayLabel = day => new Intl.DateTimeFormat('ar-SA-u-ca-gregory', { dateStyle: 'medium', numberingSystem: 'latn', timeZone: 'UTC' }).format(new Date(`${day}T00:00:00Z`));
 const operationsMetricLabels = { 'business-month': 'غسلات سويتر للشهر حسب تعريف المصدر', 'tips-net': 'صافي البقشيش بعد الرسوم', 'actual-capacity': 'السعة الفعلية والتعطل' };
@@ -14,10 +15,12 @@ const operationsCaseLabel = item => /ملغ.*معتمد.*حفظ/u.test(item.titl
 export function ExecutiveDailySummaryLive({ report, latestReportDate }) {
   const data = useExecutiveDailyMetrics();
   const operationsReview = useLatestOperationsReview(data?.today || riyadhTodayISO());
-  return <ExecutiveDailySummary report={report} data={data} latestReportDate={latestReportDate} operationsReview={operationsReview} />;
+  const today = data?.today || riyadhTodayISO();
+  const qualityReview = useExecutiveQualityReview(data?.overview?.workers, today.slice(0, 7), today);
+  return <ExecutiveDailySummary report={report} data={data} latestReportDate={latestReportDate} operationsReview={operationsReview} qualityReview={qualityReview} />;
 }
 
-export default function ExecutiveDailySummary({ report, data, latestReportDate = report?.dateRiyadh, operationsReview }) {
+export default function ExecutiveDailySummary({ report, data, latestReportDate = report?.dateRiyadh, operationsReview, qualityReview }) {
   const today = data?.today || riyadhTodayISO(), periodKey = today.slice(0, 7);
   const overview = data?.overview, statement = overview?.finance.statement;
   const ops = data?.yesterdayOperations || overview?.operations;
@@ -35,7 +38,7 @@ export default function ExecutiveDailySummary({ report, data, latestReportDate =
     { label: 'صافي الربح', value: money('netProfit'), date: periodLabel, day: today,
       note: statement?.salaryAccrual?.estimated ? 'تقديري حتى اعتماد مسير الرواتب.' : null },
   ];
-  const problems = executiveProblems(report, data?.cash, operationsReview);
+  const problems = executiveProblems(report, data?.cash, operationsReview, qualityReview);
   const decisions = executiveOwnerDecisions(report);
   return <div className="sw-executive-daily">
     {latestReportDate && latestReportDate !== today && <p className="sw-executive-daily__stale" role="note">آخر تقرير: <time dateTime={latestReportDate}>{dayLabel(latestReportDate)}</time> — لم يُحفظ تقرير اليوم؛ سبب عدم صدوره غير مسجل.</p>}
@@ -52,10 +55,11 @@ export default function ExecutiveDailySummary({ report, data, latestReportDate =
       {problems.length ? <ul>{problems.map(problem => <li key={problem.id} data-severity={problem.severity}>
         <span className="sw-executive-daily__severity">{problem.severity === 'critical' ? 'عاجل' : problem.severity === 'open' ? 'يحتاج متابعة' : 'تنبيه'}</span>
         <p>{problem.text}{problem.balances?.map(row => <span key={row.code}> {row.name} <bdi>{formatCurrencyPrecise(row.balance)}</bdi>؛</span>)}</p>
-        <small>{problem.operations ? `مراجعة التشغيل · ${dayLabel(problem.operations.dateRiyadh)}` : problem.current ? `الدفتر الحالي · ${dayLabel(today)}` : `بحسب تقرير ${dayLabel(report.dateRiyadh)}`}</small>
+        <small>{problem.quality ? 'المصدر: تقارير الجودة المنشورة أدناه' : problem.qualityRead ? 'المصدر: قراءة الجودة الحالية' : problem.operations ? `مراجعة التشغيل · ${dayLabel(problem.operations.dateRiyadh)}` : problem.current ? `الدفتر الحالي · ${dayLabel(today)}` : `بحسب تقرير ${dayLabel(report.dateRiyadh)}`}</small>
       </li>)}</ul> : <p>{data?.cash.loading ? 'جارٍ فحص الأرصدة النقدية…' : 'لا توجد مشاكل إضافية مسجلة في المصادر المقروءة.'}</p>}
     </section>
     <OperationsCoverage state={operationsReview} today={today} />
+    <QualityCoverage state={qualityReview} today={today} />
     <section aria-label="المطلوب مني" className="sw-executive-daily__owner"><h2>المطلوب مني</h2>
       {decisions.length ? <><div className="sw-executive-daily__decisions">{decisions.map(decision => <article key={decision.id}>
         <h3>{decision.question}</h3><p>{decision.reason}</p>
@@ -78,6 +82,32 @@ export default function ExecutiveDailySummary({ report, data, latestReportDate =
       </>}
     </details>
   </div>;
+}
+
+function QualityCoverage({ state, today }) {
+  if (!state) return null;
+  const review = state.review;
+  const dateTime = value => new Intl.DateTimeFormat('ar-SA-u-ca-gregory', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Riyadh', numberingSystem: 'latn' }).format(new Date(value));
+  return <section aria-label="حالة الجودة المنشورة" className="sw-executive-daily__operations">
+    <h2>حالة الجودة المنشورة</h2>
+    {state.loading ? <p role="status">جارٍ قراءة تقارير الجودة المنشورة…</p> : state.error ? <p role="alert">{state.error}</p> : !review ? <p>حالة الجودة غير متاحة في هذه القراءة.</p> : <>
+      {review.latestPublishedAt ? <p>آخر حفظ ضمن التقارير المعروضة: <time dateTime={review.latestPublishedAt}>{dateTime(review.latestPublishedAt)}</time> (الرياض)</p>
+        : <p>لم يُعثر على تقارير منشورة متحققة ضمن القائمة المقروءة.</p>}
+      {review.oldestCut && <p>وقت قطع التقارير: <time dateTime={review.oldestCut}>{dateTime(review.oldestCut)}</time>
+        {review.latestCut !== review.oldestCut && <> — <time dateTime={review.latestCut}>{dateTime(review.latestCut)}</time></>} (الرياض)</p>}
+      {review.windows.map(window => <p key={`${window.from}:${window.to}`}>نطاق منشور: <time dateTime={window.from}>{dayLabel(window.from)}</time> — <time dateTime={window.to}>{dayLabel(window.to)}</time> · {formatNumber(window.count)} بايكر</p>)}
+      {review.windows.length > 0 && review.windows.some(window => window.to < today) && <p role="note">هذه فترات التقارير المنشورة؛ لا تثبت مراجعة الوقائع اللاحقة لها.</p>}
+      <p>لهم تقرير منشور: {formatNumber(review.published)} من {formatNumber(review.requested)} · جزئي: {formatNumber(review.partial)} · مكتمل: {formatNumber(review.complete)} · خارج الفترة: {formatNumber(review.outside)}</p>
+      <p>بلا تقرير: {formatNumber(review.missing)} · تعذرت قراءتهم: {formatNumber(review.failed)} · بيانات غير صالحة: {formatNumber(review.invalid)}</p>
+      {review.sourceUnavailable > 0 && <p role="alert">تعذرت قراءة المصدر التشغيلي الحالي لبعض البايكرية؛ التقارير المنشورة لا تثبت تغطيته.</p>}
+      {review.hasIssues && <p>التقييم النهائي غير مكتمل على مستوى القائمة؛ لا يُفترض اكتمال المعايير الناقصة.</p>}
+      <details><summary>تغطية معايير الجودة المنشورة</summary>
+        <ul>{review.criteria.map(item => <li key={item.key}>{item.label}: بيانات متاحة لـ {formatNumber(item.available)} من {formatNumber(item.total)}؛ تغطية كاملة لـ {formatNumber(item.covered)}.</li>)}</ul>
+        <p>قراءة من تقارير البروفايلات ومسار المراجعة اليدوية القائم؛ لا درجات جديدة أو إعادة وزن.</p>
+      </details>
+    </>}
+    <a href="/?page=bikers">فتح تقارير الجودة في البايكر</a>
+  </section>;
 }
 
 function OperationsCoverage({ state, today }) {

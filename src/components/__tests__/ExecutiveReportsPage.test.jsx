@@ -6,6 +6,7 @@ import { executiveFixture } from '../../../server/__tests__/executiveFixture';
 import { LanguageContext } from '../../i18n/LanguageContext';
 vi.mock('../../hooks/useExecutiveDailyMetrics',()=>({useExecutiveDailyMetrics:()=>undefined}));
 vi.mock('../../hooks/useLatestOperationsReview',()=>({useLatestOperationsReview:()=>({report:null,loading:false,error:null})}));
+vi.mock('../../hooks/useExecutiveQualityReview',()=>({useExecutiveQualityReview:()=>undefined}));
 afterEach(cleanup);
 it('preserves reviewed Arabic report wording even when the surrounding application is English',()=>{
   const report=executiveFixture({summary:'غير متاح'});

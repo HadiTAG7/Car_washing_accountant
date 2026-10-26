@@ -1,3 +1,4 @@
+import { FreshnessBarView } from './SweaterFreshnessBar';
 import { useEffect, useState } from 'react';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 import { useLanguage } from '../i18n/useLanguage';
@@ -52,13 +53,8 @@ export function OperationsTodayContent({ onNavigate }) {
           <button type="button" className="sw-button sw-button--secondary sw-button--sm" onClick={read.retry}>{text('تحديث البيانات', 'Refresh data')}</button></div>
       </div>
       {invalidDay && <p role="alert">{text('اختر اليوم أو يومًا سابقًا.', 'Choose today or an earlier day.')}</p>}
-      <Card className={`ot-freshness ot-tone-${freshness?.tone || 'red'}`}>
-        <strong>{text('آخر استيراد من سويتر', 'Last Sweater import')}: <bdi>{read.stateLoading ? '…' : stamp(freshness?.savedAt)}</bdi> {text('(الرياض)', '(Riyadh)')}</strong>
-        <p>{text('قراءة المصدر', 'Source read')}: <bdi>{stamp(freshness?.observedAt)}</bdi>{freshness?.ageHours != null && <> · {text('عمر البيانات', 'Data age')}: {num(freshness.ageHours)} {text('ساعة', 'hours')}</>}</p>
-        {read.stateError && <p role="alert">{text('تعذّرت قراءة وقت الاستيراد؛ الحداثة غير مؤكدة.', 'Import time could not be read; freshness is unconfirmed.')}</p>}
-        {freshness?.coverage && <p>{text('نطاق آخر استيراد', 'Latest import scope')}: <bdi>{freshness.coverage.rangeFrom || '—'} — {freshness.coverage.rangeTo || '—'}</bdi> · {freshness.coverage.isComplete === true ? text('مكتمل حسب سجل الاستيراد', 'Complete according to the import record') : text('تغطية جزئية؛ لا تثبت اكتمال اليوم أو الشركة', 'Partial coverage; does not establish completeness for the day or company')}</p>}
-        <small>{day < today ? text('عرض التاريخ من السجلات الحالية؛ ليس لقطة محفوظة وقتها. التكاليف والحالات حسب آخر بيانات متاحة.', 'Historical date shown from current records, not a saved point-in-time snapshot. Costs and statuses use the latest available data.') : text('اليوم ما اكتمل؛ متوسطات الأيام المكتملة تستبعد اليوم.', 'Today is incomplete; completed-day averages exclude today.')}</small>
-      </Card>
+      <FreshnessBarView value={freshness} loading={read.stateLoading} error={read.stateError} />
+      <small>{day < today ? text('عرض التاريخ من السجلات الحالية؛ ليس لقطة محفوظة وقتها. التكاليف والحالات حسب آخر بيانات متاحة.', 'Historical date shown from current records, not a saved point-in-time snapshot. Costs and statuses use the latest available data.') : text('اليوم ما اكتمل؛ متوسطات الأيام المكتملة تستبعد اليوم.', 'Today is incomplete; completed-day averages exclude today.')}</small>
       {read.loading ? <p role="status">{text('جارٍ قراءة التشغيل…', 'Loading operations…')}</p> : (read.error || read.value?.error) ? <p role="alert">{text('تعذّر تأكيد أرقام التشغيل. أعد القراءة أو راجع تعارض الغسلات.', 'Operational totals could not be confirmed. Refresh or review wash conflicts.')}</p> : v && <>
         <section aria-label={text('الفريق', 'Team')}><SectionHeader title={text('الفريق', 'Team')} subtitle={<bdi>{day}</bdi>} />
           <div className="ot-metrics">

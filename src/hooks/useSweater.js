@@ -1,4 +1,7 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { onReadRefresh } from '../lib/readCache';
+import { OPERATIONS_SETTINGS } from '../config/operationsSettings';
+import { recentImportRuns } from '../lib/sweaterFreshness';
 import { isFirebaseConfigured } from '../lib/firebaseClient';
 import { fetchRows, sortBy, where, orderBy, limit } from '../lib/firestoreCrud';
 import { callServer } from '../lib/ledgerTransport';
@@ -120,12 +123,13 @@ export function useSweaterVariances(periodKey) {
 
 /** حال التكامل + سجل التشغيل + المفاتيح (بلا أسرار). */
 export function useSweaterIntegration() {
+  const [since] = useState(() => new Date(Date.now() - OPERATIONS_SETTINGS.importHistoryDays * 86400000).toISOString());
   const state = useFirestoreQuery(
     async () => fetchRows('sweater_integration_state'),
     { enabled, fallback: [] },
   );
   const runs = useFirestoreQuery(
-    async () => sortBy(await fetchRows('sweater_import_runs'), [{ key: 'startedAtIso', dir: 'desc' }]),
+    async () => recentImportRuns(await fetchRows('sweater_import_runs', [where('startedAtIso', '>=', since)])),
     { enabled, fallback: [] },
   );
   const keys = useFirestoreQuery(
@@ -136,10 +140,11 @@ export function useSweaterIntegration() {
   const refetchAll = useCallback(async () => {
     await Promise.all([state.refetch(), runs.refetch(), keys.refetch()]);
   }, [state, runs, keys]);
+  useEffect(() => onReadRefresh(refetchAll), [refetchAll]);
 
   return {
     current: (state.data ?? []).find((s) => s.id === 'current') ?? null,
-    runs: (runs.data ?? []).slice(0, 30),
+    runs: runs.data ?? [],
     keys: keys.data ?? [],
     loading: state.loading || runs.loading,
     // ── خطأ القائمة لا يبتلع الصفحة ──

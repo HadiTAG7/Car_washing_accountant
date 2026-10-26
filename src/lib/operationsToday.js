@@ -1,3 +1,5 @@
+import { operationFreshness } from './sweaterFreshness.js';
+export { operationFreshness } from './sweaterFreshness.js';
 import { uniqueCompletedCommissionWashes } from '../../functions/src/washCommission.js';
 import { monthRange } from './accounting/monthlyStatement.js';
 import { availableWorkDays } from './availableWorkDays.js';
@@ -15,23 +17,6 @@ const dateOf = w => w.washDate ?? w.wash_date;
 const bikerOf = w => String(w.bikerId ?? w.biker_id ?? '').trim();
 const instant = x => typeof x === 'string' && /T.*(?:Z|[+-]\d{2}:\d{2})$/.test(x) && Number.isFinite(Date.parse(x)) ? Date.parse(x) : null;
 export const riyadhDayAt = stamp => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Riyadh' }).format(new Date(stamp));
-
-/** Existing successful import state only. A heartbeat never refreshes data.
- * A narrowly scoped save cannot establish coverage for a whole day/month. */
-export function operationFreshness(state, now = Date.now()) {
-  const paths = [
-    { savedAt: state?.lastSuccessAtIso, coverage: state?.lastCoverage },
-    { savedAt: state?.lastOperationalSuccessAtIso, coverage: state?.lastOperationalCoverage },
-  ].filter(p => instant(p.savedAt) !== null && instant(p.savedAt) <= now)
-    .sort((a, b) => instant(b.savedAt) - instant(a.savedAt));
-  const latest = paths[0];
-  if (!latest) return { savedAt: null, observedAt: null, ageHours: null, tone: 'red', coverage: null };
-  const observed = instant(latest.coverage?.extractedAt);
-  const observedAt = observed !== null && observed <= now ? latest.coverage.extractedAt : null;
-  // Known old source data stays old even if it was saved just now.
-  const ageHours = (now - Math.min(instant(latest.savedAt), observed ?? instant(latest.savedAt))) / 36e5;
-  return { ...latest, observedAt, ageHours, tone: ageHours > 12 ? 'red' : ageHours > 3 ? 'yellow' : 'green' };
-}
 
 /** One natural booking identity, latest stored observation, original status
  * retained. Equal-time conflicting observations make booking totals unknown. */

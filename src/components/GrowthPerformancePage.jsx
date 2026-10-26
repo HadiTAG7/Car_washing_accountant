@@ -1,3 +1,4 @@
+import SweaterFreshnessBar from './SweaterFreshnessBar';
 import { useMemo, useRef, useState } from 'react';
 import { useLanguage } from '../i18n/useLanguage';
 import { useGrowthPerformance } from '../hooks/useGrowthPerformance';
@@ -67,6 +68,7 @@ export function GrowthPerformanceContent({ language = 'ar', source, period, onPe
   const yesterday = shiftGrowthDay(riyadhToday(), -1);
   const [draft, setDraft] = useState(period), [validation, setValidation] = useState(false);
   return <main className="sw-growth__page" dir={language === 'en' ? 'ltr' : 'rtl'}>
+    {source.allowed && <SweaterFreshnessBar />}
     <form className="sw-growth__filters" onSubmit={event=>{event.preventDefault();const valid=growthDay(draft.from)&&growthDay(draft.to)&&draft.from<=draft.to&&draft.to<=yesterday&&Date.parse(draft.to)-Date.parse(draft.from)<=92*86400000;setValidation(!valid);if(valid)onPeriodChange({...draft});}}>
       <label>{t('من','From')}<DateField ariaLabel={t('من','From')} className="sw-growth__date-trigger" value={draft.from} onChange={e=>setDraft(d=>({...d,from:e.target.value}))} required/></label>
       <label>{t('إلى / يوم القياس','To / measurement day')}<DateField ariaLabel={t('إلى / يوم القياس','To / measurement day')} className="sw-growth__date-trigger" value={draft.to} onChange={e=>setDraft(d=>({...d,to:e.target.value}))} required/></label>

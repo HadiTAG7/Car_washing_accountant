@@ -1,3 +1,7 @@
+import { FreshnessBarView } from './SweaterFreshnessBar';
+import { useFreshnessClock } from '../hooks/useSweaterFreshness';
+import { operationFreshness, importStamp, importRunErrors } from '../lib/sweaterFreshness';
+import { OPERATIONS_SETTINGS } from '../config/operationsSettings';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Plug, KeyRound, ShieldAlert, CheckCircle2, Clock, AlertTriangle, Copy, Ban, Inbox,
@@ -28,14 +32,6 @@ import { AGENT_STATUS_AR, labelOf } from '../lib/sweater/labels';
 // أبداً — لا من الخادم ولا من المخزن، لأن المخزَّن مُعمّى ولأن استرجاعه
 // يجعل الوصول إلى الشاشة كافياً لانتحال الوكيل.
 // ═══════════════════════════════════════════════════════════════════════════
-
-const STALE_HOURS = 30;
-
-function hoursSince(iso) {
-  if (!iso) return null;
-  const h = (Date.now() - Date.parse(iso)) / 36e5;
-  return Number.isFinite(h) ? Math.floor(h) : null;
-}
 
 export default function SweaterIntegrationPage() {
   const { canMutate, role, isPartnerView } = usePartnerView();
@@ -72,12 +68,16 @@ export default function SweaterIntegrationPage() {
     return () => { alive = false; };
   }, []);
 
+  const now = useFreshnessClock();
   const st = integ.current;
-  // The later of the two paths: a staff/legacy import (lastSuccessAtIso) and the
-  // operations agent's save (lastOperationalSuccessAtIso). Both are toISOString(), so they sort as text.
-  const lastSuccessIso = [st?.lastSuccessAtIso, st?.lastOperationalSuccessAtIso].filter(Boolean).sort().at(-1) ?? null;
-  const lastHours = hoursSince(lastSuccessIso);
-  const stale = lastHours === null || lastHours > STALE_HOURS;
+  const freshness = operationFreshness(st, now);
+  const lastSuccessIso = freshness.savedAt;
+  const lastHours = freshness.savedAgeHours == null ? null : Math.floor(freshness.savedAgeHours);
+  const stale = freshness.tone !== 'green';
+  const staleSource = freshness.sourceTimeUncertain
+    || (freshness.savedAgeHours <= OPERATIONS_SETTINGS.freshnessWarningHours && freshness.ageHours > OPERATIONS_SETTINGS.freshnessWarningHours)
+    || (freshness.savedAgeHours <= OPERATIONS_SETTINGS.freshnessCriticalHours && freshness.ageHours > OPERATIONS_SETTINGS.freshnessCriticalHours);
+  const latestCounts = lastSuccessIso && lastSuccessIso === st?.lastOperationalSuccessAtIso ? st.lastOperationalCounts : st?.lastCounts;
   const agentAlert = ['session_expired', 'otp_required', 'blocked'].includes(st?.lastAgentStatus);
 
   const activeKeys = useMemo(() => integ.keys.filter((k) => k.status === 'active'), [integ.keys]);
@@ -88,6 +88,7 @@ export default function SweaterIntegrationPage() {
 
       <main className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5">
         {integ.error && <ErrorState error={integ.error} />}
+        <FreshnessBarView value={freshness} loading={integ.loading} error={integ.error} />
         {!isPartnerView && ['admin', 'accountant'].includes(role) && <><SweaterOwnerWashTaxCorrection /><SweaterHandoffPreview /></>}
 
         {/* ── السرّ يُعرض مرة واحدة ── */}
@@ -152,15 +153,15 @@ export default function SweaterIntegrationPage() {
             tone={stale ? 'amber' : 'primary'}
             label="آخر استيراد ناجح"
             value={lastHours === null ? '—' : `قبل ${formatNumber(lastHours)} ساعة`}
-            sub={lastSuccessIso ? lastSuccessIso.slice(0, 16).replace('T', ' ') : 'لم يصل شيء بعد'}
+            sub={lastSuccessIso ? `${importStamp(lastSuccessIso)} (الرياض)` : 'لم يصل شيء بعد'}
           />
           <StatCard
             icon={CheckCircle2}
             tone="indigo"
             label="آخر دفعة"
-            value={st?.lastCounts ? formatNumber((st.lastCounts.new || 0) + (st.lastCounts.modified || 0)) : '—'}
-            sub={st?.lastCounts
-              ? `جديد ${formatNumber(st.lastCounts.new || 0)} · معدّل ${formatNumber(st.lastCounts.modified || 0)} · مرفوض ${formatNumber(st.lastCounts.rejected || 0)}`
+            value={latestCounts ? formatNumber((latestCounts.new || 0) + (latestCounts.modified || 0)) : '—'}
+            sub={latestCounts
+              ? `جديد ${formatNumber(latestCounts.new || 0)} · معدّل ${formatNumber(latestCounts.modified || 0)} · مرفوض ${formatNumber(latestCounts.rejected || 0)}`
               : 'لا دفعات'}
           />
           <StatCard
@@ -180,8 +181,10 @@ export default function SweaterIntegrationPage() {
               ? `الوكيل توقّف بأمان: ${labelOf(AGENT_STATUS_AR, st.lastAgentStatus)}. `
                 + 'المنصة تطلب تدخّلاً بشرياً — سجّل الدخول عندها ثم أعِد تشغيل الوكيل. '
                 + 'الوكيل لا يتجاوز مصادقةً ولا يخزّن رمز تحقق.'
-              : (lastHours === null ? 'لم يصل أي استيراد ناجح حتى الآن. ' : `لم يصل استيرادٌ ناجح منذ ${formatNumber(lastHours)} ساعة. `)
-                + 'تحقّق من جدولة الوكيل ومن صلاحية مفتاحه.'}
+              : freshness.sourceTimeUncertain ? 'وقت قراءة المصدر غير مؤكد؛ نجاح الحفظ لا يثبت حداثة البيانات. راجع توقيت القراءة ونطاقها.'
+                : staleSource ? `وصل استيراد قبل ${formatNumber(lastHours)} ساعة، لكن قراءة المصدر قديمة؛ عمر البيانات ${formatNumber(Math.floor(freshness.ageHours))} ساعة. راجع توقيت القراءة ونطاقها.`
+                  : (lastHours === null ? 'لم يصل أي استيراد ناجح حتى الآن. ' : `لم يصل استيرادٌ ناجح منذ ${formatNumber(lastHours)} ساعة. `)
+                    + 'تحقّق من جدولة الوكيل ومن صلاحية مفتاحه.'}
           </p>
         )}
 
@@ -272,13 +275,14 @@ export default function SweaterIntegrationPage() {
 
         {/* ── سجل التشغيل ── */}
         <Card className="p-4 sm:p-6">
-          <SectionHeader title="سجل الاستيراد" subtitle="آخر ٣٠ دفعة — بعددها ونتيجتها وتغطيتها" />
+          <SectionHeader title="سجل الاستيراد" subtitle={`آخر ${OPERATIONS_SETTINGS.importHistoryDays} أيام — التشغيلات المحفوظة فقط؛ المحاولات التي لم تصل للخادم لا تظهر هنا.`} />
+          <p className="text-sm mt-2">{integ.runs.length} تشغيل محفوظ في الفترة · الأوقات بتوقيت الرياض</p>
           {integ.loading && integ.runs.length === 0 ? (
             <div className="mt-4"><LoadingState message="جارٍ التحميل..." /></div>
           ) : integ.runs.length === 0 ? (
             <div className="mt-4">
-              <EmptyState compact icon={Inbox} title="لا دفعات بعد"
-                hint="أول دفعة من الوكيل ستظهر هنا فور وصولها." />
+              <EmptyState compact icon={Inbox} title="لا تشغيلات محفوظة خلال آخر 7 أيام"
+                hint="لا يثبت غياب السجل أن الوكيل حاول الاتصال. وقت آخر نجاح ظاهر أعلى الصفحة." />
             </div>
           ) : (
             <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6 mt-4">
@@ -290,36 +294,11 @@ export default function SweaterIntegrationPage() {
                     <th className="py-3 px-4">النطاق</th>
                     <th className="py-3 px-4 text-center">جديد / معدّل / مرفوض</th>
                     <th className="py-3 px-4">النتيجة</th>
+                    <th className="py-3 px-4">الأخطاء</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {integ.runs.map((r) => (
-                    <tr key={r.id} className="border-b border-slate-50 dark:border-slate-800/60 last:border-0">
-                      <td className="py-3 px-4 font-mono text-[11px] text-slate-600 dark:text-slate-400">{r.importRunId}</td>
-                      <td className="py-3 px-4 text-[12px] text-slate-600 dark:text-slate-400 tabular-nums">
-                        {r.startedAtIso ? r.startedAtIso.slice(0, 16).replace('T', ' ') : '—'}
-                      </td>
-                      <td className="py-3 px-4 text-[12px] text-slate-600 dark:text-slate-400 tabular-nums">
-                        {r.coverage?.rangeFrom ? `${r.coverage.rangeFrom} → ${r.coverage.rangeTo}` : '—'}
-                      </td>
-                      <td className="py-3 px-4 text-center tabular-nums text-[12px]">
-                        <span className="text-emerald-700 dark:text-emerald-400">{formatNumber(r.result?.counts?.new ?? 0)}</span>
-                        {' / '}
-                        <span className="text-sky-700 dark:text-sky-400">{formatNumber(r.result?.counts?.modified ?? 0)}</span>
-                        {' / '}
-                        <span className="text-rose-700 dark:text-rose-400">{formatNumber(r.result?.counts?.rejected ?? 0)}</span>
-                      </td>
-                      <td className="py-3 px-4">
-                        <span className={`text-[11px] font-bold ${r.status === 'completed' ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'}`}>
-                          {r.status === 'completed' ? 'مكتملة'
-                            : r.status === 'completed_with_gaps' ? 'مكتملة بفجوات' : r.status}
-                        </span>
-                        {r.coverageIssues?.length > 0 && (
-                          <span className="block text-[11px] text-amber-700 dark:text-amber-400">{r.coverageIssues[0]}</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                  {integ.runs.map(r => <IntegrationRunRow key={r.id} run={r} />)}
                 </tbody>
               </table>
             </div>
@@ -332,6 +311,7 @@ export default function SweaterIntegrationPage() {
             title="الإعدادات السارية"
             subtitle="الأسعار وأنواع الخصومات — مؤرخة، فتعديلها اليوم لا يمسّ شهراً مضى"
           />
+          <p className="text-sm mt-3">حدود حداثة البيانات: أصفر بعد {OPERATIONS_SETTINGS.freshnessWarningHours} ساعات، وأحمر بعد {OPERATIONS_SETTINGS.freshnessCriticalHours} ساعة. موحّدة في إعدادات عرض التشغيل.</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
             <div>
               <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-2">أسعار الخدمات</p>
@@ -445,4 +425,20 @@ export default function SweaterIntegrationPage() {
       <Toast open={toast.open} message={toast.message} tone={toast.tone} duration={toast.duration} onClose={closeToast} />
     </>
   );
+}
+
+function IntegrationRunRow({ run: r }) {
+  const counts = r.result?.counts, errors = importRunErrors(r);
+  const count = key => counts?.[key] == null ? 'غير مسجل' : formatNumber(counts[key]);
+  return <tr className="border-b border-slate-50 dark:border-slate-800/60 last:border-0">
+    <td className="text-slate-700 dark:text-slate-300 py-3 px-4 max-w-64 break-all text-xs">{r.importRunId || r.id}</td>
+    <td className="text-slate-700 dark:text-slate-300 py-3 px-4 text-xs tabular-nums"><bdi>{importStamp(r.startedAtIso)}</bdi></td>
+    <td className="text-slate-700 dark:text-slate-300 py-3 px-4 text-xs"><bdi>{r.coverage?.rangeFrom || '—'} → {r.coverage?.rangeTo || '—'}</bdi></td>
+    <td className="text-slate-700 dark:text-slate-300 py-3 px-4 text-center text-xs tabular-nums">{count('new')} / {count('modified')} / {count('rejected')}</td>
+    <td className="text-slate-700 dark:text-slate-300 py-3 px-4 text-xs">{r.status === 'completed' ? 'مكتملة' : r.status === 'completed_with_gaps' ? 'مكتملة بفجوات' : r.status === 'failed' ? 'فشلت' : r.status === 'processing' ? 'قيد التنفيذ' : 'حالة غير معروفة'}
+      {counts?.needsReview > 0 && <p>تحتاج مراجعة: {count('needsReview')}</p>}
+      {(r.coverageIssues || r.result?.coverageIssues)?.length > 0 && <details><summary>فجوات التغطية</summary><ul>{(r.coverageIssues || r.result.coverageIssues).map((issue, i) => <li key={i}>{issue}</li>)}</ul></details>}
+    </td>
+    <td className="text-slate-700 dark:text-slate-300 py-3 px-4 text-xs max-w-80 break-words">{errors.length ? <details><summary>{errors.length} أسباب مسجلة</summary><ul>{errors.map((error, i) => <li key={i}>{error}</li>)}</ul></details> : r.status === 'failed' ? 'فشل التشغيل؛ تفاصيل الخطأ غير مسجلة' : counts ? 'لا أخطاء مسجلة' : 'غير مسجلة'}</td>
+  </tr>;
 }

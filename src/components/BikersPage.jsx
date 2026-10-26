@@ -1,3 +1,4 @@
+import SweaterFreshnessBar from './SweaterFreshnessBar';
 import IdleBikersTab from './IdleBikersTab';
 import { translate } from '../i18n/locale';
 import { useLanguage } from '../i18n/useLanguage';
@@ -245,6 +246,7 @@ export default function BikersPage({ role, payrollPreview = false, initialSectio
         subtitle="سجل العاملين ومسير رواتبهم الشهري من المعاينة حتى الصرف"
       />
       <main className="p-4 sm:p-6 lg:p-8 space-y-6">
+        <SweaterFreshnessBar />
         {role === 'admin' && !isPartnerView && <HousingEndNotice bikers={bikers} today={riyadhToday()} language={language}/>}
         {mutationError && (
           <ErrorState title="تعذّر تنفيذ العملية" error={mutationError} onRetry={() => setMutationError(null)} />

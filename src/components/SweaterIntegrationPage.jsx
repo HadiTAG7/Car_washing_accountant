@@ -426,14 +426,14 @@ function IntegrationRunRow({ run: r }) {
   const counts = r.result?.counts, errors = importRunErrors(r);
   const count = key => counts?.[key] == null ? 'غير مسجل' : formatNumber(counts[key]);
   return <tr className="border-b border-slate-50 dark:border-slate-800/60 last:border-0">
-    <td className="py-3 px-4 max-w-64 break-all text-xs">{r.importRunId || r.id}</td>
-    <td className="py-3 px-4 text-xs tabular-nums"><bdi>{importStamp(r.startedAtIso)}</bdi></td>
-    <td className="py-3 px-4 text-xs"><bdi>{r.coverage?.rangeFrom || '—'} → {r.coverage?.rangeTo || '—'}</bdi></td>
-    <td className="py-3 px-4 text-center text-xs tabular-nums">{count('new')} / {count('modified')} / {count('rejected')}</td>
-    <td className="py-3 px-4 text-xs">{r.status === 'completed' ? 'مكتملة' : r.status === 'completed_with_gaps' ? 'مكتملة بفجوات' : r.status === 'failed' ? 'فشلت' : r.status === 'processing' ? 'قيد التنفيذ' : 'حالة غير معروفة'}
+    <td className="text-slate-700 dark:text-slate-300 py-3 px-4 max-w-64 break-all text-xs">{r.importRunId || r.id}</td>
+    <td className="text-slate-700 dark:text-slate-300 py-3 px-4 text-xs tabular-nums"><bdi>{importStamp(r.startedAtIso)}</bdi></td>
+    <td className="text-slate-700 dark:text-slate-300 py-3 px-4 text-xs"><bdi>{r.coverage?.rangeFrom || '—'} → {r.coverage?.rangeTo || '—'}</bdi></td>
+    <td className="text-slate-700 dark:text-slate-300 py-3 px-4 text-center text-xs tabular-nums">{count('new')} / {count('modified')} / {count('rejected')}</td>
+    <td className="text-slate-700 dark:text-slate-300 py-3 px-4 text-xs">{r.status === 'completed' ? 'مكتملة' : r.status === 'completed_with_gaps' ? 'مكتملة بفجوات' : r.status === 'failed' ? 'فشلت' : r.status === 'processing' ? 'قيد التنفيذ' : 'حالة غير معروفة'}
       {counts?.needsReview > 0 && <p>تحتاج مراجعة: {count('needsReview')}</p>}
       {(r.coverageIssues || r.result?.coverageIssues)?.length > 0 && <details><summary>فجوات التغطية</summary><ul>{(r.coverageIssues || r.result.coverageIssues).map((issue, i) => <li key={i}>{issue}</li>)}</ul></details>}
     </td>
-    <td className="py-3 px-4 text-xs max-w-80 break-words">{errors.length ? <details><summary>{errors.length} أسباب مسجلة</summary><ul>{errors.map((error, i) => <li key={i}>{error}</li>)}</ul></details> : r.status === 'failed' ? 'فشل التشغيل؛ تفاصيل الخطأ غير مسجلة' : counts ? 'لا أخطاء مسجلة' : 'غير مسجلة'}</td>
+    <td className="text-slate-700 dark:text-slate-300 py-3 px-4 text-xs max-w-80 break-words">{errors.length ? <details><summary>{errors.length} أسباب مسجلة</summary><ul>{errors.map((error, i) => <li key={i}>{error}</li>)}</ul></details> : r.status === 'failed' ? 'فشل التشغيل؛ تفاصيل الخطأ غير مسجلة' : counts ? 'لا أخطاء مسجلة' : 'غير مسجلة'}</td>
   </tr>;
 }

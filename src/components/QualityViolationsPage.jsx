@@ -31,6 +31,7 @@ export function QualityViolationsContent() {
   const visible = rows.filter(row => `${row.name} ${row.externalId}`.toLowerCase().includes(search.toLowerCase()));
   const selectedRow = rows.find(row => row.id === selected);
   const detailRef = useRef(null);
+  const openedFrom = useRef(null);
   useEffect(() => { if (selected) { detailRef.current?.focus({ preventScroll: true }); detailRef.current?.scrollIntoView?.({ block: 'start', behavior: 'smooth' }); } }, [selected]);
   const eventCount = rows.reduce((sum, row) => sum + row.events.length, 0);
   const loading = read.current.loading || read.workers.loading, error = read.current.error || read.workers.error;
@@ -64,11 +65,11 @@ export function QualityViolationsContent() {
               return <tr key={row.id}><th>{row.name}</th><td><bdi>{row.externalId || 'غير مربوط بسويتر'}</bdi></td>
                 {['violations', 'freeWashCompensation', 'cancelledByBiker', 'damages'].map(key => <td key={key}>{number(row.values[key].value)}{row.values[key].value != null && row.values[key].partial && <small> · جزئي</small>}</td>)}
                 <td>{score?.points != null ? `${number(score.points)} / ${number(score.weight)}${score.incomplete ? ' · جزئي' : ''}` : 'غير متاح'}</td>
-                <td><button className={button} onClick={() => setSelected(row.id)}>عرض الصفوف ({row.events.length})</button></td></tr>;
+                <td><button className={button} aria-expanded={selected === row.id} onClick={event => { openedFrom.current = event.currentTarget; setSelected(row.id); }}>عرض الصفوف ({row.events.length})</button></td></tr>;
             })}</tbody></table></ScrollableTable>
           {!visible.length && <p>لا توجد نتائج للبحث.</p>}
         </Card>
-        {selectedRow && <section ref={detailRef} tabIndex={-1} className="qv-details" aria-label="تفاصيل البايكر"><Card className="qv-panel"><SectionHeader title={`تفاصيل ${selectedRow.name}`} action={<button className={button} onClick={() => setSelected(null)}>إغلاق التفاصيل</button>} />
+        {selectedRow && <section ref={detailRef} tabIndex={-1} className="qv-details" aria-label="تفاصيل البايكر"><Card className="qv-panel"><SectionHeader title={`تفاصيل ${selectedRow.name}`} action={<button className={button} onClick={() => { setSelected(null); openedFrom.current?.focus(); }}>إغلاق التفاصيل</button>} />
           {!selectedRow.events.length ? <p>ما وصلت تفاصيل سويتر لهذا البايكر في الشهر.</p> : <>
             {(read.objections.loading || read.objections.error) && <p role="alert">{read.objections.loading ? 'جارٍ قراءة متابعة الاعتراضات…' : 'تعذّرت قراءة متابعة الاعتراضات؛ الحفظ متوقف.'}</p>}
             <div className="qv-events">{selectedRow.events.toSorted((a, b) => `${b.date || ''} ${b.time || ''}`.localeCompare(`${a.date || ''} ${a.time || ''}`)).map(row => {

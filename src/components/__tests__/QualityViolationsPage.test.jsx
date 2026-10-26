@@ -34,3 +34,10 @@ it('disables saving when the current objection state cannot be read', () => {
   render(<QualityViolationsPage />); fireEvent.click(screen.getByRole('button', { name: 'عرض الصفوف (1)' }));
   expect(screen.getByRole('button', { name: 'حفظ المتابعة' }).disabled).toBe(true);
 });
+it('returns keyboard focus to the opening row after closing details', () => {
+  render(<QualityViolationsPage />);
+  const trigger = screen.getByRole('button', { name: 'عرض الصفوف (1)' });
+  fireEvent.click(trigger); expect(document.activeElement.getAttribute('aria-label')).toBe('تفاصيل البايكر');
+  fireEvent.click(screen.getByRole('button', { name: 'إغلاق التفاصيل' }));
+  expect(document.activeElement).toBe(trigger);
+});

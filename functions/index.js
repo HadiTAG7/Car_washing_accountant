@@ -63,6 +63,7 @@ export const expenseSaveCorrection = callable('expenseSaveCorrection');
 export const bikerIdleFollowupSave = callable('bikerIdleFollowupSave');
 export const qualityObjectionSave = callable('qualityObjectionSave');
 export const qualityObjectionSettingsSave = callable('qualityObjectionSettingsSave');
+export const fleetSave = callable('fleetSave');
 export const payrollReadStatus = callable('payrollReadStatus');
 export const workerRecordAdvance = callable('workerRecordAdvance');
 

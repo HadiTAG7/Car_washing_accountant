@@ -25,6 +25,7 @@ const FinanceReportsPage = lazy(() => import('./components/FinanceReportsPage'))
 const OperationsReportsPage = lazy(() => import('./components/OperationsReportsPage'));
 const OperationsTodayPage = lazy(() => import('./components/OperationsTodayPage'));
 const QualityViolationsPage = lazy(() => import('./components/QualityViolationsPage'));
+const FleetPage = lazy(() => import('./components/FleetPage'));
 const FinanceWorkbenchPage = lazy(() => import('./components/FinanceWorkbenchPage'));
 const ExecutiveReportsPage = lazy(() => import('./components/ExecutiveReportsPage'));
 const SupervisorPage       = lazy(() => import('./components/SupervisorPage'));
@@ -218,6 +219,7 @@ function AppShell({ membership }) {
             {effectiveTab === 'overview' && (membership.role === 'supervisor' ? <SupervisorPage /> : <OverviewPage onNavigate={handleSelectTab} />)}
             {effectiveTab === 'growth_performance' && <GrowthPerformancePage />}
             {effectiveTab === 'quality_violations' && <QualityViolationsPage />}
+            {effectiveTab === 'fleet' && <FleetPage />}
             {effectiveTab === 'finance' && <FinanceHomePage onNavigate={handleSelectTab} />}
             {effectiveTab === 'finance_reports' && <FinanceReportsPage />}
             {effectiveTab === 'operations_reports' && <OperationsReportsPage />}

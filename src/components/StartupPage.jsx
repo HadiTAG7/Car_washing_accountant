@@ -1,5 +1,5 @@
 import ScrollableTable from './ScrollableTable';
-import { Fragment, useCallback, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Plus, Trash2, Pencil, Wallet, Receipt, Scale, FileText, Percent, Link as LinkIcon,
 } from 'lucide-react';
@@ -138,7 +138,14 @@ export default function StartupPage({ pendingEntry, onClearPendingEntry, embedde
   // Storing the object froze it at click time: divisions added afterwards —
   // or a budget edited in another tab — never reached the open modal, which
   // kept serving a snapshot while the page around it had moved on.
-  const [detailItemId, setDetailItemId] = useState(null);
+  const [detailItemId, setDetailItemId] = useState(() => {
+    const linked = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('fleetItem') : null;
+    return linked && /^[A-Za-z0-9_-]{1,160}$/.test(linked) ? linked : null;
+  });
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.has('fleetItem')) { url.searchParams.delete('fleetItem'); window.history.replaceState(null, '', url); }
+  }, []);
   const detailItem = useMemo(
     () => (detailItemId ? items.find((i) => i.id === detailItemId) ?? null : null),
     [items, detailItemId],

@@ -187,6 +187,8 @@ export const TABLES = [
   // Readings of Sweater's Metabase dashboards, signed by the operations agent: one row per reading, never rewritten.
   { collection: 'sweater_metric_snapshots', columns: 'periodKey:month! extractedAtIso sourceUrl payloadHash keyId:id metrics:json receivedAt:ts receivedAtIso',
     policy: { read: 'staff', write: 'none' }, migration: '20261023000000_sweater_metric_snapshots' },
+  { collection: 'quality_objections', columns: 'periodKey:month! metricKey sourceId:id snapshotId:id sourceHash status note revision:int updatedBy:id updatedByName updatedAtIso',
+    policy: { read: 'admin', write: 'none' }, migration: '20261026210339_quality_objections' },
 
   // ── مركز قيادة الوكلاء ──
   { collection: 'agent_command_agents', columns: '', policy: { read: 'accountant', write: 'none' }, realtime: true },

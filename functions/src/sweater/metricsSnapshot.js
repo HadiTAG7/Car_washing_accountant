@@ -41,6 +41,7 @@ export async function saveMetricsSnapshot(db, FieldValue, payload, { keyId, nowM
       ...(Object.hasOwn(payload, 'tipsByBiker') ? { tipsByBiker: payload.tipsByBiker } : {}),
       ...(Object.hasOwn(payload, 'deductionDetails') ? { deductionDetails: payload.deductionDetails } : {}),
       ...(Object.hasOwn(payload, 'countDetails') ? { countDetails: payload.countDetails } : {}),
+      ...(Object.hasOwn(payload, 'eventDetails') ? { eventDetails: payload.eventDetails, eventCoverage: payload.eventCoverage } : {}),
       receivedAt: FieldValue.serverTimestamp(), receivedAtIso: new Date(nowMs).toISOString(),
     });
     return answer(true);

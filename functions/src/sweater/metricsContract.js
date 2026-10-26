@@ -105,12 +105,50 @@ export function validCountDetails(rows, metrics, periodKey) {
   return keys.every(key => Number.isSafeInteger(sums[key]) && sums[key] <= metrics[key]);
 }
 
+export const COMPENSATION_KEYS = Object.freeze(['violations','damages','compensations','freeWashCompensation','cancelledByBiker','cancelledMaintenance','cancelledByCustomer']);
+
+/** Source table coverage is distinct from field availability. A missing time,
+ * worker, reason or amount stays null; a count is never converted into money.
+ * A complete table must reconcile with this same signed reading. */
+export function validEventDetails(rows, coverage, metrics, periodKey) {
+  if (!Array.isArray(rows) || rows.length > 5000 || !Array.isArray(coverage) || !coverage.length || coverage.length > 7 || !month(periodKey) || !object(metrics)) return false;
+  const groups = new Map(), ids = new Set();
+  for (const c of coverage) {
+    if (!exactKeys(c,['metricKey','totalRows','complete']) || !COMPENSATION_KEYS.includes(c.metricKey) || !Object.hasOwn(metrics,c.metricKey)
+      || groups.has(c.metricKey) || typeof c.complete !== 'boolean' || (c.totalRows !== null && (!Number.isSafeInteger(c.totalRows) || c.totalRows < 0 || c.totalRows > 100000))) return false;
+    groups.set(c.metricKey,{...c,rows:[],sum:0,known:true});
+  }
+  for (const r of rows) {
+    const g = groups.get(r?.metricKey);
+    if (!g || !exactKeys(r,['metricKey','sourceId','bookingId','date','time','driverExternalId','reason','quantity','amount','sourceUrl']) || !docId(r.sourceId)
+      || (r.bookingId !== null && !docId(r.bookingId)) || (r.driverExternalId !== null && !docId(r.driverExternalId))
+      || (r.date !== null && (typeof r.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(r.date) || r.date.slice(0,7) !== periodKey || !Number.isFinite(Date.parse(`${r.date}T00:00:00Z`)) || new Date(`${r.date}T00:00:00Z`).toISOString().slice(0,10) !== r.date))
+      || (r.time !== null && (!r.date || typeof r.time !== 'string' || !/^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(r.time)))
+      || (r.reason !== null && (typeof r.reason !== 'string' || !r.reason.trim() || r.reason.length > 500))
+      || !Number.isSafeInteger(r.quantity) || r.quantity < 1 || (r.metricKey !== 'freeWashCompensation' && r.quantity !== 1)
+      || (r.amount !== null && (typeof r.amount !== 'number' || !Number.isFinite(r.amount) || r.amount < 0 || r.amount > 1e9 || !halalas(r.amount))) || !sspSourceUrl(r.sourceUrl)) return false;
+    const key = `${r.metricKey}:${r.sourceId}`;
+    if (ids.has(key)) return false;
+    ids.add(key);g.rows.push(r);
+    if (SWEATER_METRICS[r.metricKey].unit === 'count') g.sum += r.quantity;
+    else if (r.amount === null) g.known = false;
+    else g.sum += Math.round(r.amount*100);
+  }
+  return [...groups.values()].every(g => {
+    const total = metrics[g.metricKey], expected = SWEATER_METRICS[g.metricKey].unit === 'count' ? total : Math.round(total*100);
+    return Number.isFinite(total) && total >= 0 && g.sum <= expected && (g.totalRows === null || g.rows.length <= g.totalRows)
+      && (!g.complete || (g.totalRows === g.rows.length && g.known && g.sum === expected));
+  });
+}
+
 /** One month's reading: known metrics only, counts as whole numbers, money to the halala. */
 export function validateMetricsSnapshot(payload) {
   const fields = ['contractVersion', 'importRunId', 'periodKey', 'extractedAt', 'sourceUrl', 'metrics'];
   if (object(payload) && Object.hasOwn(payload, 'tipsByBiker')) fields.push('tipsByBiker');
   if (object(payload) && Object.hasOwn(payload, 'deductionDetails')) fields.push('deductionDetails');
   if (object(payload) && Object.hasOwn(payload, 'countDetails')) fields.push('countDetails');
+  if (object(payload) && Object.hasOwn(payload, 'eventDetails')) fields.push('eventDetails');
+  if (object(payload) && Object.hasOwn(payload, 'eventCoverage')) fields.push('eventCoverage');
   if (!exactKeys(payload, fields)
     || payload.contractVersion !== METRICS_CONTRACT || !docId(payload.importRunId) || !month(payload.periodKey)
     || !instant(payload.extractedAt) || !sspSourceUrl(payload.sourceUrl)) fail('عقد لقطة أرقام سويتر أو معرّفها أو شهرها أو وقتها أو رابطها غير صالح.');
@@ -134,6 +172,9 @@ export function validateMetricsSnapshot(payload) {
   }
   if (Object.hasOwn(payload, 'countDetails') && !validCountDetails(payload.countDetails, payload.metrics, payload.periodKey)) {
     fail('تفاصيل الأعداد تحتاج وقائع مصدر فريدة من الشهر والقراءة نفسهما، وكمية لا تتجاوز العدد؛ المبلغ المفقود يبقى غير متاح.');
+  }
+  if ((Object.hasOwn(payload,'eventDetails') || Object.hasOwn(payload,'eventCoverage')) && !validEventDetails(payload.eventDetails,payload.eventCoverage,payload.metrics,payload.periodKey)) {
+    fail('تفاصيل التعويضات أو تغطيتها لا تطابق القراءة؛ احتفظ بالناقص غير متاح ولا تفترض صفرًا.');
   }
   return payload;
 }

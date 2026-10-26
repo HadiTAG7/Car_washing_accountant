@@ -10,6 +10,7 @@ import { collection, doc, getDoc, getDocs, setDoc } from 'firebase/firestore';
 import { operationsReports } from '../operationsReports.js';
 import { createOperationsReportsHandler } from '../operationsReportsHttp.js';
 import { operationsFixture } from './operationsFixture.js';
+import { operationsSubmission } from '../../src/lib/operationsReportPublication.js';
 
 const local = /^(127\.0\.0\.1|localhost):\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST || '');
 describe.skipIf(!local)('operations reports real SDK/auth/rules — demo only', () => {
@@ -41,8 +42,8 @@ describe.skipIf(!local)('operations reports real SDK/auth/rules — demo only', 
     const corrected = { ...report, revision: 2, correctionReason: 'تصحيح معزول', summary: 'ملخص التصحيح في الاختبار' };
     await save(corrected);
     const after = await operationsReports(db, auth, { action: 'read', reportId: report.reportId });
-    expect(after.report).toEqual(corrected); expect(after.history).toHaveLength(2); expect(after.savedAt).toBeTruthy();
-    expect((await operationsReports(db, auth, { action: 'read', reportId: report.reportId, revision: 1 })).report).toEqual(report);
+    expect(operationsSubmission(after.report)).toEqual(corrected); expect(after.history).toHaveLength(2); expect(after.savedAt).toBeTruthy();
+    expect(operationsSubmission((await operationsReports(db, auth, { action: 'read', reportId: report.reportId, revision: 1 })).report)).toEqual(report);
     await expect(save({ ...report, summary: 'استبدال غير مسموح' })).rejects.toMatchObject({ code: 'already-exists' });
     await expect(save({ ...corrected, revision: 4 })).rejects.toMatchObject({ code: 'failed-precondition' });
   });
@@ -58,7 +59,7 @@ describe.skipIf(!local)('operations reports real SDK/auth/rules — demo only', 
       historicalImported: { originalSourceRole: 12, originalSourceRef: 'OLD-THREAD-REPORT', originalReportDate: '2026-10-18', sourceSha256: 'b'.repeat(64),
         evidenceThroughDate: '2026-10-18', cutPrecision: 'date_only', timeNote: 'نطاق الخدمة غير معروف والوقت مفقود؛ لا تاريخ بديل.' } });
     await save(r); const after = await operationsReports(db, auth, { action: 'read', reportId: r.reportId });
-    expect(after.report).toEqual(r); expect(after.report.period.from).toBeNull(); expect(after.report.cutAtRiyadh).toBeNull();
+    expect(operationsSubmission(after.report)).toEqual(r); expect(after.report.period.from).toBeNull(); expect(after.report.cutAtRiyadh).toBeNull();
     expect(after.report.sourceRole).toBe(12); expect(after.savedAt).not.toBeNull();
   });
   it.each(users.slice(1))('denies current %s on service list/read/save', async uid => {
@@ -80,7 +81,7 @@ describe.skipIf(!local)('operations reports real SDK/auth/rules — demo only', 
     };
     const r = remember(operationsFixture({ round: 'http' }));
     expect((await invoke({ action: 'save', report: r, expectedRevision: 0 })).body.result).toMatchObject({ duplicate: false });
-    expect((await invoke({ action: 'read', reportId: r.reportId })).body.result.report).toEqual(r);
+    expect(operationsSubmission((await invoke({ action: 'read', reportId: r.reportId })).body.result.report)).toEqual(r);
     expect((await invoke({ action: 'save', report: r, expectedRevision: 0 })).body.result.duplicate).toBe(true);
     for (const uid of users.slice(1)) expect((await invoke({ action: 'read', reportId: r.reportId }, uid)).code).toBe(403);
     expect((await invoke({ action: 'list' }, 'forged')).code).toBe(401);

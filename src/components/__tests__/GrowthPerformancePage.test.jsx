@@ -20,7 +20,7 @@ describe('current growth performance display',()=>{
  });
  it('keeps cards, chart, and table aligned when selecting a biker or zone',()=>{
   const {container}=render(<GrowthPerformanceView data={growthFixture()} language="en"/>);const total=()=>container.querySelector('.sw-growth__card strong').textContent;
-  expect(total()).toBe('252');fireEvent.change(screen.getByLabelText('Biker'),{target:{value:'fixture-1984'}});expect(total()).toBe('42');expect(screen.getByRole('heading',{name:/Biker trend/}).textContent).toMatch(/Synthetic biker/);
+  expect(total()).toBe('252');fireEvent.change(screen.getByLabelText('Biker'),{target:{value:'fixture-1984'}});expect(total()).toBe('42');expect(screen.getByText(/Displayed bikers:/).textContent).toBe('Displayed bikers: 1 of 7');expect(screen.getByRole('heading',{name:/Biker trend/}).textContent).toMatch(/Synthetic biker/);
   expect(within(screen.getByRole('table')).getAllByRole('row')).toHaveLength(3);
   fireEvent.change(screen.getByLabelText('Zone'),{target:{value:'Wurood'}});expect(screen.getByLabelText('Biker').value).toBe('all');expect(total()).toBe('168');
  });

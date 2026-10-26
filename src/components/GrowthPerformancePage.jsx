@@ -30,7 +30,7 @@ export function GrowthPerformanceView({ data, language = 'ar' }) {
     <section className="sw-growth__filters" aria-label={t('فلاتر الأداء', 'Performance filters')}>
       <label>{t('البايكر', 'Biker')}<select value={workerId} onChange={e => selectWorker(e.target.value)}><option value="all">{t('الكل', 'All')}</option>{displayWorkers.filter(w => region === 'all' || w.region === region).map(w => <option key={w.id} value={w.id}>{w.code} — {w.name}</option>)}</select></label>
       <label>{t('الموقع', 'Zone')}<select value={region} onChange={e => {setRegion(e.target.value);selectWorker('all');}}><option value="all">{t('كل المواقع', 'All zones')}</option>{metrics.regions.map(r => <option key={r}>{r}</option>)}</select></label>
-      <span>{t('البايكرية المعروضون', 'Displayed bikers')}: {number(metrics.selectedCount)} / {number(metrics.activeCount)}</span>
+      <span>{t('البايكرية المعروضون', 'Displayed bikers')}: <bdi>{number(metrics.selectedCount)}</bdi> {t('من إجمالي', 'of')} <bdi>{number(metrics.activeCount)}</bdi></span>
     </section>
     <p className="sw-growth__meta">{t('آخر لقطة مواقع من سويتر', 'Last Sweater location snapshot')}: {rosterTime}</p>
     <details className="sw-growth__warnings"><summary>{number(warnings.length)} {t('ملاحظات على البيانات', 'data notes')} · <u>{t('تفاصيل', 'Details')}</u></summary>

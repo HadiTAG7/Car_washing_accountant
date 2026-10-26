@@ -3846,5 +3846,6 @@
   "السجلات الحالية والمقارنة بأيام العمل المتاحة": "Current records and available-workday comparisons",
   "تعذرت قراءة المسير؛ لا يمكن تأكيد قائمة البايكرية النشطين.": "Payroll could not be read; the active biker list cannot be confirmed.",
   "تكرر البايكر في مسير الشهر؛ راجع المصدر.": "The biker appears more than once in the month payroll; review the source.",
-  "إجمالي النمو لا يطابق سجل الغسلات؛ تعذّر تأكيد العرض.": "Growth totals do not match the wash register; the display could not be confirmed."
+  "إجمالي النمو لا يطابق سجل الغسلات؛ تعذّر تأكيد العرض.": "Growth totals do not match the wash register; the display could not be confirmed.",
+  "من إجمالي": "of"
 }

@@ -3628,5 +3628,8 @@
   "رصيد الدفتر التراكمي؛ لا يثبت التحصيل أو رصيد كشف البنك.": "Cumulative ledger balance; not proof of collection or the bank statement balance.",
   "الضريبة المستردة · [VAR0]؛ الموجب مستحق والسالب مسترد؛ حسب السياسة المحفوظة.": "VAT report · [VAR0]; positive is payable and negative is refundable, under the saved policy.",
   "الضريبة المستردة ·": "VAT report ·",
-  "؛ الموجب مستحق والسالب مسترد؛ حسب السياسة المحفوظة.": "; positive is payable and negative is refundable, under the saved policy."
+  "؛ الموجب مستحق والسالب مسترد؛ حسب السياسة المحفوظة.": "; positive is payable and negative is refundable, under the saved policy.",
+  "المبلغ المحفوظ": "Saved amount",
+  "تعذرت قراءة الأرقام وقت الحفظ": "The figures could not be read when saving.",
+  "تعذرت قراءة بعض الأرقام وقت الحفظ؛ المتوفر ظاهر أدناه.": "Some figures could not be read when saving; available figures appear below."
 }

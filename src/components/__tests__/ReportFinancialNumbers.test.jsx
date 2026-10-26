@@ -12,6 +12,8 @@ it('shows the saved six figures instead of caller prose or the old supplied metr
  const before = JSON.stringify(report);
  render(<FinanceReportOverview report={report}/>);
  const table = screen.getByRole('table');
+ expect(screen.getByRole('columnheader',{name:'المبلغ المحفوظ'})).toBeTruthy();
+ expect(screen.queryByRole('columnheader',{name:'عند القطع'})).toBeNull();
  expect(within(table).getAllByRole('row')).toHaveLength(7);
  expect(table.textContent).toContain('175.00'); expect(table.textContent).toContain('9.00');
  expect(screen.getByText('تحتاج صياغة')).toBeTruthy();
@@ -31,4 +33,6 @@ it('leaves old reports missing, and distinguishes failed captures from historic 
  const financialSnapshot = {...financialPreviewSnapshot,metrics:financialPreviewSnapshot.metrics.map(m=>({...m,value:null,basis:'unavailable'}))};
  rerender(<FinanceReportOverview report={financeFixture({financialSnapshot})}/>);
  expect(screen.getAllByText('تعذرت القراءة وقت الحفظ')).toHaveLength(6);
+ expect(screen.getByText('تعذرت قراءة الأرقام وقت الحفظ')).toBeTruthy();
+ expect(screen.queryByText('ما انحفظت أرقام مع هذا التقرير')).toBeNull();
 });

@@ -11,11 +11,11 @@ export default function FinanceReportOverview({report,previousMetrics,comparison
       <h1>{financeReportHeading(report)}</h1>
       <div className="finance-report-summary" aria-label="الخلاصة">{financeReportSummary(report).map((line,i)=><p key={i}>{line}</p>)}</div>
     </header>
-    <section aria-label="أرقام التقرير عند القطع"><h2>أرقام التقرير</h2>
+    <section aria-label={report.financialSnapshot?"أرقام التقرير المحفوظة":"أرقام التقرير عند القطع"}><h2>أرقام التقرير</h2>
       <p className="finance-report-caption">لقطة بيانات الموقع المحفوظة مع التقرير، وليست أرصدة اليوم أو أرقامًا مستخرجة من النص.</p>
       {report.financialSnapshot&&<p className="finance-report-caption">شهر الأرقام: {report.financialSnapshot.month} · وقت قراءة الأرقام: <time dateTime={report.financialSnapshot.capturedAt}>{report.financialSnapshot.capturedAt.replace('T',' ').replace('+03:00','')}</time> — الرياض. قد يختلف عن وقت قطع النص.</p>}
-      {available===0?<p role="note">ما انحفظت أرقام مع هذا التقرير</p>:available<6&&<p role="note">ما انحفظت كل الأرقام المطلوبة مع هذا التقرير؛ المتوفر ظاهر أدناه.</p>}
-      <div className="finance-report-table"><table><caption>الأرقام المالية المحفوظة — ريال</caption><thead><tr><th scope="col">البند</th><th scope="col">عند القطع</th><th scope="col">التغيّر عن التقرير السابق</th><th scope="col">الأساس والتاريخ</th></tr></thead>
+      {available===0?<p role="note">{report.financialSnapshot?"تعذرت قراءة الأرقام وقت الحفظ":"ما انحفظت أرقام مع هذا التقرير"}</p>:available<6&&<p role="note">{report.financialSnapshot?"تعذرت قراءة بعض الأرقام وقت الحفظ؛ المتوفر ظاهر أدناه.":"ما انحفظت كل الأرقام المطلوبة مع هذا التقرير؛ المتوفر ظاهر أدناه."}</p>}
+      <div className="finance-report-table"><table><caption>الأرقام المالية المحفوظة — ريال</caption><thead><tr><th scope="col">البند</th><th scope="col">{report.financialSnapshot?"المبلغ المحفوظ":"عند القطع"}</th><th scope="col">التغيّر عن التقرير السابق</th><th scope="col">الأساس والتاريخ</th></tr></thead>
         <tbody>{rows.map(row=><tr key={row.id}><th scope="row">{row.label}</th><td className={row.value<0?'finance-report-negative':''}><bdi>{row.value===null?(report.financialSnapshot?'تعذرت القراءة وقت الحفظ':'غير محفوظ'):number(row.value)}</bdi></td>
           <td><bdi>{row.delta===null?'غير متاح للمقارنة':`${row.delta>0?'+':''}${number(row.delta)}`}</bdi></td>
           <td>{row.metric?<>{bases[row.metric.basis]} · <time dateTime={row.metric.asOf}>{row.metric.asOf.slice(0,10)}</time>{report.financialSnapshot&&<small>{row.metric.coverage}</small>}</>:'لا لقطة محفوظة'}</td></tr>)}</tbody></table></div>

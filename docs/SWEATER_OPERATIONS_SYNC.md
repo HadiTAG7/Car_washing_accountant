@@ -301,6 +301,73 @@ project before the code that reads the table is deployed.
 
 ## Recommendation for agent 7 instructions (do not auto-edit skills/schedules)
 
+### Compensations event tables — 26 October 2026
+
+In the existing monthly `Metrics` run, read the seven Compensations tables
+with the SAME month, account, filters and extraction time as their aggregates.
+Use all source pages or the actual downloaded CSV; record incomplete coverage.
+Do not request another live integration or infer these events from wash status.
+
+The existing `sweater-metrics-v1` envelope accepts an optional **pair**:
+
+```json
+{
+  "eventDetails": [{
+    "metricKey": "cancelledByCustomer", "sourceId": "actual-source-row-id",
+    "bookingId": "actual-booking-id", "date": "2026-10-26", "time": "19:10",
+    "driverExternalId": "actual-driver-id", "reason": "Source reason",
+    "quantity": 1, "amount": null,
+    "sourceUrl": "https://ssp-portal.sweater.sa/dashboards/compensations"
+  }],
+  "eventCoverage": [{"metricKey": "cancelledByCustomer", "totalRows": 1, "complete": true}]
+}
+```
+
+- Supported keys: `violations`, `damages`, `compensations`,
+  `freeWashCompensation`, `cancelledByBiker`, `cancelledMaintenance`,
+  `cancelledByCustomer`. Keep their existing units and direction.
+- Each row has exactly the ten fields above. Source IDs must be real stable
+  source identifiers, unique within type/month. An actual stable booking ID
+  can identify a row only if the source uniquely identifies that event with it.
+  Do not fabricate an index, worker, date, timestamp, reason or amount.
+  Distinct events may share a booking; never collapse them by booking alone.
+- Missing booking/date/time/worker/reason/amount is `null`. Dates belong to
+  the selected month. Time is Riyadh `HH:mm[:ss]`, with a known date; do not
+  turn a missing time into midnight. No customer names, phones or credential URLs.
+- Quantity is the source count (positive integer); only free-wash compensation
+  can have quantity above one. Monetary rows have quantity one and source SAR
+  amounts to the halala. Never convert cancellation/free-wash counts into SAR.
+- `totalRows` is the source table row count, or `null` if unavailable.
+  `complete:true` requires all rows and reconciliation to THIS reading's
+  aggregate: sum of quantities for count metrics, sum of amounts for money.
+  Unknown monetary amounts prevent complete monetary coverage.
+  A partial list is `complete:false`, with known subtotals not exceeding the
+  aggregate. Maximum 5,000 delivered rows per snapshot. Omit this pair entirely
+  if no table was read. Empty rows are complete only for a source-confirmed zero.
+- Never re-stamp old details or attach them to newer totals. A newer aggregate-only
+  reading deliberately makes its old event details unavailable. Existing legacy
+  `deductionDetails` / `countDetails` remain readable, with unavailable times.
+- Keep the same endpoint, key, principal, signing, immutable run/body/readback,
+  existing 09:00/22:00 schedule and source permissions. Objection status is
+  internal site metadata, never a submitted SSP objection or payroll deduction.
+
+**Agent device rollout:** only `functions/src/sweater/metricsContract.js` changes
+in the installed sender checkout. Its SHA-256 entry in
+`C:/Users/MMC/.codex/automations/automation-2/operations-v2/signers/approved-sender.json`
+needs owner approval. The fixed `run-approved-sync.ps1` also needs the two optional
+allowlisted fields `eventDetails` and `eventCoverage` in its Metrics branch.
+Do not change CLI/client, signer/provider, key, endpoint, other trust entries,
+wash writer files or schedules. Stage/review these changes; do not silently
+replace approved fingerprints. Update the operations agent's external monthly
+instructions at `07-sweater-operations-sync/references/dashboard-metrics.md`
+to follow this section once those reviewed files are installed.
+
+Before UI release, apply the additive generated migration
+`20261026203950_quality_objections.sql`. It contains only admin-readable internal
+objection metadata; browser writes are denied. Both narrow server actions recheck
+admin membership, source freshness and revision and write a before/after audit.
+The deadline is unset until Hadi saves it in the page; no guessed default is seeded.
+
 After the signer gate is resolved, add this document/command as the general
 raw-save workflow. Keep the daily 00:00 Riyadh / completed yesterday / seven
 completed days / independent older gaps policy unchanged. Keep owner handoff

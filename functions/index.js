@@ -61,6 +61,8 @@ export const expenseCorrectionOptions = callable('expenseCorrectionOptions');
 export const expensePreviewCorrection = callable('expensePreviewCorrection');
 export const expenseSaveCorrection = callable('expenseSaveCorrection');
 export const bikerIdleFollowupSave = callable('bikerIdleFollowupSave');
+export const qualityObjectionSave = callable('qualityObjectionSave');
+export const qualityObjectionSettingsSave = callable('qualityObjectionSettingsSave');
 export const payrollReadStatus = callable('payrollReadStatus');
 export const workerRecordAdvance = callable('workerRecordAdvance');
 

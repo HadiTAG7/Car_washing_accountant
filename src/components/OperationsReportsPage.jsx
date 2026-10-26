@@ -9,6 +9,7 @@ import { LanguageContext } from '../i18n/LanguageContext';
 import OperationsReportPublisher from './OperationsReportPublisher';
 import './FinanceWorkspace.css';
 import './FinanceReportsPage.css';
+import './OperationsReportsPage.css';
 import OperationsReportOverview from './OperationsReportOverview';
 import { operationsHeading } from '../lib/operationsReportPresentation';
 import { needsReportWording } from '../lib/reportPublication';
@@ -40,7 +41,7 @@ export default function OperationsReportsPage() {
   if (!archive.allowed) return <div className="fw-page"><p role="alert">تقارير العمليات التفصيلية للإدارة فقط.</p></div>;
   return <>
     <TopBar title="تقارير العمليات" subtitle="التشغيل والمزامنة والأصول — لقطات مراجعة وأرشيف، لا تسجيل عمليات جديدة" />
-    <main className="fw-page finance-reports-page" dir="rtl">
+    <main className="fw-page finance-reports-page operations-reports-page" dir="rtl">
       <div className="fw-toolbar">
         <label>بحث في كل التقارير <input type="search" aria-label="بحث في كل التقارير" maxLength={200} value={query} onChange={e=>{setQuery(e.target.value);resetSelection();}} /></label>
         <label>الفريق <select aria-label="فريق التقرير" value={sourceRole} onChange={e=>{setSourceRole(e.target.value);resetSelection();}}><option value="all">كل فرق العمليات</option>

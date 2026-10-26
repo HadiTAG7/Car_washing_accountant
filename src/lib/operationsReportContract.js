@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { operationsSnapshotSchema } from './operationsReportPublication.js';
 
 const text = max => z.string().trim().min(1).max(max);
 const ref = z.string().regex(/^[A-Za-z0-9_-]{1,160}$/);
@@ -38,7 +39,7 @@ export const operationsReportSchema = z.object({
     basis: z.enum(['operational', 'estimate', 'unavailable']), coverage: text(1500), asOf: at.nullable() }).strict()).max(6),
   visibleWarnings: z.array(z.object({ id: ref, severity: z.enum(['limitation', 'open', 'critical']), text: text(2000) }).strict()).max(30),
   sources: z.array(source).min(1).max(40), cases: z.array(state).max(100), sections: z.array(section).max(24),
-  historicalIntegrity: text(2000), correctionReason: text(1500).optional(),
+  historicalIntegrity: text(2000), correctionReason: text(1500).optional(), operationsSnapshot: operationsSnapshotSchema.optional(),
 }).strict().superRefine((report, ctx) => {
   const problem = message => ctx.addIssue({ code: 'custom', message });
   const cut = Date.parse(report.cutAtRiyadh);

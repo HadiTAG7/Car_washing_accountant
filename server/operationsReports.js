@@ -7,6 +7,7 @@ import { reportWordingWarnings } from '../src/lib/reportPublication.js';
 import { financeSearchText } from '../src/lib/financeReportPresentation.js';
 import { reportReadDb } from './reportFinancialSnapshot.js';
 import { captureReportOperations } from './reportOperationsSnapshot.js';
+import { operationsTeam, operationsTeamOptions } from '../src/lib/operationsReportTeams.js';
 
 export const OPERATIONS_REPORTS = 'operations_reports';
 const id = z.string().regex(/^ops-\d{4}-\d{2}-\d{2}-\d{1,2}-(morning_review|sync|assets|weekly|targeted)-[A-Za-z0-9_-]{1,24}-(?:\d{4}-\d{2}-\d{2}|unknown)-(?:\d{4}-\d{2}-\d{2}|unknown)$/);
@@ -29,14 +30,14 @@ export async function operationsReports(db, auth, input, now = null, captureCloc
     const p = z.object({ action: z.literal('list'), before: id.optional(),page:z.number().int().min(1).max(1000000).optional(),
       pageSize:z.number().int().min(1).max(30).optional(),query:z.string().trim().max(200).optional(),
       kind:z.enum(['morning_review','sync','assets','weekly','targeted']).optional(),status:z.enum(['reviewed','partial','blocked']).optional(),
-      sourceRole:z.number().int().min(0).max(13).optional(),from:date.optional(),to:date.optional() }).strict().safeParse(input);
+      sourceRole:z.number().int().min(0).max(13).optional(),team:z.enum(['operations','sync','assets','other']).optional(),from:date.optional(),to:date.optional() }).strict().safeParse(input);
     if (!p.success) bad('طلب أرشيف العمليات غير صالح.');
-    if(['page','pageSize','query','kind','status','sourceRole','from','to'].some(k=>p.data[k]!==undefined)){
+    if(['page','pageSize','query','kind','status','sourceRole','team','from','to'].some(k=>p.data[k]!==undefined)){
       if(p.data.before||(p.data.from&&p.data.to&&p.data.from>p.data.to))bad('نطاق الأرشيف غير صالح.');
       const heads=(await db.collection(OPERATIONS_REPORTS).get()).docs.map(d=>d.data());
       const teams=[...new Map(heads.map(r=>[r.sourceRole,{id:r.sourceRole,label:r.sourceLabel}])).values()];
       let found=heads.filter(r=>
-        (p.data.sourceRole===undefined||r.sourceRole===p.data.sourceRole)&&(!p.data.kind||r.kind===p.data.kind)
+        (p.data.sourceRole===undefined||r.sourceRole===p.data.sourceRole)&&(!p.data.team||operationsTeam(r)===p.data.team)&&(!p.data.kind||r.kind===p.data.kind)
         &&(!p.data.status||r.status===p.data.status)&&(!p.data.from||r.dateRiyadh>=p.data.from)&&(!p.data.to||r.dateRiyadh<=p.data.to));
       const needle=financeSearchText(p.data.query||'');
       if(needle){const matches=[];
@@ -49,7 +50,7 @@ export async function operationsReports(db, auth, input, now = null, captureCloc
       found.sort((a,b)=>b.dateRiyadh.localeCompare(a.dateRiyadh)||String(b.cutAtRiyadh||'').localeCompare(String(a.cutAtRiyadh||''))||b.reportId.localeCompare(a.reportId));
       const pageSize=p.data.pageSize||8,pageCount=Math.max(1,Math.ceil(found.length/pageSize)),page=Math.min(p.data.page||1,pageCount);
       return{items:found.slice((page-1)*pageSize,page*pageSize).map(({reportId,dateRiyadh,sourceRole,sourceLabel,period,kind,round,status,archiveMode,title,revision,cutAtRiyadh})=>
-        ({reportId,dateRiyadh,sourceRole,sourceLabel,period,kind,round,status,archiveMode,title,revision,cutAtRiyadh})),total:found.length,page,pageCount,pageSize,teams};
+        ({reportId,dateRiyadh,sourceRole,sourceLabel,period,kind,round,status,archiveMode,title,revision,cutAtRiyadh})),total:found.length,page,pageCount,pageSize,teams,teamOptions:operationsTeamOptions(heads)};
     }
     let query = db.collection(OPERATIONS_REPORTS).orderBy('reportId', 'desc');
     if (p.data.before) query = query.where('reportId', '<', p.data.before);

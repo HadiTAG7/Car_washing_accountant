@@ -12,6 +12,11 @@ it('shows a timed review with its date once and keeps the saved title',()=>{
   expect(operationsHeading(report)).toBe('26 أكتوبر: 09:00');
   expect(JSON.stringify(report)).toBe(before);
 });
+it('does not add a second date already present in a meaningful snapshot heading',()=>{
+  const report=operationsFixture({dateRiyadh:'2026-10-26',title:'لقطة 26 أكتوبر 22:00 واستكمال 23:14'}), before=JSON.stringify(report);
+  expect(operationsHeading(report)).toBe('لقطة 26 أكتوبر 22:00 واستكمال 23:14');
+  expect(JSON.stringify(report)).toBe(before);
+});
 it('formats the owner view without changing source titles or narrative',()=>{
   const r=operationsFixture({title:'استكمال الغسلة5643311 — خدمة20 أكتوبر',summary:'تمت مراجعة3 حجوزات. البيانات جزئية؛يوجد عمل آخر.'}),before=JSON.stringify(r);
   const title=operationsHeading(r);expect(title).not.toContain('5643311');expect(title).toContain('استكمال الغسلة');expect(title).toContain('أكتوبر');

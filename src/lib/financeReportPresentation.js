@@ -2,7 +2,7 @@
 // historical report, parse amounts from prose, or mutate the archived JSON.
 import { readableExecutiveText } from './executiveOwnerSummary.js';
 import { needsReportWording } from './reportPublication.js';
-import { reportDateLabel, stripReportDatePrefixes } from './reportDisplayHeading.js';
+import { withReportDate, stripReportDatePrefixes } from './reportDisplayHeading.js';
 
 export const FINANCE_SNAPSHOT_ROWS = Object.freeze([
   { id:'revenue', label:'الإيراد', ids:['revenue','net-revenue','monthly-revenue'] },
@@ -67,8 +67,7 @@ export function financeOwnerDecisions(report) {
 export function financeReportHeading(report) {
   const notes=financeReportNotes(report);
   const headline=notes.find(n=>n.id==='cash-ledger')?'الصندوق ما زال سالبًا':financeSentence(stripReportDatePrefixes(readableFinanceText(report.title).replace(/^المالية\s*[—:-]?\s*/u,''),report.dateRiyadh));
-  const date=reportDateLabel(report.dateRiyadh);
-  return `${date}: ${headline||'تقرير المالية المحفوظ'}`;
+  return withReportDate(headline||'تقرير المالية المحفوظ', report.dateRiyadh);
 }
 export function financeReportSummary(report) {
   const notes=financeReportNotes(report);

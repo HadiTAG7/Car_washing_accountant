@@ -3,6 +3,16 @@ export function reportDateLabel(day) {
   return new Intl.DateTimeFormat('ar-SA-u-ca-gregory', { day: 'numeric', month: 'long', numberingSystem: 'latn', timeZone: 'UTC' })
     .format(new Date(`${day}T00:00:00Z`));
 }
+// A meaningful date inside the headline already identifies this report day.
+// Keep that wording instead of automatically adding the same date again.
+export function withReportDate(title, day) {
+  const date = reportDateLabel(day);
+  const escape = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = escape(date).replace(/\s+/g, '\\s*');
+  const normalized = String(title).replace(/[٠-٩]/g, digit => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)));
+  const present = new RegExp(`(?:^|[^\\d])(?:${pattern}|${escape(day)})(?![\\p{L}\\d])`, 'u').test(normalized);
+  return present ? title : `${date}: ${title}`;
+}
 export function stripReportDatePrefixes(title, day) {
   const label = reportDateLabel(day), year = day.slice(0, 4);
   const escape = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

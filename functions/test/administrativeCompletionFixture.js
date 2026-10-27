@@ -25,3 +25,16 @@ export function missingStartCompletionFixture() {
       conversationId:'01a04f9f-cdbe-7213-bf1b-eee76eb35b38',messageId:'01a16fb9-0e70-7203-b117-6f8c2fe44a8c',
       decidedAt:'2026-10-25T00:03:19+03:00'} };
 }
+
+// Synthetic ongoing execution with actual Start and explicit, truthful missing End.
+export function ongoingCompletionFixture() {
+  const p = completionFixture(), serviceDate = '2026-10-26';
+  const record = { sspBookingId: 'B-880001', driverExternalId: '1982', bookingKind: 'individual',
+    serviceType: 'interior_exterior_wash', serviceDate, rawStatus: 'Washing Started',
+    startedAt: '2026-10-26T21:13:00+03:00', completedAt: null, sourceUrl: p.coverage.sourceUrl };
+  return { ...p, importRunId: 'synthetic-ongoing-owner-decision', records: [record], workerLinks: { '1982': 'worker1' },
+    coverage: { ...p.coverage, rangeFrom: serviceDate, rangeTo: serviceDate, recordCount: 1, extractedAt: '2026-10-26T22:25:00+03:00' },
+    decision: { ...p.decision, serviceDate, bookingIds: [record.sspBookingId], excludedBookingIds: [],
+      conversationId: '01a04f9f-cdbe-7213-bf1b-eee76eb35b38', messageId: '01a15086-97de-7292-8767-b755ee029923',
+      statement: 'Synthetic ongoing execution under the standing owner approval; no collection.', decidedAt: '2026-10-18T12:00:00+03:00' } };
+}

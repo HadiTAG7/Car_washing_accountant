@@ -29,6 +29,24 @@ const day = x => typeof x === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(x) && Numbe
 const stamp = x => typeof x === 'string' && /T.*(?:Z|[+-]\d{2}:\d{2})$/.test(x) && Number.isFinite(Date.parse(x));
 const url = x => { try { const u = new URL(x); return u.protocol === 'https:' && u.hostname === 'ssp-portal.sweater.sa' && !u.username && !u.password && !u.hash && ![...u.searchParams.keys()].some(k => /token|session|auth|secret|cookie/i.test(k)); } catch { return false; } };
 
+// Standing owner instruction of 18 Oct, reaffirmed on 25/26 Oct. This changes
+// the administrative decision route only; automatic source completion still
+// requires real Start and End, and cancellation approvals remain independent.
+export const ONGOING_OWNER_APPROVAL = Object.freeze({
+  effectiveFrom: '2026-10-18', conversationId: '01a04f9f-cdbe-7213-bf1b-eee76eb35b38',
+  messageIds: Object.freeze(['01a15086-97de-7292-8767-b755ee029923', '01a16f81-d999-7e20-b83d-8ece75c37e15', '01a179ab-1b3f-7373-bf4c-f35d4f623bb1']),
+});
+export function isApprovedOngoingCompletion(input, record, now = Date.now()) {
+  const d = input.decision, c = input.coverage, a = ONGOING_OWNER_APPROVAL;
+  if (!d || !c || d.conversationId !== a.conversationId || !a.messageIds.includes(d.messageId)
+    || d.approved !== true || d.source !== 'owner_statement' || !day(record?.serviceDate) || record.serviceDate < a.effectiveFrom
+    || record.rawStatus !== 'Washing Started' || record.serviceType !== 'interior_exterior_wash'
+    || record.completedAt !== null || !stamp(record.startedAt) || !stamp(c.extractedAt) || !stamp(d.decidedAt)) return false;
+  const started = Date.parse(record.startedAt), observed = Date.parse(c.extractedAt), decided = Date.parse(d.decidedAt);
+  return started <= observed && observed <= now && decided <= observed
+    && new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Riyadh' }).format(new Date(started)) === record.serviceDate;
+}
+
 // An explicit, bounded owner decision. No daily booking exceptions, prices,
 // collection assertion, source status conversion, credentials or write access.
 export function reviewAdministrativeCompletion(input) {
@@ -61,7 +79,7 @@ export function reviewAdministrativeCompletion(input) {
   for (const [index, r] of records.entries()) {
     const problems = recordProblems(r).filter(p => p.code !== 'unknown_service_type').map(p => ({ code: p.code, message: p.ar }));
     if (!object(r) || !approvedIds.includes(r.sspBookingId) || excluded.has(ownerBookingIdentity(r?.sspBookingId))
-      || r?.serviceDate !== d?.serviceDate || (r?.rawStatus !== 'Cancelled by Admin' && !isApprovedMissingStartCompletion(input, r)) || r?.bookingKind !== 'individual'
+      || r?.serviceDate !== d?.serviceDate || (r?.rawStatus !== 'Cancelled by Admin' && !isApprovedMissingStartCompletion(input, r) && !isApprovedOngoingCompletion(input, r)) || r?.bookingKind !== 'individual'
       || !id(r?.driverExternalId) || !input.workerLinks?.[r?.driverExternalId] || !url(r?.sourceUrl)) problems.push({ code: 'outside_decision', message: 'الحجز خارج قرار المالك أو مستثنى أو حالته/عامله غير موثقين.' });
     if (object(r) && ALLOWED_RECORD_FIELDS.some(k => r[k] != null && (typeof r[k] === 'object' || typeof r[k] === 'boolean' || String(r[k]).length > 2000))) problems.push({ code: 'bad_shape', message: 'حقول المصدر يجب أن تبقى قيمًا بسيطة دون بيانات جلسة.' });
     rows.push({ index: index + 1, sspBookingId: r?.sspBookingId || '—', problems });

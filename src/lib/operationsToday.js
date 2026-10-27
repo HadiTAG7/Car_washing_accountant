@@ -8,7 +8,6 @@ import { overviewOperations } from './overviewDashboard.js';
 import { overviewBusinessMetrics } from './overviewInsights.js';
 import { idleBikers, departedBiker } from './idleBikers.js';
 import { ownerBookingIdentity } from './sweater/bookingIdentity.js';
-import { qualityBikerRows } from './qualityViolations.js';
 
 const DAY = 86400000;
 export const shiftDay = (day, n) => new Date(Date.parse(`${day}T00:00:00Z`) + n * DAY).toISOString().slice(0, 10);
@@ -57,12 +56,10 @@ export function operationsToday({ day, today, washes = [], bikers = [], bookings
   const perBiker = payrollLines && statement ? bikerBreakEven({ statement, payrollLines, washes: unique, bikers, periodKey, today: cutoff }) : null;
   const idle = payrollLines ? idleBikers({ bikers, washes: unique, payrollLines, statement, periodKey, today: cutoff }) : null;
   const imported = dayBookings(bookings);
-  const cancellationGroup = snapshot?.eventGroups?.cancelledByBiker;
-  const cancellationDetailsAvailable = Boolean(cancellationGroup?.complete || cancellationGroup?.rows?.length);
-  const qualitySnapshot = cancellationGroup ? { ...snapshot, eventGroups: { cancelledByBiker: { ...cancellationGroup,
-    complete: cancellationGroup.complete && cancellationGroup.rows.every(row => realDay(row.date)),
-    rows: cancellationGroup.rows.filter(row => realDay(row.date) && row.date >= range.from && row.date <= day) } } } : null;
-  const qualityRows = new Map(qualityBikerRows(qualitySnapshot, bikers).map(row => [row.id, row.values.cancelledByBiker]));
+  const detail = snapshot?.countDetails?.cancelledByBiker;
+  const cancellationTotal = snapshot?.metrics?.cancelledByBiker;
+  const completeAttribution = Array.isArray(detail) && detail.every(d => d.driverExternalId && d.date)
+    && detail.reduce((n, d) => n + d.quantity, 0) === cancellationTotal;
   const active = bikers.filter(b => !departedBiker(b) && (!b.startDate || b.startDate <= day) && (!b.endDate || b.endDate >= day));
   const rows = active.map(b => {
     const own = unique.filter(w => bikerOf(w) === String(b.id));
@@ -74,13 +71,21 @@ export function operationsToday({ day, today, washes = [], bikers = [], bookings
     const lastWash = own.filter(w => dateOf(w) < cutoff).map(dateOf).sort().at(-1) || null;
     const twoDays = [lastCompleted, shiftDay(lastCompleted, -1)];
     const silentTwo = Boolean(b.startDate && b.startDate <= twoDays[1] && twoDays.every(d => !own.some(w => dateOf(w) === d)));
-    const cancellations = qualityRows.get(b.id);
+    const driver = String(b.driverExternalId || '');
+    const uniqueDriver = driver && bikers.filter(v => String(v.driverExternalId || '') === driver).length === 1;
+    const attributed = uniqueDriver && Array.isArray(detail) ? detail.filter(d => d.driverExternalId === driver && d.date && d.date <= day) : [];
+    // Partial attribution can confirm observed positives, never a zero.
+    const cancellationCount = completeAttribution && uniqueDriver ? sum(attributed)
+      : attributed.length ? sum(attributed) : null;
+    const rawCancels = !imported.conflict ? imported.rows.filter(r => r.serviceDate >= range.from && r.serviceDate <= day
+      && (r.linkedBikerId ? r.linkedBikerId === b.id : uniqueDriver && r.driverExternalId === driver)
+      && /^(biker refused wash|cancelled by biker|canceled by biker)$/i.test(String(r.rawStatus || '').trim())).length : null;
     const actualDaily = matched ? matched.actualDaily : (line?.eligibleStart || b.startDate) && available?.workDays > 0 && ownMonth.every(w => !b.startDate || dateOf(w) >= b.startDate)
       ? sum(ownMonth) / available.workDays : null;
     const idleRow = !idle?.error && idle?.rows?.find(r => r.bikerId === b.id);
     return { biker: b, today: sum(own.filter(w => dateOf(w) === day)), yesterday: sum(own.filter(w => dateOf(w) === yesterday)),
-      actualDaily, coverage: matched?.coverage ?? (actualDaily === 0 && available?.workDays > 0 ? 0 : null), requiredDaily: matched?.requiredDaily ?? null,
-      cancellationCount: cancellations?.value ?? null, cancellationPartial: cancellations?.partial ?? true,
+      actualDaily, coverage: matched?.coverage ?? null, requiredDaily: matched?.requiredDaily ?? null,
+      cancellationCount: cancellationCount ?? (rawCancels > 0 ? rawCancels : null), cancellationPartial: !completeAttribution,
       silentTwo, lastWash, status: idleRow ? 'idle' : !idle || idle.error || !line || !available?.calendarDays || idle.excluded.some(r => r.bikerId === b.id) ? 'unknown' : 'working' };
   }).sort((a, b) => Number(b.silentTwo) - Number(a.silentTwo) || b.today - a.today || String(a.biker.name).localeCompare(String(b.biker.name), 'ar'));
   // Regions describe recorded execution, attributed only through imported
@@ -120,6 +125,6 @@ export function operationsToday({ day, today, washes = [], bikers = [], bookings
     neededPerRemainingDay: remainingDays && business?.remainingWashes != null ? business.remainingWashes / remainingDays : null,
     partialCosts: Boolean(statement?.issues?.length), payrollError: Boolean(perBiker?.error || idle?.error),
     regions: imported.conflict ? null : [...regions.values()].sort((a, b) => b.today - a.today || b.week - a.week),
-    bookingsConflict: imported.conflict, reconciliation, cancellationDetailsAvailable, unlinkedCount: sum(unlinked), silentCount: rows.filter(r => r.silentTwo).length,
+    bookingsConflict: imported.conflict, reconciliation, unlinkedCount: sum(unlinked), silentCount: rows.filter(r => r.silentTwo).length,
     freshness: operationFreshness(integrationState, now) };
 }

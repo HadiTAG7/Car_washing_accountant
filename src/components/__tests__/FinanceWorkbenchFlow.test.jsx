@@ -11,6 +11,21 @@ const base = data => ({ allowed: true, loading: false, error: null, refresh: vi.
 const callbacks = () => ({ onSaved: vi.fn(), onMessage: vi.fn(), options: base({ items: [] }) });
 beforeEach(() => { mock.api.mockReset(); mock.read.mockReset(); });
 afterEach(cleanup);
+it('shows corrected posting and financing history read-only without treating missing source evidence as complete', () => {
+  const detail = { sourceId: 'synthetic', row: { description: 'أصل مصحح', amount: 100 }, protectedSource: true,
+    workflowStage: 'posted_review', issues: ['دليل المصدر ناقص'], paymentProven: false,
+    postingHistory: { active: [{ id: 'purchase', number: 137 }, { id: 'payment', number: 138, settlementOf: 'purchase' }],
+      reversed: [{ id: 'old', number: 4, reversal: { number: 130 }, mirrorMatched: true }], fundingCorrections: [{ id: 'funding', number: 168 }] } };
+  render(<FinanceExpenseForm kind="startup" detail={detail} {...callbacks()} />);
+  expect(screen.getByText('مرحل ويحتاج استكمال')).toBeTruthy();
+  const history = screen.getByRole('region', { name: 'القيود السارية وسجل العكس' });
+  expect(history.textContent).toContain('#137، #138 (سداد)');
+  expect(history.textContent).toContain('الأصل #4 معكوس');
+  expect(history.textContent).toContain('#130'); expect(history.textContent).toContain('#168');
+  expect(screen.queryByRole('button', { name: 'رحّل' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'اعتمد' })).toBeNull();
+  expect(screen.getByText('دليل المصدر ناقص')).toBeTruthy(); expect(mock.api).not.toHaveBeenCalled();
+});
 it('keeps exactly seven basic fields, opens only tax invoices, hides opaque source codes and never edits existing payment on a warning', () => {
   const detail = { sourceId: 'opaque-secret-id', row: { description: 'تحويل بنكي', amount: 100, spent_date: '2026-10-18', payment_method: 'cash', is_tax_invoice: true }, workflowStage: 'incomplete', issues: [] };
   render(<FinanceExpenseForm kind="annual" detail={detail} {...callbacks()} />);

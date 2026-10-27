@@ -97,6 +97,14 @@ export default function FinanceExpenseForm({ kind, detail, requestId, options, o
     </dl>}
     {conflict && <div className="fw-payment-warning" role="note"><AlertTriangle size={18} /><span>طريقة دفع متناقضة: المستند يشير إلى تحويل أو مدى أو بنكي، لكن المسجل نقد. التنبيه لا يغيّر البيانات.</span></div>}
     {detail?.workflowNote && <p className="fw-warning">{detail.workflowNote}</p>}
+    {detail?.postingHistory && (detail.postingHistory.active.length > 0 || detail.postingHistory.reversed.length > 0) &&
+      <section className="fw-form-section" aria-label="القيود السارية وسجل العكس">
+        <h3 className="fw-form-section-title">القيود السارية وسجل العكس</h3>
+        <p>القيود السارية: {detail.postingHistory.active.map(entry => `#${entry.number ?? 'غير مرقم'}${entry.settlementOf ? ' (سداد)' : ''}`).join('، ') || 'لا يوجد بديل مرحل مثبت'}</p>
+        {detail.postingHistory.reversed.map(entry => <p key={entry.id}>الأصل #{entry.number ?? 'غير مرقم'} معكوس · قيد العكس: {entry.reversal ? `#${entry.reversal.number ?? 'غير مرقم'}` : 'غير متاح'} · {entry.mirrorMatched ? 'الأصل والعكس متطابقان' : 'مطابقة العكس تحتاج مراجعة'}</p>)}
+        {detail.postingHistory.fundingCorrections.length > 0 && <p>تصحيح جهة السداد المسجل: {detail.postingHistory.fundingCorrections.map(entry => `#${entry.number ?? 'غير مرقم'}`).join('، ')}. هذا ربط دفتري، وليس مطابقة كشف البنك.</p>}
+        <p>القيود لا تعني اكتمال دليل المستند أو اعتماد نسخته الحالية. تبقى النواقص ظاهرة، ولا يسمح بإعادة الترحيل.</p>
+      </section>}
     {protectedRow && <p className="fw-protected-note">المصدر محمي أو الفترة مقفلة؛ العرض فقط. لا تعديل للمصدر المرحّل من هذا المسار.</p>}
     {error && <div className="fw-warning" role="alert">{error}</div>}
     <section aria-label="الأساسي"><h3 className="fw-form-section-title">الأساسي</h3><div className="fw-form">

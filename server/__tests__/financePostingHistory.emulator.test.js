@@ -4,12 +4,13 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { financeWorkbench } from '../financeWorkbench.js';
 import { postSource } from '../../functions/src/ledger.js';
 import { correctedSourceSeed, historySourceId as sourceId } from './financePostingHistoryFixture.js';
+import { expensePatch } from './financeFixtures.js';
 
 const enabled = process.env.FIRESTORE_EMULATOR_HOST === '127.0.0.1:5288';
 const auth = { uid: 'test-admin' };
 describe.skipIf(!enabled)('corrected history — owned isolated demo emulator', () => {
   let app, db;
-  const names = ['users', 'startup_cost_entries', 'journal_entries', 'journal_lines', 'accounting_periods', 'posting_locks', 'finance_reviews', 'audit_logs', 'finance_workbench_receipts', 'counters'];
+  const names = ['users', 'startup_cost_entries', 'startup_costs', 'chart_of_accounts', 'app_settings', 'journal_entries', 'journal_lines', 'accounting_periods', 'posting_locks', 'finance_reviews', 'audit_logs', 'finance_workbench_receipts', 'counters'];
   beforeAll(() => { app = initializeApp({ projectId: 'demo-sweater' }, 'finance-posting-history'); db = getFirestore(app); });
   beforeEach(async () => {
     for (const name of names) for (const doc of (await db.collection(name).get()).docs) await doc.ref.delete();
@@ -47,6 +48,24 @@ describe.skipIf(!enabled)('corrected history — owned isolated demo emulator', 
     await ref.update({ lines: FieldValue.delete() });
     const before = await snapshot(), detail = await financeWorkbench(db, auth, { action: 'read', kind: 'startup', sourceId });
     expect(detail.postingHistory.reversed[0].mirrorMatched).toBe(true);
+    expect(await snapshot()).toBe(before);
+  });
+  it('rejects direct reposting of a reversed original even with a genuinely valid current approval', async () => {
+    await db.doc('startup_costs/parent').set({ item_name: 'بند اختبار', budgeted_amount: 1000, actual_amount: 0 });
+    await db.doc('app_settings/accounting').set({ value: { vatRegistered: false } });
+    for (const account of ['1500', '2000']) await db.doc(`chart_of_accounts/${account}`).set({ code: account, active: true });
+    const patch = { ...expensePatch({ invoiceNumber: 'ISOLATED-APPROVED', invoiceUrl: 'https://example.org/isolated-approved' }), parentId: 'parent' };
+    delete patch.categoryId;
+    const input = { kind: 'startup', requestId: 'isolated-approved-history', patch };
+    const preview = await financeWorkbench(db, auth, { ...input, action: 'previewCapture' });
+    const saved = await financeWorkbench(db, auth, { ...input, action: 'capture', previewHash: preview.previewHash, confirm: true, reason: 'تهيئة اختبار معزول' });
+    const read = await financeWorkbench(db, auth, { action: 'read', kind: 'startup', sourceId: saved.sourceId });
+    await financeWorkbench(db, auth, { action: 'approve', kind: 'startup', sourceId: saved.sourceId, sourceHash: read.sourceHash,
+      postingHash: read.postingPreview.postingHash, confirm: true, reason: 'اعتماد اختباري قبل إضافة التاريخ' });
+    await db.doc('journal_entries/approved-old-reversed').set({ sourceKind: 'startup', sourceId: saved.sourceId, status: 'reversed' });
+    const before = await snapshot();
+    await expect(postSource(db, FieldValue, { kind: 'startup', sourceId: saved.sourceId }, { userId: auth.uid }))
+      .rejects.toThrow(/قيد سابق أو معكوس/);
     expect(await snapshot()).toBe(before);
   });
   it.each(['partner', 'accountant', 'operator'])('denies %s the history read without changing data', async role => {

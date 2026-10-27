@@ -2,6 +2,7 @@
 // historical report, parse amounts from prose, or mutate the archived JSON.
 import { readableExecutiveText } from './executiveOwnerSummary.js';
 import { needsReportWording } from './reportPublication.js';
+import { withReportDate, stripReportDatePrefixes } from './reportDisplayHeading.js';
 
 export const FINANCE_SNAPSHOT_ROWS = Object.freeze([
   { id:'revenue', label:'الإيراد', ids:['revenue','net-revenue','monthly-revenue'] },
@@ -65,9 +66,8 @@ export function financeOwnerDecisions(report) {
 }
 export function financeReportHeading(report) {
   const notes=financeReportNotes(report);
-  const headline=notes.find(n=>n.id==='cash-ledger')?'الصندوق ما زال سالبًا':financeSentence(report.title.replace(/^المالية\s*[—:-]?\s*/u,''));
-  const date=new Intl.DateTimeFormat('ar-SA-u-ca-gregory',{day:'numeric',month:'long',numberingSystem:'latn',timeZone:'UTC'}).format(new Date(`${report.dateRiyadh}T00:00:00Z`));
-  return `${date}: ${headline||'تقرير المالية المحفوظ'}`;
+  const headline=notes.find(n=>n.id==='cash-ledger')?'الصندوق ما زال سالبًا':financeSentence(stripReportDatePrefixes(readableFinanceText(report.title).replace(/^المالية\s*[—:-]?\s*/u,''),report.dateRiyadh));
+  return withReportDate(headline||'تقرير المالية المحفوظ', report.dateRiyadh);
 }
 export function financeReportSummary(report) {
   const notes=financeReportNotes(report);

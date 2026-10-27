@@ -27,7 +27,14 @@ describe('daily operations from stored records', () => {
     expect(r.rows.find(x => x.biker.id === 'a').coverage).toBe(per.rows[0].coverage);
     expect(r.remainingWashes).toBe(Math.ceil(30036.57 / 20) - 3);
     expect(r.remainingDays).toBe(6); expect(r.neededPerRemainingDay).toBe(r.remainingWashes / 6);
-    expect(r.rows.find(x => x.biker.id === 'b').coverage).toBeNull();
+    expect(r.rows.find(x => x.biker.id === 'b').coverage).toBe(0);
+  });
+  it('shows zero coverage for an idle biker with elapsed available days and keeps a new starter unavailable', () => {
+    const input = base(); input.bikers.push(biker('new', { startDate: input.today }));
+    input.payrollLines.push({ ...pay('new'), eligibleStart: input.today, daysEntitled: 6 });
+    const r = operationsToday(input);
+    expect(r.rows.find(row => row.biker.id === 'b')).toMatchObject({ actualDaily: 0, coverage: 0 });
+    expect(r.rows.find(row => row.biker.id === 'new')).toMatchObject({ actualDaily: null, coverage: null });
   });
   it('selecting a completed day includes it, ignores later washes, and handles a cross-month seven-day window', () => {
     const r = operationsToday({ ...base(), day: '2026-10-01', washes: [wash('sep', '2026-09-30'), wash('oct', '2026-10-01'), wash('later', '2026-10-02')] });
@@ -51,11 +58,27 @@ describe('daily operations from stored records', () => {
     expect(r.quantity).toBe(1); expect(r.unlinkedCount).toBe(1);
     expect(r.regions).toEqual([{ region: 'شرق', today: 1, week: 0 }, { region: 'غير محددة', today: 0, week: 1 }]);
   });
-  it('keeps absent cancellation attribution unavailable, partial positives labelled, and admin cancellation unrelated', () => {
+  it('waits for quality details instead of treating raw booking cancellations as attributed detail', () => {
     const input = base(); input.bookings = [{ record: { sspBookingId: '22', serviceDate: '2026-10-25', driverExternalId: 'a', rawStatus: 'Cancelled by Admin' } }];
     expect(operationsToday(input).rows.find(r => r.biker.id === 'a').cancellationCount).toBeNull();
     input.bookings.push({ record: { sspBookingId: '23', serviceDate: '2026-10-24', driverExternalId: 'a', rawStatus: 'Biker Refused Wash' } });
-    const r = operationsToday(input).rows.find(r => r.biker.id === 'a'); expect(r.cancellationCount).toBe(1); expect(r.cancellationPartial).toBe(true);
+    const result = operationsToday(input); expect(result.cancellationDetailsAvailable).toBe(false);
+    expect(result.rows.find(r => r.biker.id === 'a').cancellationCount).toBeNull();
+  });
+  it('uses the quality page attribution for imported cancellation details, with known zeros only when complete', () => {
+    const input = base(); input.snapshot = { metricSources: { cancelledByBiker: { snapshotId: 'synthetic' } },
+      eventGroups: { cancelledByBiker: { complete: true, rows: [
+        { metricKey: 'cancelledByBiker', driverExternalId: 'a', date: '2026-10-25', quantity: 2 },
+        { metricKey: 'cancelledByBiker', driverExternalId: 'a', date: '2026-10-27', quantity: 1 },
+      ] } } };
+    const r = operationsToday(input); expect(r.cancellationDetailsAvailable).toBe(true);
+    expect(r.rows.find(x => x.biker.id === 'a').cancellationCount).toBe(2);
+    expect(r.rows.find(x => x.biker.id === 'b').cancellationCount).toBe(0);
+    input.snapshot.eventGroups.cancelledByBiker.complete = false;
+    expect(operationsToday(input).rows.find(x => x.biker.id === 'b').cancellationCount).toBeNull();
+    input.snapshot.eventGroups.cancelledByBiker.complete = true;
+    input.snapshot.eventGroups.cancelledByBiker.rows.push({metricKey:'cancelledByBiker',driverExternalId:'a',date:null,quantity:1});
+    expect(operationsToday(input).rows.find(x => x.biker.id === 'b').cancellationCount).toBeNull();
   });
   it('compares an appropriate monthly snapshot through its dated scope, never a later snapshot to an older selected day', () => {
     const input = { ...base(), bookings: [{record:{sspBookingId:'w2',serviceDate:'2026-10-25',completedAt:'2026-10-25T12:00:00+03:00'}}], snapshot: { metrics: { completedWashes: 10 }, metricSources: { completedWashes: { extractedAtIso: '2026-10-25T15:00:00Z' } } } };

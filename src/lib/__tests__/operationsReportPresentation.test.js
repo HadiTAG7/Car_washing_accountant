@@ -1,6 +1,22 @@
 import {it,expect} from 'vitest';
 import {operationsHeading,operationsNotes,operationsSummary} from '../operationsReportPresentation';
 import {operationsFixture} from '../../../server/__tests__/operationsFixture';
+it('removes repeated leading report dates only in the display heading', () => {
+  const report=operationsFixture({dateRiyadh:'2026-10-27',title:'27 أكتوبر: مراجعة 27 أكتوبر: غسلات أمس مطابقة للسجل'});
+  expect(operationsHeading(report)).toBe('27 أكتوبر: غسلات أمس مطابقة للسجل');
+  expect(report.title).toBe('27 أكتوبر: مراجعة 27 أكتوبر: غسلات أمس مطابقة للسجل');
+  expect(operationsHeading({...report,title:'مراجعة 26 أكتوبر: غسلات أمس مطابقة للسجل'})).toContain('26 أكتوبر');
+});
+it('shows a timed review with its date once and keeps the saved title',()=>{
+  const report=operationsFixture({dateRiyadh:'2026-10-26',title:'مراجعة 26 أكتوبر 09:00'}), before=JSON.stringify(report);
+  expect(operationsHeading(report)).toBe('26 أكتوبر: 09:00');
+  expect(JSON.stringify(report)).toBe(before);
+});
+it('does not add a second date already present in a meaningful snapshot heading',()=>{
+  const report=operationsFixture({dateRiyadh:'2026-10-26',title:'لقطة 26 أكتوبر 22:00 واستكمال 23:14'}), before=JSON.stringify(report);
+  expect(operationsHeading(report)).toBe('لقطة 26 أكتوبر 22:00 واستكمال 23:14');
+  expect(JSON.stringify(report)).toBe(before);
+});
 it('formats the owner view without changing source titles or narrative',()=>{
   const r=operationsFixture({title:'استكمال الغسلة5643311 — خدمة20 أكتوبر',summary:'تمت مراجعة3 حجوزات. البيانات جزئية؛يوجد عمل آخر.'}),before=JSON.stringify(r);
   const title=operationsHeading(r);expect(title).not.toContain('5643311');expect(title).toContain('استكمال الغسلة');expect(title).toContain('أكتوبر');

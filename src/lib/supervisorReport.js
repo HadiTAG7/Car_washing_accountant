@@ -1,5 +1,7 @@
-import { monthlyStatement, monthRange, DEFAULT_FEE_RULES } from './accounting/monthlyStatement.js';
-import { round2, isBalanced } from './accounting/journal.js';
+import { monthlyStatement, monthRange } from './accounting/monthlyStatement.js';
+import { monthlyFeeRules, managementShareAmount } from './accounting/managementShare.js';
+import { FINANCIAL_SETTINGS } from '../config/financialSettings.js';
+import { isBalanced } from './accounting/journal.js';
 import { isRealCalendarDate } from './vatFields.js';
 
 const validDate = date => typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date) && isRealCalendarDate(date);
@@ -49,12 +51,11 @@ export function supervisorReport(data, periodKey) {
     const rows = monthLines.filter(l => l.entryId === e.id);
     return rows.length === 0 || !isBalanced(rows);
   })) issues.push('توجد قيود غير متوازنة أو بلا سطور.');
-  const applicable = (rules.length ? rules : DEFAULT_FEE_RULES).filter(r => !r.effectiveFrom || r.effectiveFrom <= to);
-  const supervisorRules = applicable.filter(r => r.key === 'supervisor');
+  const applicable = monthlyFeeRules(rules, to);
+
   const managementRules = applicable.filter(r => r.key === 'management');
   if (rules.some(r => !numeric(r.rate) || Number(r.rate) < 0 || !['profit', 'revenue'].includes(r.basis) || (r.effectiveFrom && !validDate(r.effectiveFrom)))) issues.push('قواعد الرسوم ناقصة أو غير صالحة.');
-  if (supervisorRules.length !== 1 || supervisorRules[0]?.basis !== 'profit' || Number(supervisorRules[0]?.rate) !== 0.05) issues.push('سياسة رسوم المشرف لا تطابق قاعدة 5% من الربح؛ تحتاج مراجعة.');
-  if (applicable.length !== 2 || managementRules.length !== 1 || managementRules[0]?.basis !== 'profit' || Number(managementRules[0]?.rate) !== 0.1) issues.push('سياسة رسوم الإدارة لا تطابق إجمالي 15%: 10% للإدارة و5% للمشرف على الأساس نفسه.');
+  if (applicable.length !== 1 || managementRules.length !== 1 || managementRules[0]?.basis !== 'profit' || Number(managementRules[0]?.rate) !== FINANCIAL_SETTINGS.managementShareRate) issues.push('سياسة حصة الإدارة لا تطابق القاعدة المعتمدة؛ تحتاج مراجعة.');
   const statement = monthlyStatement({ accounts, entries, lines, periodKey, feeRules: rules });
   if (FINANCIAL_FIELDS.some(field => !Number.isFinite(statement[field])) || statement.fees.some(fee => !Number.isFinite(fee.amount))) issues.push('نتيجة مالية غير محدودة أو غير صالحة.');
   if (!statement.hasActivity) issues.push('لا توجد حركة مالية مرحّلة تؤكد نتيجة الشهر.');
@@ -95,17 +96,17 @@ export function supervisorReport(data, periodKey) {
     && Number.isFinite(completedQuantity) && Number.isFinite(pendingQuantity)
     && [...actual.values()].every(stats => Number.isFinite(stats.completedQuantity) && Number.isFinite(stats.pendingQuantity));
   const financialComplete = issues.length === 0;
-  const reference = financialComplete ? round2(Math.max(0, statement.netProfitBeforeFees) * 0.05) : null;
+  const reference = financialComplete ? managementShareAmount(statement.netProfitBeforeFees) : null;
   return {
     periodKey, from, to,
     coverage: { financial: issues.length ? 'incomplete' : 'closed-ledger', issues, postedEntries: monthEntries.length, closed,
       performance: { source: 'washes', complete: performanceComplete, monthWashRows, unknownDateRows,
         unassignedQuantity: Number.isFinite(unassignedQuantity) ? unassignedQuantity : null, unassignedRows, invalidRows } },
     statement: financialComplete ? Object.fromEntries(FINANCIAL_FIELDS.map(field => [field, statement[field]])) : null,
-    share: { rate: 0.05, basisField: 'netProfitBeforeFees', finalNetField: 'netProfit',
+    share: { rate: FINANCIAL_SETTINGS.managementShareRate, basisField: 'netProfitBeforeFees', finalNetField: 'netProfit',
       basisAmount: financialComplete ? statement.netProfitBeforeFees : null,
       referenceAmount: Number.isFinite(reference) ? reference : null,
-      managementRate: 0.1, combinedRate: 0.15, basisStatus: 'owner-confirmed',
+      managementRate: FINANCIAL_SETTINGS.managementShareRate, combinedRate: FINANCIAL_SETTINGS.managementShareRate, basisStatus: 'owner-confirmed',
       entitlementAmount: null, decision: 'reference-only' },
     kpis: { workers: Array.isArray(data.bikers) ? bikers.length : null,
       completedQuantity: performanceComplete ? completedQuantity : null,

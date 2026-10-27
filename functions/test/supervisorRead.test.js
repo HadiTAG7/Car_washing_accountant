@@ -54,7 +54,7 @@ describe('supervisor server projections and pagination', () => {
   });
   it('declares source coverage and returns only curated report data', async () => {
     const r = await supervisorOverview(fakeDb(supervisorFixture()), { periodKey: '2026-08' });
-    expect(r.share.referenceAmount).toBe(40); expect(r.sources.every(s => s.complete)).toBe(true); expect(JSON.stringify(r)).not.toMatch(/private-phone|private-id/);
+    expect(r.share.referenceAmount).toBe(120); expect(r.sources.every(s => s.complete)).toBe(true); expect(JSON.stringify(r)).not.toMatch(/private-phone|private-id/);
   });
   it('rejects future/unbounded overview requests', async () => { await expect(supervisorOverview(fakeDb({}), { periodKey: '2999-12' })).rejects.toMatchObject({ code: 'invalid-argument' }); });
   it('propagates a failed source instead of computing zero', async () => { await expect(supervisorOverview({ collection: () => ({ select: () => ({ get: async () => { throw new Error('unavailable'); } }) }) }, { periodKey: '2026-08' })).rejects.toThrow('unavailable'); });

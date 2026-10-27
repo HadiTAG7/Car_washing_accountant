@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import TopBar from './TopBar';
 import { useSupervisorOverview } from '../hooks/useSupervisor';
+import { FINANCIAL_SETTINGS } from '../config/financialSettings';
 
 const money = value => !Number.isFinite(value) ? 'غير متاح' : `${new Intl.NumberFormat('ar-SA', { maximumFractionDigits: 2, minimumFractionDigits: 2 }).format(value)} ر.س`;
 const quantity = value => Number.isFinite(value) ? String(value) : 'غير متاح';
@@ -29,14 +30,14 @@ export function SupervisorDashboard({ report, periodKey, onPeriodChange, loading
         <p>سجلات بتواريخ مجهولة خارج المؤشر: {quantity(coverage?.unknownDateRows)}. سجلات غير صالحة في الشهر: {quantity(coverage?.invalidRows)}. كمية بلا ربط عامل مؤكد: {quantity(coverage?.unassignedQuantity)}.</p>
       </div>}
       <section aria-label="حسبة المشرف" className={`${panel} space-y-3`}>
-        <h2 className="font-bold text-lg">أساس حسبة المشرف — 5%</h2>
-        <p className="text-sm">الأساس مؤكد من المالك: 10% للإدارة و5% للمشرف، بإجمالي 15% من صافي الربح قبل الرسوم للشركة كاملة. الخسارة والتعادل لا ينتجان حصة موجبة.</p>
+        <h2 className="font-bold text-lg">حصة الإدارة المجمّعة — {FINANCIAL_SETTINGS.managementShareRate*100}%</h2>
+        <p className="text-sm">قرار المالك: حصة واحدة للإدارة من صافي ربح كل شهر مستقل. الخسارة والتعادل حصتهما صفر، دون تعويض لاحق.</p>
         {statement ? <dl className="space-y-2 text-sm">
           {[[ 'صافي الإيرادات بعد المردودات', statement.netRevenue ],[ 'التكاليف المباشرة', statement.directCosts ],[ 'المصاريف التشغيلية', statement.operatingExpenses ],[ 'صافي الربح قبل الرسوم (netProfitBeforeFees)', statement.netProfitBeforeFees ],[ 'مجموع الرسوم الحالية', statement.totalFees ],[ 'الصافي النهائي بعد الرسوم (netProfit)', statement.netProfit ]].map(([label, value]) => <div key={label} className="flex flex-wrap justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-2"><dt className="break-words">{label}</dt><dd className="font-semibold">{money(value)}</dd></div>)}
         </dl> : <p role="status">بنود الربح غير متاحة بسبب نقص البيانات المحاسبية.</p>}
         {report.coverage.issues.length > 0 && <div role="status" className="text-sm text-amber-900 bg-amber-50 p-3 rounded-lg"><p className="font-semibold">حسبة الشهر الكامل غير مؤكدة</p><ul className="list-disc mr-5 mt-2">{report.coverage.issues.map(issue => <li key={issue}>{issue}</li>)}</ul></div>}
-        <p className="font-semibold text-sm">حسبة مرجعية للسياسة الحالية: {money(report.share.basisAmount)} × 5% = {money(report.share.referenceAmount)}</p>
-        <p className="text-sm">هذا عرض مرجعي للقراءة فقط؛ لا يسجل استحقاقًا ولا يصرف مبلغًا.</p>
+        <p className="font-semibold text-sm">حسبة مرجعية للسياسة الحالية: {money(report.share.basisAmount)} × {FINANCIAL_SETTINGS.managementShareRate*100}% = {money(report.share.referenceAmount)}</p>
+        <p className="text-sm">هذه حصة الإدارة المجمّعة، وليست راتبًا شخصيًا للمشرف. العرض لا يسجل استحقاقًا ولا يصرف مبلغًا.</p>
       </section>
       <section aria-label="أهداف المشرف من المصدر" className={`${panel} space-y-3`}>
         <h2 className="font-bold text-lg">أهداف المشرف من المصدر</h2>

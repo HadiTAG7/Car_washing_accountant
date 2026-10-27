@@ -107,7 +107,7 @@ function formatMonthLabel(ym) {
 const COMPARISON_LABELS = {
   netRevenue: 'حصتك من صافي الإيرادات', variable: 'المصاريف المتغيرة والعمولات',
   monthly: 'المصاريف الشهرية والرواتب', other: 'المصاريف الأخرى', totalCosts: 'إجمالي مصاريف التشغيل',
-  totalFees: 'رسوم الإدارة والإشراف', annualReserve: 'احتياطي التجديد السنوي', netAfterReserve: 'نتيجتك التشغيلية بعد الاحتياطي',
+  totalFees: 'حصة الإدارة', annualReserve: 'احتياطي التجديد السنوي', netAfterReserve: 'نتيجتك التشغيلية بعد الاحتياطي',
 };
 
 export function PartnerComparisonCard({ report, activeMonth }) {
@@ -414,6 +414,7 @@ export function IncomeStatementCard({
               {(statement.fees || []).map((f) => (
                 <StatementRow key={f.key} label={`يُخصم منه: ${f.label}`} amount={f.amount} />
               ))}
+              <tr><td colSpan={2} className="p-3 text-xs">حصة الإدارة من نتيجة الشركة في قائمة الدخل، ثم تُوزع حسب حصة الشريك. كل شهر مستقل، دون تعويض عن شهر خاسر.</td></tr>
               <ExpenseStatementGroup key={`annual:${activeMonth}`} label="احتياطي التجديد السنوي — حصة هذا الشهر" amount={statement.annualReserve || 0} group={groups.annual}
                 onExplain={() => setReserveHelpOpen(open => !open)} explanationOpen={reserveHelpOpen} explanationId={reserveHelpId}
                 explanation={<>
@@ -503,8 +504,8 @@ function OverviewView({
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <StatCard icon={TrendingUp} label="مجموع الإيرادات" value={formatCurrency(monthlySummary.netRevenue)} sub="بعد المرتجعات" />
-            <StatCard icon={Wallet} tone="amber" label="مجموع المصروفات" value={formatCurrency(monthlySummary.totalAllocation + monthlySummary.totalFees)} sub="تشمل الرسوم واحتياطي التجديد" />
-            <StatCard icon={HandCoins} tone={monthlySummary.netAfterReserve >= 0 ? 'emerald' : 'slate'} label="صافي الربح" value={formatCurrency(monthlySummary.netAfterReserve)} sub="بعد الرسوم والاحتياطي؛ مو توزيع مستحق" />
+            <StatCard icon={Wallet} tone="amber" label="مجموع المصروفات" value={formatCurrency(monthlySummary.totalAllocation + monthlySummary.totalFees)} sub="تشمل حصة الإدارة واحتياطي التجديد" />
+            <StatCard icon={HandCoins} tone={monthlySummary.netAfterReserve >= 0 ? 'emerald' : 'slate'} label="صافي الربح" value={formatCurrency(monthlySummary.netAfterReserve)} sub="بعد حصة الإدارة والاحتياطي؛ مو توزيع مستحق" />
           </div>
         )}
       </Card>

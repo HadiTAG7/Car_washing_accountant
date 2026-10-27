@@ -8,9 +8,9 @@ const pages = {
   annual: lazy(() => import('./AnnualExpensesPage')),
   monthly: lazy(() => import('./MonthlyExpensesPage')),
   variable: lazy(() => import('./VariableExpensesPage')),
-  temporary_expenses: lazy(() => import('./TemporaryExpensesPage')),
+  temporary_expenses: lazy(() => import('./AdministrationExpensesPage')),
 };
-const labels = ['التأسيس', 'السنوية', 'الشهرية', 'المتغيرة', 'المؤقتة'];
+const labels = ['التأسيس', 'السنوية', 'الشهرية', 'المتغيرة', 'مصاريف الإدارة'];
 
 // Legacy page ids remain the URL/history contract. Only one existing expense
 // screen is mounted: no duplicate queries, financial records or write paths.

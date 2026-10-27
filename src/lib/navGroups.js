@@ -36,7 +36,7 @@ const LEGACY_TAB_GROUPS = [
       { id: 'operations_reports', label: 'تقارير العمليات والأرشيف', icon: FileText, roles: ['admin'] },
       { id: 'bikers',    label: 'البايكر',                 icon: Bike        },
       { id: 'housing',   label: 'السكن',                   icon: Home        },
-      { id: 'temporary_expenses', label: 'المصروفات المؤقتة', icon: RefreshCw },
+      { id: 'temporary_expenses', label: 'مصاريف الإدارة', icon: RefreshCw },
     ],
   },
   {

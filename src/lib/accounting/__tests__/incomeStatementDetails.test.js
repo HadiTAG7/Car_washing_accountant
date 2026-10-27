@@ -99,6 +99,6 @@ describe('income statement source details and salary accrual periods', () => {
   it('excludes unresolved tax without claiming a zero-valued source and keeps fee formulas tied to the same statement', () => {
     const result = liveIncomeStatement(options([], { sources: { washes: washes(), variables: [{ ...expense, vat_amount: -1 }] } }));
     expect(result.issues).toHaveLength(1); expect(result.details.directCosts.items).toHaveLength(0);
-    expect(result.details['fee:management'].items[0].fee).toMatchObject({ base: 320, rate: 0.1 }); checkAll(result);
+    expect(result.details['fee:management'].items[0].fee).toMatchObject({ base: 320, rate: 0.15 }); checkAll(result);
   });
 });

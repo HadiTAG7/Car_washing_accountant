@@ -1,7 +1,8 @@
 // Management allocation only. Never posts, reclassifies, transfers cash, or
 // changes the official company income statement. Annual amounts are a renewal
 // reserve (not a second recognition of the first annual payment).
-import { monthlyStatement, DEFAULT_FEE_RULES, monthRange } from './monthlyStatement.js';
+import { monthlyStatement, monthRange } from './monthlyStatement.js';
+import { managementShareAmount, monthlyFeeRules } from './managementShare.js';
 import { postedLines, incomeStatementLines, sourceKindOf } from './reports.js';
 import { ACC } from './chartOfAccounts.js';
 import { round2 } from './journal.js';
@@ -56,7 +57,7 @@ export function partnerOperatingStatement({
   feeRules = null, monthlyExpenses = [], variableExpenses = [], annualExpenses = [],
   vouchers = [], settings = {},
   dynamicCommissions = [], dynamicVariableIds = [],
-  revenueSources = {}, payrollPreview = null,
+  revenueSources = {}, payrollPreview = null, companySources = null,
 } = {}) {
   const range = monthRange(periodKey);
   if (!range.from) throw new Error('شهر التقرير غير صالح.');
@@ -187,10 +188,18 @@ export function partnerOperatingStatement({
   const operatingExpenses = sum(items.filter(i => i.section === 'operating'));
   const totalCosts = round2(directCosts + operatingExpenses);
   const netProfitBeforeFees = round2(netRevenue - totalCosts);
+  // The management share belongs to the company month, not to a different
+  // partner allocation/reserve basis. Never return the full-company basis.
+  const company = liveIncomeStatement({ accounts, entries, lines, periodKey, feeRules,
+    sources: companySources || { ...revenueSources, variables: variableExpenses, monthlies: monthlyExpenses,
+      vouchers, payrollPreviews: payrollPreview ? [payrollPreview] : [] },
+    policyAt: date => taxPolicyAt(date, settings) });
+  if (company.issues.length) throw new Error('تعذّر تأكيد أساس حصة الإدارة من قائمة دخل الشركة.');
   // Available profit is after operating costs and fee estimates, before the
   // renewal reservation. Rates, official fee postings and books stay intact.
-  const rules = (feeRules?.length ? feeRules : DEFAULT_FEE_RULES).filter(r => !r.effectiveFrom || r.effectiveFrom <= range.to);
-  const fees = rules.map(r => ({ ...r, amount: round2(Math.max(0, r.basis === 'profit' ? netProfitBeforeFees : netRevenue) * (Number(r.rate) || 0)) }));
+  const rules = monthlyFeeRules(feeRules, range.to);
+  const fees = rules.map(r => ({ ...r, amount: r.key === 'management' ? round2(managementShareAmount(company.netProfitBeforeFees) * factor)
+    : round2(Math.max(0, r.basis === 'profit' ? netProfitBeforeFees : netRevenue) * (Number(r.rate) || 0)) }));
   const totalFees = sum(fees);
   const netProfit = round2(netProfitBeforeFees - totalFees);
   const reserveItems = items.filter(i => i.section === 'reserve');

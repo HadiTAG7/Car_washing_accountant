@@ -24,6 +24,17 @@ const revenue = (amount, periodKey = '2026-09') => ({
 });
 
 describe('احتياطي التجديد من الأرباح فقط', () => {
+  it.each([1000, 2000])('does not charge a partner with allocation profit when company profit is zero or a loss (%s)', cost => {
+    const r=compute({...revenue(1000),monthlyExpenses:[],variableExpenses:[],annualExpenses:[],
+      companySources:{monthlies:[{id:'annual-service',recurrence:'one_time',logged_date:'2026-09-01',total_monthly_cost:cost}]}});
+    expect(r.netProfitBeforeFees).toBe(100);
+    expect(r.totalFees).toBe(0);
+  });
+  it('allocates the same company share across partners without exposing its full basis',()=>{
+    const shares=[0.2,0.3,0.5].map(scalingFactor=>compute({...revenue(25000),scalingFactor}));
+    expect(shares.reduce((sum,row)=>sum+row.totalFees,0)).toBe(3675);
+    expect(shares.every(row=>!('companySources' in row)&&!('company' in row))).toBe(true);
+  });
   it.each([0, 800])('لا يحجز في شهر الخسارة أو التعادل (إيراد الشركة %s)', amount => {
     const r = compute(revenue(amount));
     expect(r.annualReserve).toBe(0);
@@ -34,22 +45,25 @@ describe('احتياطي التجديد من الأرباح فقط', () => {
   });
   it('شهر الربح يحتسب الحصة الشهرية كاملة بعد المصروفات والرسوم', () => {
     const r = compute(revenue(25000));
-    expect(r).toMatchObject({ netProfitBeforeFees: 2420, totalFees: 363, netProfit: 2057,
-      annualReserve: 1500, netAfterReserve: 557 });
-    expect(r.renewalReserve).toMatchObject({ scheduledAmount: 1500, availableProfit: 2057, reason: 'full' });
+    // Company P&L has 24,500 profit (the 300 recurring template is not posted
+    // or a dated voucher). Its 3,675 share is allocated at 10%, not recalculated
+    // on the partner's different 2,420 allocation profit.
+    expect(r).toMatchObject({ netProfitBeforeFees: 2420, totalFees: 367.5, netProfit: 2052.5,
+      annualReserve: 1500, netAfterReserve: 552.5 });
+    expect(r.renewalReserve).toMatchObject({ scheduledAmount: 1500, availableProfit: 2052.5, reason: 'full' });
   });
   it('يقف عند الربح المتاح ويوزع الاحتياطي بين البنود دون اختلاف هللات', () => {
     const r = compute({ ...revenue(10000), annualExpenses: [
       { id: 'housing', annual_cost: 180000 }, { id: 'insurance', annual_cost: 36000 },
     ] });
-    expect(r).toMatchObject({ totalFees: 138, netProfit: 782, annualReserve: 782, netAfterReserve: 0 });
+    expect(r).toMatchObject({ totalFees: 142.5, netProfit: 777.5, annualReserve: 777.5, netAfterReserve: 0 });
     expect(r.renewalReserve).toMatchObject({ scheduledAmount: 1800, reason: 'limited' });
     const group = r.expenseBreakdown.groups.find(g => g.key === 'annual');
-    expect(group.items.map(i => i.amount)).toEqual([651.67, 130.33]);
+    expect(group.items.map(i => i.amount)).toEqual([647.92, 129.58]);
     expect(group.items.map(i => i.scheduledAmount)).toEqual([1500, 300]);
     expect(group.amount).toBe(r.annualReserve);
     expect(r.expenseBreakdown.total).toBe(r.totalAllocation);
-    expect(r.expenseBreakdown.fixedTotal).toBe(812);
+    expect(r.expenseBreakdown.fixedTotal).toBe(807.5);
   });
   it('الربح قبل الرسوم لا يكفي إذا الرسوم المرتبطة بالإيراد تجعل الشهر خاسراً', () => {
     const r = compute({ ...revenue(1000), feeRules: [{ key: 'service', basis: 'revenue', rate: 0.3 }] });
@@ -82,7 +96,7 @@ describe('تقرير الشريك: كل المصروفات دون تكرار، �
     expect(r.totalCosts).toBe(80);
     expect(r.annualReserve).toBe(1500);
     expect(r.totalAllocation).toBe(1580);
-    expect(r.netAfterReserve).toBe(557);
+    expect(r.netAfterReserve).toBe(552.5);
   });
 
   it('البند الشهري لمرة واحدة يخص شهره، والمتغير لا ينتقل لشهر آخر', () => {

@@ -294,7 +294,7 @@ export default function FinancialSummaryPage() {
               <StatCard
                 icon={isProfit ? TrendingUp : TrendingDown}
                 tone={isProfit ? 'emerald' : 'rose'}
-                label="صافي نتيجة الشركة بعد الرسوم"
+                label="صافي نتيجة الشركة بعد حصة الإدارة"
                 value={`${isProfit ? '' : '−'}${formatCurrency(Math.abs(finalNetProfit))}`}
                 sub={statement.fees.length
                   ? `بعد خصم ${statement.fees.map((f) => f.label).join(' و')}`
@@ -406,9 +406,9 @@ export default function FinancialSummaryPage() {
                         ['التكاليف المباشرة والعمولات', Number((-variableTotal).toFixed(2))],
                         ['مجمل الربح التشغيلي', Number(grossProfit.toFixed(2))],
                         ['المصاريف التشغيلية', Number((-fixedExpensesTotal).toFixed(2))],
-                        ['صافي الربح قبل الرسوم', Number(netProfitBeforeFees.toFixed(2))],
+                        ['صافي الربح قبل حصة الإدارة', Number(netProfitBeforeFees.toFixed(2))],
                         ...statement.fees.map((f) => [f.label, Number((-f.amount).toFixed(2))]),
-                        ['صافي نتيجة الشركة بعد الرسوم', Number(finalNetProfit.toFixed(2))],
+                        ['صافي نتيجة الشركة بعد حصة الإدارة', Number(finalNetProfit.toFixed(2))],
                       ],
                     )}
                   >
@@ -476,7 +476,7 @@ export default function FinancialSummaryPage() {
                       kind="expenseSubtotal"
                     />
                     <StatementRow
-                      label="= صافي الربح قبل الرسوم"
+                      label="= صافي الربح قبل حصة الإدارة"
                       amount={netProfitBeforeFees}
                       onClick={openStatementDetail('netProfitBeforeFees')}
                       kind="subtotal"
@@ -491,7 +491,7 @@ export default function FinancialSummaryPage() {
                       />
                     ))}
                     <StatementRow
-                      label="= صافي نتيجة الشركة بعد الرسوم"
+                      label="= صافي نتيجة الشركة بعد حصة الإدارة"
                       amount={finalNetProfit}
                       onClick={openStatementDetail('netProfit')}
                       kind="final"

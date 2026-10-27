@@ -707,9 +707,9 @@ function clampAdvanceMethod(value) {
 export function mapTemporaryExpense(row) {
   return {
     id:             row.id,
-    title:          row.title || '',
+    title:          row.title || row.expense_name || row.extra?.expense_name || '',
     amount:         Number(row.amount) || 0,
-    spentDate:      row.spent_date || '',
+    spentDate:      row.spent_date || row.expense_date || row.extra?.expense_date || '',
     assignmentMonth: advanceAssignmentMonth(row),
     assignmentMonthExplicit: isAssignmentMonth(row.assignment_month),
     status:         clampRecoveryStatus(row.status),

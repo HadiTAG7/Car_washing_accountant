@@ -16,6 +16,7 @@ vi.mock('../AnnualExpensesPage', () => ({ default: () => <p>annual fixture</p> }
 vi.mock('../MonthlyExpensesPage', () => ({ default: () => <p>monthly fixture</p> }));
 vi.mock('../VariableExpensesPage', () => ({ default: () => <p>variable fixture</p> }));
 vi.mock('../TemporaryExpensesPage', () => ({ default: () => <p>temporary_expenses fixture</p> }));
+vi.mock('../AdministrationExpensesPage', () => ({ default: () => <p>temporary_expenses fixture</p> }));
 afterEach(cleanup);
 
 describe('finance presentation without new financial calculations or writes', () => {

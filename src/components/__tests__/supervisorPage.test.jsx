@@ -14,7 +14,7 @@ describe('supervisor read-only RTL interface', () => {
     render(<SupervisorDashboard report={r} periodKey="2026-08" onPeriodChange={() => {}} />);
     expect(document.querySelector('main').dir).toBe('rtl');
     expect(screen.getByText(/netProfitBeforeFees/)).toBeTruthy(); expect(screen.getByText(/netProfit\)/)).toBeTruthy();
-    expect(screen.getByText(/الأساس مؤكد من المالك/)).toBeTruthy(); expect(screen.getByText(/نسبة التحقيق: غير متاحة/)).toBeTruthy();
+    expect(screen.getByText(/قرار المالك: حصة واحدة للإدارة/)).toBeTruthy(); expect(screen.getByText(/نسبة التحقيق: غير متاحة/)).toBeTruthy();
     expect(screen.getByText(/90% أو أكثر لكل شهر/)).toBeTruthy(); expect(screen.getByText(/سقف 5000 ريال لكل شهر مستقل/)).toBeTruthy();
     expect(screen.getByText(/لا توجد مزامنة تلقائية/)).toBeTruthy(); expect(screen.getByText(/تواريخ أشهر المتابعة الثلاثة: غير محددة/)).toBeTruthy();
     expect(screen.getByRole('link', { name: /مرجع أهداف المشرف/ }).href).toContain('gid=2100000004');

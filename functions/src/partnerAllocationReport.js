@@ -192,6 +192,8 @@ export async function partnerAllocationReport(db, { partnerId, periodKey, today 
       accounts: data.chart_of_accounts, entries, lines, periodKey: period, scalingFactor: eligibility.factor,
       feeRules, settings, revenueSources, monthlyExpenses: data.monthly_expenses,
       payrollPreview: payrollPreviews.find(p => p.periodKey === period),
+      companySources: { ...revenueSources, variables: data.variable_expenses, monthlies: data.monthly_expenses,
+        annualEntries: data.annual_expense_entries, vouchers: data.expense_vouchers, payrollPreviews },
       variableExpenses: data.variable_expenses.filter(v => !dynamicIds.has(v.category_id)), annualExpenses: data.annual_expenses,
       vouchers: data.expense_vouchers,
       dynamicCommissions: dynamicCategories.map(c => ({ id: c.id, periodKey: period, amount: (washQuantities.get(period) || 0) * DEFAULT_DYNAMIC_UNIT_COST })),

@@ -166,7 +166,7 @@ describe('قائمة الدخل الشهرية من القيود', () => {
     });
     expect(s.fees.map((f) => f.key)).toEqual(['mgmt']);
     expect(s.totalFees).toBe(5);
-    expect(DEFAULT_FEE_RULES.map((f) => f.rate)).toEqual([0.10, 0.05]);
+    expect(DEFAULT_FEE_RULES.map((f) => f.rate)).toEqual([0.15]);
   });
 
   it('حصة الشريك تُقاس على كل سطر بنفس النسبة', () => {

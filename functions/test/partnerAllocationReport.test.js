@@ -444,8 +444,10 @@ describe('تقرير مصروفات الشريك الخادمي', () => {
       partnerId: 'p2', factor: 1, annualReserve: 9000, includeStatements: true, periodKey: '2026-09',
     }, { uid: 'u1' });
     expect(r.partnerId).toBe('p1');
-    expect(r.statements[0]).toMatchObject({ annualReserve: 782, netAfterReserve: 0, totalFees: 138,
-      renewalReserve: { reason: 'limited', availableProfit: 782 } });
+    // Company annual expense makes this a loss month despite the partner's
+    // different allocation profit. No management share is charged on it.
+    expect(r.statements[0]).toMatchObject({ annualReserve: 920, netAfterReserve: 0, totalFees: 0,
+      renewalReserve: { reason: 'limited', availableProfit: 920 } });
   });
   it('شهر خسارة ثم ربح لا يرحّل احتياطياً متأخراً ولا يقلل رصيد التأسيس به', async () => {
     const r = await partnerAllocationReport(database({ journal_entries: [

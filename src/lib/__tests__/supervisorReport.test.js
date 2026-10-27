@@ -7,7 +7,7 @@ describe('supervisor read-only financial and performance view', () => {
     const d = supervisorFixture(); const before = JSON.stringify(d); const r = report(d);
     expect(r.statement.netProfitBeforeFees).toBe(800);
     expect(r.statement.netProfit).toBe(680);
-    expect(r.share).toMatchObject({ basisAmount: 800, referenceAmount: 40, entitlementAmount: null, decision: 'reference-only', basisStatus: 'owner-confirmed', managementRate: 0.1, combinedRate: 0.15 });
+    expect(r.share).toMatchObject({ basisAmount: 800, referenceAmount: 120, entitlementAmount: null, decision: 'reference-only', basisStatus: 'owner-confirmed', managementRate: 0.15, combinedRate: 0.15 });
     expect(JSON.stringify(d)).toBe(before);
     expect(JSON.stringify(r)).not.toMatch(/private-phone|private-id|salary/);
     expect(r.workers[0]).toMatchObject({ completedQuantity: 10, target: null, achievement: null });
@@ -21,9 +21,9 @@ describe('supervisor read-only financial and performance view', () => {
       const d = supervisorFixture(); change(d); expect(report(d).share.referenceAmount).toBeNull();
     }
   });
-  it('refuses a conflicting configured rate without changing it', () => {
+  it('replaces the former supervisor split in the view without changing its stored rule', () => {
     const d = supervisorFixture(); d.fee_rules = [{ key: 'supervisor', basis: 'profit', rate: 0.1 }];
-    const r = report(d); expect(r.share.referenceAmount).toBeNull(); expect(r.coverage.issues.join(' ')).toContain('سياسة رسوم');
+    const r = report(d); expect(r.share.referenceAmount).toBe(120); expect(r.share.entitlementAmount).toBeNull();
     expect(d.fee_rules[0].rate).toBe(0.1);
   });
   it.each(['2026-13', '', 'all'])('rejects invalid month %s', key => { expect(() => supervisorReport(supervisorFixture(), key)).toThrow(); });
@@ -46,7 +46,7 @@ describe('supervisor read-only financial and performance view', () => {
   });
   it('does not double-count embedded and legacy lines for the same entry', () => {
     const d = supervisorFixture(); d.journal_lines = d.journal_entries[0].lines.map((l, i) => ({ ...l, id: `old${i}`, entryId: 'sale' }));
-    expect(report(d).share.referenceAmount).toBe(40);
+    expect(report(d).share.referenceAmount).toBe(120);
   });
   it.each([NaN, Infinity, -Infinity, 1e308, true, {}, 'NaN'])('refuses invalid/overflow money without returning a zero reference: %s', amount => {
     const d = supervisorFixture(); d.journal_entries[0].lines[0].debit = amount; d.journal_entries[0].lines[1].credit = amount;
@@ -69,8 +69,10 @@ describe('supervisor read-only financial and performance view', () => {
     expect(r.goals.metrics.every(m => m.period === 'monthly' && m.actual === null && m.progress === null)).toBe(true);
     expect(r.goals.source.url).toContain('gid=2100000004');
   });
-  it('refuses additional fees rather than adding 5% on top of the confirmed 15%', () => {
+  it('collapses legacy split keys into one share instead of adding supervisor percentage again', () => {
     const d = supervisorFixture(); d.fee_rules = [{ key: 'management', basis: 'profit', rate: 0.15 }, { key: 'supervisor', basis: 'profit', rate: 0.05 }];
+    expect(report(d).share.referenceAmount).toBe(120);
+    d.fee_rules.push({key:'unrelated',basis:'profit',rate:0.2});
     expect(report(d).share.referenceAmount).toBeNull();
   });
 });

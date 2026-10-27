@@ -29,17 +29,16 @@ import { ACC } from './chartOfAccounts.js';
 import { incomeStatement, movementBySource, incomeStatementLines, sourceKindOf } from './reports.js';
 import { ownerWashTaxSplit } from '../sweater/ownerWashTax.js';
 import { incomeStatementDetails } from './incomeStatementDetails.js';
+import { MANAGEMENT_SHARE_RULE, managementShareAmount, monthlyFeeRules } from './managementShare.js';
 
 /**
  * The fees that apply when `fee_rules` has not been configured.
  *
- * These are the rates the statement has always charged; they live here rather
- * than inline in the page so that the screen, the CSV and the trend cannot
- * disagree about them. A configured rule set replaces them entirely.
+ * The owner's single monthly share is shared by screen, CSV and trend.
+ * Legacy management/supervisor settings are normalized without changing them.
  */
 export const DEFAULT_FEE_RULES = [
-  { key: 'management', label: 'رسوم الإدارة (10% من صافي الربح)', basis: 'profit', rate: 0.10, effectiveFrom: null },
-  { key: 'supervisor', label: 'راتب المشرف (5% من صافي الربح)',   basis: 'profit', rate: 0.05, effectiveFrom: null },
+  MANAGEMENT_SHARE_RULE,
 ];
 
 /** `2026-08` → { from: '2026-08-01', to: '2026-08-31' }. */
@@ -57,12 +56,11 @@ export function monthRange(periodKey) {
 /**
  * The fee a rule charges for a period.
  *
- * A losing month triggers neither a management fee nor a supervisor's share:
- * both are a cut of something the month did not produce. Charging them anyway
- * would deepen the loss by 15% of itself, which is not a rule any partner
- * agreed to.
+ * Management participates only in this month's positive profit. No loss
+ * carry-forward or cumulative catch-up enters this calculation.
  */
 function feeAmount(rule, { netRevenue, operatingProfit }) {
+  if (rule.key === 'management') return managementShareAmount(operatingProfit);
   const rate = Number(rule.rate) || 0;
   const base = rule.basis === 'profit' ? operatingProfit : netRevenue;
   return base > 0 ? round2(base * rate) : 0;
@@ -199,8 +197,7 @@ export function monthlyStatement({
   const grossProfit = round2(netRevenue - directCosts);
   const netProfitBeforeFees = round2(grossProfit - operatingExpenses);
 
-  const rules = (feeRules && feeRules.length ? feeRules : DEFAULT_FEE_RULES)
-    .filter((f) => !f.effectiveFrom || !to || f.effectiveFrom <= to);
+  const rules = monthlyFeeRules(feeRules, to);
   const fees = rules.map((f) => ({
     key: f.key,
     label: f.label,

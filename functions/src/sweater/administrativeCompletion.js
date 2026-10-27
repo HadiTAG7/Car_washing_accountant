@@ -1,4 +1,4 @@
-import { reviewAdministrativeCompletion, ADMIN_COMPLETION_WARNING, isApprovedMissingStartCompletion } from '../../../src/lib/sweater/administrativeCompletion.js';
+import { reviewAdministrativeCompletion, ADMIN_COMPLETION_WARNING, isApprovedMissingStartCompletion, isApprovedOngoingCompletion } from '../../../src/lib/sweater/administrativeCompletion.js';
 import { ownerBookingIdentity } from '../../../src/lib/sweater/bookingIdentity.js';
 import { COL, bookingDocId, rawDocId, SweaterIngestError } from './ingest.js';
 import { hashBody, hashRecord, normalizeRecord } from './record.js';
@@ -63,8 +63,13 @@ async function plan(db, payload, read, actor) {
       || booking.source !== 'operations_sync_v2' || booking.operationalWorkerId !== bikerId
       || booking.record?.startedAt !== null
       || ['sspBookingId', 'serviceDate', 'driverExternalId', 'rawStatus', 'completedAt', 'serviceType'].some(k => booking.record?.[k] !== record[k]));
+    // An ongoing decision must attach to the already saved, worker-linked
+    // actual Start observation. A caller cannot seed or rewrite source facts.
+    const ongoingEvidenceConflict = isApprovedOngoingCompletion(payload, raw) && (!booking
+      || booking.source !== 'operations_sync_v2' || booking.operationalWorkerId !== bikerId
+      || ['sspBookingId', 'serviceDate', 'driverExternalId', 'rawStatus', 'startedAt', 'completedAt', 'serviceType', 'bookingKind'].some(k => booking.record?.[k] !== record[k]));
     const existingMatches = existingWash && existingWash.administrativeWashHash === hash && Object.entries(wash).every(([k,v]) => hashBody(existingWash[k]) === hashBody(v));
-    const conflict = !workerOK || foreignRelated || protectedBooking || missingStartEvidenceConflict || (existingWash && !existingMatches)
+    const conflict = !workerOK || foreignRelated || protectedBooking || missingStartEvidenceConflict || ongoingEvidenceConflict || (existingWash && !existingMatches)
       || (claim && (claim.sspBookingId !== record.sspBookingId || claim.washId !== washId))
       || Boolean(existingWash) !== Boolean(booking?.ownerCompletionDecision);
     const outcome = conflict ? 'needs_review' : existingWash ? 'duplicate' : booking ? 'modified' : 'new';

@@ -1,6 +1,20 @@
 # Administrative completion without collection
 
-This admin workflow records an explicit owner decision for named cancelled SSP bookings, plus the single missing-start exception below. It creates one operational wash with unpaid commission, preserves the source facts, and does not confirm collection or create a journal, payment, payroll run, recognition policy or integration key. It is separate from the historical collection handoff and the pinned operations v2 sender.
+This admin workflow records an explicit owner decision for named cancelled SSP bookings, actual ongoing executions under the standing approval below, and the single missing-start exception. It creates one operational wash with unpaid commission, preserves the source facts, and does not confirm collection or create a journal, payment, payroll run, recognition policy or integration key. It is separate from the historical collection handoff and the pinned operations v2 sender.
+
+## Actual ongoing executions — standing approval from 18 October 2026
+
+Hadi's verified message `01a15086-97de-7292-8767-b755ee029923` in conversation `01a04f9f-cdbe-7213-bf1b-eee76eb35b38` says «كل الغسلات من اليوم وانت طالع سجلها المكتملة والجارية». Messages `01a16f81-d999-7e20-b83d-8ece75c37e15` and `01a179ab-1b3f-7373-bf4c-f35d4f623bb1` reaffirm it. This covers actual ongoing washing from service day `2026-10-18` onward; it is not daily reapproval, a cancellation policy, or proof of source completion or collection.
+
+Use the existing Integration JSON administrative review/preview/save workflow and unchanged kind. Each batch still names its actual service date, exact booking IDs, verified worker links, exclusions, original owner statement/reference and documented decision time. Never replace the owner's message reference or timestamp with the current run time. A standing reference may precede the service day; it must precede the source observation.
+
+An eligible record must be individual `interior_exterior_wash`, raw status exactly `Washing Started`, an actual `startedAt` on that service day in Riyadh, and explicit `completedAt: null`. Start cannot follow the source reading, and source reading/decision cannot be future timestamps. Waiting, arrival, en-route, future bookings, missing Start, or observed End are outside this ongoing path. A genuinely finished execution uses unchanged automatic operations v2 eligibility instead.
+
+First save the truthful raw observation using the existing operations v2 process. The administrative preview then requires that exact stored observation: source `operations_sync_v2`, verified `operationalWorkerId`, same booking/day/driver/service/status/Start, individual booking kind and null End. No invented source fields or new raw-only bypass is accepted. Existing claims, foreign prefixes, protected records, closed periods, approved settlements, actor-role rereads and preview hashes retain their existing guards.
+
+For the administrative save, the application wash is «مكتملة» with `completion_basis: owner_administrative_decision`; the original `Washing Started` and null End remain unchanged and the owner decision stays separate. Existing 20/3/23 pricing and a single 4.50 unpaid commission are reused. Collection stays pending, payment method null; no journal, payroll payment or separate commission record is created.
+
+Read back the natural booking identity across all prefixes, one canonical wash/claim and one unpaid commission. Later real End evidence is stored as a new truthful observation through operations v2; it cannot create a second wash or commission or rewrite the original administrative evidence. A protected/changed prefix remains a review item, never an excuse to replace the claim or use a new identity. The already completed real-source bookings 5666443 and 5666482 need verification only, not another administrative save.
 
 ## One-time missing-start exception approved 25 October 2026
 

@@ -1,5 +1,9 @@
 # Agent 7 operational sync v2 — raw facts and evidenced wash executions
 
+## Actual ongoing washing under the standing owner decision (27 October 2026)
+
+Automatic v2 still requires genuine Start and End before it creates an executed wash. An actual `Washing Started` observation with genuine Start and null End is first stored truthfully by v2. Under Hadi's standing 18 October instruction, the authorized operations manager then uses the existing administrative preview/save workflow described in [SWEATER_ADMINISTRATIVE_COMPLETION.md](SWEATER_ADMINISTRATIVE_COMPLETION.md), with the original owner reference and the current batch's explicit booking IDs. No daily approval request, invented End, collection assertion, new sender, signature, key, pin, or schedule is required. Existing natural claims and canonical wash identities prevent a second entitlement when genuine completion arrives later. Never replay the two already verified 26 October executions merely to test this repair.
+
 ## Later completion after a started observation (24 October 2026)
 
 The same v2 preview/save/status workflow can promote an earlier `washing_started`

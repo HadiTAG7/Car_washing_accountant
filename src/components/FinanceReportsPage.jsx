@@ -8,7 +8,7 @@ import { LanguageContext } from '../i18n/LanguageContext';
 import FinanceReportPublisher from './FinanceReportPublisher';
 import FinanceReportOverview from './FinanceReportOverview';
 import { needsReportWording } from '../lib/reportPublication';
-import { readableFinanceText, financeReportHeading } from '../lib/financeReportPresentation';
+import { readableFinanceText, financeSentence } from '../lib/financeReportPresentation';
 import './FinanceWorkspace.css';
 import './FinanceReportsPage.css';
 
@@ -58,7 +58,7 @@ export default function FinanceReportsPage() {
           {!archive.loading && !error && visibleItems.length === 0 && <p>لا تقارير محفوظة في هذا النطاق. غير المتاح ليس صفرًا.</p>}
           {visibleItems.map(item => <button type="button" className={item.reportId === reportId ? 'fw-selected' : ''} key={item.reportId}
             aria-pressed={item.reportId === reportId} onClick={() => { setSelected(item.reportId); setRevision(undefined); setTab('summary'); }}>
-            <strong>{financeReportHeading(item)}</strong><span>{item.dateRiyadh} · {FINANCE_ROLES[item.sourceRole]}</span><small>النسخة {item.revision}</small>
+            <strong>{financeSentence(item.title)}</strong><span>{item.dateRiyadh} · {FINANCE_ROLES[item.sourceRole]}</span><small>النسخة {item.revision}</small>
           </button>)}
           {pageCount>1&&<nav className="finance-report-pagination" aria-label="صفحات تقارير المالية">
             <button type="button" disabled={currentPage<=1||archive.loading} onClick={()=>choosePage(currentPage-1)}>السابق</button>

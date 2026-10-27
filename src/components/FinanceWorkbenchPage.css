@@ -55,6 +55,7 @@
 .fw-stage--ready { background: var(--sw-warning-soft); color: var(--sw-warning); }
 .fw-stage--approved { background: var(--sw-info-soft); color: var(--sw-info); }
 .fw-stage--complete { background: var(--sw-success-soft); color: var(--sw-success); }
+.fw-stage--posted_review { background: var(--sw-warning-soft); color: var(--sw-warning); }
 .fw-page.fw-workbench .fw-age-warning { color: var(--sw-danger); }
 .fw-pagination { display: flex; flex-wrap: wrap; gap: 5px; margin-block: 16px 10px; }
 .fw-workbench .fw-pagination button { padding: 6px 10px; min-width: 44px; font-size: .75rem; }

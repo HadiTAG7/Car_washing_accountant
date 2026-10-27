@@ -12,6 +12,7 @@ import { filterWorkbenchItems, hasPaymentConflict, documentDay } from '../src/li
 import { cashBankCorrection } from './cashBankCorrection.js';
 import {cashResidualCorrection} from './cashResidualCorrection.js';
 import { payrollCashFunding } from './payrollCashFunding.js';
+import { financePostingHistory } from './financePostingHistory.js';
 
 const kindSchema = z.enum(['variable', 'monthly', 'annual', 'startup']);
 const id = z.string().regex(/^[\p{L}\p{N}_.:-]{1,160}$/u);
@@ -144,8 +145,9 @@ async function workflowDocument(db, tx, kind, sourceId, row, currentState = null
     catch (error) { if (!(error instanceof FinanceReviewError)) throw error; additionalIssues.push(error.message); }
   }
   const journals = await Promise.all(state.journalIds.map(id => tx.get(db.collection('journal_entries').doc(id))));
-  const reversed = journals.some(journal => journal.data()?.status === 'reversed' || journal.data()?.reversalOf);
-  const posted = journals.some(journal => journal.data()?.status === 'posted') && !reversed;
+  const postingHistory = await financePostingHistory(db, tx, journals, sourceId);
+  const reversed = postingHistory.reversed.length > 0;
+  const posted = postingHistory.active.length > 0;
   const evidence = row.finance_metadata || {};
   const paymentProven = row.payment_status === 'paid' && isRealDate(row.paid_date)
     && typeof evidence.fundingReference === 'string' && Boolean(evidence.fundingReference.trim())
@@ -153,19 +155,21 @@ async function workflowDocument(db, tx, kind, sourceId, row, currentState = null
     && ((evidence.fundingType === 'company_cash' && row.payment_method === 'cash')
       || (evidence.fundingType === 'company_bank' && ['transfer', 'card'].includes(row.payment_method)));
   const safeUnposted = !state.protectedSource && !state.closed && preview.ready && !additionalIssues.length && !detail.issues.length;
-  const workflowStage = posted ? paymentProven ? 'complete' : 'posted_unproven'
+  const correctedNeedsReview = reversed && (detail.issues.length > 0 || postingHistory.issues.length > 0 || !paymentProven);
+  const workflowStage = posted ? correctedNeedsReview ? 'posted_review' : paymentProven ? 'complete' : 'posted_unproven'
     : safeUnposted ? detail.approved ? 'approved' : 'ready' : 'incomplete';
-  return { ...detail, issues: [...detail.issues, ...additionalIssues], workflowStage,
+  return { ...detail, issues: [...detail.issues, ...additionalIssues, ...postingHistory.issues], workflowStage, postingHistory,
     approvalReady: safeUnposted && !detail.approved && !detail.issues.length,
     postingReady: safeUnposted && detail.approved && !detail.issues.length,
     paymentProven, paymentConflict: hasPaymentConflict(row),
-    workflowNote: reversed ? 'له قيد معكوس؛ المصدر محمي ويحتاج مراجعة.' : state.closed ? 'الفترة مقفلة؛ العرض فقط.'
+    workflowNote: reversed && posted ? 'له قيود مرحلة سارية بعد عكس الأصل؛ لا يعاد ترحيله. اكتمال الدليل والسداد منفصل عن وجود القيود.'
+      : reversed ? 'له قيد معكوس دون بديل مرحل مثبت؛ المصدر محمي ويحتاج مراجعة.' : state.closed ? 'الفترة مقفلة؛ العرض فقط.'
       : state.protectedSource && !posted ? 'المصدر محمي؛ لم يثبت قيد مرحّل صالح في القراءة الحالية.' : null,
     journalNumbers: journals.map(j => j.data()?.entryNumber).filter(Number.isFinite) };
 }
 async function browseDocuments(db) {
   const names = [...Object.values(FINANCE_KINDS).flatMap(spec => [spec.collection, spec.parent || spec.category]),
-    'journal_entries', 'posting_locks', 'finance_reviews', 'accounting_periods', 'app_settings', 'chart_of_accounts'];
+    'journal_entries', 'journal_lines', 'posting_locks', 'finance_reviews', 'accounting_periods', 'app_settings', 'chart_of_accounts'];
   const snapshot = await financeReadSnapshot(db, names);
   const tx = { get: reference => reference.get() };
   const items = [];

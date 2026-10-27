@@ -60,12 +60,13 @@ suite('ongoing administrative completion — isolated real transactions', () => 
     const raw = (await db.collection('sweater_raw_payloads').get()).docs.map(d => d.data());
     expect(raw.some(r => r.rawPayload.rawStatus === 'Collecting Payment' && r.rawPayload.completedAt === payload.records[0].completedAt)).toBe(true);
   });
-  it.each(['start','worker','role','period'])('rechecks %s inside the save transaction after preview', async kind => {
+  it.each(['start','worker','role','period','kind'])('rechecks %s inside the save transaction after preview', async kind => {
     const p = ongoingCompletionFixture(), r = await previewAdministrativeCompletion(db, p, 'admin');
     if (kind === 'start') await db.collection('sweater_bookings').doc('B-880001').update({ 'record.startedAt': '2026-10-26T21:14:00+03:00' });
     if (kind === 'worker') await db.collection('bikers').doc('worker1').update({ end_date: '2026-10-25' });
     if (kind === 'role') await db.collection('users').doc('admin').update({ role: 'operator' });
     if (kind === 'period') await db.collection('accounting_periods').doc('2026-10').set({ status: 'closed' });
+    if (kind === 'kind') await db.collection('sweater_bookings').doc('B-880001').update({ 'record.bookingKind': 'corporate' });
     await expect(saveAdministrativeCompletion(db, FieldValue, { payload: p, reviewedPayloadHash: r.reviewedPayloadHash, previewStateHash: r.previewStateHash }, 'admin')).rejects.toThrow();
     expect((await db.collection('washes').get()).empty).toBe(true);
   });

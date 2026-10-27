@@ -37,12 +37,12 @@ describe('standing owner approval for actual ongoing execution', () => {
   ])('rejects missing, future, unrelated and out-of-scope ongoing evidence', mutate => {
     const p = ongoingCompletionFixture(); mutate(p); expect(reviewAdministrativeCompletion(p).ready).toBe(false);
   });
-  it.each(['missing', 'worker', 'status', 'start', 'end', 'service', 'source'])('requires the existing verified observation: %s', async kind => {
+  it.each(['missing', 'worker', 'status', 'start', 'end', 'service', 'source', 'kind'])('requires the existing verified observation: %s', async kind => {
     const p = ongoingCompletionFixture(), data = seed(p), path = 'sweater_bookings/B-880001';
     if (kind === 'missing') delete data[path];
     else if (kind === 'worker') data[path].operationalWorkerId = 'unverified';
     else if (kind === 'source') data[path].source = 'manual';
-    else data[path].record[{ status: 'rawStatus', start: 'startedAt', end: 'completedAt', service: 'serviceType' }[kind]] = 'different';
+    else data[path].record[{ status: 'rawStatus', start: 'startedAt', end: 'completedAt', service: 'serviceType', kind: 'bookingKind' }[kind]] = kind === 'kind' ? 'corporate' : 'different';
     const db = memoryFinanceDb(data), result = await previewAdministrativeCompletion(db, p, 'admin');
     expect(result.canSave).toBe(false); expect(result.counts.needsReview).toBe(1);
     expect([...db.rows.keys()].some(k => k.startsWith('washes/'))).toBe(false);

@@ -3,6 +3,11 @@ import {financeFixture} from '../../../server/__tests__/financeFixtures';
 import {financeReportNotes,financeReportHeading,financeReportSummary,financeSentence,financeSnapshotRows,readableFinanceText,financeOwnerDecisions} from '../financeReportPresentation';
 const metric=(id,value,basis='ledger')=>({id,label:id,value,basis,unit:'ريال',coverage:'لقطة محفوظة',asOf:'2026-10-19T09:00:00+03:00'});
 describe('read-only finance report presentation',()=>{
+  it('shows a timed review with its date once and keeps the saved title',()=>{
+    const report=financeFixture({dateRiyadh:'2026-10-26',title:'مراجعة 26 أكتوبر 09:00'}), before=JSON.stringify(report);
+    expect(financeReportHeading(report)).toBe('26 أكتوبر: 09:00');
+    expect(JSON.stringify(report)).toBe(before);
+  });
   it('does not repeat the report date in nested heading prefixes or change the saved title',()=>{
     const report=financeFixture({dateRiyadh:'2026-10-27',title:'27 أكتوبر: مراجعة 27 أكتوبر: القيود مطابقة'});
     expect(financeReportHeading(report)).toBe('27 أكتوبر: القيود مطابقة');

@@ -3940,15 +3940,5 @@
   "تعذر إثبات مطابقة عكس القيد": "Reversal matching could not be verified for entry",
   "؛ لا تعاد العملية.": "; do not repeat the operation.",
   "له قيود مرحلة سارية بعد عكس الأصل؛ لا يعاد ترحيله. اكتمال الدليل والسداد منفصل عن وجود القيود.": "Current postings exist after reversal of the original; do not repost. Document and payment evidence are separate from the existence of postings.",
-  "له قيد معكوس دون بديل مرحل مثبت؛ المصدر محمي ويحتاج مراجعة.": "A reversed posting has no confirmed posted replacement; the source remains protected and needs review.",
-  "عدد سويتر وقت اللقطة": "Sweater count at snapshot time",
-  "المسجل المؤكد حتى وقت اللقطة": "Confirmed records up to snapshot time",
-  "المسجل عندنا لنفس الوقت": "Our recorded count at the same time",
-  "العدد المؤكد لا يشمل": "The confirmed count excludes",
-  "غسلات بلا وقت انتهاء؛ لذلك ما نقدر نحسب الفرق بدقة.": "washes without a completion time, so an exact difference cannot be calculated.",
-  "بانتظار تفاصيل سويتر": "Waiting for Sweater details",
-  "فرق عمليات أخرى": "Other operations teams",
-  "الدور الأصلي [VAR0]": "Original role [VAR0]",
-  "الدور الأصلي": "Original role",
-  "التغطية على أيام العمل المتاحة المكتملة؛ صفر الغسلات يظهر 0%. الإلغاءات الغائبة ليست صفرًا.": "Coverage uses completed available workdays; zero washes show 0%. Missing cancellations are not zero."
+  "له قيد معكوس دون بديل مرحل مثبت؛ المصدر محمي ويحتاج مراجعة.": "A reversed posting has no confirmed posted replacement; the source remains protected and needs review."
 }

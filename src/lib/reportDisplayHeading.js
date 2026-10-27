@@ -8,7 +8,7 @@ export function stripReportDatePrefixes(title, day) {
   const escape = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const labelPattern = escape(label).replace(/\s+/g, '\\s*');
   const lead = /^(?:(?:مراجعة|تقرير|ملخص|متابعة)\s*[:：—–-]?\s*)?/u.source;
-  const prefix = new RegExp(`${lead}(?:${labelPattern}(?:\\s+${year})?|${escape(day)})(?:\\s*[:：—–-]\\s*|\\s*$)`, 'u');
+  const prefix = new RegExp(`${lead}(?:${labelPattern}(?:\\s+${year})?|${escape(day)})(?:\\s*[:：—–-]\\s*|\\s*$|\\s+(?=[0-2]?\\d:[0-5]\\d))`, 'u');
   let result = String(title || '').replace(/[٠-٩]/g, digit => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit))).trim();
   for (let count = 0; count < 20; count++) {
     const next = result.replace(prefix, '').trim();

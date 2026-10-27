@@ -18,6 +18,17 @@ function archive(report = operationsFixture()) {
     : base({ report: r.revision === 1 ? report : { ...report, revision: 2, correctionReason: 'تصحيح معزول', summary: 'ملخص النسخة الثانية' }, currentRevision: 2,
       savedAt: '2026-10-19T07:00:00Z', history: [{ revision: 2, reason: 'تصحيح' }, { revision: 1, reason: 'أول' }] }));
 }
+it('shows plain merged team names with attribution in tooltips and sends a whole-archive group filter', () => {
+  const report=operationsFixture(), teams=[{id:4,label:'4: مدير العمليات'},{id:12,label:'مدير العمليات — الرقم الأصلي12 قبل إعادة الترقيم'},{id:6,label:'مدير العمليات — الرقم الأصلي6 قبل الدمج'},{id:7,label:'مزامنة العمليات — الرقم الأصلي7 قبل الدمج'},{id:8,label:'الأصول والصيانة — الرقم الأصلي8 قبل الدمج'}];
+  mock.read.mockImplementation((_e,r)=>base(r.action==='list'?{items:[report],teams,page:1,pageCount:1,total:1}:{report,history:[]}));
+  render(<OperationsReportsPage />);
+  const filter=screen.getByRole('combobox',{name:'فريق التقرير'});
+  expect([...filter.options].map(option=>option.textContent)).toEqual(['كل فرق العمليات','مدير العمليات','المزامنة','الأصول والصيانة']);
+  expect(filter.options[1].title).toContain('الأصلي12');
+  fireEvent.change(filter,{target:{value:'operations'}});
+  expect(mock.read.mock.calls.some(([,r])=>r.action==='list'&&r.team==='operations'&&r.sourceRole===undefined)).toBe(true);
+  expect(filter.title).toContain('الأصلي12'); expect(mock.api).not.toHaveBeenCalled();
+});
 it('preserves Arabic content, separate coverage/stages and historical revision warning', () => {
   archive(); render(<LanguageContext.Provider value={{ language: 'en' }}><OperationsReportsPage /></LanguageContext.Provider>);
   expect(screen.getAllByText('ملخص النسخة الثانية').length).toBeGreaterThan(0); expect(screen.getByText('معاينة لا تثبت الحفظ')).toBeTruthy(); expect(screen.getByText('تغطية الشركات غير متاحة في المصدر')).toBeTruthy();

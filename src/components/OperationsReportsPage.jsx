@@ -13,6 +13,7 @@ import './OperationsReportsPage.css';
 import OperationsReportOverview from './OperationsReportOverview';
 import { operationsHeading } from '../lib/operationsReportPresentation';
 import { needsReportWording } from '../lib/reportPublication';
+import { operationsTeamOptions } from '../lib/operationsReportTeams';
 
 const bases = { operational: 'قيمة تشغيلية', estimate: 'تقديري', unavailable: 'غير متاح' };
 const dateText = value => value ? new Date(value).toLocaleString('ar-SA', { timeZone: 'Asia/Riyadh', calendar: 'gregory', numberingSystem: 'latn', dateStyle: 'medium', timeStyle: 'short' }) : 'غير موثق بدقة';
@@ -23,7 +24,8 @@ export default function OperationsReportsPage() {
   const [tab, setTab] = useState('summary'), [state, setState] = useState('all');
   const language = useContext(LanguageContext);
   const archive = useOperationsRead('operations-reports', { action: 'list',page,pageSize:8,...(query?{query}:{}),
-    ...(kind!=='all'?{kind}:{}),...(status!=='all'?{status}:{}),...(from?{from}:{}),...(to?{to}:{}),...(sourceRole!=='all'?{sourceRole:Number(sourceRole)}:{}) });
+    ...(kind!=='all'?{kind}:{}),...(status!=='all'?{status}:{}),...(from?{from}:{}),...(to?{to}:{}),...(sourceRole!=='all'?{team:sourceRole}:{}) });
+  const teams=archive.data?.teamOptions||operationsTeamOptions((archive.data?.teams||[]).map(team=>({sourceRole:team.id,sourceLabel:team.label})));
   const items = Array.isArray(archive.data?.items) ? archive.data.items : [];
   const visibleItems = items;
   const currentPage=archive.data?.page||page,pageCount=archive.data?.pageCount||1;
@@ -44,8 +46,8 @@ export default function OperationsReportsPage() {
     <main className="fw-page finance-reports-page operations-reports-page" dir="rtl">
       <div className="fw-toolbar">
         <label>بحث في كل التقارير <input type="search" aria-label="بحث في كل التقارير" maxLength={200} value={query} onChange={e=>{setQuery(e.target.value);resetSelection();}} /></label>
-        <label>الفريق <select aria-label="فريق التقرير" value={sourceRole} onChange={e=>{setSourceRole(e.target.value);resetSelection();}}><option value="all">كل فرق العمليات</option>
-          {(archive.data?.teams||[]).map(({id,label})=><option key={id} value={id}>{label}</option>)}</select></label>
+        <label>الفريق <select aria-label="فريق التقرير" title={teams.find(team=>team.id===sourceRole)?.tooltip} value={sourceRole} onChange={e=>{setSourceRole(e.target.value);resetSelection();}}><option value="all">كل فرق العمليات</option>
+          {teams.map(({id,label,tooltip})=><option key={id} value={id} title={tooltip}>{label}</option>)}</select></label>
         <label>نوع التقرير <select value={kind} onChange={e => { setKind(e.target.value); resetSelection(); }}>
           <option value="all">كل الأنواع</option>{Object.entries(OPERATIONS_KINDS).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
         </select></label>

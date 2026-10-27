@@ -1,5 +1,6 @@
 import { financeSentence, readableFinanceText, financeOwnerDecisions } from './financeReportPresentation.js';
 import { needsReportWording } from './reportPublication.js';
+import { reportDateLabel, stripReportDatePrefixes } from './reportDisplayHeading.js';
 
 // Operational references belong to the original technical report regardless
 // of whether a name, noun, plural or punctuation precedes the booking number.
@@ -11,8 +12,8 @@ export function operationsSentence(value){return financeSentence(String(value||'
   .replace(/\bCEO\b/giu,'الرئيس التنفيذي').replace(/\bCollecting\b/giu,'تحصيل').replace(/\bPayment\b/giu,'الدفع')
   .replace(/\s+/gu,' ').trim();}
 export function operationsHeading(report){
-  const date=new Intl.DateTimeFormat('ar-SA-u-ca-gregory',{day:'numeric',month:'long',numberingSystem:'latn',timeZone:'UTC'}).format(new Date(`${report.dateRiyadh}T00:00:00Z`));
-  let title=operationsSentence(String(report.title||'').split(/[—|]/u)[0]);
+  const date=reportDateLabel(report.dateRiyadh);
+  let title=operationsSentence(stripReportDatePrefixes(readableFinanceText(report.title), report.dateRiyadh).split(/[—|]/u)[0]);
   if(needsReportWording(title))title=({sync:'متابعة الغسلات',morning_review:'ملخص التشغيل',assets:'متابعة الأصول والصيانة',weekly:'مراجعة تشغيل الأسبوع',targeted:'متابعة تشغيلية'})[report.kind]||'ملخص العمليات';
   return `${date}: ${title||'ملخص العمليات'}`;
 }

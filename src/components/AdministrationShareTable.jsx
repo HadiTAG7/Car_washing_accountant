@@ -32,7 +32,7 @@ export default function AdministrationShareTable() {
     <p className="font-semibold">النسبة المعتمدة: {FINANCIAL_SETTINGS.managementShareRate*100}%</p>
     <p className="text-sm">نفس نتيجة قائمة الدخل قبل الحصة. كل شهر مستقل؛ الخسارة لا تنتقل لحساب حصة الأشهر اللاحقة.</p>
     <p className="text-sm">التصنيف المقترح للسجلات لم يدخل المصروفات بعد. لا تسجّل هذه المعاينة استحقاقًا أو إثبات سداد.</p>
-    {loading?<p role="status">جارٍ قراءة نتائج الأشهر...</p>:error?<p role="alert">تعذرت قراءة نتيجة الشهر؛ لا تُفترض حصة صفر.</p>:<ScrollableTable><table className="w-full text-sm text-right"><thead><tr>
+    {loading?<p role="status">جارٍ قراءة نتائج الأشهر...</p>:error?<p role="alert">تعذرت قراءة نتيجة الشهر؛ لا تُفترض حصة صفر.</p>:<ScrollableTable className="overflow-x-auto"><table className="w-full text-sm text-right"><thead><tr>
       {['الشهر','صافي الربح قبل الحصة','حصة الإدارة','الحالة'].map(label=><th key={label} className="p-3">{label}</th>)}
     </tr></thead><tbody>{rows.map(row=><tr key={row.month} className="border-t border-slate-200 dark:border-slate-700">
       <th className="p-3">{formatMonthLabel(row.month)}</th><td className="p-3">{row.profit==null?'غير متاح':formatCurrencyPrecise(row.profit)}</td>

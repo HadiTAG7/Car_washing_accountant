@@ -12,7 +12,7 @@ export default function TemporaryProposalTable({ rows, bikers = [], showDestinat
   return <div className="space-y-3">
     <label className="block text-sm">بحث في السجلات <input type="search" className="sw-input block w-full mt-1" value={search} onChange={e=>setSearch(e.target.value)} /></label>
     <p className="text-sm">عدد السجلات: {visible.length} · مجموع المبالغ: {formatCurrencyPrecise(visible.reduce((sum,row)=>sum+row.amount,0))}</p>
-    <ScrollableTable><table className="w-full text-sm text-right"><thead><tr>
+    <ScrollableTable className="overflow-x-auto"><table className="w-full text-sm text-right"><thead><tr>
       {['الوصف','المبلغ','التاريخ','البايكر','حالة الاسترداد','المعلق',...(showDestination?['المكان المقترح']:[]),'ملاحظة'].map(label=><th key={label} className="p-3">{label}</th>)}
     </tr></thead><tbody>{visible.map(row=><tr key={row.id} className="border-t border-slate-200 dark:border-slate-700">
       <td className="p-3 min-w-56">{row.title}</td><td className="p-3 whitespace-nowrap">{formatCurrencyPrecise(row.amount)}</td>

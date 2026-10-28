@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { financeWorkbench } from '../financeWorkbench.js';
-import { assertFinanceApproval, financeProblems } from '../../functions/src/financeReview.js';
+import { postSource, reverseEntry } from '../../functions/src/ledger.js';
+import { FieldValue } from 'firebase-admin/firestore';
+import { assertFinanceApproval, financeProblems, financeReviewId, financeSourceHash } from '../../functions/src/financeReview.js';
 import { expensePatch, memoryFinanceDb } from './financeFixtures';
 
 const auth = { uid: 'test-admin' };
@@ -28,7 +30,7 @@ function employeeRequest(requestId, amount, kind = 'variable') {
       fundingJournalId: 'test-funding', allocatedAmount: amount } }) };
 }
 describe('finance workbench version-bound review', () => {
-  it('keeps an owner statement separate from a verified advance and credits 1300 only after a matched link', async () => {
+  it('separates owner statement, matched funding and the blocked 1300 posting preview', async () => {
     const db = database();
     seedAdvance(db);
     const ownerOnly = await capture(db, { paymentStatus: 'paid', paymentMethod: 'card', paidDate: '2026-10-18',
@@ -40,16 +42,26 @@ describe('finance workbench version-bound review', () => {
     const patch = { employeeAdvanceLink: { version: 1, advanceId: 'test-advance', employeeId: 'test-employee',
       fundingJournalId: 'test-funding', allocatedAmount: 100 } };
     const preview = await financeWorkbench(db, auth, { action: 'preview', ...common, patch });
-    expect(preview.postingPreview.ready).toBe(true);
+    expect(preview.postingPreview.ready).toBe(false);
+    expect(preview.issues.join(' ')).toMatch(/الرواتب والاسترداد غير مفعلة/);
     expect(preview.postingPreview.lines).toContainEqual(expect.objectContaining({ accountId: '1300', credit: 100 }));
     expect(preview.postingPreview.lines.some(line => line.accountId === '1010' || line.accountId === '1020')).toBe(false);
     const saved = await financeWorkbench(db, auth, { action: 'save', ...common, patch, previewHash: preview.previewHash,
       reason: 'TEST advance linkage', confirm: true });
     const read = await financeWorkbench(db, auth, { action: 'read', kind: 'variable', sourceId: saved.sourceId });
-    expect(read.approvalReady).toBe(true);
-    expect(read.paymentProven).toBe(true);
+    expect(read.approvalReady).toBe(false);
+    expect(read.paymentProven).toBe(false);
     expect(read.workflowDimensions.funding.ledgerMatched).toBe(true);
+    await expect(financeWorkbench(db, auth, { action: 'approve', kind: 'variable', sourceId: saved.sourceId,
+      sourceHash: read.sourceHash, postingHash: 'a'.repeat(64), reason: 'TEST blocked shared balance', confirm: true })).rejects.toThrow();
     expect([...db.rows.keys()].some(key => key.startsWith('journal_entries/') && key !== 'journal_entries/test-funding')).toBe(false);
+    db.rows.set('temporary_expenses/test-advance', { ...db.rows.get('temporary_expenses/test-advance'),
+      status: 'recovered', recovered_amount: 150 });
+    const recoveredFirst = await financeWorkbench(db, auth, { action: 'read', kind: 'variable', sourceId: saved.sourceId });
+    expect(recoveredFirst.approvalReady).toBe(false);
+    expect(recoveredFirst.workflowDimensions.funding.ledgerMatched).toBe(false);
+    db.rows.set('temporary_expenses/test-advance', { ...db.rows.get('temporary_expenses/test-advance'),
+      status: 'pending', recovered_amount: 0 });
     db.rows.set('journal_entries/test-funding', { ...db.rows.get('journal_entries/test-funding'), status: 'reversed' });
     const reversed = await financeWorkbench(db, auth, { action: 'read', kind: 'variable', sourceId: saved.sourceId });
     expect(reversed.approvalReady).toBe(false);
@@ -59,7 +71,7 @@ describe('finance workbench version-bound review', () => {
     db.rows.set('journal_entries/test-funding', { ...funding, lines: undefined });
     db.rows.set('journal_lines/test-debit', { entryId: 'test-funding', accountId: '1300', debit: 150, credit: 0 });
     db.rows.set('journal_lines/test-credit', { entryId: 'test-funding', accountId: '1010', debit: 0, credit: 150 });
-    expect((await financeWorkbench(db, auth, { action: 'read', kind: 'variable', sourceId: saved.sourceId })).paymentProven).toBe(true);
+    expect((await financeWorkbench(db, auth, { action: 'read', kind: 'variable', sourceId: saved.sourceId })).workflowDimensions.funding.ledgerMatched).toBe(true);
     db.rows.set('journal_lines/test-credit', { entryId: 'test-funding', accountId: '2000', debit: 0, credit: 150 });
     expect((await financeWorkbench(db, auth, { action: 'read', kind: 'variable', sourceId: saved.sourceId })).approvalReady).toBe(false);
     db.rows.set('journal_lines/test-credit', { entryId: 'test-funding', accountId: '1010', debit: 0, credit: 150 });
@@ -70,7 +82,7 @@ describe('finance workbench version-bound review', () => {
     expect(second.postingPreview.ready).toBe(false);
     expect(second.issues.join(' ')).toMatch(/تتجاوز التمويل/);
   });
-  it('reserves the exact advance across expense kinds and rejects a duplicate original', async () => {
+  it('checks the exact advance allocation across expense kinds while withholding approval and rejecting duplicates', async () => {
     const db = database(); seedAdvance(db);
     db.rows.set('monthly_expense_categories/test-category', { name: 'TEST monthly' });
     db.rows.set('chart_of_accounts/5200', {});
@@ -78,13 +90,15 @@ describe('finance workbench version-bound review', () => {
     const saved = [];
     for (const request of [first, second]) {
       const preview = await financeWorkbench(db, auth, { action: 'previewCapture', ...request });
-      expect(preview.postingPreview.ready).toBe(true);
+      expect(preview.postingPreview.ready).toBe(false);
+      expect(preview.postingPreview.employeeAdvanceProof).toBeTruthy();
       saved.push(await financeWorkbench(db, auth, { action: 'capture', ...request, previewHash: preview.previewHash,
         reason: 'TEST exact allocation', confirm: true }));
     }
     for (const [index, item] of saved.entries()) {
-      expect((await financeWorkbench(db, auth, { action: 'read', kind: index ? 'monthly' : 'variable',
-        sourceId: item.sourceId })).approvalReady).toBe(true);
+      const read = await financeWorkbench(db, auth, { action: 'read', kind: index ? 'monthly' : 'variable', sourceId: item.sourceId });
+      expect(read.approvalReady).toBe(false);
+      expect(read.workflowDimensions.funding.ledgerMatched).toBe(true);
     }
     const excess = await financeWorkbench(db, auth, { action: 'previewCapture', ...employeeRequest('EXCESS', 0.01) });
     expect(excess.postingPreview.ready).toBe(false);
@@ -93,7 +107,7 @@ describe('finance workbench version-bound review', () => {
     duplicate.patch.invoiceUrl = first.patch.invoiceUrl;
     await expect(financeWorkbench(db, auth, { action: 'previewCapture', ...duplicate })).rejects.toThrow(/مرتبط/);
   });
-  it('rechecks concurrent saved allocations before approval even when both previews were ready', async () => {
+  it('rechecks concurrent saved allocations while every employee approval remains blocked', async () => {
     const db = database(); seedAdvance(db);
     const first = employeeRequest('BASE', 100);
     const firstPreview = await financeWorkbench(db, auth, { action: 'previewCapture', ...first });
@@ -101,7 +115,7 @@ describe('finance workbench version-bound review', () => {
       reason: 'TEST base allocation', confirm: true });
     const contenders = [employeeRequest('RACE-A', 40), employeeRequest('RACE-B', 40)];
     const previews = await Promise.all(contenders.map(request => financeWorkbench(db, auth, { action: 'previewCapture', ...request })));
-    expect(previews.every(preview => preview.postingPreview.ready)).toBe(true);
+    expect(previews.every(preview => !preview.postingPreview.ready && preview.postingPreview.employeeAdvanceProof)).toBe(true);
     const saved = await Promise.all(contenders.map((request, index) => financeWorkbench(db, auth, { action: 'capture', ...request,
       previewHash: previews[index].previewHash, reason: 'TEST racing allocation', confirm: true })));
     for (const item of saved) {
@@ -111,6 +125,54 @@ describe('finance workbench version-bound review', () => {
       await expect(financeWorkbench(db, auth, { action: 'approve', kind: 'variable', sourceId: item.sourceId,
         sourceHash: read.sourceHash, postingHash: 'a'.repeat(64), reason: 'TEST refuse over-allocation', confirm: true })).rejects.toThrow();
     }
+  });
+  it('refuses reversing linked advance funding and permits reversal after an unposted link is removed', async () => {
+    const db = database(); seedAdvance(db);
+    const request = employeeRequest('REVERSAL', 100);
+    const preview = await financeWorkbench(db, auth, { action: 'previewCapture', ...request });
+    const saved = await financeWorkbench(db, auth, { action: 'capture', ...request, previewHash: preview.previewHash,
+      reason: 'TEST linked advance', confirm: true });
+    const before = structuredClone([...db.rows]);
+    await expect(reverseEntry(db, FieldValue, 'test-funding', { entryDate: '2026-10-19', userId: 'test-admin' }))
+      .rejects.toThrow(/مرتبط بمصروفات/);
+    expect([...db.rows]).toEqual(before);
+    const row = db.rows.get(`variable_expenses/${saved.sourceId}`);
+    delete row.finance_metadata.employeeAdvanceLink;
+    const reversed = await reverseEntry(db, FieldValue, 'test-funding', { entryDate: '2026-10-19', userId: 'test-admin' });
+    expect(reversed.reversedEntryId).toBe('test-funding');
+    expect(db.rows.get('journal_entries/test-funding').status).toBe('reversed');
+  });
+  it('cannot make a stale linked expense eligible while funding reversal races with capture', async () => {
+    const db = database(); seedAdvance(db);
+    const request = employeeRequest('REVERSAL-RACE', 100);
+    const preview = await financeWorkbench(db, auth, { action: 'previewCapture', ...request });
+    const outcomes = await Promise.allSettled([
+      reverseEntry(db, FieldValue, 'test-funding', { entryDate: '2026-10-19', userId: auth.uid }),
+      financeWorkbench(db, auth, { action: 'capture', ...request, previewHash: preview.previewHash,
+        reason: 'TEST concurrent link', confirm: true }),
+    ]);
+    const captured = outcomes[1].status === 'fulfilled' ? outcomes[1].value : null;
+    if (captured) {
+      const read = await financeWorkbench(db, auth, { action: 'read', kind: 'variable', sourceId: captured.sourceId });
+      expect(read.approvalReady).toBe(false);
+      expect(read.paymentProven).toBe(false);
+    }
+    expect([...db.rows.keys()].filter(key => key.startsWith('journal_entries/') && key !== 'journal_entries/test-funding'
+      && db.rows.get(key).sourceType === 'expense')).toEqual([]);
+  });
+  it('blocks the direct ledger posting door even with a forged approved review', async () => {
+    const db = database(); seedAdvance(db);
+    const request = employeeRequest('FORGED-APPROVAL', 100);
+    const preview = await financeWorkbench(db, auth, { action: 'previewCapture', ...request });
+    const saved = await financeWorkbench(db, auth, { action: 'capture', ...request, previewHash: preview.previewHash,
+      reason: 'TEST linked source', confirm: true });
+    const row = db.rows.get(`variable_expenses/${saved.sourceId}`);
+    row.approval_status = 'approved';
+    db.rows.set(`finance_reviews/${financeReviewId('variable', saved.sourceId)}`,
+      { status: 'approved', sourceHash: financeSourceHash(row) });
+    await expect(postSource(db, FieldValue, { kind: 'variable', sourceId: saved.sourceId }, { userId: auth.uid }))
+      .rejects.toThrow(/الرواتب والاسترداد/);
+    expect([...db.rows.keys()].filter(key => key.startsWith('journal_entries/'))).toEqual(['journal_entries/test-funding']);
   });
   it('a no-op correction or reverting values cannot resurrect an old approval receipt', async () => {
     const db = database(), data = await capture(db), common = { kind: 'variable', sourceId: data.result.sourceId, sourceHash: data.read.sourceHash };

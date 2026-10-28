@@ -1,6 +1,7 @@
 // An owner's statement records a claim; only a posted, employee-specific
 // advance can justify crediting 1300 for a purchase made from that advance.
 const COLLECTIONS = ['variable_expenses', 'monthly_expenses', 'annual_expense_entries', 'startup_cost_entries'];
+export const EMPLOYEE_ADVANCE_SETTLEMENT_BLOCKER = 'تسوية عهدة الموظف مع الرواتب والاسترداد غير مفعلة؛ الاعتماد والترحيل متوقفان حتى توحيد الرصيد.';
 const id = value => typeof value === 'string' && /^[\p{L}\p{N}_.:-]{1,160}$/u.test(value);
 const cents = value => Math.round(Number(value) * 100);
 const halala = value => Number.isFinite(value) && value > 0 && Math.abs(value * 100 - cents(value)) < 1e-6;
@@ -79,6 +80,10 @@ export async function verifyEmployeeAdvanceLink(db, tx, kind, sourceId, row, gro
   if (!saved.exists || saved.data().finance_metadata?.employeeAdvanceLink?.advanceId !== link.advanceId) allocated += cents(link.allocatedAmount);
   else allocated += cents(link.allocatedAmount) - cents(saved.data().finance_metadata.employeeAdvanceLink.allocatedAmount || 0);
   if (allocated > available) return { issues: ['تخصيصات عهدة الموظف تتجاوز التمويل المرحل المتاح.'], proof: null };
-  return { issues: [], proof: { advanceId: link.advanceId, employeeId: link.employeeId,
-    fundingJournalId: link.fundingJournalId, fundedAmount: funded / 100, availableAmount: available / 100, allocatedAmount: allocated / 100 } };
+  // Payroll and recovery still consume temporary_expenses.amount independently.
+  // Until all three posting paths share one transactional balance, even a
+  // matched funding entry cannot safely authorize another credit to 1300.
+  return { issues: [EMPLOYEE_ADVANCE_SETTLEMENT_BLOCKER],
+    proof: { advanceId: link.advanceId, employeeId: link.employeeId,
+      fundingJournalId: link.fundingJournalId, fundedAmount: funded / 100, availableAmount: available / 100, allocatedAmount: allocated / 100 } };
 }

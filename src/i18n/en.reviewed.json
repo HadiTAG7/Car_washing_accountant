@@ -4378,5 +4378,8 @@
   "رصيد العهدة المرتبط بالقيد المحدد غير متاح أو يحتاج مطابقة.": "The balance linked to the selected advance entry is unavailable or needs reconciliation.",
   "تخصيصات العهدة كثيرة؛ يلزم فحصها قبل الاعتماد.": "There are too many advance allocations to verify before approval.",
   "تخصيصات عهدة الموظف متعارضة وتحتاج مراجعة.": "Employee advance allocations conflict and need review.",
-  "تخصيصات عهدة الموظف تتجاوز التمويل المرحل المتاح.": "Employee advance allocations exceed the available posted funding."
+  "تخصيصات عهدة الموظف تتجاوز التمويل المرحل المتاح.": "Employee advance allocations exceed the available posted funding.",
+  "الإفادة تحفظ بصفتها إفادة فقط. حتى بعد مطابقة القيد، يبقى اعتماد مصروف العهدة متوقفًا إلى أن يتشارك مع الرواتب والاسترداد رصيدًا واحدًا.": "The statement is recorded as a statement only. Even after the funding entry is matched, expense approval remains blocked until payroll and recovery share one advance balance.",
+  "تسوية عهدة الموظف مع الرواتب والاسترداد غير مفعلة؛ الاعتماد والترحيل متوقفان حتى توحيد الرصيد.": "Employee advance settlement is not integrated with payroll and recovery; approval and posting remain blocked until the balance is unified.",
+  "قيد تمويل العهدة مرتبط بمصروفات؛ فك الربط غير المرحل أو نفذ تصحيحًا محاسبيًا منسقًا قبل العكس.": "The advance funding entry is linked to expenses; unlink unposted expenses or perform a coordinated accounting correction before reversal."
 }

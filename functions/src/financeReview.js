@@ -5,7 +5,7 @@ import { financeInvoiceLineProblems } from './financeInvoiceLines.js';
 import { requiresReviewedPartialVat, reviewedPartialVatGrant } from './financeReviewedVat.js';
 import { verifiedReviewedIdentity } from './financeReviewedIdentity.js';
 import { printedDiscountSourceProblems } from './financePrintedDiscount.js';
-import { employeeAdvanceLinkProblems } from './financeEmployeeAdvance.js';
+import { employeeAdvanceLinkProblems, EMPLOYEE_ADVANCE_SETTLEMENT_BLOCKER } from './financeEmployeeAdvance.js';
 
 export const FINANCE_KINDS = Object.freeze({
   variable: { collection: 'variable_expenses', amount: 'total_variable_cost', date: 'logged_date', title: 'expense_name', category: 'variable_expense_categories' },
@@ -89,6 +89,7 @@ export async function assertFinanceApproval(db, tx, kind, id, row, expectedHash 
   }
   const issues = financeProblems(kind, row, id);
   if (issues.length) throw new FinanceReviewError(issues.join(' '));
+  if (row.finance_metadata?.fundingType === 'employee') throw new FinanceReviewError(EMPLOYEE_ADVANCE_SETTLEMENT_BLOCKER);
   const spec = FINANCE_KINDS[kind];
   const classification = await tx.get(db.collection(spec.parent || spec.category).doc(row[spec.fk || 'category_id']));
   if (!classification.exists) throw new FinanceReviewError('رابط تصنيف المصروف لم يعد موجودًا؛ أعد المراجعة.');

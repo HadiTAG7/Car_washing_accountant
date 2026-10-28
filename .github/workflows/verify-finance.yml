@@ -9,6 +9,8 @@ on:
       - functions/src/posting.js
       - functions/src/ledger.js
       - server/financeWorkbench.js
+      - server/financeReadSnapshot.js
+      - server/__tests__/financeWorkbenchBrowse.test.js
       - server/__tests__/financeWorkflow.emulator.test.js
       - src/components/FinanceExpenseForm.jsx
       - src/lib/accounting/postingRules.js

@@ -511,6 +511,16 @@ export async function reverseEntry(db, FieldValue, entryId, { entryDate, descrip
         'لا يُعكس قيد عكسي — سجّل قيد تسوية جديداً يوضّح التصحيح.',
       );
     }
+    if (original.sourceType === 'temporary_expense') {
+      // A funded purchase credits 1300 against this exact funding entry.
+      // Reversing the debit alone would orphan that credit. Pending links
+      // also block until they are removed through their versioned review.
+      for (const collection of ['variable_expenses', 'monthly_expenses', 'annual_expense_entries', 'startup_cost_entries']) {
+        const linked = await tx.get(db.collection(collection)
+          .where('finance_metadata.employeeAdvanceLink.fundingJournalId', '==', originalRef.id).limit(1));
+        if (!linked.empty) throw new LedgerError('قيد تمويل العهدة مرتبط بمصروفات؛ فك الربط غير المرحل أو نفذ تصحيحًا محاسبيًا منسقًا قبل العكس.');
+      }
+    }
 
     // ── فاتورة سارية تشير إلى هذا القيد ──
     // An ISSUED tax invoice pointing at a REVERSED entry is a state the books

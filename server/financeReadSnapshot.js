@@ -7,6 +7,7 @@ export async function financeReadSnapshot(db, names) {
     return [name, new Map(result.docs.map(doc => [doc.id, doc.data()]))];
   })));
   const snapshot = (id, value) => ({ id, exists: value !== undefined, data: () => value });
+  const fieldValue = (row, field) => field.split('.').reduce((value, segment) => value?.[segment], row);
   const query = (name, filters = [], max = Infinity) => ({
     where(field, operator, value) {
       if (operator !== '==') throw new Error('Unsupported read-only snapshot filter');
@@ -18,7 +19,7 @@ export async function financeReadSnapshot(db, names) {
       return { get: async () => snapshot(String(id), tables.get(name).get(String(id))) };
     },
     async get() {
-      const docs = [...tables.get(name)].filter(([, value]) => filters.every(([field, expected]) => value[field] === expected))
+      const docs = [...tables.get(name)].filter(([, value]) => filters.every(([field, expected]) => fieldValue(value, field) === expected))
         .slice(0, max).map(([id, value]) => snapshot(id, value));
       return { docs, size: docs.length, empty: docs.length === 0 };
     },

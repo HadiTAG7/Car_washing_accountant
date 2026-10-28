@@ -153,7 +153,7 @@ async function postingPreview(db, tx, kind, sourceId, row, context = null) {
     const gross = [...built.lines, ...(built.settlement?.lines || [])].filter(line => String(line.accountId) === '1300')
       .reduce((sum, line) => sum + Number(line.credit || 0), 0);
     const advance = await verifyEmployeeAdvanceLink(db, tx, kind, sourceId, row, gross);
-    if (advance.issues.length) return { ready: false, issues: advance.issues, entry: null, lines: [] };
+    if (advance.issues.length) return { ready: false, issues: advance.issues, ...built, employeeAdvanceProof: advance.proof };
     const accounts = await tx.get(db.collection('chart_of_accounts'));
     const known = new Set(accounts.docs.map(d => d.id));
     if ([...built.lines, ...(built.settlement?.lines || [])].some(l => !known.has(String(l.accountId)))) {
@@ -189,7 +189,7 @@ async function workflowDocument(db, tx, kind, sourceId, row, currentState = null
     && Array.isArray(evidence.evidenceRefs) && evidence.evidenceRefs.length > 0 && evidence.evidenceRefs.every(ref => typeof ref === 'string' && ref.trim())
     && ((evidence.fundingType === 'company_cash' && row.payment_method === 'cash')
       || (evidence.fundingType === 'company_bank' && ['transfer', 'card'].includes(row.payment_method))
-      || (evidence.fundingType === 'employee' && preview.employeeAdvanceProof && ['cash', 'transfer', 'card'].includes(row.payment_method))));
+      || (evidence.fundingType === 'employee' && preview.ready && preview.employeeAdvanceProof && ['cash', 'transfer', 'card'].includes(row.payment_method))));
   const safeUnposted = !state.protectedSource && !state.closed && preview.ready && !additionalIssues.length && !detail.issues.length;
   const correctedNeedsReview = reversed && (detail.issues.length > 0 || postingHistory.issues.length > 0 || !paymentProven);
   const workflowStage = posted ? correctedNeedsReview ? 'posted_review' : paymentProven ? 'complete' : 'posted_unproven'
@@ -206,7 +206,7 @@ async function workflowDocument(db, tx, kind, sourceId, row, currentState = null
 }
 async function browseDocuments(db) {
   const names = [...Object.values(FINANCE_KINDS).flatMap(spec => [spec.collection, spec.parent || spec.category]),
-    'journal_entries', 'journal_lines', 'posting_locks', 'finance_reviews', 'accounting_periods', 'app_settings', 'chart_of_accounts'];
+    'temporary_expenses', 'journal_entries', 'journal_lines', 'posting_locks', 'finance_reviews', 'accounting_periods', 'app_settings', 'chart_of_accounts'];
   const snapshot = await financeReadSnapshot(db, names);
   const tx = { get: reference => reference.get() };
   const items = [];

@@ -8,7 +8,7 @@ import { readFile } from 'node:fs/promises';
 import { financeWorkbench } from '../financeWorkbench.js';
 import { exceptionSources, allocationSources, originalUrl, evidenceSeed, evidenceCall, saveEvidence, linkAllocation, approveEvidence } from './financeSourceEvidenceFixtures.js';
 import { financeReports } from '../financeReports.js';
-import { postSource } from '../../functions/src/ledger.js';
+import { postSource, reverseEntry } from '../../functions/src/ledger.js';
 import { expensePatch, financeFixture, syntheticFinanceInvoiceLines, syntheticPrintedInvoiceLines, syntheticSharedInvoiceLines } from './financeFixtures.js';
 import { financeReviewId, financeSourceHash } from '../../functions/src/financeReview.js';
 import { approveFinanceSelection } from '../../src/lib/financeWorkbenchActions.js';
@@ -45,7 +45,7 @@ describe.skipIf(!enabled)('finance real Firestore workflow — isolated demo onl
   afterAll(async () => { if (rules) await rules.cleanup(); if (db) await db.terminate(); if (app) await deleteApp(app); });
   const call = input => financeWorkbench(db, auth, input);
 
-  it('links a synthetic funded employee advance, rejects a stale ledger link, then posts against 1300 without a payment', async () => {
+  it('displays a matched employee advance but blocks both posting doors and reversing linked funding', async () => {
     await db.doc('temporary_expenses/test-advance').set({ biker_id: 'test-worker', amount: 150, status: 'pending', recovered_amount: 0 });
     const funding = { status: 'posted', sourceType: 'temporary_expense', sourceId: 'test-advance', entryDate: '2026-10-17',
       lines: [{ accountId: '1300', debit: 150, credit: 0 }, { accountId: '1010', debit: 0, credit: 150 }] };
@@ -56,24 +56,24 @@ describe.skipIf(!enabled)('finance real Firestore workflow — isolated demo onl
       employeeAdvanceLink: { version: 1, advanceId: 'test-advance', employeeId: 'test-worker',
         fundingJournalId: 'test-funding', allocatedAmount: 100 } }) };
     const preview = await call({ action: 'previewCapture', ...request });
-    expect(preview.postingPreview.ready).toBe(true);
+    expect(preview.postingPreview.ready).toBe(false);
+    expect(preview.postingPreview.lines).toEqual(expect.arrayContaining([expect.objectContaining({ accountId: '1300', credit: 100 })]));
     const captured = await call({ action: 'capture', ...request, previewHash: preview.previewHash, reason: 'TEST advance', confirm: true });
     const common = { kind: 'variable', sourceId: captured.sourceId };
     const read = await call({ action: 'read', ...common });
-    expect(read.approvalReady).toBe(true);
-    await call({ action: 'approve', ...common, sourceHash: read.sourceHash,
-      postingHash: read.postingPreview.postingHash, reason: 'TEST matched advance', confirm: true });
+    expect(read.approvalReady).toBe(false);
+    expect(read.workflowDimensions.funding.ledgerMatched).toBe(true);
+    const browsed = (await call({ action: 'browse' })).items.find(item => item.sourceId === captured.sourceId);
+    expect(browsed).toMatchObject({ approvalReady: false, workflowStage: read.workflowStage,
+      workflowDimensions: read.workflowDimensions, issueCount: read.issues.length });
+    await expect(call({ action: 'approve', ...common, sourceHash: read.sourceHash,
+      postingHash: 'a'.repeat(64), reason: 'TEST matched advance', confirm: true })).rejects.toThrow(/الرواتب والاسترداد/);
+    await expect(postSource(db, FieldValue, common, { userId: auth.uid })).rejects.toThrow(/اعتماد/);
+    await expect(reverseEntry(db, FieldValue, 'test-funding', { entryDate: '2026-10-19', userId: auth.uid }))
+      .rejects.toThrow(/مرتبط بمصروفات/);
     await db.doc('journal_entries/test-funding').update({ status: 'reversed' });
-    await expect(postSource(db, FieldValue, common, { userId: auth.uid })).rejects.toThrow(/عهدة/);
-    await db.doc('journal_entries/test-funding').update({ status: 'posted' });
-    const result = await call({ action: 'post', ...common, sourceHash: read.sourceHash, confirm: true });
-    expect(result.verification.linesMatched).toBe(true);
-    const posted = (await db.collection('journal_entries').where('sourceId', '==', captured.sourceId).get()).docs;
-    expect(posted).toHaveLength(2);
-    expect(posted.flatMap(doc => doc.data().lines)).toEqual(expect.arrayContaining([
-      expect.objectContaining({ accountId: '1300', credit: 100 }),
-    ]));
-    expect(posted.flatMap(doc => doc.data().lines).some(line => ['1010', '1020'].includes(line.accountId))).toBe(false);
+    expect((await call({ action: 'browse' })).items.find(item => item.sourceId === captured.sourceId).approvalReady).toBe(false);
+    expect((await db.collection('journal_entries').where('sourceId', '==', captured.sourceId).get()).size).toBe(0);
     expect((await db.collection('payroll_runs').get()).size).toBe(0);
   }, 120000);
 

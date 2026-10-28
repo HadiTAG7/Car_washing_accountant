@@ -120,7 +120,7 @@ describe('source biker deduction follow-up without payroll or financial writes',
   it('does not infer biker blame from a cancellation status or ambiguous accident reason', async () => {
     const input = deductionInput({ sourceKind: 'booking', sourceId: 'C-990002', snapshotId: 'raw-test-run' });
     db.rows.get('sweater_bookings/C-990002').sourceHash = 'changed';
-    await expect(previewBikerDeduction(db, input, actor)).rejects.toThrow(/سبب بايكر صريح/);
+    await expect(previewBikerDeduction(db, input, actor)).rejects.toThrow(/روابطه المحمية/);
   });
   it('accepts the import-verified existing worker link only when current booking and registry do not conflict', async () => {
     const input = deductionInput({ sourceKind: 'booking', sourceId: 'C-990002', snapshotId: 'raw-test-run' });

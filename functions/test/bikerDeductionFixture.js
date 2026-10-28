@@ -1,5 +1,5 @@
 import { BIKER_DEDUCTION_AUTHORITY } from '../../src/lib/sweater/bikerDeductions.js';
-import { normalizeRecord, hashRecord } from '../src/sweater/record.js';
+import { normalizeRecord, hashRecord, hashBody } from '../src/sweater/record.js';
 import { rawDocId, COL } from '../src/sweater/ingest.js';
 export const month = '2026-10', actor = { userId: 'admin' };
 export function deductionInput(patch = {}) {
@@ -25,4 +25,23 @@ export function deductionSeed() {
     'sweater_adjustments/unchanged': { kind: 'deduction', amount: 20, approvalStatus: 'pending_review' },
     'journal_entries/unchanged': { status: 'posted' },
   };
+}
+
+export function protectedDeductionSeed() {
+  const seed = deductionSeed(), original = seed['sweater_bookings/C-990002'];
+  const oldRecord = normalizeRecord({ ...original.record, notes: 'Synthetic preserved execution timeline; no invoice observation yet.',
+    sourceUrl: 'https://ssp-portal.sweater.sa/older-reading', startedAt: '2026-10-20T10:00:00+03:00' });
+  seed['sweater_bookings/C-990002'] = { ...original, record: oldRecord, sourceHash: hashRecord(oldRecord),
+    administrativeCompletionRunId: 'synthetic-owner-completion', processingStatus: 'needs_review' };
+  seed['sweater_owner_booking_claims/990002'] = { sspBookingId: 'C-990002', bookingNumber: '990002', washId: 'ssp__C-990002', source: 'operations_sync_v2' };
+  seed['washes/ssp__C-990002'] = { ssp_booking_id: 'C-990002', biker_id: 'worker-one', driver_external_id: 'TEST-DRIVER', wash_date: '2026-10-20',
+    worker_commission_paid: false, worker_commission_per_wash: 4.5, completion_basis: 'owner_administrative_decision', price: 20, vat_amount: 3, gross_amount: 23, collection_status: 'pending' };
+  seed['sweater_operational_wash_links/b__C-990002'] = { sspBookingId: 'C-990002', washId: 'ssp__C-990002', bikerId: 'worker-one' };
+  seed['sweater_operational_wash_links/w__ssp__C-990002'] = { sspBookingId: 'C-990002', washId: 'ssp__C-990002', bikerId: 'worker-one' };
+  const result = seed['sweater_import_runs/raw-test-run'].result.rows[0];
+  Object.assign(result, { reasonCode: 'protected_existing_record', bookingMustMatch: false, bookingSaved: false,
+    existingLinkRefs: ['washes/ssp__C-990002', 'sweater_operational_wash_links/b__C-990002', 'sweater_operational_wash_links/w__ssp__C-990002'].map(path => {
+      const [collection, id] = path.split('/'); return { collection, id, hash: hashBody(seed[path]) };
+    }) });
+  return seed;
 }

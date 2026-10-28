@@ -12,6 +12,7 @@ import { hashRecord } from './sweater/record.js';
 import { compensationGroup } from './sweater/compensationEvents.js';
 import { COMPENSATION_KEYS } from './sweater/metricsContract.js';
 import { bookingInvoiceDeduction } from './sweater/bookingInvoiceDeduction.js';
+import { deductionBookingBinding } from './sweater/deductionBookingBinding.js';
 
 const COLLECTION = 'quality_objections', CAP = 10000;
 const fail = (message, code = 'failed-precondition') => { throw new LedgerError(message, { code }); };
@@ -68,11 +69,12 @@ async function plan(db, input, read, userId) {
       && r.sourceHash === raw?.sourceHash && r.rawId === rawSnap.id);
     if (raw?.source !== 'operations_sync_v2' || !record || raw.importRunId !== input.snapshotId
       || record.sspBookingId !== input.sourceId || raw.sourceHash !== hashRecord(record)
-      || booking?.sourceHash !== raw.sourceHash || hashBody(booking.record) !== hashBody(record)
       || run?.source !== 'operations_sync_v2' || !verifiedRow || !['completed', 'completed_with_gaps'].includes(run?.status)
       || !['Biker Refused Wash', 'Biker delay caused cancellation or postponement'].includes(reason)
       || !['Cancelled by Admin', 'Cancelled by Biker'].includes(record.rawStatus)
       || record.serviceDate?.slice(0, 7) !== input.periodKey || !run.coverage?.extractedAt) fail('لا يوجد سبب بايكر صريح محفوظ ومطابق للقراءة الخام؛ لا يُستنتج من حالة الإلغاء وحدها.');
+    const binding = await deductionBookingBinding(db, read, { booking, record, verifiedRow, isProtected: protectedRecord });
+    if (!binding) fail('الحجز الحالي أو روابطه المحمية لا تطابق دليل الخصم؛ لن نغيّر السجل القديم.');
     let invoice;
     try { invoice = bookingInvoiceDeduction(record, reason, run.coverage.extractedAt); }
     catch (error) { fail(error.message); }
@@ -81,7 +83,7 @@ async function plan(db, input, read, userId) {
       reason, quantity: 1, amount: invoice ? -invoice.signedDeductionSAR : null, sourceUrl: record.sourceUrl };
     sourceReadAt = invoice?.sourceReadAt || run.coverage.extractedAt;
     bookingEvidence = { rawId: rawSnap.id, rawSourceHash: raw.sourceHash, rawStatus: record.rawStatus,
-      notes: record.notes, invoice, workerId: verifiedRow.bikerId && verifiedRow.bikerId === booking.operationalWorkerId ? verifiedRow.bikerId : null,
+      notes: record.notes, invoice, binding, workerId: verifiedRow.bikerId && verifiedRow.bikerId === booking.operationalWorkerId ? verifiedRow.bikerId : null,
       classificationBasis: 'owner_decision_from_explicit_booking_reason', matchedToCompensations: false };
   }
   if (!event.date || event.date < '2026-08-29' || event.date > '2026-10-28' || !event.reason?.trim()) fail('الواقعة خارج الفترة المفوضة أو ينقصها تاريخ أو سبب المصدر.');

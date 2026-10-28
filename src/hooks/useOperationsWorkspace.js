@@ -9,6 +9,7 @@ import { fetchRows, getRow, where } from '../lib/firestoreCrud';
 import { mapStartupCost, mapStartupCostEntry, mapAnnualExpense, mapAnnualExpenseEntry, mapHousingUnit } from '../lib/mappers';
 import { operationsWorkspace } from '../lib/operationsWorkspace';
 import { riyadhToday } from '../lib/bikerProfile';
+import { isBikerDeduction } from '../lib/sweater/bikerDeductions';
 const names=['startup_costs','startup_cost_entries','annual_expenses','annual_expense_entries','housing_units','fleet_bikes','fleet_maintenance','fleet_policies'];
 export function useOperationsWorkspace(periodKey) {
   const { user }=useAuth(),today=riyadhToday();
@@ -21,7 +22,7 @@ export function useOperationsWorkspace(periodKey) {
       getRow('app_settings','quality-objections'),fetchRows('sweater_bookings',[where('periodKey','==',periodKey)]),
     ]);
     return {startup:rows[0].map(mapStartupCost),startupEntries:rows[1].map(mapStartupCostEntry),annual:rows[2].map(mapAnnualExpense),
-      annualEntries:rows[3].map(mapAnnualExpenseEntry),housing:rows[4].map(mapHousingUnit),bikes:rows[5],maintenance:rows[6],policies:rows[7],objections,qualitySettings,bookings};
+      annualEntries:rows[3].map(mapAnnualExpenseEntry),housing:rows[4].map(mapHousingUnit),bikes:rows[5],maintenance:rows[6],policies:rows[7],objections:objections.filter(row=>!isBikerDeduction(row)),qualitySettings,bookings};
   },{enabled:isFirebaseConfigured&&Boolean(user?.id),preserveResult:true,cacheKey:`operationsWorkspace:${periodKey}`,cacheTags:[...names,'quality_objections','app_settings','sweater_bookings'],queryKey:user?.id,deps:[periodKey],fallback:null});
   const states=[overview.washes,overview.workers,overview.finance,overview.payroll,idle,overview.sweaterMetrics,resources,freshness];
   const loading=states.some(s=>s.loading),error=states.find(s=>s.error)?.error;

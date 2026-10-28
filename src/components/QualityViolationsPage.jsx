@@ -14,6 +14,7 @@ import BikerProfileMonthPicker from './BikerProfileMonthPicker';
 import ScrollableTable from './ScrollableTable';
 import { Card, SectionHeader } from './UI';
 import './QualityViolationsPage.css';
+import BikerDeductionFollowup from './BikerDeductionFollowup';
 const number = value => value == null ? 'غير متاح' : formatNumber(Math.round(value * 100) / 100);
 const stamp = value => value ? new Date(value).toLocaleString('ar-SA-u-ca-gregory', { timeZone: 'Asia/Riyadh', numberingSystem: 'latn' }) : 'غير متاح';
 const button = 'sw-button sw-button--secondary sw-button--sm';
@@ -40,6 +41,7 @@ export function QualityViolationsContent() {
     <main className="qv-page" dir="rtl"><SweaterFreshnessBar /><div className="qv-toolbar"><div><h2>الجودة والمخالفات</h2><p>من اللقطات المحفوظة · بدون اتصال مباشر بسويتر</p></div>
       <BikerProfileMonthPicker value={month} max={today.slice(0, 7)} language="ar" onChange={value => { setMonth(value); setSelected(null); }} />
       <button className={button} onClick={read.refresh}>تحديث البيانات</button></div>
+      <BikerDeductionFollowup records={read.deductions} preview={read.previewDeduction} save={read.saveDeduction} disabled={Boolean(read.objections.loading || read.objections.error)} />
       <Card className="qv-panel"><SectionHeader title="مهلة الاعتراض" subtitle="متابعة داخلية فقط؛ تغيير الحالة هنا لا يرسل اعتراضًا إلى سويتر." />
         {read.settings.loading ? <p>جارٍ قراءة المهلة…</p> : read.settings.error ? <p role="alert">تعذّرت قراءة المهلة؛ لا يمكن تحديد قرب انتهائها.</p>
           : <DeadlineSetting key={read.settings.data?.revision || 0} settings={read.settings.data} save={read.saveSettings} />}</Card>

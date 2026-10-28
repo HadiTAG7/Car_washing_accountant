@@ -23,7 +23,7 @@ export function InitialScenario({ mode }) {
       else {
         const list = await callFinanceApi('finance-workbench', { action: 'browse' });
         const target = mode === 'shared' ? 'TEST-SHARED-LINES' : 'TEST-MIXED-LINES';
-        source = list.items.find(item => item.documentNumber === target);
+        source = mode === 'status' ? list.items.find(item => item.title.includes('TEST-SAVED-PENDING')) : list.items.find(item => item.documentNumber === target);
         if (!source) throw new Error('Isolated scenario source not found');
       }
       const detail = await callFinanceApi('finance-workbench', { action: 'read', kind: source.kind, sourceId: source.sourceId });
@@ -59,5 +59,5 @@ createRoot(document.getElementById('root')).render(<>
   <header style={{ padding: 16, borderBottom: '3px solid #d97706' }}>
     <strong>اختبار معزول — بيانات اصطناعية في الذاكرة فقط، دون اتصال بالإنتاج</strong>
   </header>
-  {['protected', 'comparison', 'shared', 'quantity', 'exception-comparison', 'allocation', 'allocation-peer', 'allocation-comparison'].includes(requested) ? <InitialScenario mode={requested} /> : <FinanceWorkbenchPage />}
+  {['protected', 'comparison', 'shared', 'quantity', 'exception-comparison', 'allocation', 'allocation-peer', 'allocation-comparison', 'status'].includes(requested) ? <InitialScenario mode={requested} /> : <FinanceWorkbenchPage />}
 </>);

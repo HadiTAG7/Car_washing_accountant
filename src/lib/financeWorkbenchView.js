@@ -1,6 +1,6 @@
 // Read/display helpers only. No inferred value is persisted or used to authorise a posting.
 export const WORKBENCH_STAGES = {
-  incomplete: 'ناقص', ready: 'جاهز للاعتماد', approved: 'معتمد غير مرحل',
+  incomplete: 'مسجل — نواقص أو موانع ترحيل', ready: 'جاهز للاعتماد', approved: 'معتمد غير مرحل',
   posted_unproven: 'مرحل والسداد غير مثبت', complete: 'مكتمل',
   posted_review: 'مرحل ويحتاج استكمال',
 };

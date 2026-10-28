@@ -48,6 +48,9 @@ describe('finance workbench version-bound review', () => {
     db.rows.set('journal_lines/test-debit', { entryId: 'test-funding', accountId: '1300', debit: 150, credit: 0 });
     db.rows.set('journal_lines/test-credit', { entryId: 'test-funding', accountId: '1010', debit: 0, credit: 150 });
     expect((await financeWorkbench(db, auth, { action: 'read', kind: 'variable', sourceId: saved.sourceId })).paymentProven).toBe(true);
+    db.rows.set('journal_lines/test-credit', { entryId: 'test-funding', accountId: '2000', debit: 0, credit: 150 });
+    expect((await financeWorkbench(db, auth, { action: 'read', kind: 'variable', sourceId: saved.sourceId })).approvalReady).toBe(false);
+    db.rows.set('journal_lines/test-credit', { entryId: 'test-funding', accountId: '1010', debit: 0, credit: 150 });
     const second = await financeWorkbench(db, auth, { action: 'previewCapture', kind: 'variable', requestId: 'SECOND-TEST',
       patch: expensePatch({ amount: 60, quantity: 2, invoiceNumber: 'TEST-002', invoiceUrl: 'https://example.org/second-invoice',
         paymentStatus: 'paid', paymentMethod: 'card', paidDate: '2026-10-18', fundingType: 'employee',

@@ -39,10 +39,12 @@ export async function verifyEmployeeAdvanceLink(db, tx, kind, sourceId, row, gro
   const fundingLines = journal ? await linesOf(db, tx, link.fundingJournalId, journal) : [];
   const funded = fundingLines.filter(line => String(line.accountId) === '1300')
     .reduce((sum, line) => sum + cents(line.debit || 0) - cents(line.credit || 0), 0);
+  const companyOutflow = fundingLines.filter(line => ['1010', '1020'].includes(String(line.accountId)))
+    .reduce((sum, line) => sum + cents(line.credit || 0) - cents(line.debit || 0), 0);
   if (!advance || String(advance.biker_id || '') !== link.employeeId
     || advance.status === 'recovered' || Number(advance.recovered_amount || 0) !== 0 || advance.payroll_lock_id
     || !journal || journal.status !== 'posted' || journal.reversalOf || journal.reversedBy || journal.sourceType !== 'temporary_expense'
-    || journal.sourceId !== link.advanceId || funded <= 0 || funded !== cents(advance.amount)
+    || journal.sourceId !== link.advanceId || funded <= 0 || funded !== cents(advance.amount) || companyOutflow !== funded
     || typeof journal.entryDate !== 'string' || journal.entryDate > row.paid_date) {
     return { issues: ['قيد تمويل عهدة الموظف غير مطابق للموظف والعهدة وتاريخ السداد أو لم يعد ساريًا.'], proof: null };
   }

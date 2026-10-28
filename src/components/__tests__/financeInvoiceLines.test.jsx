@@ -3,12 +3,27 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within, waitFor } from '@testing-library/react';
 import FinanceExpenseForm from '../FinanceExpenseForm';
 import { syntheticFinanceInvoiceLines, syntheticSharedInvoiceLines } from '../../../server/__tests__/financeFixtures';
+import { printedDiscountRow } from '../../../server/__tests__/financeReviewedIdentityFixtures';
 const api = vi.hoisted(() => vi.fn());
 vi.mock('../../lib/financeApi', () => ({ callFinanceApi: (...args) => api(...args) }));
 afterEach(cleanup); beforeEach(() => api.mockReset());
 const props = () => ({ kind: 'variable', onSaved: vi.fn(), onMessage: vi.fn(), options: { loading: false, data: { items: [] } } });
 const row = () => ({ expense_name: 'فاتورة اختبار متعددة', total_variable_cost: 50, logged_date: '2026-10-18', quantity: null, unit_cost: null,
   finance_metadata: { invoiceLines: syntheticFinanceInvoiceLines() } });
+it('previews a printed invoice discount once, preserving known prices and blocking shared-total replacement', async () => {
+  const before = printedDiscountRow();
+  api.mockResolvedValue({ before, after: before, previewHash: 'b'.repeat(64), issues: [] });
+  render(<FinanceExpenseForm {...props()} kind="startup" detail={{ sourceId: 'TEST', sourceHash: 'a'.repeat(64), row: before, issues: [] }} />);
+  expect(screen.getByLabelText('مبلغ الخصم المطبوع').value).toBe('0.1');
+  expect(screen.getByRole('checkbox', { name: 'المصدر يذكر مبلغًا مشتركًا دون تفصيل أسعار الأصناف' }).disabled).toBe(true);
+  expect(within(screen.getByRole('group', { name: 'البند 1' })).getByLabelText('سعر وحدة البند').value).toBe('30');
+  fireEvent.change(screen.getByLabelText('مرجع الخصم في المصدر'), { target: { value: 'TEST verified original discount' } });
+  fireEvent.click(screen.getByRole('button', { name: 'احفظ' }));
+  await waitFor(() => expect(api).toHaveBeenCalledTimes(1));
+  expect(api.mock.calls[0][1]).toMatchObject({ action: 'preview', patch: { amount: 200, vatAmount: 26.1,
+    invoiceLines: { printedDiscount: { amount: 0.1, sourceRef: 'TEST verified original discount' } } } });
+  expect(api.mock.calls[0][1].patch.invoiceLines.items).toEqual(before.finance_metadata.invoiceLines.items);
+});
 
 it('opens a heterogeneous draft without inventing a quantity, unit or price and requires an explicit source line', () => {
   render(<FinanceExpenseForm {...props()} requestId="TEST-ONLY" />);

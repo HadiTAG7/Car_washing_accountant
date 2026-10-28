@@ -21,6 +21,8 @@ import { round2 } from './invariants.js';
 import { resolvePurchaseTax } from './purchaseTax.js';
 import { applyReviewedPartialVat, requiresReviewedPartialVat } from './financeReviewedVat.js';
 import { financeInvoiceLineProblems } from './financeInvoiceLines.js';
+import { applyReviewedIdentity } from './financeReviewedIdentity.js';
+import { printedDiscountSourceProblems } from './financePrintedDiscount.js';
 import { washPostabilityProblem } from './sweater/revenueOrigin.js';
 import {
   buildRecognitionEntry, buildAdjustmentEntry, buildCollectionEntry,
@@ -181,11 +183,14 @@ function buildExpense(kind, row, id, { policyAt = null, recordDate = null } = {}
       : (row.payment_status === 'unpaid' ? 'unpaid' : 'paid');
 
   const fields = purchaseFieldsOf(kind, row);
-  if (requiresReviewedPartialVat(kind, id, row)) {
+  const discountIssues = printedDiscountSourceProblems(kind, id, row);
+  if (discountIssues.length) throw new Error(discountIssues.join(' '));
+  if (requiresReviewedPartialVat(kind, id, row) || row.finance_metadata?.invoiceLines?.printedDiscount != null) {
     const issues = financeInvoiceLineProblems(row, fields.amount, { kind, sourceId: id });
     if (issues.length) throw new Error(issues.join(' '));
   }
-  const tax = applyReviewedPartialVat(kind, id, row, resolvePurchaseTax({ ...fields, recordDate: settlementDate }, { policyAt }));
+  const tax = applyReviewedPartialVat(kind, id, row, applyReviewedIdentity(kind, id, row,
+    resolvePurchaseTax({ ...fields, recordDate: settlementDate }, { policyAt }), policyAt));
 
   // The supplier's document dates the liability and the deduction. Without one
   // — a purchase with no tax invoice — the record's own date is all there is.

@@ -18,6 +18,8 @@ export function InitialScenario({ mode }) {
       let source;
       if (mode === 'protected') source = { kind: 'startup', sourceId: 'synthetic-corrected-source' };
       else if (mode === 'reviewed-partial' || mode === 'reviewed-partial-comparison') source = { kind: 'startup', sourceId: 'c790RQ8Dk5q8RoX3K3dO' };
+      else if (mode === 'reviewed-identity' || mode === 'identity-comparison') source = { kind: 'variable', sourceId: 'ABdYfrGUUZ0ywAsy2UQg' };
+      else if (mode === 'printed-discount' || mode === 'discount-comparison') source = { kind: 'startup', sourceId: '8YAyIItUAuqW0XEY4hV7' };
       else if (mode === 'quantity' || mode === 'exception-comparison') source = { kind: 'startup', sourceId: 'I8tWV7ElQXRMW3AFMqBI' };
       else if (mode === 'allocation' || mode === 'allocation-comparison') source = { kind: 'startup', sourceId: 'xm8IA2ypXnQvQ7LFLPTy' };
       else if (mode === 'allocation-peer') source = { kind: 'startup', sourceId: 'zk0wmq8nHTbsgs9CteWd' };
@@ -31,6 +33,13 @@ export function InitialScenario({ mode }) {
       const options = await callFinanceApi('finance-workbench', { action: 'options', kind: source.kind });
       if (mode === 'protected' && !detail.protectedSource) throw new Error('Isolated protected-source evidence did not match');
       let preview = null;
+      if (mode === 'identity-comparison') preview = await callFinanceApi('finance-workbench', { action: 'preview', kind: source.kind, sourceId: source.sourceId, sourceHash: detail.sourceHash,
+        patch: { reviewedDocumentIdentity: { version: 1, grantRef: detail.sourceContext.reviewedIdentityGrant.ref, sourceRef: 'TEST reviewed original, not an invoice number' } } });
+      if (mode === 'discount-comparison') {
+        const invoiceLines = structuredClone(detail.row.finance_metadata.invoiceLines);
+        invoiceLines.printedDiscount.sourceRef = 'TEST updated printed discount evidence';
+        preview = await callFinanceApi('finance-workbench', { action: 'preview', kind: source.kind, sourceId: source.sourceId, sourceHash: detail.sourceHash, patch: { invoiceLines } });
+      }
       if (mode === 'reviewed-partial-comparison') preview = await callFinanceApi('finance-workbench', { action: 'preview', kind: source.kind, sourceId: source.sourceId, sourceHash: detail.sourceHash, patch: {} });
       if (mode === 'comparison') {
         const invoiceLines = structuredClone(detail.row.finance_metadata.invoiceLines);
@@ -61,5 +70,5 @@ createRoot(document.getElementById('root')).render(<>
   <header style={{ padding: 16, borderBottom: '3px solid #d97706' }}>
     <strong>اختبار معزول — بيانات اصطناعية في الذاكرة فقط، دون اتصال بالإنتاج</strong>
   </header>
-  {['protected', 'comparison', 'shared', 'quantity', 'exception-comparison', 'allocation', 'allocation-peer', 'allocation-comparison', 'status', 'reviewed-partial', 'reviewed-partial-comparison'].includes(requested) ? <InitialScenario mode={requested} /> : <FinanceWorkbenchPage />}
+  {['protected', 'comparison', 'shared', 'quantity', 'exception-comparison', 'allocation', 'allocation-peer', 'allocation-comparison', 'status', 'reviewed-partial', 'reviewed-partial-comparison', 'reviewed-identity', 'identity-comparison', 'printed-discount', 'discount-comparison'].includes(requested) ? <InitialScenario mode={requested} /> : <FinanceWorkbenchPage />}
 </>);

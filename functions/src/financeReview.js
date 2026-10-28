@@ -3,6 +3,8 @@ import { financeSourceEvidence, quantityExceptionProblems, allowedAllocationSibl
 export { financeHash, financeSourceHash } from './financeHash.js';
 import { financeInvoiceLineProblems } from './financeInvoiceLines.js';
 import { requiresReviewedPartialVat, reviewedPartialVatGrant } from './financeReviewedVat.js';
+import { verifiedReviewedIdentity } from './financeReviewedIdentity.js';
+import { printedDiscountSourceProblems } from './financePrintedDiscount.js';
 
 export const FINANCE_KINDS = Object.freeze({
   variable: { collection: 'variable_expenses', amount: 'total_variable_cost', date: 'logged_date', title: 'expense_name', category: 'variable_expense_categories' },
@@ -18,6 +20,7 @@ const realDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.tes
 export function financeProblems(kind, row, sourceId = null) {
   const spec = FINANCE_KINDS[kind], issues = [];
   if (!spec) return ['نوع السجل ليس مصروفًا مؤهلًا لهذا المسار.'];
+  issues.push(...printedDiscountSourceProblems(kind, sourceId, row));
   if (requiresReviewedPartialVat(kind, sourceId, row) && !reviewedPartialVatGrant(kind, sourceId, row)) issues.push('الخصم الجزئي لا يطابق مصدر الرأي المحسوم ومبالغه؛ أعد المراجعة.');
   if (typeof row[spec.title] !== 'string' || !row[spec.title].trim()) issues.push('وصف المصروف غير مكتمل.');
   if (!Number.isFinite(row[spec.amount]) || row[spec.amount] <= 0) issues.push('المبلغ غير مثبت.');
@@ -34,6 +37,8 @@ export function financeProblems(kind, row, sourceId = null) {
   if (row.payment_status === 'paid' && !realDate(row.paid_date)) issues.push('تاريخ السداد الفعلي غير مثبت.');
   if (!['cash', 'transfer', 'card', 'credit'].includes(row.payment_method)) issues.push('طريقة الدفع أو الذمة غير مثبتة.');
   const meta = row.finance_metadata;
+  const reviewedIdentity = verifiedReviewedIdentity(kind, sourceId, row);
+  if (meta?.reviewedDocumentIdentity != null && !reviewedIdentity) issues.push('هوية المستند المراجعة لا تطابق المصدر والرأي والحقائق المثبتة.');
   if (typeof meta?.purpose !== 'string' || !meta.purpose.trim() || !meta?.evidenceRefs?.length) issues.push('الغرض ودليل المراجعة غير مكتملين.');
   if (typeof meta?.fundingReference !== 'string' || !meta.fundingReference.trim()) issues.push('دليل التمويل أو ذمة المورد غير مكتمل.');
   const types = { company_cash: ['cash'], company_bank: ['card', 'transfer'], vendor_liability: ['credit'] };
@@ -46,7 +51,7 @@ export function financeProblems(kind, row, sourceId = null) {
   const taxAmountKnown = Number.isFinite(row.vat_amount) && row.vat_amount >= 0;
   const taxRateKnown = Number.isFinite(row.vat_rate) && row.vat_rate >= 0 && row.vat_rate <= 1;
   const reviewedDatedPolicy = meta?.taxBasis === 'verified_historical_policy' && typeof meta.taxReviewRef === 'string' && meta.taxReviewRef.trim();
-  if (row.is_tax_invoice && (typeof row.invoice_number !== 'string' || !row.invoice_number.trim() || !realDate(row.invoice_date)
+  if (row.is_tax_invoice && ((!reviewedIdentity && (typeof row.invoice_number !== 'string' || !row.invoice_number.trim())) || !realDate(row.invoice_date)
     || (!taxAmountKnown && !taxRateKnown && !reviewedDatedPolicy) || !['inclusive', 'exclusive'].includes(row.price_mode))) issues.push('حقول الفاتورة الضريبية غير مكتملة.');
   return issues;
 }

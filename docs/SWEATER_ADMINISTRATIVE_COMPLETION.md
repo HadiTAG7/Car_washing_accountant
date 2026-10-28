@@ -4,6 +4,18 @@ This admin workflow records an explicit owner decision for named cancelled SSP b
 
 ## Actual ongoing executions — standing approval from 18 October 2026
 
+## Read current saved facts without saving again
+
+Load the exact already-saved administrative JSON in the existing Integration workflow and choose server dry-run preview. An identical saved run returns `replay:true`, `saved:false`, `canSave:false`, its historical receipt, and a separate current `verification`. The UI hides a second save action. No new endpoint, role, sender, key, scope, claim, wash, commission payment, payroll or ledger write is added.
+
+The replay reader rechecks the existing admin membership and exact payload hash inside a read-only transaction, then compares current natural booking claims, wash identities/counts, original raw evidence, recorded owner decisions, worker/date/pricing fields and the wash's commission amount/payment flag. It preserves legitimate claims created by an earlier operations import. It reads the original Start/End exactly, retaining null values; a later SSP status is reported separately and never overwritten. Commission is an attribute of the single wash, not a separate payment record. A paid or unknown commission flag is shown as its current value, not reset to unpaid. The wash's collection flag is checked; this is not a bank, collection-confirmation, payroll-disbursement or ledger audit.
+
+`verification.status` is `verified`, `mismatch`, or `unavailable`. A missing/duplicate claim or wash, altered decision/raw evidence or changed commission is a reported difference, never an automatic repair or another save. Complete uniqueness checks scan up to10,000 rows each in washes and claims; beyond this explicit ceiling coverage is unavailable and counts that cannot be established remain null. This is bounded verification of the named saved run, not evidence that every historical operation is complete.
+
+The source/application writer, its hashes, locks, protections, eligibility and replay-save behavior are unchanged. Existing preview of a new run stays non-saving. Tests use synthetic memory storage and the isolated demo emulator only. Production verification reloads existing saved files and previews them; it never calls save as a deployment test. Local visual fixture: `scripts/administrative-completion-preview.mjs`, `/scripts/administrative-completion-preview/index.html?view=readback`, host127.0.0.1:5224. It seeds a synthetic saved run in memory; the browser transport permits preview only.
+
+## Standing ongoing approval
+
 Hadi's verified message `01a15086-97de-7292-8767-b755ee029923` in conversation `01a04f9f-cdbe-7213-bf1b-eee76eb35b38` says «كل الغسلات من اليوم وانت طالع سجلها المكتملة والجارية». Messages `01a16f81-d999-7e20-b83d-8ece75c37e15` and `01a179ab-1b3f-7373-bf4c-f35d4f623bb1` reaffirm it. This covers actual ongoing washing from service day `2026-10-18` onward; it is not daily reapproval, a cancellation policy, or proof of source completion or collection.
 
 Use the existing Integration JSON administrative review/preview/save workflow and unchanged kind. Each batch still names its actual service date, exact booking IDs, verified worker links, exclusions, original owner statement/reference and documented decision time. Never replace the owner's message reference or timestamp with the current run time. A standing reference may precede the service day; it must precede the source observation.

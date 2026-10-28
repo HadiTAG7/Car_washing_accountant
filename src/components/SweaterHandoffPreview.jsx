@@ -73,8 +73,23 @@ export default function SweaterHandoffPreview() {
     </div>}
     {result && <div className="space-y-3 text-sm" aria-label="نتيجة dryRun">
       <p className="font-bold">{result.saved ? (result.administrativeDecision ? 'حُفظ قرار الاكتمال والغسلات دون تحصيل أو ترحيل أو صرف عمولة' : 'تم حفظ الغسلات وإقرار المالك دون ترحيل أو صرف عمولة') : 'معاينة فقط — ما تم استيراد أو ترحيل'}</p>
+      {result.previousRun && <p>نتيجة الحفظ السابق:</p>}
       <p>جديد: {result.counts.new} · معدل: {result.counts.modified} · مكرر: {result.counts.duplicate} · مرفوض: {result.counts.rejected} · يحتاج مراجعة: {result.counts.needsReview}</p>
       {result.previousRun && <p>المعرّف مستخدم سابقًا بنفس السجلات؛ هذه قراءة فقط، مو إعادة استيراد.</p>}
+      {result.verification && <section aria-label="مطابقة الحفظ الحالية" className="space-y-2">
+        <h3 className="font-bold">مطابقة الحفظ الحالية</h3>
+        <p>{result.verification.status === 'verified' ? 'مطابق — غسلة واحدة وربط واحد وعمولة مسجلة غير مدفوعة لكل حجز.'
+          : result.verification.status === 'unavailable' ? 'تعذر اكتمال القراءة؛ لا نعدّ المفقود صفرًا.' : 'ظهرت فروقات في السجلات الحالية؛ راجع التفاصيل دون إعادة الحفظ.'}</p>
+        <p>مطابق: {result.verification.matched} من {result.verification.total} · قراءة فقط</p>
+        <div className="overflow-x-auto"><table className="w-full text-sm" aria-label="نتيجة مطابقة الحفظ"><thead><tr>
+          <th>الحجز</th><th>الغسلات</th><th>روابط الحجز</th><th>العمولة المسجلة</th><th>حالة العمولة</th><th>النتيجة</th>
+        </tr></thead><tbody>{result.verification.rows.map(row => <tr key={row.sspBookingId}>
+          <td>{row.sspBookingId}</td><td>{row.washCount ?? 'غير متاح'}</td><td>{row.claimCount ?? 'غير متاح'}</td>
+          <td>{row.commission.amountPerWash ?? 'غير متاح'}</td><td>{row.commission.paid === false ? 'غير مدفوعة' : row.commission.paid === true ? 'مدفوعة' : 'غير متاح'}</td>
+          <td>{row.verified ? 'مطابق' : <>{'يحتاج مراجعة'}{row.issues?.map(issue => <small className="block" key={issue}>{issue}</small>)}</>}</td>
+        </tr>)}</tbody></table></div>
+        <small>العمولة صفة للغسلة الواحدة، وليست دفعة منفصلة. لا يحدث حفظ أو صرف من هذا الفحص.</small>
+      </section>}
       {[...(result.coverageIssues || []), ...(result.reviewWarnings || [])].map((message, index) => <p key={index} className="text-amber-700 dark:text-amber-300">{message}</p>)}
       <div className="overflow-x-auto"><table className="w-full text-sm" aria-label="تصنيف سجلات المعاينة"><thead><tr><th>الحجز</th><th>النتيجة</th><th>الملاحظة</th></tr></thead>
         <tbody>{result.rows.map((row, index) => <tr key={index}><td className="py-2">{row.sspBookingId}</td><td>{row.outcome}</td><td>{row.reasonAr || '—'}</td></tr>)}</tbody></table></div>
@@ -87,9 +102,9 @@ export default function SweaterHandoffPreview() {
       {result.administrativeDecision && <div className="space-y-3" aria-label="قرار الاكتمال الإداري دون تحصيل">
         <p>{result.administrativeDecision.ownerName}: {result.administrativeDecision.statement}</p>
         <p>مرجع القرار: {result.administrativeDecision.conversationId} · {result.administrativeDecision.messageId}</p>
-        <p>التحصيل غير مثبت. كل غسلة: صافي 20 ريال، ضريبة 3، إجمالي 23، وعمولة 4.50 غير مدفوعة وفق القيم القائمة.</p>
+        <p>عند التسجيل: التحصيل غير مثبت. كل غسلة صافي 20 ريال، ضريبة 3، إجمالي 23، وعمولة 4.50 غير مدفوعة.</p>
         <ul>{result.rows.map(row => <li key={row.sspBookingId}>{row.sspBookingId} · {row.rawStatus} · {row.bikerName} · {row.collectionStatus}</li>)}</ul>
-        {!result.saved && <>
+        {!result.saved && !result.previousRun && <>
           <label className="flex items-start gap-2"><input type="checkbox" checked={completionDecisionConfirmed} onChange={event => setCompletionDecisionConfirmed(event.target.checked)} disabled={!result.canSave || busy} />راجعت الحجوزات المشمولة والمستثناة ومرجع قرار هادي، دون إثبات تحصيل</label>
           <label className="flex items-start gap-2"><input type="checkbox" checked={saveConfirmed} onChange={event => setSaveConfirmed(event.target.checked)} disabled={!result.canSave || busy} />أحفظ القرار والغسلات المحددة فقط دون قيد أو قبض أو صرف</label>
           <SecondaryButton onClick={save} disabled={!result.canSave || !saveConfirmed || !completionDecisionConfirmed || busy}>{busy ? 'نحفظ الغسلات...' : 'حفظ قرار الاكتمال دون تحصيل'}</SecondaryButton>

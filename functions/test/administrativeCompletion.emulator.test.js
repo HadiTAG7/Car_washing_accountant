@@ -34,6 +34,21 @@ suite('administrative completion — isolated transactions and integration regre
   beforeAll(() => { app = initializeApp({ projectId: 'demo-sweater' }, 'administrative-completion'); db = getFirestore(app); });
   afterAll(async () => { if (app) await deleteApp(app); });
   beforeEach(seed, 60000);
+  it('read-verifies saved source/claim/wash/commission in a consistent replay without any new save or journal', async () => {
+    const payload = completionFixture(); await save(payload);
+    const snapshot = async () => Object.fromEntries(await Promise.all(names.map(async name => [name, (await db.collection(name).get()).docs.map(doc => ({ id: doc.id, row: doc.data() }))])));
+    const before = await snapshot(), replay = await previewAdministrativeCompletion(db, payload, 'admin');
+    expect(replay.canSave).toBe(false); expect(replay.saved).toBe(false);
+    expect(replay.verification).toMatchObject({ status: 'verified', matched: 4, total: 4, readOnly: true, coverage: { complete: true } });
+    expect(replay.verification.rows.every(row => row.washCount === 1 && row.claimCount === 1 && row.commission.amountPerWash === 4.5 && row.commission.paid === false)).toBe(true);
+    expect(await snapshot()).toEqual(before);
+    const washId = replay.verification.rows[0].washId;
+    await db.collection('washes').doc(washId).update({ worker_commission_paid: true });
+    const changed = await snapshot(), check = await previewAdministrativeCompletion(db, payload, 'admin');
+    expect(check.verification.status).toBe('mismatch'); expect(check.verification.rows[0].commission.paid).toBe(true);
+    expect(await snapshot()).toEqual(changed);
+    await expect(previewAdministrativeCompletion(db, payload, 'partner')).rejects.toThrow();
+  }, 120000);
   it('atomically creates four pending-collection washes; preserves raw/claims/closed runs and records only unpaid commission', async () => {
     const p = completionFixture(), old = (await db.collection('sweater_bookings').doc(p.records[0].sspBookingId).get()).data();
     const claimBefore = (await db.collection('sweater_owner_booking_claims').get()).docs.map(d=>d.data());

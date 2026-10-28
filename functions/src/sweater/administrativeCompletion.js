@@ -4,6 +4,7 @@ import { COL, bookingDocId, rawDocId, SweaterIngestError } from './ingest.js';
 import { hashBody, hashRecord, normalizeRecord } from './record.js';
 import { executionWash } from './operationsExecution.js';
 import { WASH_COMMISSION_EFFECTIVE_MONTH } from '../washCommission.js';
+import { administrativeCompletionReadback } from './administrativeCompletionReadback.js';
 
 export const ADMIN_COMPLETION_SOURCE = 'staff_owner_administrative_completion_v1';
 const CLAIMS = 'sweater_owner_booking_claims', LINKS = 'sweater_operational_wash_links';
@@ -86,12 +87,22 @@ async function plan(db, payload, read, actor) {
   return { runRef, payloadHash, rows, counts, stateHash: hashBody(state) };
 }
 function resultFor(value, payload) {
-  if (value.run) return { ...value.run.result, saved: false, dryRun: true, replay: true, previousRun: { sameRecords: true, status: value.run.status } };
+  if (value.run) return { ...value.run.result, saved: false, canSave: false, dryRun: true, replay: true, previousRun: { sameRecords: true, status: value.run.status } };
   return { importRunId: payload.importRunId, dryRun: true, saved: false, replay: false, canSave: value.counts.needsReview === 0,
     reviewedPayloadHash: value.payloadHash, previewStateHash: value.stateHash, counts: value.counts, rows: value.rows.map(publicRow),
     coverage: payload.coverage, coverageIssues: [], reviewWarnings: [ADMIN_COMPLETION_WARNING], administrativeDecision: payload.decision, ledgerPosted: false, payrollPaid: false };
 }
-export async function previewAdministrativeCompletion(db, payload, actor) { return resultFor(await plan(db, payload, r => r.get(), actor), payload); }
+export async function previewAdministrativeCompletion(db, payload, actor) {
+  const value = await plan(db, payload, r => r.get(), actor);
+  if (!value.run) return resultFor(value, payload);
+  // Re-read membership, receipt and current linked facts in one consistent
+  // snapshot. No tx.set/create/update/delete, business write or save replay.
+  return db.runTransaction(async tx => {
+    const current = await plan(db, payload, ref => tx.get(ref), actor);
+    if (!current.run) fail('تغير سجل الحفظ أثناء التحقق؛ أعد القراءة.');
+    return { ...resultFor(current, payload), verification: await administrativeCompletionReadback(db, tx, payload, current.run) };
+  });
+}
 export async function saveAdministrativeCompletion(db, FieldValue, request, actor) {
   if (!request || Object.keys(request).some(k => !['payload','reviewedPayloadHash','previewStateHash'].includes(k))) fail('حقول طلب الحفظ غير مسموحة.', 'invalid-argument');
   validated(request.payload);

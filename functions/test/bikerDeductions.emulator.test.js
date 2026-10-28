@@ -2,7 +2,7 @@ import { beforeAll, beforeEach, afterAll, describe, expect, it } from 'vitest';
 import { initializeApp, deleteApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { previewBikerDeduction, saveBikerDeduction, readBikerDeduction } from '../src/bikerDeductions.js';
-import { deductionSeed, deductionInput, actor } from './bikerDeductionFixture.js';
+import { deductionSeed, protectedDeductionSeed, deductionInput, actor } from './bikerDeductionFixture.js';
 import { dispatch } from '../src/handlers.js';
 import { hashRecord } from '../src/sweater/record.js';
 const host = process.env.FIRESTORE_EMULATOR_HOST;
@@ -10,7 +10,8 @@ if (host && !/^(127\.0\.0\.1|localhost):19080$/.test(host)) throw Error('Isolate
 const suite = host ? describe : describe.skip;
 let app, db;
 const names = ['users', 'app_admins', 'bikers', 'quality_objections', 'audit_logs', 'sweater_metric_snapshots', 'sweater_raw_payloads',
-  'sweater_bookings', 'sweater_import_runs', 'accounting_periods', 'sweater_settlements', 'payroll_periods', 'payroll_runs', 'journal_entries', 'washes', 'sweater_adjustments'];
+  'sweater_bookings', 'sweater_import_runs', 'accounting_periods', 'sweater_settlements', 'payroll_periods', 'payroll_runs', 'journal_entries', 'washes', 'sweater_adjustments',
+  'sweater_owner_booking_claims', 'sweater_operational_wash_links'];
 suite('biker deduction isolated transactional behavior', () => {
   beforeAll(() => { app = initializeApp({ projectId: 'demo-sweater' }, 'biker-deduction-isolated'); db = getFirestore(app); });
   afterAll(async () => { if (app) await deleteApp(app); });
@@ -84,5 +85,18 @@ suite('biker deduction isolated transactional behavior', () => {
     const readback = await readBikerDeduction(db, { id: result.id }, actor);
     expect(readback.record.current).toMatchObject({ amountSAR: 129.95, quantity: 1, unit: 'count', matchedToCompensations: false, ledgerPosted: false, payrollApplied: false });
     expect((await db.collection('journal_entries').get()).size).toBe(1);
+  });
+  it('binds a protected owner-completed booking to newer raw without any source, wash, claim or commission write', async () => {
+    for (const [path, value] of Object.entries(protectedDeductionSeed())) await db.doc(path).set(value);
+    const snapshot = async () => Object.fromEntries(await Promise.all(names.filter(n => !['quality_objections', 'audit_logs'].includes(n)).map(async name => [name,
+      (await db.collection(name).get()).docs.map(d => ({ id: d.id, data: d.data() }))])));
+    const before = await snapshot(), payload = deductionInput({ sourceKind: 'booking', sourceId: 'C-990002', snapshotId: 'raw-test-run' });
+    const result = await saveBikerDeduction(db, FieldValue, await request(payload), actor);
+    expect(result.record.current.bookingEvidence.binding.mode).toBe('protected_owner_completed_observation'); expect(await snapshot()).toEqual(before);
+    const prepared = await request({ ...payload, expectedRevision: 1, reason: 'Another reviewed reason' }, 'source-became-paid');
+    await db.doc('washes/ssp__C-990002').update({ worker_commission_paid: true });
+    const protectedBefore = await snapshot();
+    await expect(saveBikerDeduction(db, FieldValue, prepared, actor)).rejects.toThrow(/روابطه المحمية/); expect(await snapshot()).toEqual(protectedBefore);
+    expect((await readBikerDeduction(db, { id: result.id }, actor)).record.revision).toBe(1);
   });
 });

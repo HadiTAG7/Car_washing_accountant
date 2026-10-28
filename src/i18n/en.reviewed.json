@@ -4351,5 +4351,6 @@
   "دليل فاتورة الحجز مكرر؛ يلزم مراجعة المصدر.": "Booking invoice evidence is duplicated; source review is required.",
   "دليل فاتورة الحجز المحفوظ غير مكتمل.": "Stored booking invoice evidence is incomplete.",
   "دليل مبلغ خصم الفاتورة لا يطابق الحجز أو العامل أو الوقت أو الإجماليات.": "Invoice deduction evidence does not match the booking, worker, reading time or totals.",
-  "نص فاتورة سويتر لا يثبت مبلغ الخصم المحدد؛ لا يُستخدم صافي الفاتورة بدلًا منه.": "Sweater invoice text does not establish this deduction; invoice net cannot replace the deduction amount."
+  "نص فاتورة سويتر لا يثبت مبلغ الخصم المحدد؛ لا يُستخدم صافي الفاتورة بدلًا منه.": "Sweater invoice text does not establish this deduction; invoice net cannot replace the deduction amount.",
+  "الحجز الحالي أو روابطه المحمية لا تطابق دليل الخصم؛ لن نغيّر السجل القديم.": "The current booking or protected links do not match the deduction evidence; the old record will remain unchanged."
 }

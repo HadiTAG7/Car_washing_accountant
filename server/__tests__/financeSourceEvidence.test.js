@@ -112,7 +112,7 @@ describe('one original allocated to two existing sources', () => {
     db.rows.set('monthly_expenses/injected-alias', { invoice_url: alias });
     await expect(evidenceCall(db, { action: 'approve', sourceId, sourceHash: before.sourceHash, postingHash: before.postingPreview.postingHash,
       reason: 'TEST separate approval', confirm: true })).rejects.toThrow();
-    await expect(assertFinanceApproval(db, { get: ref => ref.get() }, kind, sourceId, before.row)).rejects.toThrow();
+    await expect(assertFinanceApproval(db, { get: ref => ref.get() }, kind, sourceId, before.row)).rejects.toThrow('يوجد مصروف آخر بنفس هوية أصل المستند ولو اختلف شكل رابطه؛ راجع التكرار قبل الاعتماد والترحيل.');
     expect([...db.rows.keys()].some(key => key.startsWith('journal_entries/'))).toBe(false);
   });
   it('normalizes only documented Drive identity and never confuses another file or host', () => {

@@ -269,7 +269,7 @@ describe.skipIf(!enabled)('finance real Firestore workflow — isolated demo onl
     await db.doc('accounting_periods/2026-10').delete();
     await expect(evidenceCall(db, { action: 'preview', sourceId, sourceHash: before.sourceHash, patch: { amount: 201 } })).rejects.toThrow(/مبلغ أحد جزأي/);
     await db.doc('monthly_expenses/injected-duplicate').set({ invoice_url: `${originalUrl}?usp=sharing` });
-    await expect(postSource(db, FieldValue, { kind: 'startup', sourceId }, { userId: auth.uid })).rejects.toThrow(/مرتبط بمصروف/);
+    await expect(postSource(db, FieldValue, { kind: 'startup', sourceId }, { userId: auth.uid })).rejects.toThrow('يوجد مصروف آخر بنفس هوية أصل المستند ولو اختلف شكل رابطه؛ راجع التكرار قبل الاعتماد والترحيل.');
     expect((await db.collection('journal_entries').get()).size).toBe(0);
   }, 180000);
 

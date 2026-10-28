@@ -38,6 +38,15 @@ describe('finance MCP uses the same authenticated application service', () => {
     mocks.fetch.mockResolvedValueOnce(result({ sourceId: 'TEST', sourceHash: 'first' })).mockResolvedValueOnce(result({ sourceId: 'TEST', sourceHash: 'changed' }));
     await expect(financeWriteTools[1].run({ action: 'save', request: { kind: 'variable' }, confirm: true })).rejects.toThrow(/تتطابق/);
   });
+  it('preserves invoice line evidence through the same server endpoint and verifies the saved source hash', async () => {
+    const invoiceLines = { version: 1, items: [{ id: 'source-line-1', description: 'بند اصطناعي', quantity: 2, unit: 'قطعة', unitCost: 25, amount: 50, sourceRef: 'TEST line 1' }] };
+    const request = { kind: 'variable', sourceId: 'TEST', sourceHash: 'before', previewHash: 'preview', reason: 'اختبار معزول', patch: { invoiceLines } };
+    mocks.fetch.mockResolvedValueOnce(result({ sourceId: 'TEST', sourceHash: 'after' })).mockResolvedValueOnce(result({ sourceId: 'TEST', sourceHash: 'after' }));
+    const output = await financeWriteTools[1].run({ action: 'save', request, confirm: true });
+    expect(JSON.parse(mocks.fetch.mock.calls[0][1].body)).toEqual({ ...request, action: 'save', confirm: true });
+    expect(mocks.fetch.mock.calls.every(([url]) => url.endsWith('/finance-workbench'))).toBe(true);
+    expect(JSON.parse(output.content[0].text).readbackVerified).toBe(true);
+  });
   it.each(['cash_bank_correction','payroll_cash_funding','cash_residual_correction'])('supports %s through the existing save and status-read workflow',async kind=>{
     const sourceId='CEO-CASH-NEGATIVE-20261025-v1',receipt={sourceId,sourceHash:'receipt-proof',entryId:'single-entry',financialPosting:true};
     mocks.fetch.mockResolvedValueOnce(result(receipt)).mockResolvedValueOnce(result({...receipt,completed:true,status:'completed'}));

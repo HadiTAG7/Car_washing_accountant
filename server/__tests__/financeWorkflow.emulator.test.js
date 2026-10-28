@@ -8,7 +8,8 @@ import { readFile } from 'node:fs/promises';
 import { financeWorkbench } from '../financeWorkbench.js';
 import { financeReports } from '../financeReports.js';
 import { postSource } from '../../functions/src/ledger.js';
-import { expensePatch, financeFixture } from './financeFixtures.js';
+import { expensePatch, financeFixture, syntheticFinanceInvoiceLines, syntheticPrintedInvoiceLines, syntheticSharedInvoiceLines } from './financeFixtures.js';
+import { financeReviewId, financeSourceHash } from '../../functions/src/financeReview.js';
 import { approveFinanceSelection } from '../../src/lib/financeWorkbenchActions.js';
 import { dispatch } from '../../functions/src/handlers.js';
 import { deleteStartupPlan } from '../../functions/src/startupCosts.js';
@@ -76,6 +77,75 @@ describe.skipIf(!enabled)('finance real Firestore workflow — isolated demo onl
     return { input, preview, result, read, common: { kind: 'variable', sourceId: result.sourceId, sourceHash: read.sourceHash } };
   }
   const approve = data => call({ action: 'approve', ...data.common, postingHash: data.read.postingPreview.postingHash, reason: 'اعتماد مستند الاختبار', confirm: true });
+
+  it('records known source quantities with an undivided shared total and posts the startup source once without component prices', async () => {
+    const invoiceLines = syntheticSharedInvoiceLines();
+    const patch = expensePatch({ parentId: 'test-parent', amount: 2950, invoiceLines });
+    delete patch.categoryId; delete patch.quantity;
+    const input = { kind: 'startup', requestId: 'TEST-SHARED-TOTAL', patch };
+    const preview = await call({ action: 'previewCapture', ...input });
+    const saved = await call({ action: 'capture', ...input, previewHash: preview.previewHash, reason: 'مبلغ مشترك اختباري دون توزيع', confirm: true });
+    const read = await call({ action: 'read', kind: 'startup', sourceId: saved.sourceId });
+    const common = { kind: 'startup', sourceId: saved.sourceId, sourceHash: read.sourceHash };
+    expect(read.approvalReady).toBe(true); expect(read.row.quantity).toBeNull(); expect(read.row.unit_cost).toBeNull();
+    expect(read.row.finance_metadata.invoiceLines).toEqual(invoiceLines);
+    await call({ action: 'approve', ...common, postingHash: read.postingPreview.postingHash, reason: 'اعتماد المبلغ المشترك الاختباري', confirm: true });
+    const posted = await call({ action: 'post', ...common, confirm: true });
+    expect(posted.verification.linesMatched).toBe(true);
+    const entries = await db.collection('journal_entries').get(); expect(entries.size).toBe(1);
+    expect(entries.docs[0].data().lines).toEqual(expect.arrayContaining([
+      expect.objectContaining({ accountId: '1500', debit: 2950, credit: 0 }), expect.objectContaining({ accountId: '2000', debit: 0, credit: 2950 }),
+    ]));
+    expect((await db.doc('startup_costs/test-parent').get()).data().actual_amount).toBe(2950);
+    const after = (await db.doc(`startup_cost_entries/${read.sourceId}`).get()).data();
+    expect(after.finance_metadata.invoiceLines.items.every(item => item.unitCost === null && item.amount === null)).toBe(true);
+    expect(after.payment_status).toBe('unpaid');
+    await expect(call({ action: 'post', ...common, confirm: true })).rejects.toThrow();
+    expect((await db.collection('journal_entries').get()).size).toBe(1);
+  }, 120000);
+
+  it('keeps heterogeneous quantities, invalidates their approval on evidence change, then posts exactly once through the existing adapter', async () => {
+    const lines = syntheticFinanceInvoiceLines();
+    const data = await captured({ quantity: undefined, amount: 50, invoiceLines: lines });
+    expect(data.read.row).toMatchObject({ quantity: null, unit_cost: null, finance_metadata: { invoiceLines: lines } });
+    await approve(data);
+    lines.items[0].sourceRef = 'TEST-INVOICE corrected line reference';
+    const patch = { invoiceLines: lines }, preview = await call({ action: 'preview', ...data.common, patch });
+    await call({ action: 'save', ...data.common, patch, previewHash: preview.previewHash, reason: 'تصحيح مرجع بند اختباري', confirm: true });
+    await expect(postSource(db, FieldValue, { kind: 'variable', sourceId: data.read.sourceId }, { userId: auth.uid })).rejects.toThrow(/اعتماد/);
+    expect((await db.collection('journal_entries').get()).size).toBe(0);
+    const read = await call({ action: 'read', kind: 'variable', sourceId: data.read.sourceId });
+    const current = { read, common: { ...data.common, sourceHash: read.sourceHash } };
+    expect(read.sourceHash).not.toBe(data.read.sourceHash); expect(read.approved).toBe(false);
+    await approve(current);
+    const posted = await call({ action: 'post', ...current.common, confirm: true });
+    expect(posted.verification.linesMatched).toBe(true);
+    const journals = await db.collection('journal_entries').get(); expect(journals.size).toBe(1);
+    expect(journals.docs[0].data().lines).toEqual(expect.arrayContaining([
+      expect.objectContaining({ accountId: '5100', debit: 50, credit: 0 }), expect.objectContaining({ accountId: '2000', debit: 0, credit: 50 }),
+    ]));
+    const saved = (await db.doc(`variable_expenses/${read.sourceId}`).get()).data();
+    expect(saved.finance_metadata.invoiceLines).toEqual(lines); expect(saved.payment_status).toBe('unpaid');
+    await expect(call({ action: 'post', ...current.common, confirm: true })).rejects.toThrow();
+    expect((await db.collection('journal_entries').get()).size).toBe(1);
+  }, 120000);
+
+  it('preserves partial VAT evidence but refuses full deduction through the current and legacy posting doors', async () => {
+    const invoiceLines = syntheticPrintedInvoiceLines();
+    const data = await captured({ quantity: undefined, amount: 81.75, invoiceLines, isTaxInvoice: true, vatAmount: 10.66, vatRate: 0.15,
+      vatDeductible: true, taxReviewRef: 'TEST-PARTIAL-REVIEW' });
+    expect(data.read.approvalReady).toBe(false); expect(data.read.issues.some(issue => issue.includes('الجزئي'))).toBe(true);
+    await expect(call({ action: 'approve', ...data.common, postingHash: 'a'.repeat(64), reason: 'رفض معزول', confirm: true })).rejects.toThrow(/الجزئي/);
+    // Simulate a stale legacy approval in this demo emulator only. Shared posting
+    // validation must still reject it before any journal is created.
+    const row = { ...data.read.row, approval_status: 'approved' };
+    await db.doc(`variable_expenses/${data.read.sourceId}`).update({ approval_status: 'approved' });
+    await db.doc(`finance_reviews/${financeReviewId('variable', data.read.sourceId)}`).set({ status: 'approved', sourceHash: financeSourceHash(row) });
+    await expect(postSource(db, FieldValue, { kind: 'variable', sourceId: data.read.sourceId }, { userId: auth.uid })).rejects.toThrow(/الجزئي/);
+    expect((await db.collection('journal_entries').get()).size).toBe(0);
+    expect((await db.doc(`variable_expenses/${data.read.sourceId}`).get()).data().vat_amount).toBe(10.66);
+    expect((await db.doc(`variable_expenses/${data.read.sourceId}`).get()).data().finance_metadata.invoiceLines.items[1]).toMatchObject({ quantity: 2, unitCost: 13.04, amount: 30 });
+  }, 120000);
 
   it('bulk approval calls the original transactional path per eligible version and never posts or proves payment', async () => {
     await captured({ invoiceNumber: 'BULK-A', invoiceUrl: 'https://example.org/bulk-a' }, 'BULK-A');

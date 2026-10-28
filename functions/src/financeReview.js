@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { financeInvoiceLineProblems } from './financeInvoiceLines.js';
 
 export const FINANCE_KINDS = Object.freeze({
   variable: { collection: 'variable_expenses', amount: 'total_variable_cost', date: 'logged_date', title: 'expense_name', category: 'variable_expense_categories' },
@@ -27,7 +28,8 @@ export function financeProblems(kind, row) {
   if (typeof row[spec.title] !== 'string' || !row[spec.title].trim()) issues.push('وصف المصروف غير مكتمل.');
   if (!Number.isFinite(row[spec.amount]) || row[spec.amount] <= 0) issues.push('المبلغ غير مثبت.');
   if (!realDate(row[spec.date])) issues.push('تاريخ المصروف غير مكتمل.');
-  if (!Number.isFinite(row.quantity) || row.quantity <= 0 || !Number.isFinite(row.unit_cost)
+  if (Object.hasOwn(row.finance_metadata || {}, 'invoiceLines')) issues.push(...financeInvoiceLineProblems(row, row[spec.amount]));
+  else if (!Number.isFinite(row.quantity) || row.quantity <= 0 || !Number.isFinite(row.unit_cost)
     || Math.round(row.quantity * row.unit_cost * 100) !== Math.round(row[spec.amount] * 100)) issues.push('الكمية وسعر الوحدة لا يطابقان الإجمالي.');
   if (typeof row.supplier !== 'string' || !row.supplier.trim()) issues.push('المورد غير محدد.');
   if (!row.invoice_url || !/^https:\/\//.test(row.invoice_url)) issues.push('رابط المستند غير مكتمل.');

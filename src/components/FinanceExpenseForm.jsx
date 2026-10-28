@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { AlertTriangle, ShieldCheck } from 'lucide-react';
 import { callFinanceApi } from '../lib/financeApi';
 import { EXPENSE_KIND_LABELS, hasPaymentConflict, suggestedPaymentMethod, WORKBENCH_STAGES } from '../lib/financeWorkbenchView';
+import FinanceInvoiceLines, { InvoiceLinesRead } from './FinanceInvoiceLines';
 
 const fields = { variable: ['expense_name', 'total_variable_cost', 'logged_date'], monthly: ['expense_name', 'total_monthly_cost', 'logged_date'],
   annual: ['description', 'amount', 'spent_date', 'annual_expense_id'], startup: ['description', 'amount', 'spent_date', 'startup_cost_id'] };
@@ -14,10 +15,12 @@ function fromRow(kind, row = {}) {
     vatRate: row.vat_rate ?? '', vatDeductible: bool(row.vat_deductible), priceMode: row.price_mode || '',
     paymentMethod: row.payment_method || 'unknown', paymentStatus: row.payment_status || 'unknown', paidDate: row.paid_date || '',
     fundingType: meta.fundingType || 'unknown', fundingReference: meta.fundingReference || '', purpose: meta.purpose || '',
-    taxBasis: meta.taxBasis || 'document', taxReviewRef: meta.taxReviewRef || '', evidenceRefs: (meta.evidenceRefs || []).join('\n') };
+    taxBasis: meta.taxBasis || 'document', taxReviewRef: meta.taxReviewRef || '', evidenceRefs: (meta.evidenceRefs || []).join('\n'),
+    invoiceLines: meta.invoiceLines ? structuredClone(meta.invoiceLines) : null };
 }
 function toPatch(kind, form) {
-  const p = { description: form.description, amount: Number(form.amount), date: form.date, quantity: Number(form.quantity),
+  const p = { description: form.description, amount: Number(form.amount), date: form.date,
+    ...(form.invoiceLines ? { invoiceLines: form.invoiceLines } : { invoiceLines: null, quantity: Number(form.quantity) }),
     supplier: form.supplier.trim() || null, invoiceNumber: form.invoiceNumber.trim() || null, invoiceDate: form.invoiceDate || null,
     invoiceUrl: form.invoiceUrl.trim() || null, vatAmount: form.vatAmount === '' ? null : Number(form.vatAmount),
     vatRate: form.vatRate === '' ? null : Number(form.vatRate), paidDate: form.paidDate || null,
@@ -128,7 +131,11 @@ export default function FinanceExpenseForm({ kind, detail, requestId, options, o
       {input('دليل الدفع أو ذمة المورد', 'fundingReference')}{input('سبب المصروف للمشروع', 'purpose')}
     </div></details>
     <details className="fw-form-section"><summary>التصنيف والمراجع</summary><div className="fw-form">
-      {input('الكمية', 'quantity', 'number')}
+      <label>طريقة تمثيل الكمية<select value={form.invoiceLines ? 'lines' : 'single'} disabled={protectedRow || busy}
+        onChange={event => set('invoiceLines', event.target.value === 'lines' ? { version: 1, items: [], vatAllocation: null } : null)}>
+        <option value="single">كمية متجانسة واحدة</option><option value="lines">بنود مختلفة من الفاتورة</option>
+      </select></label>
+      {!form.invoiceLines && input('الكمية', 'quantity', 'number')}
       <label>تصنيف المصروف<select value={form.classification} disabled={protectedRow || busy || (Boolean(detail) && ['annual', 'startup'].includes(kind))}
         onChange={e => set('classification', e.target.value)}><option value="">غير محدد</option>{(options.data?.items || []).map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select>
         {options.data?.limited && <small>قائمة التصنيفات محدودة؛ لا تختَر بدلًا من بند غير ظاهر.</small>}</label>
@@ -137,6 +144,8 @@ export default function FinanceExpenseForm({ kind, detail, requestId, options, o
         <option value="">غير محدد</option><option value="نقد">إيصال نقدي</option><option value="تحويل بنكي">تحويل بنكي</option><option value="مدى">مدى / بطاقة</option></select></label>}
       <label className="fw-wide">روابط أو مراجع تؤيد المستند — كل مرجع في سطر<textarea value={form.evidenceRefs} onChange={e => set('evidenceRefs', e.target.value)} disabled={protectedRow || busy} /></label>
     </div></details>
+    {form.invoiceLines && <FinanceInvoiceLines value={form.invoiceLines} onChange={value => set('invoiceLines', value)} disabled={protectedRow || busy}
+      amount={form.amount} vatAmount={form.vatAmount} taxReviewRef={form.taxReviewRef} isTaxInvoice={form.isTaxInvoice} />}
     {issues.length > 0 && <details className="fw-document-issues"><summary>نواقص تمنع الاعتماد: {issues.length}</summary><ul>{issues.map((issue, index) => <li key={index}>{issue}</li>)}</ul></details>}
     {preview && <ChangePreview kind={kind} preview={preview} options={options.data?.items || []} />}
     {previewData?.lines?.length > 0 && <details className="fw-form-section"><summary>معاينة القيد — دون ترحيل</summary>
@@ -166,7 +175,7 @@ export default function FinanceExpenseForm({ kind, detail, requestId, options, o
   </>;
 }
 
-function ChangePreview({ kind, preview, options }) {
+export function ChangePreview({ kind, preview, options }) {
   const labels = { description: 'الوصف', amount: 'المبلغ بالريال', date: 'تاريخ المصروف', quantity: 'الكمية', classification: 'تصنيف المصروف',
     supplier: 'المورد', invoiceNumber: 'رقم المستند', invoiceDate: 'تاريخ الفاتورة', invoiceUrl: 'رابط الإيصال',
     isTaxInvoice: 'فاتورة ضريبية', vatAmount: 'مبلغ الضريبة', vatRate: 'نسبة الضريبة', vatDeductible: 'قابلية استرداد الضريبة', priceMode: 'السعر والضريبة',
@@ -177,9 +186,13 @@ function ChangePreview({ kind, preview, options }) {
     inclusive: 'شامل الضريبة', exclusive: 'غير شامل الضريبة', document: 'المستند', verified_historical_policy: 'سياسة تاريخية متحقق منها' };
   const before = fromRow(kind, preview.before), after = fromRow(kind, preview.after);
   const changed = Object.keys(labels).filter(key => String(before[key]) !== String(after[key]));
+  const linesChanged = JSON.stringify(before.invoiceLines) !== JSON.stringify(after.invoiceLines);
   const show = (key, value) => key === 'classification' ? options.find(o => o.id === value)?.label || 'غير متاح'
     : value === '' || value === null || value === undefined ? 'غير متاح' : values[value] || String(value);
   return <details className="fw-form-section" open><summary>معاينة التغيير — لم يُحفظ</summary>{changed.length ? <div className="fw-table-scroll"><table>
     <thead><tr><th>الحقل</th><th>قبل</th><th>بعد</th></tr></thead><tbody>{changed.map(key => <tr key={key}><th scope="row">{labels[key]}</th><td>{show(key, before[key])}</td><td>{show(key, after[key])}</td></tr>)}</tbody>
-  </table></div> : <p>لا تغيير في الحقول المعروضة.</p>}</details>;
+  </table></div> : !linesChanged && <p>لا تغيير في الحقول المعروضة.</p>}
+    {linesChanged && <section aria-label="تغيير بنود الفاتورة"><h4>بنود الفاتورة قبل التغيير</h4><InvoiceLinesRead value={before.invoiceLines} />
+      <h4>بنود الفاتورة بعد التغيير</h4><InvoiceLinesRead value={after.invoiceLines} /></section>}
+  </details>;
 }

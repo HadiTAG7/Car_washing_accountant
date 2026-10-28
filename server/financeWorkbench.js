@@ -12,6 +12,7 @@ import { filterWorkbenchItems, hasPaymentConflict, documentDay } from '../src/li
 import { cashBankCorrection } from './cashBankCorrection.js';
 import {cashResidualCorrection} from './cashResidualCorrection.js';
 import { payrollCashFunding } from './payrollCashFunding.js';
+import { invoiceLinesShapeIssues } from '../functions/src/financeInvoiceLines.js';
 import { financePostingHistory } from './financePostingHistory.js';
 
 const kindSchema = z.enum(['variable', 'monthly', 'annual', 'startup']);
@@ -31,6 +32,7 @@ const patchSchema = z.object({
   fundingType: z.enum(['unknown', 'company_cash', 'company_bank', 'vendor_liability', 'partner', 'employee']).optional(),
   fundingReference: nullableText.optional(), purpose: nullableText.optional(), evidenceRefs: z.array(z.string().trim().min(1).max(300)).max(20).optional(),
   taxReviewRef: nullableText.optional(), taxBasis: z.enum(['document', 'verified_historical_policy']).optional(),
+  invoiceLines: z.unknown().refine(value => value === null || invoiceLinesShapeIssues(value).length === 0, 'بنود الفاتورة غير صالحة.').optional(),
 }).strict();
 const common = { kind: kindSchema, sourceId: id };
 const correction = { ...common, patch: patchSchema, sourceHash: hash };
@@ -63,10 +65,17 @@ function applyPatch(kind, before, p) {
   if (p.categoryId && spec.fk) fail('هذا النوع يتبع بند التأسيس أو السنوي.', 'invalid-argument');
   const meta = { ...(row.finance_metadata || {}) };
   for (const key of ['fundingType', 'fundingReference', 'purpose', 'evidenceRefs', 'taxReviewRef', 'taxBasis']) if (Object.hasOwn(p, key)) meta[key] = p[key];
+  if (Object.hasOwn(p, 'invoiceLines')) {
+    if (p.invoiceLines === null) delete meta.invoiceLines;
+    else meta.invoiceLines = p.invoiceLines;
+  }
   row.finance_metadata = meta;
   if (row[spec.amount] !== undefined && (!Number.isFinite(row[spec.amount]) || row[spec.amount] <= 0
     || round2(row[spec.amount]) !== row[spec.amount])) fail('المبلغ يجب أن يكون موجبًا بالهللة.', 'invalid-argument');
-  if (Number.isFinite(row.quantity) && Number.isFinite(row[spec.amount])) row.unit_cost = Number((row[spec.amount] / row.quantity).toFixed(8));
+  if (Object.hasOwn(meta, 'invoiceLines')) {
+    if (p.quantity != null) fail('لا تجمع كمية واحدة مع بنود مختلفة؛ اختر تمثيل المستند من مصدره.', 'invalid-argument');
+    row.quantity = null; row.unit_cost = null;
+  } else if (Number.isFinite(row.quantity) && Number.isFinite(row[spec.amount])) row.unit_cost = Number((row[spec.amount] / row.quantity).toFixed(8));
   row.finance_workflow_version = 1;
   const previousRevision = before.finance_revision ?? 0;
   if (!Number.isSafeInteger(previousRevision) || previousRevision < 0 || previousRevision >= Number.MAX_SAFE_INTEGER) fail('نسخة المصدر التقنية غير صالحة؛ لا تحفظ فوقها.');
@@ -265,7 +274,8 @@ export async function financeWorkbench(db, auth, input) {
     if (state.closed) fail('الفترة مقفلة.');
     if (!isCapture && state.sourceHash !== r.sourceHash) fail('تغير السجل؛ أعد القراءة والمعاينة.');
     const after = r.action === 'approve' ? before : applyPatch(r.kind, before, r.patch);
-    if (isCapture && (!after[spec.title] || !after[spec.date] || !after[spec.amount] || !after.quantity)) fail('التسجيل يحتاج وصفًا وتاريخًا ومبلغًا وكمية مثبتة.');
+    if (isCapture && (!after[spec.title] || !after[spec.date] || !after[spec.amount]
+      || (!after.quantity && !after.finance_metadata?.invoiceLines))) fail('التسجيل يحتاج وصفًا وتاريخًا ومبلغًا وكمية أو بنودًا مثبتة.');
     if (isCapture && !after.invoice_url) fail('رابط المستند مطلوب لمنع التكرار.');
     // A same-record edit never relocates or deletes a source, nor moves a
     // booked date to an open month to evade the original period lock.

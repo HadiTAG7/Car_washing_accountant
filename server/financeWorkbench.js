@@ -328,7 +328,8 @@ export async function financeWorkbench(db, auth, input) {
     tx.set(auditRef, { action: `finance-${r.action}`, userId: auth.uid, kind: r.kind, sourceId, before, after,
       reason: r.reason, sourceHash: financeSourceHash(after),
       sourceEvidence: { quantityDecision: after.finance_metadata?.quantityException ? sourceContext.quantityGrant : null,
-        originalAllocation: after.finance_metadata?.documentAllocation ? sourceContext.allocationGrant : null }, at: FieldValue.serverTimestamp() });
+        originalAllocation: after.finance_metadata?.documentAllocation ? sourceContext.allocationGrant : null,
+        reviewedPartialVat: sourceContext.partialVatGrant || null }, at: FieldValue.serverTimestamp() });
     const result = { saved: true, action: r.action, kind: r.kind, sourceId, sourceHash: financeSourceHash(after), auditId: auditRef.id,
       approved: r.action === 'approve', financialPosting: false };
     tx.set(receiptRef, { requestHash, result, at: FieldValue.serverTimestamp(), userId: auth.uid });

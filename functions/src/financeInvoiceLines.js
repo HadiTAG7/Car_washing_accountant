@@ -1,4 +1,5 @@
 import { round2 } from './invariants.js';
+import { reviewedPartialVatGrant } from './financeReviewedVat.js';
 
 export const MAX_FINANCE_INVOICE_LINES = 100;
 const text = (value, max) => typeof value === 'string' && value.trim().length > 0 && value.length <= max;
@@ -45,7 +46,7 @@ export function invoiceLinesTotal(value) {
   return Array.isArray(value?.items) ? round2(value.items.reduce((sum, line) => sum + (Number.isFinite(line?.amount) ? line.amount : 0), 0)) : null;
 }
 
-export function financeInvoiceLineProblems(row, total) {
+export function financeInvoiceLineProblems(row, total, { kind, sourceId } = {}) {
   const value = row.finance_metadata?.invoiceLines;
   const issues = invoiceLinesShapeIssues(value);
   if (issues.length) return issues;
@@ -67,9 +68,7 @@ export function financeInvoiceLineProblems(row, total) {
       issues.push('أهلية ضريبة البنود تحتاج مرجع المراجعة الضريبية نفسه، ولا تُستنتج من المبلغ.');
     }
     if (tax.eligibleVat > 0 && tax.eligibleVat < tax.printedVat) {
-      // The existing posting adapter supports all-or-none VAT only. Preserve the
-      // reviewed partial amount but do not silently post the entire printed VAT.
-      issues.push('خصم الضريبة الجزئي محفوظ للمراجعة، ومسار الترحيل الحالي لا يدعمه؛ يبقى الاعتماد والترحيل موقوفين.');
+      if (!reviewedPartialVatGrant(kind, sourceId, row)) issues.push('الخصم الجزئي يحتاج مصدرًا مطابقًا للرأي الضريبي المحسوم؛ يبقى الاعتماد والترحيل موقوفين.');
     } else if (row.vat_deductible === true && tax.eligibleVat !== tax.printedVat) {
       issues.push('المبلغ المؤهل للضريبة لم يثبت مطابقته للخصم المطلوب؛ لا تخصم الضريبة المطبوعة تلقائيًا.');
     } else if (row.vat_deductible !== true && tax.eligibleVat > 0) {

@@ -4100,7 +4100,7 @@
   "ضريبة البنود المطبوعة": "Printed item VAT",
   "ضريبة البنود المؤهلة — اتركها فارغة إن لم تُحسم": "Eligible item VAT — leave blank if unresolved",
   "مرجع مراجعة ضريبة البنود": "Item VAT review reference",
-  "لا تستنتج الأهلية من الضريبة المطبوعة. الخصم الجزئي يبقى موقوفًا إذا لم يدعمه مسار الترحيل.": "Do not infer eligibility from printed VAT. Partial deduction remains blocked when unsupported by the posting workflow.",
+  "لا تستنتج الأهلية من الضريبة المطبوعة. الخصم الجزئي يحتاج مصدرًا مطابقًا لرأي ضريبي مراجع.": "Do not infer eligibility from printed VAT. Partial deduction requires a source matching a reviewed tax opinion.",
   "بنود الفاتورة قبل التغيير": "Invoice items before the change",
   "بنود الفاتورة بعد التغيير": "Invoice items after the change",
   "كمية متجانسة واحدة؛ لا توجد بنود مفصلة.": "One homogeneous quantity; no itemized lines.",

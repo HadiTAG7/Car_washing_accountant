@@ -17,6 +17,16 @@ for (let index = 1; index <= 3; index++) {
 }
 
 {
+  const request = { kind: 'variable', requestId: 'BROWSER-SAVED-PENDING-STATUS', patch: expensePatch({
+    description: 'TEST-SAVED-PENDING — مستند مسجل ومراجعته معلقة', amount: 12, quantity: 2,
+    invoiceNumber: null, invoiceUrl: 'https://example.org/test-saved-pending-status', isTaxInvoice: true,
+    date: '2026-10-03', invoiceDate: '2026-10-03', vatDeductible: false, vatAmount: 1.57, vatRate: 0.15, paymentStatus: 'paid', paymentMethod: 'card', paidDate: '2026-10-03',
+    fundingType: 'employee', fundingReference: 'TEST owner-prefunded employee evidence', taxReviewRef: 'TEST-OPINION-NO-DEDUCTION' }) };
+  const preview = await financeWorkbench(db, { uid: 'test-admin' }, { action: 'previewCapture', ...request });
+  await financeWorkbench(db, { uid: 'test-admin' }, { action: 'capture', ...request, previewHash: preview.previewHash, reason: 'تهيئة حالة تسجيل اصطناعية دون اعتماد', confirm: true });
+}
+
+{
   const request = { kind: 'variable', requestId: 'BROWSER-SHARED-LINES', patch: expensePatch({ quantity: undefined, amount: 2950,
     invoiceLines: syntheticSharedInvoiceLines(), description: 'اختبار مبلغ مشترك — أسعار الأصناف غير مفصولة',
     invoiceNumber: 'TEST-SHARED-LINES', invoiceUrl: 'https://example.org/test-shared-lines' }) };

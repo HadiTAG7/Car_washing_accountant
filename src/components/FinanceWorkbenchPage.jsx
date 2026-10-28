@@ -70,11 +70,12 @@ export default function FinanceWorkbenchPage() {
   }
   if (!list.allowed) return <div className="fw-page" role="alert">صندوق العمل المالي للإدارة فقط.</div>;
   return <><TopBar title="صندوق العمل المالي" subtitle="كل مستند، وخطوته الجاية — دون تغيير الضوابط" /><main className="fw-page fw-workbench" dir="rtl">
-    <div className="fw-toolbar"><div><h2>المستندات حسب المرحلة</h2><small>الحفظ، والاعتماد، والترحيل، والسداد خطوات منفصلة.</small></div><div className="fw-actions">
+    <div className="fw-toolbar"><div><h2>المستندات المسجلة ومراحلها</h2><small>التسجيل وحفظ التفاصيل والمراجعة والاعتماد والترحيل والسداد حالات منفصلة.</small></div><div className="fw-actions">
       <button type="button" disabled={formBusy || bulkBusy || list.loading} onClick={refresh}><RefreshCw size={16} /> تحديث البيانات</button>
       <button type="button" className="fw-primary" disabled={formBusy || bulkBusy} onClick={() => { if (!mayLeave()) return; setCapture({ kind: filters.kind === 'all' ? kind : filters.kind, requestId: crypto.randomUUID() }); setDirty(false); setMessage(''); }}><Plus size={16} /> مستند جديد</button>
     </div></div>
     <p className="fw-workbench-note"><AlertTriangle size={17} />النواقص تمنع الاعتماد. الاعتماد لا يعني الترحيل أو السداد، والترحيل لا يصرف أموالًا.</p>
+    <p className="fw-workbench-note">كل مستند في القائمة مسجل بالفعل. حالة النواقص قد تعني مانع ترحيل مشتركًا، وليس نقص تسجيل.</p>
     {message && <div className="fw-success" role="status">{message}</div>}
     {list.error && <div className="fw-warning" role="alert">{list.error} لم تكتمل قراءة القائمة؛ لا توجد أعداد متحققة.</div>}
     <section className="fw-stage-counters" aria-label="عدادات مراحل المستندات">{Object.entries(stageNames).map(([stage, label]) => <button type="button" key={stage}
@@ -104,6 +105,7 @@ export default function FinanceWorkbenchPage() {
           <small>{documentDay(item.date) || 'التاريخ غير مثبت'} · {EXPENSE_KIND_LABELS[item.kind]}</small>
           <small>{item.supplier || 'المورد غير مثبت'}{item.documentNumber ? ` · مستند ${item.documentNumber}` : ''}</small>
           <span className={`fw-stage fw-stage--${item.workflowStage}`}>{WORKBENCH_STAGES[item.workflowStage] || 'غير متاح'}</span>
+          {item.workflowDimensions && <small>{item.workflowDimensions.details.label} · {item.workflowDimensions.review.label}</small>}
           {age > 30 && item.workflowStage !== 'complete' && <small className="fw-age-warning">أقدم من 30 يومًا ولم يكتمل · {age} يومًا</small>}
           {item.paymentConflict && <small className="fw-age-warning">طريقة دفع متناقضة</small>}
         </button></article>; })}

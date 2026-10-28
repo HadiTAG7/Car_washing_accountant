@@ -64,6 +64,9 @@
 .fw-document-status { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; background: var(--sw-surface-raised); border-radius: var(--sw-radius-small-card); padding: 14px; margin-bottom: 20px; font-size: .75rem; line-height: 1.9; }
 .fw-document-status dt { color: var(--sw-text-secondary); }
 .fw-document-status dd { margin: 3px 0 0; }
+.fw-read-status { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.fw-read-status .fw-document-status > div { min-width: 0; }
+.fw-read-status ul { list-style: disc; padding-inline-start: 20px; line-height: 1.9; }
 .fw-payment-warning, .fw-suggestion { display: flex; align-items: flex-start; gap: 10px; background: var(--sw-danger-soft); color: var(--sw-danger); border: 1px solid var(--sw-danger); border-radius: var(--sw-radius-small-card); padding: 14px; line-height: 1.9; margin-block: 15px; font-size: .8rem; }
 .fw-payment-warning svg { flex-shrink: 0; margin-top: 4px; }
 .fw-suggestion { background: var(--sw-info-soft); color: var(--sw-info); border-color: var(--sw-info); align-items: center; flex-wrap: wrap; }

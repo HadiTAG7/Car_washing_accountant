@@ -15,6 +15,7 @@ import { payrollCashFunding } from './payrollCashFunding.js';
 import { invoiceLinesShapeIssues } from '../functions/src/financeInvoiceLines.js';
 import { financeSourceEvidence, sourceEvidenceShapeValid } from '../functions/src/financeSourceEvidence.js';
 import { financePostingHistory } from './financePostingHistory.js';
+import { financeWorkflowDimensions } from '../src/lib/financeWorkflowDimensions.js';
 
 const kindSchema = z.enum(['variable', 'monthly', 'annual', 'startup']);
 const id = z.string().regex(/^[\p{L}\p{N}_.:-]{1,160}$/u);
@@ -180,7 +181,7 @@ async function workflowDocument(db, tx, kind, sourceId, row, currentState = null
   const correctedNeedsReview = reversed && (detail.issues.length > 0 || postingHistory.issues.length > 0 || !paymentProven);
   const workflowStage = posted ? correctedNeedsReview ? 'posted_review' : paymentProven ? 'complete' : 'posted_unproven'
     : safeUnposted ? detail.approved ? 'approved' : 'ready' : 'incomplete';
-  return { ...detail, issues: [...detail.issues, ...additionalIssues, ...postingHistory.issues], workflowStage, postingHistory,
+  const result = { ...detail, issues: [...detail.issues, ...additionalIssues, ...postingHistory.issues], workflowStage, postingHistory,
     approvalReady: safeUnposted && !detail.approved && !detail.issues.length,
     postingReady: safeUnposted && detail.approved && !detail.issues.length,
     paymentProven, paymentConflict: hasPaymentConflict(row),
@@ -188,6 +189,7 @@ async function workflowDocument(db, tx, kind, sourceId, row, currentState = null
       : reversed ? 'له قيد معكوس دون بديل مرحل مثبت؛ المصدر محمي ويحتاج مراجعة.' : state.closed ? 'الفترة مقفلة؛ العرض فقط.'
       : state.protectedSource && !posted ? 'المصدر محمي؛ لم يثبت قيد مرحّل صالح في القراءة الحالية.' : null,
     journalNumbers: journals.map(j => j.data()?.entryNumber).filter(Number.isFinite) };
+  return { ...result, workflowDimensions: financeWorkflowDimensions(result, { recorded: true }) };
 }
 async function browseDocuments(db) {
   const names = [...Object.values(FINANCE_KINDS).flatMap(spec => [spec.collection, spec.parent || spec.category]),
@@ -205,7 +207,7 @@ async function browseDocuments(db) {
         date: documentDay(row[spec.date]) || row[spec.date] || null, supplier: row.supplier || '', documentNumber: row.invoice_number || row.receipt_number || '',
         paymentStatus: row.payment_status || 'unknown', workflowStage: detail.workflowStage, paymentConflict: detail.paymentConflict,
         approvalReady: detail.approvalReady, sourceHash: detail.sourceHash, postingHash: detail.postingPreview.postingHash || null,
-        issueCount: detail.issues.length, workflowNote: detail.workflowNote });
+        issueCount: detail.issues.length, workflowNote: detail.workflowNote, workflowDimensions: detail.workflowDimensions });
     }
   }
   return { items: filterWorkbenchItems(items), readAt: new Date().toISOString(), complete: true };
@@ -234,6 +236,7 @@ export async function financeWorkbench(db, auth, input) {
     if (r.after) query = query.startAfter(r.after);
     const snap = await query.limit(31).get();
     return { kind: r.kind, items: snap.docs.slice(0, 30).map(doc => ({ sourceId: doc.id, title: doc.data()[spec.title] || 'بلا عنوان',
+      registration: { status: 'recorded', label: 'مسجل بالفعل' },
       amount: doc.data()[spec.amount] ?? null, date: doc.data()[spec.date] ?? null,
       review: doc.data().approval_status || 'unreviewed', paymentStatus: doc.data().payment_status || 'unknown' })),
     nextAfter: snap.size > 30 ? snap.docs[29].id : null, coverage: 'قائمة محدودة إلى 30 سجلًا؛ ليست إجمالي الذمم أو المؤهل.' };

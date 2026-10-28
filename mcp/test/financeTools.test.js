@@ -19,6 +19,17 @@ describe('finance MCP uses the same authenticated application service', () => {
     expect(mocks.fetch.mock.calls[0][0]).toBe('https://sweater-hadi-alghanim.vercel.app/api/finance-reports');
     expect(mocks.fetch.mock.calls[0][1].headers.Authorization).toBe('Bearer SYNTHETIC-TOKEN');
   });
+  it('retains independent registered/pending/blocked dimensions from the shared read service without writing', async () => {
+    const workflowDimensions = { registration: { status: 'recorded' }, details: { saved: true }, review: { status: 'saved_pending' },
+      approval: { current: false }, posting: { ready: false }, sourceFacts: { invoiceNumber: null, isTaxInvoice: true, vatDeductible: false },
+      postingBlockers: [{ category: 'funding', text: 'TEST unresolved counterpart' }] };
+    mocks.fetch.mockResolvedValueOnce(result({ workflowStage: 'incomplete', workflowDimensions }));
+    const tool = financeReadTools.find(tool => tool.name === 'sweater_finance_workbench');
+    const response = await tool.run({ action: 'read', request: { kind: 'variable', sourceId: 'TEST' } });
+    expect(JSON.parse(response.content[0].text).workflowDimensions).toEqual(workflowDimensions);
+    expect(JSON.parse(mocks.fetch.mock.calls[0][1].body)).toEqual({ action: 'read', kind: 'variable', sourceId: 'TEST' });
+    expect(mocks.fetch).toHaveBeenCalledTimes(1);
+  });
   it('refuses writes before even signing in when read-only', async () => {
     mocks.readOnly = true; await expect(callFinanceServer('finance-workbench', {}, { write: true })).rejects.toMatchObject({ code: 'permission-denied' });
     expect(mocks.connect).not.toHaveBeenCalled();

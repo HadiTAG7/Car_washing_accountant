@@ -3,6 +3,7 @@ import { AlertTriangle, ShieldCheck } from 'lucide-react';
 import { callFinanceApi } from '../lib/financeApi';
 import { EXPENSE_KIND_LABELS, hasPaymentConflict, suggestedPaymentMethod, WORKBENCH_STAGES } from '../lib/financeWorkbenchView';
 import FinanceInvoiceLines, { InvoiceLinesRead } from './FinanceInvoiceLines';
+import FinanceDocumentStatus from './FinanceDocumentStatus';
 
 const fields = { variable: ['expense_name', 'total_variable_cost', 'logged_date'], monthly: ['expense_name', 'total_monthly_cost', 'logged_date'],
   annual: ['description', 'amount', 'spent_date', 'annual_expense_id'], startup: ['description', 'amount', 'spent_date', 'startup_cost_id'] };
@@ -97,7 +98,7 @@ export default function FinanceExpenseForm({ kind, detail, requestId, options, o
     <div className="fw-document-heading"><h2><ShieldCheck size={19} />{requestId ? 'مستند جديد' : 'مراجعة المستند'}</h2>
       <span className={`fw-stage fw-stage--${detail?.workflowStage || 'incomplete'}`}>{requestId ? 'لم يُحفظ بعد' : WORKBENCH_STAGES[detail?.workflowStage] || 'عرض المستند'}</span></div>
     <small>{EXPENSE_KIND_LABELS[kind]}</small>
-    {detail && <dl className="fw-document-status" aria-label="حالات المصروف المنفصلة">
+    {detail?.workflowDimensions ? <FinanceDocumentStatus dimensions={detail.workflowDimensions} /> : detail && <dl className="fw-document-status" aria-label="حالات المصروف المنفصلة">
       <div><dt>الاعتماد</dt><dd>{detail.approved ? 'اعتماد النسخة الحالية' : 'غير معتمد'}</dd></div>
       <div><dt>الترحيل</dt><dd>{detail.protectedSource ? 'المصدر محمي وله أثر سابق' : 'غير مرحل'}</dd></div>
       <div><dt>السداد</dt><dd>{detail.paymentProven ? 'مثبت في المصدر' : ({ paid: 'مسجل مدفوع — يحتاج دليل', unpaid: 'غير مسدد' })[detail.row.payment_status] || 'غير مثبت'}</dd></div>
@@ -170,7 +171,7 @@ export default function FinanceExpenseForm({ kind, detail, requestId, options, o
     {(preview?.sourceContext || detail?.sourceContext)?.warnings?.map(warning => <p className="fw-warning" key={warning}>{warning}</p>)}
     {form.invoiceLines && <FinanceInvoiceLines value={form.invoiceLines} onChange={value => set('invoiceLines', value)} disabled={protectedRow || busy}
       amount={form.amount} vatAmount={form.vatAmount} taxReviewRef={form.taxReviewRef} isTaxInvoice={form.isTaxInvoice} />}
-    {issues.length > 0 && <details className="fw-document-issues"><summary>نواقص تمنع الاعتماد: {issues.length}</summary><ul>{issues.map((issue, index) => <li key={index}>{issue}</li>)}</ul></details>}
+    {issues.length > 0 && (preview || !detail?.workflowDimensions) && <details className="fw-document-issues"><summary>نواقص أو موانع اعتماد في المعاينة: {issues.length}</summary><ul>{issues.map((issue, index) => <li key={index}>{issue}</li>)}</ul></details>}
     {preview && <ChangePreview kind={kind} preview={preview} options={options.data?.items || []} />}
     {previewData?.lines?.length > 0 && <details className="fw-form-section"><summary>معاينة القيد — دون ترحيل</summary>
       {[previewData, ...(previewData.settlement ? [previewData.settlement] : [])].map((entry, index) => <div key={index}>

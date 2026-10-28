@@ -13,6 +13,7 @@ import { cashBankCorrection } from './cashBankCorrection.js';
 import {cashResidualCorrection} from './cashResidualCorrection.js';
 import { payrollCashFunding } from './payrollCashFunding.js';
 import { invoiceLinesShapeIssues } from '../functions/src/financeInvoiceLines.js';
+import { financeSourceEvidence, sourceEvidenceShapeValid } from '../functions/src/financeSourceEvidence.js';
 import { financePostingHistory } from './financePostingHistory.js';
 
 const kindSchema = z.enum(['variable', 'monthly', 'annual', 'startup']);
@@ -33,6 +34,8 @@ const patchSchema = z.object({
   fundingReference: nullableText.optional(), purpose: nullableText.optional(), evidenceRefs: z.array(z.string().trim().min(1).max(300)).max(20).optional(),
   taxReviewRef: nullableText.optional(), taxBasis: z.enum(['document', 'verified_historical_policy']).optional(),
   invoiceLines: z.unknown().refine(value => value === null || invoiceLinesShapeIssues(value).length === 0, 'بنود الفاتورة غير صالحة.').optional(),
+  quantityException: z.unknown().refine(sourceEvidenceShapeValid, 'دليل استثناء الكمية غير مكتمل.').optional(),
+  documentAllocation: z.unknown().refine(sourceEvidenceShapeValid, 'دليل توزيع الأصل غير مكتمل.').optional(),
 }).strict();
 const common = { kind: kindSchema, sourceId: id };
 const correction = { ...common, patch: patchSchema, sourceHash: hash };
@@ -69,10 +72,16 @@ function applyPatch(kind, before, p) {
     if (p.invoiceLines === null) delete meta.invoiceLines;
     else meta.invoiceLines = p.invoiceLines;
   }
+  for (const key of ['quantityException', 'documentAllocation']) if (Object.hasOwn(p, key)) {
+    if (p[key] === null) delete meta[key]; else meta[key] = p[key];
+  }
   row.finance_metadata = meta;
   if (row[spec.amount] !== undefined && (!Number.isFinite(row[spec.amount]) || row[spec.amount] <= 0
     || round2(row[spec.amount]) !== row[spec.amount])) fail('المبلغ يجب أن يكون موجبًا بالهللة.', 'invalid-argument');
-  if (Object.hasOwn(meta, 'invoiceLines')) {
+  if (Object.hasOwn(meta, 'quantityException')) {
+    if (p.quantity != null || meta.invoiceLines != null) fail('استثناء العدد لا يقبل كمية مفترضة أو بنودًا مختلفة.', 'invalid-argument');
+    row.quantity = null; row.unit_cost = null;
+  } else if (Object.hasOwn(meta, 'invoiceLines')) {
     if (p.quantity != null) fail('لا تجمع كمية واحدة مع بنود مختلفة؛ اختر تمثيل المستند من مصدره.', 'invalid-argument');
     row.quantity = null; row.unit_cost = null;
   } else if (Number.isFinite(row.quantity) && Number.isFinite(row[spec.amount])) row.unit_cost = Number((row[spec.amount] / row.quantity).toFixed(8));
@@ -94,8 +103,10 @@ async function readState(db, tx, kind, sourceId, row) {
   const protectedSource = locks.some(l => l.exists) || matchingJournals.length > 0 || Boolean(row.journal_entry_id || row.posted_entry_id || row.posting_status === 'posted');
   const closed = periods.some(p => p.exists && p.data().status === 'closed');
   const reviewValue = review.exists ? review.data() : null, sourceHash = financeSourceHash(row);
-  return { protectedSource, closed, sourceHash, review: reviewValue,
-    approved: row.approval_status === 'approved' && reviewValue?.status === 'approved' && reviewValue?.sourceHash === sourceHash,
+  const sourceContext = await financeSourceEvidence(db, tx, kind, sourceId, row);
+  return { protectedSource, closed, sourceHash, review: reviewValue, sourceContext,
+    approved: row.approval_status === 'approved' && reviewValue?.status === 'approved' && reviewValue?.sourceHash === sourceHash
+      && !sourceContext.issues.length && (reviewValue?.sourceContextHash || null) === sourceContext.contextHash,
     journalIds: matchingJournals.map(d => d.id) };
 }
 async function validateClassification(db, tx, kind, row) {
@@ -117,11 +128,12 @@ async function validateClassification(db, tx, kind, row) {
   }
   return null;
 }
-async function checkDuplicate(db, tx, kind, sourceId, row) {
-  return assertFinanceDocumentUniqueness(db, tx, kind, sourceId, row);
+async function checkDuplicate(db, tx, kind, sourceId, row, options) {
+  return assertFinanceDocumentUniqueness(db, tx, kind, sourceId, row, options);
 }
-async function postingPreview(db, tx, kind, sourceId, row) {
-  const issues = financeProblems(kind, row);
+async function postingPreview(db, tx, kind, sourceId, row, context = null) {
+  const sourceContext = context || await financeSourceEvidence(db, tx, kind, sourceId, row);
+  const issues = [...financeProblems(kind, row, sourceId), ...sourceContext.issues];
   if (issues.length) return { ready: false, issues, entry: null, lines: [] };
   try {
     const settings = await tx.get(db.collection('app_settings').doc('accounting'));
@@ -134,7 +146,8 @@ async function postingPreview(db, tx, kind, sourceId, row) {
     if ([...built.lines, ...(built.settlement?.lines || [])].some(l => !known.has(String(l.accountId)))) {
       return { ready: false, issues: ['حسابات القيد غير مكتملة في الدليل.'], entry: null, lines: [] };
     }
-    return { ready: true, issues: [], ...built, postingHash: financeHash(built) };
+    return { ready: true, issues: [], ...built, postingHash: sourceContext.contextHash
+      ? financeHash({ built, sourceContextHash: sourceContext.contextHash }) : financeHash(built) };
   } catch (error) { return { ready: false, issues: [error.message], entry: null, lines: [] }; }
 }
 function publicRow(kind, sourceId, row, state, preview) {
@@ -145,7 +158,7 @@ function publicRow(kind, sourceId, row, state, preview) {
 }
 async function workflowDocument(db, tx, kind, sourceId, row, currentState = null) {
   const state = currentState || await readState(db, tx, kind, sourceId, row);
-  const preview = await postingPreview(db, tx, kind, sourceId, row);
+  const preview = await postingPreview(db, tx, kind, sourceId, row, state.sourceContext);
   const detail = publicRow(kind, sourceId, row, state, preview);
   // Reporting the current checks, not replacing or relaxing any write gate.
   const additionalIssues = [];
@@ -274,6 +287,7 @@ export async function financeWorkbench(db, auth, input) {
     if (state.closed) fail('الفترة مقفلة.');
     if (!isCapture && state.sourceHash !== r.sourceHash) fail('تغير السجل؛ أعد القراءة والمعاينة.');
     const after = r.action === 'approve' ? before : applyPatch(r.kind, before, r.patch);
+    if (isCapture && (after.finance_metadata?.quantityException || after.finance_metadata?.documentAllocation)) fail('هذه الأدلة تخص سجلات قائمة؛ لا تستخدم لإنشاء مصروف جديد.');
     if (isCapture && (!after[spec.title] || !after[spec.date] || !after[spec.amount]
       || (!after.quantity && !after.finance_metadata?.invoiceLines))) fail('التسجيل يحتاج وصفًا وتاريخًا ومبلغًا وكمية أو بنودًا مثبتة.');
     if (isCapture && !after.invoice_url) fail('رابط المستند مطلوب لمنع التكرار.');
@@ -283,11 +297,12 @@ export async function financeWorkbench(db, auth, input) {
     if (afterState.closed) fail('أحد تواريخ المصدر أو الفاتورة أو السداد مقفل.');
     if (before[spec.fk] && r.patch?.parentId && r.patch.parentId !== before[spec.fk]) fail('نقل البند الأب ليس تصحيحًا لنفس السجل في هذا المسار.');
     const parent = await validateClassification(db, tx, r.kind, after);
-    await checkDuplicate(db, tx, r.kind, sourceId, after);
-    const preview = await postingPreview(db, tx, r.kind, sourceId, after);
-    const previewHash = financeHash({ kind: r.kind, sourceId, before, after, parent: parent ? { value: parent.raw, rows: parent.rows } : null });
+    const sourceContext = await checkDuplicate(db, tx, r.kind, sourceId, after, { allowIncompleteAllocation: r.action !== 'approve' });
+    const preview = await postingPreview(db, tx, r.kind, sourceId, after, sourceContext);
+    const previewHash = financeHash({ kind: r.kind, sourceId, before, after, parent: parent ? { value: parent.raw, rows: parent.rows } : null,
+      ...(sourceContext.contextHash ? { sourceContextHash: sourceContext.contextHash } : {}) });
     if (['preview', 'previewCapture'].includes(r.action)) return { kind: r.kind, sourceId, sourceHash: state.sourceHash, previewHash, before, after,
-      issues: preview.issues, postingPreview: preview, financialPosting: false };
+      issues: preview.issues, postingPreview: preview, sourceContext, financialPosting: false };
     if (r.action === 'approve' && !preview.ready) fail(preview.issues.join(' '));
     if (r.action === 'approve' && r.postingHash !== preview.postingHash) fail('تغيرت معاينة القيد؛ أعد القراءة قبل الاعتماد.');
     if (r.action !== 'approve' && r.previewHash !== previewHash) fail('تغيرت المعاينة أو بيانات البند؛ أعد المعاينة.');
@@ -304,11 +319,13 @@ export async function financeWorkbench(db, auth, input) {
       tx.update(sourceRef, { approval_status: 'approved' });
     }
     tx.set(reviewRef, { kind: r.kind, sourceId, sourceHash: financeSourceHash(after), status: r.action === 'approve' ? 'approved' : 'pending',
-      postingHash: r.action === 'approve' ? preview.postingHash : null,
+      postingHash: r.action === 'approve' ? preview.postingHash : null, sourceContextHash: sourceContext.contextHash,
       reviewedByUid: auth.uid, reviewedAt: FieldValue.serverTimestamp(), reason: r.reason,
       evidenceRefs: after.finance_metadata?.evidenceRefs || [], verificationKind: 'self' });
     tx.set(auditRef, { action: `finance-${r.action}`, userId: auth.uid, kind: r.kind, sourceId, before, after,
-      reason: r.reason, sourceHash: financeSourceHash(after), at: FieldValue.serverTimestamp() });
+      reason: r.reason, sourceHash: financeSourceHash(after),
+      sourceEvidence: { quantityDecision: after.finance_metadata?.quantityException ? sourceContext.quantityGrant : null,
+        originalAllocation: after.finance_metadata?.documentAllocation ? sourceContext.allocationGrant : null }, at: FieldValue.serverTimestamp() });
     const result = { saved: true, action: r.action, kind: r.kind, sourceId, sourceHash: financeSourceHash(after), auditId: auditRef.id,
       approved: r.action === 'approve', financialPosting: false };
     tx.set(receiptRef, { requestHash, result, at: FieldValue.serverTimestamp(), userId: auth.uid });

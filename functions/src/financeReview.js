@@ -1,4 +1,6 @@
-import { createHash } from 'node:crypto';
+import { financeHash, financeSourceHash } from './financeHash.js';
+import { financeSourceEvidence, quantityExceptionProblems, allowedAllocationSibling } from './financeSourceEvidence.js';
+export { financeHash, financeSourceHash } from './financeHash.js';
 import { financeInvoiceLineProblems } from './financeInvoiceLines.js';
 
 export const FINANCE_KINDS = Object.freeze({
@@ -7,28 +9,19 @@ export const FINANCE_KINDS = Object.freeze({
   annual: { collection: 'annual_expense_entries', amount: 'amount', date: 'spent_date', title: 'description', parent: 'annual_expenses', fk: 'annual_expense_id' },
   startup: { collection: 'startup_cost_entries', amount: 'amount', date: 'spent_date', title: 'description', parent: 'startup_costs', fk: 'startup_cost_id' },
 });
-const stable = value => {
-  if (value?.toDate) return value.toDate().toISOString();
-  if (Array.isArray(value)) return value.map(stable);
-  if (value && typeof value === 'object') return Object.fromEntries(Object.keys(value).sort().map(k => [k, stable(value[k])]));
-  return value;
-};
-export const financeHash = value => createHash('sha256').update(JSON.stringify(stable(value))).digest('hex');
-export function financeSourceHash(row) {
-  return financeHash(Object.fromEntries(Object.entries(row).filter(([key]) => !['updated_at', 'updated_by', 'approval_status', 'id'].includes(key))));
-}
 export const financeReviewId = (kind, id) => financeHash({ kind, sourceId: id });
 export const journalMatchesFinanceSource = (kind, entry) => entry.sourceKind
   ? entry.sourceKind === kind : !entry.sourceType || entry.sourceType === 'expense';
 const realDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
   && Number.isFinite(Date.parse(`${value}T12:00:00Z`)) && new Date(`${value}T12:00:00Z`).toISOString().slice(0, 10) === value;
-export function financeProblems(kind, row) {
+export function financeProblems(kind, row, sourceId = null) {
   const spec = FINANCE_KINDS[kind], issues = [];
   if (!spec) return ['نوع السجل ليس مصروفًا مؤهلًا لهذا المسار.'];
   if (typeof row[spec.title] !== 'string' || !row[spec.title].trim()) issues.push('وصف المصروف غير مكتمل.');
   if (!Number.isFinite(row[spec.amount]) || row[spec.amount] <= 0) issues.push('المبلغ غير مثبت.');
   if (!realDate(row[spec.date])) issues.push('تاريخ المصروف غير مكتمل.');
-  if (Object.hasOwn(row.finance_metadata || {}, 'invoiceLines')) issues.push(...financeInvoiceLineProblems(row, row[spec.amount]));
+  if (Object.hasOwn(row.finance_metadata || {}, 'quantityException')) issues.push(...quantityExceptionProblems(kind, sourceId, row));
+  else if (Object.hasOwn(row.finance_metadata || {}, 'invoiceLines')) issues.push(...financeInvoiceLineProblems(row, row[spec.amount]));
   else if (!Number.isFinite(row.quantity) || row.quantity <= 0 || !Number.isFinite(row.unit_cost)
     || Math.round(row.quantity * row.unit_cost * 100) !== Math.round(row[spec.amount] * 100)) issues.push('الكمية وسعر الوحدة لا يطابقان الإجمالي.');
   if (typeof row.supplier !== 'string' || !row.supplier.trim()) issues.push('المورد غير محدد.');
@@ -58,8 +51,11 @@ export function financeProblems(kind, row) {
 export class FinanceReviewError extends Error {
   constructor(message, code = 'failed-precondition') { super(message); this.code = code; }
 }
-export async function assertFinanceDocumentUniqueness(db, tx, kind, sourceId, row) {
-  for (const spec of Object.values(FINANCE_KINDS)) {
+export async function assertFinanceDocumentUniqueness(db, tx, kind, sourceId, row, { allowIncompleteAllocation = false } = {}) {
+  const context = await financeSourceEvidence(db, tx, kind, sourceId, row);
+  const blocking = context.issues.filter(issue => !allowIncompleteAllocation || !issue.startsWith('ربط التوزيع غير مكتمل'));
+  if (blocking.length) throw new FinanceReviewError(blocking.join(' '));
+  for (const [matchKind, spec] of Object.entries(FINANCE_KINDS)) {
     const queries = [];
     if (row.invoice_url) queries.push(['invoice_url', row.invoice_url]);
     if (row.invoice_number && row.supplier) queries.push(['invoice_number', row.invoice_number]);
@@ -67,9 +63,11 @@ export async function assertFinanceDocumentUniqueness(db, tx, kind, sourceId, ro
       const matches = await tx.get(db.collection(spec.collection).where(key, '==', value).limit(101));
       if (matches.size > 100) throw new FinanceReviewError('نتائج كشف التكرار محدودة؛ يلزم حسمها قبل الاعتماد.');
       if (matches.docs.some(d => !(spec.collection === FINANCE_KINDS[kind].collection && d.id === sourceId)
-        && (key === 'invoice_url' || d.data().supplier === row.supplier))) throw new FinanceReviewError('يوجد مستند مرتبط بمصروف آخر؛ راجع احتمال التكرار أو تجزئة المستند.');
+        && (key === 'invoice_url' || d.data().supplier === row.supplier)
+        && !(row.finance_metadata?.documentAllocation && allowedAllocationSibling(context.allocationGrant, matchKind, d.id)))) throw new FinanceReviewError('يوجد مستند مرتبط بمصروف آخر؛ راجع احتمال التكرار أو تجزئة المستند.');
     }
   }
+  return context;
 }
 /** Called inside the SAME posting transaction, including the old MCP/callable
  * door. No source-date shortcut or client-side checkbox can substitute it. */
@@ -80,12 +78,13 @@ export async function assertFinanceApproval(db, tx, kind, id, row, expectedHash 
   if (row.approval_status !== 'approved' || !review.exists || review.data().status !== 'approved' || review.data().sourceHash !== financeSourceHash(row)) {
     throw new FinanceReviewError('يلزم اعتماد موثق للنسخة الحالية من المصروف عبر المالية.');
   }
-  const issues = financeProblems(kind, row);
+  const issues = financeProblems(kind, row, id);
   if (issues.length) throw new FinanceReviewError(issues.join(' '));
   const spec = FINANCE_KINDS[kind];
   const classification = await tx.get(db.collection(spec.parent || spec.category).doc(row[spec.fk || 'category_id']));
   if (!classification.exists) throw new FinanceReviewError('رابط تصنيف المصروف لم يعد موجودًا؛ أعد المراجعة.');
-  await assertFinanceDocumentUniqueness(db, tx, kind, id, row);
+  const context = await assertFinanceDocumentUniqueness(db, tx, kind, id, row);
+  if ((review.data().sourceContextHash || null) !== context.contextHash) throw new FinanceReviewError('تغيرت نسخة أحد سجلي توزيع الأصل بعد الاعتماد؛ أعد المراجعة.');
   const journals = await tx.get(db.collection('journal_entries').where('sourceId', '==', id));
   if (journals.docs.some(d => journalMatchesFinanceSource(kind, d.data()))) throw new FinanceReviewError('لهذا المصدر قيد سابق أو معكوس؛ لا يعاد ترحيله.');
   return review.data();

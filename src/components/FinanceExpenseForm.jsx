@@ -16,11 +16,15 @@ function fromRow(kind, row = {}) {
     paymentMethod: row.payment_method || 'unknown', paymentStatus: row.payment_status || 'unknown', paidDate: row.paid_date || '',
     fundingType: meta.fundingType || 'unknown', fundingReference: meta.fundingReference || '', purpose: meta.purpose || '',
     taxBasis: meta.taxBasis || 'document', taxReviewRef: meta.taxReviewRef || '', evidenceRefs: (meta.evidenceRefs || []).join('\n'),
-    invoiceLines: meta.invoiceLines ? structuredClone(meta.invoiceLines) : null };
+    invoiceLines: meta.invoiceLines ? structuredClone(meta.invoiceLines) : null,
+    quantityException: meta.quantityException ? structuredClone(meta.quantityException) : null,
+    documentAllocation: meta.documentAllocation ? structuredClone(meta.documentAllocation) : null };
 }
 function toPatch(kind, form) {
   const p = { description: form.description, amount: Number(form.amount), date: form.date,
-    ...(form.invoiceLines ? { invoiceLines: form.invoiceLines } : { invoiceLines: null, quantity: Number(form.quantity) }),
+    ...(form.quantityException ? { invoiceLines: null, quantityException: form.quantityException }
+      : form.invoiceLines ? { invoiceLines: form.invoiceLines, quantityException: null } : { invoiceLines: null, quantityException: null, quantity: Number(form.quantity) }),
+    documentAllocation: form.documentAllocation,
     supplier: form.supplier.trim() || null, invoiceNumber: form.invoiceNumber.trim() || null, invoiceDate: form.invoiceDate || null,
     invoiceUrl: form.invoiceUrl.trim() || null, vatAmount: form.vatAmount === '' ? null : Number(form.vatAmount),
     vatRate: form.vatRate === '' ? null : Number(form.vatRate), paidDate: form.paidDate || null,
@@ -131,11 +135,20 @@ export default function FinanceExpenseForm({ kind, detail, requestId, options, o
       {input('دليل الدفع أو ذمة المورد', 'fundingReference')}{input('سبب المصروف للمشروع', 'purpose')}
     </div></details>
     <details className="fw-form-section"><summary>التصنيف والمراجع</summary><div className="fw-form">
-      <label>طريقة تمثيل الكمية<select value={form.invoiceLines ? 'lines' : 'single'} disabled={protectedRow || busy}
-        onChange={event => set('invoiceLines', event.target.value === 'lines' ? { version: 1, items: [], vatAllocation: null } : null)}>
+      <label>طريقة تمثيل الكمية<select value={form.quantityException ? 'total' : form.invoiceLines ? 'lines' : 'single'} disabled={protectedRow || busy}
+        onChange={event => {
+          const mode = event.target.value;
+          setForm(current => ({ ...current, invoiceLines: mode === 'lines' ? { version: 1, items: [], vatAllocation: null } : null,
+            quantityException: mode === 'total' ? { version: 1, grantRef: detail.sourceContext.quantityGrant.ref, sourceRef: '' } : null }));
+          setPreview(null);
+          setConfirmed(false); setError(''); onEdit?.();
+        }}>
         <option value="single">كمية متجانسة واحدة</option><option value="lines">بنود مختلفة من الفاتورة</option>
+        {(detail?.sourceContext?.quantityGrant || form.quantityException) && <option value="total" disabled={!detail?.sourceContext?.quantityGrant}>إجمالي مثبت — العدد غير متاح بقرار هادي</option>}
       </select></label>
-      {!form.invoiceLines && input('الكمية', 'quantity', 'number')}
+      {!form.invoiceLines && !form.quantityException && input('الكمية', 'quantity', 'number')}
+      {form.quantityException && <label className="fw-wide">مرجع دليل المبلغ واستثناء العدد<input disabled={protectedRow || busy} value={form.quantityException.sourceRef}
+        onChange={event => set('quantityException', { ...form.quantityException, sourceRef: event.target.value })} /></label>}
       <label>تصنيف المصروف<select value={form.classification} disabled={protectedRow || busy || (Boolean(detail) && ['annual', 'startup'].includes(kind))}
         onChange={e => set('classification', e.target.value)}><option value="">غير محدد</option>{(options.data?.items || []).map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select>
         {options.data?.limited && <small>قائمة التصنيفات محدودة؛ لا تختَر بدلًا من بند غير ظاهر.</small>}</label>
@@ -144,6 +157,17 @@ export default function FinanceExpenseForm({ kind, detail, requestId, options, o
         <option value="">غير محدد</option><option value="نقد">إيصال نقدي</option><option value="تحويل بنكي">تحويل بنكي</option><option value="مدى">مدى / بطاقة</option></select></label>}
       <label className="fw-wide">روابط أو مراجع تؤيد المستند — كل مرجع في سطر<textarea value={form.evidenceRefs} onChange={e => set('evidenceRefs', e.target.value)} disabled={protectedRow || busy} /></label>
     </div></details>
+    {form.quantityException && <p className="fw-warning">الكمية وسعر الوحدة غير متاحين بقرار هادي الموثق. لا نفترض كمية واحدة. بقية النواقص والاعتماد المنفصل باقية.</p>}
+    {(detail?.sourceContext?.allocationGrant || form.documentAllocation) && <section className="fw-form-section" aria-label="توزيع الأصل المراجع">
+      <h3 className="fw-form-section-title">توزيع الأصل المراجع</h3>
+      <p>فاتورة واحدة: 200 ريال للدبابات و80 ريال للسكن، من إجمالي 280 ريال. لا مصروف جديد أو تكرار للبنود.</p>
+      <label><input type="checkbox" disabled={protectedRow || busy || !detail?.sourceContext?.allocationGrant} checked={Boolean(form.documentAllocation)}
+        onChange={event => set('documentAllocation', event.target.checked ? { version: 1, grantRef: detail.sourceContext.allocationGrant.ref, sourceRef: '' } : null)} /> ربط هذا السجل بحصته المراجعة من الأصل</label>
+      {form.documentAllocation && <label>مرجع مراجعة توزيع الأصل<input disabled={protectedRow || busy} value={form.documentAllocation.sourceRef}
+        onChange={event => set('documentAllocation', { ...form.documentAllocation, sourceRef: event.target.value })} /></label>}
+      <small>يلزم اكتمال الربط في السجلين قبل الاعتماد. تغيير أحدهما يبطل صلاحية اعتماد التوزيع؛ لا يتغير أي مبلغ تلقائيًا.</small>
+    </section>}
+    {(preview?.sourceContext || detail?.sourceContext)?.warnings?.map(warning => <p className="fw-warning" key={warning}>{warning}</p>)}
     {form.invoiceLines && <FinanceInvoiceLines value={form.invoiceLines} onChange={value => set('invoiceLines', value)} disabled={protectedRow || busy}
       amount={form.amount} vatAmount={form.vatAmount} taxReviewRef={form.taxReviewRef} isTaxInvoice={form.isTaxInvoice} />}
     {issues.length > 0 && <details className="fw-document-issues"><summary>نواقص تمنع الاعتماد: {issues.length}</summary><ul>{issues.map((issue, index) => <li key={index}>{issue}</li>)}</ul></details>}
@@ -187,12 +211,22 @@ export function ChangePreview({ kind, preview, options }) {
   const before = fromRow(kind, preview.before), after = fromRow(kind, preview.after);
   const changed = Object.keys(labels).filter(key => String(before[key]) !== String(after[key]));
   const linesChanged = JSON.stringify(before.invoiceLines) !== JSON.stringify(after.invoiceLines);
+  const evidenceChanged = JSON.stringify([before.quantityException, before.documentAllocation]) !== JSON.stringify([after.quantityException, after.documentAllocation]);
   const show = (key, value) => key === 'classification' ? options.find(o => o.id === value)?.label || 'غير متاح'
     : value === '' || value === null || value === undefined ? 'غير متاح' : values[value] || String(value);
   return <details className="fw-form-section" open><summary>معاينة التغيير — لم يُحفظ</summary>{changed.length ? <div className="fw-table-scroll"><table>
     <thead><tr><th>الحقل</th><th>قبل</th><th>بعد</th></tr></thead><tbody>{changed.map(key => <tr key={key}><th scope="row">{labels[key]}</th><td>{show(key, before[key])}</td><td>{show(key, after[key])}</td></tr>)}</tbody>
-  </table></div> : !linesChanged && <p>لا تغيير في الحقول المعروضة.</p>}
+  </table></div> : !linesChanged && !evidenceChanged && <p>لا تغيير في الحقول المعروضة.</p>}
     {linesChanged && <section aria-label="تغيير بنود الفاتورة"><h4>بنود الفاتورة قبل التغيير</h4><InvoiceLinesRead value={before.invoiceLines} />
       <h4>بنود الفاتورة بعد التغيير</h4><InvoiceLinesRead value={after.invoiceLines} /></section>}
+    {evidenceChanged && <section aria-label="تغيير أدلة المصدر"><h4>أدلة المصدر قبل التغيير</h4><SourceEvidenceRead form={before} />
+      <h4>أدلة المصدر بعد التغيير</h4><SourceEvidenceRead form={after} /></section>}
   </details>;
+}
+
+function SourceEvidenceRead({ form }) {
+  return <>{form.quantityException ? <p>إجمالي مثبت دون كمية أو سعر وحدة بقرار هادي · {form.quantityException.grantRef} · {form.quantityException.sourceRef}</p>
+    : <p>لا استثناء من متطلبات الكمية.</p>}
+    {form.documentAllocation ? <p>ربط بتوزيع أصل مراجع · {form.documentAllocation.grantRef} · {form.documentAllocation.sourceRef}</p>
+      : <p>لا ربط بتوزيع أصل.</p>}</>;
 }

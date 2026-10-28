@@ -281,7 +281,8 @@ export async function postSource(db, FieldValue, { kind, sourceId }, { userId = 
     });
 
     const normEntry = normalizeEntry(built.entry);
-    if (financeApproval && financeApproval.postingHash !== financeHash(built)) {
+    if (financeApproval && financeApproval.postingHash !== (financeApproval.sourceContextHash
+      ? financeHash({ built, sourceContextHash: financeApproval.sourceContextHash }) : financeHash(built))) {
       throw new LedgerError('تغيرت معاينة الحسابات أو المعالجة الضريبية بعد الاعتماد؛ أعد المراجعة.');
     }
     const normLines = normalizeLines(built.lines);

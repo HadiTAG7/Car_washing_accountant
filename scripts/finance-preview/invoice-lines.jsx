@@ -17,6 +17,9 @@ export function InitialScenario({ mode }) {
     (async () => {
       let source;
       if (mode === 'protected') source = { kind: 'startup', sourceId: 'synthetic-corrected-source' };
+      else if (mode === 'quantity' || mode === 'exception-comparison') source = { kind: 'startup', sourceId: 'I8tWV7ElQXRMW3AFMqBI' };
+      else if (mode === 'allocation' || mode === 'allocation-comparison') source = { kind: 'startup', sourceId: 'xm8IA2ypXnQvQ7LFLPTy' };
+      else if (mode === 'allocation-peer') source = { kind: 'startup', sourceId: 'zk0wmq8nHTbsgs9CteWd' };
       else {
         const list = await callFinanceApi('finance-workbench', { action: 'browse' });
         const target = mode === 'shared' ? 'TEST-SHARED-LINES' : 'TEST-MIXED-LINES';
@@ -32,6 +35,12 @@ export function InitialScenario({ mode }) {
         invoiceLines.items[0].quantity *= 2; invoiceLines.items[0].unitCost /= 2;
         preview = await callFinanceApi('finance-workbench', { action: 'preview', kind: source.kind, sourceId: source.sourceId,
           sourceHash: detail.sourceHash, patch: { invoiceLines } });
+      }
+      if (mode === 'exception-comparison' || mode === 'allocation-comparison') {
+        const field = mode === 'exception-comparison' ? 'quantityException' : 'documentAllocation';
+        const grant = field === 'quantityException' ? detail.sourceContext.quantityGrant : detail.sourceContext.allocationGrant;
+        preview = await callFinanceApi('finance-workbench', { action: 'preview', kind: source.kind, sourceId: source.sourceId,
+          sourceHash: detail.sourceHash, patch: { [field]: { version: 1, grantRef: grant.ref, sourceRef: 'TEST synthetic reviewed evidence only' } } });
       }
       if (active) setState({ source, detail, preview, options });
     })().catch(error => { if (active) setState({ error: error.message }); });
@@ -50,5 +59,5 @@ createRoot(document.getElementById('root')).render(<>
   <header style={{ padding: 16, borderBottom: '3px solid #d97706' }}>
     <strong>اختبار معزول — بيانات اصطناعية في الذاكرة فقط، دون اتصال بالإنتاج</strong>
   </header>
-  {['protected', 'comparison', 'shared'].includes(requested) ? <InitialScenario mode={requested} /> : <FinanceWorkbenchPage />}
+  {['protected', 'comparison', 'shared', 'quantity', 'exception-comparison', 'allocation', 'allocation-peer', 'allocation-comparison'].includes(requested) ? <InitialScenario mode={requested} /> : <FinanceWorkbenchPage />}
 </>);

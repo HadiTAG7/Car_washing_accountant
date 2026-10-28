@@ -6,6 +6,7 @@ import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebas
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { readFile } from 'node:fs/promises';
 import { financeWorkbench } from '../financeWorkbench.js';
+import { exceptionSources, allocationSources, originalUrl, evidenceSeed, evidenceCall, saveEvidence, linkAllocation, approveEvidence } from './financeSourceEvidenceFixtures.js';
 import { financeReports } from '../financeReports.js';
 import { postSource } from '../../functions/src/ledger.js';
 import { expensePatch, financeFixture, syntheticFinanceInvoiceLines, syntheticPrintedInvoiceLines, syntheticSharedInvoiceLines } from './financeFixtures.js';
@@ -222,6 +223,55 @@ describe.skipIf(!enabled)('finance real Firestore workflow — isolated demo onl
     expect((await db.collection('audit_logs').get()).size).toBeGreaterThanOrEqual(3);
     await expect(call({ action: 'preview', ...data.common, patch })).rejects.toThrow(/تغير/);
   }, 120000);
+
+  it('posts an explicitly bounded owner quantity exception once without a fake quantity, price or payment', async () => {
+    await Promise.all(Object.entries(evidenceSeed()).map(([path, value]) => db.doc(path).set(value)));
+    const sourceId = exceptionSources[0][0], read = await evidenceCall(db, { action: 'read', sourceId });
+    await saveEvidence(db, sourceId, { quantityException: { version: 1, grantRef: read.sourceContext.quantityGrant.ref, sourceRef: 'TEST isolated decision proof' } });
+    await approveEvidence(db, sourceId);
+    const posted = await evidenceCall(db, { action: 'post', sourceId, sourceHash: (await evidenceCall(db, { action: 'read', sourceId })).sourceHash, confirm: true });
+    expect(posted.verification.linesMatched).toBe(true);
+    const row = (await db.doc(`startup_cost_entries/${sourceId}`).get()).data();
+    expect(row).toMatchObject({ amount: 20, quantity: null, unit_cost: null, payment_status: 'unpaid' });
+    expect((await db.collection('journal_entries').get()).docs.flatMap(doc => doc.data().lines).find(line => line.accountId === '1500').debit).toBe(20);
+    await expect(postSource(db, FieldValue, { kind: 'startup', sourceId }, { userId: auth.uid })).rejects.toThrow();
+    expect((await db.collection('journal_entries').get()).size).toBe(1);
+    await expect(evidenceCall(db, { action: 'preview', sourceId, sourceHash: financeSourceHash(row), patch: {} })).rejects.toThrow(/مصدر/);
+  }, 120000);
+
+  it('posts the two allocated existing sources concurrently exactly once each within the reviewed 280 ceiling', async () => {
+    await Promise.all(Object.entries(evidenceSeed()).map(([path, value]) => db.doc(path).set(value)));
+    await linkAllocation(db); for (const sourceId of allocationSources) await approveEvidence(db, sourceId);
+    const reads = await Promise.all(allocationSources.map(sourceId => evidenceCall(db, { action: 'read', sourceId })));
+    const posted = await Promise.all(reads.map(read => evidenceCall(db, { action: 'post', sourceId: read.sourceId, sourceHash: read.sourceHash, confirm: true })));
+    expect(posted.every(result => result.verification.linesMatched)).toBe(true);
+    const entries = (await db.collection('journal_entries').get()).docs.map(doc => doc.data());
+    expect(entries).toHaveLength(2); expect(new Set(entries.map(entry => entry.sourceId)).size).toBe(2);
+    expect(entries.flatMap(entry => entry.lines).filter(line => line.accountId === '1500').reduce((sum, line) => sum + line.debit, 0)).toBe(280);
+    for (const sourceId of allocationSources) await expect(postSource(db, FieldValue, { kind: 'startup', sourceId }, { userId: auth.uid })).rejects.toThrow();
+    expect((await db.collection('startup_cost_entries').get()).size).toBe(4);
+  }, 180000);
+
+  it('rechecks allocation peers, closed periods, injected duplicates and concurrent saves before posting through either door', async () => {
+    await Promise.all(Object.entries(evidenceSeed()).map(([path, value]) => db.doc(path).set(value)));
+    await linkAllocation(db); const sourceId = allocationSources[0]; await approveEvidence(db, sourceId);
+    const before = await evidenceCall(db, { action: 'read', sourceId });
+    const peer = await evidenceCall(db, { action: 'read', sourceId: allocationSources[1] });
+    const previews = await Promise.all(['TEST first correction', 'TEST second correction'].map(purpose => evidenceCall(db, { action: 'preview', sourceId: peer.sourceId, sourceHash: peer.sourceHash, patch: { purpose } })));
+    const saves = await Promise.allSettled(previews.map((preview, index) => evidenceCall(db, { action: 'save', sourceId: peer.sourceId, sourceHash: peer.sourceHash,
+      patch: { purpose: index ? 'TEST second correction' : 'TEST first correction' }, previewHash: preview.previewHash, reason: 'TEST concurrent correction', confirm: true })));
+    expect(saves.filter(result => result.status === 'fulfilled')).toHaveLength(1);
+    expect((await evidenceCall(db, { action: 'read', sourceId })).approved).toBe(false);
+    await expect(postSource(db, FieldValue, { kind: 'startup', sourceId }, { userId: auth.uid })).rejects.toThrow(/توزيع الأصل/);
+    await approveEvidence(db, sourceId);
+    await db.doc('accounting_periods/2026-10').set({ status: 'closed' });
+    await expect(evidenceCall(db, { action: 'post', sourceId, sourceHash: before.sourceHash, confirm: true })).rejects.toThrow();
+    await db.doc('accounting_periods/2026-10').delete();
+    await expect(evidenceCall(db, { action: 'preview', sourceId, sourceHash: before.sourceHash, patch: { amount: 201 } })).rejects.toThrow(/مبلغ أحد جزأي/);
+    await db.doc('monthly_expenses/injected-duplicate').set({ invoice_url: originalUrl });
+    await expect(postSource(db, FieldValue, { kind: 'startup', sourceId }, { userId: auth.uid })).rejects.toThrow(/مرتبط بمصروف/);
+    expect((await db.collection('journal_entries').get()).size).toBe(0);
+  }, 180000);
 
   it('different capture keys cannot create duplicate originals under simultaneous requests', async () => {
     const inputs = ['DIFF-1', 'DIFF-2'].map(requestId => ({ kind: 'variable', requestId, patch: expensePatch() }));

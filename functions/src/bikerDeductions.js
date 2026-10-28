@@ -22,7 +22,8 @@ const hex = v => /^[a-f0-9]{64}$/.test(v || '');
 const text = v => typeof v === 'string' && v.trim().length >= 3 && v.length <= 1000;
 const fields = ['sourceKind', 'periodKey', 'metricKey', 'sourceId', 'snapshotId', 'bikerId', 'expectedRevision', 'reason', 'decisionReference'];
 const rows = snap => snap.docs.map(d => ({ ...d.data(), id: d.id }));
-const protectedRecord = v => v && (v.locked || v.financialLock || v.lockedAt || v.appliedAt || v.payrollRunId || v.paymentId || v.journalEntryId
+const protectedRecord = v => v && (v.locked || v.financialLock || v.lockedAt || v.appliedAt || v.payrollApplied || v.ledgerPosted
+  || v.payrollRunId || v.paymentId || v.journalEntryId
   || ['applied', 'paid', 'posted', 'closed'].includes(v.status));
 function validate(input) {
   if (!exact(input, fields) || !['metrics', 'booking'].includes(input.sourceKind) || !/^\d{4}-(0[1-9]|1[0-2])$/.test(input.periodKey)

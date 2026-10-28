@@ -82,6 +82,16 @@ describe('source biker deduction follow-up without payroll or financial writes',
     db.rows.set('users/admin', { role: 'partner' });
     await expect(saveBikerDeduction(db, FieldValue, request, actor)).rejects.toMatchObject({ code: 'permission-denied' });
   });
+  it.each(['payrollApplied', 'ledgerPosted'].flatMap(flag => ['root', 'current'].map(position => [flag, position])))('protects consumed %s on %s without rewriting flags or history', async (flag, position) => {
+    const saved = await saveBikerDeduction(db, FieldValue, await prepare(), actor);
+    const record = db.rows.get('quality_objections/' + saved.id);
+    (position === 'root' ? record : record.current)[flag] = true;
+    const before = structuredClone([...db.rows]), input = deductionInput({ expectedRevision: 1, reason: 'Changed reason after consumption' });
+    const p = await previewBikerDeduction(db, input, actor);
+    expect(p).toMatchObject({ locked: true, canSave: false });
+    await expect(saveBikerDeduction(db, FieldValue, await prepare(input, 'after-consumption'), actor)).rejects.toMatchObject({ code: 'aborted' });
+    expect([...db.rows]).toEqual(before);
+  });
   it('never accepts aggregate-only or stale details', async () => {
     const snap = structuredClone(db.rows.get('sweater_metric_snapshots/reading-one'));
     delete snap.eventDetails; delete snap.eventCoverage; snap.extractedAtIso = '2026-10-28T16:00:00Z';

@@ -48,6 +48,15 @@ suite('biker deduction isolated transactional behavior', () => {
     await expect(saveBikerDeduction(db, FieldValue, input, actor)).rejects.toMatchObject({ code: 'permission-denied' });
     expect((await db.collection('quality_objections').get()).size).toBe(0);
   });
+  it.each(['payrollApplied', 'ledgerPosted'].flatMap(flag => ['root', 'current'].map(position => [flag, position])))('protects consumed %s on %s transactionally', async (flag, position) => {
+    const saved = await saveBikerDeduction(db, FieldValue, await request(), actor), ref = db.collection('quality_objections').doc(saved.id);
+    const record = (await ref.get()).data(); (position === 'root' ? record : record.current)[flag] = true;
+    await ref.set(record);
+    const input = deductionInput({ expectedRevision: 1, reason: 'Correction after consumption' });
+    const p = await previewBikerDeduction(db, input, actor); expect(p).toMatchObject({ locked: true, canSave: false });
+    await expect(saveBikerDeduction(db, FieldValue, await request(input, 'protected-correction'), actor)).rejects.toMatchObject({ code: 'aborted' });
+    expect((await ref.get()).data()).toEqual(record); expect((await db.collection('audit_logs').get()).size).toBe(1);
+  });
   it('uses supported admin actions and preserves raw owner-classified cancellation evidence', async () => {
     const payload = deductionInput({ sourceKind: 'booking', sourceId: 'C-990002', snapshotId: 'raw-test-run' });
     const auth = { uid: 'admin', token: { role: 'admin' } };

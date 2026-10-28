@@ -12,13 +12,25 @@ async function capture(db, overrides = {}) {
   const result = await financeWorkbench(db, auth, { action: 'capture', ...request, previewHash: preview.previewHash, reason: 'مستند اختبار معزول', confirm: true });
   return { request, preview, result, read: await financeWorkbench(db, auth, { action: 'read', kind: 'variable', sourceId: result.sourceId }) };
 }
+function seedAdvance(db, amount = 150) {
+  db.rows.set('chart_of_accounts/1300', {});
+  db.rows.set('temporary_expenses/test-advance', { biker_id: 'test-employee', amount, status: 'pending', recovered_amount: 0 });
+  db.rows.set('journal_entries/test-funding', { status: 'posted', sourceType: 'temporary_expense', sourceId: 'test-advance',
+    entryDate: '2026-10-17', lines: [{ accountId: '1300', debit: amount, credit: 0 },
+      { accountId: '1010', debit: 0, credit: amount }] });
+}
+function employeeRequest(requestId, amount, kind = 'variable') {
+  return { kind, requestId, patch: expensePatch({ amount, quantity: 1,
+    invoiceNumber: `TEST-${requestId}`, invoiceUrl: `https://example.org/${requestId}`,
+    paymentStatus: 'paid', paymentMethod: 'card', paidDate: '2026-10-18',
+    fundingType: 'employee', fundingReference: 'TEST supplier receipt',
+    employeeAdvanceLink: { version: 1, advanceId: 'test-advance', employeeId: 'test-employee',
+      fundingJournalId: 'test-funding', allocatedAmount: amount } }) };
+}
 describe('finance workbench version-bound review', () => {
   it('keeps an owner statement separate from a verified advance and credits 1300 only after a matched link', async () => {
     const db = database();
-    db.rows.set('chart_of_accounts/1300', {});
-    db.rows.set('temporary_expenses/test-advance', { biker_id: 'test-employee', amount: 150, status: 'pending', recovered_amount: 0 });
-    db.rows.set('journal_entries/test-funding', { status: 'posted', sourceType: 'temporary_expense', sourceId: 'test-advance',
-      entryDate: '2026-10-17', lines: [{ accountId: '1300', debit: 150, credit: 0 }, { accountId: '1010', debit: 0, credit: 150 }] });
+    seedAdvance(db);
     const ownerOnly = await capture(db, { paymentStatus: 'paid', paymentMethod: 'card', paidDate: '2026-10-18',
       fundingType: 'employee', fundingReference: 'TEST supplier receipt', ownerStatementRef: 'TEST owner statement' });
     expect(ownerOnly.read.approvalReady).toBe(false);
@@ -57,6 +69,48 @@ describe('finance workbench version-bound review', () => {
         employeeAdvanceLink: { ...patch.employeeAdvanceLink, allocatedAmount: 60 } }) });
     expect(second.postingPreview.ready).toBe(false);
     expect(second.issues.join(' ')).toMatch(/تتجاوز التمويل/);
+  });
+  it('reserves the exact advance across expense kinds and rejects a duplicate original', async () => {
+    const db = database(); seedAdvance(db);
+    db.rows.set('monthly_expense_categories/test-category', { name: 'TEST monthly' });
+    db.rows.set('chart_of_accounts/5200', {});
+    const first = employeeRequest('FIRST', 100), second = employeeRequest('SECOND', 50, 'monthly');
+    const saved = [];
+    for (const request of [first, second]) {
+      const preview = await financeWorkbench(db, auth, { action: 'previewCapture', ...request });
+      expect(preview.postingPreview.ready).toBe(true);
+      saved.push(await financeWorkbench(db, auth, { action: 'capture', ...request, previewHash: preview.previewHash,
+        reason: 'TEST exact allocation', confirm: true }));
+    }
+    for (const [index, item] of saved.entries()) {
+      expect((await financeWorkbench(db, auth, { action: 'read', kind: index ? 'monthly' : 'variable',
+        sourceId: item.sourceId })).approvalReady).toBe(true);
+    }
+    const excess = await financeWorkbench(db, auth, { action: 'previewCapture', ...employeeRequest('EXCESS', 0.01) });
+    expect(excess.postingPreview.ready).toBe(false);
+    expect(excess.issues.join(' ')).toMatch(/تتجاوز التمويل/);
+    const duplicate = employeeRequest('DUPLICATE', 1);
+    duplicate.patch.invoiceUrl = first.patch.invoiceUrl;
+    await expect(financeWorkbench(db, auth, { action: 'previewCapture', ...duplicate })).rejects.toThrow(/مرتبط/);
+  });
+  it('rechecks concurrent saved allocations before approval even when both previews were ready', async () => {
+    const db = database(); seedAdvance(db);
+    const first = employeeRequest('BASE', 100);
+    const firstPreview = await financeWorkbench(db, auth, { action: 'previewCapture', ...first });
+    await financeWorkbench(db, auth, { action: 'capture', ...first, previewHash: firstPreview.previewHash,
+      reason: 'TEST base allocation', confirm: true });
+    const contenders = [employeeRequest('RACE-A', 40), employeeRequest('RACE-B', 40)];
+    const previews = await Promise.all(contenders.map(request => financeWorkbench(db, auth, { action: 'previewCapture', ...request })));
+    expect(previews.every(preview => preview.postingPreview.ready)).toBe(true);
+    const saved = await Promise.all(contenders.map((request, index) => financeWorkbench(db, auth, { action: 'capture', ...request,
+      previewHash: previews[index].previewHash, reason: 'TEST racing allocation', confirm: true })));
+    for (const item of saved) {
+      const read = await financeWorkbench(db, auth, { action: 'read', kind: 'variable', sourceId: item.sourceId });
+      expect(read.approvalReady).toBe(false);
+      expect(read.issues.join(' ')).toMatch(/تتجاوز التمويل/);
+      await expect(financeWorkbench(db, auth, { action: 'approve', kind: 'variable', sourceId: item.sourceId,
+        sourceHash: read.sourceHash, postingHash: 'a'.repeat(64), reason: 'TEST refuse over-allocation', confirm: true })).rejects.toThrow();
+    }
   });
   it('a no-op correction or reverting values cannot resurrect an old approval receipt', async () => {
     const db = database(), data = await capture(db), common = { kind: 'variable', sourceId: data.result.sourceId, sourceHash: data.read.sourceHash };

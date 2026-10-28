@@ -4185,5 +4185,7 @@
   "دليل استثناء الكمية غير مكتمل.": "Quantity exception evidence is incomplete.",
   "دليل توزيع الأصل غير مكتمل.": "Original allocation evidence is incomplete.",
   "استثناء العدد لا يقبل كمية مفترضة أو بنودًا مختلفة.": "The quantity exception does not accept an assumed quantity or itemized lines.",
-  "هذه الأدلة تخص سجلات قائمة؛ لا تستخدم لإنشاء مصروف جديد.": "This evidence applies to existing records. Do not use it to create a new expense."
+  "هذه الأدلة تخص سجلات قائمة؛ لا تستخدم لإنشاء مصروف جديد.": "This evidence applies to existing records. Do not use it to create a new expense.",
+  "تغطية فحص هوية المستند غير مكتملة؛ يبقى الاعتماد والترحيل موقوفين حتى تكتمل.": "Document identity check coverage is incomplete. Approval and posting remain blocked until coverage is complete.",
+  "يوجد مصروف آخر بنفس هوية أصل المستند ولو اختلف شكل رابطه؛ راجع التكرار قبل الاعتماد والترحيل.": "Another expense has the same original document identity, even with a different link format. Review the duplicate before approval or posting."
 }

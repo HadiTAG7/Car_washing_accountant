@@ -18,6 +18,10 @@ describe('bounded owner quantity evidence', () => {
     expect(saved.read.approvalReady).toBe(true); expect(saved.read.approved).toBe(false);
     expect(saved.read.postingPreview.lines.find(line => line.accountId === '1500').debit).toBe(amount);
     expect(saved.read.row.payment_status).toBe('unpaid'); expect(saved.read.row.finance_metadata.evidenceRefs).toEqual(['TEST evidence']);
+    expect(saved.read.sourceContext.contextHash).toMatch(/^[a-f0-9]{64}$/);
+    const audit = [...db.rows.entries()].find(([path]) => path.startsWith('audit_logs/'))[1];
+    expect(audit.sourceEvidence.quantityDecision).toMatchObject({ decisionText: '10 مو مهم العدد', decisionAt: '2026-10-26T19:16:11.251Z', amount, sourceId });
+    expect(audit.before.quantity).toBe(2); expect(audit.after.quantity).toBeNull();
     await approveEvidence(db, sourceId);
     await assertFinanceApproval(db, { get: ref => ref.get() }, kind, sourceId, db.rows.get(`startup_cost_entries/${sourceId}`));
   });
@@ -58,6 +62,7 @@ describe('one original allocated to two existing sources', () => {
     const before = await evidenceCall(db, { action: 'read', sourceId });
     await expect(evidenceCall(db, { action: 'preview', sourceId, sourceHash: before.sourceHash, patch: {} })).rejects.toThrow(/توزيع مراجع/);
     const grant = before.sourceContext.allocationGrant;
+    expect(Object.isFrozen(grant.members)).toBe(true); expect(Object.isFrozen(grant.members[0].lineIds)).toBe(true);
     expect(grant.total).toBe(280); expect(grant.members.map(member => member.amount)).toEqual([200, 80]);
     expect(new Set(grant.members.flatMap(member => member.lineIds)).size).toBe(grant.lines.length);
     expect(grant.lines.reduce((sum, line) => sum + line.amount, 0)).toBe(grant.total);
@@ -99,11 +104,29 @@ describe('one original allocated to two existing sources', () => {
     const read = await evidenceCall(db, { action: 'read', sourceId: id });
     expect(read.issues.join()).toContain('الكمية'); expect(read.issues.join()).toContain('غير الضريبي'); expect(read.approvalReady).toBe(false);
   });
+  it.each(['sharing-query', 'open-id'])('blocks an already-existing third source with a %s Drive alias before approval and legacy posting', async variant => {
+    const db = memoryFinanceDb(evidenceSeed()); await linkAllocation(db); const sourceId = allocationSources[0];
+    await approveEvidence(db, sourceId);
+    const before = await evidenceCall(db, { action: 'read', sourceId });
+    const alias = variant === 'sharing-query' ? `${originalUrl}?usp=sharing` : 'https://drive.google.com/open?id=1kXBQUqAPostNYJ6c9myt3CqBwKKFRM_k';
+    db.rows.set('monthly_expenses/injected-alias', { invoice_url: alias });
+    await expect(evidenceCall(db, { action: 'approve', sourceId, sourceHash: before.sourceHash, postingHash: before.postingPreview.postingHash,
+      reason: 'TEST separate approval', confirm: true })).rejects.toThrow();
+    await expect(assertFinanceApproval(db, { get: ref => ref.get() }, kind, sourceId, before.row)).rejects.toThrow();
+    expect([...db.rows.keys()].some(key => key.startsWith('journal_entries/'))).toBe(false);
+  });
   it('normalizes only documented Drive identity and never confuses another file or host', () => {
     expect(financeDocumentIdentity(`${originalUrl}?usp=sharing`)).toBe(financeDocumentIdentity(originalUrl));
     expect(financeDocumentIdentity('https://drive.google.com/open?id=1kXBQUqAPostNYJ6c9myt3CqBwKKFRM_k')).toBe(financeDocumentIdentity(originalUrl));
     expect(financeDocumentIdentity(originalUrl.replace('drive.google.com', 'example.org'))).not.toBe(financeDocumentIdentity(originalUrl));
     expect(financeDocumentIdentity('javascript:alert(1)')).toBeNull();
+  });
+  it('fails closed when any source-kind scan exceeds its complete identity-check coverage', async () => {
+    const db = memoryFinanceDb(evidenceSeed()); await linkAllocation(db); const sourceId = allocationSources[0];
+    for (let index = 0; index < 1001; index++) db.rows.set(`monthly_expenses/coverage-${index}`, { invoice_url: `https://example.org/synthetic-${index}` });
+    const read = await evidenceCall(db, { action: 'read', sourceId });
+    expect(read.approvalReady).toBe(false); expect(read.issues.join()).toContain('تغطية فحص هوية');
+    await expect(approveEvidence(db, sourceId)).rejects.toThrow();
   });
   it('rejects an ordinary same-invoice duplicate outside the bounded group', async () => {
     const db = memoryFinanceDb(evidenceSeed()), first = 'ordinary-a', second = 'ordinary-b';

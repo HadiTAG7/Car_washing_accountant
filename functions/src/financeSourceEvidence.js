@@ -9,7 +9,11 @@ const quantityGrants = Object.freeze([
     document: 'drive:1rDK0CUU83cIE5YW4N7XDaYRIt47Iwp55' },
 ].map(grant => Object.freeze({ ...grant, decisionRef: 'CFO-OWNER-BATCH-ANSWERS-20261026:10',
   decisionText: '10 مو مهم العدد', decisionAt: '2026-10-26T19:16:11.251Z' })));
-const original99 = Object.freeze({ ref: 'ORIGINAL99-0579-20261028', document: 'drive:1kXBQUqAPostNYJ6c9myt3CqBwKKFRM_k', total: 280,
+const deepFreeze = value => {
+  if (value && typeof value === 'object') { Object.values(value).forEach(deepFreeze); Object.freeze(value); }
+  return value;
+};
+const original99 = deepFreeze({ ref: 'ORIGINAL99-0579-20261028', document: 'drive:1kXBQUqAPostNYJ6c9myt3CqBwKKFRM_k', total: 280,
   evidenceRef: 'ORIGINAL99-READ-20261028',
   lines: [{ id: 'printed-1', amount: 30 }, { id: 'printed-2', amount: 30 }, { id: 'printed-3', amount: 20 }, { id: 'printed-4', amount: 200 }],
   members: [
@@ -49,6 +53,22 @@ export function allocationGrant(kind, sourceId) {
 export function allowedAllocationSibling(grant, kind, sourceId) {
   return Boolean(grant?.members.some(member => member.kind === kind && member.sourceId === sourceId));
 }
+async function originalIdentityIssues(db, tx, document, allowed) {
+  const issues = [];
+  // Existing records have no normalized-document index. Only these bounded
+  // grants use the complete scan, with an explicit ceiling and fail-closed
+  // coverage. Do not cache across Firestore transaction retry attempts.
+  const collections = { variable: 'variable_expenses', monthly: 'monthly_expenses', annual: 'annual_expense_entries', startup: 'startup_cost_entries' };
+  for (const [kind, name] of Object.entries(collections)) {
+    let query = db.collection(name).limit(1001);
+    if (typeof query.select === 'function') query = query.select('invoice_url');
+    const snapshot = await tx.get(query);
+    if (snapshot.size > 1000) issues.push('تغطية فحص هوية المستند غير مكتملة؛ يبقى الاعتماد والترحيل موقوفين حتى تكتمل.');
+    if (snapshot.docs.some(doc => financeDocumentIdentity(doc.data().invoice_url) === document
+      && !allowed.some(member => member.kind === kind && member.sourceId === doc.id))) issues.push('يوجد مصروف آخر بنفس هوية أصل المستند ولو اختلف شكل رابطه؛ راجع التكرار قبل الاعتماد والترحيل.');
+  }
+  return issues;
+}
 /** Every allocated peer is read in the caller's transaction, including legacy
  * posting. Pending setup may be saved, but never approved or posted. */
 export async function financeSourceEvidence(db, tx, kind, sourceId, row) {
@@ -60,7 +80,7 @@ export async function financeSourceEvidence(db, tx, kind, sourceId, row) {
   }
   const allocation = meta.documentAllocation;
   const hasAllocation = allocation != null;
-  let contextHash = null;
+  let contextHash = meta.quantityException != null && !issues.length ? financeHash({ quantityGrant }) : null;
   if (grant && financeDocumentIdentity(row.invoice_url) !== grant.document) issues.push('لا يغيّر رابط أصل التوزيع لتجاوز التكرار؛ أعد رابط المستند المثبت.');
   if (grant && !hasAllocation) issues.push('هذا الأصل له توزيع مراجع؛ يلزم ربط السجل بالتوزيع قبل الاعتماد أو الترحيل.');
   if (hasAllocation && (!evidenceShape(allocation) || !grant || allocation.grantRef !== grant.ref)) issues.push('مجموعة توزيع الأصل غير معتمدة لهذا المصدر؛ لا يستثنى منع التكرار العام.');
@@ -81,5 +101,7 @@ export async function financeSourceEvidence(db, tx, kind, sourceId, row) {
     contextHash = financeHash({ grant, peers });
     warnings.push('فاتورة واحدة موزعة دون تكرار: 200 ريال للدبابات و80 ريال للسكن؛ سقف الأصل 280 ريال.');
   }
+  if (grant && hasAllocation) issues.push(...await originalIdentityIssues(db, tx, grant.document, grant.members));
+  else if (quantityGrant && meta.quantityException != null) issues.push(...await originalIdentityIssues(db, tx, quantityGrant.document, [{ kind, sourceId }]));
   return { quantityGrant, allocationGrant: grant, issues: [...new Set(issues)], warnings, contextHash };
 }

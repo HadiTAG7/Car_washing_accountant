@@ -268,7 +268,7 @@ describe.skipIf(!enabled)('finance real Firestore workflow — isolated demo onl
     await expect(evidenceCall(db, { action: 'post', sourceId, sourceHash: before.sourceHash, confirm: true })).rejects.toThrow();
     await db.doc('accounting_periods/2026-10').delete();
     await expect(evidenceCall(db, { action: 'preview', sourceId, sourceHash: before.sourceHash, patch: { amount: 201 } })).rejects.toThrow(/مبلغ أحد جزأي/);
-    await db.doc('monthly_expenses/injected-duplicate').set({ invoice_url: originalUrl });
+    await db.doc('monthly_expenses/injected-duplicate').set({ invoice_url: `${originalUrl}?usp=sharing` });
     await expect(postSource(db, FieldValue, { kind: 'startup', sourceId }, { userId: auth.uid })).rejects.toThrow(/مرتبط بمصروف/);
     expect((await db.collection('journal_entries').get()).size).toBe(0);
   }, 180000);

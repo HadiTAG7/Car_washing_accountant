@@ -1,4 +1,10 @@
 export const FLEET_STATUSES = Object.freeze([['working', 'شغال'], ['maintenance', 'صيانة'], ['stopped', 'متوقف'], ['missing', 'مفقود']]);
+export const EXPECTED_FLEET_COUNT = 50;
+export function fleetInventorySummary({bikes=[],maintenance=[]}) {
+  return {registered:bikes.length,working:bikes.length?bikes.filter(b=>b.status==='working').length:null,
+    maintenance:new Set([...maintenance.filter(m=>!m.endedOn).map(m=>m.bikeId),...bikes.filter(b=>b.status==='maintenance').map(b=>b.id)]).size,
+    missing:Math.max(0,EXPECTED_FLEET_COUNT-bikes.length)};
+}
 export const CLAIM_STATUSES = Object.freeze([['none', 'ما فيه مطالبة'], ['pending', 'تحت المتابعة'], ['submitted', 'قُدمت'], ['accepted', 'قُبلت'], ['rejected', 'رُفضت'], ['closed', 'أُغلقت']]);
 export const fleetDay = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
   && Number.isFinite(Date.parse(`${value}T00:00:00Z`)) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;

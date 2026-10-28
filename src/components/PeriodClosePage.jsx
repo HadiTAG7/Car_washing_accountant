@@ -21,6 +21,7 @@ import {
   previewGeneration, generateVouchers, fetchVoucherBundle, setVoucherInvoice,
 } from '../lib/accounting/firestoreRecurring';
 import VoucherInvoiceModal from './VoucherInvoiceModal';
+import OperationsReadinessBanner from './OperationsReadinessBanner';
 import { linkLegacyInvoices } from '../lib/accounting/firestoreInvoicing';
 import { addMonths } from '../lib/accounting/depreciation';
 import { useAccountingSettings } from '../hooks/useAccountingSettings';
@@ -43,6 +44,7 @@ export default function PeriodClosePage() {
   const [editingSettings, setEditingSettings] = useState(false);
   const [pendingSetting, setPendingSetting] = useState(null);
   const [overrideReason, setOverrideReason] = useState('');
+  const [operationsOpen,setOperationsOpen]=useState(()=>new Set([currentPeriodKey()]));
   const {
     settings, update: updateSettings, setPolicy, seedPolicy,
     baselineFrom, policyConfigured,
@@ -349,11 +351,12 @@ export default function PeriodClosePage() {
           <SectionHeader title="قائمة فحص الإقفال" subtitle="قراءة فقط؛ لا تُرحّل عمليات ولا تغيّر الفترات"
             action={<SecondaryButton onClick={readinessQuery.refetch} disabled={readinessQuery.loading}>تحديث الفحص</SecondaryButton>} />
           {readinessQuery.loading && <p>جارٍ فحص الجاهزية...</p>}
-          {(readinessQuery.data?.periods || []).map(period => <details key={period.periodKey} open={period.periodKey === currentPeriodKey()} className="rounded-control border border-slate-300 dark:border-slate-700 p-3">
+          {(readinessQuery.data?.periods || []).map(period => <details key={period.periodKey} open={period.periodKey === currentPeriodKey()} onToggle={event=>{const open=event.currentTarget.open;setOperationsOpen(previous=>{if(previous.has(period.periodKey)===open)return previous;const next=new Set(previous);if(open)next.add(period.periodKey);else next.delete(period.periodKey);return next;});}} className="rounded-control border border-slate-300 dark:border-slate-700 p-3">
             <summary className={period.ok ? 'text-emerald-500 font-bold cursor-pointer' : 'text-rose-500 font-bold cursor-pointer'}>
               {period.periodKey} · {period.ok ? 'جاهزة للإقفال' : `غير جاهزة: ${period.failedCount} بنود`}
             </summary>
             <ul className="mt-3 space-y-2 text-sm">
+              <li>{operationsOpen.has(period.periodKey)?<OperationsReadinessBanner periodKey={period.periodKey}/>:<a href={`?page=operations_close&period=${period.periodKey}`}>جاهزية شهر التشغيل · فتح قائمة الفحص</a>}</li>
               {period.checks.map(check => <li key={check.id} className={!check.applicable ? 'text-slate-500' : check.ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
                 <a href={check.href}>{!check.applicable ? '—' : check.ok ? '✓' : '✗'} {check.label} · {check.count}{check.amount != null ? ` · ${formatCurrency(check.amount)}` : ''}</a>
                 {check.note && <small className="block text-slate-500 mt-1 break-words">{check.note}</small>}

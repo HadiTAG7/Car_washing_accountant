@@ -5,7 +5,7 @@ import { useOverviewDashboard } from '../hooks/useOverviewDashboard';
 import { useIdleBikersData } from '../hooks/useIdleBikersData';
 import { riyadhToday } from '../lib/bikerProfile';
 import { displayBikerName } from '../lib/bikerNames';
-import { FLEET_STATUSES, CLAIM_STATUSES, fleetSummary, fleetPolicy, parseFleetCsv, FLEET_CSV_COLUMNS } from '../lib/fleet';
+import { FLEET_STATUSES, CLAIM_STATUSES, fleetSummary, fleetInventorySummary, fleetPolicy, parseFleetCsv, FLEET_CSV_COLUMNS } from '../lib/fleet';
 import TopBar from './TopBar';
 import DateField from './DateField';
 import { Card, SectionHeader } from './UI';
@@ -36,6 +36,7 @@ export function FleetContent() {
   const flight = useRef(false);
   const tabButtons = useRef([]), formRefs = useRef({});
   const summary = useMemo(() => fleetSummary({ ...data, today }), [data, today]);
+  const inventory = useMemo(() => fleetInventorySummary(data), [data]);
   const bikeName = id => data.bikes.find(b => b.id === id)?.internalNumber || 'دباب غير موجود في السجل';
   const bikerName = (id, saved = '') => { const biker = data.bikers.find(b => b.id === id); return biker ? displayBikerName(biker) : saved || (id ? 'بايكر غير موجود في القائمة' : 'غير معروف'); };
   const selectEdit = (kind, row) => { setEditing(old => ({ ...old, [kind]: row?.id || null })); setMessage('');
@@ -62,7 +63,7 @@ export function FleetContent() {
   return <><TopBar title="الأسطول" subtitle="الدبابات والتسليم والصيانة والتأمين" /><main className="fleet-page" dir="rtl">
     <div className="fleet-toolbar"><div><h2>سجل الأسطول</h2><p>سجل تشغيلي مستقل؛ لا يغيّر الأصول الثابتة أو القيود.</p></div><button className={button} onClick={read.refetch} disabled={busy}>تحديث البيانات</button></div>
     {read.loading ? <p role="status">جارٍ قراءة الأسطول…</p> : read.error || !read.data ? <p role="alert">تعذّرت قراءة الأسطول؛ الأعداد غير مؤكدة. أعد المحاولة.</p> : <>
-      <div className="fleet-metrics">{[['الدبابات المسجلة', data.bikes.length], ['متاحة بدون بايكر', data.bikes.length ? summary.available.length : 'غير معروف'], ['في صيانة مفتوحة', new Set([...data.maintenance.filter(m => !m.endedOn).map(m => m.bikeId), ...data.bikes.filter(b => b.status === 'maintenance').map(b => b.id)]).size]].map(([title, value]) => <Card className="fleet-panel" key={title}><h3>{title}</h3><strong>{value}</strong></Card>)}</div>
+      <div className="fleet-metrics">{[['الدبابات المسجلة', inventory.registered], ['متاحة بدون بايكر', data.bikes.length ? summary.available.length : 'غير معروف'], ['في صيانة مفتوحة', inventory.maintenance]].map(([title, value]) => <Card className="fleet-panel" key={title}><h3>{title}</h3><strong>{value}</strong></Card>)}</div>
       {!data.bikes.length && <Card className="fleet-panel"><h3>ما تسجلت بيانات الدبابات بعد</h3><p>بند التأسيس يسجل 50 دبابًا. هذا لا يحدد لوحاتها أو مستلميها؛ أدخل البيانات الفعلية أولًا.</p><button className={button} onClick={() => setTab('csv')}>طريقة تعبئة الدبابات الخمسين</button></Card>}
       <Card className="fleet-panel"><SectionHeader title="تنبيهات الأسطول" /><ul className="fleet-alerts">
         {summary.available.length > 0 && <FleetIdleAlert available={summary.available.length} today={today} />}

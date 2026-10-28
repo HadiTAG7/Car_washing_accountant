@@ -1,6 +1,8 @@
 import { financeHash, financeSourceHash } from './financeHash.js';
 import { financeDocumentIdentity } from './financeDocumentIdentity.js';
 import { reviewedPartialVatGrant, requiresReviewedPartialVat } from './financeReviewedVat.js';
+import { reviewedIdentityGrant, verifiedReviewedIdentity } from './financeReviewedIdentity.js';
+import { printedDiscountGrant } from './financePrintedDiscount.js';
 export { financeDocumentIdentity } from './financeDocumentIdentity.js';
 
 // Bounded, reviewed source grants. These are not editable policy settings or a
@@ -73,6 +75,20 @@ export async function financeSourceEvidence(db, tx, kind, sourceId, row) {
   const allocation = meta.documentAllocation;
   const hasAllocation = allocation != null;
   let contextHash = meta.quantityException != null && !issues.length ? financeHash({ quantityGrant }) : null;
+  const discountGrant = printedDiscountGrant(kind, sourceId, row);
+  if (discountGrant) {
+    contextHash = financeHash({ previousContextHash: contextHash, printedDiscount: discountGrant });
+    issues.push(...await originalIdentityIssues(db, tx, financeDocumentIdentity(row.invoice_url), [{ kind, sourceId }]));
+  }
+  const identityGrant = reviewedIdentityGrant(kind, sourceId, row), verifiedIdentity = verifiedReviewedIdentity(kind, sourceId, row);
+  if (meta.reviewedDocumentIdentity != null) {
+    if (!verifiedIdentity) issues.push('هوية المستند المراجعة لا تطابق المصدر والرأي والحقائق المثبتة.');
+    else {
+      contextHash = financeHash({ previousContextHash: contextHash, reviewedIdentity: verifiedIdentity });
+      issues.push(...await originalIdentityIssues(db, tx, verifiedIdentity.document, [{ kind, sourceId }]));
+      warnings.push('المستند مقبول بهويته المراجعة دون اختلاق رقم فاتورة؛ المعالجة الضريبية السابقة وبقية الضوابط باقية.');
+    }
+  }
   const partialVatGrant = reviewedPartialVatGrant(kind, sourceId, row);
   if (requiresReviewedPartialVat(kind, sourceId, row)) {
     // Incomplete/unresolved allocations remain saveable as pending evidence;
@@ -105,5 +121,5 @@ export async function financeSourceEvidence(db, tx, kind, sourceId, row) {
   }
   if (grant && hasAllocation) issues.push(...await originalIdentityIssues(db, tx, grant.document, grant.members));
   else if (quantityGrant && meta.quantityException != null) issues.push(...await originalIdentityIssues(db, tx, quantityGrant.document, [{ kind, sourceId }]));
-  return { quantityGrant, allocationGrant: grant, partialVatGrant, issues: [...new Set(issues)], warnings, contextHash };
+  return { quantityGrant, allocationGrant: grant, partialVatGrant, reviewedIdentityGrant: identityGrant, verifiedIdentity, printedDiscountGrant: discountGrant, issues: [...new Set(issues)], warnings, contextHash };
 }

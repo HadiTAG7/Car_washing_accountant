@@ -15,6 +15,7 @@ import { approveFinanceSelection } from '../../src/lib/financeWorkbenchActions.j
 import { dispatch } from '../../functions/src/handlers.js';
 import { deleteStartupPlan } from '../../functions/src/startupCosts.js';
 import { reviewedPartialSeed, partialSourceId, partialReviewRef } from './financeReviewedVatFixtures.js';
+import { identitySources, identitySeed, printedDiscountRow, discountedSourceId } from './financeReviewedIdentityFixtures.js';
 
 const projectId = 'demo-sweater-finance';
 const enabled = /^(127\.0\.0\.1|localhost):19080$/.test(process.env.FIRESTORE_EMULATOR_HOST || '');
@@ -43,6 +44,46 @@ describe.skipIf(!enabled)('finance real Firestore workflow — isolated demo onl
   }, 120000);
   afterAll(async () => { if (rules) await rules.cleanup(); if (db) await db.terminate(); if (app) await deleteApp(app); });
   const call = input => financeWorkbench(db, auth, input);
+
+  it.each(identitySources.flatMap((source, index) => ['workbench', 'legacy'].map(door => [source[0], index, door])))('posts bounded identity %s (#%i) through %s without a fabricated number or return action', async (sourceId, index, door) => {
+    for (const [path, row] of Object.entries(identitySeed(auth.uid, { linked: true, funded: true }))) await db.doc(path).set(row);
+    const request = { kind: 'variable', sourceId }, read = await call({ action: 'read', ...request });
+    expect(read.row.invoice_number).toBeNull(); expect(read.approvalReady).toBe(true); expect(read.approved).toBe(false);
+    await call({ action: 'approve', ...request, sourceHash: read.sourceHash, postingHash: read.postingPreview.postingHash, reason: 'TEST reviewed identity separate approval', confirm: true });
+    if (door === 'legacy') await postSource(db, FieldValue, request, { userId: auth.uid });
+    else await call({ action: 'post', ...request, sourceHash: read.sourceHash, confirm: true });
+    const entries = await db.collection('journal_entries').get(); expect(entries.size).toBe(1);
+    const vat = index ? identitySources[index][4] : 0, total = identitySources[index][1];
+    expect(entries.docs[0].data().lines.find(line => line.accountId === '5100').debit).toBe(Math.round((total - vat) * 100) / 100);
+    expect(entries.docs[0].data().lines.find(line => line.accountId === '1200')?.debit || 0).toBe(vat);
+    expect(entries.docs[0].data().lines.find(line => line.accountId === '1020').credit).toBe(total);
+    expect(entries.docs[0].data().purchaseTaxSnapshot).toMatchObject({ invoiceNumber: null, vatAmount: identitySources[index][4], reviewedDocumentIdentity: { sourceId, returnAction: 'none' } });
+    expect((await db.doc(`variable_expenses/${sourceId}`).get()).data().invoice_number).toBeNull();
+    await expect(postSource(db, FieldValue, request, { userId: auth.uid })).rejects.toThrow();
+    expect((await db.collection('journal_entries').get()).size).toBe(1); expect((await db.collection('vat_returns').get()).size).toBe(0);
+  }, 120000);
+
+  it.each(['workbench', 'legacy'])('posts printed invoice discount once through %s without replacing prices or VAT', async door => {
+    const row = printedDiscountRow({ funded: true });
+    await db.doc('startup_costs/test-parent').set({ actual_amount: 200, budgeted_amount: 1000 });
+    await db.doc(`startup_cost_entries/${discountedSourceId}`).set(row);
+    await db.doc('app_settings/accounting').set({ value: { vatRegistered: true } });
+    const request = { kind: 'startup', sourceId: discountedSourceId }, read = await call({ action: 'read', ...request });
+    expect(read.approvalReady).toBe(true);
+    await call({ action: 'approve', ...request, sourceHash: read.sourceHash, postingHash: read.postingPreview.postingHash, reason: 'TEST printed invoice discount review', confirm: true });
+    if (door === 'legacy') await postSource(db, FieldValue, request, { userId: auth.uid });
+    else await call({ action: 'post', ...request, sourceHash: read.sourceHash, confirm: true });
+    const entries = await db.collection('journal_entries').get(); expect(entries.size).toBe(1);
+    expect(entries.docs[0].data().lines).toEqual(expect.arrayContaining([
+      expect.objectContaining({ accountId: '1500', debit: 173.9, credit: 0 }),
+      expect.objectContaining({ accountId: '1200', debit: 26.1, credit: 0 }),
+      expect.objectContaining({ accountId: '1010', debit: 0, credit: 200 }),
+    ]));
+    const after = (await db.doc(`startup_cost_entries/${discountedSourceId}`).get()).data();
+    expect(after.amount).toBe(200); expect(after.vat_amount).toBe(26.1); expect(after.finance_metadata.invoiceLines).toEqual(row.finance_metadata.invoiceLines);
+    await expect(postSource(db, FieldValue, request, { userId: auth.uid })).rejects.toThrow();
+    expect((await db.collection('journal_entries').get()).size).toBe(1);
+  }, 120000);
 
   it.each(['workbench', 'legacy'])('posts only the reviewed eligible VAT once through %s, with source/period/approval guards intact', async door => {
     const seed = reviewedPartialSeed(auth.uid);

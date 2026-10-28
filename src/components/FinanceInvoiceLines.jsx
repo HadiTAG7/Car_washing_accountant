@@ -1,4 +1,4 @@
-import { invoiceLinesTotal, MAX_FINANCE_INVOICE_LINES } from '../../functions/src/financeInvoiceLines';
+import { invoiceLinesTotal, invoiceLinesSubtotal, MAX_FINANCE_INVOICE_LINES } from '../../functions/src/financeInvoiceLines';
 
 export function InvoiceLinesRead({ value }) {
   if (!value) return <p>كمية متجانسة واحدة؛ لا توجد بنود مفصلة.</p>;
@@ -10,6 +10,7 @@ export function InvoiceLinesRead({ value }) {
       <td>{line?.unit || 'غير مثبت'}</td><td>{shared ? 'غير مفصول في المصدر' : line?.unitCost ?? 'غير مثبت'}</td><td>{shared ? 'مبلغ مشترك غير موزع' : line?.amountSource === 'printed' ? line.unitPriceMode === 'exclusive' ? 'قبل الضريبة' : 'شامل الضريبة' : 'نفس أساس المستند'}</td>
       <td>{shared ? 'ضمن المبلغ المشترك' : line?.amount ?? 'غير مثبت'}{line?.amountSource === 'printed' && <small className="block">إجمالي مطبوع في المصدر</small>}</td><td>{line?.sourceRef || 'غير مثبت'}</td></tr>)}</tbody></table></div>
     <p>{shared ? 'المبلغ المشترك:' : 'مجموع البنود:'} {invoiceLinesTotal(value)} ريال</p>
+    {value.printedDiscount && <p>قبل الخصم: {invoiceLinesSubtotal(value)} ريال · الخصم المطبوع: {value.printedDiscount.amount} ريال · بعد الخصم: {invoiceLinesTotal(value)} ريال · {value.printedDiscount.description} · {value.printedDiscount.sourceRef}</p>}
     {value.vatAllocation && <p>الضريبة المطبوعة: {value.vatAllocation.printedVat ?? 'غير مثبتة'} · المؤهلة: {value.vatAllocation.eligibleVat ?? 'لم تُحسم'} · مرجع المراجعة: {value.vatAllocation.reviewRef || 'غير مثبت'}</p>}
   </>;
 }
@@ -24,10 +25,11 @@ export default function FinanceInvoiceLines({ value, onChange, disabled, amount,
     onChange({ ...value, items: [...items, { id: `line-${id}`, description: '', quantity: '', unit: '', unitCost: shared ? null : '', amount: shared ? null : '', sourceRef: '' }] });
   };
   const tax = value?.vatAllocation;
+  const discount = value?.printedDiscount;
   return <section className="fw-form-section fw-invoice-lines" aria-label="بنود الفاتورة المختلفة">
     <h3 className="fw-form-section-title">بنود الفاتورة المختلفة</h3>
     <p>انقل كل بند كما ورد في المصدر. لا تجمع وحدات مختلفة ولا تحسب سعرًا متوسطًا. المبالغ بنفس أساس السعر والضريبة للمستند.</p>
-    <label><input type="checkbox" disabled={disabled} checked={Boolean(shared)} onChange={event => onChange({ ...value,
+    <label><input type="checkbox" disabled={disabled || Boolean(discount)} checked={Boolean(shared)} onChange={event => onChange({ ...value,
       sharedTotal: event.target.checked ? { amount: amount === '' ? '' : Number(amount), description: '', sourceRef: '' } : null,
       items: items.map(item => ({ ...Object.fromEntries(Object.entries(item).filter(([key]) => !['amountSource', 'unitPriceMode', 'amountNote'].includes(key))),
         unitCost: event.target.checked ? null : '', amount: event.target.checked ? null : '' })) })} /> المصدر يذكر مبلغًا مشتركًا دون تفصيل أسعار الأصناف</label>
@@ -60,6 +62,14 @@ export default function FinanceInvoiceLines({ value, onChange, disabled, amount,
     </fieldset>)}
     <button type="button" className="fw-secondary" disabled={disabled || items.length >= MAX_FINANCE_INVOICE_LINES} onClick={add}>إضافة بند من الفاتورة</button>
     <p>{shared ? 'المبلغ المشترك:' : 'مجموع البنود:'} {invoiceLinesTotal(value)} ريال · إجمالي المستند: {amount === '' ? 'غير مثبت' : amount} ريال. لا يتغير الإجمالي تلقائيًا.</p>
+    <label><input type="checkbox" disabled={disabled || Boolean(shared)} checked={Boolean(discount)} onChange={event => onChange({ ...value,
+      printedDiscount: event.target.checked ? { amount: '', description: '', sourceRef: '' } : null })} /> خصم إضافي مطبوع على إجمالي الفاتورة</label>
+    {discount && <div className="fw-form">
+      <label>مبلغ الخصم المطبوع<input type="number" min="0.01" step="0.01" disabled={disabled} value={discount.amount ?? ''} onChange={event => onChange({ ...value, printedDiscount: { ...discount, amount: numeric(event) } })} /></label>
+      <label>بيان الخصم<input disabled={disabled} value={discount.description || ''} onChange={event => onChange({ ...value, printedDiscount: { ...discount, description: event.target.value } })} /></label>
+      <label>مرجع الخصم في المصدر<input disabled={disabled} value={discount.sourceRef || ''} onChange={event => onChange({ ...value, printedDiscount: { ...discount, sourceRef: event.target.value } })} /></label>
+      <p>قبل الخصم: {invoiceLinesSubtotal(value)} ريال · بعد الخصم: {invoiceLinesTotal(value)} ريال. تبقى أسعار البنود والضريبة كما طُبعت.</p>
+    </div>}
     {(isTaxInvoice === 'true' || tax) && <div className="fw-form-section">
       <label><input type="checkbox" checked={Boolean(tax)} disabled={disabled} onChange={event => onChange({ ...value, vatAllocation: event.target.checked
         ? { printedVat: vatAmount === '' ? '' : Number(vatAmount), eligibleVat: null, reviewRef: taxReviewRef || null } : null })} /> تفصيل أهلية ضريبة البنود من المراجعة</label>

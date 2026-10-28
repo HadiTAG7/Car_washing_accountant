@@ -10,7 +10,7 @@ const keys = (value, allowed) => value && typeof value === 'object' && !Array.is
 /** Shape validation also runs against stored data, including the legacy posting door.
  * Amounts are source amounts in the invoice's existing price mode, not a new tax calculation. */
 export function invoiceLinesShapeIssues(value) {
-  if (!keys(value, ['version', 'items', 'vatAllocation', 'sharedTotal']) || value.version !== 1 || !Array.isArray(value.items)
+  if (!keys(value, ['version', 'items', 'vatAllocation', 'sharedTotal', 'printedDiscount']) || value.version !== 1 || !Array.isArray(value.items)
     || !value.items.length || value.items.length > MAX_FINANCE_INVOICE_LINES) return ['بنود الفاتورة غير مكتملة أو نسختها غير مدعومة.'];
   const seen = new Set(), issues = [];
   const shared = value.sharedTotal != null;
@@ -35,15 +35,24 @@ export function invoiceLinesShapeIssues(value) {
     if (line?.id) seen.add(line.id);
   }
   const tax = value.vatAllocation;
+  const discount = value.printedDiscount;
+  if (discount != null && (shared || !keys(discount, ['amount', 'description', 'sourceRef']) || !money(discount.amount)
+    || discount.amount <= 0 || discount.amount >= invoiceLinesSubtotal(value) || !text(discount.description, 500) || !text(discount.sourceRef, 300))) {
+    issues.push('خصم الفاتورة المطبوع يحتاج مبلغًا موجبًا أقل من مجموع البنود وبيانًا ومرجعًا، ولا يجمع مع مبلغ مشترك.');
+  }
   if (tax != null && (!keys(tax, ['printedVat', 'eligibleVat', 'reviewRef']) || !money(tax.printedVat)
     || !(tax.eligibleVat === null || money(tax.eligibleVat)) || (tax.eligibleVat !== null && tax.eligibleVat > tax.printedVat)
     || !(tax.reviewRef === null || text(tax.reviewRef, 500)))) issues.push('تفصيل الضريبة المطبوعة والمؤهلة ومرجعها غير صالح.');
   return issues;
 }
 
-export function invoiceLinesTotal(value) {
+export function invoiceLinesSubtotal(value) {
   if (value?.sharedTotal != null) return Number.isFinite(value.sharedTotal.amount) ? value.sharedTotal.amount : null;
   return Array.isArray(value?.items) ? round2(value.items.reduce((sum, line) => sum + (Number.isFinite(line?.amount) ? line.amount : 0), 0)) : null;
+}
+export function invoiceLinesTotal(value) {
+  const subtotal = invoiceLinesSubtotal(value);
+  return subtotal === null ? null : round2(subtotal - (value?.printedDiscount?.amount ?? 0));
 }
 
 export function financeInvoiceLineProblems(row, total, { kind, sourceId } = {}) {

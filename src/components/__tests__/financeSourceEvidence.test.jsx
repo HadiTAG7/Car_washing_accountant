@@ -9,6 +9,22 @@ afterEach(cleanup); beforeEach(() => { api.mockReset(); });
 const source = () => ({ amount: 20, description: 'TEST synthetic source', spent_date: '2026-10-18', quantity: 2, unit_cost: 10,
   finance_metadata: {} });
 const props = detail => ({ kind: 'startup', detail, onSaved: vi.fn(), onMessage: vi.fn(), options: { loading: false, data: { items: [] } } });
+it('requires an explicit evidence link for a server-reviewed identity and previews it without inventing an invoice number', async () => {
+  const before = { ...source(), invoice_number: null, is_tax_invoice: true, vat_deductible: false };
+  api.mockImplementation(async (_route, request) => ({ before, after: { ...before,
+    finance_metadata: { reviewedDocumentIdentity: request.patch.reviewedDocumentIdentity } }, previewHash: 'b'.repeat(64), issues: [] }));
+  render(<FinanceExpenseForm {...props({ sourceId: 'TEST', sourceHash: 'a'.repeat(64), row: before, issues: [], sourceContext: { reviewedIdentityGrant: { ref: 'TEST-REVIEWED' } } })} />);
+  const link = screen.getByRole('checkbox', { name: 'ربط هوية المستند بالرأي المراجع' });
+  expect(link.checked).toBe(false); expect(api).not.toHaveBeenCalled();
+  fireEvent.click(link);
+  expect(screen.getByLabelText('مرجع دليل هوية المستند').value).toBe('');
+  fireEvent.change(screen.getByLabelText('مرجع دليل هوية المستند'), { target: { value: 'TEST original reference' } });
+  fireEvent.click(screen.getByRole('button', { name: 'احفظ' }));
+  await waitFor(() => expect(api).toHaveBeenCalledTimes(1));
+  expect(api.mock.calls[0][1]).toMatchObject({ action: 'preview', patch: { invoiceNumber: null, isTaxInvoice: true, vatDeductible: false,
+    reviewedDocumentIdentity: { version: 1, grantRef: 'TEST-REVIEWED', sourceRef: 'TEST original reference' } } });
+  expect(screen.getByRole('region', { name: 'تغيير أدلة المصدر' })).toBeTruthy();
+});
 
 it('offers total-only quantity only for an existing server-authorized source, never a new source', () => {
   const view = render(<FinanceExpenseForm {...props(null)} requestId="TEST" />);

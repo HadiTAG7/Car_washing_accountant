@@ -37,6 +37,7 @@ const patchSchema = z.object({
   invoiceLines: z.unknown().refine(value => value === null || invoiceLinesShapeIssues(value).length === 0, 'بنود الفاتورة غير صالحة.').optional(),
   quantityException: z.unknown().refine(sourceEvidenceShapeValid, 'دليل استثناء الكمية غير مكتمل.').optional(),
   documentAllocation: z.unknown().refine(sourceEvidenceShapeValid, 'دليل توزيع الأصل غير مكتمل.').optional(),
+  reviewedDocumentIdentity: z.unknown().refine(sourceEvidenceShapeValid, 'دليل هوية المستند المراجعة غير مكتمل.').optional(),
 }).strict();
 const common = { kind: kindSchema, sourceId: id };
 const correction = { ...common, patch: patchSchema, sourceHash: hash };
@@ -73,7 +74,7 @@ function applyPatch(kind, before, p) {
     if (p.invoiceLines === null) delete meta.invoiceLines;
     else meta.invoiceLines = p.invoiceLines;
   }
-  for (const key of ['quantityException', 'documentAllocation']) if (Object.hasOwn(p, key)) {
+  for (const key of ['quantityException', 'documentAllocation', 'reviewedDocumentIdentity']) if (Object.hasOwn(p, key)) {
     if (p[key] === null) delete meta[key]; else meta[key] = p[key];
   }
   row.finance_metadata = meta;
@@ -329,7 +330,9 @@ export async function financeWorkbench(db, auth, input) {
       reason: r.reason, sourceHash: financeSourceHash(after),
       sourceEvidence: { quantityDecision: after.finance_metadata?.quantityException ? sourceContext.quantityGrant : null,
         originalAllocation: after.finance_metadata?.documentAllocation ? sourceContext.allocationGrant : null,
-        reviewedPartialVat: sourceContext.partialVatGrant || null }, at: FieldValue.serverTimestamp() });
+        reviewedPartialVat: sourceContext.partialVatGrant || null,
+        reviewedDocumentIdentity: sourceContext.verifiedIdentity || null,
+        printedDiscount: sourceContext.printedDiscountGrant || null }, at: FieldValue.serverTimestamp() });
     const result = { saved: true, action: r.action, kind: r.kind, sourceId, sourceHash: financeSourceHash(after), auditId: auditRef.id,
       approved: r.action === 'approve', financialPosting: false };
     tx.set(receiptRef, { requestHash, result, at: FieldValue.serverTimestamp(), userId: auth.uid });

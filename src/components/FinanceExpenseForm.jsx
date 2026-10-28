@@ -19,13 +19,15 @@ function fromRow(kind, row = {}) {
     taxBasis: meta.taxBasis || 'document', taxReviewRef: meta.taxReviewRef || '', evidenceRefs: (meta.evidenceRefs || []).join('\n'),
     invoiceLines: meta.invoiceLines ? structuredClone(meta.invoiceLines) : null,
     quantityException: meta.quantityException ? structuredClone(meta.quantityException) : null,
-    documentAllocation: meta.documentAllocation ? structuredClone(meta.documentAllocation) : null };
+    documentAllocation: meta.documentAllocation ? structuredClone(meta.documentAllocation) : null,
+    reviewedDocumentIdentity: meta.reviewedDocumentIdentity ? structuredClone(meta.reviewedDocumentIdentity) : null };
 }
 function toPatch(kind, form) {
   const p = { description: form.description, amount: Number(form.amount), date: form.date,
     ...(form.quantityException ? { invoiceLines: null, quantityException: form.quantityException }
       : form.invoiceLines ? { invoiceLines: form.invoiceLines, quantityException: null } : { invoiceLines: null, quantityException: null, quantity: Number(form.quantity) }),
     documentAllocation: form.documentAllocation,
+    reviewedDocumentIdentity: form.reviewedDocumentIdentity,
     supplier: form.supplier.trim() || null, invoiceNumber: form.invoiceNumber.trim() || null, invoiceDate: form.invoiceDate || null,
     invoiceUrl: form.invoiceUrl.trim() || null, vatAmount: form.vatAmount === '' ? null : Number(form.vatAmount),
     vatRate: form.vatRate === '' ? null : Number(form.vatRate), paidDate: form.paidDate || null,
@@ -168,6 +170,14 @@ export default function FinanceExpenseForm({ kind, detail, requestId, options, o
         onChange={event => set('documentAllocation', { ...form.documentAllocation, sourceRef: event.target.value })} /></label>}
       <small>يلزم اكتمال الربط في السجلين قبل الاعتماد. تغيير أحدهما يبطل صلاحية اعتماد التوزيع؛ لا يتغير أي مبلغ تلقائيًا.</small>
     </section>}
+    {(detail?.sourceContext?.reviewedIdentityGrant || form.reviewedDocumentIdentity) && <section className="fw-form-section" aria-label="هوية المستند المراجعة">
+      <h3>هوية المستند المراجعة</h3>
+      <p>لا يوجد رقم فاتورة مطبوع. يبقى فارغًا، ويرتبط هذا المصدر فقط بالرأي المراجع دون تغيير الضريبة أو بقية الضوابط.</p>
+      <label><input type="checkbox" disabled={protectedRow || busy || !detail?.sourceContext?.reviewedIdentityGrant} checked={Boolean(form.reviewedDocumentIdentity)}
+        onChange={event => set('reviewedDocumentIdentity', event.target.checked ? { version: 1, grantRef: detail.sourceContext.reviewedIdentityGrant.ref, sourceRef: '' } : null)} /> ربط هوية المستند بالرأي المراجع</label>
+      {form.reviewedDocumentIdentity && <label>مرجع دليل هوية المستند<input disabled={protectedRow || busy} value={form.reviewedDocumentIdentity.sourceRef}
+        onChange={event => set('reviewedDocumentIdentity', { ...form.reviewedDocumentIdentity, sourceRef: event.target.value })} /></label>}
+    </section>}
     {(preview?.sourceContext || detail?.sourceContext)?.warnings?.map(warning => <p className="fw-warning" key={warning}>{warning}</p>)}
     {form.invoiceLines && <FinanceInvoiceLines value={form.invoiceLines} onChange={value => set('invoiceLines', value)} disabled={protectedRow || busy}
       amount={form.amount} vatAmount={form.vatAmount} taxReviewRef={form.taxReviewRef} isTaxInvoice={form.isTaxInvoice} />}
@@ -212,7 +222,7 @@ export function ChangePreview({ kind, preview, options }) {
   const before = fromRow(kind, preview.before), after = fromRow(kind, preview.after);
   const changed = Object.keys(labels).filter(key => String(before[key]) !== String(after[key]));
   const linesChanged = JSON.stringify(before.invoiceLines) !== JSON.stringify(after.invoiceLines);
-  const evidenceChanged = JSON.stringify([before.quantityException, before.documentAllocation]) !== JSON.stringify([after.quantityException, after.documentAllocation]);
+  const evidenceChanged = JSON.stringify([before.quantityException, before.documentAllocation, before.reviewedDocumentIdentity]) !== JSON.stringify([after.quantityException, after.documentAllocation, after.reviewedDocumentIdentity]);
   const show = (key, value) => key === 'classification' ? options.find(o => o.id === value)?.label || 'غير متاح'
     : value === '' || value === null || value === undefined ? 'غير متاح' : values[value] || String(value);
   return <details className="fw-form-section" open><summary>معاينة التغيير — لم يُحفظ</summary>{changed.length ? <div className="fw-table-scroll"><table>
@@ -229,5 +239,7 @@ function SourceEvidenceRead({ form }) {
   return <>{form.quantityException ? <p>إجمالي مثبت دون كمية أو سعر وحدة بقرار هادي · {form.quantityException.grantRef} · {form.quantityException.sourceRef}</p>
     : <p>لا استثناء من متطلبات الكمية.</p>}
     {form.documentAllocation ? <p>ربط بتوزيع أصل مراجع · {form.documentAllocation.grantRef} · {form.documentAllocation.sourceRef}</p>
-      : <p>لا ربط بتوزيع أصل.</p>}</>;
+      : <p>لا ربط بتوزيع أصل.</p>}
+    {form.reviewedDocumentIdentity ? <p>هوية مستند مراجعة دون رقم مطبوع · {form.reviewedDocumentIdentity.grantRef} · {form.reviewedDocumentIdentity.sourceRef}</p>
+      : <p>لا ربط بهوية مستند مراجعة.</p>}</>;
 }

@@ -25,6 +25,8 @@ import { splitVatBalanced } from './vat.js';
 import { resolvePurchaseTax } from './purchaseTax.js';
 import { applyReviewedPartialVat, requiresReviewedPartialVat } from '../../../functions/src/financeReviewedVat.js';
 import { financeInvoiceLineProblems } from '../../../functions/src/financeInvoiceLines.js';
+import { applyReviewedIdentity } from '../../../functions/src/financeReviewedIdentity.js';
+import { printedDiscountSourceProblems } from '../../../functions/src/financePrintedDiscount.js';
 import { isRealCalendarDate } from '../vatFields.js';
 
 /** طرق الدفع. `credit` = آجل (ذمم). */
@@ -152,8 +154,12 @@ export function buildExpenseEntry(expense, {
   const method = expense.paymentMethod || 'cash';
   const status = expense.paymentStatus || 'paid';
   const date = String(expense.date || expense.invoiceDate || '').slice(0, 10);
+  if (sourceRow) {
+    const issues = printedDiscountSourceProblems(sourceKind, expense.id, sourceRow);
+    if (issues.length) throw new Error(issues.join(' '));
+  }
 
-  if (sourceRow && requiresReviewedPartialVat(sourceKind, expense.id, sourceRow)) {
+  if (sourceRow && (requiresReviewedPartialVat(sourceKind, expense.id, sourceRow) || sourceRow.finance_metadata?.invoiceLines?.printedDiscount != null)) {
     const issues = financeInvoiceLineProblems(sourceRow, expense.amount, { kind: sourceKind, sourceId: expense.id });
     if (issues.length) throw new Error(issues.join(' '));
   }
@@ -169,7 +175,8 @@ export function buildExpenseEntry(expense, {
     vatRate: expense.vatRate ?? null,
     recordDate: date,
   }, { policyAt });
-  const tax = sourceRow ? applyReviewedPartialVat(sourceKind, expense.id, sourceRow, resolvedTax) : resolvedTax;
+  const tax = sourceRow ? applyReviewedPartialVat(sourceKind, expense.id, sourceRow,
+    applyReviewedIdentity(sourceKind, expense.id, sourceRow, resolvedTax, policyAt)) : resolvedTax;
 
   // ── إثبات الفاتورة ثم السداد ──
   // Same rule as the server: the input tax is claimed in the INVOICE's period

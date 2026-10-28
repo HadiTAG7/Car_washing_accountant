@@ -91,3 +91,23 @@
 @media(max-width:900px) { .fw-workbench .fw-records { grid-template-columns: minmax(0, 1fr); } .fw-document-list { max-height: 420px; } }
 @media(max-width:640px) { .fw-page.fw-workbench { padding: 20px 14px; } .fw-page.fw-workbench .fw-panel { padding: 18px; } }
 @media(max-width:540px) { .fw-stage-counters { grid-template-columns: repeat(2, minmax(0, 1fr)); } .fw-counter > span { min-height: 0; } .fw-page.fw-workbench .fw-counter { padding: 17px; } .fw-filters { grid-template-columns: minmax(0, 1fr); } .fw-document-status { grid-template-columns: minmax(0, 1fr); } .fw-document-actions { flex-wrap: wrap; } }
+/* Native fieldsets and long select options must shrink inside narrow item forms.
+   Keep invoice comparison tables scrollable within their existing wrapper. */
+.fw-invoice-lines,
+.fw-invoice-lines__item,
+.fw-invoice-lines .fw-form,
+.fw-invoice-lines label {
+  min-width: 0;
+  min-inline-size: 0;
+  max-width: 100%;
+}
+.fw-invoice-lines__item { margin-inline: 0; }
+.fw-invoice-lines .fw-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.fw-invoice-lines input,
+.fw-invoice-lines select { min-width: 0; min-inline-size: 0; max-width: 100%; box-sizing: border-box; }
+.fw-invoice-lines legend { max-width: 100%; white-space: normal; }
+.fw-invoice-lines p,
+.fw-invoice-lines small { overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+  .fw-invoice-lines .fw-form { grid-template-columns: minmax(0, 1fr); }
+}

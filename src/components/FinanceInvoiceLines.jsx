@@ -21,10 +21,10 @@ export default function FinanceInvoiceLines({ value, onChange, disabled, amount,
     onChange({ ...value, items: [...items, { id: `line-${id}`, description: '', quantity: '', unit: '', unitCost: '', amount: '', sourceRef: '' }] });
   };
   const tax = value?.vatAllocation;
-  return <section className="fw-form-section" aria-label="بنود الفاتورة المختلفة">
+  return <section className="fw-form-section fw-invoice-lines" aria-label="بنود الفاتورة المختلفة">
     <h3 className="fw-form-section-title">بنود الفاتورة المختلفة</h3>
     <p>انقل كل بند كما ورد في المصدر. لا تجمع وحدات مختلفة ولا تحسب سعرًا متوسطًا. المبالغ بنفس أساس السعر والضريبة للمستند.</p>
-    {items.map((line, index) => <fieldset key={line.id || index} className="fw-form-section" disabled={disabled}>
+    {items.map((line, index) => <fieldset key={line.id || index} className="fw-form-section fw-invoice-lines__item" disabled={disabled}>
       <legend>البند {index + 1}</legend><div className="fw-form">
         <label>وصف البند<input value={line.description ?? ''} onChange={event => update(index, 'description', event.target.value)} /></label>
         <label>كمية البند<input type="number" step="any" value={line.quantity ?? ''} onChange={event => update(index, 'quantity', numeric(event))} /></label>

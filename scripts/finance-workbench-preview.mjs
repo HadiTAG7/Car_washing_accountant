@@ -4,7 +4,7 @@ import { createServer } from 'vite';
 import { fileURLToPath } from 'node:url';
 import config from '../vite.config.js';
 import { financeWorkbench } from '../server/financeWorkbench.js';
-import { memoryFinanceDb, expensePatch, syntheticFinanceInvoiceLines, syntheticPrintedInvoiceLines } from '../server/__tests__/financeFixtures.js';
+import { memoryFinanceDb, expensePatch, syntheticFinanceInvoiceLines, syntheticPrintedInvoiceLines, syntheticSharedInvoiceLines } from '../server/__tests__/financeFixtures.js';
 import { correctedSourceSeed } from '../server/__tests__/financePostingHistoryFixture.js';
 const db = memoryFinanceDb({ 'users/test-admin': { role: 'admin' }, 'variable_expense_categories/test-category': { name: 'تصنيف اختبار' },
   'app_settings/accounting': { value: { vatRegistered: false } }, 'chart_of_accounts/5100': {}, 'chart_of_accounts/2000': {}, 'chart_of_accounts/1010': {} });
@@ -13,6 +13,14 @@ for (let index = 1; index <= 3; index++) {
     invoiceNumber: `BROWSER-${index}`, invoiceUrl: `https://example.org/test-only-${index}` }) };
   const preview = await financeWorkbench(db, { uid: 'test-admin' }, { action: 'previewCapture', ...request });
   await financeWorkbench(db, { uid: 'test-admin' }, { action: 'capture', ...request, previewHash: preview.previewHash, reason: 'تهيئة اختبار اصطناعي فقط', confirm: true });
+}
+
+{
+  const request = { kind: 'variable', requestId: 'BROWSER-SHARED-LINES', patch: expensePatch({ quantity: undefined, amount: 2950,
+    invoiceLines: syntheticSharedInvoiceLines(), description: 'اختبار مبلغ مشترك — أسعار الأصناف غير مفصولة',
+    invoiceNumber: 'TEST-SHARED-LINES', invoiceUrl: 'https://example.org/test-shared-lines' }) };
+  const preview = await financeWorkbench(db, { uid: 'test-admin' }, { action: 'previewCapture', ...request });
+  await financeWorkbench(db, { uid: 'test-admin' }, { action: 'capture', ...request, previewHash: preview.previewHash, reason: 'تهيئة مبلغ مشترك اصطناعي', confirm: true });
 }
 
 // Synthetic source lines only. This fixture never reads commercial invoices or
@@ -29,6 +37,9 @@ for (const partial of [false, true]) {
 }
 db.rows.set('variable_expenses/incomplete-only', { expense_name: 'تحويل بنكي قديم — اختبار نقد متناقض', total_variable_cost: 50, logged_date: '2026-05-01', payment_method: 'cash' });
 for (const [path, value] of Object.entries(correctedSourceSeed({ split: true }))) db.rows.set(path, value);
+const protectedPath = 'startup_cost_entries/synthetic-corrected-source', protectedLines = syntheticFinanceInvoiceLines();
+protectedLines.items = protectedLines.items.map(line => ({ ...line, unitCost: line.unitCost * 2, amount: line.amount * 2 }));
+db.rows.set(protectedPath, { ...db.rows.get(protectedPath), quantity: null, unit_cost: null, finance_metadata: { invoiceLines: protectedLines } });
 const fixture = fileURLToPath(new URL('./finance-preview/fixtures.jsx', import.meta.url)), flow = fileURLToPath(new URL('./finance-preview/workbench-flow.jsx', import.meta.url));
 const resolved = typeof config === 'function' ? await config({ mode: 'development', command: 'serve' }) : config;
 const server = await createServer({ ...resolved, configFile: false,

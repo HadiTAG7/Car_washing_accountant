@@ -9,21 +9,27 @@ const keys = (value, allowed) => value && typeof value === 'object' && !Array.is
 /** Shape validation also runs against stored data, including the legacy posting door.
  * Amounts are source amounts in the invoice's existing price mode, not a new tax calculation. */
 export function invoiceLinesShapeIssues(value) {
-  if (!keys(value, ['version', 'items', 'vatAllocation']) || value.version !== 1 || !Array.isArray(value.items)
+  if (!keys(value, ['version', 'items', 'vatAllocation', 'sharedTotal']) || value.version !== 1 || !Array.isArray(value.items)
     || !value.items.length || value.items.length > MAX_FINANCE_INVOICE_LINES) return ['بنود الفاتورة غير مكتملة أو نسختها غير مدعومة.'];
   const seen = new Set(), issues = [];
+  const shared = value.sharedTotal != null;
+  if (shared && (!keys(value.sharedTotal, ['amount', 'description', 'sourceRef']) || !money(value.sharedTotal.amount)
+    || value.sharedTotal.amount <= 0 || !text(value.sharedTotal.description, 500) || !text(value.sharedTotal.sourceRef, 300))) {
+    issues.push('المبلغ المشترك يحتاج إجماليًا مثبتًا وبيان ما يشمله ومرجع المصدر، دون توزيع على الأصناف.');
+  }
   for (const [index, line] of value.items.entries()) {
     if (!keys(line, ['id', 'description', 'quantity', 'unit', 'unitCost', 'amount', 'sourceRef', 'amountSource', 'unitPriceMode', 'amountNote'])
       || typeof line.id !== 'string' || !/^[\p{L}\p{N}_.:-]{1,80}$/u.test(line.id) || seen.has(line.id)
       || !text(line.description, 500) || !text(line.unit, 50) || !text(line.sourceRef, 300)
       || !Number.isFinite(line.quantity) || line.quantity <= 0 || line.quantity > 1e6
-      || !Number.isFinite(line.unitCost) || line.unitCost < 0 || line.unitCost > 1e9
-      || !money(line.amount) || ![undefined, 'product', 'printed'].includes(line.amountSource)
-      || (line.amountSource !== 'printed' && (Object.hasOwn(line, 'unitPriceMode') || Object.hasOwn(line, 'amountNote')))
-      || (line.amountSource === 'printed'
-        ? !['inclusive', 'exclusive'].includes(line.unitPriceMode) || !text(line.amountNote, 500)
-        : round2(line.quantity * line.unitCost) !== line.amount)) {
-      issues.push(`بند الفاتورة ${index + 1}: يلزم وصف ووحدة وكمية وسعر ومبلغ متطابق ومرجع للمصدر، دون تكرار البند.`);
+      || (shared ? line.unitCost !== null || line.amount !== null || ['amountSource', 'unitPriceMode', 'amountNote'].some(key => Object.hasOwn(line, key))
+        : !Number.isFinite(line.unitCost) || line.unitCost < 0 || line.unitCost > 1e9 || !money(line.amount)
+          || ![undefined, 'product', 'printed'].includes(line.amountSource)
+          || (line.amountSource !== 'printed' && (Object.hasOwn(line, 'unitPriceMode') || Object.hasOwn(line, 'amountNote')))
+          || (line.amountSource === 'printed' ? !['inclusive', 'exclusive'].includes(line.unitPriceMode) || !text(line.amountNote, 500)
+            : round2(line.quantity * line.unitCost) !== line.amount))) {
+      issues.push(shared ? `بند الفاتورة ${index + 1}: يلزم وصف ووحدة وكمية ومرجع، مع أسعار ومبالغ فردية فارغة للمبلغ المشترك.`
+        : `بند الفاتورة ${index + 1}: يلزم وصف ووحدة وكمية وسعر ومبلغ متطابق ومرجع للمصدر، دون تكرار البند.`);
     }
     if (line?.id) seen.add(line.id);
   }
@@ -35,6 +41,7 @@ export function invoiceLinesShapeIssues(value) {
 }
 
 export function invoiceLinesTotal(value) {
+  if (value?.sharedTotal != null) return Number.isFinite(value.sharedTotal.amount) ? value.sharedTotal.amount : null;
   return Array.isArray(value?.items) ? round2(value.items.reduce((sum, line) => sum + (Number.isFinite(line?.amount) ? line.amount : 0), 0)) : null;
 }
 
@@ -42,6 +49,7 @@ export function financeInvoiceLineProblems(row, total) {
   const value = row.finance_metadata?.invoiceLines;
   const issues = invoiceLinesShapeIssues(value);
   if (issues.length) return issues;
+  if (row.quantity != null || row.unit_cost != null) issues.push('المستند ذو البنود المختلفة لا يقبل كمية أو سعر وحدة إجماليًا؛ أعد معاينته من صندوق العمل المالي.');
   if (invoiceLinesTotal(value) !== total) issues.push('مجموع بنود الفاتورة لا يطابق إجمالي المستند؛ لا تستخدم متوسطًا لسعر الوحدة.');
   for (const line of value.items) {
     if (line.amountSource === 'printed' && (!['inclusive', 'exclusive'].includes(row.price_mode)

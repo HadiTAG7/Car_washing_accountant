@@ -8,7 +8,7 @@ import { readFile } from 'node:fs/promises';
 import { financeWorkbench } from '../financeWorkbench.js';
 import { financeReports } from '../financeReports.js';
 import { postSource } from '../../functions/src/ledger.js';
-import { expensePatch, financeFixture, syntheticFinanceInvoiceLines, syntheticPrintedInvoiceLines } from './financeFixtures.js';
+import { expensePatch, financeFixture, syntheticFinanceInvoiceLines, syntheticPrintedInvoiceLines, syntheticSharedInvoiceLines } from './financeFixtures.js';
 import { financeReviewId, financeSourceHash } from '../../functions/src/financeReview.js';
 import { approveFinanceSelection } from '../../src/lib/financeWorkbenchActions.js';
 import { dispatch } from '../../functions/src/handlers.js';
@@ -77,6 +77,32 @@ describe.skipIf(!enabled)('finance real Firestore workflow — isolated demo onl
     return { input, preview, result, read, common: { kind: 'variable', sourceId: result.sourceId, sourceHash: read.sourceHash } };
   }
   const approve = data => call({ action: 'approve', ...data.common, postingHash: data.read.postingPreview.postingHash, reason: 'اعتماد مستند الاختبار', confirm: true });
+
+  it('records known source quantities with an undivided shared total and posts the startup source once without component prices', async () => {
+    const invoiceLines = syntheticSharedInvoiceLines();
+    const patch = expensePatch({ parentId: 'test-parent', amount: 2950, invoiceLines });
+    delete patch.categoryId; delete patch.quantity;
+    const input = { kind: 'startup', requestId: 'TEST-SHARED-TOTAL', patch };
+    const preview = await call({ action: 'previewCapture', ...input });
+    const saved = await call({ action: 'capture', ...input, previewHash: preview.previewHash, reason: 'مبلغ مشترك اختباري دون توزيع', confirm: true });
+    const read = await call({ action: 'read', kind: 'startup', sourceId: saved.sourceId });
+    const common = { kind: 'startup', sourceId: saved.sourceId, sourceHash: read.sourceHash };
+    expect(read.approvalReady).toBe(true); expect(read.row.quantity).toBeNull(); expect(read.row.unit_cost).toBeNull();
+    expect(read.row.finance_metadata.invoiceLines).toEqual(invoiceLines);
+    await call({ action: 'approve', ...common, postingHash: read.postingPreview.postingHash, reason: 'اعتماد المبلغ المشترك الاختباري', confirm: true });
+    const posted = await call({ action: 'post', ...common, confirm: true });
+    expect(posted.verification.linesMatched).toBe(true);
+    const entries = await db.collection('journal_entries').get(); expect(entries.size).toBe(1);
+    expect(entries.docs[0].data().lines).toEqual(expect.arrayContaining([
+      expect.objectContaining({ accountId: '1500', debit: 2950, credit: 0 }), expect.objectContaining({ accountId: '2000', debit: 0, credit: 2950 }),
+    ]));
+    expect((await db.doc('startup_costs/test-parent').get()).data().actual_amount).toBe(2950);
+    const after = (await db.doc(`startup_cost_entries/${read.sourceId}`).get()).data();
+    expect(after.finance_metadata.invoiceLines.items.every(item => item.unitCost === null && item.amount === null)).toBe(true);
+    expect(after.payment_status).toBe('unpaid');
+    await expect(call({ action: 'post', ...common, confirm: true })).rejects.toThrow();
+    expect((await db.collection('journal_entries').get()).size).toBe(1);
+  }, 120000);
 
   it('keeps heterogeneous quantities, invalidates their approval on evidence change, then posts exactly once through the existing adapter', async () => {
     const lines = syntheticFinanceInvoiceLines();

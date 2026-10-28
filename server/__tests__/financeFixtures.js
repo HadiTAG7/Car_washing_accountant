@@ -34,6 +34,14 @@ export function syntheticPrintedInvoiceLines(reviewRef = 'TEST-PARTIAL-REVIEW') 
     amountSource: 'printed', unitPriceMode: 'exclusive', amountNote: 'سعر الوحدة مطبوع قبل الضريبة والإجمالي شاملها مع تقريب المورد.' })),
     vatAllocation: { printedVat: 10.66, eligibleVat: 6.75, reviewRef } };
 }
+export function syntheticSharedInvoiceLines() {
+  return { version: 1, vatAllocation: null,
+    sharedTotal: { amount: 2950, description: 'جهاز اختبار وجهازان مختلفان، والتركيب مشمول دون تفصيل سعره.', sourceRef: 'TEST shared invoice total' },
+    items: [
+      { id: 'device-a', description: 'جهاز اختبار أول', quantity: 1, unit: 'جهاز', unitCost: null, amount: null, sourceRef: 'TEST shared invoice line 1' },
+      { id: 'device-b', description: 'جهاز اختبار مختلف', quantity: 2, unit: 'جهاز', unitCost: null, amount: null, sourceRef: 'TEST shared invoice line 2' },
+    ] };
+}
 // Unit-only storage double. Real transactional/query behavior has separate
 // emulator tests; this must never be described as production verification.
 export function memoryFinanceDb(seed = {}) {

@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within, waitFor } from '@testing-library/react';
 import FinanceExpenseForm from '../FinanceExpenseForm';
-import { syntheticFinanceInvoiceLines } from '../../../server/__tests__/financeFixtures';
+import { syntheticFinanceInvoiceLines, syntheticSharedInvoiceLines } from '../../../server/__tests__/financeFixtures';
 const api = vi.hoisted(() => vi.fn());
 vi.mock('../../lib/financeApi', () => ({ callFinanceApi: (...args) => api(...args) }));
 afterEach(cleanup); beforeEach(() => api.mockReset());
@@ -47,4 +47,19 @@ it('keeps protected-source line fields and representation disabled with no busin
   expect(screen.getByRole('group', { name: 'البند 1' }).disabled).toBe(true);
   expect(screen.getByRole('button', { name: 'إضافة بند من الفاتورة' }).disabled).toBe(true);
   expect(screen.queryByRole('button', { name: 'احفظ' })).toBeNull(); expect(api).not.toHaveBeenCalled();
+});
+it('shows an undivided shared amount while keeping component quantities and missing individual prices truthful', async () => {
+  const invoiceLines = syntheticSharedInvoiceLines(), source = { ...row(), total_variable_cost: 2950, finance_metadata: { invoiceLines } };
+  api.mockResolvedValue({ before: source, after: source, previewHash: 'b'.repeat(64), issues: [] });
+  render(<FinanceExpenseForm {...props()} detail={{ sourceId: 'TEST', sourceHash: 'a'.repeat(64), row: source, issues: [] }} />);
+  expect(screen.getByLabelText('المبلغ المشترك المثبت').value).toBe('2950');
+  const first = within(screen.getByRole('group', { name: 'البند 1' }));
+  expect(first.getByLabelText('كمية البند').value).toBe('1');
+  expect(first.getByLabelText('سعر وحدة البند').disabled).toBe(true); expect(first.getByLabelText('سعر وحدة البند').value).toBe('');
+  expect(first.getByLabelText('مبلغ البند').value).toBe('');
+  fireEvent.change(screen.getByLabelText('ما الذي يشمله المبلغ المشترك؟'), { target: { value: 'بيان مشترك اختباري مؤيد' } });
+  fireEvent.click(screen.getByRole('button', { name: 'احفظ' }));
+  await waitFor(() => expect(api).toHaveBeenCalledTimes(1));
+  expect(api.mock.calls[0][1].action).toBe('preview'); expect(api.mock.calls[0][1].patch.quantity).toBeUndefined();
+  expect(api.mock.calls[0][1].patch.invoiceLines.items.every(item => item.unitCost === null && item.amount === null)).toBe(true);
 });

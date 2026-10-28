@@ -4138,5 +4138,19 @@
   "توضيح أساس الإجمالي المطبوع وتقريب المورد": "Printed total basis and supplier rounding explanation",
   "انسخ الإجمالي المطبوع كما هو؛ لا نستخرج منه ضريبة سطر أو نعيد حساب تقريب المورد.": "Copy the printed total as it is. We do not infer line VAT or recalculate supplier rounding.",
   "أساس سعر الوحدة والإجمالي المطبوع غير متسق؛ لا تستخدم إجماليًا مطبوعًا لتجاوز فرق على الأساس نفسه.": "The unit price and printed total bases are inconsistent. A printed-total label cannot bypass a discrepancy on the same basis.",
-  "قبل الضريبة": "Before VAT"
+  "قبل الضريبة": "Before VAT",
+  "المبلغ المشترك:": "Shared total:",
+  "غير مفصول في المصدر": "Not itemized in the source",
+  "مبلغ مشترك غير موزع": "Undivided shared amount",
+  "ضمن المبلغ المشترك": "Included in the shared total",
+  "المصدر يذكر مبلغًا مشتركًا دون تفصيل أسعار الأصناف": "The source states a shared total without individual item prices",
+  "المبلغ المشترك المثبت": "Evidenced shared total",
+  "ما الذي يشمله المبلغ المشترك؟": "What does the shared total include?",
+  "مرجع المبلغ المشترك في المصدر": "Shared-total source reference",
+  "أسعار الأصناف ومبالغها تبقى فارغة. لا نوزع المبلغ ولا ننشئ سعرًا متوسطًا. تبقى الكميات ومراجعها مطلوبة.": "Individual item prices and amounts stay empty. We do not allocate the total or invent an average price. Quantities and source references remain required.",
+  "المبلغ المشترك يحتاج إجماليًا مثبتًا وبيان ما يشمله ومرجع المصدر، دون توزيع على الأصناف.": "A shared total needs an evidenced amount, scope description and source reference, without item allocation.",
+  "بند الفاتورة [VAR0]: يلزم وصف ووحدة وكمية ومرجع، مع أسعار ومبالغ فردية فارغة للمبلغ المشترك.": "Invoice item [VAR0] needs a description, unit, quantity and reference, with empty individual prices and amounts for the shared total.",
+  ": يلزم وصف ووحدة وكمية ومرجع، مع أسعار ومبالغ فردية فارغة للمبلغ المشترك.": ": a description, unit, quantity and reference are required, with empty individual prices and amounts for the shared total.",
+  "ريال ·": "SAR ·",
+  "المستند ذو البنود المختلفة لا يقبل كمية أو سعر وحدة إجماليًا؛ أعد معاينته من صندوق العمل المالي.": "An itemized document cannot have a scalar total quantity or unit price. Preview it again in the financial workbench."
 }

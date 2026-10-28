@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { financeWorkbench } from '../financeWorkbench.js';
 import { financeProblems, financeSourceHash, assertFinanceApproval, financeReviewId } from '../../functions/src/financeReview.js';
 import { invoiceLinesShapeIssues } from '../../functions/src/financeInvoiceLines.js';
-import { expensePatch, memoryFinanceDb, syntheticFinanceInvoiceLines as syntheticInvoiceLines, syntheticPrintedInvoiceLines } from './financeFixtures.js';
+import { expensePatch, memoryFinanceDb, syntheticFinanceInvoiceLines as syntheticInvoiceLines, syntheticPrintedInvoiceLines, syntheticSharedInvoiceLines } from './financeFixtures.js';
 const auth = { uid: 'test-admin' };
 const database = () => memoryFinanceDb({ 'users/test-admin': { role: 'admin' }, 'variable_expense_categories/test-category': {},
   'app_settings/accounting': { value: { vatRegistered: true } }, 'chart_of_accounts/5100': {}, 'chart_of_accounts/2000': {}, 'chart_of_accounts/1200': {} });
@@ -114,5 +114,37 @@ describe('faithful heterogeneous financial source quantities', () => {
     expect(data.read.issues.some(issue => issue.includes('الأساس نفسه'))).toBe(true); expect(data.read.approvalReady).toBe(false);
     invoiceLines.items[0].unitCost = null;
     expect(invoiceLinesShapeIssues(invoiceLines).length).toBeGreaterThan(0);
+  });
+  it('preserves known quantities and one evidenced shared total with null component prices, never an artificial average', async () => {
+    const db = database(), invoiceLines = syntheticSharedInvoiceLines();
+    const data = await capture(db, { amount: 2950, invoiceLines });
+    expect(data.read.approvalReady).toBe(true);
+    expect(data.read.row).toMatchObject({ quantity: null, unit_cost: null, finance_metadata: { invoiceLines } });
+    expect(data.read.row.finance_metadata.invoiceLines.items.map(item => [item.quantity, item.unitCost, item.amount])).toEqual([[1, null, null], [2, null, null]]);
+    expect(data.read.postingPreview.lines.find(line => line.accountId === '5100').debit).toBe(2950);
+    const missingFunding = await capture(database(), { amount: 2950, invoiceLines, fundingType: 'unknown', fundingReference: null });
+    expect(missingFunding.read.approvalReady).toBe(false); expect(missingFunding.read.issues.some(issue => issue.includes('الحساب المقابل'))).toBe(true);
+  });
+  it.each(['missing-quantity', 'missing-shared-evidence', 'mixed-prices', 'empty-items'])('does not use a shared amount to excuse %s', async failure => {
+    const invoiceLines = syntheticSharedInvoiceLines();
+    if (failure === 'missing-quantity') invoiceLines.items[0].quantity = null;
+    if (failure === 'missing-shared-evidence') invoiceLines.sharedTotal.sourceRef = '';
+    if (failure === 'mixed-prices') invoiceLines.items[0].unitCost = 2950;
+    if (failure === 'empty-items') invoiceLines.items = [];
+    expect(invoiceLinesShapeIssues(invoiceLines).length).toBeGreaterThan(0);
+  });
+  it('keeps mismatched shared totals blocked and hashes the common source evidence', async () => {
+    const invoiceLines = syntheticSharedInvoiceLines(), data = await capture(database(), { amount: 2900, invoiceLines });
+    expect(data.read.approvalReady).toBe(false); expect(data.read.issues.some(issue => issue.includes('إجمالي المستند'))).toBe(true);
+    const changed = structuredClone(data.read.row); changed.finance_metadata.invoiceLines.sharedTotal.sourceRef = 'TEST changed common evidence';
+    expect(financeSourceHash(changed)).not.toBe(data.read.sourceHash);
+  });
+  it('rejects a legacy writer repopulating fabricated scalar quantity and price above valid source lines', async () => {
+    const db = database(), data = await capture(db, { amount: 2950, invoiceLines: syntheticSharedInvoiceLines() });
+    const corrupt = { ...data.read.row, quantity: 1, unit_cost: 2950, approval_status: 'approved' };
+    db.rows.set(`finance_reviews/${financeReviewId('variable', data.read.sourceId)}`, { status: 'approved', sourceHash: financeSourceHash(corrupt) });
+    expect(financeProblems('variable', corrupt).some(issue => issue.includes('سعر وحدة إجماليًا'))).toBe(true);
+    await expect(db.runTransaction(tx => assertFinanceApproval(db, tx, 'variable', data.read.sourceId, corrupt))).rejects.toThrow(/سعر وحدة إجماليًا/);
+    expect([...db.rows.keys()].some(key => key.startsWith('journal_entries/'))).toBe(false);
   });
 });

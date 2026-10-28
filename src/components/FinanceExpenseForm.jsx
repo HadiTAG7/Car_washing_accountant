@@ -175,7 +175,7 @@ export default function FinanceExpenseForm({ kind, detail, requestId, options, o
   </>;
 }
 
-function ChangePreview({ kind, preview, options }) {
+export function ChangePreview({ kind, preview, options }) {
   const labels = { description: 'الوصف', amount: 'المبلغ بالريال', date: 'تاريخ المصروف', quantity: 'الكمية', classification: 'تصنيف المصروف',
     supplier: 'المورد', invoiceNumber: 'رقم المستند', invoiceDate: 'تاريخ الفاتورة', invoiceUrl: 'رابط الإيصال',
     isTaxInvoice: 'فاتورة ضريبية', vatAmount: 'مبلغ الضريبة', vatRate: 'نسبة الضريبة', vatDeductible: 'قابلية استرداد الضريبة', priceMode: 'السعر والضريبة',

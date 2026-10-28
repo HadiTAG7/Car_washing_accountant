@@ -7,6 +7,19 @@ vi.mock('../../lib/firebaseClient', () => ({ callSweaterAdministrativeCompletion
   callSweaterImportPreview:state.oldPreview,callSweaterOwnerHandoffSave:state.oldSave,describeBackendError:e=>e.message }));
 import SweaterHandoffPreview from '../SweaterHandoffPreview';
 afterEach(()=>{cleanup();Object.values(state).forEach(f=>f.mockReset());});
+it('shows current readback facts for a saved run and offers no second save or invented commission payment status', async () => {
+  const p = completionFixture();
+  state.preview.mockResolvedValue({ canSave: false, saved: false, replay: true, previousRun: { sameRecords: true },
+    administrativeDecision: p.decision, counts: { new: 4 }, rows: [], verification: { status: 'mismatch', matched: 0, total: 1,
+      rows: [{ sspBookingId: 'C-990001', washCount: 1, claimCount: 1, verified: false, issues: ['TEST current mismatch'], commission: { amountPerWash: 4.5, paid: null } }] } });
+  render(<SweaterHandoffPreview />);
+  fireEvent.change(screen.getByLabelText('بيانات التسليم'), { target: { value: JSON.stringify(p) } });
+  fireEvent.click(screen.getByRole('button', { name: 'راجع الملف محليًا' })); fireEvent.click(screen.getByRole('checkbox'));
+  fireEvent.click(screen.getByRole('button', { name: 'معاينة dryRun على الخادم' }));
+  expect(await screen.findByRole('region', { name: 'مطابقة الحفظ الحالية' })).toBeTruthy();
+  expect(screen.getByRole('table', { name: 'نتيجة مطابقة الحفظ' }).textContent).toContain('غير متاح');
+  expect(screen.queryByRole('button', { name: 'حفظ قرار الاكتمال دون تحصيل' })).toBeNull(); expect(state.save).not.toHaveBeenCalled();
+});
 it.each([completionFixture,missingStartCompletionFixture])('uses the separate admin path, shows source facts, requires both reviews, binds both hashes and never invokes collection handoff', async fixture=>{
   const p=fixture(), result={canSave:true,reviewedPayloadHash:'file-hash',previewStateHash:'state-hash',administrativeDecision:p.decision,
     rows:p.records.map(r=>({...r,outcome:'new',bikerName:'Synthetic worker',collectionStatus:'pending'})),counts:{new:p.records.length,modified:0,duplicate:0,rejected:0,needsReview:0}};

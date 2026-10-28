@@ -23,6 +23,8 @@ import { splitVatBalanced } from './vat.js';
 // The purchase side is not split here: it is decided by the shared engine, so
 // this preview and the server's posting cannot disagree about a reclaim.
 import { resolvePurchaseTax } from './purchaseTax.js';
+import { applyReviewedPartialVat, requiresReviewedPartialVat } from '../../../functions/src/financeReviewedVat.js';
+import { financeInvoiceLineProblems } from '../../../functions/src/financeInvoiceLines.js';
 import { isRealCalendarDate } from '../vatFields.js';
 
 /** طرق الدفع. `credit` = آجل (ذمم). */
@@ -145,12 +147,17 @@ export function buildExpenseEntry(expense, {
   // recognises no input VAT when it states nothing.
   policyAt = null,
   createdBy = null,
+  sourceKind = null, sourceRow = null,
 } = {}) {
   const method = expense.paymentMethod || 'cash';
   const status = expense.paymentStatus || 'paid';
   const date = String(expense.date || expense.invoiceDate || '').slice(0, 10);
 
-  const tax = resolvePurchaseTax({
+  if (sourceRow && requiresReviewedPartialVat(sourceKind, expense.id, sourceRow)) {
+    const issues = financeInvoiceLineProblems(sourceRow, expense.amount, { kind: sourceKind, sourceId: expense.id });
+    if (issues.length) throw new Error(issues.join(' '));
+  }
+  const resolvedTax = resolvePurchaseTax({
     amount: expense.amount,
     priceMode: expense.priceMode,
     isTaxInvoice: expense.isTaxInvoice === true,
@@ -162,6 +169,7 @@ export function buildExpenseEntry(expense, {
     vatRate: expense.vatRate ?? null,
     recordDate: date,
   }, { policyAt });
+  const tax = sourceRow ? applyReviewedPartialVat(sourceKind, expense.id, sourceRow, resolvedTax) : resolvedTax;
 
   // ── إثبات الفاتورة ثم السداد ──
   // Same rule as the server: the input tax is claimed in the INVOICE's period

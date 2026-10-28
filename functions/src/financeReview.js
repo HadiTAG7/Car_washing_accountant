@@ -2,6 +2,7 @@ import { financeHash, financeSourceHash } from './financeHash.js';
 import { financeSourceEvidence, quantityExceptionProblems, allowedAllocationSibling } from './financeSourceEvidence.js';
 export { financeHash, financeSourceHash } from './financeHash.js';
 import { financeInvoiceLineProblems } from './financeInvoiceLines.js';
+import { requiresReviewedPartialVat, reviewedPartialVatGrant } from './financeReviewedVat.js';
 
 export const FINANCE_KINDS = Object.freeze({
   variable: { collection: 'variable_expenses', amount: 'total_variable_cost', date: 'logged_date', title: 'expense_name', category: 'variable_expense_categories' },
@@ -17,11 +18,12 @@ const realDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.tes
 export function financeProblems(kind, row, sourceId = null) {
   const spec = FINANCE_KINDS[kind], issues = [];
   if (!spec) return ['نوع السجل ليس مصروفًا مؤهلًا لهذا المسار.'];
+  if (requiresReviewedPartialVat(kind, sourceId, row) && !reviewedPartialVatGrant(kind, sourceId, row)) issues.push('الخصم الجزئي لا يطابق مصدر الرأي المحسوم ومبالغه؛ أعد المراجعة.');
   if (typeof row[spec.title] !== 'string' || !row[spec.title].trim()) issues.push('وصف المصروف غير مكتمل.');
   if (!Number.isFinite(row[spec.amount]) || row[spec.amount] <= 0) issues.push('المبلغ غير مثبت.');
   if (!realDate(row[spec.date])) issues.push('تاريخ المصروف غير مكتمل.');
   if (Object.hasOwn(row.finance_metadata || {}, 'quantityException')) issues.push(...quantityExceptionProblems(kind, sourceId, row));
-  else if (Object.hasOwn(row.finance_metadata || {}, 'invoiceLines')) issues.push(...financeInvoiceLineProblems(row, row[spec.amount]));
+  else if (Object.hasOwn(row.finance_metadata || {}, 'invoiceLines')) issues.push(...financeInvoiceLineProblems(row, row[spec.amount], { kind, sourceId }));
   else if (!Number.isFinite(row.quantity) || row.quantity <= 0 || !Number.isFinite(row.unit_cost)
     || Math.round(row.quantity * row.unit_cost * 100) !== Math.round(row[spec.amount] * 100)) issues.push('الكمية وسعر الوحدة لا يطابقان الإجمالي.');
   if (typeof row.supplier !== 'string' || !row.supplier.trim()) issues.push('المورد غير محدد.');

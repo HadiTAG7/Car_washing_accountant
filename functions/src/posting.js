@@ -19,6 +19,8 @@
 
 import { round2 } from './invariants.js';
 import { resolvePurchaseTax } from './purchaseTax.js';
+import { applyReviewedPartialVat, requiresReviewedPartialVat } from './financeReviewedVat.js';
+import { financeInvoiceLineProblems } from './financeInvoiceLines.js';
 import { washPostabilityProblem } from './sweater/revenueOrigin.js';
 import {
   buildRecognitionEntry, buildAdjustmentEntry, buildCollectionEntry,
@@ -179,7 +181,11 @@ function buildExpense(kind, row, id, { policyAt = null, recordDate = null } = {}
       : (row.payment_status === 'unpaid' ? 'unpaid' : 'paid');
 
   const fields = purchaseFieldsOf(kind, row);
-  const tax = resolvePurchaseTax({ ...fields, recordDate: settlementDate }, { policyAt });
+  if (requiresReviewedPartialVat(kind, id, row)) {
+    const issues = financeInvoiceLineProblems(row, fields.amount, { kind, sourceId: id });
+    if (issues.length) throw new Error(issues.join(' '));
+  }
+  const tax = applyReviewedPartialVat(kind, id, row, resolvePurchaseTax({ ...fields, recordDate: settlementDate }, { policyAt }));
 
   // The supplier's document dates the liability and the deduction. Without one
   // — a purchase with no tax invoice — the record's own date is all there is.

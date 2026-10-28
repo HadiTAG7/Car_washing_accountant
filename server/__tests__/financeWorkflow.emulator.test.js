@@ -14,6 +14,7 @@ import { financeReviewId, financeSourceHash } from '../../functions/src/financeR
 import { approveFinanceSelection } from '../../src/lib/financeWorkbenchActions.js';
 import { dispatch } from '../../functions/src/handlers.js';
 import { deleteStartupPlan } from '../../functions/src/startupCosts.js';
+import { reviewedPartialSeed, partialSourceId, partialReviewRef } from './financeReviewedVatFixtures.js';
 
 const projectId = 'demo-sweater-finance';
 const enabled = /^(127\.0\.0\.1|localhost):19080$/.test(process.env.FIRESTORE_EMULATOR_HOST || '');
@@ -42,6 +43,32 @@ describe.skipIf(!enabled)('finance real Firestore workflow — isolated demo onl
   }, 120000);
   afterAll(async () => { if (rules) await rules.cleanup(); if (db) await db.terminate(); if (app) await deleteApp(app); });
   const call = input => financeWorkbench(db, auth, input);
+
+  it.each(['workbench', 'legacy'])('posts only the reviewed eligible VAT once through %s, with source/period/approval guards intact', async door => {
+    const seed = reviewedPartialSeed(auth.uid);
+    for (const [path, value] of Object.entries(seed)) await db.doc(path).set(value);
+    const request = { kind: 'startup', sourceId: partialSourceId };
+    const read = await call({ action: 'read', ...request });
+    expect(read.approvalReady).toBe(true); expect(read.approved).toBe(false);
+    await expect(postSource(db, FieldValue, request, { userId: auth.uid })).rejects.toThrow(/اعتماد/);
+    await call({ action: 'approve', ...request, sourceHash: read.sourceHash, postingHash: read.postingPreview.postingHash, reason: 'TEST reviewed partial allocation', confirm: true });
+    const before = (await db.doc(`startup_cost_entries/${partialSourceId}`).get()).data();
+    if (door === 'legacy') await postSource(db, FieldValue, request, { userId: auth.uid });
+    else await call({ action: 'post', ...request, sourceHash: read.sourceHash, confirm: true });
+    const entries = await db.collection('journal_entries').get(); expect(entries.size).toBe(1);
+    expect(entries.docs[0].data().lines).toEqual(expect.arrayContaining([
+      expect.objectContaining({ accountId: '1500', debit: 75, credit: 0 }),
+      expect.objectContaining({ accountId: '1200', debit: 6.75, credit: 0 }),
+      expect.objectContaining({ accountId: '1020', debit: 0, credit: 81.75 }),
+    ]));
+    expect(entries.docs[0].data().purchaseTaxSnapshot).toMatchObject({ documentVat: 10.66, vatAmount: 10.66, vat: 6.75, net: 75,
+      reviewedAllocation: { ref: partialReviewRef, eligibleVat: 6.75, returnAction: 'none' } });
+    const after = (await db.doc(`startup_cost_entries/${partialSourceId}`).get()).data();
+    expect(after.vat_amount).toBe(10.66); expect(after.finance_metadata.invoiceLines).toEqual(before.finance_metadata.invoiceLines);
+    await expect(postSource(db, FieldValue, request, { userId: auth.uid })).rejects.toThrow();
+    expect((await db.collection('journal_entries').get()).size).toBe(1);
+    expect((await db.collection('vat_returns').get()).size).toBe(0);
+  }, 120000);
 
   it('confirms and audits an annual status change without creating a payment, then refuses deleting any parent with payments or a journal', async () => {
     const request = { action: 'update', parentId: 'test-parent', patch: { payment_status: 'paid' }, confirmed: true,

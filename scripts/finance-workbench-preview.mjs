@@ -7,6 +7,7 @@ import { financeWorkbench } from '../server/financeWorkbench.js';
 import { memoryFinanceDb, expensePatch, syntheticFinanceInvoiceLines, syntheticPrintedInvoiceLines, syntheticSharedInvoiceLines } from '../server/__tests__/financeFixtures.js';
 import { correctedSourceSeed } from '../server/__tests__/financePostingHistoryFixture.js';
 import { evidenceSeed } from '../server/__tests__/financeSourceEvidenceFixtures.js';
+import { reviewedPartialSeed } from '../server/__tests__/financeReviewedVatFixtures.js';
 const db = memoryFinanceDb({ 'users/test-admin': { role: 'admin' }, 'variable_expense_categories/test-category': { name: 'تصنيف اختبار' },
   'app_settings/accounting': { value: { vatRegistered: false } }, 'chart_of_accounts/5100': {}, 'chart_of_accounts/2000': {}, 'chart_of_accounts/1010': {} });
 for (let index = 1; index <= 3; index++) {
@@ -54,6 +55,7 @@ db.rows.set(protectedPath, { ...db.rows.get(protectedPath), quantity: null, unit
 // Synthetic values pinned to the reviewed grant identities; no commercial
 // records are read, and the original URLs are never fetched by this handler.
 for (const [path, value] of Object.entries(evidenceSeed())) db.rows.set(path, value);
+for (const [path, value] of Object.entries(reviewedPartialSeed())) db.rows.set(path, value);
 const fixture = fileURLToPath(new URL('./finance-preview/fixtures.jsx', import.meta.url)), flow = fileURLToPath(new URL('./finance-preview/workbench-flow.jsx', import.meta.url));
 const resolved = typeof config === 'function' ? await config({ mode: 'development', command: 'serve' }) : config;
 const server = await createServer({ ...resolved, configFile: false,

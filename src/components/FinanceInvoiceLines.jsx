@@ -68,7 +68,7 @@ export default function FinanceInvoiceLines({ value, onChange, disabled, amount,
         <label>ضريبة البنود المؤهلة — اتركها فارغة إن لم تُحسم<input type="number" step="0.01" disabled={disabled} value={tax.eligibleVat ?? ''} onChange={event => onChange({ ...value, vatAllocation: { ...tax, eligibleVat: event.target.value === '' ? null : Number(event.target.value) } })} /></label>
         <label>مرجع مراجعة ضريبة البنود<input disabled={disabled} value={tax.reviewRef || ''} onChange={event => onChange({ ...value, vatAllocation: { ...tax, reviewRef: event.target.value || null } })} /></label>
       </div>}
-      <small>لا تستنتج الأهلية من الضريبة المطبوعة. الخصم الجزئي يبقى موقوفًا إذا لم يدعمه مسار الترحيل.</small>
+      <small>لا تستنتج الأهلية من الضريبة المطبوعة. الخصم الجزئي يحتاج مصدرًا مطابقًا لرأي ضريبي مراجع.</small>
     </div>}
   </section>;
 }

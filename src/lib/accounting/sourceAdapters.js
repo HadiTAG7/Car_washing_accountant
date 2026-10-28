@@ -62,7 +62,7 @@ function expenseAdapter({ collection, kind, toExpense, isApproved, notApprovedRe
     // `policyAt` carries the dated tax record through to the engine, so the
     // preview prices a 5%-era invoice at 5% exactly as the server will.
     build: (r, { policyAt = null } = {}) => buildExpenseEntry(
-      toExpense(r), { expenseAccount: expenseAccountFor(kind), policyAt },
+      toExpense(r), { expenseAccount: expenseAccountFor(kind), policyAt, sourceKind: kind, sourceRow: r },
     ),
   };
 }

@@ -1,4 +1,7 @@
 import { financeHash, financeSourceHash } from './financeHash.js';
+import { financeDocumentIdentity } from './financeDocumentIdentity.js';
+import { reviewedPartialVatGrant, requiresReviewedPartialVat } from './financeReviewedVat.js';
+export { financeDocumentIdentity } from './financeDocumentIdentity.js';
 
 // Bounded, reviewed source grants. These are not editable policy settings or a
 // client assertion of owner authority. Adding another source requires review.
@@ -20,17 +23,6 @@ const original99 = deepFreeze({ ref: 'ORIGINAL99-0579-20261028', document: 'driv
     { kind: 'startup', sourceId: 'xm8IA2ypXnQvQ7LFLPTy', amount: 200, lineIds: ['printed-4'] },
     { kind: 'startup', sourceId: 'zk0wmq8nHTbsgs9CteWd', amount: 80, lineIds: ['printed-1', 'printed-2', 'printed-3'] },
   ] });
-export function financeDocumentIdentity(url) {
-  try {
-    const parsed = new URL(url);
-    if (parsed.protocol !== 'https:') return null;
-    if (parsed.hostname === 'drive.google.com') {
-      const driveId = parsed.pathname.match(/^\/file\/d\/([\w-]+)(?:\/|$)/)?.[1] || parsed.searchParams.get('id');
-      if (driveId && /^[\w-]+$/.test(driveId)) return `drive:${driveId}`;
-    }
-    return parsed.href;
-  } catch { return null; }
-}
 const evidenceShape = value => value && typeof value === 'object' && !Array.isArray(value)
   && Object.keys(value).every(key => ['version', 'grantRef', 'sourceRef'].includes(key)) && value.version === 1
   && typeof value.grantRef === 'string' && typeof value.sourceRef === 'string' && value.sourceRef.trim().length > 0 && value.sourceRef.length <= 300;
@@ -81,6 +73,16 @@ export async function financeSourceEvidence(db, tx, kind, sourceId, row) {
   const allocation = meta.documentAllocation;
   const hasAllocation = allocation != null;
   let contextHash = meta.quantityException != null && !issues.length ? financeHash({ quantityGrant }) : null;
+  const partialVatGrant = reviewedPartialVatGrant(kind, sourceId, row);
+  if (requiresReviewedPartialVat(kind, sourceId, row)) {
+    // Incomplete/unresolved allocations remain saveable as pending evidence;
+    // financeProblems still blocks both approval and every posting door.
+    if (partialVatGrant) {
+      contextHash = financeHash({ previousContextHash: contextHash, partialVatGrant });
+      issues.push(...await originalIdentityIssues(db, tx, financeDocumentIdentity(row.invoice_url), [{ kind, sourceId }]));
+      warnings.push('المؤهل 6.75 ريال من الضريبة المطبوعة 10.66؛ الباقي ضمن تكلفة المصدر. لا ينفذ إقرارًا أو مطالبة.');
+    }
+  }
   if (grant && financeDocumentIdentity(row.invoice_url) !== grant.document) issues.push('لا يغيّر رابط أصل التوزيع لتجاوز التكرار؛ أعد رابط المستند المثبت.');
   if (grant && !hasAllocation) issues.push('هذا الأصل له توزيع مراجع؛ يلزم ربط السجل بالتوزيع قبل الاعتماد أو الترحيل.');
   if (hasAllocation && (!evidenceShape(allocation) || !grant || allocation.grantRef !== grant.ref)) issues.push('مجموعة توزيع الأصل غير معتمدة لهذا المصدر؛ لا يستثنى منع التكرار العام.');
@@ -103,5 +105,5 @@ export async function financeSourceEvidence(db, tx, kind, sourceId, row) {
   }
   if (grant && hasAllocation) issues.push(...await originalIdentityIssues(db, tx, grant.document, grant.members));
   else if (quantityGrant && meta.quantityException != null) issues.push(...await originalIdentityIssues(db, tx, quantityGrant.document, [{ kind, sourceId }]));
-  return { quantityGrant, allocationGrant: grant, issues: [...new Set(issues)], warnings, contextHash };
+  return { quantityGrant, allocationGrant: grant, partialVatGrant, issues: [...new Set(issues)], warnings, contextHash };
 }

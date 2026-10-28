@@ -5,6 +5,7 @@ import { financeInvoiceLineProblems } from './financeInvoiceLines.js';
 import { requiresReviewedPartialVat, reviewedPartialVatGrant } from './financeReviewedVat.js';
 import { verifiedReviewedIdentity } from './financeReviewedIdentity.js';
 import { printedDiscountSourceProblems } from './financePrintedDiscount.js';
+import { employeeAdvanceLinkProblems } from './financeEmployeeAdvance.js';
 
 export const FINANCE_KINDS = Object.freeze({
   variable: { collection: 'variable_expenses', amount: 'total_variable_cost', date: 'logged_date', title: 'expense_name', category: 'variable_expense_categories' },
@@ -41,9 +42,10 @@ export function financeProblems(kind, row, sourceId = null) {
   if (meta?.reviewedDocumentIdentity != null && !reviewedIdentity) issues.push('هوية المستند المراجعة لا تطابق المصدر والرأي والحقائق المثبتة.');
   if (typeof meta?.purpose !== 'string' || !meta.purpose.trim() || !meta?.evidenceRefs?.length) issues.push('الغرض ودليل المراجعة غير مكتملين.');
   if (typeof meta?.fundingReference !== 'string' || !meta.fundingReference.trim()) issues.push('دليل التمويل أو ذمة المورد غير مكتمل.');
-  const types = { company_cash: ['cash'], company_bank: ['card', 'transfer'], vendor_liability: ['credit'] };
+  const types = { company_cash: ['cash'], company_bank: ['card', 'transfer'], vendor_liability: ['credit'], employee: ['cash', 'card', 'transfer'] };
   if (!types[meta?.fundingType]) issues.push('الحساب المقابل لهذا التمويل غير محسوم؛ لا يفترض الصندوق أو البنك.');
   else if (!types[meta.fundingType].includes(row.payment_method)) issues.push('طريقة الدفع تتعارض مع التمويل المثبت.');
+  issues.push(...employeeAdvanceLinkProblems(meta));
   if ((meta?.fundingType === 'vendor_liability') !== (row.payment_status === 'unpaid')) issues.push('حالة السداد لا تطابق الذمة أو التمويل.');
   if (typeof row.is_tax_invoice !== 'boolean' || typeof row.vat_deductible !== 'boolean') issues.push('المعالجة الضريبية غير محسومة.');
   if (!row.is_tax_invoice && row.vat_deductible !== false) issues.push('المستند غير الضريبي لا يثبت مطالبة مدخلات.');

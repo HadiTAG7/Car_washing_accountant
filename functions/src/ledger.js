@@ -34,6 +34,7 @@ import {
 import { ADAPTERS, legacyLockIdFor } from './posting.js';
 import { taxPolicyAt } from './taxPolicy.js';
 import { assertFinanceApproval, financeHash } from './financeReview.js';
+import { verifyEmployeeAdvanceLink } from './financeEmployeeAdvance.js';
 import { readCloseData, periodReadiness } from './periodReadiness.js';
 
 export const COL = {
@@ -279,6 +280,12 @@ export async function postSource(db, FieldValue, { kind, sourceId }, { userId = 
       // March's rate. Only the builder knows which date it needs.
       policyAt: (d) => taxPolicyAt(d, settings),
     });
+    if (financeApproval && row.finance_metadata?.fundingType === 'employee') {
+      const gross = [...built.lines, ...(built.settlement?.lines || [])].filter(line => String(line.accountId) === '1300')
+        .reduce((sum, line) => sum + Number(line.credit || 0), 0);
+      const advance = await verifyEmployeeAdvanceLink(db, tx, kind, id, row, gross);
+      if (advance.issues.length) throw new LedgerError(advance.issues.join(' '));
+    }
 
     const normEntry = normalizeEntry(built.entry);
     if (financeApproval && financeApproval.postingHash !== (financeApproval.sourceContextHash

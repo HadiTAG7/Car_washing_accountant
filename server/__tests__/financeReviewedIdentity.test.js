@@ -16,7 +16,7 @@ describe('bounded reviewed identities and printed invoice-level discount', () =>
     expect([...db.rows]).toEqual(beforeRows); expect(before.row.invoice_number).toBeNull(); expect(before.sourceContext.reviewedIdentityGrant).toBeTruthy();
     expect(before.row.finance_metadata.reviewedDocumentIdentity).toBeUndefined(); expect(before.approvalReady).toBe(false);
     const patch = { reviewedDocumentIdentity: identityEvidence(sourceId) }, preview = await call(db, { action: 'preview', ...common, sourceHash: before.sourceHash, patch });
-    expect([...db.rows]).toEqual(beforeRows); expect(preview.issues.some(issue => issue.includes('الحساب المقابل'))).toBe(true);
+    expect([...db.rows]).toEqual(beforeRows); expect(preview.issues.some(issue => issue.includes('ربط عهدة الموظف'))).toBe(true);
     expect(preview.issues.some(issue => issue.includes('حقول الفاتورة'))).toBe(false);
     await call(db, { action: 'save', ...common, sourceHash: before.sourceHash, patch, previewHash: preview.previewHash, reason: 'TEST link existing reviewed identity only', confirm: true });
     const after = await call(db, { action: 'read', ...common });

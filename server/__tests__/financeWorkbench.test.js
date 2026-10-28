@@ -13,6 +13,48 @@ async function capture(db, overrides = {}) {
   return { request, preview, result, read: await financeWorkbench(db, auth, { action: 'read', kind: 'variable', sourceId: result.sourceId }) };
 }
 describe('finance workbench version-bound review', () => {
+  it('keeps an owner statement separate from a verified advance and credits 1300 only after a matched link', async () => {
+    const db = database();
+    db.rows.set('chart_of_accounts/1300', {});
+    db.rows.set('temporary_expenses/test-advance', { biker_id: 'test-employee', amount: 150, status: 'pending', recovered_amount: 0 });
+    db.rows.set('journal_entries/test-funding', { status: 'posted', sourceType: 'temporary_expense', sourceId: 'test-advance',
+      entryDate: '2026-10-17', lines: [{ accountId: '1300', debit: 150, credit: 0 }, { accountId: '1010', debit: 0, credit: 150 }] });
+    const ownerOnly = await capture(db, { paymentStatus: 'paid', paymentMethod: 'card', paidDate: '2026-10-18',
+      fundingType: 'employee', fundingReference: 'TEST supplier receipt', ownerStatementRef: 'TEST owner statement' });
+    expect(ownerOnly.read.approvalReady).toBe(false);
+    expect(ownerOnly.read.paymentProven).toBe(false);
+    expect(ownerOnly.read.workflowDimensions.funding).toMatchObject({ ownerStatementRef: 'TEST owner statement', ledgerMatched: false });
+    const common = { kind: 'variable', sourceId: ownerOnly.result.sourceId, sourceHash: ownerOnly.read.sourceHash };
+    const patch = { employeeAdvanceLink: { version: 1, advanceId: 'test-advance', employeeId: 'test-employee',
+      fundingJournalId: 'test-funding', allocatedAmount: 100 } };
+    const preview = await financeWorkbench(db, auth, { action: 'preview', ...common, patch });
+    expect(preview.postingPreview.ready).toBe(true);
+    expect(preview.postingPreview.lines).toContainEqual(expect.objectContaining({ accountId: '1300', credit: 100 }));
+    expect(preview.postingPreview.lines.some(line => line.accountId === '1010' || line.accountId === '1020')).toBe(false);
+    const saved = await financeWorkbench(db, auth, { action: 'save', ...common, patch, previewHash: preview.previewHash,
+      reason: 'TEST advance linkage', confirm: true });
+    const read = await financeWorkbench(db, auth, { action: 'read', kind: 'variable', sourceId: saved.sourceId });
+    expect(read.approvalReady).toBe(true);
+    expect(read.paymentProven).toBe(true);
+    expect(read.workflowDimensions.funding.ledgerMatched).toBe(true);
+    expect([...db.rows.keys()].some(key => key.startsWith('journal_entries/') && key !== 'journal_entries/test-funding')).toBe(false);
+    db.rows.set('journal_entries/test-funding', { ...db.rows.get('journal_entries/test-funding'), status: 'reversed' });
+    const reversed = await financeWorkbench(db, auth, { action: 'read', kind: 'variable', sourceId: saved.sourceId });
+    expect(reversed.approvalReady).toBe(false);
+    expect(reversed.paymentProven).toBe(false);
+    db.rows.set('journal_entries/test-funding', { ...db.rows.get('journal_entries/test-funding'), status: 'posted' });
+    const funding = db.rows.get('journal_entries/test-funding');
+    db.rows.set('journal_entries/test-funding', { ...funding, lines: undefined });
+    db.rows.set('journal_lines/test-debit', { entryId: 'test-funding', accountId: '1300', debit: 150, credit: 0 });
+    db.rows.set('journal_lines/test-credit', { entryId: 'test-funding', accountId: '1010', debit: 0, credit: 150 });
+    expect((await financeWorkbench(db, auth, { action: 'read', kind: 'variable', sourceId: saved.sourceId })).paymentProven).toBe(true);
+    const second = await financeWorkbench(db, auth, { action: 'previewCapture', kind: 'variable', requestId: 'SECOND-TEST',
+      patch: expensePatch({ amount: 60, quantity: 2, invoiceNumber: 'TEST-002', invoiceUrl: 'https://example.org/second-invoice',
+        paymentStatus: 'paid', paymentMethod: 'card', paidDate: '2026-10-18', fundingType: 'employee',
+        employeeAdvanceLink: { ...patch.employeeAdvanceLink, allocatedAmount: 60 } }) });
+    expect(second.postingPreview.ready).toBe(false);
+    expect(second.issues.join(' ')).toMatch(/تتجاوز التمويل/);
+  });
   it('a no-op correction or reverting values cannot resurrect an old approval receipt', async () => {
     const db = database(), data = await capture(db), common = { kind: 'variable', sourceId: data.result.sourceId, sourceHash: data.read.sourceHash };
     await financeWorkbench(db, auth, { action: 'approve', ...common, postingHash: data.read.postingPreview.postingHash, reason: 'اعتماد اختبار', confirm: true });

@@ -38,12 +38,44 @@ describe.skipIf(!enabled)('finance real Firestore workflow — isolated demo onl
       db.doc('annual_expenses/test-parent').set({ expense_name: 'خطة سنوية اختبارية', annual_cost: 1000, actual_amount: 0, payment_status: 'pending' }),
       db.doc('startup_costs/test-parent').set({ item_name: 'خطة تأسيس اختبارية', budgeted_amount: 1000, actual_amount: 0, status: 'in_progress' }),
       db.doc('app_settings/accounting').set({ value: { vatRegistered: false } }),
-      ...['5100', '5200', '5300', '1500', '2000', '1020', '1010', '1200'].map(code => db.doc(`chart_of_accounts/${code}`).set({
+      ...['5100', '5200', '5300', '1500', '2000', '1020', '1010', '1200', '1300'].map(code => db.doc(`chart_of_accounts/${code}`).set({
         code, nameArabic: 'حساب اختبار', accountType: ['5100', '5200', '5300'].includes(code) ? 'expense' : code === '2000' ? 'liability' : 'asset', active: true })),
     ]);
   }, 120000);
   afterAll(async () => { if (rules) await rules.cleanup(); if (db) await db.terminate(); if (app) await deleteApp(app); });
   const call = input => financeWorkbench(db, auth, input);
+
+  it('links a synthetic funded employee advance, rejects a stale ledger link, then posts against 1300 without a payment', async () => {
+    await db.doc('temporary_expenses/test-advance').set({ biker_id: 'test-worker', amount: 150, status: 'pending', recovered_amount: 0 });
+    const funding = { status: 'posted', sourceType: 'temporary_expense', sourceId: 'test-advance', entryDate: '2026-10-17',
+      lines: [{ accountId: '1300', debit: 150, credit: 0 }, { accountId: '1010', debit: 0, credit: 150 }] };
+    await db.doc('journal_entries/test-funding').set(funding);
+    const request = { kind: 'variable', requestId: 'ADVANCE-TEST', patch: expensePatch({
+      invoiceDate: '2026-10-17', paymentStatus: 'paid', paymentMethod: 'card', paidDate: '2026-10-18',
+      fundingType: 'employee', fundingReference: 'TEST supplier receipt', ownerStatementRef: 'TEST owner statement',
+      employeeAdvanceLink: { version: 1, advanceId: 'test-advance', employeeId: 'test-worker',
+        fundingJournalId: 'test-funding', allocatedAmount: 100 } }) };
+    const preview = await call({ action: 'previewCapture', ...request });
+    expect(preview.postingPreview.ready).toBe(true);
+    const captured = await call({ action: 'capture', ...request, previewHash: preview.previewHash, reason: 'TEST advance', confirm: true });
+    const common = { kind: 'variable', sourceId: captured.sourceId };
+    const read = await call({ action: 'read', ...common });
+    expect(read.approvalReady).toBe(true);
+    await call({ action: 'approve', ...common, sourceHash: read.sourceHash,
+      postingHash: read.postingPreview.postingHash, reason: 'TEST matched advance', confirm: true });
+    await db.doc('journal_entries/test-funding').update({ status: 'reversed' });
+    await expect(postSource(db, FieldValue, common, { userId: auth.uid })).rejects.toThrow(/عهدة/);
+    await db.doc('journal_entries/test-funding').update({ status: 'posted' });
+    const result = await call({ action: 'post', ...common, sourceHash: read.sourceHash, confirm: true });
+    expect(result.verification.linesMatched).toBe(true);
+    const posted = (await db.collection('journal_entries').where('sourceId', '==', captured.sourceId).get()).docs;
+    expect(posted).toHaveLength(2);
+    expect(posted.flatMap(doc => doc.data().lines)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ accountId: '1300', credit: 100 }),
+    ]));
+    expect(posted.flatMap(doc => doc.data().lines).some(line => ['1010', '1020'].includes(line.accountId))).toBe(false);
+    expect((await db.collection('payroll_runs').get()).size).toBe(0);
+  }, 120000);
 
   it.each(identitySources.flatMap((source, index) => ['workbench', 'legacy'].map(door => [source[0], index, door])))('posts bounded identity %s (#%i) through %s without a fabricated number or return action', async (sourceId, index, door) => {
     for (const [path, row] of Object.entries(identitySeed(auth.uid, { linked: true, funded: true }))) await db.doc(path).set(row);

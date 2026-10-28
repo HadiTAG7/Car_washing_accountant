@@ -9,6 +9,9 @@ export default function FinanceDocumentStatus({ dimensions }) {
     <h3 className="fw-form-section-title">حالة السجل المحفوظ</h3>
     <dl className="fw-document-status" aria-label="حالات المصروف المنفصلة">{states.map(([label, state]) => <div key={label}><dt>{label}</dt><dd>{state.label}</dd></div>)}</dl>
     <p className="fw-workbench-note">وجود نواقص أو موانع ترحيل لا يعني أن المستند غير مسجل. المراجعة المعلّقة ليست اعتمادًا.</p>
+    {d.funding?.type === 'employee' && <p className="fw-workbench-note">إفادة المالك: {d.funding.ownerStatementRef || 'لا مرجع محفوظ'}.
+      مطابقة تمويل العهدة مع الدفتر: {d.funding.ledgerMatched ? 'مثبتة للفحص الحالي' : 'غير مثبتة'}.
+      رقم العهدة: {d.funding.advanceId || 'غير محدد'} · قيد التمويل: {d.funding.fundingJournalId || 'غير محدد'}.</p>}
     <details className="fw-form-section"><summary>نواقص بيانات المصدر ({d.sourceGaps.length})</summary>
       {d.sourceGaps.length ? <ul>{d.sourceGaps.map(item => <li key={item.text}>{item.text}</li>)}</ul>
         : <p>لا يظهر نقص في البيانات الأساسية بهذا الفحص؛ قد تبقى موانع مالية أو ضريبية.</p>}

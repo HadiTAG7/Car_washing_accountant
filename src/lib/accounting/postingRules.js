@@ -189,6 +189,9 @@ export function buildExpenseEntry(expense, {
     : date;
   const split = status !== 'unpaid' && accrualDate !== date;
   const supplierLabel = expense.supplier ? `المورد: ${expense.supplier}` : 'سداد';
+  const employeeAdvance = sourceRow?.finance_metadata?.fundingType === 'employee';
+  if (employeeAdvance && !sourceRow.finance_metadata.employeeAdvanceLink) throw new Error('ربط عهدة الموظف غير مكتمل.');
+  const settlementAccount = employeeAdvance ? ACC.EMPLOYEE_ADVANCE : settlementAccountForPurchase(method, status);
 
   const lines = [
     { accountId: expenseAccount, debit: tax.net, credit: 0, description: expense.description || 'مصروف' },
@@ -200,7 +203,7 @@ export function buildExpenseEntry(expense, {
     });
   }
   lines.push({
-    accountId: split ? ACC.PAYABLE : settlementAccountForPurchase(method, status),
+    accountId: split ? ACC.PAYABLE : settlementAccount,
     debit: 0, credit: tax.gross,
     description: supplierLabel,
   });
@@ -236,7 +239,7 @@ export function buildExpenseEntry(expense, {
     lines: [
       { accountId: ACC.PAYABLE, debit: tax.gross, credit: 0, description: supplierLabel },
       {
-        accountId: settlementAccountForPurchase(method, 'paid'),
+        accountId: settlementAccount,
         debit: 0, credit: tax.gross,
         description: `سداد ${accrualDate}`,
       },

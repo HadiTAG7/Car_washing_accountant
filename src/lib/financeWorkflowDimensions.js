@@ -5,7 +5,7 @@ export const FINANCE_BLOCKER_LABELS = {
   policy: 'السياسة التاريخية والحسابات', allocation: 'ربط الأصل ومنع التكرار', review: 'المراجعة والربط',
 };
 export function financeBlockerCategory(message) {
-  if (/التمويل|الحساب المقابل|ذمة المورد/.test(message)) return 'funding';
+  if (/التمويل|الحساب المقابل|ذمة المورد|العهدة|عهدة/.test(message)) return 'funding';
   if (/السداد|طريقة الدفع/.test(message)) return 'payment';
   if (/السياسة التاريخية|حسابات القيد|معاينة الحسابات/.test(message)) return 'policy';
   if (/الضريب|المدخلات/.test(message)) return 'tax';
@@ -37,6 +37,11 @@ export function financeWorkflowDimensions(detail, { recorded = false } = {}) {
     posting: { status: active ? 'posted' : reversed ? 'reversed' : detail.protectedSource ? 'protected' : 'unposted',
       label: active ? 'مرحل بقيد سارٍ' : reversed ? 'قيده معكوس — المصدر ما زال مسجلًا' : detail.protectedSource ? 'محمي وله أثر يحتاج مراجعة' : 'غير مرحل',
       ready: Boolean(detail.postingReady) },
+    funding: { type: row.finance_metadata?.fundingType || 'unknown',
+      ownerStatementRef: row.finance_metadata?.ownerStatementRef || null,
+      ledgerMatched: Boolean(detail.postingPreview?.employeeAdvanceProof),
+      advanceId: row.finance_metadata?.employeeAdvanceLink?.advanceId || null,
+      fundingJournalId: row.finance_metadata?.employeeAdvanceLink?.fundingJournalId || null },
     payment: { proven: Boolean(detail.paymentProven), recordedStatus: row.payment_status || 'unknown', method: row.payment_method || null, paidDate: row.paid_date || null,
       label: detail.paymentProven ? 'إثبات السداد مكتمل' : row.payment_status === 'paid' ? 'مسجل مدفوع — تحقق المسار غير مكتمل'
         : row.payment_status === 'unpaid' ? 'مسجل غير مسدد' : 'حالة السداد غير مثبتة' },

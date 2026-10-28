@@ -217,8 +217,11 @@ function buildExpense(kind, row, id, { policyAt = null, recordDate = null } = {}
       description: tax.lineDescription,
     });
   }
+  const employeeAdvance = kind !== 'voucher' && row.finance_metadata?.fundingType === 'employee';
+  if (employeeAdvance && !row.finance_metadata?.employeeAdvanceLink) throw new Error('ربط عهدة الموظف غير مكتمل.');
+  const settlementAccount = employeeAdvance ? ACC.EMPLOYEE_ADVANCE : settlementForPurchase(method, paid);
   lines.push({
-    accountId: split ? ACC.PAYABLE : settlementForPurchase(method, paid),
+    accountId: split ? ACC.PAYABLE : settlementAccount,
     debit: 0, credit: tax.gross,
     description: supplierLabel,
   });
@@ -245,7 +248,7 @@ function buildExpense(kind, row, id, { policyAt = null, recordDate = null } = {}
     lines: [
       { accountId: ACC.PAYABLE, debit: tax.gross, credit: 0, description: supplierLabel },
       {
-        accountId: settlementForPurchase(method, 'paid'),
+        accountId: settlementAccount,
         debit: 0, credit: tax.gross,
         description: `سداد ${accrualDate}`,
       },

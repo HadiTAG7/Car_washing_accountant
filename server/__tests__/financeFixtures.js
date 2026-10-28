@@ -17,6 +17,23 @@ export function expensePatch(overrides = {}) {
     paymentMethod: 'credit', paymentStatus: 'unpaid', paidDate: null,
     fundingType: 'vendor_liability', fundingReference: 'TEST-SUPPLIER-DEBT', purpose: 'اختبار في محاكي فقط', evidenceRefs: ['TEST-ORIGINAL'], ...overrides };
 }
+// Synthetic line prices; never use these to populate a real invoice.
+export function syntheticFinanceInvoiceLines() {
+  return { version: 1, vatAllocation: null, items: [
+    { id: 'metres', description: 'بند اختبار بطول متر', quantity: 1, unit: 'متر', unitCost: 12, amount: 12, sourceRef: 'TEST-INVOICE line 1' },
+    { id: 'lock', description: 'قطعة اختبار أولى', quantity: 1, unit: 'قطعة', unitCost: 18, amount: 18, sourceRef: 'TEST-INVOICE line 2' },
+    { id: 'cylinder', description: 'قطعة اختبار ثانية', quantity: 1, unit: 'قطعة', unitCost: 20, amount: 20, sourceRef: 'TEST-INVOICE line 3' },
+  ] };
+}
+// Synthetic fixture reproducing a net-unit/gross-total rounding pattern, with
+// no line VAT computed or claimed and no commercial source ID attached.
+export function syntheticPrintedInvoiceLines(reviewRef = 'TEST-PARTIAL-REVIEW') {
+  const quantities = [1, 2, 2, 1, 1, 1, 3], amounts = [5.75, 30, 11.5, 5.75, 5.75, 5.75, 17.25];
+  return { version: 1, items: quantities.map((quantity, index) => ({ id: `printed-${index + 1}`, description: `بند اختبار مطبوع ${index + 1}`,
+    quantity, unit: 'قطعة', unitCost: index === 1 ? 13.04 : 5, amount: amounts[index], sourceRef: `TEST printed line ${index + 1}`,
+    amountSource: 'printed', unitPriceMode: 'exclusive', amountNote: 'سعر الوحدة مطبوع قبل الضريبة والإجمالي شاملها مع تقريب المورد.' })),
+    vatAllocation: { printedVat: 10.66, eligibleVat: 6.75, reviewRef } };
+}
 // Unit-only storage double. Real transactional/query behavior has separate
 // emulator tests; this must never be described as production verification.
 export function memoryFinanceDb(seed = {}) {

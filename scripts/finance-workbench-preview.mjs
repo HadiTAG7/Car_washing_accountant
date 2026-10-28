@@ -4,7 +4,7 @@ import { createServer } from 'vite';
 import { fileURLToPath } from 'node:url';
 import config from '../vite.config.js';
 import { financeWorkbench } from '../server/financeWorkbench.js';
-import { memoryFinanceDb, expensePatch } from '../server/__tests__/financeFixtures.js';
+import { memoryFinanceDb, expensePatch, syntheticFinanceInvoiceLines, syntheticPrintedInvoiceLines } from '../server/__tests__/financeFixtures.js';
 import { correctedSourceSeed } from '../server/__tests__/financePostingHistoryFixture.js';
 const db = memoryFinanceDb({ 'users/test-admin': { role: 'admin' }, 'variable_expense_categories/test-category': { name: 'تصنيف اختبار' },
   'app_settings/accounting': { value: { vatRegistered: false } }, 'chart_of_accounts/5100': {}, 'chart_of_accounts/2000': {}, 'chart_of_accounts/1010': {} });
@@ -13,6 +13,19 @@ for (let index = 1; index <= 3; index++) {
     invoiceNumber: `BROWSER-${index}`, invoiceUrl: `https://example.org/test-only-${index}` }) };
   const preview = await financeWorkbench(db, { uid: 'test-admin' }, { action: 'previewCapture', ...request });
   await financeWorkbench(db, { uid: 'test-admin' }, { action: 'capture', ...request, previewHash: preview.previewHash, reason: 'تهيئة اختبار اصطناعي فقط', confirm: true });
+}
+
+// Synthetic source lines only. This fixture never reads commercial invoices or
+// connects to a remote database; writes use the memory handler above.
+for (const partial of [false, true]) {
+  const invoiceLines = partial ? syntheticPrintedInvoiceLines('TEST-PARTIAL-OPINION') : syntheticFinanceInvoiceLines();
+  const request = { kind: 'variable', requestId: partial ? 'BROWSER-PARTIAL-LINES' : 'BROWSER-MIXED-LINES',
+    patch: expensePatch({ quantity: undefined, amount: partial ? 81.75 : 50, invoiceLines,
+      description: partial ? 'اختبار بنود بضريبة جزئية — ممنوع الاعتماد' : 'اختبار بنود مختلفة — أسعار اصطناعية',
+      invoiceNumber: partial ? 'TEST-PARTIAL-LINES' : 'TEST-MIXED-LINES', invoiceUrl: `https://example.org/test-${partial ? 'partial' : 'mixed'}-lines`,
+      ...(partial ? { isTaxInvoice: true, vatAmount: 10.66, vatRate: 0.15, vatDeductible: true, taxReviewRef: 'TEST-PARTIAL-OPINION' } : {}) }) };
+  const preview = await financeWorkbench(db, { uid: 'test-admin' }, { action: 'previewCapture', ...request });
+  await financeWorkbench(db, { uid: 'test-admin' }, { action: 'capture', ...request, previewHash: preview.previewHash, reason: 'تهيئة اختبار بنود اصطناعي', confirm: true });
 }
 db.rows.set('variable_expenses/incomplete-only', { expense_name: 'تحويل بنكي قديم — اختبار نقد متناقض', total_variable_cost: 50, logged_date: '2026-05-01', payment_method: 'cash' });
 for (const [path, value] of Object.entries(correctedSourceSeed({ split: true }))) db.rows.set(path, value);

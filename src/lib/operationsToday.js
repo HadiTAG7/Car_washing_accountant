@@ -18,6 +18,7 @@ const dateOf = w => w.washDate ?? w.wash_date;
 const bikerOf = w => String(w.bikerId ?? w.biker_id ?? '').trim();
 const instant = x => typeof x === 'string' && /T.*(?:Z|[+-]\d{2}:\d{2})$/.test(x) && Number.isFinite(Date.parse(x)) ? Date.parse(x) : null;
 export const riyadhDayAt = stamp => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Riyadh' }).format(new Date(stamp));
+export const activeOperationsBikers = (bikers, day) => bikers.filter(b => !departedBiker(b) && (!b.startDate || b.startDate <= day) && (!b.endDate || b.endDate >= day));
 
 /** One natural booking identity, latest stored observation, original status
  * retained. Equal-time conflicting observations make booking totals unknown. */
@@ -63,7 +64,7 @@ export function operationsToday({ day, today, washes = [], bikers = [], bookings
     complete: cancellationGroup.complete && cancellationGroup.rows.every(row => realDay(row.date)),
     rows: cancellationGroup.rows.filter(row => realDay(row.date) && row.date >= range.from && row.date <= day) } } } : null;
   const qualityRows = new Map(qualityBikerRows(qualitySnapshot, bikers).map(row => [row.id, row.values.cancelledByBiker]));
-  const active = bikers.filter(b => !departedBiker(b) && (!b.startDate || b.startDate <= day) && (!b.endDate || b.endDate >= day));
+  const active = activeOperationsBikers(bikers, day);
   const rows = active.map(b => {
     const own = unique.filter(w => bikerOf(w) === String(b.id));
     const line = payrollLines?.find(l => l.bikerId === b.id);

@@ -32,6 +32,7 @@ const SupervisorPage       = lazy(() => import('./components/SupervisorPage'));
 const SupervisorRecordsPage = lazy(() => import('./components/SupervisorRecordsPage'));
 const InvestorPage         = lazy(() => import('./components/InvestorPage'));
 const ExpensesPage = lazy(() => import('./components/ExpensesPage'));
+const OperationsWorkspacePage = lazy(() => import('./components/OperationsWorkspacePage'));
 const SweaterSettlementsPage = lazy(() => import('./components/SweaterSettlementsPage'));
 const SweaterIntegrationPage = lazy(() => import('./components/SweaterIntegrationPage'));
 const WashesPage           = lazy(() => import('./components/WashesPage'));
@@ -223,6 +224,8 @@ function AppShell({ membership }) {
             {effectiveTab === 'finance' && <FinanceHomePage onNavigate={handleSelectTab} />}
             {effectiveTab === 'finance_reports' && <FinanceReportsPage />}
             {effectiveTab === 'operations_reports' && <OperationsReportsPage />}
+            {effectiveTab === 'operations_summary' && <OperationsWorkspacePage />}
+            {effectiveTab === 'operations_close' && <OperationsWorkspacePage close />}
             {effectiveTab === 'today' && <OperationsTodayPage onNavigate={setActiveTab} />}
             {effectiveTab === 'finance_workbench' && <FinanceWorkbenchPage />}
             {effectiveTab === 'finance_payroll' && <BikersPage role={visibleRole} initialSection="payroll" />}

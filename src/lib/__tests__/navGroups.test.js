@@ -7,7 +7,7 @@ const idsOf = (groups) => groups.flatMap((g) => g.tabs.map((t) => t.id));
 
 describe('من يرى أي تبويب', () => {
   it('puts Today first in daily operations and retains the company-read role guard', () => {
-    expect(TAB_GROUPS.find(g => g.id === 'ops').tabs[0].id).toBe('today');
+    expect(TAB_GROUPS.find(g => g.id === 'operations').sections[0].tabIds[0]).toBe('today');
     for (const role of ['admin', 'accountant']) expect(idsOf(visibleGroupsFor({ role }))).toContain('today');
     for (const role of ['partner', 'operator', 'supervisor', null]) expect(idsOf(visibleGroupsFor({ role }))).not.toContain('today');
   });

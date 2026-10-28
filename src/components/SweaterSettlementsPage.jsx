@@ -10,6 +10,7 @@ import ErrorState from './ErrorState';
 import Toast from './Toast';
 import SweaterActionDialog from './SweaterActionDialog';
 import SettlementInvoicePanel from './SettlementInvoicePanel';
+import OperationsReadinessBanner from './OperationsReadinessBanner';
 import {
   useSweaterSettlements, useSweaterBookings, useSweaterAdjustments, useSweaterVariances,
   useSweaterMetrics, useSweaterFirstPeriod,
@@ -195,6 +196,7 @@ export default function SweaterSettlementsPage() {
           {metricsApi.snapshot?.metricSources?.completedWashes && <p className="mt-1 text-xs text-slate-500">وقت قراءة عدد سويتر: {new Date(metricsApi.snapshot.metricSources.completedWashes.extractedAtIso).toLocaleString('en-GB', { timeZone: 'Asia/Riyadh' })} · لقطة شهرية، وليست حجوزات مستوردة أو إيرادًا مرحلًا.</p>}
         </Card>
 
+        <OperationsReadinessBanner periodKey={periodKey}/>
         {loading && !settlement ? (
           <Card className="p-6"><LoadingState message="جارٍ تحميل التسوية..." /></Card>
         ) : (

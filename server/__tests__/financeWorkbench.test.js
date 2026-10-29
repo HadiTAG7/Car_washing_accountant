@@ -57,6 +57,31 @@ describe('finance workbench version-bound review', () => {
     expect(result.readyForPosting).toBe(false);
     expect(db.rows).toEqual(new Map(before));
   });
+  it('flags a historical input-tax movement before proposing a current correction', async () => {
+    const db = database();
+    db.rows.set('app_settings/accounting', { value: { vatRegistered: true } });
+    db.rows.set('temporary_expenses/tax-preview', { biker_id: 'test-employee', amount: 100,
+      status: 'pending', recovered_amount: 0 });
+    db.rows.set('chart_of_accounts/1300', { active: true, accountType: 'asset' });
+    db.rows.set('chart_of_accounts/1020', { active: true, accountType: 'asset' });
+    db.rows.set('accounting_periods/2026-10', { status: 'open' });
+    const input = { kind: 'variable', requestId: 'TEST-TAX-PREVIEW', patch: expensePatch({
+      paymentStatus: 'paid', paidDate: '2026-10-18', paymentMethod: 'card', fundingType: 'employee',
+      fundingReference: 'TEST receipt', isTaxInvoice: true, vatDeductible: true,
+      vatAmount: 13.04, vatRate: 0.15, taxReviewRef: 'TEST tax review',
+    }) };
+    const draft = await financeWorkbench(db, auth, { ...input, action: 'previewCapture' });
+    const saved = await financeWorkbench(db, auth, { ...input, action: 'capture',
+      previewHash: draft.previewHash, reason: 'Synthetic tax document', confirm: true });
+    const result = await financeWorkbench(db, auth, { action: 'preview', kind: 'custody_reconciliation',
+      advanceId: 'tax-preview', employeeId: 'test-employee', amount: 100,
+      historicalFundingDate: '2026-10-17', correctionDate: '2026-10-29',
+      ownerStatementRef: 'TEST owner attestation', evidenceRefs: ['TEST bank transfer'],
+      allocations: [{ kind: 'variable', sourceId: saved.sourceId, amount: 100 }] });
+    expect(result.proposedExpenseEntries[0]?.vatHalala).toBeGreaterThan(0);
+    expect(result.issues.join(' ')).toMatch(/مدخلات ضريبة تاريخية/);
+    expect(result.readyForPosting).toBe(false);
+  });
   it('previews historical custody without treating a current correction as earlier funding', async () => {
     const db = database();
     db.rows.set('temporary_expenses/old-custody', { biker_id: 'test-employee', amount: 150,

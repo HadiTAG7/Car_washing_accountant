@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { foundingPlan, documentCandidates, paymentCandidates, balanceMeaning, completenessGaps, ruleGaps, dayBefore } from '../founding/foundingPlan';
+import { foundingPlan, documentCandidates, paymentCandidates, balanceMeaning, completenessGaps, ruleGaps, dayBefore, isBankFee } from '../founding/foundingPlan';
 import { when } from '../founding/foundingFormat';
 
 const doc = (id, over = {}) => ({ key: `variable:${id}`, kind: 'variable', sourceId: id, title: id, amount: 100, date: '2026-09-01', supplier: 'مورد',
@@ -95,7 +95,8 @@ describe('founding plan', () => {
 });
 
 describe('the founding-period default rule', () => {
-  const complete = { fundingType: 'company_cash', paymentMethod: 'cash', paidDate: '2026-09-01' };
+  // Complete and unpaid: a supplier liability lacks nothing, and is no one's payment yet.
+  const complete = { fundingType: 'vendor_liability', paymentMethod: 'credit', paymentStatus: 'unpaid' };
   const docs = () => [
     doc('open', { amount: 120 }),
     doc('posted', { protected: true, amount: 300, paymentMethod: 'transfer', paidDate: '2026-08-02', date: '2026-08-02', effect: { cash: 0, bank: 30000, payable: 0 } }),
@@ -175,6 +176,117 @@ describe('Hadi’s current account against his statement', () => {
   });
 });
 
+
+describe('the rule over documents recorded on the bank or the cash box', () => {
+  const onBank = { fundingType: 'company_bank', paymentMethod: 'transfer', paidDate: '2026-09-02' };
+  const docs = () => [
+    doc('gap', { amount: 100 }),
+    doc('bank', { ...onBank, amount: 200 }),
+    doc('box', { fundingType: 'company_cash', paymentMethod: 'cash', paidDate: '2026-09-03', amount: 30, protected: true, effect: { cash: 3000, bank: 0, payable: 0 } }),
+    doc('mada', { ...onBank, amount: 34.5, title: 'رسوم إصدار بطاقة مدى محلية', supplier: 'مصرف الراجحي' }),
+    doc('stmt', { ...onBank, amount: 150 }),
+    doc('kept', { ...onBank, amount: 60 }),
+    doc('mine', { fundingType: 'owner_current', paymentMethod: 'founding_personal', paidDate: '2026-09-04', amount: 70 }),
+    doc('later', { ...onBank, date: '2026-10-02', paidDate: '2026-10-02', amount: 999 }),
+  ];
+  const lines = [line('c1', { account: 'company', amount: 150, txDate: '2026-09-01', linkKind: 'variable', linkId: 'stmt' })];
+  const decisions = { 'variable:kept': { decision: 'company_bank' } };
+  it('adds them as their own group, except what the company statement matched, the bank’s own fees, and exceptions', () => {
+    const rule = foundingPlan({ docs: docs(), lines, decisions }).rule;
+    expect(rule.candidates.map(c => [c.sourceId, c.group, c.action])).toEqual([['gap', 'missing', 'update'], ['bank', 'recorded', 'update'], ['box', 'recorded', 'entry']]);
+    expect(rule.groups).toEqual({ missing: { count: 1, amount: 100 }, recorded: { count: 2, amount: 230 } });
+    expect(rule.bankFees).toMatchObject({ count: 1, amount: 34.5, rows: [{ title: 'رسوم إصدار بطاقة مدى محلية', supplier: 'مصرف الراجحي' }] });
+    expect(rule.updates.find(u => u.key === 'variable:bank').patch).toEqual({ fundingType: 'owner_current', paymentMethod: 'founding_personal' });
+    expect(rule.entries.map(e => [e.sourceKey, e.lines.map(l => [l.accountId, l.debit, l.credit])])).toEqual([['variable:box', [['1010', 30, 0], ['2300', 0, 30]]]]);
+  });
+  it('leaves a complete record as recorded: no update, no inferred correction', () => {
+    const plan = foundingPlan({ docs: docs(), lines, decisions });
+    expect(plan.rows.find(r => r.sourceId === 'mine')).toMatchObject({ payer: 'hadi', payerSource: 'recorded' });
+    expect(plan.rows.find(r => r.sourceId === 'bank')).toMatchObject({ payer: 'company_bank', payerSource: 'recorded' });
+    expect(plan.updates).toEqual([]);
+    expect(plan.entries).toEqual([]);
+    expect(plan.exceptions.map(e => [e.key, e.payer])).toEqual([['variable:kept', 'company_bank']]);
+  });
+  it('knows the bank’s own fees by the bank as supplier, or a card or transfer fee in the description', () => {
+    expect(isBankFee({ title: 'رسوم إرسالية محلية لبطاقة الحساب الجاري — الراجحي', supplier: '' })).toBe(true);
+    expect(isBankFee({ title: 'عمولة حوالة دولية', supplier: '' })).toBe(true);
+    expect(isBankFee({ title: 'كشف', supplier: 'البنك الأهلي السعودي' })).toBe(true);
+    for (const title of ['رسوم انضمام 12 بايكر', 'رسوم تسجيل واستمارة 50 دباب (400 ريال لكل دباب) — مستند رقم 27', 'توصيل باص — تحويل بنكي إلى شوكت', 'رسوم سعي سكن الشرق']) {
+      expect(isBankFee({ title, supplier: 'مؤسسة' })).toBe(false);
+    }
+  });
+});
+
+describe('Hadi’s transfers to the company account', () => {
+  it('come from the company statement too, and the same transfer on both statements counts once', () => {
+    const company = line('t1', { account: 'company', direction: 'credit', amount: 5000, txDate: '2026-10-04', decision: 'transfer' });
+    const plan = foundingPlan({ lines: [company] });
+    expect(plan.entries).toMatchObject([{ key: 'transfer:t1', date: '2026-10-04', toCompany: true, account: 'company' }]);
+    expect(plan.entries[0].lines.map(l => [l.accountId, l.debit, l.credit])).toEqual([['1020', 5000, 0], ['2300', 0, 5000]]);
+    const both = foundingPlan({ lines: [company, line('p1', { direction: 'debit', amount: 5000, txDate: '2026-10-03', decision: 'transfer' })] });
+    expect(both.entries.map(e => e.key)).toEqual(['transfer:p1']);
+  });
+});
+
+describe('without a personal statement', () => {
+  const payments = [
+    { key: 'partner_payment:p1', id: 'p1', partnerId: 'a', partnerName: 'أ', amount: 1000, date: '2026-08-01', method: 'bank_transfer', protected: false },
+    { key: 'partner_payment:p2', id: 'p2', partnerId: 'b', partnerName: 'ب', amount: 400, date: '2026-08-05', method: 'owner_current', protected: false },
+    { key: 'partner_payment:p3', id: 'p3', partnerId: 'b', partnerName: 'ب', amount: 250, date: '2026-09-10', method: 'bank_transfer', protected: false },
+  ];
+  const attested = doc('att', { fundingType: 'owner_current', paymentMethod: 'founding_personal', paidDate: '2026-09-30', date: '2026-09-30', amount: 75,
+    category: 'نقل', attestation: { approxDate: '2026-06-15', byName: 'هادي', atIso: '2026-10-29T10:00:00.000Z' } });
+  const input = (settings = {}, extra = {}) => ({
+    docs: [doc('a', { amount: 1000, category: 'سكن' }), doc('b', { amount: 500, category: 'نقل' }), attested],
+    decisions: { 'variable:a': { decision: 'founding_rule' }, 'variable:b': { decision: 'founding_rule' }, 'partner_payment:p1': { decision: 'hadi' } },
+    payments, lines: [line('t1', { account: 'company', direction: 'credit', amount: 300, txDate: '2026-10-04', decision: 'transfer' })],
+    partners: [{ id: 'a', name: 'أ' }, { id: 'b', name: 'ب' }], settings: { noPersonalStatement: true, ...settings }, ...extra });
+  it('shows no statement comparison, and breaks Hadi’s balance down by documents, partner payments and transfers', () => {
+    const plan = foundingPlan(input());
+    expect(plan.comparison).toMatchObject({ status: 'off', entry: null });
+    expect(plan.entries.some(e => e.type === 'hadi_statement')).toBe(false);
+    expect(plan.hadiBalance).toMatchObject({ paid: 1575, paidCount: 3, attested: 75, attestedCount: 1, received: 1400, receivedCount: 2,
+      toCompany: 300, toHadi: 0, net: 475, meaning: { kind: 'owed_to_hadi', amount: 475 }, undecided: { count: 1, amount: 250 }, attestation: null });
+    expect(foundingPlan(input({ noPersonalStatement: false })).comparison.status).toBe('needs_statement');
+  });
+  it('lists manager-attested expenses on their own, out of the proof groups and the rule', () => {
+    const plan = foundingPlan(input());
+    expect(plan.attestedExpenses).toMatchObject([{ key: 'variable:att', approxDate: '2026-06-15', date: '2026-09-30', byName: 'هادي', category: 'نقل' }]);
+    expect([...plan.groups.small, ...plan.groups.large].some(r => r.key === 'variable:att')).toBe(false);
+    expect(plan.rule.candidates.some(c => c.key === 'variable:att')).toBe(false);
+  });
+  it('marks Hadi’s attestation stale once the numbers behind it change', () => {
+    const saved = { paid: 1575, received: 1400, toCompany: 300, toHadi: 0, net: 475, note: 'مراجعة', byName: 'هادي' };
+    expect(foundingPlan(input({ hadiAttestation: saved })).hadiBalance.attestation).toMatchObject({ note: 'مراجعة', changed: false });
+    expect(foundingPlan(input({ hadiAttestation: { ...saved, net: 476 } })).hadiBalance.attestation.changed).toBe(true);
+  });
+  it('moves an amount to 3200 only by an entry Hadi wrote the reason for, dated the last founding day', () => {
+    const adjustments = [{ id: 'adj1', amount: 475, direction: 'debit_2300', reason: 'تنازل عن الفرق', byName: 'هادي' }];
+    const plan = foundingPlan(input({ adjustments }));
+    const entry = plan.entries.find(e => e.key === 'adjustment:adj1');
+    expect(entry).toMatchObject({ type: 'adjustment', date: '2026-09-30', status: 'proposed', reason: 'تنازل عن الفرق' });
+    expect(entry.lines.map(l => [l.accountId, l.debit, l.credit])).toEqual([['2300', 475, 0], ['3200', 0, 475]]);
+    expect(plan.hadiBalance).toMatchObject({ adjustments: -475, afterAdjustments: 0, afterMeaning: { kind: 'zero' } });
+    const back = foundingPlan(input({ adjustments: [{ ...adjustments[0], direction: 'credit_2300' }] })).entries.find(e => e.key === 'adjustment:adj1');
+    expect(back.lines.map(l => [l.accountId, l.debit, l.credit])).toEqual([['3200', 475, 0], ['2300', 0, 475]]);
+    expect(foundingPlan(input({ adjustments }, { closedMonths: new Set(['2026-09']) })).entries.find(e => e.key === 'adjustment:adj1').status).toBe('blocked_period');
+  });
+  it('summarises the founding period for the partners', () => {
+    const adjustments = [{ id: 'adj1', amount: 475, direction: 'debit_2300', reason: 'تنازل عن الفرق', byName: 'هادي' }];
+    const posted = new Map([['adjustment:adj1', { entryId: 'e1', entryNumber: 7, postedReason: 'موافقة الشركاء', postedByName: 'هادي' }]]);
+    const summary = foundingPlan(input({ adjustments }, { posted })).summary;
+    expect(summary.partners).toEqual([
+      { partnerId: 'a', name: 'أ', count: 1, total: 1000, hadi: 1000, company: 0, undecided: 0 },
+      { partnerId: 'b', name: 'ب', count: 2, total: 650, hadi: 400, company: 0, undecided: 250 }]);
+    expect(summary.partnersTotal).toBe(1650);
+    expect(summary.categories).toEqual([{ kind: 'variable', category: 'سكن', count: 1, amount: 1000, byHadi: 1000 },
+      { kind: 'variable', category: 'نقل', count: 1, amount: 500, byHadi: 500 }]);
+    expect(summary).toMatchObject({ documented: { count: 2, amount: 1500 }, attested: { count: 1, amount: 75 } });
+    expect(summary.transfers).toMatchObject([{ amount: 300, toCompany: true, account: 'company' }]);
+    expect(summary.settlements).toEqual([{ key: 'adjustment:adj1', type: 'adjustment', title: 'تسوية على 3200: تنازل عن الفرق', date: '2026-09-30',
+      status: 'posted', entryNumber: 7, reason: 'موافقة الشركاء', approvedByName: 'هادي', amount: 475 }]);
+  });
+});
 
 describe('applied-by timestamps', () => {
   it('shows who-applied times in Riyadh time, across the UTC midnight', () => {

@@ -203,7 +203,8 @@ function DecisionCard({ t, account, suggestion, choice, options, onChange }) {
         مستند: {d.title} · {money(d.amount)} · {day(d.date)}{d.protected ? ' · مرحّل (ربط فقط، والتصحيح بقيد)' : ''}{d.vatHeld ? ' · يمس إقرارًا مقدّمًا' : ''}</option>)}
       {suggestion.payments.map(p => <option key={p.key} value={`partner_payment|${p.key}`}>دفعة شريك: {p.partnerName} · {money(p.amount)} · {day(p.date)}</option>)}
       {debit && <option value="statement_expense">مصروف من الكشف (بلا مستند)</option>}
-      {account === 'personal' && <option value="transfer">{debit ? 'تحويل من هادي إلى حساب الشركة' : 'تحويل من حساب الشركة إلى هادي'}</option>}
+      {/* Out of Hadi's account, or into the company's: Hadi funding the company. */}
+      <option value="transfer">{debit === (account === 'personal') ? 'تحويل من هادي إلى حساب الشركة' : 'تحويل من حساب الشركة إلى هادي'}</option>
     </select></label>
     <ChoiceSummary choice={choice} suggestion={suggestion} />
     {!suggestion.documents.length && !suggestion.payments.length && <small>{debit ? 'ما لقيت مستندًا بنفس المبلغ في النافذة.' : 'ما لقيت دفعة شريك بنفس المبلغ في النافذة.'}</small>}

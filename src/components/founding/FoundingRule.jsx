@@ -5,14 +5,16 @@ import { money, day, when } from '../../lib/founding/foundingFormat';
 
 const KIND = { variable: 'متغيرة', monthly: 'شهرية', annual: 'سنوية', startup: 'تأسيس' };
 const ACTION = { update: 'يتعدل عبر صندوق العمل المالي', entry: 'مرحّل: قيد تصحيح بانتظار موافقتك', none: 'مرحّل بلا أثر على الصندوق أو البنك', blocked: 'في فترة مقفلة — لا يتعدل' };
-const EXCEPTIONS = { partner: 'دفعها الشريك', custody: 'من عهدة', cash: 'كاش من الصندوق', unknown: 'غير معروف' };
+const EXCEPTIONS = { partner: 'دفعها الشريك', custody: 'من عهدة', cash: 'كاش من الصندوق', company_bank: 'من حساب الشركة (يبقى على البنك)', unknown: 'غير معروف' };
+const GROUPS = { missing: 'ناقصة التمويل', recorded: 'مسجّلة على البنك أو الصندوق' };
+const groupText = c => c.group === 'recorded' ? `مسجّل على ${c.recordedAs === 'cash' ? 'الصندوق' : 'البنك'}` : `ناقص: ${c.gaps.join('، ')}`;
 const BATCH = 5;
 
 /** «تطبيق القاعدة الافتراضية لفترة التأسيس»: معاينة كاملة، استثناءات، ثم تطبيق بموافقة. */
 export function DefaultRule({ founding, partners, names, progress, setProgress }) {
   const { plan } = founding.data, rule = plan.rule;
-  const [query, setQuery] = useState('');
-  const visible = rule.candidates.filter(c => !query || `${c.title} ${c.amount} ${c.date}`.includes(query.trim()));
+  const [query, setQuery] = useState(''), [group, setGroup] = useState('');
+  const visible = rule.candidates.filter(c => (!group || c.group === group) && (!query || `${c.title} ${c.amount} ${c.date} ${c.supplier}`.includes(query.trim())));
   async function runUpdates(keys) {
     const failed = [];
     for (let i = 0; i < keys.length; i += BATCH) {
@@ -31,9 +33,10 @@ export function DefaultRule({ founding, partners, names, progress, setProgress }
   }
   return <section className="fw-panel founding-rule" aria-label="القاعدة الافتراضية لفترة التأسيس">
     <h2><Gavel size={18} /> القاعدة الافتراضية لفترة التأسيس</h2>
-    <p>كل مستند قبل {day(plan.settings.cutoffDate)} لم يُحسم من دفعه، وناقصه حساب التمويل أو تاريخ الدفع أو طريقة الدفع:
+    <p>كل مستند قبل {day(plan.settings.cutoffDate)} لم يُحسم من دفعه (لا كشف ولا قرار)، في مجموعتين: <strong>ناقص</strong> حساب التمويل أو تاريخ الدفع أو طريقة الدفع،
+      أو <strong>مسجّل على البنك (1020) أو الصندوق (1010)</strong> ولم يطابق سطرًا في كشف حساب الشركة المرفوع:
       حساب التمويل <strong>2300 حساب هادي الجاري</strong>، وتاريخ الدفع = تاريخ المستند، وطريقة الدفع <strong>«دفع شخصي - فترة التأسيس»</strong>.
-      المرحّل لا يتعدل: يُربط بالقاعدة، ويُقترح له قيد تصحيح ينتظر موافقتك. ما يمس إقرارًا مقدّمًا يبقى محجوزًا حتى تراجعه.</p>
+      رسوم البنك نفسه (مثل إصدار بطاقة مدى) تبقى على البنك. المرحّل لا يتعدل: يُربط بالقاعدة، ويُقترح له قيد تصحيح ينتظر موافقتك. ما يمس إقرارًا مقدّمًا يبقى محجوزًا حتى تراجعه.</p>
     {rule.applied && <p role="status" className="fw-success">طُبّقت على {rule.applied.count} مستندًا ({money(rule.applied.total)}) — {rule.applied.byName}، <bdi>{when(rule.applied.atIso)}</bdi>.</p>}
     {rule.pendingUpdates.length > 0 && !progress && (rule.applied || rule.count === 0) && <div className="fw-warning" role="status">
       <span>{rule.pendingUpdates.length} مستندًا غير مرحّل (بالقاعدة أو باستثناء أو قرار) لم يتعدل بعد.</span>
@@ -49,13 +52,24 @@ export function DefaultRule({ founding, partners, names, progress, setProgress }
         <div className="fw-panel fw-metric"><span>مرحّلة — بقيد تصحيح</span><strong>{rule.posted.count}</strong><p>{money(rule.posted.amount)}</p></div>
         <div className="fw-panel fw-metric"><span>تمس إقرارًا مقدّمًا</span><strong>{rule.held}</strong><p>محجوزة حتى المراجعة{rule.blocked ? ` · ${rule.blocked} في فترة مقفلة` : ''}</p></div>
       </div>
+      <div className="fw-metrics" aria-label="مجموعات القاعدة">
+        {Object.entries(GROUPS).map(([id, label]) => <div key={id} className="fw-panel fw-metric"><span>{label}</span><strong>{rule.groups[id].count}</strong><p>{money(rule.groups[id].amount)}</p></div>)}
+        <div className="fw-panel fw-metric"><span>رسوم البنك — تبقى على البنك</span><strong>{rule.bankFees.count}</strong><p>{money(rule.bankFees.amount)}</p></div>
+      </div>
+      {rule.bankFees.count > 0 && <details className="fw-form-section"><summary>رسوم البنك نفسه — لا تشملها القاعدة ({rule.bankFees.count})</summary>
+        <ul className="founding-list">{rule.bankFees.rows.map(f => <li key={f.key}>{f.title} · {money(f.amount)} · {day(f.date)}{f.supplier ? ` · ${f.supplier}` : ''}</li>)}</ul>
+      </details>}
       <details className="fw-form-section" open>
         <summary>المستندات ({rule.count}) — حدّد الاستثناءات قبل التطبيق</summary>
-        <label className="founding-search">بحث<input type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder="الوصف أو المبلغ أو التاريخ" /></label>
+        <div className="founding-filters">
+          <label className="founding-search">بحث<input type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder="الوصف أو المبلغ أو التاريخ أو المورد" /></label>
+          <label className="founding-search">المجموعة<select value={group} onChange={e => setGroup(e.target.value)}>
+            <option value="">كل المجموعات ({rule.count})</option>{Object.entries(GROUPS).map(([id, label]) => <option key={id} value={id}>{label} ({rule.groups[id].count})</option>)}</select></label>
+        </div>
         <div className="fw-table-scroll"><table>
-          <thead><tr><th>المستند</th><th>النوع</th><th>التاريخ</th><th>المبلغ</th><th>ناقصه</th><th>ماذا سيحدث</th><th>استثناء</th></tr></thead>
+          <thead><tr><th>المستند</th><th>النوع</th><th>التاريخ</th><th>المبلغ</th><th>المجموعة</th><th>ماذا سيحدث</th><th>استثناء</th></tr></thead>
           <tbody>{visible.map(c => <tr key={c.key}>
-            <td>{c.title}</td><td>{KIND[c.kind] || c.kind}</td><td>{day(c.date)}</td><td>{money(c.amount)}</td><td>{c.gaps.join('، ')}</td>
+            <td>{c.title}</td><td>{KIND[c.kind] || c.kind}</td><td>{day(c.date)}</td><td>{money(c.amount)}</td><td>{groupText(c)}</td>
             <td>{ACTION[c.action]}{c.vatHeld ? <><br /><StatusBadge status="held_vat" /></> : null}</td>
             <td><ExceptionPicker sourceKey={c.key} title={c.title} founding={founding} partners={partners} /></td>
           </tr>)}</tbody>
@@ -98,7 +112,7 @@ export function ExceptionPicker({ sourceKey, title, founding, partners }) {
 function Exceptions({ rows, founding }) {
   if (!rows.length) return null;
   const label = r => r.payer === 'partner' ? `دفعها الشريك ${r.partnerName}` : r.payer === 'custody' ? `من عهدة ${r.custodian}`
-    : r.payer === 'hadi' ? 'من حسابي' : r.payer === 'cash' ? 'كاش من الصندوق' : 'غير معروف';
+    : r.payer === 'hadi' ? 'من حسابي' : r.payer === 'cash' ? 'كاش من الصندوق' : r.payer === 'company_bank' ? 'من حساب الشركة' : 'غير معروف';
   return <details className="fw-form-section"><summary>الاستثناءات والقرارات المحفوظة ({rows.length})</summary>
     <div className="fw-table-scroll"><table>
       <thead><tr><th>المستند</th><th>التاريخ</th><th>المبلغ</th><th>من دفع</th><th>قرره</th><th></th></tr></thead>
@@ -112,7 +126,7 @@ function Exceptions({ rows, founding }) {
 /** رصيد حساب هادي الجاري حسب المستندات مقابل سطور كشفه المعلّمة، وقيد الفرق على 3200. */
 export function StatementComparison({ plan, names }) {
   const c = plan.comparison;
-  const owed = value => value >= 0 ? `المشروع مدين لهادي بـ ${money(value)}` : `عند هادي للمشروع ${money(-value)}`;
+  const owed = value => value > 0 ? `المشروع مدين لهادي بـ ${money(value)}` : value < 0 ? `عند هادي للمشروع ${money(-value)}` : 'لا رصيد بين هادي والمشروع';
   return <section className="fw-panel" aria-label="الحساب الجاري مقابل كشفك">
     <h2><Scale size={18} /> حسابك الجاري حسب المستندات مقابل كشفك (قبل {day(c.cutoffDate)})</h2>
     <div className="fw-table-scroll"><table>

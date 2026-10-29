@@ -6,9 +6,12 @@
 // هذا الملف يقرأ ما جمعه الخادم (المستندات، الدفعات، سطور الكشوف المعلّمة،
 // القرارات) ويرجع:
 //   • المجموعات قبل تاريخ القطع (= يوم بدء عمل البنك؛ فترة التأسيس قبله)،
-//   • القاعدة الافتراضية: كل مستند تأسيس لم يُحسم من دفعه يُنسب لهادي،
+//   • القاعدة الافتراضية: كل مستند تأسيس ناقص التمويل، أو مسجّل على البنك أو
+//     الصندوق ولم يطابق كشف الشركة، يُنسب لهادي (إلا رسوم البنك نفسه)،
 //   • القيود المقترحة (نقل أثر 1010/1020/2000 إلى الجهة التي دفعت فعلًا)،
-//   • مقارنة الحساب الجاري حسب المستندات بسطور كشف هادي، وقيد الفرق على 3200،
+//   • مقارنة الحساب الجاري حسب المستندات بسطور كشف هادي، وقيد الفرق على 3200 —
+//     أو، بلا كشف شخصي، تفصيل رصيد 2300 وإقرار المدير عليه وتسويات يكتب سببها،
+//   • ملخص فترة التأسيس للشركاء،
 //   • قيد تسوية الواقع يوم القطع (البنك والصندوق والعهد) على 3200،
 //   • كشف حساب هادي الجاري ورصيده ومعناه.
 // لا شيء هنا يُرحَّل: الخادم يعيد الحساب نفسه ويرحّل فقط ما وافق عليه هادي.
@@ -22,7 +25,7 @@ export const FOUNDING_DEFAULTS = Object.freeze({ cutoffDate: '2026-10-01', thres
 export const FILED_VAT_QUARTERS = Object.freeze(['2026-Q2', '2026-Q3']);
 export const ACCOUNTS = Object.freeze({ CASH: '1010', BANK: '1020', ADVANCES: '1300', PAYABLE: '2000', HADI: '2300', SETTLEMENTS: '3200' });
 // من دفع المستند — قرار يدوي. «founding_rule» تكتبه القاعدة الافتراضية وحدها.
-export const DOC_DECISIONS = Object.freeze(['hadi', 'partner', 'custody', 'cash', 'unknown']);
+export const DOC_DECISIONS = Object.freeze(['hadi', 'partner', 'custody', 'cash', 'company_bank', 'unknown']);
 export const RULE_DECISION = 'founding_rule';
 export const PAYMENT_ARRIVALS = Object.freeze(['hadi', 'company']);
 // قديم: «مقبولة بإقرار المدير» كانت تُحفظ كقرار؛ صارت علامة `attested` مستقلة عن الدافع.
@@ -31,6 +34,10 @@ export const MATCH_WINDOW_DAYS = 7;
 // ما يكفي ليُعد المستند «محسوم الدفع» (نفس قائمة financeProblems في الخادم).
 const RESOLVED_FUNDING = ['company_cash', 'company_bank', 'vendor_liability', 'owner_current', 'custody', 'partner'];
 const KNOWN_METHODS = ['cash', 'transfer', 'card', 'credit', 'owner_current', 'founding_personal', 'custody', 'partner_paid'];
+// من دفع مستندًا مكتملًا كما سُجّل (بلا كشف ولا قرار).
+const RECORDED_PAYER = { owner_current: 'hadi', company_bank: 'company_bank', company_cash: 'cash', partner: 'partner', custody: 'custody', vendor_liability: 'vendor' };
+// تسويات 3200 اليدوية: اتجاهها على 2300.
+export const ADJUSTMENT_DIRECTIONS = Object.freeze(['debit_2300', 'credit_2300']);
 
 export const halala = value => Math.round(Number(value || 0) * 100);
 const riyal = h => Math.round(h) / 100;
@@ -73,7 +80,10 @@ export function statementLinks(lines) {
   return map;
 }
 
-/** الجهة التي دفعت المستند فعلًا: من الكشف أولًا، ثم القرار اليدوي، ثم القاعدة الافتراضية. */
+/**
+ * الجهة التي دفعت المستند فعلًا: من الكشف أولًا، ثم القرار اليدوي أو القاعدة،
+ * ثم ما سُجّل في مستند مكتمل (حساب تمويل وتاريخ دفع وطريقة دفع).
+ */
 export function payerOf(doc, links, decisions) {
   const line = links.get(doc.key);
   if (line) return { payer: line.account === 'personal' ? 'hadi' : 'company_bank', source: 'statement', line };
@@ -82,7 +92,17 @@ export function payerOf(doc, links, decisions) {
   if (DOC_DECISIONS.includes(decision?.decision)) {
     return { payer: decision.decision, source: 'decision', partnerId: decision.partnerId || null, custodian: decision.custodian || null, decision };
   }
+  const recorded = !ruleGaps(doc).length && RECORDED_PAYER[doc.fundingType];
+  if (recorded) return { payer: recorded, source: 'recorded', partnerId: doc.fundingPartnerId || null, custodian: doc.custodian || null };
   return { payer: null, source: null };
+}
+
+// رسوم البنك نفسه (إصدار بطاقة مدى، إرسالية بطاقة، حوالة...) تبقى على البنك:
+// المورد بنك أو مصرف، أو الوصف رسوم/عمولة بطاقة أو حوالة أو حساب.
+const BANK_SUPPLIER = /(مصرف|بنك|\bbank\b)/i;
+const BANK_FEE_TEXT = /(رسوم|عمولة)[^—]*(بطاقة|مدى|إرسالية|ارسالية|حوالة|فتح حساب|الحساب الجاري|بنكي|بنكية)/;
+export function isBankFee(doc) {
+  return BANK_SUPPLIER.test(String(doc.supplier || '')) || BANK_FEE_TEXT.test(String(doc.title || ''));
 }
 
 function targetAccount(pay) {
@@ -115,7 +135,8 @@ function needsPatch(doc, patch) {
 export function ruleGaps(doc) {
   const gaps = [];
   if (!RESOLVED_FUNDING.includes(doc.fundingType)) gaps.push('حساب التمويل');
-  if (!doc.paidDate) gaps.push('تاريخ الدفع');
+  // An unpaid supplier liability has no payment date yet, and lacks nothing.
+  if (!doc.paidDate && !(doc.fundingType === 'vendor_liability' && doc.paymentStatus === 'unpaid')) gaps.push('تاريخ الدفع');
   if (!KNOWN_METHODS.includes(doc.paymentMethod)) gaps.push('طريقة الدفع');
   return gaps;
 }
@@ -160,14 +181,16 @@ function planCore(input) {
     const row = { ...doc, payer: pay.payer, payerSource: pay.source, statementLine: pay.line || null, partnerId: pay.partnerId || null,
       custodian: pay.custodian || null, vatHeld, decision, attested: isAttested(decision), founding: inFounding(doc.date) };
     rows.push(row);
-    if (row.founding) {
+    // «مصروف تأسيس بإقرار المدير» له قائمته؛ لا يدخل مجموعات الإثبات.
+    if (row.founding && !doc.attestation) {
       if (pay.line) groups.matched.push(row);
       else if (doc.hasProof) groups.withProof.push(row);
       else if (halala(doc.amount) < threshold) groups.small.push(row);
       else groups.large.push(row);
     }
     const target = targetAccount(pay);
-    if (!target) continue;
+    // As recorded: nothing to change, and no correction is inferred from it.
+    if (!target || pay.source === 'recorded') continue;
     if (!doc.protected) {
       const patch = documentPatchFor(pay);
       if (patch && needsPatch(doc, patch)) {
@@ -193,11 +216,17 @@ function planCore(input) {
   }
 
   // ── دفعات الشركاء ──
+  const paymentRows = [];
   for (const payment of input.payments || []) {
     const line = links.get(payment.key), decision = decisions[payment.key];
-    const arrival = line ? (line.account === 'personal' ? 'hadi' : 'company') : PAYMENT_ARRIVALS.includes(decision?.decision) ? decision.decision : null;
-    if (inFounding(payment.date)) groups.partners.push({ ...payment, arrival, arrivalSource: line ? 'statement' : decision ? 'decision' : null, statementLine: line || null });
-    const target = targetAccount({ payer: arrival });
+    const decided = line ? (line.account === 'personal' ? 'hadi' : 'company') : PAYMENT_ARRIVALS.includes(decision?.decision) ? decision.decision : null;
+    // Recorded as received by Hadi: counts for his account, changes nothing.
+    const arrival = decided || (payment.method === 'owner_current' ? 'hadi' : null);
+    const row = { ...payment, arrival, arrivalSource: line ? 'statement' : decided ? 'decision' : arrival ? 'recorded' : null,
+      statementLine: line || null, founding: inFounding(payment.date) };
+    paymentRows.push(row);
+    if (row.founding) groups.partners.push(row);
+    const target = targetAccount({ payer: decided });
     if (!target) continue;
     if (!payment.protected) {
       const method = arrival === 'hadi' ? 'owner_current' : 'bank_transfer';
@@ -219,24 +248,32 @@ function planCore(input) {
       ...(posted.get(key) || {}) });
   }
 
-  // ── التحويلات بين هادي وحساب الشركة ──
-  for (const line of input.lines || []) {
-    if (line.decision !== 'transfer' || line.account !== 'personal' || !appliedLine(line)) continue;
+  // ── التحويلات بين هادي وحساب الشركة: من كشفه أو من كشف الشركة ──
+  const transferLines = (input.lines || []).filter(l => l.decision === 'transfer' && appliedLine(l));
+  const personalTransfers = transferLines.filter(l => l.account === 'personal');
+  for (const line of transferLines) {
+    const company = line.account === 'company';
+    // The same transfer marked on both statements counts once (Hadi's line).
+    if (company && personalTransfers.some(p => p.direction !== line.direction && halala(p.amount) === halala(line.amount)
+      && Math.abs(daysBetween(p.txDate, line.txDate)) <= MATCH_WINDOW_DAYS)) continue;
     const key = `transfer:${line.id}`, date = closed.has(line.txDate.slice(0, 7)) ? dateFor(line.txDate) : line.txDate;
-    const toCompany = line.direction === 'debit', amount = halala(line.amount);
+    // Out of Hadi's account, or into the company's: Hadi funded the company.
+    const toCompany = company ? line.direction === 'credit' : line.direction === 'debit', amount = halala(line.amount);
     const lines = toCompany
       ? [{ accountId: ACCOUNTS.BANK, debit: riyal(amount), credit: 0, description: 'تحويل من حساب هادي إلى حساب الشركة' },
         { accountId: ACCOUNTS.HADI, debit: 0, credit: riyal(amount), description: line.description || 'تحويل من هادي' }]
       : [{ accountId: ACCOUNTS.HADI, debit: riyal(amount), credit: 0, description: line.description || 'تحويل إلى هادي' },
         { accountId: ACCOUNTS.BANK, debit: 0, credit: riyal(amount), description: 'تحويل من حساب الشركة إلى حساب هادي' }];
     entries.push({ key, type: 'transfer', sourceKey: `statement:${line.id}`, title: line.description || 'تحويل', amount: line.amount, date,
-      originalDate: line.txDate, payer: 'hadi', lines, status: status(key, date, false),
+      originalDate: line.txDate, payer: 'hadi', account: line.account, toCompany, lines, status: status(key, date, false),
       description: `${toCompany ? 'تحويل من هادي إلى حساب الشركة' : 'تحويل من حساب الشركة إلى هادي'} (${line.txDate})`,
       ...(posted.get(key) || {}) });
   }
 
-  const comparison = statementComparison({ rows, payments: groups.partners, lines: input.lines || [], cutoff, foundingEnd, posted, closed });
+  const comparison = statementComparison({ rows, payments: groups.partners, lines: input.lines || [], cutoff, foundingEnd, posted, closed,
+    off: Boolean(settings.noPersonalStatement) });
   if (comparison.entry) entries.push(comparison.entry);
+  for (const a of settings.adjustments || []) entries.push(adjustmentEntry(a, { cutoff, foundingEnd, posted, closed }));
   const settlement = settlementFor({ settings, foundingEnd, book: input.book || {}, entries, posted, closed });
   if (settlement.entry) entries.push(settlement.entry);
   const vatTouching = rows.filter(d => d.vatQuarter && FILED_VAT_QUARTERS.includes(d.vatQuarter))
@@ -249,20 +286,117 @@ function planCore(input) {
     .map(d => ({ key: d.key, kind: d.kind, title: d.title, amount: d.amount, date: d.date, payer: d.payer, partnerId: d.partnerId,
       partnerName: d.partnerId ? partnerName(d.partnerId) : null, custodian: d.custodian, decidedByName: d.decision?.decidedByName || null }));
   const totals = Object.fromEntries(Object.entries(groups).map(([name, list]) => [name, { count: list.length, amount: riyal(list.reduce((n, r) => n + halala(r.amount), 0)) }]));
+  const attestedExpenses = rows.filter(d => d.attestation).map(d => ({ key: d.key, kind: d.kind, sourceId: d.sourceId, title: d.title, amount: d.amount,
+    date: d.date, category: d.category || null, approxDate: d.attestation.approxDate || d.date, byName: d.attestation.byName || null,
+    atIso: d.attestation.atIso || null, proofUrl: d.proofUrl || null, protected: d.protected, approval: d.approval || null }))
+    .sort((a, b) => String(a.approxDate).localeCompare(String(b.approxDate)));
+  const hadiBalance = hadiBalanceOf({ rows, payments: paymentRows, entries, cutoff, saved: settings.hadiAttestation || null });
   return { settings: { ...settings, foundingEnd }, groups, totals, rows, entries, updates, settlement, comparison, vatTouching, postCutoff, exceptions,
+    attestedExpenses, hadiBalance,
+    summary: foundingSummary({ rows, payments: paymentRows, entries, hadiBalance, attestedExpenses, settings: { ...settings, foundingEnd } }),
     hadi: hadiStatement({ hadiLedger: input.hadiLedger || [], rows, payments: input.payments || [], entries }) };
+}
+
+// ── رصيد حساب هادي الجاري من المستندات (بلا كشف شخصي) ─────────────────
+const HALALA_SUM = list => list.reduce((n, r) => n + halala(r.amount), 0);
+const BALANCE_FIELDS = ['paid', 'received', 'toCompany', 'toHadi', 'net'];
+/**
+ * ما دفعه هادي من مستندات، وما وصله من دفعات الشركاء، وتحويلاته مع حساب
+ * الشركة (من أي كشف)، والصافي: موجب = المشروع مدين لهادي. كل التواريخ: هذا
+ * رصيد الحساب 2300 حسب المستندات، لا فترة التأسيس وحدها.
+ */
+function hadiBalanceOf({ rows, payments, entries, cutoff, saved }) {
+  const paidRows = rows.filter(d => d.payer === 'hadi'), attestedRows = paidRows.filter(d => d.attestation);
+  const receivedRows = payments.filter(p => p.arrival === 'hadi'), undecided = payments.filter(p => p.founding && !p.arrival);
+  const transfers = entries.filter(e => e.type === 'transfer').map(e => ({ key: e.key, date: e.originalDate, amount: e.amount, toCompany: e.toCompany,
+    account: e.account, title: e.title, status: e.status })).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  const paid = HALALA_SUM(paidRows), received = HALALA_SUM(receivedRows);
+  const toCompany = HALALA_SUM(transfers.filter(t => t.toCompany)), toHadi = HALALA_SUM(transfers.filter(t => !t.toCompany));
+  const net = paid + toCompany - toHadi - received;
+  const adjusted = entries.filter(e => e.type === 'adjustment')
+    .reduce((n, e) => n + e.lines.filter(l => l.accountId === ACCOUNTS.HADI).reduce((m, l) => m + halala(l.credit) - halala(l.debit), 0), 0);
+  const numbers = { paid: riyal(paid), received: riyal(received), toCompany: riyal(toCompany), toHadi: riyal(toHadi), net: riyal(net) };
+  return { cutoffDate: cutoff, ...numbers, paidCount: paidRows.length, paidFounding: riyal(HALALA_SUM(paidRows.filter(d => d.founding))),
+    attested: riyal(HALALA_SUM(attestedRows)), attestedCount: attestedRows.length, receivedCount: receivedRows.length,
+    undecided: { count: undecided.length, amount: riyal(HALALA_SUM(undecided)) }, transfers, meaning: balanceMeaning(net),
+    adjustments: riyal(adjusted), afterAdjustments: riyal(net + adjusted), afterMeaning: balanceMeaning(net + adjusted),
+    // Hadi's attestation is of these exact numbers; any change after it shows.
+    attestation: saved ? { ...saved, changed: BALANCE_FIELDS.some(k => halala(saved[k]) !== halala(numbers[k])) } : null };
+}
+
+/** تسوية يكتب هادي سببها وينقل بها مبلغًا بين 2300 و3200 — قيد مقترح ينتظر موافقته. */
+function adjustmentEntry(a, { cutoff, foundingEnd, posted, closed }) {
+  const key = `adjustment:${a.id}`, amount = riyal(halala(a.amount)), text = `تسوية فترة التأسيس — ${a.reason}`;
+  const lines = a.direction === 'debit_2300'
+    ? [{ accountId: ACCOUNTS.HADI, debit: amount, credit: 0, description: 'تسوية حساب هادي الجاري' },
+      { accountId: ACCOUNTS.SETTLEMENTS, debit: 0, credit: amount, description: text }]
+    : [{ accountId: ACCOUNTS.SETTLEMENTS, debit: amount, credit: 0, description: text },
+      { accountId: ACCOUNTS.HADI, debit: 0, credit: amount, description: 'تسوية حساب هادي الجاري' }];
+  const status = posted.has(key) ? 'posted' : closed.has(foundingEnd.slice(0, 7)) ? 'blocked_period' : 'proposed';
+  return { key, type: 'adjustment', sourceKey: key, id: a.id, title: `تسوية على 3200: ${a.reason}`, amount, date: foundingEnd, lines, status,
+    reason: a.reason, direction: a.direction, proposedByName: a.byName || null, proposedAtIso: a.atIso || null,
+    description: `تسوية على 3200 بقرار هادي (قبل ${cutoff}) — ${a.reason}`, ...(posted.get(key) || {}) };
+}
+
+// ── ملخص فترة التأسيس للشركاء ───────────────────────────────────────────
+function foundingSummary({ rows, payments, entries, hadiBalance, attestedExpenses, settings }) {
+  const partners = new Map();
+  for (const p of payments.filter(x => x.founding)) {
+    const t = partners.get(p.partnerId) || { partnerId: p.partnerId, name: p.partnerName, count: 0, total: 0, hadi: 0, company: 0, undecided: 0 };
+    const h = halala(p.amount);
+    t.count += 1; t.total += h; t[p.arrival === 'hadi' ? 'hadi' : p.arrival === 'company' ? 'company' : 'undecided'] += h;
+    partners.set(p.partnerId, t);
+  }
+  const money = t => Object.fromEntries(Object.entries(t).map(([k, v]) => [k, ['total', 'hadi', 'company', 'undecided'].includes(k) ? riyal(v) : v]));
+  const founding = rows.filter(d => d.founding), documented = founding.filter(d => !d.attestation);
+  const categories = new Map();
+  for (const d of documented) {
+    const k = `${d.kind}|${d.category || ''}`;
+    const t = categories.get(k) || { kind: d.kind, category: d.category || null, count: 0, amount: 0, byHadi: 0 };
+    t.count += 1; t.amount += halala(d.amount); if (d.payer === 'hadi') t.byHadi += halala(d.amount);
+    categories.set(k, t);
+  }
+  const after = payments.filter(p => !p.founding && p.date);
+  const settlements = entries.filter(e => e.lines.some(l => l.accountId === ACCOUNTS.SETTLEMENTS)).map(e => ({ key: e.key, type: e.type, title: e.title,
+    date: e.date, status: e.status, entryNumber: e.entryNumber || null, reason: e.postedReason || e.reason || null, approvedByName: e.postedByName || null,
+    // Positive: into 3200 (founding settlements); negative: out of it.
+    amount: riyal(e.lines.filter(l => l.accountId === ACCOUNTS.SETTLEMENTS).reduce((n, l) => n + halala(l.credit) - halala(l.debit), 0)) }));
+  return {
+    cutoffDate: settings.cutoffDate, foundingEnd: settings.foundingEnd,
+    partners: [...partners.values()].sort((a, b) => b.total - a.total).map(money),
+    partnersTotal: riyal(HALALA_SUM(payments.filter(x => x.founding))), afterCutoff: { count: after.length, amount: riyal(HALALA_SUM(after)) },
+    categories: [...categories.values()].sort((a, b) => b.amount - a.amount).map(t => ({ ...t, amount: riyal(t.amount), byHadi: riyal(t.byHadi) })),
+    documented: { count: documented.length, amount: riyal(HALALA_SUM(documented)) },
+    attested: { count: founding.length - documented.length, amount: riyal(HALALA_SUM(founding.filter(d => d.attestation))) },
+    attestedRows: attestedExpenses.filter(e => e.date && e.date < settings.cutoffDate),
+    transfers: hadiBalance.transfers, balance: hadiBalance, settlements,
+  };
 }
 
 // ── القاعدة الافتراضية لفترة التأسيس ───────────────────────────────────
 const runnable = u => !u.held && !u.blocked;
 /**
- * كل مستند قبل القطع لم يُحسم من دفعه (لا كشف ولا قرار) وناقصه حساب التمويل
- * أو تاريخ الدفع أو طريقة الدفع ← دفعه هادي من حسابه («دفع شخصي - فترة
+ * مجموعتان قبل القطع، بلا كشف ولا قرار:
+ *   «missing»  ناقصه حساب التمويل أو تاريخ الدفع أو طريقة الدفع،
+ *   «recorded» مسجّل على البنك (1020) أو الصندوق (1010) — ما طابق سطرًا في
+ *              كشف الشركة محسوم بالكشف فلا يدخل.
+ * رسوم البنك نفسه تبقى على البنك ولا تدخل أيًّا منهما.
+ */
+export function ruleGroupOf(d) {
+  if (!d.founding || d.attestation) return null;
+  if (!d.payer && ruleGaps(d).length) return 'missing';
+  if (d.payerSource === 'recorded' && ['company_bank', 'cash'].includes(d.payer)) return 'recorded';
+  return null;
+}
+/**
+ * القاعدة: كل مستند في المجموعتين ← دفعه هادي من حسابه («دفع شخصي - فترة
  * التأسيس»، الحساب المقابل 2300، تاريخ الدفع = تاريخ المستند). المعاينة تحسب
  * المخطط كأن القاعدة طُبّقت، ولا تحفظ شيئًا.
  */
 function ruleProposal(input, core) {
-  const candidates = core.rows.filter(d => d.founding && !d.payer && ruleGaps(d).length);
+  const inGroup = core.rows.filter(d => ruleGroupOf(d));
+  const bankFees = inGroup.filter(isBankFee);
+  const candidates = inGroup.filter(d => !isBankFee(d));
   const keys = new Set(candidates.map(d => d.key));
   const simulated = keys.size ? planCore({ ...input, decisions: { ...(input.decisions || {}),
     ...Object.fromEntries(candidates.map(d => [d.key, { ...(input.decisions?.[d.key] || {}), decision: RULE_DECISION }])) } }) : null;
@@ -275,10 +409,14 @@ function ruleProposal(input, core) {
     t.debit += halala(l.debit); t.credit += halala(l.credit); byAccount.set(l.accountId, t);
   }
   const rowsOut = candidates.map(d => ({ key: d.key, kind: d.kind, sourceId: d.sourceId, title: d.title, amount: d.amount, date: d.date,
+    group: ruleGroupOf(d), recordedAs: d.payerSource === 'recorded' ? d.payer : null, supplier: d.supplier || '',
     protected: d.protected, vatHeld: d.vatHeld, gaps: ruleGaps(d), attested: d.attested,
     action: d.protected ? (entries.some(e => e.sourceKey === d.key) ? 'entry' : 'none') : updates.find(u => u.key === d.key)?.blocked ? 'blocked' : 'update' }));
+  const byGroup = name => { const list = rowsOut.filter(r => r.group === name); return { count: list.length, amount: sum(list) }; };
   return {
-    candidates: rowsOut, count: rowsOut.length, total: sum(rowsOut),
+    candidates: rowsOut, count: rowsOut.length, total: sum(rowsOut), groups: { missing: byGroup('missing'), recorded: byGroup('recorded') },
+    bankFees: { count: bankFees.length, amount: sum(bankFees), rows: bankFees.map(d => ({ key: d.key, kind: d.kind, title: d.title, amount: d.amount,
+      date: d.date, supplier: d.supplier || '', protected: d.protected })) },
     unposted: { count: rowsOut.filter(r => !r.protected).length, amount: sum(rowsOut.filter(r => !r.protected)) },
     posted: { count: rowsOut.filter(r => r.protected).length, amount: sum(rowsOut.filter(r => r.protected)) },
     held: rowsOut.filter(r => r.vatHeld).length, blocked: rowsOut.filter(r => r.action === 'blocked').length,
@@ -294,7 +432,7 @@ function ruleProposal(input, core) {
 }
 
 // ── الحساب الجاري حسب المستندات مقابل كشف هادي ─────────────────────────
-function statementComparison({ rows, payments, lines, cutoff, foundingEnd, posted, closed }) {
+function statementComparison({ rows, payments, lines, cutoff, foundingEnd, posted, closed, off = false }) {
   const key = `hadi_statement:${cutoff}`;
   const before = day => Boolean(day) && day < cutoff;
   const paid = rows.filter(d => d.founding && d.payer === 'hadi').reduce((n, d) => n + halala(d.amount), 0);
@@ -308,7 +446,7 @@ function statementComparison({ rows, payments, lines, cutoff, foundingEnd, poste
     statementLines: personal.length, statementOut: riyal(personal.filter(l => l.direction === 'debit').reduce((n, l) => n + halala(l.amount), 0)),
     statementIn: riyal(personal.filter(l => l.direction === 'credit').reduce((n, l) => n + halala(l.amount), 0)),
     byStatement: riyal(byStatement), difference: riyal(difference), entry: null,
-    status: posted.has(key) ? 'posted' : !personal.length ? 'needs_statement' : difference === 0 ? 'balanced' : 'proposed' };
+    status: posted.has(key) ? 'posted' : off ? 'off' : !personal.length ? 'needs_statement' : difference === 0 ? 'balanced' : 'proposed' };
   if (result.status !== 'proposed' && result.status !== 'posted') return result;
   const amount = riyal(Math.abs(difference));
   // Documents say the project owes Hadi more than his statement shows → reduce 2300; less → raise it.
@@ -389,7 +527,7 @@ const KIND_LABEL = {
   expense: 'مصروف دفعه هادي', partner_payment: 'دفعة شريك استلمها هادي',
   founding_document: 'تصحيح: مصروف دفعه هادي', founding_payment: 'تصحيح: دفعة شريك استلمها هادي',
   founding_transfer: 'تحويل بين هادي وحساب الشركة', founding_settlement: 'تسوية فترة التأسيس',
-  founding_hadi_statement: 'تسوية الحساب الجاري على الكشف',
+  founding_hadi_statement: 'تسوية الحساب الجاري على الكشف', founding_adjustment: 'تسوية على 3200 بقرارك',
 };
 export function movementLabel(sourceType, sourceKind) {
   return KIND_LABEL[sourceKind] || KIND_LABEL[sourceType] || 'حركة أخرى';

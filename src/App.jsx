@@ -56,6 +56,7 @@ const PeriodClosePage      = lazy(() => import('./components/PeriodClosePage'));
 const HadiCurrentAccountPage = lazy(() => import('./components/HadiCurrentAccountPage'));
 const BankStatementsPage   = lazy(() => import('./components/BankStatementsPage'));
 const FoundingSettlementPage = lazy(() => import('./components/FoundingSettlementPage'));
+const FoundingSummaryPage = lazy(() => import('./components/FoundingSummaryPage'));
 
 import { useAuth } from './hooks/useAuth';
 import { usePageNavigation } from './hooks/usePageNavigation';
@@ -267,6 +268,7 @@ function AppShell({ membership }) {
             {effectiveTab === 'hadi_current' && <HadiCurrentAccountPage />}
             {effectiveTab === 'bank_statements' && <BankStatementsPage />}
             {effectiveTab === 'founding_settlement' && <FoundingSettlementPage />}
+            {effectiveTab === 'founding_summary' && <FoundingSummaryPage />}
           </div>
         </Suspense></AppErrorBoundary>
       </div>

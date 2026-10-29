@@ -37,6 +37,57 @@ An already saved run stays an immutable replay; do not resubmit the hour19 batch
 or rename its ID to bypass that receipt. Operations may use the next genuinely
 observed source update through the existing preview/save/status workflow.
 
+### Observed source labels and reassignment limits (29 October, hour20)
+
+The operational execution path also accepts the exact observed literal
+`completed` only with genuine Start/End, the approved service, a verified worker
+and all existing identity/financial/period protections. It does not rename that
+label to Collecting Payment or assert collection. Global normalization and
+financial recognition rules remain unchanged; archived hashes remain valid.
+
+For prefix promotion, the exact source literals `Initiated` and `Reached` may
+prove an earlier unexecuted observation only with null Start/End and extraction
+before the later actual Start. They retain their original `unknown` normalized
+status and `unknown_status` receipt reason. Both immutable endpoint receipts
+must still prove the same worker, day and service and no prior execution.
+Other unknown labels remain review-only, even with supplied times.
+
+A changed source driver between the initial claim and later execution remains
+protected. The current v2 and administrative routes do not authorize source
+reassignment through a prefix alias. Do not choose an earlier prefix, substitute
+a worker, rewrite the claim/raw, or rename a saved batch to pass that guard.
+Such a case needs an explicitly approved bounded reassignment workflow with
+source evidence before execution; this repair does not introduce one.
+
+Hadi's subsequent explicit instruction `01a188a5-3daf-7e83-a1e7-768c243e17ce`
+covers the four identified hour20 executions. Only the two named assignment
+cases 5677597 and 5677684 on 29 October have a bounded source-review rule in
+`operationsAssignmentReview20261029.js`. It pins the original and later run,
+both recorded worker identities, actual Start/End and the natural claim. The
+original Initiated source must contain no Start/End, its receipt must prove no
+execution, and its extraction must precede Start. The latest source and final
+execution must agree on the verified actual worker and service. All existing
+wash, financial-link, period and settlement checks still apply.
+
+For 5677597, Hadi separately and explicitly accepted worker 1988 in human reply
+`01a188ad-76a5-7c83-9c0d-dc7483ddc9e4`, conversation
+`019ff1c9-38ba-7212-8f1a-f26709c33b99`, answering the booking-specific question
+that disclosed missing assignment timing and the 4.50 unpaid commission. This
+worker is credited by that decision, not by claiming SSP proved the Start actor.
+The new wash retains `execution_worker_decision` separately from source facts;
+its complete hash and receipt are verified in readback. Without the exact scoped
+decision, this conflicting first-worker history does not qualify.
+
+For 5677684, the execution worker was observed On the Way before Start. Neither
+case proves the exact assignment-change time. The separate
+`sourceAssignmentReview` receipt records the owner scope and observation cuts,
+with `assignmentChangedAt: null`; it does not rewrite either historical worker
+or the original claim. Source attribution and the separate owner worker decision
+retain their different bases; neither claims an unobserved assignment event.
+The general four-booking instruction cannot substitute for the separate
+5677597 worker decision. Other identities or changed facts remain protected. The general v2 and
+administrative reassignment restrictions above remain in force.
+
 The existing 20/3/23 pricing and unpaid 4.50 commission representation are
 unchanged. No collection, payroll payment or journal is created. Replaying the
 same run or another prefix cannot create a second wash. This is source-proven

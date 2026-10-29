@@ -1,6 +1,7 @@
 import { hashBody, hashRecord, normalizeRecord } from './record.js';
 import { bookingDocId, rawDocId, COL } from './ingest.js';
 import { ownerBookingIdentity } from '../../../src/lib/sweater/bookingIdentity.js';
+import { scopedAssignmentReview, matchesOriginalUnexecutedAssignment, assignmentReviewReceipt } from './operationsAssignmentReview20261029.js';
 import { hasProtectedIdentityEffect, identityReference, referencesThisIdentity, referenceMetadata,
   REFERENCE_FIELDS, FINANCIAL_COLLECTIONS } from './operationsIdentity5596423.js';
 
@@ -11,9 +12,16 @@ const BOOKING_KEYS = new Set(['sspBookingId', 'bookingNumber', 'record', 'source
   'recognitionReason', 'operationalWorkerId', 'updatedAtIso', 'updatedAt']);
 const CLAIM_KEYS = new Set(['bookingNumber', 'sspBookingId', 'washId', 'source', 'importRunId', 'claimedBy', 'claimedAt']);
 const exactKeys = (row, allowed) => Boolean(row && Object.keys(row).every(key => allowed.has(key)));
-const pendingSource = (prior, current) => Boolean(prior && ['washing_started', 'on_the_way'].includes(prior.normalizedStatus)
+const pendingSourceReason = prior => {
+  if (['washing_started', 'on_the_way'].includes(prior?.normalizedStatus)) return 'execution_not_final';
+  // These exact observed labels are unexecuted source evidence, not new
+  // global/financial status mappings. Their original hashes remain valid.
+  if (prior?.normalizedStatus === 'unknown' && ['initiated', 'reached'].includes(prior.rawStatus?.trim().toLowerCase())) return 'unknown_status';
+  return null;
+};
+const pendingSource = (prior, current, expectedDriver = current.driverExternalId) => Boolean(prior && pendingSourceReason(prior)
   && prior.sspBookingId && ownerBookingIdentity(prior.sspBookingId) === ownerBookingIdentity(current.sspBookingId)
-  && prior.driverExternalId === current.driverExternalId && prior.serviceDate === current.serviceDate
+  && prior.driverExternalId === expectedDriver && prior.serviceDate === current.serviceDate
   && prior.bookingKind === 'individual' && prior.bookingKind === current.bookingKind && prior.serviceType === current.serviceType
   && !prior.completedAt && (prior.normalizedStatus === 'washing_started'
     ? prior.startedAt === current.startedAt && Boolean(prior.startedAt) : !prior.startedAt));
@@ -33,7 +41,7 @@ export async function inspectObservationPromotion({ db, read, payload, record, d
   const basic = execution.eligible && established && exactKeys(legacy, BOOKING_KEYS) && exactKeys(claim, CLAIM_KEYS)
     && legacy.sspBookingId === claim.sspBookingId && ownerBookingIdentity(legacy.sspBookingId) === number
     && legacy.bookingNumber === number && legacy.source === SOURCE && legacy.schemaVersion === 1
-    && legacy.processingStatus === 'needs_review' && legacy.reviewReasonCode === 'execution_not_final'
+    && legacy.processingStatus === 'needs_review' && legacy.reviewReasonCode === pendingSourceReason(legacy.record)
     && legacy.normalizedStatus === legacy.record?.normalizedStatus && pendingSource(legacy.record, record)
     && !legacy.recognitionEligibility && !legacy.recognitionReason && !hasProtectedIdentityEffect(legacy)
     && legacy.serviceDate === record.serviceDate && legacy.periodKey === record.serviceDate.slice(0, 7)
@@ -50,6 +58,7 @@ export async function inspectObservationPromotion({ db, read, payload, record, d
     && !['approved', 'invoiced', 'partially_collected', 'collected', 'closed'].includes(settlement?.status);
   // Do not audit whole financial stores for ordinary or already protected rows.
   if (!basic) return null;
+  const assignmentScope = scopedAssignmentReview({ number, record, legacy, claim, candidate });
   const runIds = [...new Set([claim.importRunId, legacy.lastImportRunId])];
   const [history, financialSnaps] = await Promise.all([
     Promise.all(runIds.map(async runId => {
@@ -66,18 +75,23 @@ export async function inspectObservationPromotion({ db, read, payload, record, d
     const matchingRows = run?.result?.rows?.filter(row => row.sspBookingId === legacy.sspBookingId) ?? [];
     const historicalRow = matchingRows[0];
     const cut = Date.parse(run?.coverage?.extractedAt);
+    const originalAssignment = Boolean(assignmentScope && runId === claim.importRunId);
+    const expectedDriver = originalAssignment ? assignmentScope.fromDriver : record.driverExternalId;
+    const expectedWorker = originalAssignment ? assignmentScope.fromWorker : candidate;
     return {
       rawMatches: Boolean(raw && raw.source === SOURCE && raw.importRunId === runId
-        && raw.sspBookingId === legacy.sspBookingId && pendingSource(prior, record)
+        && raw.sspBookingId === legacy.sspBookingId && pendingSource(prior, record, expectedDriver)
+        && (!originalAssignment || matchesOriginalUnexecutedAssignment(assignmentScope, prior, cut, record))
         && prior.sspBookingId === legacy.sspBookingId && raw.sourceHash === hashRecord(prior)
         && hashRecord(normalizeRecord(raw.rawPayload ?? {})) === raw.sourceHash && !hasProtectedIdentityEffect(raw)
         && (runId !== legacy.lastImportRunId || raw.sourceHash === legacy.sourceHash)),
       runProvesNoExecution: Boolean(run?.source === SOURCE && run.importRunId === runId
         && ['completed', 'completed_with_gaps'].includes(run.status) && matchingRows.length === 1
         && historicalRow.rawSaved && historicalRow.bookingSaved && !historicalRow.washCreated && !historicalRow.washId
-        && historicalRow.bookingId === legacyId && historicalRow.bikerId === candidate
+        && historicalRow.bookingId === legacyId && historicalRow.bikerId === expectedWorker
+        && historicalRow.driverExternalId === expectedDriver
         && historicalRow.rawId === rawId && historicalRow.sourceHash === raw?.sourceHash
-        && historicalRow.reasonCode === 'execution_not_final'
+        && historicalRow.reasonCode === pendingSourceReason(prior)
         && (prior?.normalizedStatus === 'washing_started' ? cut >= Date.parse(record.startedAt) : cut < Date.parse(record.startedAt))
         && cut < Date.parse(record.completedAt) && Date.parse(payload.coverage.extractedAt) > cut),
     };
@@ -105,7 +119,9 @@ export async function inspectObservationPromotion({ db, read, payload, record, d
   ];
   return { public: { kind: KIND, bookingNumber: number, legacyBookingId: legacy.sspBookingId,
     currentBookingId: record.sspBookingId, canonicalWashId: claim.washId, eligible: Object.values(checks).every(Boolean),
-    checks, claimPreserved: true, promotionSaved: false, evidenceRefs }, state: { checks, evidenceRefs, financialRefs } };
+    checks, claimPreserved: true, promotionSaved: false, evidenceRefs,
+    ...(assignmentScope ? { sourceAssignmentReview: assignmentReviewReceipt(assignmentScope, history) } : {}) },
+    state: { checks, evidenceRefs, financialRefs, ...(assignmentScope ? { sourceAssignmentReview: assignmentReviewReceipt(assignmentScope, history) } : {}) } };
 }
 
 export function preservedPromotionClaimMatches(row, claim) {

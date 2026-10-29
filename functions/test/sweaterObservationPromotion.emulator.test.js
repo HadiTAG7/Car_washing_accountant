@@ -6,6 +6,7 @@ import { previewOperations, saveOperations, operationsStatus } from '../src/swea
 import { operationsHandler, operationsSigningHash } from '../src/sweater/operationsHttp.js';
 import { createIntegrationKey, computeSignature } from '../src/sweater/integrationKeys.js';
 import { syncPayload, syncRequest } from './helpers/sweaterOperationsFixture.js';
+import { assignmentCases, reviewedPayloads } from './helpers/sweaterAssignmentReviewFixture.js';
 
 const suite = process.env.FIRESTORE_EMULATOR_HOST ? describe : describe.skip;
 let app, db, previousEncryption;
@@ -43,6 +44,32 @@ suite('source observation promotion in isolated demo transactions', () => {
     if (previousEncryption == null) delete process.env.SWEATER_KEY_ENCRYPTION_KEY; else process.env.SWEATER_KEY_ENCRYPTION_KEY = previousEncryption;
     await db?.terminate(); if (app) await deleteApp(app);
   });
+  it.each(assignmentCases)('keeps historical assignee $from and creates one execution for source worker $to in the owner-scoped case $number', async c => {
+    await db.doc(`bikers/${c.fromWorker}`).set({ name: 'Synthetic previous assignee', driver_external_id: c.from });
+    await db.doc(`bikers/${c.toWorker}`).set({ name: 'Synthetic execution worker', driver_external_id: c.to });
+    const { first, latest, final } = reviewedPayloads(c); await save(first); await save(latest);
+    const paths = [`sweater_bookings/B-${c.number}`, `sweater_owner_booking_claims/${c.number}`,
+      `sweater_raw_payloads/${first.importRunId}__B-${c.number}`, `sweater_import_runs/${first.importRunId}`,
+      `sweater_raw_payloads/${latest.importRunId}__B-${c.number}`, `sweater_import_runs/${latest.importRunId}`];
+    const originals = await Promise.all(paths.map(path => db.doc(path).get()));
+    const p = await previewOperations(db, final);
+    expect(p.rows[0].observationPromotion).toMatchObject({ eligible: true,
+      sourceAssignmentReview: { assignmentChangedAt: null, claimRewritten: false, originalDriverExternalId: c.from, sourceExecutionDriverExternalId: c.to } });
+    expect((await db.collection('washes').get()).empty).toBe(true);
+    const results = await Promise.all([1, 2].map(() => saveOperations(db, FieldValue, syncRequest(final, p), 'synthetic')));
+    expect(results.filter(r => !r.replay)).toHaveLength(1); expect((await db.collection('washes').get()).size).toBe(1);
+    for (const original of originals) expect((await original.ref.get()).updateTime.isEqual(original.updateTime)).toBe(true);
+    expect((await db.doc(`washes/ssp__B-${c.number}`).get()).data()).toMatchObject({
+      biker_id: c.toWorker, driver_external_id: c.to, worker_commission_per_wash: 4.5, worker_commission_paid: false,
+      collection_status: 'pending', payment_method: null });
+    const actualWash = (await db.doc(`washes/ssp__B-${c.number}`).get()).data();
+    if (c.number === '5677597') expect(actualWash.execution_worker_decision).toMatchObject({
+      humanMessageId: '01a188ad-76a5-7c83-9c0d-dc7483ddc9e4', driverExternalId: '1988', commissionPerWash: 4.5, commissionPaid: false });
+    expect(actualWash.source_assignment_review.assignmentChangedAt).toBeNull();
+    expect(await operationsStatus(db, final)).toMatchObject({ verified: true, rawVerified: true, linksVerified: true });
+    expect((await save({ ...final, importRunId: 'synthetic-next-source-observation' })).washesCreated).toBe(0);
+    for (const col of ['journal_entries', 'payroll_runs', 'sweater_owner_collection_confirmations', 'sweater_collections']) expect((await db.collection(col).get()).empty).toBe(true);
+  });
   it('promotes a two-observation source chain and a direct on-the-way completion once under concurrent retries', async () => {
     const { legacy, completed } = await seed(true);
     const next = structuredClone(legacy); next.importRunId = 'synthetic-started-second'; next.records = [next.records[0]];
@@ -66,6 +93,40 @@ suite('source observation promotion in isolated demo transactions', () => {
     const washes = await Promise.all(['990101', '990102'].map(n => db.doc(`washes/ssp__B-${n}`).get()));
     expect(washes.map(w => w.data().worker_commission_per_wash)).toEqual([4.5, 4.5]);
     expect(washes.every(w => w.data().worker_commission_paid === false)).toBe(true);
+    for (const col of ['journal_entries', 'payroll_runs', 'sweater_owner_collection_confirmations', 'sweater_collections']) expect((await db.collection(col).get()).empty).toBe(true);
+  });
+  it('executes evidenced Reached-prefix and literal-completed observations once without rewriting source labels or collecting', async () => {
+    await db.doc('bikers/worker-1').set({ name: 'Synthetic worker', driver_external_id: 'driver-1' });
+    const first = syncPayload(); first.importRunId = 'synthetic-initial-labels'; first.coverage.recordCount = 2;
+    first.coverage.extractedAt = '2026-10-08T21:00:00+03:00';
+    first.records = ['990201', '990202'].map(n => ({ ...first.records[0], sspBookingId: `B-${n}`,
+      serviceType: 'interior_exterior_wash', rawStatus: 'Initiated' }));
+    await save(first);
+    const middle = structuredClone(first); middle.importRunId = 'synthetic-reached-started';
+    middle.coverage.extractedAt = '2026-10-08T21:20:00+03:00'; middle.records[0].rawStatus = 'Reached';
+    Object.assign(middle.records[1], { rawStatus: 'Washing Started', startedAt: '2026-10-08T21:08:00+03:00' });
+    await save(middle);
+    const paths = ['sweater_owner_booking_claims/990201', 'sweater_owner_booking_claims/990202',
+      'sweater_bookings/B-990201', 'sweater_import_runs/synthetic-initial-labels', 'sweater_import_runs/synthetic-reached-started',
+      'sweater_raw_payloads/synthetic-initial-labels__B-990201', 'sweater_raw_payloads/synthetic-initial-labels__B-990202',
+      'sweater_raw_payloads/synthetic-reached-started__B-990201', 'sweater_raw_payloads/synthetic-reached-started__B-990202'];
+    const originals = await Promise.all(paths.map(path => db.doc(path).get()));
+    const final = structuredClone(middle); final.importRunId = 'synthetic-final-labels';
+    final.coverage.extractedAt = '2026-10-08T22:15:00+03:00';
+    Object.assign(final.records[0], { sspBookingId: 'S-990201', rawStatus: 'Collecting Payment',
+      startedAt: '2026-10-08T21:30:00+03:00', completedAt: '2026-10-08T22:00:00+03:00' });
+    Object.assign(final.records[1], { rawStatus: 'completed', completedAt: '2026-10-08T22:05:00+03:00' });
+    const p = await previewOperations(db, final);
+    expect(p.rows.every(r => r.reasonCode === null)).toBe(true); expect((await db.collection('washes').get()).empty).toBe(true);
+    const results = await Promise.all([1, 2].map(() => saveOperations(db, FieldValue, syncRequest(final, p), 'synthetic')));
+    expect(results.filter(r => !r.replay)).toHaveLength(1); expect((await db.collection('washes').get()).size).toBe(2);
+    for (const original of originals) expect((await original.ref.get()).updateTime.isEqual(original.updateTime)).toBe(true);
+    expect((await db.doc('sweater_bookings/B-990201').get()).data().record.rawStatus).toBe('Reached');
+    expect((await db.doc('sweater_bookings/B-990202').get()).data().record.rawStatus).toBe('completed');
+    for (const n of ['990201', '990202']) expect((await db.doc(`washes/ssp__B-${n}`).get()).data()).toMatchObject({
+      worker_commission_per_wash: 4.5, worker_commission_paid: false, collection_status: 'pending', payment_method: null });
+    expect(await operationsStatus(db, final)).toMatchObject({ verified: true, rawVerified: true, linksVerified: true });
+    expect((await save({ ...final, importRunId: 'synthetic-later-labels' })).washesCreated).toBe(0);
     for (const col of ['journal_entries', 'payroll_runs', 'sweater_owner_collection_confirmations', 'sweater_collections']) expect((await db.collection(col).get()).empty).toBe(true);
   });
   it('signed preview and same-run concurrent save add exactly two, retain43/source/claim/run and verify replay', async () => {

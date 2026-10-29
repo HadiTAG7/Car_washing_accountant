@@ -17,7 +17,11 @@ function timestamp(value) {
 }
 
 export function executionEligibility(record, coverage, worker) {
-  if (record.normalizedStatus !== 'payment_collection') return { eligible: false, reasonCode: 'execution_not_final' };
+  // Observed SSP literal (29 Oct). Keep raw/normalized source facts and all
+  // financial recognition rules unchanged; this execution-only path still
+  // requires genuine Start + End and does not assert payment collection.
+  const literalCompleted = record.normalizedStatus === 'unknown' && record.rawStatus?.trim().toLowerCase() === 'completed';
+  if (record.normalizedStatus !== 'payment_collection' && !literalCompleted) return { eligible: false, reasonCode: 'execution_not_final' };
   if (record.serviceType !== OPERATIONS_WASH_APPROVAL.serviceType) return { eligible: false, reasonCode: 'unsupported_execution_service_type' };
   const started = timestamp(record.startedAt), completed = timestamp(record.completedAt), observed = timestamp(coverage.extractedAt);
   // These fields mean the actual Start Service / End Service events, not the

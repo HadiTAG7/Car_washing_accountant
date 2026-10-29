@@ -154,7 +154,7 @@ async function plan(db, payload, read) {
     if (protectedRecord && !unchanged) { outcome = 'needs_review'; reasonCode = 'protected_existing_record'; }
     else if (missingService) { outcome = 'needs_review'; reasonCode = 'unknown_service_type'; }
     else if (!unchanged && !established) { outcome = 'needs_review'; reasonCode = 'unverified_worker_link'; }
-    else if (!unchanged && record.normalizedStatus === 'unknown') { outcome = 'needs_review'; reasonCode = 'unknown_status'; }
+    else if (!unchanged && record.normalizedStatus === 'unknown' && !execution.eligible) { outcome = 'needs_review'; reasonCode = 'unknown_status'; }
     else if (!unchanged && !execution.eligible && (record.serviceType === 'interior_exterior_wash' || record.startedAt || record.completedAt)) {
       outcome = 'needs_review'; reasonCode = execution.reasonCode;
     }
@@ -178,6 +178,10 @@ async function plan(db, payload, read) {
       _washRef: writeWash ? db.collection('washes').doc(proposedWashId) : null,
       _wash: writeWash ? { ...executionWash(record, candidate, historicalResolution?.public.eligible
         ? historicalResolution.public.acceptance.acceptedSourceName : worker.name),
+        ...(promotion?.public.eligible && promotion.public.sourceAssignmentReview
+          ? { source_assignment_review: promotion.public.sourceAssignmentReview,
+            ...(promotion.public.sourceAssignmentReview.workerDecision
+              ? { execution_worker_decision: promotion.public.sourceAssignmentReview.workerDecision } : {}) } : {}),
         ...(historicalResolution?.public.eligible ? { historical_identity_acceptance: historicalResolution.public.acceptance } : {}) } : null };
     rows.push(row); counts[outcome === 'needs_review' ? 'needsReview' : outcome]++;
     state.push({ id: record.sspBookingId, related, claim, worker, existingWorkerIds: [...existingWorkerIds].sort(),

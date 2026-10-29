@@ -33,6 +33,38 @@ function employeeRequest(requestId, amount, kind = 'variable') {
       fundingJournalId: 'test-funding', allocatedAmount: amount } }) };
 }
 describe('finance workbench version-bound review', () => {
+  it('previews historical custody without treating a current correction as earlier funding', async () => {
+    const db = database();
+    db.rows.set('temporary_expenses/old-custody', { biker_id: 'test-employee', amount: 150,
+      status: 'pending', recovered_amount: 0 });
+    db.rows.set('chart_of_accounts/1300', { active: true });
+    db.rows.set('chart_of_accounts/1020', { active: true });
+    db.rows.set('variable_expenses/old-invoice', { amount: 100, payment_status: 'paid', paid_date: '2026-10-18',
+      finance_metadata: { fundingType: 'employee' } });
+    const input = { action: 'preview', kind: 'custody_reconciliation', advanceId: 'old-custody',
+      employeeId: 'test-employee', amount: 150, historicalFundingDate: null, correctionDate: '2026-10-29',
+      ownerStatementRef: 'TEST owner statement', evidenceRefs: [],
+      allocations: [{ kind: 'variable', sourceId: 'old-invoice', amount: 100 }] };
+    const before = [...db.rows.entries()];
+    const preview = await financeWorkbench(db, auth, input);
+    expect(preview).toMatchObject({ financialPosting: false, readyForPosting: false,
+      proposedCorrection: { entryDate: '2026-10-29', historicalFundingDate: null,
+        entryDateIsHistoricalFundingDate: false }, ownerAttestation: { establishesHistoricalLedgerProof: false },
+      allocatedHalala: 10000, remainingHalala: 5000 });
+    expect(preview.issues.join(' ')).toMatch(/تاريخ تسليم التمويل.*غير مثبت/);
+    expect(db.rows).toEqual(new Map(before));
+    const afterInvoice = await financeWorkbench(db, auth, { ...input, historicalFundingDate: '2026-10-20',
+      evidenceRefs: ['TEST archived transfer'] });
+    expect(afterInvoice.issues.join(' ')).toMatch(/بعد دفع مستند/);
+    expect(afterInvoice.issues.join(' ')).toMatch(/لا يوجد قيد تمويل تاريخي/);
+    expect(afterInvoice.readyForPosting).toBe(false);
+    const beforeInvoice = await financeWorkbench(db, auth, { ...input, historicalFundingDate: '2026-10-17',
+      evidenceRefs: ['TEST archived transfer'] });
+    expect(beforeInvoice.issues.join(' ')).toMatch(/لا يوجد قيد تمويل تاريخي/);
+    expect(beforeInvoice.issues.join(' ')).not.toMatch(/بعد دفع مستند/);
+    expect(beforeInvoice.readyForPosting).toBe(false);
+    expect(db.rows).toEqual(new Map(before));
+  });
   it('refuses a legacy advance without a verified opening balance even when a funding journal exists', async () => {
     const db = database();
     seedAdvance(db);

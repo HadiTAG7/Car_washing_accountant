@@ -4413,7 +4413,7 @@
   "طلب معاينة مطابقة العهدة غير صالح.": "Invalid advance reconciliation preview request.",
   "سجل العهدة غير موجود؛ لا يمكن اقتراح ربط دفتر.": "The advance record is missing; a ledger link cannot be proposed.",
   "الموظف لا يطابق سجل العهدة.": "The employee does not match the advance record.",
-  "مبلغ التمويل لا يطابق سجل العهدة.": "The funding amount does not match the advance record.",
+  "مبلغ الشريحة المقترحة يتجاوز سجل العهدة.": "The proposed tranche exceeds the advance record.",
   "العهدة لها رصيد مشترك مفتوح أو سجل استهلاك؛ يلزم فحصه قبل تسوية تاريخية.": "The advance has an open shared balance or recorded consumption; review it before historical reconciliation.",
   "يوجد استرداد أو خصم راتب يحتاج مطابقة قبل فتح الرصيد.": "A recovery or payroll deduction must be reconciled before opening the balance.",
   "حركات العهدة أكثر من حد المعاينة؛ يلزم فحصها يدويًا.": "The advance has too many movements for this preview; review them manually.",
@@ -4436,6 +4436,6 @@
   "تاريخ التمويل الفعلي يأتي بعد دفع مستند مخصص.": "The actual funding date is after payment of an allocated document.",
   "المستند مرتبط بعهدة مسبقًا؛ يلزم فحص الربط قبل تسوية تاريخية.": "The document is already linked to an advance; review the link before historical reconciliation.",
   "مبلغ التخصيص لا يطابق إجمالي المستند.": "The allocation amount does not match the document total.",
-  "التخصيصات تتجاوز مبلغ العهدة.": "Allocations exceed the advance amount.",
+  "مبلغ الشريحة المقترحة يجب أن يساوي التخصيصات بالضبط؛ لا يُفتح رصيد غير مخصص.": "The proposed tranche must equal its allocations exactly; no unallocated balance will be opened.",
   "لا يوجد قيد تمويل تاريخي مطابق؛ القيد الحالي المقترح لا يثبت السداد السابق.": "No matching historical funding entry exists; the proposed current entry does not prove the earlier payment."
 }

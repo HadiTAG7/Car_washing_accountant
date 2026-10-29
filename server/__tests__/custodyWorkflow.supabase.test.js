@@ -74,11 +74,12 @@ describe.skipIf(!enabled)('custody through real PgStore transactions and SQL mig
       payment_status: 'paid', paid_date: '2026-10-18', finance_metadata: { fundingType: 'employee' } });
     const before = (await db.collection('journal_entries').get()).size;
     const preview = await financeWorkbench(db, auth, { action: 'preview', kind: 'custody_reconciliation',
-      advanceId, employeeId: `${token}-worker`, amount: 150,
+      advanceId, employeeId: `${token}-worker`, amount: 100,
       historicalFundingDate: '2026-10-17', correctionDate: '2026-10-29',
       ownerStatementRef: 'TEST owner statement', evidenceRefs: ['TEST archived receipt'],
       allocations: [{ kind: 'variable', sourceId: `${token}-legacy-invoice`, amount: 100 }] });
     expect(preview).toMatchObject({ readyForPosting: false, financialPosting: false,
+      remainingHalala: 0, opensUnallocatedBalance: false,
       proposedCorrection: { entryDate: '2026-10-29', historicalFundingDate: '2026-10-17' } });
     expect(preview.issues.join(' ')).toMatch(/لا يوجد قيد تمويل تاريخي/);
     expect((await db.collection('journal_entries').get()).size).toBe(before);

@@ -42,7 +42,7 @@ describe('finance workbench version-bound review', () => {
     db.rows.set('variable_expenses/old-invoice', { amount: 100, payment_status: 'paid', paid_date: '2026-10-18',
       finance_metadata: { fundingType: 'employee' } });
     const input = { action: 'preview', kind: 'custody_reconciliation', advanceId: 'old-custody',
-      employeeId: 'test-employee', amount: 150, historicalFundingDate: null, correctionDate: '2026-10-29',
+      employeeId: 'test-employee', amount: 100, historicalFundingDate: null, correctionDate: '2026-10-29',
       ownerStatementRef: 'TEST owner statement', evidenceRefs: [],
       allocations: [{ kind: 'variable', sourceId: 'old-invoice', amount: 100 }] };
     const before = [...db.rows.entries()];
@@ -50,7 +50,7 @@ describe('finance workbench version-bound review', () => {
     expect(preview).toMatchObject({ financialPosting: false, readyForPosting: false,
       proposedCorrection: { entryDate: '2026-10-29', historicalFundingDate: null,
         entryDateIsHistoricalFundingDate: false }, ownerAttestation: { establishesHistoricalLedgerProof: false },
-      allocatedHalala: 10000, remainingHalala: 5000 });
+      allocatedHalala: 10000, remainingHalala: 0, opensUnallocatedBalance: false });
     expect(preview.issues.join(' ')).toMatch(/تاريخ تسليم التمويل.*غير مثبت/);
     expect(db.rows).toEqual(new Map(before));
     const afterInvoice = await financeWorkbench(db, auth, { ...input, historicalFundingDate: '2026-10-20',
@@ -68,7 +68,7 @@ describe('finance workbench version-bound review', () => {
     expect(duplicated.issues.join(' ')).toMatch(/المصدر مكرر/);
     const excessive = await financeWorkbench(db, auth, { ...input,
       allocations: [{ ...input.allocations[0], amount: 151 }] });
-    expect(excessive.issues.join(' ')).toMatch(/تتجاوز مبلغ العهدة/);
+    expect(excessive.issues.join(' ')).toMatch(/يساوي التخصيصات بالضبط/);
     await expect(financeWorkbench(db, auth, { ...input, action: 'save' }))
       .rejects.toThrow(/غير صالح/);
     expect(db.rows).toEqual(new Map(before));

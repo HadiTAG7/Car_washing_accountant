@@ -40,7 +40,7 @@ export async function previewCustodyHistoricalReconciliation(db, input) {
     if (!advance) problems.push('سجل العهدة غير موجود؛ لا يمكن اقتراح ربط دفتر.');
     else {
       if (String(advance.biker_id || '') !== r.employeeId) problems.push('الموظف لا يطابق سجل العهدة.');
-      if (halala(advance.amount) !== halala(r.amount)) problems.push('مبلغ التمويل لا يطابق سجل العهدة.');
+      if (halala(advance.amount) < halala(r.amount)) problems.push('مبلغ الشريحة المقترحة يتجاوز سجل العهدة.');
       if (advance.custody_balance_opened_journal_id != null || advance.custody_expense_used_halala != null)
         problems.push('العهدة لها رصيد مشترك مفتوح أو سجل استهلاك؛ يلزم فحصه قبل تسوية تاريخية.');
       if (Number(advance.recovered_amount || 0) !== 0 || advance.payroll_lock_id || advance.status === 'recovered')
@@ -100,13 +100,14 @@ export async function previewCustodyHistoricalReconciliation(db, input) {
       records.push({ key, amountHalala: halala(allocation.amount), sourceHash: financeHash(row) });
     }
     const allocatedHalala = r.allocations.reduce((sum, a) => sum + halala(a.amount), 0);
-    if (allocatedHalala > halala(r.amount)) problems.push('التخصيصات تتجاوز مبلغ العهدة.');
+    if (allocatedHalala !== halala(r.amount))
+      problems.push('مبلغ الشريحة المقترحة يجب أن يساوي التخصيصات بالضبط؛ لا يُفتح رصيد غير مخصص.');
     const historicalLedgerProof = existing.some(d => d.data().sourceType === 'temporary_expense'
       && d.data().entryDate <= r.historicalFundingDate
       && (linesOf(d.data()).length ? linesOf(d.data()) : (separateLines.get(d.id) || []))
-        .some(l => String(l.accountId) === '1300' && halala(l.debit) === halala(r.amount))
+        .some(l => String(l.accountId) === '1300' && halala(l.debit) >= halala(r.amount))
       && (linesOf(d.data()).length ? linesOf(d.data()) : (separateLines.get(d.id) || []))
-        .some(l => String(l.accountId) === '1020' && halala(l.credit) === halala(r.amount)));
+        .some(l => String(l.accountId) === '1020' && halala(l.credit) >= halala(r.amount)));
     if (!historicalLedgerProof) problems.push('لا يوجد قيد تمويل تاريخي مطابق؛ القيد الحالي المقترح لا يثبت السداد السابق.');
     const snapshotHash = financeHash({ advance, journals: ledger.docs.map(d => ({ id: d.id, ...d.data() })),
       legacyLines: legacyLines.docs.map(d => ({ id: d.id, ...d.data() })),
@@ -117,6 +118,7 @@ export async function previewCustodyHistoricalReconciliation(db, input) {
         debitAccount: '1300', creditAccount: '1020', amountHalala: halala(r.amount),
         entryDateIsHistoricalFundingDate: false },
       allocatedHalala, remainingHalala: halala(r.amount) - allocatedHalala,
+      opensUnallocatedBalance: false,
       unassignedAdvanceMovementCount: unassigned1300,
       evidenceRefs: r.evidenceRefs, evidenceVerification: 'unverified', snapshotHash, issues: [...new Set(problems)] };
   });

@@ -172,9 +172,16 @@ export function custodyCutoffBridge(t, cutoff) {
     const valid = /^[a-f0-9]{64}$/.test(groupId || '') && result?.groupId === groupId
       && result?.fundingJournalId === funding.id && result?.anchorMode === 'independent_historical_tranche'
       && result?.sourceCount > 0 && members.length === result.sourceCount + 1 && members[0]?.id === funding.id
-      && members.every(e => e?.status === 'posted' && e.custodyHistoricalSettlementId === groupId)
-      && locks.has(`custody_reconciliation__${groupId}`)
+      && new Set(result.journalIds).size === members.length
+      && members.every(e => e?.status === 'posted' && e.custodyHistoricalSettlementId === groupId
+        && e.entryDate === funding.entryDate)
+      && entries.filter(e => e.status === 'posted' && e.custodyHistoricalSettlementId === groupId).length === members.length
+      && locks.get(`custody_reconciliation__${groupId}`)?.entryId === funding.id
+      && funding.lines?.length === 2
+      && funding.lines.some(l => String(l.accountId) === ACC.BANK && halala(l.credit) === funded && !halala(l.debit))
+      && funding.lines.some(l => String(l.accountId) === ACC.EMPLOYEE_ADVANCE && halala(l.debit) === funded && !halala(l.credit))
       && Array.isArray(sourceHashes) && sourceHashes.length === result.sourceCount
+      && new Set(sourceHashes.map(item => item.key)).size === sourceHashes.length
       && sourceHashes.every(item => {
         const [kind, ...idParts] = item.key.split(':'), sourceId = idParts.join(':');
         const source = (t[FINANCE_KINDS[kind]?.collection] || []).find(row => row.id === sourceId);
@@ -186,7 +193,11 @@ export function custodyCutoffBridge(t, cutoff) {
           && journal.sourceKind === kind && journal.sourceId === sourceId
           && journal.sourceSnapshotHash === item.before;
       })
+      && members.slice(1).every(e => e.sourceType === 'expense' && (e.lines || []).every(l =>
+        ![ACC.BANK, ACC.CASH].includes(String(l.accountId))
+        && (String(l.accountId) !== ACC.EMPLOYEE_ADVANCE || !halala(l.debit))))
       && Array.isArray(evidence) && evidence.length > 0
+      && new Set(evidence.map(d => d.depositRowId)).size === evidence.length
       && evidence.every(d => isRealDate(d.deliveryDate) && Number.isSafeInteger(halala(d.allocatedAmount)) && d.allocatedAmount > 0)
       && evidence.every(d => {
         const lock = locks.get(`custody_deposit__${financeHash(d.depositRowId).slice(0, 40)}`);

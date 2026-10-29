@@ -355,6 +355,9 @@ export function calculatePayrollPreview({
       deduction: adj.deduction,
       deductionReason: adj.deductionReason || null,
       advanceOutstanding,
+      custodyAdvanceHeld: heldAdvanceBikers.has(biker.id),
+      custodyAdvanceHoldReason: heldAdvanceBikers.has(biker.id)
+        ? 'العهدة التاريخية تحت تسوية جزئية؛ لا تخصم تلقائيًا حتى مطابقة الرصيد.' : null,
       advanceDeduction,
       advanceDeductionMax,
       advanceDeductionMode: adj.hasAdvanceDeduction ? 'manual' : 'default_full',

@@ -88,6 +88,11 @@ describe('atomic historical custody settlement, synthetic only', () => {
       bikers: [{ id: 'synthetic-worker', name: 'TEST worker', salary: 500, start_date: '2026-10-01' }],
       advances: [{ id: 'synthetic-advance', ...db.rows.get('temporary_expenses/synthetic-advance') }] });
     expect(payroll.lines[0].advanceDeduction).toBe(0);
+    expect(payroll.lines[0].custodyAdvanceHoldReason).toMatch(/لا تخصم تلقائيًا/);
+    const unrelatedPayroll = calculatePayrollPreview({ periodKey: '2026-10',
+      bikers: [{ id: 'TEST unrelated worker', name: 'TEST other worker', salary: 500, start_date: '2026-10-01' }],
+      advances: [{ id: 'synthetic-advance', ...db.rows.get('temporary_expenses/synthetic-advance') }] });
+    expect(unrelatedPayroll.lines[0].custodyAdvanceHeld).toBe(false);
   });
 
   it('requires an exact server-approved manifest before any financial write', async () => {

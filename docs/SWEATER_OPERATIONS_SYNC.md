@@ -88,6 +88,24 @@ The general four-booking instruction cannot substitute for the separate
 5677597 worker decision. Other identities or changed facts remain protected. The general v2 and
 administrative reassignment restrictions above remain in force.
 
+### Later prefix after a retained completed source (29 October, follow-through)
+
+A pre-fix run may have retained literal `completed` with genuine Start/End but
+created no application wash, because the older operational contract rejected
+that label. A later genuine source observation can use another prefix. Such a
+history is not an existing application execution: promotion requires the old
+closed run's unique row to prove raw+booking saved, `unknown_status`, no wash
+created and no wash linked. Original and current worker/day/service/Start/End
+must match exactly. The earlier completed observation must be extracted at or
+after its actual End; the current observation must be later still.
+
+The first natural claim, both raw/run endpoints and old booking remain intact;
+the one new wash uses the originally reserved ID. Existing washes/entitlements,
+financial links, locks, closed periods, changed facts or stale previews still
+block. `retainedCompletedSource: true` in the promotion receipt distinguishes
+this case from an earlier observation made before End. Old saved zero-wash
+batches stay immutable replays; they are never reopened or renamed.
+
 The existing 20/3/23 pricing and unpaid 4.50 commission representation are
 unchanged. No collection, payroll payment or journal is created. Replaying the
 same run or another prefix cannot create a second wash. This is source-proven

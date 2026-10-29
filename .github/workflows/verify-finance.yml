@@ -17,6 +17,7 @@ on:
       - supabase/migrations/20261029000000_custody_expense_guard.sql
       - server/__tests__/financeWorkbenchBrowse.test.js
       - server/__tests__/financeWorkflow.emulator.test.js
+      - server/__tests__/custodyHistoricalSettlement.emulator.test.js
       - src/components/FinanceExpenseForm.jsx
       - src/lib/accounting/postingRules.js
   workflow_dispatch:
@@ -43,5 +44,5 @@ jobs:
       - run: npm ci --prefix mcp
       - run: npm run lint
       - run: npm run build
-      - run: npm test
       - run: npm run test:finance:emulator
+      - run: npm test

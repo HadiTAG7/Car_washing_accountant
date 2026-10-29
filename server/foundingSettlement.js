@@ -13,7 +13,7 @@
 import { z } from 'zod';
 import { FieldValue } from 'firebase-admin/firestore';
 import { callerRole } from '../functions/src/handlers.js';
-import { FINANCE_KINDS, financeHash, financeProblems, FinanceReviewError, statementLineRefOf } from '../functions/src/financeReview.js';
+import { FINANCE_KINDS, financeHash, financeProblems, FinanceReviewError, statementLineRefOf, managerAttestationOf } from '../functions/src/financeReview.js';
 import { normalizeEntry, normalizeLines, validateEntry, journalCounterUpdate, isRealDate, postingLockId } from '../functions/src/invariants.js';
 import { legacyLockIdFor } from '../functions/src/posting.js';
 import { postedLines } from '../src/lib/accounting/reports.js';
@@ -22,6 +22,7 @@ import { documentDay } from '../src/lib/financeWorkbenchView.js';
 import {
   foundingPlan, documentCandidates, paymentCandidates, statementLinks, quarterOf, halala,
   FOUNDING_DEFAULTS, FILED_VAT_QUARTERS, DOC_DECISIONS, PAYMENT_ARRIVALS, RULE_DECISION, MATCH_WINDOW_DAYS, daysBetween, isAttested,
+  ADJUSTMENT_DIRECTIONS,
 } from '../src/lib/founding/foundingPlan.js';
 
 const fail = (message, code = 'failed-precondition') => { throw new FinanceReviewError(message, code); };
@@ -47,7 +48,7 @@ const applyRow = statementRow.extend({
 const confirm = { confirm: z.literal(true) };
 const requestSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('read') }).strict(),
-  z.object({ action: z.literal('saveSettings'), revision: z.number().int().min(0), cutoffDate: day, threshold: money,
+  z.object({ action: z.literal('saveSettings'), revision: z.number().int().min(0), cutoffDate: day, threshold: money, noPersonalStatement: z.boolean().optional(),
     actuals: z.object({ bankOpen: z.boolean(), bankBalance: z.number().finite().min(-1e9).max(1e9).nullable(), cash: z.number().finite().min(-1e9).max(1e9),
       custody: z.array(z.object({ name: text(80).pipe(z.string().min(1)), amount: money }).strict()).max(50) }).strict().nullable(), ...confirm }).strict(),
   z.object({ action: z.literal('decide'), sourceKey: key, decision: z.string().max(40).nullable().optional(), partnerId: z.string().max(160).nullable().default(null),
@@ -60,6 +61,17 @@ const requestSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('applyUpdate'), key, ...confirm }).strict(),
   z.object({ action: z.literal('applyUpdates'), keys: z.array(key).min(1).max(10), ...confirm }).strict(),
   z.object({ action: z.literal('applyRule'), hash, ...confirm }).strict(),
+  z.object({ action: z.literal('decidePayments'), keys: z.array(key).min(1).max(200), arrival: z.enum(PAYMENT_ARRIVALS), ...confirm }).strict(),
+  z.object({ action: z.literal('attestExpense'), requestId: z.string().regex(/^[A-Za-z0-9_-]{8,80}$/), approxDate: day,
+    amount: z.number().finite().positive().max(1e9).refine(v => Math.round(v * 100) === v * 100, 'المبلغ بالهللة.'),
+    description: text(1000).pipe(z.string().min(2)), kind: z.enum(['variable', 'monthly', 'annual', 'startup']),
+    classificationId: z.string().regex(/^[\p{L}\p{N}_.:-]{1,160}$/u),
+    proofUrl: z.string().url().refine(v => v.startsWith('https://') && !/\/api\/mcp\//i.test(v)).nullable().default(null),
+    note: text(500).nullable().default(null), ...confirm }).strict(),
+  z.object({ action: z.literal('attestBalance'), hash, note: text(1000).pipe(z.string().min(3)), ...confirm }).strict(),
+  z.object({ action: z.literal('proposeAdjustment'), amount: z.number().finite().positive().max(1e9).refine(v => Math.round(v * 100) === v * 100, 'المبلغ بالهللة.'),
+    direction: z.enum(ADJUSTMENT_DIRECTIONS), reason: text(500).pipe(z.string().min(5)), ...confirm }).strict(),
+  z.object({ action: z.literal('removeAdjustment'), id: z.string().regex(/^adj_[a-f0-9]{16}$/), ...confirm }).strict(),
   z.object({ action: z.literal('statementSuggest'), account: z.enum(['personal', 'company']), rows: z.array(statementRow).min(1).max(2000) }).strict(),
   z.object({ action: z.literal('statementApply'), account: z.enum(['personal', 'company']), fileName: text(200), fileHash: z.string().max(128),
     rows: z.array(applyRow).min(1).max(500), ...confirm }).strict(),
@@ -86,7 +98,8 @@ const entryHash = e => financeHash({ key: e.key, date: e.date, description: e.de
 // ── القراءة ──────────────────────────────────────────────────────────────
 const COLLECTIONS = [...new Set([...Object.values(FINANCE_KINDS).map(s => s.collection), 'partner_payments', 'partners', 'journal_entries',
   'journal_lines', 'posting_locks', 'bank_statement_lines', 'founding_review', 'founding_decisions', 'chart_of_accounts',
-  'accounting_periods', 'temporary_expenses', 'variable_expense_categories', 'monthly_expense_categories', 'annual_expenses', 'startup_costs'])];
+  'accounting_periods', 'temporary_expenses', 'variable_expense_categories', 'monthly_expense_categories', 'annual_expenses', 'startup_costs',
+  'categories', 'annual_expense_categories'])];
 
 async function loadTables(db, tx = null) {
   const snaps = await Promise.all(COLLECTIONS.map(name => tx ? tx.get(db.collection(name)) : db.collection(name).get()));
@@ -145,6 +158,25 @@ export function ledgerEffects(entries) {
   return effects;
 }
 
+/** اسم التصنيف كما يراه هادي: تصنيف المصروف، أو تصنيف البند الأب (أو اسمه). */
+function categoryLabels(t) {
+  const label = x => x?.label || x?.name || null;
+  const byId = list => new Map(list.map(x => [x.id, x]));
+  const variable = byId(t.variable_expense_categories), monthly = byId(t.monthly_expense_categories);
+  const startup = byId(t.startup_costs), annual = byId(t.annual_expenses), startupCats = byId(t.categories), annualCats = byId(t.annual_expense_categories);
+  return (kind, row) => {
+    if (kind === 'variable') return label(variable.get(row.category_id));
+    if (kind === 'monthly') return label(monthly.get(row.category_id));
+    const parent = kind === 'startup' ? startup.get(row.startup_cost_id) : annual.get(row.annual_expense_id);
+    const group = parent && (kind === 'startup' ? startupCats : annualCats).get(parent.category);
+    return label(group) || parent?.item_name || parent?.expense_name || null;
+  };
+}
+function attestationBrief(row) {
+  const a = managerAttestationOf(row);
+  return a ? { byName: a.byName || null, atIso: a.atIso, approxDate: a.approxDate, note: a.note || null } : null;
+}
+
 function isPayrollRow(kind, row) {
   return kind === 'monthly' && (row.recurrence === 'monthly' || row.biker_id || row.payrollSnapshot);
 }
@@ -156,7 +188,9 @@ export function foundingInputs(t) {
   const effects = ledgerEffects(entries), locks = new Set(t.posting_locks.map(l => l.id));
   const review = t.founding_review.find(r => r.id === SETTINGS_ID) || null;
   const settings = { ...FOUNDING_DEFAULTS, ...(review ? { cutoffDate: review.cutoffDate, threshold: Number(review.threshold), actuals: review.actuals || null,
-    lastRule: review.lastRule || null } : {}) };
+    lastRule: review.lastRule || null, noPersonalStatement: review.noPersonalStatement === true, hadiAttestation: review.hadiAttestation || null,
+    adjustments: Array.isArray(review.adjustments) ? review.adjustments : [] } : {}) };
+  const categoryOf = categoryLabels(t);
   const decisions = Object.fromEntries(t.founding_decisions.map(d => [d.sourceKey, d]));
   const partners = t.partners.map(p => ({ id: p.id, name: p.partner_name || 'شريك' }));
   const docs = [];
@@ -175,7 +209,9 @@ export function foundingInputs(t) {
         effect: { cash: effect.cash, bank: effect.bank, payable: effect.payable }, fundingType: row.finance_metadata?.fundingType || null,
         fundingPartnerId: row.finance_metadata?.fundingPartnerId || null, custodian: row.finance_metadata?.custodian || null,
         paymentMethod: row.payment_method || null, vatQuarter: vatDay ? quarterOf(vatDay) : null,
-        issues: financeProblems(kind, row, row.id) });
+        category: categoryOf(kind, row), approval: row.approval_status || null,
+        proofUrl: typeof row.invoice_url === 'string' && /^https:\/\//.test(row.invoice_url) ? row.invoice_url : null,
+        attestation: attestationBrief(row), issues: financeProblems(kind, row, row.id) });
     }
   }
   const payments = t.partner_payments.map(p => {
@@ -185,7 +221,8 @@ export function foundingInputs(t) {
       protected: effect.journals > 0 || locks.has(postingLockId('partner_payment', p.id)), effect: { cash: effect.cash, bank: effect.bank } };
   });
   const posted = new Map(entries.filter(e => e.foundingEntry?.key && e.status === 'posted')
-    .map(e => [e.foundingEntry.key, { entryId: e.id, entryNumber: e.entryNumber, lines: (e.lines || []).map(l => ({ accountId: String(l.accountId), debit: Number(l.debit) || 0, credit: Number(l.credit) || 0, description: l.description || '' })) }]));
+    .map(e => [e.foundingEntry.key, { entryId: e.id, entryNumber: e.entryNumber, postedReason: e.foundingEntry.reason || null, postedByName: e.foundingEntry.approvedByName || null,
+      lines: (e.lines || []).map(l => ({ accountId: String(l.accountId), debit: Number(l.debit) || 0, credit: Number(l.credit) || 0, description: l.description || '' })) }]));
   const ledger = postedLines(entries, lines);
   const byId = new Map(entries.map(e => [e.id, e]));
   const book = {};
@@ -214,6 +251,9 @@ function planOf(t) {
   // What «تطبيق القاعدة» was shown: the same documents, updates and entry lines, or nothing is saved.
   plan.rule.hash = financeHash({ cutoff: plan.settings.cutoffDate, keys: plan.rule.candidates.map(c => c.key),
     updates: plan.rule.updates.map(u => [u.key, u.patch, u.held, u.blocked]), entries: plan.rule.entries.map(entryHash) });
+  // What «اعتماد الرصيد» was shown: these numbers, or nothing is saved.
+  const b = plan.hadiBalance;
+  b.hash = financeHash({ paid: b.paid, received: b.received, toCompany: b.toCompany, toHadi: b.toHadi, net: b.net, undecided: b.undecided });
   return { input, plan };
 }
 
@@ -248,6 +288,9 @@ async function postEntries(db, auth, r) {
       return e;
     });
     if (new Set(selected.map(e => e.key)).size !== selected.length) fail('قيد مكرر في الطلب.', 'invalid-argument');
+    // Every read before the first write (the chart rows below are writes).
+    const locks = await Promise.all(selected.map(e => tx.get(db.collection('posting_locks').doc(postingLockId('founding', foundingEntryId(e.key))))));
+    if (locks.some(l => l.exists)) fail('أحد القيود مرحّل سابقًا.');
     const name = await actorName(db, auth, tx);
     const created = ensureChartRows(db, tx, input.chart, [ACC.HADI_CURRENT, ACC.FOUNDING_SETTLEMENTS]);
     for (const e of selected) for (const l of e.lines) {
@@ -260,8 +303,6 @@ async function postEntries(db, auth, r) {
       }
     }
     const periods = new Map(t.accounting_periods.map(p => [p.periodKey || p.id, p]));
-    const locks = await Promise.all(selected.map(e => tx.get(db.collection('posting_locks').doc(postingLockId('founding', foundingEntryId(e.key))))));
-    if (locks.some(l => l.exists)) fail('أحد القيود مرحّل سابقًا.');
     const results = [], first = next;
     for (const e of selected) {
       if (periods.get(e.date.slice(0, 7))?.status === 'closed') fail(`الفترة ${e.date.slice(0, 7)} مقفلة.`);
@@ -288,13 +329,18 @@ async function postEntries(db, auth, r) {
   });
 }
 
+/** The saved review without its id; what a write keeps (the rule's record, the attestation, the adjustments). */
+const reviewKept = review => (review ? Object.fromEntries(Object.entries(review).filter(([k]) => k !== 'id')) : {});
+
 async function saveSettings(db, auth, r) {
   return db.runTransaction(async tx => {
     await adminOnly(db, auth, tx);
     const ref = db.collection('founding_review').doc(SETTINGS_ID), snap = await tx.get(ref);
     const revision = snap.exists ? Number(snap.data().revision) || 0 : 0;
     if (revision !== r.revision) fail('تغيرت الإعدادات من جلسة أخرى؛ أعد القراءة.');
-    const value = { cutoffDate: r.cutoffDate, threshold: r.threshold, actuals: r.actuals, revision: revision + 1, ...stamp(auth.uid, await actorName(db, auth, tx)) };
+    const kept = reviewKept(snap.exists ? snap.data() : null);
+    const value = { ...kept, cutoffDate: r.cutoffDate, threshold: r.threshold, actuals: r.actuals,
+      noPersonalStatement: r.noPersonalStatement ?? kept.noPersonalStatement === true, revision: revision + 1, ...stamp(auth.uid, await actorName(db, auth, tx)) };
     tx.set(ref, value);
     audit(db, tx, auth, 'founding-settings', SETTINGS_ID, value);
     return { saved: true, revision: value.revision };
@@ -368,16 +414,112 @@ async function applyRule(db, auth, r) {
     }
     const created = ensureChartRows(db, tx, input.chart, [ACC.HADI_CURRENT, ACC.FOUNDING_SETTLEMENTS]);
     const lastRule = { atIso: at, by: auth.uid, byName: name, count: plan.rule.count, total: plan.rule.total, cutoffDate: plan.settings.cutoffDate,
-      unposted: plan.rule.unposted, posted: plan.rule.posted, held: plan.rule.held, hash: plan.rule.hash };
-    const reviewRef = db.collection('founding_review').doc(SETTINGS_ID), review = input.review;
-    tx.set(reviewRef, { ...(review ? Object.fromEntries(Object.entries(review).filter(([k]) => k !== 'id')) : { cutoffDate: plan.settings.cutoffDate,
-      threshold: plan.settings.threshold, actuals: plan.settings.actuals || null }), revision: (Number(review?.revision) || 0) + 1, lastRule,
-    ...stamp(auth.uid, name) });
+      unposted: plan.rule.unposted, posted: plan.rule.posted, held: plan.rule.held, groups: plan.rule.groups, bankFees: plan.rule.bankFees.count, hash: plan.rule.hash };
+    writeReview(db, tx, input.review, plan, { lastRule }, auth, name);
     tx.create(db.collection('audit_logs').doc(), { action: 'founding-rule', collectionName: 'founding_decisions', documentId: plan.settings.cutoffDate,
       userId: auth.uid, after: { ...lastRule, keys: plan.rule.candidates.map(c => c.key), accountsCreated: created }, at: FieldValue.serverTimestamp() });
     // The rule's unposted documents, and the exceptions/decisions saved before it, in one run.
     const updates = [...new Set([...plan.rule.updates, ...plan.updates].filter(u => !u.held && !u.blocked).map(u => u.key))];
     return { applied: plan.rule.count, updates, lastRule };
+  });
+}
+
+/** One write of the settings row, keeping whatever it holds. */
+function writeReview(db, tx, review, plan, patch, auth, name) {
+  const base = review ? reviewKept(review) : { cutoffDate: plan.settings.cutoffDate, threshold: plan.settings.threshold, actuals: plan.settings.actuals || null };
+  tx.set(db.collection('founding_review').doc(SETTINGS_ID), { ...base, ...patch, revision: (Number(review?.revision) || 0) + 1, ...stamp(auth.uid, name) });
+}
+
+/** «وصلت لحسابي» (أو لحساب الشركة) لكل دفعة تأسيس لم تُحسم، دفعة واحدة. */
+async function decidePayments(db, auth, r) {
+  return db.runTransaction(async tx => {
+    await adminOnly(db, auth, tx);
+    const t = await loadTables(db, tx), { input, plan } = planOf(t), name = await actorName(db, auth, tx);
+    const open = new Map(plan.groups.partners.filter(p => !p.arrival || p.arrivalSource === 'recorded').map(p => [p.key, p]));
+    if (r.keys.some(k => !open.has(k))) fail('القائمة تغيرت؛ أعد القراءة قبل الحفظ.');
+    const at = new Date().toISOString();
+    for (const k of r.keys) {
+      // Read with the tables above: a transaction reads everything before it writes.
+      const before = Object.fromEntries(Object.entries(input.decisions[k] || {}).filter(([field]) => field !== 'id'));
+      tx.set(db.collection('founding_decisions').doc(financeHash(k).slice(0, 40)), { ...before, sourceKey: k, decision: r.arrival, partnerId: null, custodian: null, attested: false, note: before.note ?? null,
+        vatReviewed: before.vatReviewed ?? false, revision: (Number(before.revision) || 0) + 1, decidedBy: auth.uid, decidedByName: name, decidedAtIso: at });
+    }
+    audit(db, tx, auth, 'founding-payments-arrival', r.arrival, { keys: r.keys, arrival: r.arrival,
+      total: r.keys.reduce((n, k) => n + halala(open.get(k).amount), 0) / 100 });
+    return { saved: true, count: r.keys.length };
+  });
+}
+
+/**
+ * «مصروف تأسيس بإقرار المدير»: مصروف دفعه هادي ولا مستند له. يُسجّل عبر صندوق
+ * العمل المالي (معاينة ثم تسجيل بضوابطه) بلا ضريبة مدخلات، باسم من أقرّه
+ * ووقته، ويعود بانتظار الاعتماد. الشهر المقفل يبقى مقفلًا: يُسجّل بآخر يوم في
+ * فترة التأسيس، ويُحفظ تاريخه التقريبي.
+ */
+async function attestExpense(db, auth, r, workbench) {
+  const t = await loadTables(db), { input, plan } = planOf(t), name = await actorName(db, auth);
+  const { cutoffDate: cutoff, foundingEnd } = plan.settings;
+  if (r.approxDate >= cutoff) fail(`التاريخ قبل بدء البنك (${cutoff}) فقط: هذا مصروف لفترة التأسيس.`, 'invalid-argument');
+  const recordDate = input.closedMonths.has(r.approxDate.slice(0, 7)) ? foundingEnd : r.approxDate;
+  if (input.closedMonths.has(recordDate.slice(0, 7))) fail('آخر يوم في فترة التأسيس في شهر مقفل؛ لا يُسجّل قبل فتحه.');
+  const parents = r.kind === 'annual' ? t.annual_expenses : r.kind === 'startup' ? t.startup_costs : t[FINANCE_KINDS[r.kind].category];
+  if (!parents.some(x => x.id === r.classificationId)) fail('التصنيف غير موجود.', 'not-found');
+  const description = r.description.trim();
+  if (plan.attestedExpenses.some(e => halala(e.amount) === halala(r.amount) && e.approxDate === r.approxDate && e.title === description)) {
+    fail('مصروف بإقرار المدير بنفس الوصف والمبلغ والتاريخ مسجّل.', 'already-exists');
+  }
+  const classification = ['annual', 'startup'].includes(r.kind) ? { parentId: r.classificationId } : { categoryId: r.classificationId };
+  const managerAttestation = { by: auth.uid, byName: name, atIso: new Date().toISOString(), approxDate: r.approxDate, ...(r.note ? { note: r.note } : {}) };
+  const patch = { description, amount: r.amount, date: recordDate, quantity: 1, ...classification, supplier: null, invoiceNumber: null, invoiceDate: null,
+    invoiceUrl: r.proofUrl, isTaxInvoice: false, vatDeductible: false, vatAmount: null, vatRate: null, priceMode: 'inclusive',
+    fundingType: 'owner_current', paymentMethod: 'founding_personal', paymentStatus: 'paid', paidDate: recordDate,
+    fundingReference: `إقرار المدير — ${name}`, purpose: 'مصروف تأسيس بإقرار المدير', evidenceRefs: ['founding:attestation'], managerAttestation };
+  const requestId = `attest_${r.requestId}`, reason = 'مصروف تأسيس بإقرار المدير';
+  const preview = await workbench(db, auth, { action: 'previewCapture', kind: r.kind, requestId, patch });
+  const saved = await workbench(db, auth, { action: 'capture', kind: r.kind, requestId, patch, previewHash: preview.previewHash, reason, confirm: true });
+  return { saved: true, kind: r.kind, sourceId: saved.sourceId, recordDate, auditId: saved.auditId || null };
+}
+
+/** إقرار المدير على رصيد 2300 حسب المستندات، بملاحظة، باسمه ووقته — بلا قيد. */
+async function attestBalance(db, auth, r) {
+  return db.runTransaction(async tx => {
+    await adminOnly(db, auth, tx);
+    const t = await loadTables(db, tx), { input, plan } = planOf(t), name = await actorName(db, auth, tx), b = plan.hadiBalance;
+    if (b.hash !== r.hash) fail('تغيّر الرصيد بعد عرضه؛ أعد القراءة واعتمد من جديد.');
+    const hadiAttestation = { paid: b.paid, received: b.received, toCompany: b.toCompany, toHadi: b.toHadi, net: b.net, undecided: b.undecided,
+      note: r.note, by: auth.uid, byName: name, atIso: new Date().toISOString(), cutoffDate: plan.settings.cutoffDate, hash: b.hash };
+    writeReview(db, tx, input.review, plan, { hadiAttestation }, auth, name);
+    audit(db, tx, auth, 'founding-attest-balance', SETTINGS_ID, hadiAttestation);
+    return { saved: true, attestation: hadiAttestation };
+  });
+}
+
+/** تسوية على 3200 يكتب هادي سببها: تُحفظ مقترحة، ولا تُرحّل إلا بموافقته من قسم القيود. */
+async function proposeAdjustment(db, auth, r) {
+  return db.runTransaction(async tx => {
+    await adminOnly(db, auth, tx);
+    const t = await loadTables(db, tx), { input, plan } = planOf(t), name = await actorName(db, auth, tx);
+    const list = plan.settings.adjustments || [];
+    if (list.length >= 50) fail('تسويات كثيرة؛ رحّل أو احذف بعضها أولًا.');
+    const at = new Date().toISOString();
+    const adjustment = { id: `adj_${financeHash({ uid: auth.uid, at, amount: r.amount, direction: r.direction, reason: r.reason }).slice(0, 16)}`,
+      amount: r.amount, direction: r.direction, reason: r.reason, by: auth.uid, byName: name, atIso: at };
+    writeReview(db, tx, input.review, plan, { adjustments: [...list, adjustment] }, auth, name);
+    audit(db, tx, auth, 'founding-adjustment', adjustment.id, adjustment);
+    return { saved: true, adjustment };
+  });
+}
+
+async function removeAdjustment(db, auth, r) {
+  return db.runTransaction(async tx => {
+    await adminOnly(db, auth, tx);
+    const t = await loadTables(db, tx), { input, plan } = planOf(t), name = await actorName(db, auth, tx);
+    const list = plan.settings.adjustments || [], entry = plan.entries.find(e => e.key === `adjustment:${r.id}`);
+    if (!list.some(a => a.id === r.id)) fail('التسوية غير موجودة.', 'not-found');
+    if (entry?.status === 'posted') fail('التسوية مرحّلة؛ تصحيحها بقيد عكسي.');
+    writeReview(db, tx, input.review, plan, { adjustments: list.filter(a => a.id !== r.id) }, auth, name);
+    audit(db, tx, auth, 'founding-adjustment-removed', r.id, { removed: list.find(a => a.id === r.id) });
+    return { saved: true };
   });
 }
 
@@ -526,7 +668,7 @@ async function applyOne(db, auth, r, row, id, name, workbench) {
     const links = statementLinks(input.lines.filter(l => l.id !== id));
     let link = { linkKind: null, linkId: null, partnerId: null }, mode = 'recorded', target = null;
     if (row.decision === 'transfer') {
-      if (r.account !== 'personal') fail('التحويل بين هادي والشركة يُعلّم من كشف هادي الشخصي.', 'invalid-argument');
+      // From Hadi's statement, or the company's: a deposit there is Hadi funding the company.
     } else if (row.decision === 'document') {
       const doc = input.docs.find(d => d.key === row.linkKey);
       if (row.direction !== 'debit' || !doc) fail('اختر مستندًا لهذا الخصم.', 'invalid-argument');
@@ -612,7 +754,8 @@ export async function foundingSettlement(db, auth, input, { workbench }) {
     const t = await loadTables(db), { input: data, plan } = planOf(t);
     return { plan, partners: data.partners, review: data.review, filedQuarters: FILED_VAT_QUARTERS,
       accounts: { hadi: data.chart.has(ACC.HADI_CURRENT), settlements: data.chart.has(ACC.FOUNDING_SETTLEMENTS) },
-      custodyHint: data.custodyHint / 100, statementLines: data.lines, readAt: new Date().toISOString(),
+      custodyHint: data.custodyHint / 100, statementLines: data.lines, readAt: new Date().toISOString(), expenseOptions: options(t),
+      closedMonths: [...data.closedMonths].sort(),
       accountNames: Object.fromEntries([...DEFAULT_CHART_OF_ACCOUNTS.map(x => [x.code, x.nameArabic]), ...t.chart_of_accounts.map(x => [x.id, x.nameArabic || x.id])]) };
   }
   if (r.action === 'saveSettings') return saveSettings(db, auth, r);
@@ -623,6 +766,11 @@ export async function foundingSettlement(db, auth, input, { workbench }) {
   if (r.action === 'applyUpdate') return applyUpdate(db, auth, r, workbench);
   if (r.action === 'applyUpdates') return applyUpdates(db, auth, r, workbench);
   if (r.action === 'applyRule') return applyRule(db, auth, r);
+  if (r.action === 'decidePayments') return decidePayments(db, auth, r);
+  if (r.action === 'attestExpense') return attestExpense(db, auth, r, workbench);
+  if (r.action === 'attestBalance') return attestBalance(db, auth, r);
+  if (r.action === 'proposeAdjustment') return proposeAdjustment(db, auth, r);
+  if (r.action === 'removeAdjustment') return removeAdjustment(db, auth, r);
   if (r.action === 'statementSuggest') return statementSuggest(db, auth, r);
   return statementApply(db, auth, r, workbench);
 }

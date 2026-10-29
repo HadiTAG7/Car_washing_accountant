@@ -102,5 +102,32 @@ describe.skipIf(!enabled)('founding settlement on Postgres with the production s
     read = await call({ action: 'read' });
     expect(read.plan.entries.filter(e => e.status === 'proposed').map(e => e.key).sort()).toEqual(['doc:startup:se1', 'doc:variable:v3']);
   }, 120000);
-});
 
+  it('keeps the no-statement settings, an attested expense, the attested balance and a written 3200 entry in Postgres', async () => {
+    let read = await call({ action: 'read' });
+    await call({ action: 'saveSettings', revision: 0, cutoffDate: '2026-10-01', threshold: 500, actuals: null, noPersonalStatement: true, confirm: true });
+    const saved = await call({ action: 'attestExpense', requestId: 'pg-attest-1', approxDate: '2026-07-20', amount: 45.5, description: 'نقل أغراض',
+      kind: 'variable', classificationId: 'cat1', proofUrl: null, note: null, confirm: true });
+    expect(saved.recordDate).toBe('2026-09-30');
+    const row = (await pool.query('select logged_date, payment_method, is_tax_invoice, vat_deductible, finance_metadata from public.variable_expenses where id = $1', [saved.sourceId])).rows[0];
+    expect(row).toMatchObject({ logged_date: '2026-09-30', payment_method: 'founding_personal', is_tax_invoice: false, vat_deductible: false });
+    expect(row.finance_metadata.managerAttestation).toMatchObject({ by: admin, approxDate: '2026-07-20' });
+    read = await call({ action: 'read' });
+    expect(read.plan.comparison.status).toBe('off');
+    expect(read.plan.attestedExpenses.map(e => e.sourceId)).toEqual([saved.sourceId]);
+    await call({ action: 'attestBalance', hash: read.plan.hadiBalance.hash, note: 'مراجعة أولى', confirm: true });
+    await call({ action: 'proposeAdjustment', amount: 45.5, direction: 'debit_2300', reason: 'تنازل عن مبلغ بلا مستند', confirm: true });
+    const review = (await db.collection('founding_review').doc('current').get()).data();
+    expect(review).toMatchObject({ noPersonalStatement: true, hadiAttestation: { note: 'مراجعة أولى', net: 45.5 }, adjustments: [{ amount: 45.5, direction: 'debit_2300' }] });
+    read = await call({ action: 'read' });
+    const entry = read.plan.entries.find(e => e.type === 'adjustment');
+    expect(entry.status).toBe('proposed');
+    await call({ action: 'postEntries', reason: 'موافقة', confirm: true, entries: [{ key: entry.key, hash: entry.hash }] });
+    const lines = (await pool.query(`select l.account_id, l.debit, l.credit from public.journal_entry_lines l join public.journal_entries e on e.id = l.entry_id
+      where e.source_kind = 'founding_adjustment' order by l.line_no`)).rows.map(l => [l.account_id, Number(l.debit), Number(l.credit)]);
+    expect(lines).toEqual([['2300', 45.5, 0], ['3200', 0, 45.5]]);
+    await call({ action: 'decidePayments', keys: ['partner_payment:pp1'], arrival: 'hadi', confirm: true });
+    read = await call({ action: 'read' });
+    expect(read.plan.hadiBalance).toMatchObject({ received: 5000, net: -4954.5, attestation: { changed: true } });
+  }, 120000);
+});

@@ -17,7 +17,7 @@ describe('من يرى أي تبويب', () => {
     for (const old of ['startup', 'annual', 'monthly', 'variable', 'temporary_expenses', 'ledger', 'vat', 'assets', 'sweater_settlements']) {
       expect(finance.tabs.some(t => t.id === old)).toBe(true); expect(resolveTab(old, { allowedTabIds: ids })).toBe(old);
     }
-    for (const role of ['partner', 'accountant', 'operator', 'supervisor']) for (const page of ['finance', 'finance_reports', 'finance_workbench', 'finance_payroll', 'hadi_current', 'bank_statements', 'founding_settlement']) {
+    for (const role of ['partner', 'accountant', 'operator', 'supervisor']) for (const page of ['finance', 'finance_reports', 'finance_workbench', 'finance_payroll', 'hadi_current', 'bank_statements', 'founding_settlement', 'founding_summary']) {
       const allowed = idsOf(visibleGroupsFor({ role })); expect(allowed).not.toContain(page); expect(resolveTab(page, { allowedTabIds: allowed })).toBe('overview');
     }
   });

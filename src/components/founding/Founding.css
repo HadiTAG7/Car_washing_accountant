@@ -33,3 +33,15 @@
 .founding-search { margin-block: 10px; }
 .founding-error { display: block; color: #9a3412; }
 .dark .founding-error { color: #fdba74; }
+.founding-filters { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+.founding-summary { background: var(--sw-surface, #fff); color: inherit; border: 1px solid var(--sw-border-subtle, #e2e8f0); border-radius: 16px; padding: 24px; display: grid; gap: 20px; }
+.founding-summary header h1 { font-size: 1.4rem; font-weight: 800; margin: 0 0 4px; }
+.founding-summary h2 { font-size: 1.05rem; font-weight: 700; margin: 0 0 8px; }
+.founding-summary table { width: 100%; border-collapse: collapse; }
+.founding-summary th, .founding-summary td { border-bottom: 1px solid var(--sw-border-subtle, #e2e8f0); padding: 6px 8px; text-align: start; }
+.founding-summary tfoot th, .founding-summary tfoot td { font-weight: 700; border-top: 2px solid currentColor; }
+@media print {
+  .founding-summary { border: 0; padding: 0; gap: 14px; color: #000; background: #fff; font-size: 11pt; }
+  .founding-summary section { break-inside: avoid; }
+  .founding-summary .fw-table-scroll { overflow: visible; }
+}

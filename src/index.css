@@ -238,12 +238,16 @@ html.dark ::-webkit-scrollbar-thumb:hover { background: #52565c; }
 
 /* ─── Print: isolate the partner statement sheet ──────────────────────────
    When window.print() fires from PartnerStatementModal, hide everything
-   except the statement sheet so the printout / saved PDF is clean. */
+   except the statement sheet so the printout / saved PDF is clean. The
+   founding-period summary prints the same way. */
 @media print {
   body * { visibility: hidden; }
   #partner-statement-sheet,
-  #partner-statement-sheet * { visibility: visible; }
-  #partner-statement-sheet {
+  #partner-statement-sheet *,
+  #founding-summary-sheet,
+  #founding-summary-sheet * { visibility: visible; }
+  #partner-statement-sheet,
+  #founding-summary-sheet {
     position: absolute;
     inset: 0;
     margin: 0;

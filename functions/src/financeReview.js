@@ -29,10 +29,14 @@ export function financeProblems(kind, row, sourceId = null) {
   else if (Object.hasOwn(row.finance_metadata || {}, 'invoiceLines')) issues.push(...financeInvoiceLineProblems(row, row[spec.amount], { kind, sourceId }));
   else if (!Number.isFinite(row.quantity) || row.quantity <= 0 || !Number.isFinite(row.unit_cost)
     || Math.round(row.quantity * row.unit_cost * 100) !== Math.round(row[spec.amount] * 100)) issues.push('الكمية وسعر الوحدة لا يطابقان الإجمالي.');
-  if (typeof row.supplier !== 'string' || !row.supplier.trim()) issues.push('المورد غير محدد.');
+  // A founding expense the manager attests to (paid, no document) may not know its supplier.
+  const attestation = managerAttestationOf(row);
+  if ((typeof row.supplier !== 'string' || !row.supplier.trim()) && !attestation) issues.push('المورد غير محدد.');
   // A saved bank-statement line is the document for an expense that has no
   // invoice; the server verifies the line itself (statementLineIssues).
-  if ((!row.invoice_url || !/^https:\/\//.test(row.invoice_url)) && !statementLineRefOf(row)) issues.push('رابط المستند غير مكتمل.');
+  if ((!row.invoice_url || !/^https:\/\//.test(row.invoice_url)) && !statementLineRefOf(row) && !attestation) issues.push('رابط المستند غير مكتمل.');
+  if (row.finance_metadata?.managerAttestation != null && !attestation) issues.push('إقرار المدير غير مكتمل.');
+  if (attestation && (row.is_tax_invoice !== false || row.vat_deductible !== false)) issues.push('مصروف بإقرار المدير بلا فاتورة ضريبية ولا ضريبة مدخلات.');
   if (spec.fk ? !row[spec.fk] : !row.category_id) issues.push('التصنيف غير محدد.');
   if (kind === 'monthly' && (row.recurrence === 'monthly' || row.biker_id || row.payrollSnapshot)) issues.push('القالب المتكرر أو الراتب ليس مصروفًا مفردًا في هذا المسار.');
   if (!['paid', 'unpaid'].includes(row.payment_status)) issues.push('حالة السداد غير مثبتة.');
@@ -67,6 +71,12 @@ export const FINANCE_PAYMENT_METHODS = Object.freeze(['cash', 'transfer', 'card'
 export function fundingPartnerOf(row) {
   const id = row?.finance_metadata?.fundingPartnerId;
   return typeof id === 'string' && /^[\p{L}\p{N}_.:-]{1,160}$/u.test(id) ? id : null;
+}
+/** «مصروف تأسيس بإقرار المدير»: دفعه هادي بلا مستند، ويقرّه المدير باسمه ووقته. */
+export function managerAttestationOf(row) {
+  const a = row?.finance_metadata?.managerAttestation;
+  return a && typeof a === 'object' && typeof a.by === 'string' && a.by.trim() && typeof a.atIso === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(a.atIso)
+    && realDate(a.approxDate) ? a : null;
 }
 /** The bank-statement line named as this record's document, if any. */
 export function statementLineRefOf(row) {

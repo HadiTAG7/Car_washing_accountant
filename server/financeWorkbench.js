@@ -35,6 +35,8 @@ const patchSchema = z.object({
   fundingType: z.enum(['unknown', 'company_cash', 'company_bank', 'vendor_liability', 'partner', 'employee', 'owner_current', 'custody']).optional(),
   fundingPartnerId: id.nullable().optional(), custodian: z.string().trim().min(1).max(80).nullable().optional(),
   statementLineRef: z.string().regex(/^[A-Za-z0-9_-]{1,120}$/).nullable().optional(),
+  managerAttestation: z.object({ by: id, byName: z.string().trim().min(1).max(200), atIso: z.string().regex(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/),
+    approxDate: date, note: z.string().trim().min(1).max(500).optional() }).strict().nullable().optional(),
   fundingReference: nullableText.optional(), purpose: nullableText.optional(), evidenceRefs: z.array(z.string().trim().min(1).max(300)).max(20).optional(),
   taxReviewRef: nullableText.optional(), taxBasis: z.enum(['document', 'verified_historical_policy']).optional(),
   invoiceLines: z.unknown().refine(value => value === null || invoiceLinesShapeIssues(value).length === 0, 'بنود الفاتورة غير صالحة.').optional(),
@@ -73,7 +75,7 @@ function applyPatch(kind, before, p) {
   if (p.categoryId && spec.fk) fail('هذا النوع يتبع بند التأسيس أو السنوي.', 'invalid-argument');
   const meta = { ...(row.finance_metadata || {}) };
   for (const key of ['fundingType', 'fundingReference', 'purpose', 'evidenceRefs', 'taxReviewRef', 'taxBasis']) if (Object.hasOwn(p, key)) meta[key] = p[key];
-  for (const key of ['statementLineRef', 'fundingPartnerId', 'custodian']) if (Object.hasOwn(p, key)) {
+  for (const key of ['statementLineRef', 'fundingPartnerId', 'custodian', 'managerAttestation']) if (Object.hasOwn(p, key)) {
     if (p[key] === null) delete meta[key]; else meta[key] = p[key];
   }
   if (Object.hasOwn(p, 'invoiceLines')) {
@@ -308,7 +310,11 @@ export async function financeWorkbench(db, auth, input) {
       || (!after.quantity && !after.finance_metadata?.invoiceLines))) fail('التسجيل يحتاج وصفًا وتاريخًا ومبلغًا وكمية أو بنودًا مثبتة.');
     // A statement line is unique by itself (one line, one record — checked in
     // assertFinanceDocumentUniqueness), so it stands in for the document link.
-    if (isCapture && !after.invoice_url && !after.finance_metadata?.statementLineRef) fail('رابط المستند مطلوب لمنع التكرار.');
+    if (isCapture && !after.invoice_url && !after.finance_metadata?.statementLineRef && !after.finance_metadata?.managerAttestation) fail('رابط المستند مطلوب لمنع التكرار.');
+    // A manager's attestation is the saver's own, never written in another's name.
+    const attestation = after.finance_metadata?.managerAttestation;
+    if (attestation && JSON.stringify(attestation) !== JSON.stringify(before.finance_metadata?.managerAttestation ?? null)
+      && attestation.by !== auth.uid) fail('إقرار المدير يُسجّل باسم من يحفظه فقط.', 'permission-denied');
     // A same-record edit never relocates or deletes a source, nor moves a
     // booked date to an open month to evade the original period lock.
     const afterState = await readState(db, tx, r.kind, sourceId, after);

@@ -26,7 +26,7 @@ describe('finance presentation without new financial calculations or writes', ()
     expect(TAB_GROUPS[4].tabs.map(tab => tab.id)).toEqual(['agent_command_center']);
     const finance = TAB_GROUPS[1];
     expect(finance.sections.map(section => section.title)).toEqual(['الإدخال اليومي', 'القوائم', 'الضريبة والإقفال']);
-    expect(finance.sections.flatMap(section => section.tabIds)).toHaveLength(18);
+    expect(finance.sections.flatMap(section => section.tabIds)).toHaveLength(19);
     expect(finance.tabs.filter(tab => !tab.hidden).map(tab => tab.id)).not.toContain('annual');
     const adminIds = visibleGroupsFor({ role: 'admin' }).flatMap(group => group.tabs.map(tab => tab.id));
     for (const id of EXPENSE_TAB_IDS) expect(resolveTab(id, { allowedTabIds: adminIds })).toBe(id);

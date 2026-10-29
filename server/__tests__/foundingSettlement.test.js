@@ -209,5 +209,86 @@ describe('Hadi current account and founding-period settlement', () => {
     expect(read.plan.updates).toEqual([]);
     expect([...db.rows.keys()].filter(k => k.startsWith('journal_entries/'))).toHaveLength(journalsBefore);
   });
-});
 
+  it('works without a personal statement: company transfers, manager-attested expenses, an attested balance, and 3200 only by a written entry', async () => {
+    const db = memoryFinanceDb(seed());
+    const journals = () => [...db.rows.keys()].filter(k => k.startsWith('journal_entries/')).length, journalsBefore = journals();
+    let read = await call(db, { action: 'read' });
+    await call(db, { action: 'applyRule', hash: read.plan.rule.hash, confirm: true });
+    await call(db, { action: 'saveSettings', revision: Number(db.rows.get('founding_review/current').revision), cutoffDate: '2026-10-01', threshold: 500,
+      actuals: null, noPersonalStatement: true, confirm: true });
+    // Saving settings keeps what the review already holds.
+    expect(db.rows.get('founding_review/current')).toMatchObject({ noPersonalStatement: true, lastRule: { count: 4 } });
+    read = await call(db, { action: 'read' });
+    expect(read.plan.comparison).toMatchObject({ status: 'off', entry: null });
+    expect(read.expenseOptions.variable).toEqual([{ id: 'cat1', label: 'تشغيل' }]);
+
+    // A deposit on the company statement marked as Hadi's transfer.
+    const deposit = { txDate: '2026-10-04', direction: 'credit', amount: 3000, description: 'تحويل من هادي', reference: 'c1', balance: null, occurrence: 1 };
+    const applied = await call(db, { action: 'statementApply', account: 'company', fileName: 'شركة.xlsx', fileHash: 'h', confirm: true,
+      rows: [{ ...deposit, decision: 'transfer', linkKey: null, expense: null }] });
+    expect(applied).toMatchObject({ applied: 1, failed: 0 });
+    // Partner payments without a statement: decided together.
+    await expect(call(db, { action: 'decidePayments', keys: ['partner_payment:nope'], arrival: 'hadi', confirm: true })).rejects.toThrow(/تغيرت/);
+    await call(db, { action: 'decidePayments', keys: ['partner_payment:pp1'], arrival: 'hadi', confirm: true });
+
+    // A founding expense with no document, attested by the manager; its closed month stays closed.
+    const attest = { action: 'attestExpense', requestId: 'req-attest-1', approxDate: '2026-07-15', amount: 90, description: 'أجرة نقل أغراض السكن',
+      kind: 'variable', classificationId: 'cat1', proofUrl: null, note: 'دفعتها كاش من جيبي', confirm: true };
+    await expect(call(db, { ...attest, approxDate: '2026-10-02' })).rejects.toMatchObject({ code: 'invalid-argument' });
+    await expect(call(db, attest, { uid: 'test-accountant' })).rejects.toMatchObject({ code: 'permission-denied' });
+    const saved = await call(db, attest);
+    expect(saved).toMatchObject({ saved: true, kind: 'variable', recordDate: '2026-09-30' });
+    const expense = db.rows.get(`variable_expenses/${saved.sourceId}`);
+    expect(expense).toMatchObject({ logged_date: '2026-09-30', total_variable_cost: 90, payment_method: 'founding_personal', paid_date: '2026-09-30',
+      is_tax_invoice: false, vat_deductible: false, approval_status: 'pending', supplier: null });
+    expect(expense.finance_metadata).toMatchObject({ fundingType: 'owner_current', managerAttestation: { by: 'test-admin', byName: 'مدير الاختبار',
+      approxDate: '2026-07-15', note: 'دفعتها كاش من جيبي' } });
+    // Complete for approval without a supplier or a document; it posts to Hadi's account, with no input VAT.
+    expect(financeProblems('variable', expense, saved.sourceId)).toEqual([]);
+    expect(financeProblems('variable', { ...expense, is_tax_invoice: true }, saved.sourceId)).toContain('مصروف بإقرار المدير بلا فاتورة ضريبية ولا ضريبة مدخلات.');
+    const built = ADAPTERS.variable.build(expense, saved.sourceId, { recordDate: '2026-09-30', policyAt: d => taxPolicyAt(d, { vatRegistered: false }) });
+    expect(built.lines.map(l => [l.accountId, l.debit, l.credit])).toEqual([['5100', 90, 0], ['2300', 0, 90]]);
+    await expect(call(db, { ...attest, requestId: 'req-attest-2' })).rejects.toMatchObject({ code: 'already-exists' });
+    // Nobody records an attestation in another's name, even through the workbench itself.
+    const forged = { description: 'مصروف', amount: 10, date: '2026-09-29', quantity: 1, categoryId: 'cat1', isTaxInvoice: false, vatDeductible: false,
+      managerAttestation: { by: 'someone-else', byName: 'غيره', atIso: '2026-10-29T10:00:00.000Z', approxDate: '2026-09-29' } };
+    const forgedPreview = await financeWorkbench(db, auth, { action: 'previewCapture', kind: 'variable', requestId: 'forged-1', patch: forged }).catch(e => e);
+    expect(forgedPreview).toMatchObject({ code: 'permission-denied' });
+
+    read = await call(db, { action: 'read' });
+    expect(read.plan.attestedExpenses).toMatchObject([{ sourceId: saved.sourceId, approxDate: '2026-07-15', date: '2026-09-30', byName: 'مدير الاختبار', category: 'تشغيل' }]);
+    const balance = read.plan.hadiBalance;
+    // Paid by Hadi: the rule's four (2,150) and the attested 90; received 5,000; transferred 3,000 to the company.
+    expect(balance).toMatchObject({ paid: 2240, received: 5000, toCompany: 3000, toHadi: 0, net: 240, meaning: { kind: 'owed_to_hadi', amount: 240 },
+      undecided: { count: 0, amount: 0 }, attestation: null });
+    expect(read.plan.entries.find(e => e.type === 'transfer').lines.map(l => [l.accountId, l.debit, l.credit])).toEqual([['1020', 3000, 0], ['2300', 0, 3000]]);
+
+    // Hadi attests the balance he was shown, with a note.
+    await expect(call(db, { action: 'attestBalance', hash: '0'.repeat(64), note: 'راجعته', confirm: true })).rejects.toThrow(/تغيّر/);
+    await call(db, { action: 'attestBalance', hash: balance.hash, note: 'راجعت المستندات والتحويلات', confirm: true });
+    expect(db.rows.get('founding_review/current').hadiAttestation).toMatchObject({ net: 240, note: 'راجعت المستندات والتحويلات', byName: 'مدير الاختبار' });
+    read = await call(db, { action: 'read' });
+    expect(read.plan.hadiBalance.attestation).toMatchObject({ net: 240, changed: false });
+    expect(read.plan.entries.some(e => e.lines.some(l => l.accountId === '3200'))).toBe(false);
+
+    // 3200 only by an entry with a written reason, posted on approval.
+    await call(db, { action: 'proposeAdjustment', amount: 240, direction: 'debit_2300', reason: 'تنازل هادي عن الفرق للمشروع', confirm: true });
+    const [adjustment] = db.rows.get('founding_review/current').adjustments;
+    expect(adjustment).toMatchObject({ amount: 240, direction: 'debit_2300', byName: 'مدير الاختبار' });
+    read = await call(db, { action: 'read' });
+    const entry = read.plan.entries.find(e => e.key === `adjustment:${adjustment.id}`);
+    expect(entry).toMatchObject({ status: 'proposed', date: '2026-09-30', reason: 'تنازل هادي عن الفرق للمشروع' });
+    expect(journals()).toBe(journalsBefore);
+    await call(db, { action: 'postEntries', reason: 'موافقة على التنازل', entries: [{ key: entry.key, hash: entry.hash }], confirm: true });
+    const posted = db.rows.get(`journal_entries/${foundingEntryId(entry.key)}`);
+    expect(posted).toMatchObject({ sourceKind: 'founding_adjustment', foundingEntry: { reason: 'موافقة على التنازل' } });
+    expect(posted.lines.map(l => [l.accountId, l.debit, l.credit])).toEqual([['2300', 240, 0], ['3200', 0, 240]]);
+    await expect(call(db, { action: 'removeAdjustment', id: adjustment.id, confirm: true })).rejects.toThrow(/مرحّلة/);
+    read = await call(db, { action: 'read' });
+    expect(read.plan.summary.settlements).toMatchObject([{ status: 'posted', reason: 'موافقة على التنازل', amount: 240 }]);
+    expect(read.plan.hadiBalance).toMatchObject({ net: 240, afterAdjustments: 0 });
+    // Only the approved adjustment was posted.
+    expect(journals()).toBe(journalsBefore + 1);
+  });
+});

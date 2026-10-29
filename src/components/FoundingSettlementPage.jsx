@@ -4,16 +4,17 @@ import TopBar from './TopBar';
 import LoadingState from './LoadingState';
 import { useFounding } from '../hooks/useFounding';
 import { ConfirmButton, EntryLines, Messages, StatusBadge } from './founding/FoundingCommon';
-import { money, day } from '../lib/founding/foundingFormat';
+import { money, day, when } from '../lib/founding/foundingFormat';
 import { DefaultRule, StatementComparison } from './founding/FoundingRule';
+import { HadiBalance, Adjustments, AttestedExpenses } from './founding/FoundingBalance';
 import './FinanceWorkspace.css';
 import './founding/Founding.css';
 
-const DOC_DECISIONS = { hadi: 'من حسابي', partner: 'من جيب شريك', custody: 'من عهدة', cash: 'كاش', unknown: 'غير معروف' };
+const DOC_DECISIONS = { hadi: 'من حسابي', partner: 'من جيب شريك', custody: 'من عهدة', cash: 'كاش', company_bank: 'من حساب الشركة', unknown: 'غير معروف' };
 const ARRIVALS = { hadi: 'حسابي', company: 'حساب الشركة' };
-const PAYERS = { hadi: 'حساب هادي', company_bank: 'حساب الشركة', partner: 'جيب شريك', custody: 'عهدة', cash: 'كاش', unknown: 'غير معروف' };
+const PAYERS = { hadi: 'حساب هادي', company_bank: 'حساب الشركة', partner: 'جيب شريك', custody: 'عهدة', cash: 'كاش', vendor: 'ذمة مورد', unknown: 'غير معروف' };
 const payerText = r => !r.payer ? 'لم يُحسم' : r.payerSource === 'rule' ? 'دفع شخصي - فترة التأسيس (القاعدة)'
-  : r.payer === 'custody' ? `من عهدة ${r.custodian || ''}` : PAYERS[r.payer] || r.payer;
+  : `${r.payer === 'custody' ? `من عهدة ${r.custodian || ''}` : PAYERS[r.payer] || r.payer}${r.payerSource === 'recorded' ? ' — كما سُجّل' : ''}`;
 const KIND = { variable: 'متغيرة', monthly: 'شهرية', annual: 'سنوية', startup: 'تأسيس' };
 
 export default function FoundingSettlementPage() {
@@ -35,7 +36,9 @@ export default function FoundingSettlementPage() {
         {/* A saved revision remounts the form with the stored values. */}
         <Settings key={Number(data.review?.revision) || 0} founding={founding} />
         <DefaultRule founding={founding} partners={data.partners} names={data.accountNames} progress={ruleProgress} setProgress={setRuleProgress} />
-        <StatementComparison plan={plan} names={data.accountNames} />
+        {plan.settings.noPersonalStatement ? <HadiBalance founding={founding} /> : <StatementComparison plan={plan} names={data.accountNames} />}
+        <Adjustments founding={founding} names={data.accountNames} />
+        <AttestedExpenses founding={founding} />
         <div className="fw-metrics">
           {[['matched', 'أ) مطابقة لكشف'], ['small', 'ب) تحت الحد بلا إثبات'], ['large', 'ج) فوق الحد بلا إثبات'], ['partners', 'د) دفعات الشركاء'], ['withProof', 'بإثبات ولم تطابق كشفًا']]
             .map(([key, label]) => <div key={key} className="fw-panel fw-metric"><span>{label}</span><strong>{plan.totals[key].count}</strong><p>{money(plan.totals[key].amount)}</p></div>)}
@@ -57,7 +60,7 @@ function Settings({ founding }) {
   const { plan, review, custodyHint } = founding.data;
   const initial = () => ({ cutoffDate: plan.settings.cutoffDate, threshold: plan.settings.threshold,
     bankOpen: plan.settings.actuals?.bankOpen ?? true, bankBalance: plan.settings.actuals?.bankBalance ?? '', cash: plan.settings.actuals?.cash ?? '',
-    custody: plan.settings.actuals?.custody || [] });
+    custody: plan.settings.actuals?.custody || [], noPersonalStatement: plan.settings.noPersonalStatement === true });
   const [form, setForm] = useState(initial);
   const revision = Number(review?.revision) || 0;
   const set = patch => setForm(f => ({ ...f, ...patch }));
@@ -73,7 +76,10 @@ function Settings({ founding }) {
       <label className="founding-check"><input type="checkbox" checked={form.bankOpen} onChange={e => set({ bankOpen: e.target.checked })} /> حساب الشركة كان مفتوحًا يوم القطع</label>
       {form.bankOpen && <label>رصيد حساب الشركة يوم القطع<input type="number" value={form.bankBalance} onChange={e => set({ bankBalance: e.target.value })} /></label>}
       <label>الكاش في الصندوق يوم القطع<input type="number" value={form.cash} onChange={e => set({ cash: e.target.value })} /></label>
+      <label className="founding-check fw-wide"><input type="checkbox" checked={form.noPersonalStatement} onChange={e => set({ noPersonalStatement: e.target.checked })} />
+        بدون كشف شخصي — رصيد حسابي الجاري من المستندات ودفعات الشركاء وكشف حساب الشركة، بلا مقارنة بكشفي</label>
     </div>
+    {review?.updatedByName && <small>آخر حفظ: {review.updatedByName} · <bdi>{when(review.updatedAtIso)}</bdi></small>}
     <h3>العهد عند كل شخص يوم القطع</h3>
     <small>رصيد العهد في الدفاتر يوم القطع {money(s.book['1300'] / 100)}، منها سلف بايكرية غير مستردة {money(custodyHint)} — أدخلها لأصحابها لو كانت عندهم.</small>
     {form.custody.map((c, i) => <div key={i} className="fw-form founding-row">
@@ -86,6 +92,7 @@ function Settings({ founding }) {
       <ConfirmButton primary label="حفظ الإعدادات والواقع" disabled={founding.busy || !form.cutoffDate}
         confirmText={actualsReady ? 'يحفظ تاريخ القطع والحد والأرقام الفعلية. لا قيود.' : 'يحفظ تاريخ القطع والحد فقط (الأرقام الفعلية ناقصة).'}
         onConfirm={() => founding.act({ action: 'saveSettings', revision, cutoffDate: form.cutoffDate, threshold: Number(form.threshold) || 0, confirm: true,
+          noPersonalStatement: form.noPersonalStatement,
           actuals: actualsReady ? { bankOpen: form.bankOpen, bankBalance: form.bankOpen ? number(form.bankBalance) : null, cash: number(form.cash),
             custody: form.custody.filter(c => c.name.trim()).map(c => ({ name: c.name.trim(), amount: Number(c.amount) || 0 })) } : null }, 'حُفظت الإعدادات.')} />
     </div>

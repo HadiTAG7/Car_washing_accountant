@@ -154,7 +154,7 @@ async function plan(db, payload, read) {
     if (protectedRecord && !unchanged) { outcome = 'needs_review'; reasonCode = 'protected_existing_record'; }
     else if (missingService) { outcome = 'needs_review'; reasonCode = 'unknown_service_type'; }
     else if (!unchanged && !established) { outcome = 'needs_review'; reasonCode = 'unverified_worker_link'; }
-    else if (!unchanged && record.normalizedStatus === 'unknown') { outcome = 'needs_review'; reasonCode = 'unknown_status'; }
+    else if (!unchanged && record.normalizedStatus === 'unknown' && !execution.eligible) { outcome = 'needs_review'; reasonCode = 'unknown_status'; }
     else if (!unchanged && !execution.eligible && (record.serviceType === 'interior_exterior_wash' || record.startedAt || record.completedAt)) {
       outcome = 'needs_review'; reasonCode = execution.reasonCode;
     }

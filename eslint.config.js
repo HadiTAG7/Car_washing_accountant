@@ -9,7 +9,9 @@ export default defineConfig([
   // `work/` contains independent Git worktrees and their built bundles. They
   // have their own source/lint lifecycle and must not be linted as part of the
   // active checkout (the same reason generated `dist/` is excluded).
-  globalIgnores(['dist', 'dist-emulator', 'dist-supabase-local', '.test-runtime', '.vercel', '.vite-cache', 'language-preview.local', 'functions/node_modules', 'mcp/node_modules', 'work']),
+  // Browserbase evaluates this generated file as a function body; its top-level
+  // return is valid there, while the generator itself remains linted below.
+  globalIgnores(['dist', 'dist-emulator', 'dist-supabase-local', '.test-runtime', '.vercel', '.vite-cache', 'language-preview.local', 'functions/node_modules', 'mcp/node_modules', 'work', 'public/integrations/sweater-browserbase-function.js']),
   {
     files: ['**/*.{js,jsx}'],
     extends: [

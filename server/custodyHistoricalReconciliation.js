@@ -111,6 +111,16 @@ export async function custodyHistoricalPlan(db, tx, r) {
       problems.push('تاريخ التمويل الفعلي يأتي بعد تاريخ التصحيح.');
     if (independent && [...evidence.values()].some(item => item.deliveryDate > r.correctionDate))
       problems.push('تاريخ تسليم إيداع يأتي بعد تاريخ التصحيح.');
+    // A founding-period 3200 entry may already have absorbed the same missing
+    // bank or advance balance at its cutoff. Never add another bank credit
+    // behind that posted settlement without a coordinated review/reversal.
+    if (independent && ledger.docs.some(doc => {
+      const entry = doc.data(), cutoff = entry.foundingEntry?.cutoffDate;
+      return entry.status === 'posted' && !entry.reversedBy && entry.foundingEntry?.type === 'settlement'
+        && isRealDate(cutoff) && [...evidence.values()].some(item => item.deliveryDate <= cutoff)
+        && linesOf(entry).some(line => ['1020', '1300'].includes(String(line.accountId))
+          && (halala(line.debit || 0) || halala(line.credit || 0)));
+    })) problems.push('تسوية 3200 المرحّلة قد تشمل تمويل العهدة نفسه؛ يلزم فحصها قبل قيد بنك جديد.');
     if (!r.evidenceRefs.length) problems.push('مراجع مستندات التمويل التاريخي غير محددة؛ إفادة المالك وحدها ليست مطابقة دفترية.');
     else notices.push('مراجع الأدلة مقدمة للفحص ولم تُطابق بعد مع تحويل البنك وتسليم العهدة.');
     if (r.correctionDate > new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Riyadh' }).format(new Date()))
@@ -121,12 +131,18 @@ export async function custodyHistoricalPlan(db, tx, r) {
       const key = `${allocation.kind}:${allocation.sourceId}`;
       if (keys.has(key)) problems.push('المصدر مكرر في قائمة التخصيصات.');
       keys.add(key);
-      const [snap, lock, prior] = await Promise.all([
+      const [snap, lock, prior, foundingDecision] = await Promise.all([
         tx.get(db.collection(collectionOf[allocation.kind]).doc(allocation.sourceId)),
         tx.get(db.collection('posting_locks').doc(`${allocation.kind}__${allocation.sourceId}`)),
         tx.get(db.collection('journal_entries').where('sourceId', '==', allocation.sourceId).limit(101)),
+        tx.get(db.collection('founding_decisions').doc(financeHash(key).slice(0, 40))),
       ]);
       const row = snap.exists ? snap.data() : null;
+      if (foundingDecision.exists && foundingDecision.data().decision != null)
+        problems.push('قرار جهة دفع في التأسيس يتعارض مع تمويل العهدة؛ يلزم حسمه قبل التسوية.');
+      if (ledger.docs.some(doc => doc.data().status === 'posted' && !doc.data().reversedBy
+        && doc.data().foundingEntry?.type === 'document' && doc.data().foundingEntry?.sourceKey === key))
+        problems.push('قيد تأسيس مرحّل للمستند نفسه؛ لا يُعاد تصنيف جهة دفعه عبر العهدة.');
       if (lock.exists) problems.push('المستند له قيد ترحيل سابق؛ يلزم فحصه قبل تخصيص العهدة.');
       if (prior.size > 100 || prior.docs.some(doc => doc.data().sourceType === 'expense' || doc.data().sourceKind === allocation.kind))
         problems.push('المستند له تاريخ ترحيل سابق؛ لا يُعترف به ثانيةً.');
@@ -189,7 +205,8 @@ export async function custodyHistoricalPlan(db, tx, r) {
             purchaseTaxSnapshot: built.purchaseTaxSnapshot || null });
         } catch (error) { problems.push(error.message); }
       }
-      records.push({ key, amountHalala: halala(allocation.amount), sourceHash: financeHash(row) });
+      records.push({ key, amountHalala: halala(allocation.amount), sourceHash: financeHash(row),
+        foundingDecision: foundingDecision.exists ? foundingDecision.data() : null });
     }
     const allocatedHalala = r.allocations.reduce((sum, a) => sum + halala(a.amount), 0);
     if (allocatedHalala !== halala(r.amount))

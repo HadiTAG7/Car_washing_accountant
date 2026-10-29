@@ -36,6 +36,7 @@ export const PAYMENT_METHOD_LABELS = {
   card:     'مدى / شبكة',
   transfer: 'تحويل بنكي',
   credit:   'آجل',
+  owner_current: 'من حساب هادي الشخصي',
 };
 
 /** The account money moves through for a given method, on the SALES side. */
@@ -57,6 +58,8 @@ export function settlementAccountForPurchase(method, paymentStatus) {
     case 'cash':     return ACC.CASH;
     case 'card':
     case 'transfer': return ACC.BANK;
+    // دفعه هادي من حسابه الشخصي: المشروع مدين له في حسابه الجاري.
+    case 'owner_current': return ACC.HADI_CURRENT;
     default:         return ACC.CASH;
   }
 }
@@ -279,7 +282,7 @@ export function buildPartnerPaymentEntry(payment, {
 } = {}) {
   const amount = round2(Number(payment.amount) || 0);
   const method = payment.paymentMethod || 'cash';
-  const cashAccount = method === 'cash' ? ACC.CASH : ACC.BANK;
+  const cashAccount = method === 'cash' ? ACC.CASH : method === 'owner_current' ? ACC.HADI_CURRENT : ACC.BANK;
   const capitalAccount = usePartnerSubAccount && payment.partnerId
     ? partnerCapitalCode(payment.partnerId)
     : ACC.PARTNER_CAPITAL;

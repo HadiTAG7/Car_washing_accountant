@@ -39,8 +39,8 @@ export const ACC = {
   SWEATER_RECEIVABLE: '1101',
   INPUT_VAT: '1200',
   EMPLOYEE_ADVANCE: '1300', FIXED_ASSETS: '1500', ACCUM_DEPRECIATION: '1510', ACCUM_AMORTIZATION: '1511',
-  PAYABLE: '2000', PAYROLL_PAYABLE: '2010', OUTPUT_VAT: '2100',
-  PARTNER_CAPITAL: '3000', RETAINED_EARNINGS: '3100',
+  PAYABLE: '2000', PAYROLL_PAYABLE: '2010', OUTPUT_VAT: '2100', HADI_CURRENT: '2300',
+  PARTNER_CAPITAL: '3000', RETAINED_EARNINGS: '3100', FOUNDING_SETTLEMENTS: '3200',
   WASH_REVENUE: '4000',
   // مردودات وخصومات المبيعات — a CONTRA-revenue account. A credit note
   // reduces revenue, but netting it against 4000 would hide the return; a
@@ -90,8 +90,15 @@ function settlementForPurchase(method, paymentStatus) {
   switch (method) {
     case 'cash': return ACC.CASH;
     case 'card': case 'transfer': return ACC.BANK;
+    // Paid by Hadi from his personal account: the project owes him.
+    case 'owner_current': return ACC.HADI_CURRENT;
     default: return ACC.CASH;
   }
+}
+
+/** The account a partner payment lands in: Hadi's current account when it reached his personal account. */
+export function partnerPaymentAccount(method) {
+  return method === 'cash' ? ACC.CASH : method === 'owner_current' ? ACC.HADI_CURRENT : ACC.BANK;
 }
 
 const EXPENSE_ACCOUNT = {
@@ -395,7 +402,7 @@ export const ADAPTERS = {
           description: 'دفعة رأس مال شريك',
         },
         lines: [
-          { accountId: method === 'cash' ? ACC.CASH : ACC.BANK, debit: amount, credit: 0, description: 'استلام دفعة' },
+          { accountId: partnerPaymentAccount(method), debit: amount, credit: 0, description: 'استلام دفعة' },
           { accountId: partnerCapitalCode(row.partner_id), debit: 0, credit: amount, description: 'رأس مال شريك' },
         ],
       };

@@ -43,8 +43,10 @@ export const ACC = {
   PAYABLE:           '2000', // الموردون / الذمم الدائنة
   PAYROLL_PAYABLE:   '2010', // رواتب مستحقة
   OUTPUT_VAT:        '2100', // ضريبة مخرجات مستحقة
+  HADI_CURRENT:      '2300', // حساب هادي الجاري مع المشروع
   PARTNER_CAPITAL:   '3000', // رأس مال الشركاء
   RETAINED_EARNINGS: '3100', // أرباح محتجزة
+  FOUNDING_SETTLEMENTS:'3200', // تسويات فترة التأسيس
   WASH_REVENUE:      '4000', // إيرادات غسيل السيارات
   SALES_RETURNS:     '4010', // مردودات وخصومات المبيعات (حساب مقابل)
   SWEATER_REVENUE:   '4001', // إيرادات خدمات سويتر
@@ -88,10 +90,17 @@ export const DEFAULT_CHART_OF_ACCOUNTS = [
   { code: ACC.PAYABLE,            nameArabic: 'الموردون / الذمم الدائنة',       accountType: 'liability' },
   { code: ACC.PAYROLL_PAYABLE,    nameArabic: 'رواتب مستحقة',                   accountType: 'liability' },
   { code: ACC.OUTPUT_VAT,         nameArabic: 'ضريبة مخرجات مستحقة',            accountType: 'liability' },
+  // حساب وسيط بين هادي والمشروع، لا بنك ولا صندوق: ما دفعه هادي من حسابه
+  // الشخصي للمشروع دائن، وما استلمه للمشروع (دفعات الشركاء) مدين. رصيده
+  // الدائن = المشروع مدين لهادي، والمدين = عند هادي للمشروع.
+  { code: ACC.HADI_CURRENT,       nameArabic: 'حساب هادي الجاري مع المشروع',    accountType: 'liability' },
 
   // ── حقوق الملكية ────────────────────────────────────────────────────
   { code: ACC.PARTNER_CAPITAL,    nameArabic: 'رأس مال الشركاء',                accountType: 'equity' },
   { code: ACC.RETAINED_EARNINGS,  nameArabic: 'أرباح محتجزة',                   accountType: 'equity' },
+  // الفرق الباقي يوم قطع فترة التأسيس بين الدفاتر والواقع (البنك والصندوق
+  // والعهد) — قيد تسوية واحد بموافقة هادي، لا مصروف ولا إيراد تشغيلي.
+  { code: ACC.FOUNDING_SETTLEMENTS, nameArabic: 'تسويات فترة التأسيس',         accountType: 'equity' },
 
   // ── الإيرادات ───────────────────────────────────────────────────────
   { code: ACC.WASH_REVENUE,       nameArabic: 'إيرادات غسيل السيارات',          accountType: 'revenue' },

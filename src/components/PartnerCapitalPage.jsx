@@ -50,7 +50,7 @@ function PartnerRow({ row }) {
       <details open={row.difference !== 0}><summary className="cursor-pointer text-primary-600 dark:text-primary-400">تفاصيل الفرق — {row.pending.length} سند</summary>
         {row.pending.map(payment => <div key={payment.id} className="flex flex-wrap justify-between gap-2 py-2 text-sm">
           <a className="underline" href={paymentHref(payment)}>{formatDate(payment.paymentDate)} · {formatCurrency(payment.amount)}</a>
-          <span>{payment.paymentMethod === 'bank_transfer' ? 'تحويل بنكي' : payment.paymentMethod === 'cash' ? 'نقد' : payment.paymentMethod || 'غير مسجل'} · {payment.reason}</span>
+          <span>{payment.paymentMethod === 'bank_transfer' ? 'تحويل بنكي' : payment.paymentMethod === 'cash' ? 'نقد' : payment.paymentMethod === 'owner_current' ? 'وصلت لحساب هادي' : payment.paymentMethod || 'غير مسجل'} · {payment.reason}</span>
         </div>)}
         {Math.abs(row.difference - row.pending.reduce((sum, payment) => sum + payment.difference, 0)) >= 0.01 && <p className="text-amber-600">يوجد فرق إضافي يحتاج مراجعة حركات رأس المال في دفتر الأستاذ.</p>}
       </details></td></tr>}

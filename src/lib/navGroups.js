@@ -10,6 +10,7 @@ import {
   LayoutDashboard, Landmark, Repeat, Receipt, Activity, Car, Bike, Home,
   BarChart3, Target, Handshake, Plug, HandCoins, RefreshCw, Percent,
   BookOpen, Scale, Lock, FileText, Boxes, Gauge, TrendingUp, Bot, CalendarDays,
+  Wallet, FileSpreadsheet,
 } from 'lucide-react';
 
 // Tab ids are untouched: the render chain below keys off them, so regrouping
@@ -99,6 +100,9 @@ const financeTabs = [
   { id: 'expenses', label: 'المصاريف', icon: Receipt, activeTabIds: EXPENSE_TAB_IDS },
   ...oldFinanceTabs.map(tab => EXPENSE_TAB_IDS.includes(tab.id) ? { ...tab, hidden: true } : tab),
   { id: 'finance_payroll', label: 'الرواتب ماليًا', icon: HandCoins, roles: ['admin'] },
+  { id: 'hadi_current', label: 'حساب هادي الجاري', icon: Wallet, roles: ['admin'] },
+  { id: 'bank_statements', label: 'كشوف الحساب', icon: FileSpreadsheet, roles: ['admin'] },
+  { id: 'founding_settlement', label: 'تسوية فترة التأسيس', icon: Scale, roles: ['admin'] },
 ];
 const top = LEGACY_TAB_GROUPS[0];
 export const TAB_GROUPS = [
@@ -107,7 +111,7 @@ export const TAB_GROUPS = [
     sections: [
       { id: 'daily', title: 'الإدخال اليومي', tabIds: ['finance_workbench', 'expenses', 'sweater_settlements', 'finance_payroll'] },
       { id: 'statements', title: 'القوائم', tabIds: ['finance', 'summary', 'balance', 'trial', 'ledger', 'finance_reports'] },
-      { id: 'tax-close', title: 'الضريبة والإقفال', tabIds: ['vat', 'documents', 'assets', 'budgets', 'periods'] },
+      { id: 'tax-close', title: 'الضريبة والإقفال', tabIds: ['vat', 'documents', 'assets', 'budgets', 'periods', 'hadi_current', 'bank_statements', 'founding_settlement'] },
     ], tabs: financeTabs },
   { id: 'partners', title: 'الشركاء', major: true, tabs: [
     { id: 'partners_list', label: 'قائمة الشركاء', icon: Handshake },

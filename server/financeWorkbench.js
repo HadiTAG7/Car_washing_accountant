@@ -16,6 +16,7 @@ import { invoiceLinesShapeIssues } from '../functions/src/financeInvoiceLines.js
 import { financeSourceEvidence, sourceEvidenceShapeValid } from '../functions/src/financeSourceEvidence.js';
 import { financePostingHistory } from './financePostingHistory.js';
 import { financeWorkflowDimensions } from '../src/lib/financeWorkflowDimensions.js';
+import { foundingSettlement } from './foundingSettlement.js';
 
 const kindSchema = z.enum(['variable', 'monthly', 'annual', 'startup']);
 const id = z.string().regex(/^[\p{L}\p{N}_.:-]{1,160}$/u);
@@ -29,9 +30,10 @@ const patchSchema = z.object({
   invoiceUrl: z.string().url().refine(v => v.startsWith('https://') && !/\/api\/mcp\//i.test(v)).nullable().optional(),
   isTaxInvoice: z.boolean().optional(), vatAmount: z.number().finite().nonnegative().nullable().optional(),
   vatRate: z.number().finite().min(0).max(1).nullable().optional(), vatDeductible: z.boolean().optional(),
-  priceMode: z.enum(['inclusive', 'exclusive']).optional(), paymentMethod: z.enum(['unknown', 'cash', 'transfer', 'card', 'credit']).optional(),
+  priceMode: z.enum(['inclusive', 'exclusive']).optional(), paymentMethod: z.enum(['unknown', 'cash', 'transfer', 'card', 'credit', 'owner_current']).optional(),
   paymentStatus: z.enum(['unknown', 'paid', 'unpaid']).optional(), paidDate: date.nullable().optional(),
-  fundingType: z.enum(['unknown', 'company_cash', 'company_bank', 'vendor_liability', 'partner', 'employee']).optional(),
+  fundingType: z.enum(['unknown', 'company_cash', 'company_bank', 'vendor_liability', 'partner', 'employee', 'owner_current']).optional(),
+  statementLineRef: z.string().regex(/^[A-Za-z0-9_-]{1,120}$/).nullable().optional(),
   fundingReference: nullableText.optional(), purpose: nullableText.optional(), evidenceRefs: z.array(z.string().trim().min(1).max(300)).max(20).optional(),
   taxReviewRef: nullableText.optional(), taxBasis: z.enum(['document', 'verified_historical_policy']).optional(),
   invoiceLines: z.unknown().refine(value => value === null || invoiceLinesShapeIssues(value).length === 0, 'بنود الفاتورة غير صالحة.').optional(),
@@ -70,6 +72,9 @@ function applyPatch(kind, before, p) {
   if (p.categoryId && spec.fk) fail('هذا النوع يتبع بند التأسيس أو السنوي.', 'invalid-argument');
   const meta = { ...(row.finance_metadata || {}) };
   for (const key of ['fundingType', 'fundingReference', 'purpose', 'evidenceRefs', 'taxReviewRef', 'taxBasis']) if (Object.hasOwn(p, key)) meta[key] = p[key];
+  if (Object.hasOwn(p, 'statementLineRef')) {
+    if (p.statementLineRef === null) delete meta.statementLineRef; else meta.statementLineRef = p.statementLineRef;
+  }
   if (Object.hasOwn(p, 'invoiceLines')) {
     if (p.invoiceLines === null) delete meta.invoiceLines;
     else meta.invoiceLines = p.invoiceLines;
@@ -177,7 +182,8 @@ async function workflowDocument(db, tx, kind, sourceId, row, currentState = null
     && typeof evidence.fundingReference === 'string' && Boolean(evidence.fundingReference.trim())
     && Array.isArray(evidence.evidenceRefs) && evidence.evidenceRefs.length > 0 && evidence.evidenceRefs.every(ref => typeof ref === 'string' && ref.trim())
     && ((evidence.fundingType === 'company_cash' && row.payment_method === 'cash')
-      || (evidence.fundingType === 'company_bank' && ['transfer', 'card'].includes(row.payment_method)));
+      || (evidence.fundingType === 'company_bank' && ['transfer', 'card'].includes(row.payment_method))
+      || (evidence.fundingType === 'owner_current' && row.payment_method === 'owner_current'));
   const safeUnposted = !state.protectedSource && !state.closed && preview.ready && !additionalIssues.length && !detail.issues.length;
   const correctedNeedsReview = reversed && (detail.issues.length > 0 || postingHistory.issues.length > 0 || !paymentProven);
   const workflowStage = posted ? correctedNeedsReview ? 'posted_review' : paymentProven ? 'complete' : 'posted_unproven'
@@ -194,7 +200,9 @@ async function workflowDocument(db, tx, kind, sourceId, row, currentState = null
 }
 async function browseDocuments(db) {
   const names = [...Object.values(FINANCE_KINDS).flatMap(spec => [spec.collection, spec.parent || spec.category]),
-    'journal_entries', 'journal_lines', 'posting_locks', 'finance_reviews', 'accounting_periods', 'app_settings', 'chart_of_accounts'];
+    'journal_entries', 'journal_lines', 'posting_locks', 'finance_reviews', 'accounting_periods', 'app_settings', 'chart_of_accounts',
+    // A record whose document is a bank-statement line is verified against it.
+    'bank_statement_lines'];
   const snapshot = await financeReadSnapshot(db, names);
   const tx = { get: reference => reference.get() };
   const items = [];
@@ -218,6 +226,9 @@ export async function financeWorkbench(db, auth, input) {
   if(input?.kind==='cash_bank_correction')return cashBankCorrection(db,auth,input);
   if(input?.kind==='cash_residual_correction')return cashResidualCorrection(db,auth,input);
   if(input?.kind==='payroll_cash_funding')return payrollCashFunding(db,auth,input);
+  // Hadi's current account, statements and the founding period: its document
+  // changes come back here through preview/save, with every control below.
+  if (input?.kind === 'founding') return foundingSettlement(db, auth, input, { workbench: financeWorkbench });
   const parsed = requestSchema.safeParse(input);
   if (!parsed.success) fail(parsed.error.issues.map(i => i.message).join(' '), 'invalid-argument');
   const r = parsed.data, spec = FINANCE_KINDS[r.kind];
@@ -294,7 +305,9 @@ export async function financeWorkbench(db, auth, input) {
     if (isCapture && (after.finance_metadata?.quantityException || after.finance_metadata?.documentAllocation)) fail('هذه الأدلة تخص سجلات قائمة؛ لا تستخدم لإنشاء مصروف جديد.');
     if (isCapture && (!after[spec.title] || !after[spec.date] || !after[spec.amount]
       || (!after.quantity && !after.finance_metadata?.invoiceLines))) fail('التسجيل يحتاج وصفًا وتاريخًا ومبلغًا وكمية أو بنودًا مثبتة.');
-    if (isCapture && !after.invoice_url) fail('رابط المستند مطلوب لمنع التكرار.');
+    // A statement line is unique by itself (one line, one record — checked in
+    // assertFinanceDocumentUniqueness), so it stands in for the document link.
+    if (isCapture && !after.invoice_url && !after.finance_metadata?.statementLineRef) fail('رابط المستند مطلوب لمنع التكرار.');
     // A same-record edit never relocates or deletes a source, nor moves a
     // booked date to an open month to evade the original period lock.
     const afterState = await readState(db, tx, r.kind, sourceId, after);

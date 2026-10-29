@@ -12,6 +12,7 @@ const METHOD_LABEL = {
   bank_transfer: 'تحويل بنكي',
   cash: 'نقدي',
   mada_pos: 'مدى / شبكة',
+  owner_current: 'وصلت لحساب هادي',
 };
 
 /**

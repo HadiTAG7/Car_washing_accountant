@@ -30,18 +30,20 @@ export function financeProblems(kind, row, sourceId = null) {
   else if (!Number.isFinite(row.quantity) || row.quantity <= 0 || !Number.isFinite(row.unit_cost)
     || Math.round(row.quantity * row.unit_cost * 100) !== Math.round(row[spec.amount] * 100)) issues.push('الكمية وسعر الوحدة لا يطابقان الإجمالي.');
   if (typeof row.supplier !== 'string' || !row.supplier.trim()) issues.push('المورد غير محدد.');
-  if (!row.invoice_url || !/^https:\/\//.test(row.invoice_url)) issues.push('رابط المستند غير مكتمل.');
+  // A saved bank-statement line is the document for an expense that has no
+  // invoice; the server verifies the line itself (statementLineIssues).
+  if ((!row.invoice_url || !/^https:\/\//.test(row.invoice_url)) && !statementLineRefOf(row)) issues.push('رابط المستند غير مكتمل.');
   if (spec.fk ? !row[spec.fk] : !row.category_id) issues.push('التصنيف غير محدد.');
   if (kind === 'monthly' && (row.recurrence === 'monthly' || row.biker_id || row.payrollSnapshot)) issues.push('القالب المتكرر أو الراتب ليس مصروفًا مفردًا في هذا المسار.');
   if (!['paid', 'unpaid'].includes(row.payment_status)) issues.push('حالة السداد غير مثبتة.');
   if (row.payment_status === 'paid' && !realDate(row.paid_date)) issues.push('تاريخ السداد الفعلي غير مثبت.');
-  if (!['cash', 'transfer', 'card', 'credit'].includes(row.payment_method)) issues.push('طريقة الدفع أو الذمة غير مثبتة.');
+  if (!['cash', 'transfer', 'card', 'credit', 'owner_current'].includes(row.payment_method)) issues.push('طريقة الدفع أو الذمة غير مثبتة.');
   const meta = row.finance_metadata;
   const reviewedIdentity = verifiedReviewedIdentity(kind, sourceId, row);
   if (meta?.reviewedDocumentIdentity != null && !reviewedIdentity) issues.push('هوية المستند المراجعة لا تطابق المصدر والرأي والحقائق المثبتة.');
   if (typeof meta?.purpose !== 'string' || !meta.purpose.trim() || !meta?.evidenceRefs?.length) issues.push('الغرض ودليل المراجعة غير مكتملين.');
   if (typeof meta?.fundingReference !== 'string' || !meta.fundingReference.trim()) issues.push('دليل التمويل أو ذمة المورد غير مكتمل.');
-  const types = { company_cash: ['cash'], company_bank: ['card', 'transfer'], vendor_liability: ['credit'] };
+  const types = { company_cash: ['cash'], company_bank: ['card', 'transfer'], vendor_liability: ['credit'], owner_current: ['owner_current'] };
   if (!types[meta?.fundingType]) issues.push('الحساب المقابل لهذا التمويل غير محسوم؛ لا يفترض الصندوق أو البنك.');
   else if (!types[meta.fundingType].includes(row.payment_method)) issues.push('طريقة الدفع تتعارض مع التمويل المثبت.');
   if ((meta?.fundingType === 'vendor_liability') !== (row.payment_status === 'unpaid')) issues.push('حالة السداد لا تطابق الذمة أو التمويل.');
@@ -55,6 +57,26 @@ export function financeProblems(kind, row, sourceId = null) {
     || (!taxAmountKnown && !taxRateKnown && !reviewedDatedPolicy) || !['inclusive', 'exclusive'].includes(row.price_mode))) issues.push('حقول الفاتورة الضريبية غير مكتملة.');
   return issues;
 }
+/** The bank-statement line named as this record's document, if any. */
+export function statementLineRefOf(row) {
+  const ref = row?.finance_metadata?.statementLineRef;
+  return typeof ref === 'string' && /^[A-Za-z0-9_-]{1,120}$/.test(ref) ? ref : null;
+}
+/**
+ * A statement line backs exactly one record: the saved line must name this
+ * record, be money out of an account, and carry the same amount.
+ */
+export async function statementLineIssues(db, tx, kind, sourceId, row) {
+  const ref = statementLineRefOf(row);
+  if (!ref) return row?.finance_metadata?.statementLineRef == null ? [] : ['مرجع سطر كشف الحساب غير صالح.'];
+  const line = await tx.get(db.collection('bank_statement_lines').doc(ref));
+  if (!line.exists) return ['سطر كشف الحساب المرتبط غير موجود.'];
+  const value = line.data(), amount = row[FINANCE_KINDS[kind].amount];
+  if (value.linkKind !== kind || value.linkId !== sourceId) return ['سطر كشف الحساب مرتبط بمستند آخر.'];
+  if (value.direction !== 'debit' || !['applying', 'applied'].includes(value.status)) return ['سطر كشف الحساب ليس خصمًا مطبقًا.'];
+  if (Math.round(Number(value.amount) * 100) !== Math.round(Number(amount) * 100)) return ['مبلغ المستند لا يطابق سطر كشف الحساب.'];
+  return [];
+}
 export class FinanceReviewError extends Error {
   constructor(message, code = 'failed-precondition') { super(message); this.code = code; }
 }
@@ -62,6 +84,8 @@ export async function assertFinanceDocumentUniqueness(db, tx, kind, sourceId, ro
   const context = await financeSourceEvidence(db, tx, kind, sourceId, row);
   const blocking = context.issues.filter(issue => !allowIncompleteAllocation || !issue.startsWith('ربط التوزيع غير مكتمل'));
   if (blocking.length) throw new FinanceReviewError(blocking.join(' '));
+  const statementIssues = await statementLineIssues(db, tx, kind, sourceId, row);
+  if (statementIssues.length) throw new FinanceReviewError(statementIssues.join(' '));
   for (const [matchKind, spec] of Object.entries(FINANCE_KINDS)) {
     const queries = [];
     if (row.invoice_url) queries.push(['invoice_url', row.invoice_url]);

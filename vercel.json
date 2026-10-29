@@ -12,9 +12,6 @@
     "api/integrations/sweater/operations.js": {
       "maxDuration": 60
     },
-    "api/integrations/sweater/n8n.js": {
-      "maxDuration": 60
-    },
     "api/agent-command-center-ingest.js": {
       "maxDuration": 30
     },
@@ -29,6 +26,10 @@
     }
   },
   "rewrites": [
+    {
+      "source": "/api/integrations/sweater/n8n",
+      "destination": "/api/integrations/sweater/operations?n8nEndpoint=1"
+    },
     {
       "source": "/api/operations-reports",
       "destination": "/api/ledger?operationsEndpoint=reports"

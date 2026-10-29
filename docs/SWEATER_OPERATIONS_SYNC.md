@@ -24,6 +24,19 @@ rewritten. A new current-prefix booking and raw retain the later source facts.
 `observationPromotion` in the result exposes the checks and hashed evidence;
 `status` verifies preservation separately from the later booking.
 
+29 October correction: the immutable natural claim identifies the first source
+run, while the current booking can legitimately identify a later unexecuted run.
+Both endpoints must independently match their raw facts and unique closed-run
+receipt, worker, day and service, with ordered source extraction times before End.
+An earlier `on_the_way` source with no Start is also permitted only when its
+extraction predates the genuine later Start. A known Start must match exactly.
+Both raw/run endpoints are retained and hash-bound to preview/save/readback.
+Other statuses, cancellations, conflicting facts, financial effects and existing
+washes stay protected. No new sender contract, key, pin or action is introduced.
+An already saved run stays an immutable replay; do not resubmit the hour19 batch
+or rename its ID to bypass that receipt. Operations may use the next genuinely
+observed source update through the existing preview/save/status workflow.
+
 The existing 20/3/23 pricing and unpaid 4.50 commission representation are
 unchanged. No collection, payroll payment or journal is created. Replaying the
 same run or another prefix cannot create a second wash. This is source-proven

@@ -10,18 +10,22 @@ import { syncPayload, syncRequest } from './helpers/sweaterOperationsFixture.js'
 const suite = process.env.FIRESTORE_EMULATOR_HOST ? describe : describe.skip;
 let app, db, previousEncryption;
 const save = async payload => saveOperations(db, FieldValue, syncRequest(payload, await previewOperations(db, payload)), 'synthetic-agent');
-async function seed() {
+async function seed(onWay = false) {
   await db.doc('bikers/worker-1').set({ name: 'Synthetic worker', driver_external_id: 'driver-1', salary: 900 });
   const legacy = syncPayload(); legacy.importRunId = 'synthetic-started';
   legacy.coverage.extractedAt = '2026-10-08T22:10:00+03:00'; legacy.coverage.recordCount = 2;
   legacy.records = ['990101', '990102'].map(number => ({ ...legacy.records[0], sspBookingId: `B-${number}`,
     serviceType: 'interior_exterior_wash', rawStatus: 'Washing Started', startedAt: '2026-10-08T21:35:00+03:00' }));
+  if (onWay) {
+    legacy.coverage.extractedAt = '2026-10-08T21:30:00+03:00';
+    legacy.records.forEach(r => Object.assign(r, { rawStatus: 'On the Way', startedAt: null }));
+  }
   await save(legacy);
   for (let i = 0; i < 43; i++) await db.doc(`washes/synthetic-existing-${i}`).set({ ssp_booking_id: `S-${880000 + i}`, price: 20 });
   const completed = structuredClone(legacy); completed.importRunId = 'synthetic-ended';
   completed.coverage.extractedAt = '2026-10-09T02:03:00+03:00';
   completed.records = completed.records.map(r => ({ ...r, sspBookingId: r.sspBookingId.replace('B-', 'S-'),
-    rawStatus: 'Collecting Payment', completedAt: '2026-10-08T22:39:00+03:00' }));
+    rawStatus: 'Collecting Payment', startedAt: '2026-10-08T21:35:00+03:00', completedAt: '2026-10-08T22:39:00+03:00' }));
   return { legacy, completed };
 }
 suite('source observation promotion in isolated demo transactions', () => {
@@ -38,6 +42,31 @@ suite('source observation promotion in isolated demo transactions', () => {
   afterAll(async () => {
     if (previousEncryption == null) delete process.env.SWEATER_KEY_ENCRYPTION_KEY; else process.env.SWEATER_KEY_ENCRYPTION_KEY = previousEncryption;
     await db?.terminate(); if (app) await deleteApp(app);
+  });
+  it('promotes a two-observation source chain and a direct on-the-way completion once under concurrent retries', async () => {
+    const { legacy, completed } = await seed(true);
+    const next = structuredClone(legacy); next.importRunId = 'synthetic-started-second'; next.records = [next.records[0]];
+    next.coverage.recordCount = 1; next.coverage.extractedAt = '2026-10-08T22:10:00+03:00';
+    Object.assign(next.records[0], { rawStatus: 'Washing Started', startedAt: '2026-10-08T21:35:00+03:00' });
+    await save(next);
+    const paths = ['sweater_bookings/B-990101', 'sweater_bookings/B-990102',
+      'sweater_owner_booking_claims/990101', 'sweater_owner_booking_claims/990102', 'sweater_import_runs/synthetic-started',
+      'sweater_import_runs/synthetic-started-second', 'sweater_raw_payloads/synthetic-started__B-990101',
+      'sweater_raw_payloads/synthetic-started__B-990102', 'sweater_raw_payloads/synthetic-started-second__B-990101'];
+    const originals = await Promise.all(paths.map(path => db.doc(path).get()));
+    const p = await previewOperations(db, completed);
+    expect(p.rows.every(r => r.observationPromotion?.eligible)).toBe(true);
+    expect((await db.collection('washes').get()).size).toBe(43);
+    const results = await Promise.all([1, 2].map(() => saveOperations(db, FieldValue, syncRequest(completed, p), 'synthetic')));
+    expect(results.filter(r => !r.replay)).toHaveLength(1);
+    expect((await db.collection('washes').get()).size).toBe(45);
+    for (const original of originals) expect((await original.ref.get()).updateTime.isEqual(original.updateTime)).toBe(true);
+    expect(await operationsStatus(db, completed)).toMatchObject({ verified: true, rawVerified: true, linksVerified: true });
+    expect((await save({ ...completed, importRunId: 'synthetic-followup' })).washesCreated).toBe(0);
+    const washes = await Promise.all(['990101', '990102'].map(n => db.doc(`washes/ssp__B-${n}`).get()));
+    expect(washes.map(w => w.data().worker_commission_per_wash)).toEqual([4.5, 4.5]);
+    expect(washes.every(w => w.data().worker_commission_paid === false)).toBe(true);
+    for (const col of ['journal_entries', 'payroll_runs', 'sweater_owner_collection_confirmations', 'sweater_collections']) expect((await db.collection(col).get()).empty).toBe(true);
   });
   it('signed preview and same-run concurrent save add exactly two, retain43/source/claim/run and verify replay', async () => {
     const { legacy, completed } = await seed();

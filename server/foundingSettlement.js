@@ -21,7 +21,7 @@ import { DEFAULT_CHART_OF_ACCOUNTS, ACC, partnerCapitalAccount } from '../src/li
 import { documentDay } from '../src/lib/financeWorkbenchView.js';
 import {
   foundingPlan, documentCandidates, paymentCandidates, statementLinks, quarterOf, halala,
-  FOUNDING_DEFAULTS, FILED_VAT_QUARTERS, DOC_DECISIONS, PAYMENT_ARRIVALS, SMALL_DECISION, MATCH_WINDOW_DAYS, daysBetween,
+  FOUNDING_DEFAULTS, FILED_VAT_QUARTERS, DOC_DECISIONS, PAYMENT_ARRIVALS, RULE_DECISION, MATCH_WINDOW_DAYS, daysBetween, isAttested,
 } from '../src/lib/founding/foundingPlan.js';
 
 const fail = (message, code = 'failed-precondition') => { throw new FinanceReviewError(message, code); };
@@ -51,12 +51,15 @@ const requestSchema = z.discriminatedUnion('action', [
     actuals: z.object({ bankOpen: z.boolean(), bankBalance: z.number().finite().min(-1e9).max(1e9).nullable(), cash: z.number().finite().min(-1e9).max(1e9),
       custody: z.array(z.object({ name: text(80).pipe(z.string().min(1)), amount: money }).strict()).max(50) }).strict().nullable(), ...confirm }).strict(),
   z.object({ action: z.literal('decide'), sourceKey: key, decision: z.string().max(40).nullable().optional(), partnerId: z.string().max(160).nullable().default(null),
+    custodian: text(80).nullable().default(null),
     vatReviewed: z.boolean().optional(), note: text(500).nullable().default(null), ...confirm }).strict(),
   z.object({ action: z.literal('acceptSmall'), keys: z.array(key).min(1).max(500), ...confirm }).strict(),
   z.object({ action: z.literal('ensureAccounts'), ...confirm }).strict(),
   z.object({ action: z.literal('postEntries'), entries: z.array(z.object({ key, hash }).strict()).min(1).max(300),
     reason: text(1000).pipe(z.string().min(3)), ...confirm }).strict(),
   z.object({ action: z.literal('applyUpdate'), key, ...confirm }).strict(),
+  z.object({ action: z.literal('applyUpdates'), keys: z.array(key).min(1).max(10), ...confirm }).strict(),
+  z.object({ action: z.literal('applyRule'), hash, ...confirm }).strict(),
   z.object({ action: z.literal('statementSuggest'), account: z.enum(['personal', 'company']), rows: z.array(statementRow).min(1).max(2000) }).strict(),
   z.object({ action: z.literal('statementApply'), account: z.enum(['personal', 'company']), fileName: text(200), fileHash: z.string().max(128),
     rows: z.array(applyRow).min(1).max(500), ...confirm }).strict(),
@@ -103,7 +106,7 @@ export function ledgerEffects(entries) {
     return null;
   };
   const effects = new Map(), get = k => {
-    if (!effects.has(k)) effects.set(k, { cash: 0, bank: 0, vat: 0, vatDate: null, journals: 0 });
+    if (!effects.has(k)) effects.set(k, { cash: 0, bank: 0, payable: 0, vat: 0, vatDate: null, journals: 0 });
     return effects.get(k);
   };
   for (const e of entries) {
@@ -116,6 +119,7 @@ export function ledgerEffects(entries) {
         const net = halala(l.credit) - halala(l.debit);
         if (String(l.accountId) === ACC.CASH) effect.cash += sign * net;
         if (String(l.accountId) === ACC.BANK) effect.bank += sign * net;
+        if (String(l.accountId) === ACC.PAYABLE) effect.payable += sign * net;
         if (String(l.accountId) === ACC.INPUT_VAT && halala(l.debit) > 0) {
           effect.vat += halala(l.debit) - halala(l.credit);
           effect.vatDate = e.purchaseTaxSnapshot?.invoiceDate || e.entryDate;
@@ -151,22 +155,25 @@ export function foundingInputs(t) {
   const lines = entries.flatMap(e => (e.lines || []).map((l, i) => ({ ...l, entryId: e.id, id: `${e.id}:${i}` }))).concat(t.journal_lines);
   const effects = ledgerEffects(entries), locks = new Set(t.posting_locks.map(l => l.id));
   const review = t.founding_review.find(r => r.id === SETTINGS_ID) || null;
-  const settings = { ...FOUNDING_DEFAULTS, ...(review ? { cutoffDate: review.cutoffDate, threshold: Number(review.threshold), actuals: review.actuals || null } : {}) };
+  const settings = { ...FOUNDING_DEFAULTS, ...(review ? { cutoffDate: review.cutoffDate, threshold: Number(review.threshold), actuals: review.actuals || null,
+    lastRule: review.lastRule || null } : {}) };
   const decisions = Object.fromEntries(t.founding_decisions.map(d => [d.sourceKey, d]));
   const partners = t.partners.map(p => ({ id: p.id, name: p.partner_name || 'شريك' }));
   const docs = [];
   for (const [kind, spec] of Object.entries(FINANCE_KINDS)) {
     for (const row of t[spec.collection]) {
       if (isPayrollRow(kind, row)) continue;
-      const effect = effects.get(`expense:${row.id}`) || { cash: 0, bank: 0, vat: 0, vatDate: null, journals: 0 };
+      const effect = effects.get(`expense:${row.id}`) || { cash: 0, bank: 0, payable: 0, vat: 0, vatDate: null, journals: 0 };
       const lock = locks.has(postingLockId(kind, row.id)) || locks.has(legacyLockIdFor(kind, row.id));
       const date = documentDay(row[spec.date]) || documentDay(row.invoice_date);
       const unpostedVat = row.is_tax_invoice === true && row.vat_deductible !== false && (Number(row.vat_amount) > 0 || Number(row.vat_rate) > 0);
       const vatDay = effect.journals ? (effect.vat > 0 ? documentDay(effect.vatDate) : null) : unpostedVat ? documentDay(row.invoice_date) || date : null;
       docs.push({ key: `${kind}:${row.id}`, kind, sourceId: row.id, title: row[spec.title] || 'بلا عنوان', amount: Number(row[spec.amount]) || 0,
-        date, supplier: row.supplier || '', hasProof: typeof row.invoice_url === 'string' && /^https:\/\//.test(row.invoice_url),
+        date, paidDate: documentDay(row.paid_date), paymentStatus: row.payment_status || null,
+        supplier: row.supplier || '', hasProof: typeof row.invoice_url === 'string' && /^https:\/\//.test(row.invoice_url),
         statementLineRef: statementLineRefOf(row), protected: lock || effect.journals > 0 || Boolean(row.journal_entry_id || row.posted_entry_id || row.posting_status === 'posted'),
-        effect: { cash: effect.cash, bank: effect.bank }, fundingType: row.finance_metadata?.fundingType || null,
+        effect: { cash: effect.cash, bank: effect.bank, payable: effect.payable }, fundingType: row.finance_metadata?.fundingType || null,
+        fundingPartnerId: row.finance_metadata?.fundingPartnerId || null, custodian: row.finance_metadata?.custodian || null,
         paymentMethod: row.payment_method || null, vatQuarter: vatDay ? quarterOf(vatDay) : null,
         issues: financeProblems(kind, row, row.id) });
     }
@@ -183,7 +190,7 @@ export function foundingInputs(t) {
   const byId = new Map(entries.map(e => [e.id, e]));
   const book = {};
   for (const account of [ACC.CASH, ACC.BANK, ACC.EMPLOYEE_ADVANCE]) {
-    book[account] = ledger.filter(l => String(l.accountId) === account && String(l.entryDate) <= settings.cutoffDate)
+    book[account] = ledger.filter(l => String(l.accountId) === account && String(l.entryDate) < settings.cutoffDate)
       .reduce((n, l) => n + halala(l.debit) - halala(l.credit), 0);
   }
   const hadiLedger = ledger.filter(l => String(l.accountId) === ACC.HADI_CURRENT).map(l => ({ entryId: l.entryId, entryNumber: l.entryNumber,
@@ -195,7 +202,7 @@ export function foundingInputs(t) {
     appliedByName: l.appliedByName || null, appliedAtIso: l.appliedAtIso || null }));
   return { docs, payments, lines: statementLines, decisions, settings, book, posted, closedMonths, hadiLedger, partners,
     review, chart: new Set(t.chart_of_accounts.map(a => a.id)),
-    custodyHint: t.temporary_expenses.filter(x => x.status !== 'recovered' && documentDay(x.spent_date) && documentDay(x.spent_date) <= settings.cutoffDate)
+    custodyHint: t.temporary_expenses.filter(x => x.status !== 'recovered' && documentDay(x.spent_date) && documentDay(x.spent_date) < settings.cutoffDate)
       .reduce((n, x) => n + halala(x.amount) - halala(x.recovered_amount), 0) };
 }
 
@@ -203,6 +210,10 @@ function planOf(t) {
   const input = foundingInputs(t), plan = foundingPlan(input);
   plan.entries = plan.entries.map(e => ({ ...e, hash: entryHash(e) }));
   if (plan.settlement.entry) plan.settlement.entry = plan.entries.find(e => e.key === plan.settlement.entry.key);
+  if (plan.comparison.entry) plan.comparison.entry = plan.entries.find(e => e.key === plan.comparison.entry.key);
+  // What «تطبيق القاعدة» was shown: the same documents, updates and entry lines, or nothing is saved.
+  plan.rule.hash = financeHash({ cutoff: plan.settings.cutoffDate, keys: plan.rule.candidates.map(c => c.key),
+    updates: plan.rule.updates.map(u => [u.key, u.patch, u.held, u.blocked]), entries: plan.rule.entries.map(entryHash) });
   return { input, plan };
 }
 
@@ -296,16 +307,20 @@ async function decide(db, auth, r) {
     const t = await loadTables(db, tx), { input, plan } = planOf(t);
     const doc = input.docs.find(d => d.key === r.sourceKey), payment = input.payments.find(p => p.key === r.sourceKey);
     if (!doc && !payment) fail('المصدر غير موجود.', 'not-found');
-    const allowed = doc ? [...DOC_DECISIONS, SMALL_DECISION] : PAYMENT_ARRIVALS;
+    const allowed = doc ? DOC_DECISIONS : PAYMENT_ARRIVALS;
     if (r.decision != null && !allowed.includes(r.decision)) fail('القرار غير صالح لهذا المصدر.', 'invalid-argument');
     if (r.decision === 'partner' && !input.partners.some(p => p.id === r.partnerId)) fail('اختر الشريك الذي دفع.', 'invalid-argument');
+    if (r.decision === 'custody' && !r.custodian) fail('اكتب اسم صاحب العهدة.', 'invalid-argument');
     if (r.vatReviewed !== undefined && !plan.vatTouching.some(v => v.key === r.sourceKey)) fail('هذا المستند لا يمس إقرارًا مقدّمًا.', 'invalid-argument');
     const ref = db.collection('founding_decisions').doc(financeHash(r.sourceKey).slice(0, 40)), snap = await tx.get(ref);
     const before = snap.exists ? snap.data() : null;
     // Only what the request names changes: a «راجعته» click keeps the payer decision, and the reverse.
-    const decision = r.decision === undefined ? before?.decision ?? null : r.decision;
-    const value = { sourceKey: r.sourceKey, decision, partnerId: decision === 'partner' ? (r.decision === undefined ? before?.partnerId ?? null : r.partnerId) : null,
-      note: r.note ?? before?.note ?? null, vatReviewed: r.vatReviewed ?? before?.vatReviewed ?? false,
+    const decision = r.decision === undefined ? (before?.decision === 'manager_attested' ? null : before?.decision ?? null) : r.decision;
+    const keep = r.decision === undefined;
+    const value = { sourceKey: r.sourceKey, decision,
+      partnerId: decision === 'partner' ? (keep ? before?.partnerId ?? null : r.partnerId) : null,
+      custodian: decision === 'custody' ? (keep ? before?.custodian ?? null : r.custodian) : null,
+      attested: isAttested(before), note: r.note ?? before?.note ?? null, vatReviewed: r.vatReviewed ?? before?.vatReviewed ?? false,
       revision: (Number(before?.revision) || 0) + 1, decidedBy: auth.uid, decidedByName: await actorName(db, auth, tx), decidedAtIso: new Date().toISOString() };
     tx.set(ref, value);
     audit(db, tx, auth, 'founding-decision', r.sourceKey, value);
@@ -317,15 +332,52 @@ async function acceptSmall(db, auth, r) {
   return db.runTransaction(async tx => {
     await adminOnly(db, auth, tx);
     const t = await loadTables(db, tx), { plan } = planOf(t), name = await actorName(db, auth, tx);
-    const small = new Map(plan.groups.small.filter(d => !d.decision?.decision).map(d => [d.key, d]));
+    const small = new Map(plan.groups.small.filter(d => !d.attested).map(d => [d.key, d]));
     if (r.keys.some(k => !small.has(k))) fail('القائمة تغيرت؛ أعد القراءة قبل القبول.');
     for (const k of r.keys) {
-      const value = { sourceKey: k, decision: SMALL_DECISION, partnerId: null, note: null, vatReviewed: false, revision: 1,
-        decidedBy: auth.uid, decidedByName: name, decidedAtIso: new Date().toISOString() };
+      // The attestation accepts the proof; who paid stays whatever was decided (or the rule).
+      const before = small.get(k).decision || {};
+      const value = { ...before, sourceKey: k, decision: before.decision === 'manager_attested' ? null : before.decision ?? null, attested: true,
+        revision: (Number(before.revision) || 0) + 1, attestedBy: auth.uid, attestedByName: name, attestedAtIso: new Date().toISOString(),
+        decidedBy: before.decidedBy || auth.uid, decidedByName: before.decidedByName || name, decidedAtIso: before.decidedAtIso || new Date().toISOString() };
       tx.set(db.collection('founding_decisions').doc(financeHash(k).slice(0, 40)), value);
     }
     audit(db, tx, auth, 'founding-accept-small', 'small', { keys: r.keys, total: r.keys.reduce((n, k) => n + halala(small.get(k).amount), 0) / 100 });
     return { saved: true, count: r.keys.length };
+  });
+}
+
+/**
+ * «تطبيق القاعدة الافتراضية لفترة التأسيس»: يحفظ لكل مستند في المعاينة أن
+ * دافعه هادي (قاعدة)، باسم من طبّق ووقته، ويضيف الحسابين للدليل. لا يعدّل
+ * مستندًا هنا ولا يرحّل قيدًا: المستندات غير المرحّلة تتعدل بعده عبر صندوق
+ * العمل المالي (applyUpdates)، وقيود المرحّلة تنتظر موافقة مستقلة.
+ */
+async function applyRule(db, auth, r) {
+  return db.runTransaction(async tx => {
+    await adminOnly(db, auth, tx);
+    const t = await loadTables(db, tx), { input, plan } = planOf(t), name = await actorName(db, auth, tx);
+    if (!plan.rule.count) fail('لا مستندات تنطبق عليها القاعدة الآن.');
+    if (plan.rule.hash !== r.hash) fail('تغيرت المستندات أو القيود بعد المعاينة؛ أعد القراءة ووافق من جديد.');
+    const at = new Date().toISOString();
+    for (const c of plan.rule.candidates) {
+      const before = input.decisions[c.key] || {};
+      tx.set(db.collection('founding_decisions').doc(financeHash(c.key).slice(0, 40)), { ...before, sourceKey: c.key, decision: RULE_DECISION,
+        partnerId: null, custodian: null, attested: isAttested(before), vatReviewed: before.vatReviewed ?? false,
+        revision: (Number(before.revision) || 0) + 1, decidedBy: auth.uid, decidedByName: name, decidedAtIso: at });
+    }
+    const created = ensureChartRows(db, tx, input.chart, [ACC.HADI_CURRENT, ACC.FOUNDING_SETTLEMENTS]);
+    const lastRule = { atIso: at, by: auth.uid, byName: name, count: plan.rule.count, total: plan.rule.total, cutoffDate: plan.settings.cutoffDate,
+      unposted: plan.rule.unposted, posted: plan.rule.posted, held: plan.rule.held, hash: plan.rule.hash };
+    const reviewRef = db.collection('founding_review').doc(SETTINGS_ID), review = input.review;
+    tx.set(reviewRef, { ...(review ? Object.fromEntries(Object.entries(review).filter(([k]) => k !== 'id')) : { cutoffDate: plan.settings.cutoffDate,
+      threshold: plan.settings.threshold, actuals: plan.settings.actuals || null }), revision: (Number(review?.revision) || 0) + 1, lastRule,
+    ...stamp(auth.uid, name) });
+    tx.create(db.collection('audit_logs').doc(), { action: 'founding-rule', collectionName: 'founding_decisions', documentId: plan.settings.cutoffDate,
+      userId: auth.uid, after: { ...lastRule, keys: plan.rule.candidates.map(c => c.key), accountsCreated: created }, at: FieldValue.serverTimestamp() });
+    // The rule's unposted documents, and the exceptions/decisions saved before it, in one run.
+    const updates = [...new Set([...plan.rule.updates, ...plan.updates].filter(u => !u.held && !u.blocked).map(u => u.key))];
+    return { applied: plan.rule.count, updates, lastRule };
   });
 }
 
@@ -345,23 +397,36 @@ async function workbenchSave(workbench, db, auth, kind, sourceId, patch, reason)
   const preview = await workbench(db, auth, { action: 'preview', kind, sourceId, patch, sourceHash: read.sourceHash });
   return workbench(db, auth, { action: 'save', kind, sourceId, patch, sourceHash: read.sourceHash, previewHash: preview.previewHash, reason, confirm: true });
 }
-function fundingPatch(row, { fundingType, paymentMethod, paidDate, reference, evidence, statementLineRef }) {
+function fundingPatch(row, { fundingType, paymentMethod, paidDate, reference, evidence, statementLineRef, fundingPartnerId, custodian }) {
   const meta = row.finance_metadata || {};
   const refs = [...new Set([...(Array.isArray(meta.evidenceRefs) ? meta.evidenceRefs : []), ...(evidence ? [evidence] : [])])].slice(0, 20);
   return { fundingType, paymentMethod, paymentStatus: 'paid', paidDate: row.paid_date && isRealDate(row.paid_date) ? row.paid_date : paidDate,
-    fundingReference: reference, evidenceRefs: refs, ...(statementLineRef ? { statementLineRef } : {}) };
+    fundingReference: reference, evidenceRefs: refs, ...(statementLineRef ? { statementLineRef } : {}),
+    fundingPartnerId: fundingPartnerId || null, custodian: custodian || null };
 }
 
-async function applyUpdate(db, auth, r, workbench) {
-  const t = await loadTables(db), { plan } = planOf(t);
-  const update = plan.updates.find(u => u.key === r.key);
+const UPDATE_REFERENCE = { rule: 'قاعدة فترة التأسيس', decision: 'قرار تسوية التأسيس', statement: 'كشف الحساب' };
+async function applyOneUpdate(db, auth, t, plan, input, key, workbench) {
+  const update = plan.updates.find(u => u.key === key);
   if (!update) fail('لا يوجد تحديث مقترح لهذا المصدر الآن.');
   if (update.held) fail('المستند يمس إقرارًا مقدّمًا؛ علّمه «راجعته» أولًا.');
+  if (update.blocked) fail('تاريخ المستند في فترة مقفلة؛ لا يتعدل إلا بفتحها.');
   if (update.type === 'document') {
     const spec = FINANCE_KINDS[update.kind], row = t[spec.collection].find(x => x.id === update.sourceId);
-    const patch = fundingPatch(row, { ...update.patch, paidDate: documentDay(row[spec.date]), reference: row.finance_metadata?.fundingReference || `قرار تسوية التأسيس ${update.key}` });
-    const saved = await workbenchSave(workbench, db, auth, update.kind, update.sourceId, patch, 'تطبيق قرار هادي في تسوية فترة التأسيس');
-    return { saved: true, key: r.key, auditId: saved.auditId };
+    if (update.patch.fundingPartnerId && !input.chart.has(`3000-${update.patch.fundingPartnerId}`)) {
+      const partner = input.partners.find(p => p.id === update.patch.fundingPartnerId);
+      if (!partner) fail('الشريك الذي دفع غير موجود.');
+      await db.runTransaction(async tx => {
+        const ref = db.collection('chart_of_accounts').doc(`3000-${partner.id}`);
+        if (!(await tx.get(ref)).exists) tx.set(ref, { ...partnerCapitalAccount(partner.id, partner.name), createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });
+      });
+      input.chart.add(`3000-${partner.id}`);
+    }
+    const reference = `${UPDATE_REFERENCE[update.source] || UPDATE_REFERENCE.decision} (قبل ${plan.settings.cutoffDate})`;
+    const patch = fundingPatch(row, { ...update.patch, paidDate: update.patch.paidDate || documentDay(row[spec.date]), reference, evidence: `founding:${update.source}` });
+    const saved = await workbenchSave(workbench, db, auth, update.kind, update.sourceId, patch,
+      update.source === 'rule' ? 'تطبيق القاعدة الافتراضية لفترة التأسيس' : 'تطبيق قرار هادي في تسوية فترة التأسيس');
+    return { saved: true, key, auditId: saved.auditId };
   }
   return db.runTransaction(async tx => {
     await adminOnly(db, auth, tx);
@@ -373,8 +438,27 @@ async function applyUpdate(db, auth, r, workbench) {
     if (period.exists && period.data().status === 'closed') fail('فترة الدفعة مقفلة.');
     tx.update(ref, { payment_method: update.patch.paymentMethod });
     audit(db, tx, auth, 'founding-payment-method', update.id, { before: snap.data().payment_method, after: update.patch.paymentMethod });
-    return { saved: true, key: r.key };
+    return { saved: true, key };
   });
+}
+
+async function applyUpdate(db, auth, r, workbench) {
+  const t = await loadTables(db), { input, plan } = planOf(t);
+  return applyOneUpdate(db, auth, t, plan, input, r.key, workbench);
+}
+
+/** A few updates per request (each is a full workbench preview/save), so a long list never outlives the function. */
+async function applyUpdates(db, auth, r, workbench) {
+  const t = await loadTables(db), { input, plan } = planOf(t), started = Date.now(), results = [];
+  for (const key of r.keys) {
+    if (Date.now() - started > 40000) { results.push({ key, ok: false, skipped: true }); continue; }
+    try { results.push({ ...(await applyOneUpdate(db, auth, t, plan, input, key, workbench)), ok: true }); }
+    catch (error) {
+      if (!(error instanceof FinanceReviewError) && !error?.code) throw error;
+      results.push({ key, ok: false, error: error.message });
+    }
+  }
+  return { results, applied: results.filter(x => x.ok).length };
 }
 
 // ── كشوف الحساب ──────────────────────────────────────────────────────────
@@ -537,6 +621,8 @@ export async function foundingSettlement(db, auth, input, { workbench }) {
   if (r.action === 'ensureAccounts') return ensureAccounts(db, auth);
   if (r.action === 'postEntries') return postEntries(db, auth, r);
   if (r.action === 'applyUpdate') return applyUpdate(db, auth, r, workbench);
+  if (r.action === 'applyUpdates') return applyUpdates(db, auth, r, workbench);
+  if (r.action === 'applyRule') return applyRule(db, auth, r);
   if (r.action === 'statementSuggest') return statementSuggest(db, auth, r);
   return statementApply(db, auth, r, workbench);
 }

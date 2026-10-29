@@ -37,15 +37,17 @@ export function financeProblems(kind, row, sourceId = null) {
   if (kind === 'monthly' && (row.recurrence === 'monthly' || row.biker_id || row.payrollSnapshot)) issues.push('القالب المتكرر أو الراتب ليس مصروفًا مفردًا في هذا المسار.');
   if (!['paid', 'unpaid'].includes(row.payment_status)) issues.push('حالة السداد غير مثبتة.');
   if (row.payment_status === 'paid' && !realDate(row.paid_date)) issues.push('تاريخ السداد الفعلي غير مثبت.');
-  if (!['cash', 'transfer', 'card', 'credit', 'owner_current'].includes(row.payment_method)) issues.push('طريقة الدفع أو الذمة غير مثبتة.');
+  if (!FINANCE_PAYMENT_METHODS.includes(row.payment_method)) issues.push('طريقة الدفع أو الذمة غير مثبتة.');
   const meta = row.finance_metadata;
   const reviewedIdentity = verifiedReviewedIdentity(kind, sourceId, row);
   if (meta?.reviewedDocumentIdentity != null && !reviewedIdentity) issues.push('هوية المستند المراجعة لا تطابق المصدر والرأي والحقائق المثبتة.');
   if (typeof meta?.purpose !== 'string' || !meta.purpose.trim() || !meta?.evidenceRefs?.length) issues.push('الغرض ودليل المراجعة غير مكتملين.');
   if (typeof meta?.fundingReference !== 'string' || !meta.fundingReference.trim()) issues.push('دليل التمويل أو ذمة المورد غير مكتمل.');
-  const types = { company_cash: ['cash'], company_bank: ['card', 'transfer'], vendor_liability: ['credit'], owner_current: ['owner_current'] };
+  const types = FUNDING_METHODS;
   if (!types[meta?.fundingType]) issues.push('الحساب المقابل لهذا التمويل غير محسوم؛ لا يفترض الصندوق أو البنك.');
   else if (!types[meta.fundingType].includes(row.payment_method)) issues.push('طريقة الدفع تتعارض مع التمويل المثبت.');
+  if (meta?.fundingType === 'partner' && !fundingPartnerOf(row)) issues.push('الشريك الذي دفع غير محدد.');
+  if (meta?.fundingType === 'custody' && !(typeof meta.custodian === 'string' && meta.custodian.trim())) issues.push('صاحب العهدة غير محدد.');
   if ((meta?.fundingType === 'vendor_liability') !== (row.payment_status === 'unpaid')) issues.push('حالة السداد لا تطابق الذمة أو التمويل.');
   if (typeof row.is_tax_invoice !== 'boolean' || typeof row.vat_deductible !== 'boolean') issues.push('المعالجة الضريبية غير محسومة.');
   if (!row.is_tax_invoice && row.vat_deductible !== false) issues.push('المستند غير الضريبي لا يثبت مطالبة مدخلات.');
@@ -56,6 +58,15 @@ export function financeProblems(kind, row, sourceId = null) {
   if (row.is_tax_invoice && ((!reviewedIdentity && (typeof row.invoice_number !== 'string' || !row.invoice_number.trim())) || !realDate(row.invoice_date)
     || (!taxAmountKnown && !taxRateKnown && !reviewedDatedPolicy) || !['inclusive', 'exclusive'].includes(row.price_mode))) issues.push('حقول الفاتورة الضريبية غير مكتملة.');
   return issues;
+}
+// Who paid, and the payment methods each funding allows. «partner» and
+// «custody» resolve only with their partner / custodian named on the record.
+export const FUNDING_METHODS = Object.freeze({ company_cash: ['cash'], company_bank: ['card', 'transfer'], vendor_liability: ['credit'],
+  owner_current: ['owner_current', 'founding_personal'], custody: ['custody'], partner: ['partner_paid'] });
+export const FINANCE_PAYMENT_METHODS = Object.freeze(['cash', 'transfer', 'card', 'credit', 'owner_current', 'founding_personal', 'custody', 'partner_paid']);
+export function fundingPartnerOf(row) {
+  const id = row?.finance_metadata?.fundingPartnerId;
+  return typeof id === 'string' && /^[\p{L}\p{N}_.:-]{1,160}$/u.test(id) ? id : null;
 }
 /** The bank-statement line named as this record's document, if any. */
 export function statementLineRefOf(row) {
@@ -86,6 +97,8 @@ export async function assertFinanceDocumentUniqueness(db, tx, kind, sourceId, ro
   if (blocking.length) throw new FinanceReviewError(blocking.join(' '));
   const statementIssues = await statementLineIssues(db, tx, kind, sourceId, row);
   if (statementIssues.length) throw new FinanceReviewError(statementIssues.join(' '));
+  const partner = row.finance_metadata?.fundingType === 'partner' ? fundingPartnerOf(row) : null;
+  if (partner && !(await tx.get(db.collection('partners').doc(partner))).exists) throw new FinanceReviewError('الشريك الذي دفع غير موجود.');
   for (const [matchKind, spec] of Object.entries(FINANCE_KINDS)) {
     const queries = [];
     if (row.invoice_url) queries.push(['invoice_url', row.invoice_url]);

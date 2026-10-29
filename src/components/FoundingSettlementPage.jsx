@@ -5,17 +5,22 @@ import LoadingState from './LoadingState';
 import { useFounding } from '../hooks/useFounding';
 import { ConfirmButton, EntryLines, Messages, StatusBadge } from './founding/FoundingCommon';
 import { money, day } from '../lib/founding/foundingFormat';
+import { DefaultRule, StatementComparison } from './founding/FoundingRule';
 import './FinanceWorkspace.css';
 import './founding/Founding.css';
 
-const DOC_DECISIONS = { hadi: 'من حسابي', partner: 'من جيب شريك', cash: 'كاش', unknown: 'غير معروف' };
+const DOC_DECISIONS = { hadi: 'من حسابي', partner: 'من جيب شريك', custody: 'من عهدة', cash: 'كاش', unknown: 'غير معروف' };
 const ARRIVALS = { hadi: 'حسابي', company: 'حساب الشركة' };
-const PAYERS = { hadi: 'حساب هادي', company_bank: 'حساب الشركة', partner: 'جيب شريك', cash: 'كاش', unknown: 'غير معروف', manager_attested: 'مقبولة بإقرار المدير' };
+const PAYERS = { hadi: 'حساب هادي', company_bank: 'حساب الشركة', partner: 'جيب شريك', custody: 'عهدة', cash: 'كاش', unknown: 'غير معروف' };
+const payerText = r => !r.payer ? 'لم يُحسم' : r.payerSource === 'rule' ? 'دفع شخصي - فترة التأسيس (القاعدة)'
+  : r.payer === 'custody' ? `من عهدة ${r.custodian || ''}` : PAYERS[r.payer] || r.payer;
 const KIND = { variable: 'متغيرة', monthly: 'شهرية', annual: 'سنوية', startup: 'تأسيس' };
 
 export default function FoundingSettlementPage() {
   const founding = useFounding();
   const data = founding.data, plan = data?.plan;
+  // Kept here, not in the rule section: a re-read unmounts the plan while it loads.
+  const [ruleProgress, setRuleProgress] = useState(null);
   if (!founding.allowed) return <div className="fw-page"><p role="alert">تسوية فترة التأسيس للإدارة فقط.</p></div>;
   return <>
     <TopBar title="تسوية فترة التأسيس" subtitle="مطابقة ما قبل تاريخ القطع، والقيود المقترحة بانتظار موافقتك" />
@@ -29,6 +34,8 @@ export default function FoundingSettlementPage() {
       {plan && <>
         {/* A saved revision remounts the form with the stored values. */}
         <Settings key={Number(data.review?.revision) || 0} founding={founding} />
+        <DefaultRule founding={founding} partners={data.partners} names={data.accountNames} progress={ruleProgress} setProgress={setRuleProgress} />
+        <StatementComparison plan={plan} names={data.accountNames} />
         <div className="fw-metrics">
           {[['matched', 'أ) مطابقة لكشف'], ['small', 'ب) تحت الحد بلا إثبات'], ['large', 'ج) فوق الحد بلا إثبات'], ['partners', 'د) دفعات الشركاء'], ['withProof', 'بإثبات ولم تطابق كشفًا']]
             .map(([key, label]) => <div key={key} className="fw-panel fw-metric"><span>{label}</span><strong>{plan.totals[key].count}</strong><p>{money(plan.totals[key].amount)}</p></div>)}
@@ -59,8 +66,9 @@ function Settings({ founding }) {
   const s = plan.settlement;
   return <section className="fw-panel" aria-label="إعدادات القطع والواقع">
     <h2><Scale size={18} /> القطع والواقع يوم القطع</h2>
+    <p>تاريخ القطع = اليوم الذي بدأ فيه حساب البنك يشتغل. فترة التأسيس كل ما قبله، وقيودها مؤرخة بآخر يوم فيها ({day(plan.settings.foundingEnd)}).</p>
     <div className="fw-form">
-      <label>تاريخ القطع<input type="date" value={form.cutoffDate} onChange={e => set({ cutoffDate: e.target.value })} /></label>
+      <label>تاريخ القطع — يوم بدء عمل حساب البنك<input type="date" value={form.cutoffDate} onChange={e => set({ cutoffDate: e.target.value })} /></label>
       <label>حد المبالغ الصغيرة (ريال)<input type="number" min="0" value={form.threshold} onChange={e => set({ threshold: e.target.value })} /></label>
       <label className="founding-check"><input type="checkbox" checked={form.bankOpen} onChange={e => set({ bankOpen: e.target.checked })} /> حساب الشركة كان مفتوحًا يوم القطع</label>
       {form.bankOpen && <label>رصيد حساب الشركة يوم القطع<input type="number" value={form.bankBalance} onChange={e => set({ bankBalance: e.target.value })} /></label>}
@@ -103,35 +111,43 @@ function Matched({ rows }) {
 }
 
 function Small({ rows, founding, threshold }) {
-  const open = rows.filter(r => !r.decision?.decision);
+  const open = rows.filter(r => !r.attested);
   const total = open.reduce((n, r) => n + Number(r.amount), 0);
   return <details className="fw-panel" open={open.length > 0}><summary>ب) تحت {money(threshold)} وبدون إثبات — {rows.length}</summary>
-    <small>تُقبل بإقرار المدير: يبقى المستند كما سُجّل، وتُحفظ الموافقة باسمك ووقتها.</small>
+    <small>تُقبل بإقرار المدير: يبقى المستند كما سُجّل، وتُحفظ الموافقة باسمك ووقتها. من دفعها تحسمه القاعدة الافتراضية أو استثناؤك.</small>
     {open.length > 0 && <div className="fw-actions"><ConfirmButton primary label={`قبول الكل بإقرار المدير (${open.length})`} disabled={founding.busy}
       confirmText={`يقبل ${open.length} مستندًا مجموعها ${money(total)} كما سُجّلت.`}
       onConfirm={() => founding.act({ action: 'acceptSmall', keys: open.map(r => r.key), confirm: true }, 'قُبلت بإقرار المدير.')} /></div>}
-    {rows.length > 0 && <DocTable rows={rows} head={<th>الحالة</th>} extra={r => <td>{r.decision?.decision ? `${PAYERS[r.decision.decision]} — ${r.decision.decidedByName || ''}` : 'لم تُقبل بعد'}</td>} />}
+    {rows.length > 0 && <DocTable rows={rows} head={<><th>الإثبات</th><th>من دفع</th></>} extra={r => <>
+      <td>{r.attested ? `مقبولة بإقرار المدير — ${r.decision?.attestedByName || r.decision?.decidedByName || ''}` : 'لم تُقبل بعد'}</td><td>{payerText(r)}</td></>} />}
   </details>;
 }
 
 function Large({ rows, founding, partners }) {
-  return <details className="fw-panel" open={rows.length > 0}><summary>ج) فوق الحد وبدون إثبات — {rows.length}</summary>
-    <small>قرر لكل مستند من أين دُفع. «من حسابي» ينقله لحساب هادي الجاري، و«من جيب شريك» لرأس مال ذلك الشريك — بقيد مقترح ينتظر موافقتك.</small>
-    {rows.length > 0 && <DocTable rows={rows} head={<th>من أين دُفع؟</th>} extra={r => <td><DecisionPicker row={r} founding={founding} partners={partners} /></td>} />}
+  return <details className="fw-panel" open={rows.some(r => !r.payer)}><summary>ج) فوق الحد وبدون إثبات — {rows.length}</summary>
+    <small>من دفع كل مستند: القاعدة الافتراضية تنسب غير المحسوم لحسابك، وتقدر تحدد هنا غيره. «من جيب شريك» يذهب لرأس مال الشريك، و«من عهدة» لحساب العهد — بقيد مقترح ينتظر موافقتك.</small>
+    {rows.length > 0 && <DocTable rows={rows} head={<><th>من دفع الآن</th><th>قرار</th></>} extra={r => <>
+      <td>{payerText(r)}</td><td><DecisionPicker row={r} founding={founding} partners={partners} /></td></>} />}
   </details>;
 }
 
 function DecisionPicker({ row, founding, partners }) {
-  const [decision, setDecision] = useState(row.decision?.decision || ''), [partnerId, setPartnerId] = useState(row.decision?.partnerId || '');
-  const changed = decision !== (row.decision?.decision || '') || (decision === 'partner' && partnerId !== (row.decision?.partnerId || ''));
+  const saved = DOC_DECISIONS[row.decision?.decision] ? row.decision.decision : '';
+  const [decision, setDecision] = useState(saved), [partnerId, setPartnerId] = useState(row.decision?.partnerId || '');
+  const [custodian, setCustodian] = useState(row.decision?.custodian || '');
+  const changed = decision !== saved || (decision === 'partner' && partnerId !== (row.decision?.partnerId || ''))
+    || (decision === 'custody' && custodian.trim() !== (row.decision?.custodian || ''));
+  const incomplete = (decision === 'partner' && !partnerId) || (decision === 'custody' && !custodian.trim());
   return <span className="founding-picker">
     <select aria-label={`من أين دُفع: ${row.title}`} value={decision} onChange={e => setDecision(e.target.value)}>
       <option value="">— لم يُقرر —</option>{Object.entries(DOC_DECISIONS).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select>
     {decision === 'partner' && <select aria-label="الشريك" value={partnerId} onChange={e => setPartnerId(e.target.value)}>
       <option value="">— الشريك —</option>{partners.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>}
-    {changed && <button type="button" disabled={founding.busy || (decision === 'partner' && !partnerId)}
-      onClick={() => founding.act({ action: 'decide', sourceKey: row.key, decision: decision || null, partnerId: decision === 'partner' ? partnerId : null, confirm: true }, 'حُفظ القرار.')}>حفظ القرار</button>}
-    {!changed && row.decision?.decidedByName && <small>{row.decision.decidedByName}</small>}
+    {decision === 'custody' && <input aria-label="صاحب العهدة" placeholder="اسم صاحب العهدة" value={custodian} onChange={e => setCustodian(e.target.value)} />}
+    {changed && <button type="button" disabled={founding.busy || incomplete}
+      onClick={() => founding.act({ action: 'decide', sourceKey: row.key, decision: decision || null, partnerId: decision === 'partner' ? partnerId : null,
+        custodian: decision === 'custody' ? custodian.trim() : null, confirm: true }, 'حُفظ القرار.')}>حفظ القرار</button>}
+    {!changed && saved && row.decision?.decidedByName && <small>{row.decision.decidedByName}</small>}
   </span>;
 }
 
@@ -157,11 +173,12 @@ function ArrivalPicker({ row, founding }) {
 
 function Updates({ rows, founding }) {
   if (!rows.length) return null;
+  const source = { rule: 'القاعدة', decision: 'قرارك', statement: 'الكشف' };
   return <details className="fw-panel" open><summary>مستندات غير مرحّلة تحتاج تحديث جهة الدفع — {rows.length}</summary>
     <small>تتعدل عبر صندوق العمل المالي نفسه (معاينة ثم حفظ بضوابطه)، وتعود «بانتظار الاعتماد». لا اعتماد ولا ترحيل.</small>
     <ul className="founding-list">{rows.map(u => <li key={u.key}>
-      {u.title} · {money(u.amount)} → {PAYERS[u.payer] || u.payer}
-      {u.held ? <StatusBadge status="held_vat" /> : <ConfirmButton label="تطبيق" disabled={founding.busy} confirmText="يعدّل جهة الدفع في المستند فقط."
+      {u.title} · {money(u.amount)} → {payerText({ payer: u.payer, payerSource: u.source, custodian: u.patch?.custodian })}{u.source ? ` (${source[u.source] || u.source})` : ''}
+      {u.held ? <StatusBadge status="held_vat" /> : u.blocked ? <StatusBadge status="blocked_period" /> : <ConfirmButton label="تطبيق" disabled={founding.busy} confirmText="يعدّل جهة الدفع في المستند فقط."
         onConfirm={() => founding.act({ action: 'applyUpdate', key: u.key, confirm: true }, 'طُبّق التحديث.')} />}
     </li>)}</ul>
   </details>;
@@ -184,7 +201,7 @@ function Entries({ plan, founding, names }) {
   const s = plan.settlement;
   return <section className="fw-panel" aria-label="قيود التصحيح والتسوية">
     <h2>قيود التصحيح والتسوية</h2>
-    <p>تنقل ما سُجّل على البنك (1020) أو الصندوق (1010) وهو فعليًا مرّ على حسابك إلى «حساب هادي الجاري» (2300). قيود ما قبل القطع مؤرخة بيوم القطع {day(plan.settings.cutoffDate)} لأن أشهر التأسيس الأولى مقفلة.</p>
+    <p>تنقل أثر ما سُجّل على البنك (1020) أو الصندوق (1010) أو الموردين (2000) إلى من دفع فعلًا: «حساب هادي الجاري» (2300)، أو العهدة (1300)، أو رأس مال الشريك. قيود فترة التأسيس مؤرخة بآخر يوم فيها {day(plan.settings.foundingEnd)} لأن أشهر التأسيس الأولى مقفلة.</p>
     {plan.entries.length === 0 && <p>لا قيود مقترحة بعد: اربط الكشوف أو قرر جهات الدفع أولًا.</p>}
     {plan.entries.map(e => <article key={e.key} className="founding-entry">
       <header>

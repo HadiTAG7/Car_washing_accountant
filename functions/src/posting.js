@@ -84,13 +84,22 @@ export function settlementForSale(method) {
 }
 
 /** The account money leaves from, on the PURCHASE side. */
-function settlementForPurchase(method, paymentStatus) {
+function settlementForPurchase(method, paymentStatus, row = null) {
   if (paymentStatus === 'unpaid' || method === 'credit') return ACC.PAYABLE;
   switch (method) {
     case 'cash': return ACC.CASH;
     case 'card': case 'transfer': return ACC.BANK;
-    // Paid by Hadi from his personal account: the project owes him.
-    case 'owner_current': return ACC.HADI_CURRENT;
+    // Paid by Hadi from his personal account (proven by a statement line, or
+    // by the founding-period rule): the project owes him.
+    case 'owner_current': case 'founding_personal': return ACC.HADI_CURRENT;
+    // Paid out of someone's custody (عهدة): the advance shrinks.
+    case 'custody': return ACC.EMPLOYEE_ADVANCE;
+    // Paid by a partner from his own pocket: his capital contribution.
+    case 'partner_paid': {
+      const partner = String(row?.finance_metadata?.fundingPartnerId || '').trim();
+      if (!partner) throw new Error('الشريك الذي دفع غير محدد.');
+      return partnerCapitalCode(partner);
+    }
     default: return ACC.CASH;
   }
 }
@@ -225,7 +234,7 @@ function buildExpense(kind, row, id, { policyAt = null, recordDate = null } = {}
     });
   }
   lines.push({
-    accountId: split ? ACC.PAYABLE : settlementForPurchase(method, paid),
+    accountId: split ? ACC.PAYABLE : settlementForPurchase(method, paid, row),
     debit: 0, credit: tax.gross,
     description: supplierLabel,
   });
@@ -252,7 +261,7 @@ function buildExpense(kind, row, id, { policyAt = null, recordDate = null } = {}
     lines: [
       { accountId: ACC.PAYABLE, debit: tax.gross, credit: 0, description: supplierLabel },
       {
-        accountId: settlementForPurchase(method, 'paid'),
+        accountId: settlementForPurchase(method, 'paid', row),
         debit: 0, credit: tax.gross,
         description: `سداد ${accrualDate}`,
       },

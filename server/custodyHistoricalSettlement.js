@@ -28,6 +28,20 @@ export function custodySettlementManifestHash(input) {
     !['action', 'confirm', 'reason'].includes(key))));
 }
 
+export async function projectedSettlementContexts(db, tx, sources, evidence = financeSourceEvidence) {
+  const projected = new Map(sources.map(source => [source.ref.path, source.after]));
+  const projectedTx = { get: async ref => {
+    if (projected.has(ref.path)) return { id: ref.id, exists: true, data: () => projected.get(ref.path) };
+    return tx.get(ref);
+  } };
+  for (const source of sources) {
+    const [kind, ...idParts] = source.item.key.split(':');
+    const context = await evidence(db, projectedTx, kind, idParts.join(':'), source.after);
+    if (context.issues.length) fail(context.issues.join(' '));
+    source.afterContextHash = context.contextHash || null;
+  }
+}
+
 // The save route is intentionally disabled in production until an exact
 // reviewed manifest is approved. Tests opt in against disposable databases.
 export async function saveCustodyHistoricalSettlement(db, auth, input) {
@@ -152,17 +166,7 @@ export async function saveCustodyHistoricalSettlement(db, auth, input) {
     }));
     // Source evidence may depend on a peer document. Verify the context that will
     // exist after every member receives its settlement marker, before writing.
-    const projected = new Map(sources.map(source => [source.ref.path, source.after]));
-    const projectedTx = { get: async ref => {
-      if (projected.has(ref.path)) return { id: ref.id, exists: true, data: () => projected.get(ref.path) };
-      return tx.get(ref);
-    } };
-    for (const source of sources) {
-      const [kind, ...idParts] = source.item.key.split(':');
-      const context = await financeSourceEvidence(db, projectedTx, kind, idParts.join(':'), source.after);
-      if (context.issues.length) fail(context.issues.join(' '));
-      source.afterContextHash = context.contextHash || null;
-    }
+    await projectedSettlementContexts(db, tx, sources);
     const chart = await tx.get(db.collection('chart_of_accounts'));
     const knownAccountCodes = new Set(chart.docs.map(doc => doc.id));
     const counterRef = db.collection('counters').doc('journal'), counter = await tx.get(counterRef);

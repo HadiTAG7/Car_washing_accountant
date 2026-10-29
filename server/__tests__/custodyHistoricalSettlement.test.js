@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { FieldValue } from 'firebase-admin/firestore';
 import { financeWorkbench } from '../financeWorkbench.js';
-import { custodySettlementManifestHash } from '../custodyHistoricalSettlement.js';
+import { custodySettlementManifestHash, projectedSettlementContexts } from '../custodyHistoricalSettlement.js';
 import { postSource, reverseEntry } from '../../functions/src/ledger.js';
 import { calculatePayrollPreview } from '../../functions/src/payroll.js';
 import { expensePatch, memoryFinanceDb } from './financeFixtures.js';
-import { financeHash } from '../../functions/src/financeReview.js';
+import { financeHash, financeSourceHash } from '../../functions/src/financeReview.js';
 
 const auth = { uid: 'synthetic-admin' };
 const postingDay = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Riyadh' }).format(new Date());
@@ -219,6 +219,30 @@ describe('atomic historical custody settlement, synthetic only', () => {
     expect(result.journalIds).toHaveLength(31);
     expect((await financeWorkbench(db, auth, { action: 'read', ...sources[0] })).workflowStage).toBe('complete');
     expect((await financeWorkbench(db, auth, { action: 'read', ...sources[29] })).workflowStage).toBe('complete');
+  });
+
+  it('stores post-save context for two synthetic sources whose allocation hash includes both peers', async () => {
+    const db = memoryFinanceDb({
+      'startup_cost_entries/test-part-a': { amount: 20, finance_metadata: { documentAllocation: { version: 1 } } },
+      'startup_cost_entries/test-part-b': { amount: 30, finance_metadata: { documentAllocation: { version: 1 } } },
+    });
+    const before = ['test-part-a', 'test-part-b'].map(id => db.rows.get(`startup_cost_entries/${id}`));
+    const groupId = 'a'.repeat(64);
+    const sources = ['test-part-a', 'test-part-b'].map((id, index) => ({
+      ref: db.collection('startup_cost_entries').doc(id), item: { key: `startup:${id}` },
+      after: { ...before[index], finance_metadata: { ...before[index].finance_metadata,
+        custodyHistoricalSettlementId: groupId } },
+    }));
+    const context = async (store, tx) => {
+      const peers = await Promise.all(['test-part-a', 'test-part-b'].map(id =>
+        tx.get(store.collection('startup_cost_entries').doc(id))));
+      return { issues: [], contextHash: financeHash(peers.map(peer => financeSourceHash(peer.data()))) };
+    };
+    const priorContext = await context(db, { get: ref => ref.get() });
+    await projectedSettlementContexts(db, { get: ref => ref.get() }, sources, context);
+    const afterContext = financeHash(sources.map(source => financeSourceHash(source.after)));
+    expect(afterContext).not.toBe(priorContext.contextHash);
+    expect(sources.map(source => source.afterContextHash)).toEqual([afterContext, afterContext]);
   });
 
   it('rejects stale sources, changed requests, overlapping evidence and mismatched VAT evidence without writes', async () => {

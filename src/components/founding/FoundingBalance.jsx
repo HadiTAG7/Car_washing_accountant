@@ -19,7 +19,15 @@ const newRequestId = () => (globalThis.crypto?.randomUUID?.() || `${Date.now()}$
 export function HadiBalance({ founding }) {
   const { plan } = founding.data, b = plan.hadiBalance;
   const [note, setNote] = useState('');
-  const undecided = plan.groups.partners.filter(p => !p.arrival);
+  const undecided = plan.groups.partners.filter(p => !p.arrival), unposted = undecided.filter(p => !p.protected);
+  // The decisions first; then the unposted payments' records follow them (posted ones get correction entries to approve).
+  async function allToHadi() {
+    if (!await founding.act({ action: 'decidePayments', keys: undecided.map(p => p.key), arrival: 'hadi', confirm: true }, 'حُفظت جهة وصول الدفعات.')) return;
+    for (let i = 0; i < unposted.length; i += 10) {
+      await founding.call({ action: 'applyUpdates', keys: unposted.slice(i, i + 10).map(p => p.key), confirm: true }).catch(() => null);
+    }
+    if (unposted.length) founding.refresh();
+  }
   const attestation = b.attestation;
   return <section className="fw-panel" aria-label="رصيد حسابك الجاري">
     <h2><Wallet size={18} /> رصيد حسابك الجاري 2300 — من المستندات وكشف الشركة</h2>
@@ -38,8 +46,8 @@ export function HadiBalance({ founding }) {
     {undecided.length > 0 && <div className="fw-warning" role="status">
       <span>دفعات شركاء في فترة التأسيس لم تُحسم وجهتها: {b.undecided.count} · {money(b.undecided.amount)}. لا تدخل الصافي حتى تُحسم (هنا كلها، أو كل دفعة في «د) دفعات الشركاء»).</span>
       <ConfirmButton label={`كلها وصلت لحسابي (${undecided.length})`} disabled={founding.busy}
-        confirmText={`يحفظ أن ${undecided.length} دفعة مجموعها ${money(b.undecided.amount)} وصلت لحسابك الشخصي، باسمك ووقتك. لا قيد.`}
-        onConfirm={() => founding.act({ action: 'decidePayments', keys: undecided.map(p => p.key), arrival: 'hadi', confirm: true }, 'حُفظت جهة وصول الدفعات.')} />
+        confirmText={`يحفظ أن ${undecided.length} دفعة مجموعها ${money(b.undecided.amount)} وصلت لحسابك الشخصي، باسمك ووقتك، ويعدّل جهة استلام غير المرحّلة منها (${unposted.length}). المرحّلة لها قيود تصحيح تنتظر موافقتك. لا ترحيل.`}
+        onConfirm={allToHadi} />
     </div>}
     {b.transfers.length > 0 ? <details className="fw-form-section"><summary>التحويلات بينك وبين حساب الشركة ({b.transfers.length})</summary>
       <div className="fw-table-scroll"><table>

@@ -4889,10 +4889,8 @@
   ". لا تدخل الصافي حتى تُحسم (هنا كلها، أو كل دفعة في «د) دفعات الشركاء»).": ". They are not in the net until decided (all of them here, or each payment in «D) Partner payments»).",
   "كلها وصلت لحسابي ([VAR0])": "All reached my account ([VAR0])",
   "كلها وصلت لحسابي (": "All reached my account (",
-  "يحفظ أن [VAR0] دفعة مجموعها [VAR1] وصلت لحسابك الشخصي، باسمك ووقتك. لا قيد.": "Saves that [VAR0] payments totalling [VAR1] reached your personal account, under your name and time. No entry.",
   "يحفظ أن": "Saves that",
   "دفعة مجموعها": "payments totalling",
-  "وصلت لحسابك الشخصي، باسمك ووقتك. لا قيد.": "reached your personal account, under your name and time. No entry.",
   "حُفظت جهة وصول الدفعات.": "The payments' destination was saved.",
   "التحويلات بينك وبين حساب الشركة (": "Transfers between you and the company account (",
   "كشف الشركة": "Company statement",
@@ -4991,5 +4989,8 @@
   "تغيّر الرصيد بعد عرضه؛ أعد القراءة واعتمد من جديد.": "The balance changed after it was shown; re-read and attest again.",
   "تسويات كثيرة؛ رحّل أو احذف بعضها أولًا.": "Too many settlements; post or delete some first.",
   "التسوية غير موجودة.": "The settlement does not exist.",
-  "التسوية مرحّلة؛ تصحيحها بقيد عكسي.": "The settlement is posted; correct it with a reversing entry."
+  "التسوية مرحّلة؛ تصحيحها بقيد عكسي.": "The settlement is posted; correct it with a reversing entry.",
+  "يحفظ أن [VAR0] دفعة مجموعها [VAR1] وصلت لحسابك الشخصي، باسمك ووقتك، ويعدّل جهة استلام غير المرحّلة منها ([VAR2]). المرحّلة لها قيود تصحيح تنتظر موافقتك. لا ترحيل.": "Saves that [VAR0] payments totalling [VAR1] reached your personal account, under your name and time, and updates where the unposted ones were received ([VAR2]). Posted ones get correction entries awaiting your approval. Nothing is posted.",
+  "وصلت لحسابك الشخصي، باسمك ووقتك، ويعدّل جهة استلام غير المرحّلة منها (": "reached your personal account, under your name and time, and updates where the unposted ones were received (",
+  "). المرحّلة لها قيود تصحيح تنتظر موافقتك. لا ترحيل.": "). Posted ones get correction entries awaiting your approval. Nothing is posted."
 }

@@ -294,7 +294,7 @@ function planCore(input) {
   return { settings: { ...settings, foundingEnd }, groups, totals, rows, entries, updates, settlement, comparison, vatTouching, postCutoff, exceptions,
     attestedExpenses, hadiBalance,
     summary: foundingSummary({ rows, payments: paymentRows, entries, hadiBalance, attestedExpenses, settings: { ...settings, foundingEnd } }),
-    hadi: hadiStatement({ hadiLedger: input.hadiLedger || [], rows, payments: input.payments || [], entries }) };
+    hadi: hadiStatement({ hadiLedger: input.hadiLedger || [], rows, payments: paymentRows, entries }) };
 }
 
 // ── رصيد حساب هادي الجاري من المستندات (بلا كشف شخصي) ─────────────────
@@ -552,7 +552,8 @@ function hadiStatement({ hadiLedger, rows, payments, entries }) {
   for (const d of rows) if (!d.protected && d.payer === 'hadi') {
     pending.push({ key: d.key, date: d.date, label: 'مصروف دفعه هادي — لم يُعتمد ويُرحّل بعد', description: d.title, debit: 0, credit: d.amount, status: 'unposted' });
   }
-  for (const p of payments) if (!p.protected && p.method === 'owner_current') {
+  // Received by Hadi as decided (or recorded), even before the payment record itself is updated.
+  for (const p of payments) if (!p.protected && p.arrival === 'hadi') {
     pending.push({ key: p.key, date: p.date, label: 'دفعة شريك استلمها هادي — لم تُرحّل بعد', description: `دفعة ${p.partnerName}`, debit: p.amount, credit: 0, status: 'unposted' });
   }
   for (const e of entries) if (e.status !== 'posted') for (const l of e.lines) if (l.accountId === ACCOUNTS.HADI) {

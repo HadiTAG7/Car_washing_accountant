@@ -248,6 +248,9 @@ describe('without a personal statement', () => {
     expect(plan.hadiBalance).toMatchObject({ paid: 1575, paidCount: 3, attested: 75, attestedCount: 1, received: 1400, receivedCount: 2,
       toCompany: 300, toHadi: 0, net: 475, meaning: { kind: 'owed_to_hadi', amount: 475 }, undecided: { count: 1, amount: 250 }, attestation: null });
     expect(foundingPlan(input({ noPersonalStatement: false })).comparison.status).toBe('needs_statement');
+    // Hadi's page agrees: decided payments count before their records are updated.
+    expect(plan.hadi.pending.filter(p => p.key.startsWith('partner_payment:')).map(p => p.key).sort()).toEqual(['partner_payment:p1', 'partner_payment:p2']);
+    expect(plan.hadi.projectedBalance).toBe(plan.hadiBalance.net);
   });
   it('lists manager-attested expenses on their own, out of the proof groups and the rule', () => {
     const plan = foundingPlan(input());

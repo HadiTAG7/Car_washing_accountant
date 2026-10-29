@@ -162,6 +162,7 @@ export async function listIntegrationKeys(db) {
     return {
       keyId: k.keyId, label: k.label, scope: k.scope, status: k.status,
       fingerprint: k.fingerprint,
+      authMode: k.authMode ?? 'hmac-sha256', expiresAtIso: k.expiresAtIso ?? null,
       createdAtIso: k.createdAtIso ?? null, createdBy: k.createdBy ?? null,
       lastUsedAtIso: k.lastUsedAtIso ?? null, revokedAtIso: k.revokedAtIso ?? null,
     };

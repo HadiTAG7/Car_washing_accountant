@@ -27,6 +27,10 @@
   },
   "rewrites": [
     {
+      "source": "/api/integrations/sweater/n8n",
+      "destination": "/api/integrations/sweater/operations?n8nEndpoint=1"
+    },
+    {
       "source": "/api/operations-reports",
       "destination": "/api/ledger?operationsEndpoint=reports"
     },

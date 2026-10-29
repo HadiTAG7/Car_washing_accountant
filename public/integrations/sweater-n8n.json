@@ -1,0 +1,343 @@
+{
+  "name": "Sweater | Verified wash import",
+  "nodes": [
+    {
+      "id": "ssp-batch-from-another-workflow",
+      "name": "SSP batch from another workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        180
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "validate-source-batch",
+      "name": "Validate source batch",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        180
+      ],
+      "parameters": {
+        "jsCode": "const items = $input.all();\nif (items.length !== 1) throw new Error('Pass exactly one item containing one payload (at most 100 records).');\nconst p = items[0].json.payload;\nif (!p || p.contractVersion !== 2 || !p.importRunId || !Array.isArray(p.records) || p.records.length > 100 || !p.coverage || p.coverage.recordCount !== p.records.length) throw new Error('A verified operations-v2 source payload is required. No sample/live records are generated here.');\nreturn [{json:{payload:p}}];"
+      }
+    },
+    {
+      "id": "check-existing-batch",
+      "name": "Check existing batch",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        180
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://app.hadialghanim.com/api/integrations/sweater/n8n",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({action:'status',payload:$('Validate source batch').first().json.payload}) }}",
+        "options": {
+          "timeout": 60000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "retryOnFail": false,
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "already-saved",
+      "name": "Already saved",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        720,
+        180
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "found",
+              "leftValue": "={{ $json.result.found }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "preview-batch",
+      "name": "Preview batch",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        340
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://app.hadialghanim.com/api/integrations/sweater/n8n",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({action:'preview',payload:$('Validate source batch').first().json.payload}) }}",
+        "options": {
+          "timeout": 60000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "retryOnFail": false,
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "prepare-exact-save",
+      "name": "Prepare exact save",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        340
+      ],
+      "parameters": {
+        "jsCode": "const r = $input.first().json.result;\nif (!r || r.dryRun !== true || r.saved !== false || (r.counts?.rejected || 0) > 0 || !/^[a-f0-9]{64}$/.test(r.reviewedPayloadHash || '') || !/^[a-f0-9]{64}$/.test(r.previewStateHash || '')) throw new Error('Preview refused or contains rejected records; review the source batch.');\nreturn [{json:{action:'save',payload:$('Validate source batch').first().json.payload,reviewedPayloadHash:r.reviewedPayloadHash,previewStateHash:r.previewStateHash}}];"
+      }
+    },
+    {
+      "id": "save-reviewed-batch",
+      "name": "Save reviewed batch",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1440,
+        340
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://app.hadialghanim.com/api/integrations/sweater/n8n",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 60000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "retryOnFail": false,
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "verify-saved-batch",
+      "name": "Verify saved batch",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        340
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://app.hadialghanim.com/api/integrations/sweater/n8n",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({action:'status',payload:$('Validate source batch').first().json.payload}) }}",
+        "options": {
+          "timeout": 60000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "retryOnFail": false,
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "require-verified-result",
+      "name": "Require verified result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1920,
+        180
+      ],
+      "parameters": {
+        "jsCode": "const r = $input.first().json.result;\nif (!r || r.found !== true || r.verified !== true) throw new Error('Persistence could not be verified. Stop and review; do not change the run ID or repeat a save blindly.');\nreturn [{json:{importRunId:$('Validate source batch').first().json.payload.importRunId,verified:true,coverage:r.coverage,result:r.result}}];"
+      }
+    },
+    {
+      "id": "connection-instructions",
+      "name": "Connection instructions",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        120,
+        -320
+      ],
+      "parameters": {
+        "width": 970,
+        "height": 400,
+        "content": "## Sweater — verified batch import\n\n1. Create a dedicated n8n key in the platform integration page.\n2. Create a **Header Auth** credential in n8n: name `Authorization`, value `Bearer <key>`. Select the SAME credential in all four HTTP nodes. Restrict it to `app.hadialghanim.com` when the credential UI supports allowed domains.\n3. Another workflow must supply ONE item `{payload: <operations-v2 batch>}` from a real SSP source. This template does not sign in to SSP or create example bookings.\n4. Keep the full payload + run ID stable across retries. A lost save response is recovered by starting here again: status is checked before preview/save. HTTP nodes do not auto-retry saves or follow redirects. Stop on 401/403/409/412/429; review before rerunning.\n5. Test source access separately. Never import real bookings as a software test. Partial coverage and review-only records remain explicit. No collection, payroll payment or ledger posting."
+      }
+    }
+  ],
+  "connections": {
+    "SSP batch from another workflow": {
+      "main": [
+        [
+          {
+            "node": "Validate source batch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate source batch": {
+      "main": [
+        [
+          {
+            "node": "Check existing batch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check existing batch": {
+      "main": [
+        [
+          {
+            "node": "Already saved",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Already saved": {
+      "main": [
+        [
+          {
+            "node": "Require verified result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preview batch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preview batch": {
+      "main": [
+        [
+          {
+            "node": "Prepare exact save",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare exact save": {
+      "main": [
+        [
+          {
+            "node": "Save reviewed batch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save reviewed batch": {
+      "main": [
+        [
+          {
+            "node": "Verify saved batch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify saved batch": {
+      "main": [
+        [
+          {
+            "node": "Require verified result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "timezone": "Asia/Riyadh",
+    "executionOrder": "v1"
+  }
+}

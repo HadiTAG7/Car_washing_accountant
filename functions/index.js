@@ -130,6 +130,7 @@ export const sweaterRecordCollection = callable('sweaterRecordCollection');
 export const sweaterResolveVariance = callable('sweaterResolveVariance');
 export const sweaterCloseSettlement = callable('sweaterCloseSettlement');
 export const sweaterCreateIntegrationKey = callable('sweaterCreateIntegrationKey');
+export const sweaterCreateN8nKey = callable('sweaterCreateN8nKey');
 export const sweaterRevokeIntegrationKey = callable('sweaterRevokeIntegrationKey');
 export const sweaterListIntegrationKeys = callable('sweaterListIntegrationKeys');
 

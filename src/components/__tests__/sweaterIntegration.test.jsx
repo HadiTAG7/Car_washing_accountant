@@ -36,6 +36,7 @@ const ACTIVE_KEY = {
 const state = {
   canMutate: true, role: 'admin', isPartnerView: false,
   createKey: vi.fn(),
+  createN8nKey: vi.fn(),
   revokeKey: vi.fn(),
   keys: [],
   runs: [],
@@ -56,6 +57,7 @@ vi.mock('../../hooks/useSweater', () => ({
     keysError: null,
     refetch: vi.fn(),
     createKey: state.createKey,
+    createN8nKey: state.createN8nKey,
     revokeKey: state.revokeKey,
   }),
   useSweaterConfig: () => ({ prices: [], adjustmentTypes: [], policy: [], loading: false, error: null }),
@@ -65,6 +67,7 @@ beforeEach(() => {
   state.canMutate = true; state.role = 'admin'; state.isPartnerView = false;
   state.keys = []; state.runs = [];
   state.createKey = vi.fn().mockResolvedValue(NEW_KEY);
+  state.createN8nKey = vi.fn().mockResolvedValue({ ...NEW_KEY, authMode: 'bearer-sha256', expiresAtIso: '2027-01-27T00:00:00Z' });
   state.revokeKey = vi.fn().mockResolvedValue({ status: 'revoked' });
   // المسبار لا يُجيب في jsdom — الصفحة تتجاهل فشله عمداً.
   vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('no network')));
@@ -74,6 +77,27 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 const createButton = () => screen.queryByRole('button', { name: /أنشئ مفتاحاً/ });
 const dialog = () => screen.queryByRole('dialog');
 const confirmIn = (d, name) => [...d.querySelectorAll('button')].find((b) => name.test(b.textContent));
+
+describe('اتصال n8n المستقل', () => {
+  it('لا ينشئ مفتاحًا عند فتح الصفحة، ثم ينشئه بعد تأكيد المدير ويخفيه عند الطلب', async () => {
+    render(<SweaterIntegrationPage />);
+    expect(state.createN8nKey).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'إنشاء اتصال n8n' }));
+    expect(state.createN8nKey).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'إنشاء مفتاح n8n' }));
+    await vi.waitFor(() => expect(state.createN8nKey).toHaveBeenCalledWith('n8n — تسجيل الغسلات'));
+    await vi.waitFor(() => expect(document.body.textContent).toContain(NEW_KEY.secret));
+    expect(document.body.textContent).toContain('Header Auth');
+    fireEvent.click(screen.getByRole('button', { name: 'أخفِه' }));
+    expect(document.body.textContent).not.toContain(NEW_KEY.secret);
+    expect(state.createKey).not.toHaveBeenCalled();
+  });
+  it('لا يعرض إنشاء اتصال n8n للمحاسب أو الشريك', () => {
+    state.role = 'accountant';
+    render(<SweaterIntegrationPage />);
+    expect(screen.queryByRole('button', { name: 'إنشاء اتصال n8n' })).toBeNull();
+  });
+});
 
 describe('زر إنشاء المفتاح', () => {
   it('يظهر للمدير — الانحدار الأول', () => {

@@ -27,13 +27,14 @@ export async function previewCustodyHistoricalReconciliation(db, input) {
   const r = parsed.data;
   return db.runTransaction(async tx => {
     const problems = [];
-    const [advanceSnap, related, accountAdvance, accountBank, ledger, legacyLines] = await Promise.all([
+    const [advanceSnap, related, accountAdvance, accountBank, ledger, legacyLines, period] = await Promise.all([
       tx.get(db.collection('temporary_expenses').doc(r.advanceId)),
       tx.get(db.collection('journal_entries').where('sourceId', '==', r.advanceId).limit(101)),
       tx.get(db.collection('chart_of_accounts').doc('1300')),
       tx.get(db.collection('chart_of_accounts').doc('1020')),
       tx.get(db.collection('journal_entries').limit(1001)),
       tx.get(db.collection('journal_lines').limit(1001)),
+      tx.get(db.collection('accounting_periods').doc(r.correctionDate.slice(0, 7))),
     ]);
     const advance = advanceSnap.exists ? advanceSnap.data() : null;
     if (!advance) problems.push('سجل العهدة غير موجود؛ لا يمكن اقتراح ربط دفتر.');
@@ -64,6 +65,11 @@ export async function previewCustodyHistoricalReconciliation(db, input) {
     if (unassigned1300) problems.push('توجد حركات مدينة على حساب العهدة بلا ربط مثبت بهذا السجل؛ افحصها قبل اقتراح تمويل جديد.');
     if (!accountAdvance.exists || !accountBank.exists || accountAdvance.data().active === false || accountBank.data().active === false)
       problems.push('حساب العهدة أو البنك غير متاح في الدليل.');
+    if (accountAdvance.exists && accountAdvance.data().accountType !== 'asset'
+      || accountBank.exists && accountBank.data().accountType !== 'asset')
+      problems.push('نوع حساب العهدة أو البنك لا يطابق أصلًا ماليًا.');
+    if (!period.exists || period.data().status !== 'open')
+      problems.push('فترة القيد التصحيحي غير مثبتة مفتوحة؛ لا تُفتح تلقائيًا.');
     if (r.historicalFundingDate == null) problems.push('تاريخ تسليم التمويل الفعلي غير مثبت.');
     if (r.historicalFundingDate && r.historicalFundingDate > r.correctionDate)
       problems.push('تاريخ التمويل الفعلي يأتي بعد تاريخ التصحيح.');
@@ -97,16 +103,18 @@ export async function previewCustodyHistoricalReconciliation(db, input) {
     if (allocatedHalala > halala(r.amount)) problems.push('التخصيصات تتجاوز مبلغ العهدة.');
     const historicalLedgerProof = existing.some(d => d.data().sourceType === 'temporary_expense'
       && d.data().entryDate <= r.historicalFundingDate
-      && linesOf(d.data()).some(l => String(l.accountId) === '1300' && halala(l.debit) === halala(r.amount))
-      && linesOf(d.data()).some(l => String(l.accountId) === '1020' && halala(l.credit) === halala(r.amount)));
+      && (linesOf(d.data()).length ? linesOf(d.data()) : (separateLines.get(d.id) || []))
+        .some(l => String(l.accountId) === '1300' && halala(l.debit) === halala(r.amount))
+      && (linesOf(d.data()).length ? linesOf(d.data()) : (separateLines.get(d.id) || []))
+        .some(l => String(l.accountId) === '1020' && halala(l.credit) === halala(r.amount)));
     if (!historicalLedgerProof) problems.push('لا يوجد قيد تمويل تاريخي مطابق؛ القيد الحالي المقترح لا يثبت السداد السابق.');
     const snapshotHash = financeHash({ advance, journals: ledger.docs.map(d => ({ id: d.id, ...d.data() })),
       legacyLines: legacyLines.docs.map(d => ({ id: d.id, ...d.data() })),
-      records, accounts: [accountAdvance.data(), accountBank.data()], request: r });
+      records, accounts: [accountAdvance.data(), accountBank.data()], period: period.data(), request: r });
     return { preview: true, financialPosting: false, readyForPosting: false,
       ownerAttestation: { reference: r.ownerStatementRef, establishesHistoricalLedgerProof: false },
       proposedCorrection: { entryDate: r.correctionDate, historicalFundingDate: r.historicalFundingDate,
-        sourceAccount: '1020', destinationAccount: '1300', amountHalala: halala(r.amount),
+        debitAccount: '1300', creditAccount: '1020', amountHalala: halala(r.amount),
         entryDateIsHistoricalFundingDate: false },
       allocatedHalala, remainingHalala: halala(r.amount) - allocatedHalala,
       unassignedAdvanceMovementCount: unassigned1300,

@@ -650,7 +650,9 @@ export function toPartnerUpdate({ partnerName, workersCount, userId }) {
 // One row per receipt against a partner's capital fee. The DB trigger
 // `partner_payments_sync` keeps `partners.paid_amount` equal to
 // SUM(amount) per partner, so reading the cached aggregate stays valid.
-const PAYMENT_METHODS = new Set(['bank_transfer', 'cash', 'mada_pos']);
+// `owner_current`: the payment reached Hadi's personal account (set only by
+// the statement link on the server); it posts to his current account.
+const PAYMENT_METHODS = new Set(['bank_transfer', 'cash', 'mada_pos', 'owner_current']);
 function clampPaymentMethod(value) {
   return PAYMENT_METHODS.has(value) ? value : 'bank_transfer';
 }

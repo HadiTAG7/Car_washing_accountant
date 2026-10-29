@@ -1,0 +1,30 @@
+.founding-page .fw-panel { margin-block: 16px; }
+.founding-page h3 { font-weight: 700; margin-block: 14px 6px; }
+.founding-meaning { display: flex; gap: 14px; align-items: flex-start; border-inline-start: 4px solid #b34d13; }
+.founding-meaning strong { font-size: clamp(20px, 2.4vw, 28px); line-height: 1.6; display: block; }
+.founding-meaning > svg { flex-shrink: 0; margin-top: 8px; color: #b34d13; }
+.founding-note { background: #f1f5f9; border-radius: 12px; padding: 10px 14px; font-size: 13px; }
+.dark .founding-note { background: #1e293b; }
+.founding-confirm { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.founding-confirm > span { font-size: 13px; }
+.founding-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 14px; }
+.founding-choice { font-size: 13px; margin: 0 !important; background: #f8fafc; border-radius: 10px; padding: 8px 10px; }
+.dark .founding-choice { background: #1e293b; }
+.founding-card { display: flex; flex-direction: column; gap: 10px; margin: 0 !important; }
+.founding-card label { display: flex; flex-direction: column; align-items: stretch; gap: 6px; font-size: 13px; }
+.founding-card__head { margin: 0 !important; }
+.founding-marked td { background: #fff8f2; }
+.dark .founding-marked td { background: #2d2216; }
+.founding-list { list-style: disc; padding-inline-start: 22px; line-height: 2; }
+.founding-list li { overflow-wrap: anywhere; }
+.founding-list li .founding-confirm, .founding-list li > button { margin-inline-start: 8px; }
+.founding-entry { border: 1px solid #e2e8f0; border-radius: 14px; padding: 12px; margin-block: 12px; }
+.dark .founding-entry { border-color: #334155; }
+.founding-entry > header { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+.founding-picker { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.founding-row { align-items: end; }
+.founding-check { flex-direction: row !important; align-items: center !important; }
+.founding-status--posted { background: #e7f7ee; color: #205236; }
+.founding-status--held_vat, .founding-status--blocked_period { background: #fff7e4; color: #664006; }
+.dark .founding-status--posted { background: #123226; color: #b9f0d0; }
+.dark .founding-status--held_vat, .dark .founding-status--blocked_period { background: #352914; color: #ffe0a0; }

@@ -53,6 +53,9 @@ const BalanceSheetPage     = lazy(() => import('./components/BalanceSheetPage'))
 const SalesDocumentsPage   = lazy(() => import('./components/SalesDocumentsPage'));
 const FixedAssetsPage      = lazy(() => import('./components/FixedAssetsPage'));
 const PeriodClosePage      = lazy(() => import('./components/PeriodClosePage'));
+const HadiCurrentAccountPage = lazy(() => import('./components/HadiCurrentAccountPage'));
+const BankStatementsPage   = lazy(() => import('./components/BankStatementsPage'));
+const FoundingSettlementPage = lazy(() => import('./components/FoundingSettlementPage'));
 
 import { useAuth } from './hooks/useAuth';
 import { usePageNavigation } from './hooks/usePageNavigation';
@@ -261,6 +264,9 @@ function AppShell({ membership }) {
             {effectiveTab === 'documents' && <SalesDocumentsPage />}
             {effectiveTab === 'assets'    && <FixedAssetsPage />}
             {effectiveTab === 'periods'   && <PeriodClosePage />}
+            {effectiveTab === 'hadi_current' && <HadiCurrentAccountPage />}
+            {effectiveTab === 'bank_statements' && <BankStatementsPage />}
+            {effectiveTab === 'founding_settlement' && <FoundingSettlementPage />}
           </div>
         </Suspense></AppErrorBoundary>
       </div>

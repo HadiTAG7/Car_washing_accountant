@@ -196,6 +196,17 @@ export const TABLES = [
   { collection: 'fleet_incidents', columns: 'bikeId:id! bikerId:id bikerName happenedOn:day! bookingId description cost:money claimStatus claimNote revision:int updatedBy:id updatedByName updatedAtIso', policy: { read: 'accountant', write: 'none' }, migration: '20261026214026_fleet' },
   { collection: 'fleet_policies', columns: 'number company startsOn:day expiresOn:day! wholeFleet:bool revision:int updatedBy:id updatedByName updatedAtIso', policy: { read: 'accountant', write: 'none' }, migration: '20261026214026_fleet' },
   { collection: 'fleet_control', columns: 'revision:int', policy: { read: 'none', write: 'none' }, migration: '20261026214026_fleet' },
+  // Hadi's current account and the founding period: only statement lines Hadi
+  // marked as the project's are ever stored (never a whole personal statement),
+  // plus the reconciliation settings and his decisions. The server alone writes.
+  { collection: 'bank_statement_lines', columns: `account:text! txDate:day! direction:text! amount:money balance:money description reference
+      fileName fileHash rowHash:text! decision:text! linkKind linkId:id! partnerId:id status:text! result:json
+      appliedBy:id appliedByName appliedAt:ts appliedAtIso`,
+    policy: { read: 'admin', write: 'none' }, migration: '20261029090000_hadi_current_account' },
+  { collection: 'founding_review', columns: 'cutoffDate:day threshold:money actuals:json revision:int updatedBy:id updatedByName updatedAtIso',
+    policy: { read: 'admin', write: 'none' }, migration: '20261029090000_hadi_current_account' },
+  { collection: 'founding_decisions', columns: 'sourceKey:text! decision:text! partnerId:id note vatReviewed:bool revision:int decidedBy:id decidedByName decidedAtIso',
+    policy: { read: 'admin', write: 'none' }, migration: '20261029090000_hadi_current_account' },
 
   // ── مركز قيادة الوكلاء ──
   { collection: 'agent_command_agents', columns: '', policy: { read: 'accountant', write: 'none' }, realtime: true },

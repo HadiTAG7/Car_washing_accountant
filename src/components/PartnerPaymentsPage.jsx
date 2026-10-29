@@ -41,6 +41,12 @@ const METHOD_META = {
     icon:  CreditCard,
     cls:   'bg-primary-50 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300 border-primary-100 dark:border-primary-500/30',
   },
+  // Set only by a statement link: the payment reached Hadi's personal account.
+  owner_current: {
+    label: 'وصلت لحساب هادي',
+    icon:  Landmark,
+    cls:   'bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-100 dark:border-amber-500/30',
+  },
 };
 
 function MethodPill({ method }) {

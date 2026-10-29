@@ -3,7 +3,7 @@ try {
   const context=remote.contexts()[0], page=context.pages()[0];
   const cdp=await context.newCDPSession(page);
   await cdp.send('Emulation.setTimezoneOverride',{timezoneId:'Asia/Riyadh'});
-  return await collectSspWashes(page,{rangeFrom:params.rangeFrom,rangeTo:params.rangeTo});
+  return packSspSource(await collectSspWashes(page,{rangeFrom:params.rangeFrom,rangeTo:params.rangeTo}));
 } finally { await remote.close(); }
 // Read-only DOM collector for Browserbase Functions. No SSP credentials,
 // private API calls, customer fields, or worker profiles leave the browser.
@@ -58,6 +58,26 @@ function sspSourceRecord(row, details, kind, sourceUrl) {
     notes: 'Read from SSP DOM. Displayed event times have minute precision; browser timezone fixed to Asia/Riyadh.'
       + (!sourceType ? ' Regular-wash classification follows the owner rule; SSP service label not displayed.' : ''),
   };
+}
+
+// Browserbase Functions caps the returned JSON at 64 KiB. Dictionary columns
+// remove repeated keys/notes/URLs without dropping any source facts.
+function packSspSource(source) {
+  const keys = [...new Set(source.records.flatMap(r => Object.keys(r)))];
+  const columns = keys.map(key => {
+    const values = [], lookup = new Map();
+    const indices = source.records.map(record => {
+      if (!Object.hasOwn(record, key)) return -1;
+      const value = record[key];
+      if (value !== null && !['string','number','boolean'].includes(typeof value)) throw new Error('Invalid source transport value');
+      if (!lookup.has(value)) { lookup.set(value, values.length); values.push(value); }
+      return lookup.get(value);
+    });
+    return {key, values, indices};
+  });
+  const packed = {format:'ssp-columnar-v1', coverage:source.coverage, columns};
+  if (new TextEncoder().encode(JSON.stringify(packed)).length > 64000) throw new Error('Complete SSP transport exceeds the function result limit; no batch was saved');
+  return packed;
 }
 
 async function collectSspWashes(page, input) {

@@ -1,5 +1,7 @@
 import { z } from 'zod';
-import { financeHash, FinanceReviewError } from '../functions/src/financeReview.js';
+import { financeHash, financeSourceHash, financeProblems, FINANCE_KINDS, FinanceReviewError } from '../functions/src/financeReview.js';
+import { ADAPTERS } from '../functions/src/posting.js';
+import { taxPolicyAt } from '../functions/src/taxPolicy.js';
 import { isRealDate } from '../functions/src/invariants.js';
 
 const identifier = z.string().regex(/^[\p{L}\p{N}_.:-]{1,160}$/u);
@@ -27,7 +29,7 @@ export async function previewCustodyHistoricalReconciliation(db, input) {
   const r = parsed.data;
   return db.runTransaction(async tx => {
     const problems = [];
-    const [advanceSnap, related, accountAdvance, accountBank, ledger, legacyLines, period] = await Promise.all([
+    const [advanceSnap, related, accountAdvance, accountBank, ledger, legacyLines, period, settingsSnap] = await Promise.all([
       tx.get(db.collection('temporary_expenses').doc(r.advanceId)),
       tx.get(db.collection('journal_entries').where('sourceId', '==', r.advanceId).limit(101)),
       tx.get(db.collection('chart_of_accounts').doc('1300')),
@@ -35,6 +37,7 @@ export async function previewCustodyHistoricalReconciliation(db, input) {
       tx.get(db.collection('journal_entries').limit(1001)),
       tx.get(db.collection('journal_lines').limit(1001)),
       tx.get(db.collection('accounting_periods').doc(r.correctionDate.slice(0, 7))),
+      tx.get(db.collection('app_settings').doc('accounting')),
     ]);
     const advance = advanceSnap.exists ? advanceSnap.data() : null;
     if (!advance) problems.push('سجل العهدة غير موجود؛ لا يمكن اقتراح ربط دفتر.');
@@ -76,7 +79,8 @@ export async function previewCustodyHistoricalReconciliation(db, input) {
     if (!r.evidenceRefs.length) problems.push('مراجع مستندات التمويل التاريخي غير محددة؛ إفادة المالك وحدها ليست مطابقة دفترية.');
     else problems.push('مراجع الأدلة مقدمة للفحص ولم تُطابق بعد مع تحويل البنك وتسليم العهدة.');
     if (r.correctionDate > new Date().toISOString().slice(0, 10)) problems.push('تاريخ القيد المقترح مستقبلي.');
-    const keys = new Set(), records = [];
+    const keys = new Set(), records = [], proposedExpenseEntries = [];
+    const settings = settingsSnap.exists ? settingsSnap.data().value || {} : {};
     for (const allocation of r.allocations) {
       const key = `${allocation.kind}:${allocation.sourceId}`;
       if (keys.has(key)) problems.push('المصدر مكرر في قائمة التخصيصات.');
@@ -95,28 +99,57 @@ export async function previewCustodyHistoricalReconciliation(db, input) {
           problems.push('تاريخ التمويل الفعلي يأتي بعد دفع مستند مخصص.');
         if (row.finance_metadata?.employeeAdvanceLink)
           problems.push('المستند مرتبط بعهدة مسبقًا؛ يلزم فحص الربط قبل تسوية تاريخية.');
-        if (halala(row.amount) !== halala(allocation.amount)) problems.push('مبلغ التخصيص لا يطابق إجمالي المستند.');
+        if (halala(row[FINANCE_KINDS[allocation.kind].amount]) !== halala(allocation.amount))
+          problems.push('مبلغ التخصيص لا يطابق إجمالي المستند.');
+        // Check the ordinary source and tax rules against a proposed link
+        // shape. This is not funding proof: the journal does not exist yet.
+        const candidate = { ...row, finance_metadata: { ...(row.finance_metadata || {}),
+          employeeAdvanceLink: { version: 1, advanceId: r.advanceId, employeeId: r.employeeId,
+            fundingJournalId: 'preview-only', allocatedAmount: allocation.amount } } };
+        const sourceIssues = financeProblems(allocation.kind, candidate, allocation.sourceId);
+        problems.push(...sourceIssues);
+        if (!sourceIssues.length) try {
+          const adapter = ADAPTERS[allocation.kind], recordDate = adapter.dateOf(row);
+          const policy = taxPolicyAt(recordDate, settings);
+          if (!policy.known) throw new Error('السياسة التاريخية غير مهيأة لهذا المستند.');
+          const built = adapter.build(candidate, allocation.sourceId,
+            { recordDate, policyAt: date => taxPolicyAt(date, settings) });
+          const lines = [...built.lines, ...(built.settlement?.lines || [])];
+          const gross = lines.filter(line => String(line.accountId) === '1300')
+            .reduce((sum, line) => sum + halala(line.credit || 0) - halala(line.debit || 0), 0);
+          if (gross !== halala(allocation.amount)) problems.push('أثر العهدة في قيد المستند لا يطابق مبلغ الشريحة.');
+          const vat = lines.filter(line => String(line.accountId) === '1200')
+            .reduce((sum, line) => sum + halala(line.debit || 0) - halala(line.credit || 0), 0);
+          if (vat) problems.push('مدخلات ضريبة تاريخية تحتاج قرار فترة التسوية قبل قيد حالي.');
+          proposedExpenseEntries.push({ key, entryDate: r.correctionDate, originalInvoiceDate: row.invoice_date || null,
+            originalPaidDate: row.paid_date, sourceHash: financeSourceHash(row), lines, vatHalala: vat });
+        } catch (error) { problems.push(error.message); }
       }
       records.push({ key, amountHalala: halala(allocation.amount), sourceHash: financeHash(row) });
     }
     const allocatedHalala = r.allocations.reduce((sum, a) => sum + halala(a.amount), 0);
     if (allocatedHalala !== halala(r.amount))
       problems.push('مبلغ الشريحة المقترحة يجب أن يساوي التخصيصات بالضبط؛ لا يُفتح رصيد غير مخصص.');
-    const historicalLedgerProof = existing.some(d => d.data().sourceType === 'temporary_expense'
+    const historicalLedgerEntry = existing.find(d => d.data().sourceType === 'temporary_expense'
       && d.data().entryDate <= r.historicalFundingDate
       && (linesOf(d.data()).length ? linesOf(d.data()) : (separateLines.get(d.id) || []))
         .some(l => String(l.accountId) === '1300' && halala(l.debit) >= halala(r.amount))
       && (linesOf(d.data()).length ? linesOf(d.data()) : (separateLines.get(d.id) || []))
         .some(l => String(l.accountId) === '1020' && halala(l.credit) >= halala(r.amount)));
-    if (!historicalLedgerProof) problems.push('لا يوجد قيد تمويل تاريخي مطابق؛ القيد الحالي المقترح لا يثبت السداد السابق.');
+    if (!historicalLedgerEntry) problems.push('لا يوجد قيد تمويل تاريخي مطابق؛ القيد الحالي المقترح لا يثبت السداد السابق.');
     const snapshotHash = financeHash({ advance, journals: ledger.docs.map(d => ({ id: d.id, ...d.data() })),
       legacyLines: legacyLines.docs.map(d => ({ id: d.id, ...d.data() })),
-      records, accounts: [accountAdvance.data(), accountBank.data()], period: period.data(), request: r });
+      records, accounts: [accountAdvance.data(), accountBank.data()], period: period.data(), settings,
+      proposedExpenseEntries, request: r });
     return { preview: true, financialPosting: false, readyForPosting: false,
       ownerAttestation: { reference: r.ownerStatementRef, establishesHistoricalLedgerProof: false },
-      proposedCorrection: { entryDate: r.correctionDate, historicalFundingDate: r.historicalFundingDate,
-        debitAccount: '1300', creditAccount: '1020', amountHalala: halala(r.amount),
-        entryDateIsHistoricalFundingDate: false },
+      fundingRoute: historicalLedgerEntry ? 'reuse_existing_journal' : 'propose_current_correction',
+      existingFundingJournalId: historicalLedgerEntry?.id || null,
+      proposedCorrection: historicalLedgerEntry ? null : { entryDate: r.correctionDate,
+        historicalFundingDate: r.historicalFundingDate, debitAccount: '1300', creditAccount: '1020',
+        amountHalala: halala(r.amount), entryDateIsHistoricalFundingDate: false,
+        requiresAtomicExpenseConsumptionHalala: allocatedHalala, freeAdvanceBalanceHalala: 0 },
+      proposedExpenseEntries,
       allocatedHalala, remainingHalala: halala(r.amount) - allocatedHalala,
       opensUnallocatedBalance: false,
       unassignedAdvanceMovementCount: unassigned1300,

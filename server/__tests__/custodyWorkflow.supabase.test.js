@@ -70,7 +70,7 @@ describe.skipIf(!enabled)('custody through real PgStore transactions and SQL mig
     const advanceId = `${token}-legacy`;
     await db.doc(`temporary_expenses/${advanceId}`).set({ biker_id: `${token}-worker`, amount: 150,
       status: 'pending', spent_date: '2026-10-17', recovered_amount: 0 });
-    await db.doc(`variable_expenses/${token}-legacy-invoice`).set({ amount: 100,
+    await db.doc(`variable_expenses/${token}-legacy-invoice`).set({ total_variable_cost: 100,
       payment_status: 'paid', paid_date: '2026-10-18', finance_metadata: { fundingType: 'employee' } });
     const before = (await db.collection('journal_entries').get()).size;
     const preview = await financeWorkbench(db, auth, { action: 'preview', kind: 'custody_reconciliation',

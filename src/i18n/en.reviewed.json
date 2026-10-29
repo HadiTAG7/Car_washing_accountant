@@ -4437,5 +4437,8 @@
   "المستند مرتبط بعهدة مسبقًا؛ يلزم فحص الربط قبل تسوية تاريخية.": "The document is already linked to an advance; review the link before historical reconciliation.",
   "مبلغ التخصيص لا يطابق إجمالي المستند.": "The allocation amount does not match the document total.",
   "مبلغ الشريحة المقترحة يجب أن يساوي التخصيصات بالضبط؛ لا يُفتح رصيد غير مخصص.": "The proposed tranche must equal its allocations exactly; no unallocated balance will be opened.",
-  "لا يوجد قيد تمويل تاريخي مطابق؛ القيد الحالي المقترح لا يثبت السداد السابق.": "No matching historical funding entry exists; the proposed current entry does not prove the earlier payment."
+  "لا يوجد قيد تمويل تاريخي مطابق؛ القيد الحالي المقترح لا يثبت السداد السابق.": "No matching historical funding entry exists; the proposed current entry does not prove the earlier payment.",
+  "السياسة التاريخية غير مهيأة لهذا المستند.": "The historical policy is not configured for this document.",
+  "أثر العهدة في قيد المستند لا يطابق مبلغ الشريحة.": "The document's advance effect does not match the tranche amount.",
+  "مدخلات ضريبة تاريخية تحتاج قرار فترة التسوية قبل قيد حالي.": "Historical input tax needs a settlement-period decision before a current entry."
 }

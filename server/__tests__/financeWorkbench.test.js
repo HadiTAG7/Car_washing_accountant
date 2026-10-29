@@ -33,13 +33,37 @@ function employeeRequest(requestId, amount, kind = 'variable') {
       fundingJournalId: 'test-funding', allocatedAmount: amount } }) };
 }
 describe('finance workbench version-bound review', () => {
+  it('shows a dated, source-backed expense effect without posting it', async () => {
+    const db = database();
+    db.rows.set('temporary_expenses/legacy-preview', { biker_id: 'test-employee', amount: 150,
+      status: 'pending', recovered_amount: 0 });
+    db.rows.set('chart_of_accounts/1300', { active: true, accountType: 'asset' });
+    db.rows.set('chart_of_accounts/1020', { active: true, accountType: 'asset' });
+    db.rows.set('accounting_periods/2026-10', { status: 'open' });
+    const captured = await capture(db, { paymentStatus: 'paid', paidDate: '2026-10-18',
+      paymentMethod: 'card', fundingType: 'employee', fundingReference: 'TEST receipt' });
+    const before = [...db.rows.entries()];
+    const result = await financeWorkbench(db, auth, { action: 'preview', kind: 'custody_reconciliation',
+      advanceId: 'legacy-preview', employeeId: 'test-employee', amount: 100,
+      historicalFundingDate: '2026-10-17', correctionDate: '2026-10-29',
+      ownerStatementRef: 'TEST owner attestation', evidenceRefs: ['TEST bank transfer'],
+      allocations: [{ kind: 'variable', sourceId: captured.result.sourceId, amount: 100 }] });
+    expect(result.proposedExpenseEntries).toEqual([expect.objectContaining({
+      entryDate: '2026-10-29', originalPaidDate: '2026-10-18',
+      lines: expect.arrayContaining([expect.objectContaining({ accountId: '1300', credit: 100 })]),
+    })]);
+    expect(result.proposedCorrection).toMatchObject({ debitAccount: '1300', creditAccount: '1020',
+      freeAdvanceBalanceHalala: 0 });
+    expect(result.readyForPosting).toBe(false);
+    expect(db.rows).toEqual(new Map(before));
+  });
   it('previews historical custody without treating a current correction as earlier funding', async () => {
     const db = database();
     db.rows.set('temporary_expenses/old-custody', { biker_id: 'test-employee', amount: 150,
       status: 'pending', recovered_amount: 0 });
     db.rows.set('chart_of_accounts/1300', { active: true });
     db.rows.set('chart_of_accounts/1020', { active: true });
-    db.rows.set('variable_expenses/old-invoice', { amount: 100, payment_status: 'paid', paid_date: '2026-10-18',
+    db.rows.set('variable_expenses/old-invoice', { total_variable_cost: 100, payment_status: 'paid', paid_date: '2026-10-18',
       finance_metadata: { fundingType: 'employee' } });
     const input = { action: 'preview', kind: 'custody_reconciliation', advanceId: 'old-custody',
       employeeId: 'test-employee', amount: 100, historicalFundingDate: null, correctionDate: '2026-10-29',
@@ -63,6 +87,15 @@ describe('finance workbench version-bound review', () => {
     expect(beforeInvoice.issues.join(' ')).toMatch(/لا يوجد قيد تمويل تاريخي/);
     expect(beforeInvoice.issues.join(' ')).not.toMatch(/بعد دفع مستند/);
     expect(beforeInvoice.readyForPosting).toBe(false);
+    db.rows.set('journal_entries/old-funding', { status: 'posted', sourceType: 'temporary_expense',
+      sourceId: 'old-custody', entryDate: '2026-10-17', lines: [
+        { accountId: '1300', debit: 150, credit: 0 }, { accountId: '1020', debit: 0, credit: 150 },
+      ] });
+    const existingFunding = await financeWorkbench(db, auth, { ...input, historicalFundingDate: '2026-10-17',
+      evidenceRefs: ['TEST archived transfer'] });
+    expect(existingFunding).toMatchObject({ fundingRoute: 'reuse_existing_journal',
+      existingFundingJournalId: 'old-funding', proposedCorrection: null, readyForPosting: false });
+    db.rows.delete('journal_entries/old-funding');
     const duplicated = await financeWorkbench(db, auth, { ...input,
       allocations: [...input.allocations, ...input.allocations] });
     expect(duplicated.issues.join(' ')).toMatch(/المصدر مكرر/);

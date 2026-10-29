@@ -87,7 +87,7 @@ describe.skipIf(!enabled)('finance real Firestore workflow — isolated demo onl
     expect((await call({ action: 'read', ...common })).workflowStage).toBe('complete');
     await expect(postSource(db, FieldValue, common, { userId: auth.uid })).rejects.toThrow(/سبق ترحيل/);
     await expect(reverseEntry(db, FieldValue, 'test-funding', { entryDate: '2026-10-19', userId: auth.uid }))
-      .rejects.toThrow(/مرتبط بمصروفات/);
+      .rejects.toThrow(/قيد تمويل العهدة مستهلك/);
     await db.doc('temporary_expenses/test-advance').update({ status: 'recovered', recovered_date: '2026-10-19' });
     const recovery = await postSource(db, FieldValue, { kind: 'recovery', sourceId: 'test-advance' }, { userId: auth.uid });
     expect((await db.doc(`journal_entries/${recovery.entryId}`).get()).data().lines)

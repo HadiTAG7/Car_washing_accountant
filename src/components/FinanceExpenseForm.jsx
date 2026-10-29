@@ -16,6 +16,9 @@ function fromRow(kind, row = {}) {
     vatRate: row.vat_rate ?? '', vatDeductible: bool(row.vat_deductible), priceMode: row.price_mode || '',
     paymentMethod: row.payment_method || 'unknown', paymentStatus: row.payment_status || 'unknown', paidDate: row.paid_date || '',
     fundingType: meta.fundingType || 'unknown', fundingReference: meta.fundingReference || '', purpose: meta.purpose || '',
+    ownerStatementRef: meta.ownerStatementRef || '', advanceId: meta.employeeAdvanceLink?.advanceId || '',
+    advanceEmployeeId: meta.employeeAdvanceLink?.employeeId || '', advanceJournalId: meta.employeeAdvanceLink?.fundingJournalId || '',
+    advanceAllocatedAmount: meta.employeeAdvanceLink?.allocatedAmount ?? '',
     taxBasis: meta.taxBasis || 'document', taxReviewRef: meta.taxReviewRef || '', evidenceRefs: (meta.evidenceRefs || []).join('\n'),
     invoiceLines: meta.invoiceLines ? structuredClone(meta.invoiceLines) : null,
     quantityException: meta.quantityException ? structuredClone(meta.quantityException) : null,
@@ -33,6 +36,10 @@ function toPatch(kind, form) {
     vatRate: form.vatRate === '' ? null : Number(form.vatRate), paidDate: form.paidDate || null,
     paymentMethod: form.paymentMethod, paymentStatus: form.paymentStatus, fundingType: form.fundingType,
     fundingReference: form.fundingReference.trim() || null, purpose: form.purpose.trim() || null,
+    ownerStatementRef: form.ownerStatementRef.trim() || null,
+    employeeAdvanceLink: form.fundingType === 'employee' && form.advanceId && form.advanceEmployeeId && form.advanceJournalId && form.advanceAllocatedAmount !== ''
+      ? { version: 1, advanceId: form.advanceId.trim(), employeeId: form.advanceEmployeeId.trim(),
+        fundingJournalId: form.advanceJournalId.trim(), allocatedAmount: Number(form.advanceAllocatedAmount) } : null,
     taxBasis: form.taxBasis, taxReviewRef: form.taxReviewRef.trim() || null, evidenceRefs: form.evidenceRefs.split('\n').map(v => v.trim()).filter(Boolean) };
   if (form.classification) p[kind === 'annual' || kind === 'startup' ? 'parentId' : 'categoryId'] = form.classification;
   for (const key of ['isTaxInvoice', 'vatDeductible']) if (form[key] !== '') p[key] = form[key] === 'true';
@@ -67,6 +74,12 @@ export default function FinanceExpenseForm({ kind, detail, requestId, options, o
   async function execute(action) {
     if (inFlight.current) return;
     const isPreview = action === 'preview' || action === 'previewCapture';
+    const advanceFields = [form.advanceId, form.advanceEmployeeId, form.advanceJournalId, form.advanceAllocatedAmount];
+    if (form.fundingType === 'employee' && !['approve', 'post'].includes(action)
+      && advanceFields.some(value => value !== '') && advanceFields.some(value => value === '')) {
+      setError('أكمل معرف العهدة والموظف وقيد التمويل ومبلغ التخصيص معًا، أو اترك الربط فارغًا لتوثيق إفادة المالك فقط.');
+      return;
+    }
     if (uncertain && !isPreview) return;
     if (['approve', 'post'].includes(action) && (!confirmed || dirty || (action === 'approve' && (reason.trim().length < 3 || !detail?.approvalReady))
       || (action === 'post' && !detail?.postingReady))) return;
@@ -134,8 +147,15 @@ export default function FinanceExpenseForm({ kind, detail, requestId, options, o
     </div></details>
     <details className="fw-form-section"><summary>السداد والتمويل</summary><div className="fw-form">
       {select('حالة السداد', 'paymentStatus', [['unknown', 'غير مثبتة'], ['unpaid', 'لم يُسدد بعد'], ['paid', 'تم السداد بدليله']])}
-      {select('من أين دُفع المبلغ؟', 'fundingType', [['unknown', 'غير مثبت'], ['company_cash', 'صندوق المنشأة'], ['company_bank', 'بنك المنشأة'], ['vendor_liability', 'لم يُدفع — ذمة مورد'], ['partner', 'دفع شريك — يحتاج حسم الحساب'], ['employee', 'دفع موظف — يحتاج حسم الحساب'], ['owner_current', 'حساب هادي الجاري']])}
+      {select('من أين دُفع المبلغ؟', 'fundingType', [['unknown', 'غير مثبت'], ['company_cash', 'صندوق المنشأة'], ['company_bank', 'بنك المنشأة'], ['vendor_liability', 'لم يُدفع — ذمة مورد'], ['partner', 'دفع شريك — يحتاج حسم الحساب'], ['employee', 'عهدة موظف — يلزم ربط قيد تمويل'], ['owner_current', 'حساب هادي الجاري']])}
       {input('دليل الدفع أو ذمة المورد', 'fundingReference')}{input('سبب المصروف للمشروع', 'purpose')}
+      {form.fundingType === 'employee' && <>
+        {input('مرجع إفادة المالك (لا يثبت قيد التمويل)', 'ownerStatementRef')}
+        {input('معرف العهدة في الدفتر', 'advanceId')}{input('معرف الموظف', 'advanceEmployeeId')}
+        {input('معرف قيد تمويل العهدة المرحل', 'advanceJournalId')}
+        {input('مبلغ هذا المستند المخصص من العهدة', 'advanceAllocatedAmount', 'number')}
+        <small>الإفادة تحفظ بصفتها إفادة فقط. يتطلب الاعتماد قيد تمويل مرحلًا مطابقًا وتخصيصًا ضمن الرصيد المشترك مع الرواتب والاسترداد؛ لا تُستنتج أي دفعة من الإفادة.</small>
+      </>}
     </div></details>
     <details className="fw-form-section"><summary>التصنيف والمراجع</summary><div className="fw-form">
       <label>طريقة تمثيل الكمية<select value={form.quantityException ? 'total' : form.invoiceLines ? 'lines' : 'single'} disabled={protectedRow || busy}
@@ -215,7 +235,9 @@ export function ChangePreview({ kind, preview, options }) {
     supplier: 'المورد', invoiceNumber: 'رقم المستند', invoiceDate: 'تاريخ الفاتورة', invoiceUrl: 'رابط الإيصال',
     isTaxInvoice: 'فاتورة ضريبية', vatAmount: 'مبلغ الضريبة', vatRate: 'نسبة الضريبة', vatDeductible: 'قابلية استرداد الضريبة', priceMode: 'السعر والضريبة',
     paymentMethod: 'طريقة الدفع', paymentStatus: 'حالة السداد', paidDate: 'تاريخ السداد', fundingType: 'مصدر التمويل', fundingReference: 'دليل الدفع أو الذمة',
-    purpose: 'سبب المصروف للمشروع', evidenceRefs: 'مراجع المستند', taxReviewRef: 'مرجع مراجعة الضريبة', taxBasis: 'مصدر الضريبة' };
+    purpose: 'سبب المصروف للمشروع', evidenceRefs: 'مراجع المستند', taxReviewRef: 'مرجع مراجعة الضريبة', taxBasis: 'مصدر الضريبة',
+    ownerStatementRef: 'مرجع إفادة المالك', advanceId: 'معرف العهدة', advanceEmployeeId: 'معرف الموظف',
+    advanceJournalId: 'قيد تمويل العهدة', advanceAllocatedAmount: 'مبلغ تخصيص العهدة' };
   const values = { true: 'نعم', false: 'لا', unknown: 'غير مثبت', paid: 'تم السداد بدليله', unpaid: 'لم يُسدد بعد', company_cash: 'صندوق المنشأة',
     company_bank: 'بنك المنشأة', vendor_liability: 'ذمة مورد', partner: 'دفع شريك', employee: 'دفع موظف', ...paymentNames,
     inclusive: 'شامل الضريبة', exclusive: 'غير شامل الضريبة', document: 'المستند', verified_historical_policy: 'سياسة تاريخية متحقق منها' };

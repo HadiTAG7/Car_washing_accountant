@@ -88,6 +88,15 @@ describe('احتساب مسير الرواتب — أيام الشهر الفع�
     expect(p.totals).toMatchObject({ basic: 523, advances: 200, net: 323 });
   });
 
+  it('يخصم من الرصيد بعد مصروف عهدة مرحل ويحافظ على السجلات القديمة بلا حقل استهلاك', () => {
+    const legacy = preview({ advances: [ADVANCE()] });
+    expect(legacy.lines[0].advanceOutstanding).toBe(200);
+    const consumed = preview({ advances: [ADVANCE({ custody_expense_used_halala: 10000, recovered_amount: 50 })] });
+    expect(consumed.lines[0]).toMatchObject({ advanceOutstanding: 50, advanceDeduction: 50 });
+    expect(() => preview({ advances: [ADVANCE({ custody_expense_used_halala: 18000, recovered_amount: 50 })] }))
+      .toThrow(/استهلاك السلفة يتجاوز التمويل/);
+  });
+
   it('22 عاملاً × سلفة 200: الأساسي 11,439 والسلف 4,400 والصافي 7,039', () => {
     const bikers = Array.from({ length: 22 }, (_, index) => ({
       id: `b${index + 1}`, name: `عامل ${index + 1}`,

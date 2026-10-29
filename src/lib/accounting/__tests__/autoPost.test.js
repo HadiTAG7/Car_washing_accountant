@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { transitionedToApproved, describeAutoPost, autoPostTone, editWarningFor } from '../autoPost';
 import { ADAPTERS } from '../sourceAdapters';
+import { buildRecoveryEntry } from '../postingRules';
 
 describe('لحظة الاعتماد', () => {
   it('الغسلة تُعتمد عند اكتمالها فقط', () => {
@@ -70,6 +71,13 @@ describe('التحذير عند تعديل سجل مُرحّل', () => {
 });
 
 describe('المحوّلات مشتركة بين المسارين', () => {
+  it('معاينة الاسترداد تدائن المتبقي بعد مصروف العهدة فقط', () => {
+    const built = buildRecoveryEntry({ id: 'test-advance', amount: 150, recoveredAmount: 0,
+      custodyExpenseUsedHalala: 10000, status: 'recovered', recoveredDate: '2026-10-19' });
+    expect(built.lines).toContainEqual(expect.objectContaining({ accountId: '1300', credit: 50 }));
+    expect(() => buildRecoveryEntry({ amount: 150, custodyExpenseUsedHalala: 15000,
+      recoveredDate: '2026-10-19' })).toThrow(/لا يوجد رصيد/);
+  });
   it('كل محوّل يعرّف الحقول التي يعتمد عليها المساران', () => {
     for (const [key, a] of Object.entries(ADAPTERS)) {
       expect(a.collection, key).toBeTruthy();

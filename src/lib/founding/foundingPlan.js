@@ -113,16 +113,21 @@ export function foundingPlan(input) {
 
   // ── المستندات ──
   for (const doc of input.docs || []) {
-    const pay = payerOf(doc, links, decisions);
-    const vatHeld = Boolean(doc.vatQuarter && FILED_VAT_QUARTERS.includes(doc.vatQuarter) && !decisions[doc.key]?.vatReviewed);
+    // Employee custody is funded through the advance, not by a direct payment
+    // of each invoice from Hadi or the company. Its own receipt controls the
+    // posted source, including any input VAT claimed in an earlier quarter.
+    const custodyScoped = doc.fundingType === 'employee' || Boolean(doc.custodySettlementId);
+    const pay = custodyScoped ? { payer: null, source: 'custody' } : payerOf(doc, links, decisions);
+    const vatHeld = Boolean(!custodyScoped && doc.vatQuarter && FILED_VAT_QUARTERS.includes(doc.vatQuarter) && !decisions[doc.key]?.vatReviewed);
     const row = { ...doc, payer: pay.payer, payerSource: pay.source, statementLine: pay.line || null,
-      partnerId: pay.partnerId || null, vatHeld, decision: decisions[doc.key] || null };
+      partnerId: pay.partnerId || null, vatHeld, decision: decisions[doc.key] || null, custodyScoped };
     if (doc.date && doc.date <= cutoff) {
       if (pay.line) groups.matched.push(row);
       else if (doc.hasProof) groups.withProof.push(row);
       else if (halala(doc.amount) < threshold) groups.small.push(row);
       else groups.large.push(row);
     }
+    if (custodyScoped) continue;
     const target = targetAccount(pay.payer, pay.partnerId);
     if (!target) continue;
     if (!doc.protected) {
@@ -188,9 +193,16 @@ export function foundingPlan(input) {
       ...(posted.get(key) || {}) });
   }
 
-  const settlement = settlementFor({ settings, book: input.book || {}, entries, posted, closed });
+  // A client-writable marker or status is never proof that the historical
+  // source was settled. Only the server-verified receipt/ledger/lock path may
+  // remove a source from this cutoff guard. A verified later funding date is
+  // the sole exception for an earlier founding cutoff.
+  const unresolvedCustody = (input.docs || []).filter(d => (d.fundingType === 'employee' || d.custodySettlementId)
+    && !d.custodySettled && !d.custodyFundingAfterCutoff);
+  const settlement = settlementFor({ settings, book: input.book || {}, entries, posted, closed,
+    custodyBridge: input.custodyBridge, unresolvedCustody });
   if (settlement.entry) entries.push(settlement.entry);
-  const vatTouching = (input.docs || []).filter(d => d.vatQuarter && FILED_VAT_QUARTERS.includes(d.vatQuarter))
+  const vatTouching = (input.docs || []).filter(d => !d.custodySettlementId && d.vatQuarter && FILED_VAT_QUARTERS.includes(d.vatQuarter))
     .map(d => ({ key: d.key, kind: d.kind, sourceId: d.sourceId, title: d.title, amount: d.amount, date: d.date, quarter: d.vatQuarter,
       reviewed: Boolean(decisions[d.key]?.vatReviewed), protected: d.protected }));
   const postCutoff = (input.docs || []).filter(d => d.date && d.date > cutoff && !d.protected && d.issues?.length)
@@ -219,17 +231,22 @@ export function completenessGaps(doc) {
 }
 
 // ── قيد التسوية يوم القطع ────────────────────────────────────────────────
-function settlementFor({ settings, book, entries, posted, closed }) {
+function settlementFor({ settings, book, entries, posted, closed, custodyBridge = null, unresolvedCustody = [] }) {
   const cutoff = settings.cutoffDate, key = `settlement:${cutoff}`;
   const actuals = settings.actuals || null;
   const accounts = [ACCOUNTS.BANK, ACCOUNTS.CASH, ACCOUNTS.ADVANCES];
   const bookAt = Object.fromEntries(accounts.map(a => [a, Math.round(book[a] || 0)]));
+  const timingBridge = Object.fromEntries(accounts.map(a => [a, Math.round(custodyBridge?.amounts?.[a] || 0)]));
+  const bookAfterTimingBridge = Object.fromEntries(accounts.map(a => [a, bookAt[a] + timingBridge[a]]));
   // The proposed corrections dated on or before the cutoff move these balances too.
   const pending = Object.fromEntries(accounts.map(a => [a, 0]));
   const waiting = entries.filter(e => e.status === 'proposed' && e.date <= cutoff);
   for (const e of waiting) for (const l of e.lines) if (accounts.includes(l.accountId)) pending[l.accountId] += halala(l.debit) - halala(l.credit);
-  const after = Object.fromEntries(accounts.map(a => [a, bookAt[a] + pending[a]]));
-  const result = { cutoffDate: cutoff, book: bookAt, afterCorrections: after, actual: null, differences: null, entry: null,
+  const after = Object.fromEntries(accounts.map(a => [a, bookAfterTimingBridge[a] + pending[a]]));
+  const custodyIssues = custodyBridge?.issues || [];
+  const result = { cutoffDate: cutoff, book: bookAt, timingBridge, bookAfterTimingBridge,
+    custodyBridgeGroups: custodyBridge?.groups || [], custodyIssues,
+    unresolvedCustodyCount: unresolvedCustody.length, afterCorrections: after, actual: null, differences: null, entry: null,
     status: posted.has(key) ? 'posted' : actuals ? 'proposed' : 'needs_actuals', waitingCorrections: waiting.length };
   if (!actuals) return result;
   const custody = (actuals.custody || []).reduce((n, c) => n + halala(c.amount), 0);
@@ -246,8 +263,12 @@ function settlementFor({ settings, book, entries, posted, closed }) {
   if (net > 0) lines.push({ accountId: ACCOUNTS.SETTLEMENTS, debit: 0, credit: riyal(net), description: 'فرق فترة التأسيس' });
   if (net < 0) lines.push({ accountId: ACCOUNTS.SETTLEMENTS, debit: riyal(-net), credit: 0, description: 'فرق فترة التأسيس' });
   Object.assign(result, { actual, differences });
-  if (!lines.length && !posted.has(key)) { result.status = result.status === 'posted' ? 'posted' : 'balanced'; return result; }
-  const entryStatus = posted.has(key) ? 'posted' : waiting.length ? 'waiting' : closed.has(cutoff.slice(0, 7)) ? 'blocked_period' : 'proposed';
+  if (!lines.length && !posted.has(key)) {
+    result.status = custodyIssues.length || unresolvedCustody.length ? 'waiting_custody' : 'balanced';
+    return result;
+  }
+  const entryStatus = posted.has(key) ? 'posted' : custodyIssues.length || unresolvedCustody.length ? 'waiting_custody'
+    : waiting.length ? 'waiting' : closed.has(cutoff.slice(0, 7)) ? 'blocked_period' : 'proposed';
   result.status = entryStatus;
   result.entry = { key, type: 'settlement', sourceKey: key, title: 'تسوية فترة التأسيس', date: cutoff, lines, status: entryStatus,
     amount: riyal(Math.abs(net)), description: `تسوية فترة التأسيس يوم القطع ${cutoff} — الفرق الباقي بين الدفاتر والواقع`,

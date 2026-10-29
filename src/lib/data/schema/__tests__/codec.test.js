@@ -25,6 +25,15 @@ const roundTrip = (collection, id, data) => {
 };
 
 describe('سجل الجداول', () => {
+  it('round-trips the server-owned advance balance and opening journal in existing extra JSON', () => {
+    const advance = { amount: 150, status: 'pending', recovered_amount: 0, custody_expense_used_halala: 10000,
+      custody_balance_opened_journal_id: 'test-funding' };
+    expect(roundTrip('temporary_expenses', 'test-advance', advance)).toEqual(advance);
+    const journal = { sourceType: 'expense', sourceId: 'test-expense', status: 'posted',
+      employeeAdvanceConsumption: { advanceId: 'test-advance', amountHalala: 10000, usedAfterHalala: 10000,
+        fundingJournalId: 'test-funding' } };
+    expect(roundTrip('journal_entries', 'test-journal', journal)).toEqual(journal);
+  });
   it('round-trips display-only biker tips in the existing snapshot extra JSON without schema changes', () => {
     const document = { periodKey: '2026-10', metrics: { tipsNet: 73.13 }, tipsByBiker: [{ driverExternalId: '1984', netAmount: 73.125 }] };
     expect(roundTrip('sweater_metric_snapshots', 'tips-test', document)).toEqual(document);

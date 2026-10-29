@@ -103,14 +103,14 @@ function Matched({ rows }) {
 }
 
 function Small({ rows, founding, threshold }) {
-  const open = rows.filter(r => !r.decision?.decision);
+  const open = rows.filter(r => !r.custodyScoped && !r.decision?.decision);
   const total = open.reduce((n, r) => n + Number(r.amount), 0);
   return <details className="fw-panel" open={open.length > 0}><summary>ب) تحت {money(threshold)} وبدون إثبات — {rows.length}</summary>
     <small>تُقبل بإقرار المدير: يبقى المستند كما سُجّل، وتُحفظ الموافقة باسمك ووقتها.</small>
     {open.length > 0 && <div className="fw-actions"><ConfirmButton primary label={`قبول الكل بإقرار المدير (${open.length})`} disabled={founding.busy}
       confirmText={`يقبل ${open.length} مستندًا مجموعها ${money(total)} كما سُجّلت.`}
       onConfirm={() => founding.act({ action: 'acceptSmall', keys: open.map(r => r.key), confirm: true }, 'قُبلت بإقرار المدير.')} /></div>}
-    {rows.length > 0 && <DocTable rows={rows} head={<th>الحالة</th>} extra={r => <td>{r.decision?.decision ? `${PAYERS[r.decision.decision]} — ${r.decision.decidedByName || ''}` : 'لم تُقبل بعد'}</td>} />}
+    {rows.length > 0 && <DocTable rows={rows} head={<th>الحالة</th>} extra={r => <td>{r.custodyScoped ? 'عهدة موظف — تُسوّى من تمويلها' : r.decision?.decision ? `${PAYERS[r.decision.decision]} — ${r.decision.decidedByName || ''}` : 'لم تُقبل بعد'}</td>} />}
   </details>;
 }
 
@@ -123,6 +123,7 @@ function Large({ rows, founding, partners }) {
 
 function DecisionPicker({ row, founding, partners }) {
   const [decision, setDecision] = useState(row.decision?.decision || ''), [partnerId, setPartnerId] = useState(row.decision?.partnerId || '');
+  if (row.custodyScoped) return <span>عهدة موظف — تُسوّى من تمويلها</span>;
   const changed = decision !== (row.decision?.decision || '') || (decision === 'partner' && partnerId !== (row.decision?.partnerId || ''));
   return <span className="founding-picker">
     <select aria-label={`من أين دُفع: ${row.title}`} value={decision} onChange={e => setDecision(e.target.value)}>
@@ -195,12 +196,16 @@ function Entries({ plan, founding, names }) {
       <EntryLines lines={e.lines} names={names} />
     </article>)}
     <h3>الفرق يوم القطع</h3>
+    {s.unresolvedCustodyCount > 0 && <p>بانتظار تسوية {s.unresolvedCustodyCount} مستند عهدة قبل قيد 3200؛ لا يُفترض أن فرق البنك رصيد حر.</p>}
+    {s.custodyIssues?.map((issue, i) => <p key={i} role="alert">{issue}</p>)}
+    {s.custodyBridgeGroups?.length > 0 && <p>جسر توقيت العهدة المصححة بتاريخ لاحق: البنك {money(s.timingBridge['1020'] / 100)}، والعهد {money(s.timingBridge['1300'] / 100)}. يظهر في الحساب يوم القطع فقط ولا ينشئ قيدًا آخر.</p>}
     {s.status === 'needs_actuals' ? <p>أدخل الواقع يوم القطع (البنك والكاش والعهد) لحساب قيد التسوية.</p> : <div className="fw-table-scroll"><table>
-      <thead><tr><th>الحساب</th><th>الدفاتر المرحّلة</th><th>بعد قيود التصحيح المقترحة</th><th>الواقع</th><th>الفرق</th></tr></thead>
+      <thead><tr><th>الحساب</th><th>الدفاتر المرحّلة</th><th>جسر توقيت العهدة</th><th>بعد التصحيح والجسر</th><th>الواقع</th><th>الفرق</th></tr></thead>
       <tbody>{['1020', '1010', '1300'].map(a => <tr key={a}><td><bdi>{a}</bdi> {names?.[a]}</td><td>{money(s.book[a] / 100)}</td>
-        <td>{money(s.afterCorrections[a] / 100)}</td><td>{s.actual ? money(s.actual[a] / 100) : '—'}</td><td>{s.differences ? money(s.differences[a] / 100) : '—'}</td></tr>)}</tbody>
+        <td>{money(s.timingBridge[a] / 100)}</td><td>{money(s.afterCorrections[a] / 100)}</td><td>{s.actual ? money(s.actual[a] / 100) : '—'}</td><td>{s.differences ? money(s.differences[a] / 100) : '—'}</td></tr>)}</tbody>
     </table></div>}
     {s.status === 'waiting' && <p>قيد التسوية يُقترح للترحيل بعد ترحيل قيود التصحيح ({s.waitingCorrections}).</p>}
+    {s.status === 'waiting_custody' && <p>قيد 3200 موقوف حتى تتطابق عهدة الموظف وجسر توقيتها مع الدفتر وإيصالاتها.</p>}
     {s.status === 'balanced' && <p>لا فرق باقٍ يوم القطع.</p>}
     <div className="fw-form">
       <label className="fw-wide">سبب الموافقة<input value={reason} onChange={e => setReason(e.target.value)} placeholder="مثلًا: مطابقة كشف هادي لفترة التأسيس" /></label>

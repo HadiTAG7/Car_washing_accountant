@@ -264,6 +264,30 @@ describe('مطابقة ضريبة المدخلات مع حساب 1200', () => {
     expect(r.unpostedInputTax).toBe(30);
   });
 
+  it('يفصل فرق توقيت مطالبة سابقة عن الفرق غير المفسر دون نقل تاريخ الفاتورة أو القيد', () => {
+    const correction = { id: 'synthetic-correction', sourceType: 'expense', sourceKind: 'variable',
+      sourceId: 'i1', status: 'posted', entryDate: '2026-10-29', custodyHistoricalSettlementId: 'synthetic-group',
+      purchaseTaxSnapshot: { gross: 1150, net: 1000, vat: 150, deductible: true,
+        invoiceDate: '2026-08-03', claimDisposition: 'previously_claimed',
+        submittedPeriod: '2026-Q3', priorClaimEvidenceRef: 'TEST filed return' } };
+    const prior = { id: 'synthetic-other', sourceType: 'expense', sourceKind: 'variable',
+      sourceId: 'i2', status: 'posted', entryDate: '2026-08-04' };
+    const rows = [INV, { ...INV, id: 'i2', invoiceNumber: 'TEST-OTHER', amount: 115 }];
+    const journalLines = [{ entryId: correction.id, accountId: '1200', debit: 150, credit: 0 },
+      { entryId: prior.id, accountId: '1200', debit: 15, credit: 0 }];
+    const q3 = buildVatReport({ inputs: rows, entries: [correction, prior], lines: journalLines, period: '2026-Q3' });
+    expect(q3).toMatchObject({ inputMismatch: 150, documentedPriorClaimTiming: 150,
+      unexplainedInputMismatch: 0 });
+    const q4 = buildVatReport({ inputs: rows, entries: [correction, prior], lines: journalLines, period: '2026-Q4' });
+    expect(q4).toMatchObject({ inputMismatch: -150, documentedPriorClaimTiming: -150,
+      unexplainedInputMismatch: 0, input: { tax: 0 } });
+    const tampered = buildVatReport({ inputs: rows, entries: [{ ...correction,
+      purchaseTaxSnapshot: { ...correction.purchaseTaxSnapshot, priorClaimEvidenceRef: null } }, prior],
+    lines: journalLines, period: '2026-Q4' });
+    expect(tampered.documentedPriorClaimTiming).toBe(0);
+    expect(tampered.unexplainedInputMismatch).toBe(-150);
+  });
+
   it('القيد غير المرحّل لا يُحتسب في رصيد الدفاتر', () => {
     const draft = [{ id: 'e2', status: 'draft', entryDate: '2026-08-04' }];
     const draftLines = [{ entryId: 'e2', accountId: '1200', debit: 999, credit: 0 }];

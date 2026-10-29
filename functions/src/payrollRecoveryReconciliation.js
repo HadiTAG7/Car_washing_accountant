@@ -1,4 +1,5 @@
 import { advanceAssignmentMonth } from '../../src/lib/advanceMonth.js';
+import { custodyExpenseUsedCents } from './financeEmployeeAdvance.js';
 const fail = message => { const error = new Error(message); error.code = 'failed-precondition'; throw error; };
 const round = n => Math.round(n * 100) / 100;
 export async function payrollRecoveryReconciliation(tx, db, run, allItems, request) {
@@ -12,7 +13,8 @@ export async function payrollRecoveryReconciliation(tx, db, run, allItems, reque
       payrollLockId: row.payroll_lock_id || null };
     const postedRecovery = recoveryLocks[index].exists || journalSnap.docs.some(doc => { const entry = doc.data(); return entry.status === 'posted'
       && entry.sourceType === 'recovery' && entry.sourceId === row.id; });
-    const blocked = snapshot.payrollLockId || snapshot.recoveredAmount !== 0 || postedRecovery || !Number.isFinite(snapshot.amount) || snapshot.amount <= 0
+    const blocked = snapshot.payrollLockId || snapshot.recoveredAmount !== 0 || custodyExpenseUsedCents(row) !== 0
+      || postedRecovery || !Number.isFinite(snapshot.amount) || snapshot.amount <= 0
       || (snapshot.bikerId && !request.bikerIds.includes(snapshot.bikerId));
     return { ...snapshot, eligible: !blocked, postedRecovery, needsWorkerConfirmation: !snapshot.bikerId };
   });

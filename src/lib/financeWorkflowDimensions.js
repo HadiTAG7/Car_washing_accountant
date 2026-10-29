@@ -5,7 +5,7 @@ export const FINANCE_BLOCKER_LABELS = {
   policy: 'السياسة التاريخية والحسابات', allocation: 'ربط الأصل ومنع التكرار', review: 'المراجعة والربط',
 };
 export function financeBlockerCategory(message) {
-  if (/التمويل|الحساب المقابل|ذمة المورد/.test(message)) return 'funding';
+  if (/التمويل|الحساب المقابل|ذمة المورد|العهدة|عهدة/.test(message)) return 'funding';
   if (/السداد|طريقة الدفع/.test(message)) return 'payment';
   if (/السياسة التاريخية|حسابات القيد|معاينة الحسابات/.test(message)) return 'policy';
   if (/الضريب|المدخلات/.test(message)) return 'tax';
@@ -32,13 +32,20 @@ export function financeWorkflowDimensions(detail, { recorded = false } = {}) {
     details: { saved: detailsSaved, revision, sourceGapCount: sourceGaps.length,
       label: detailsSaved ? sourceGaps.length ? 'تفاصيل محفوظة — بها نواقص مصدر' : 'تفاصيل محفوظة' : 'مصدر مسجل — دون نسخة مراجعة محفوظة' },
     review: { recordSaved: reviewSaved, status: reviewStatus, matchesSource, verificationKind: review?.verificationKind || null, label: reviewLabel },
-    approval: { current: Boolean(detail.approved), label: detail.approved ? 'اعتماد النسخة الحالية'
+    approval: { current: Boolean(detail.approved || detail.historicalSettlementProof?.receiptVerified), label: detail.historicalSettlementProof?.receiptVerified
+      ? 'تسوية تاريخية معتمدة بإيصال مستقل' : detail.approved ? 'اعتماد النسخة الحالية'
       : row.approval_status === 'approved' || review?.status === 'approved' ? 'اعتماد سابق يحتاج مراجعة' : 'غير معتمد' },
     posting: { status: active ? 'posted' : reversed ? 'reversed' : detail.protectedSource ? 'protected' : 'unposted',
       label: active ? 'مرحل بقيد سارٍ' : reversed ? 'قيده معكوس — المصدر ما زال مسجلًا' : detail.protectedSource ? 'محمي وله أثر يحتاج مراجعة' : 'غير مرحل',
       ready: Boolean(detail.postingReady) },
+    funding: { type: row.finance_metadata?.fundingType || 'unknown',
+      ownerStatementRef: row.finance_metadata?.ownerStatementRef || null,
+      ledgerMatched: Boolean(detail.postingPreview?.employeeAdvanceProof || detail.historicalSettlementProof?.receiptVerified),
+      advanceId: row.finance_metadata?.employeeAdvanceLink?.advanceId || detail.historicalSettlementProof?.advanceId || null,
+      fundingJournalId: row.finance_metadata?.employeeAdvanceLink?.fundingJournalId || detail.historicalSettlementProof?.fundingJournalId || null },
     payment: { proven: Boolean(detail.paymentProven), recordedStatus: row.payment_status || 'unknown', method: row.payment_method || null, paidDate: row.paid_date || null,
-      label: detail.paymentProven ? 'إثبات السداد مكتمل' : row.payment_status === 'paid' ? 'مسجل مدفوع — تحقق المسار غير مكتمل'
+      label: detail.historicalSettlementProof?.receiptVerified ? 'سداد بإفادة المالك وتسوية دفترية؛ دون مطابقة كشف بنك'
+        : detail.paymentProven ? 'إثبات السداد مكتمل' : row.payment_status === 'paid' ? 'مسجل مدفوع — تحقق المسار غير مكتمل'
         : row.payment_status === 'unpaid' ? 'مسجل غير مسدد' : 'حالة السداد غير مثبتة' },
     sourceGaps, postingBlockers: blockers,
     sourceFacts: { invoiceNumber: typeof row.invoice_number === 'string' || Number.isFinite(row.invoice_number) ? row.invoice_number : null,

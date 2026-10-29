@@ -59,7 +59,8 @@ export function memoryFinanceDb(seed = {}) {
       limit: value => query(filters, ordering, value, after), startAfter: key => query(filters, ordering, count, key),
       async get() {
         let all = [...rows].filter(([path]) => path.startsWith(`${name}/`) && !path.slice(name.length + 1).includes('/'));
-        const value = ([path, row], key) => key === '__name__' ? path.slice(name.length + 1) : row[key];
+        const value = ([path, row], key) => key === '__name__' ? path.slice(name.length + 1)
+          : key.split('.').reduce((current, part) => current?.[part], row);
         all = all.filter(entry => filters.every(([key, op, expected]) => op === '==' ? value(entry, key) === expected : value(entry, key) < expected));
         if (ordering) all.sort((a, b) => (value(a, ordering[0]) < value(b, ordering[0]) ? -1 : value(a, ordering[0]) > value(b, ordering[0]) ? 1 : 0) * (ordering[1] === 'desc' ? -1 : 1));
         if (after) all = all.filter(([path]) => path.slice(name.length + 1) > after);

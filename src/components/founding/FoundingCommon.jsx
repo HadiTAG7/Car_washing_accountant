@@ -23,7 +23,7 @@ export function Messages({ error, actionError, notice }) {
 
 const STATUS = {
   proposed: 'بانتظار موافقتك', posted: 'مرحّل', held_vat: 'يمس إقرارًا مقدّمًا — راجعه أولًا',
-  blocked_period: 'الفترة مقفلة', waiting: 'بعد ترحيل قيود التصحيح', unposted: 'لم يُرحّل بعد',
+  blocked_period: 'الفترة مقفلة', waiting: 'بعد ترحيل قيود التصحيح', waiting_custody: 'بانتظار مطابقة العهدة', unposted: 'لم يُرحّل بعد',
 };
 export function StatusBadge({ status }) {
   return <span className={`fw-badge founding-status founding-status--${status}`}>{STATUS[status] || status}</span>;

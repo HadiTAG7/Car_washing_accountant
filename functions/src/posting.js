@@ -18,6 +18,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { round2 } from './invariants.js';
+import { custodyExpenseUsedCents } from './financeEmployeeAdvance.js';
 import { resolvePurchaseTax } from './purchaseTax.js';
 import { applyReviewedPartialVat, requiresReviewedPartialVat } from './financeReviewedVat.js';
 import { financeInvoiceLineProblems } from './financeInvoiceLines.js';
@@ -173,7 +174,7 @@ export function purchaseFieldsOf(kind, row) {
  *
  * كل ما يخص الضريبة من `resolvePurchaseTax`.
  */
-function buildExpense(kind, row, id, { policyAt = null, recordDate = null } = {}) {
+function buildExpense(kind, row, id, { policyAt = null, recordDate = null, historicalReconciliation = null } = {}) {
   // The SAME date the poster resolved the policy from. Computing it twice let
   // the two drift — the voucher adapter read `due_date` while the builder read
   // `dueDate` — so an entry could be dated one day and taxed under another.
@@ -224,8 +225,16 @@ function buildExpense(kind, row, id, { policyAt = null, recordDate = null } = {}
       description: tax.lineDescription,
     });
   }
+  const employeeAdvance = kind !== 'voucher' && row.finance_metadata?.fundingType === 'employee';
+  const reconciled = historicalReconciliation?.verified === true
+    && historicalReconciliation.sourceId === id
+    && historicalReconciliation.kind === kind
+    && historicalReconciliation.amountHalala === Math.round(tax.gross * 100);
+  if (employeeAdvance && !row.finance_metadata?.employeeAdvanceLink && !reconciled)
+    throw new Error('ربط عهدة الموظف غير مكتمل.');
+  const settlementAccount = employeeAdvance ? ACC.EMPLOYEE_ADVANCE : settlementForPurchase(method, paid);
   lines.push({
-    accountId: split ? ACC.PAYABLE : settlementForPurchase(method, paid),
+    accountId: split ? ACC.PAYABLE : settlementAccount,
     debit: 0, credit: tax.gross,
     description: supplierLabel,
   });
@@ -252,7 +261,7 @@ function buildExpense(kind, row, id, { policyAt = null, recordDate = null } = {}
     lines: [
       { accountId: ACC.PAYABLE, debit: tax.gross, credit: 0, description: supplierLabel },
       {
-        accountId: settlementForPurchase(method, 'paid'),
+        accountId: settlementAccount,
         debit: 0, credit: tax.gross,
         description: `سداد ${accrualDate}`,
       },
@@ -427,7 +436,16 @@ export const ADAPTERS = {
     approved: (r) => r.status === 'recovered' && Boolean(r.recovered_date) && !r.payroll_lock_id,
     notApproved: 'العهدة لم تُسترد بعد.',
     build: (row, id) => {
-      const amount = round2(row.amount);
+      if (row.custody_historical_partial_hold === true) throw new Error('العهدة التاريخية تحت تسوية جزئية؛ لا يُرحّل استرداد منفرد.');
+      const recovered = Number(row.recovered_amount || 0);
+      const expenseUsed = custodyExpenseUsedCents(row);
+      if (!Number.isFinite(recovered) || recovered < 0 || Math.abs(recovered * 100 - Math.round(recovered * 100)) > 1e-6
+        || Math.round(recovered * 100) + expenseUsed > Math.round(Number(row.amount) * 100)
+        || (recovered > 0 && !row.payroll_lock_id)) {
+        throw new Error('رصيد استرداد العهدة لا يطابق الخصومات المحفوظة؛ يلزم فحصه.');
+      }
+      const amount = round2(Number(row.amount) - recovered - expenseUsed / 100);
+      if (!(amount > 0)) throw new Error('لا يوجد رصيد عهدة قابل للاسترداد؛ راجع المصروفات وخصومات الرواتب.');
       const method = row.recovery_method || row.payment_method || 'cash';
       return {
         entry: {

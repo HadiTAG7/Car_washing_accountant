@@ -1,4 +1,5 @@
 import { payrollRecoveryReconciliation } from './payrollRecoveryReconciliation.js';
+import { custodyExpenseUsedCents } from './financeEmployeeAdvance.js';
 import { createHash } from 'node:crypto';
 import {
   buildReversalLines,
@@ -195,10 +196,13 @@ function completedWash(row) {
 }
 
 function outstandingOfAdvance(row) {
+  if (row.custody_historical_partial_hold === true) fail('العهدة التاريخية تحت تسوية جزئية؛ يلزم مطابقة الرصيد قبل خصمها من الراتب.');
   const amount = money(row.amount, 'قيمة السلفة');
+  const expenseUsed = custodyExpenseUsedCents(row) / 100;
   if (row.status === 'recovered') return 0;
   const recovered = Math.min(amount, money(row.recovered_amount, 'المسترد من السلفة'));
-  return round2(amount - recovered);
+  if (round2(recovered + expenseUsed) > amount) fail('استهلاك السلفة يتجاوز التمويل؛ يلزم فحصه قبل صرف الراتب.');
+  return round2(amount - recovered - expenseUsed);
 }
 
 function commissionPolicy(periodKey, stored = null) {
@@ -280,9 +284,13 @@ export function calculatePayrollPreview({
   }
 
   const advanceMap = new Map();
+  const heldAdvanceBikers = new Set();
   for (const row of advances || []) {
     const bikerId = String(row.biker_id || '').trim();
-    if (!bikerId || outstandingOfAdvance(row) <= 0 || advanceAssignmentMonth(row) !== bounds.periodKey) continue;
+    if (!bikerId || advanceAssignmentMonth(row) !== bounds.periodKey
+      || !(bikers || []).some(biker => String(biker.id || '') === bikerId)) continue;
+    if (row.custody_historical_partial_hold === true) { heldAdvanceBikers.add(bikerId); continue; }
+    if (outstandingOfAdvance(row) <= 0) continue;
     const list = advanceMap.get(bikerId) || [];
     list.push(row);
     advanceMap.set(bikerId, list);
@@ -304,6 +312,8 @@ export function calculatePayrollPreview({
     if (eligibility.daysEntitled === 0) continue;
 
     const adj = adjustmentMap.get(biker.id) || normalizeAdjustment({ bikerId: biker.id });
+    if (adj.hasAdvanceDeduction && heldAdvanceBikers.has(biker.id))
+      fail('العهدة التاريخية تحت تسوية جزئية؛ يلزم مطابقة الرصيد قبل خصمها من الراتب.');
     const basicDue = basicSalaryDue({
       monthlySalary: biker.salary, daysEntitled: eligibility.daysEntitled, monthDays: bounds.monthDays,
     });
@@ -345,6 +355,9 @@ export function calculatePayrollPreview({
       deduction: adj.deduction,
       deductionReason: adj.deductionReason || null,
       advanceOutstanding,
+      custodyAdvanceHeld: heldAdvanceBikers.has(biker.id),
+      custodyAdvanceHoldReason: heldAdvanceBikers.has(biker.id)
+        ? 'العهدة التاريخية تحت تسوية جزئية؛ لا تخصم تلقائيًا حتى مطابقة الرصيد.' : null,
       advanceDeduction,
       advanceDeductionMax,
       advanceDeductionMode: adj.hasAdvanceDeduction ? 'manual' : 'default_full',
@@ -945,7 +958,9 @@ export async function payPayroll(db, FieldValue, payload, {
       const current = { id: snap.id, ...snap.data() };
       const outstanding = outstandingOfAdvance(current);
       if (row.allocation.recoveryReconciliation) {
-        if (current.status !== 'recovered' || Number(current.recovered_amount || 0) !== 0 || current.payroll_lock_id || Number(current.amount) !== row.allocation.amount || advanceAssignmentMonth(current) !== run.periodKey) fail('تغيرت السلفة المستردة بعد معاينة المطابقة.');
+        if (current.status !== 'recovered' || Number(current.recovered_amount || 0) !== 0 || current.payroll_lock_id
+          || custodyExpenseUsedCents(current) !== 0 || Number(current.amount) !== row.allocation.amount
+          || advanceAssignmentMonth(current) !== run.periodKey) fail('تغيرت السلفة المستردة بعد معاينة المطابقة.');
         continue;
       }
       if (recordExternal && (String(current.biker_id || '') !== String(row.item.bikerId) || advanceAssignmentMonth(current) !== run.periodKey)) fail('السلفة لا تخص العامل أو شهر المسير المحدد.');

@@ -13,7 +13,10 @@
 import { z } from 'zod';
 import { FieldValue } from 'firebase-admin/firestore';
 import { callerRole } from '../functions/src/handlers.js';
-import { FINANCE_KINDS, financeHash, financeProblems, FinanceReviewError, statementLineRefOf } from '../functions/src/financeReview.js';
+import { FINANCE_KINDS, financeHash, financeSourceHash, financeProblems, FinanceReviewError, statementLineRefOf } from '../functions/src/financeReview.js';
+import { financeSourceEvidence } from '../functions/src/financeSourceEvidence.js';
+import { verifyEmployeeAdvanceLink } from '../functions/src/financeEmployeeAdvance.js';
+import { historicalSettlementProof } from './custodyHistoricalProof.js';
 import { normalizeEntry, normalizeLines, validateEntry, journalCounterUpdate, isRealDate, postingLockId } from '../functions/src/invariants.js';
 import { legacyLockIdFor } from '../functions/src/posting.js';
 import { postedLines } from '../src/lib/accounting/reports.js';
@@ -78,11 +81,12 @@ export function statementLineId(account, row) {
     occurrence: row.occurrence || 1 }).slice(0, 40)}`;
 }
 export const foundingEntryId = entryKey => `founding_${financeHash(entryKey).slice(0, 40)}`;
-const entryHash = e => financeHash({ key: e.key, date: e.date, description: e.description, lines: e.lines });
+const entryHash = (e, stateHash) => financeHash({ key: e.key, date: e.date, description: e.description,
+  lines: e.lines, stateHash });
 
 // ── القراءة ──────────────────────────────────────────────────────────────
 const COLLECTIONS = [...new Set([...Object.values(FINANCE_KINDS).map(s => s.collection), 'partner_payments', 'partners', 'journal_entries',
-  'journal_lines', 'posting_locks', 'bank_statement_lines', 'founding_review', 'founding_decisions', 'chart_of_accounts',
+  'journal_lines', 'posting_locks', 'finance_workbench_receipts', 'bank_statement_lines', 'founding_review', 'founding_decisions', 'chart_of_accounts',
   'accounting_periods', 'temporary_expenses', 'variable_expense_categories', 'monthly_expense_categories', 'annual_expenses', 'startup_costs'])];
 
 async function loadTables(db, tx = null) {
@@ -141,6 +145,96 @@ export function ledgerEffects(entries) {
   return effects;
 }
 
+/** Current-dated custody corrections whose delivery and spending preceded the
+ * founding cutoff are a timing bridge, not another 3200 journal. An incomplete
+ * or unverified group blocks the founding settlement rather than opening a
+ * guessed balance. All figures are integer halala. */
+export function custodyCutoffBridge(t, cutoff) {
+  const amounts = { [ACC.BANK]: 0, [ACC.CASH]: 0, [ACC.EMPLOYEE_ADVANCE]: 0 };
+  const groups = [], issues = [];
+  const entries = t.journal_entries || [], byId = new Map(entries.map(e => [e.id, e]));
+  const receipts = new Map((t.finance_workbench_receipts || []).map(r => [r.id, r]));
+  const locks = new Map((t.posting_locks || []).map(l => [l.id, l]));
+  for (const funding of entries) {
+    if (funding.sourceKind !== 'custody_reconciliation' || funding.custodyAnchorMode !== 'independent_historical_tranche'
+      || funding.status !== 'posted' || funding.entryDate <= cutoff) continue;
+    const groupId = funding.custodyHistoricalSettlementId;
+    const receipt = receipts.get(`custody_h_${String(groupId || '').slice(0, 40)}`);
+    const result = receipt?.result, members = result?.journalIds?.map(id => byId.get(id)) || [];
+    const evidence = result?.fundingEvidence, sourceHashes = receipt?.sourceHashes;
+    const funded = (funding.lines || []).filter(l => String(l.accountId) === ACC.BANK)
+      .reduce((n, l) => n + halala(l.credit) - halala(l.debit), 0);
+    const advanceDebit = (funding.lines || []).filter(l => String(l.accountId) === ACC.EMPLOYEE_ADVANCE)
+      .reduce((n, l) => n + halala(l.debit) - halala(l.credit), 0);
+    const spent = members.slice(1).reduce((n, e) => n + (e?.lines || [])
+      .filter(l => String(l.accountId) === ACC.EMPLOYEE_ADVANCE)
+      .reduce((m, l) => m + halala(l.credit) - halala(l.debit), 0), 0);
+    const valid = /^[a-f0-9]{64}$/.test(groupId || '') && result?.groupId === groupId
+      && result?.fundingJournalId === funding.id && result?.anchorMode === 'independent_historical_tranche'
+      && result?.sourceCount > 0 && members.length === result.sourceCount + 1 && members[0]?.id === funding.id
+      && new Set(result.journalIds).size === members.length
+      && members.every(e => e?.status === 'posted' && e.custodyHistoricalSettlementId === groupId
+        && e.entryDate === funding.entryDate)
+      && entries.filter(e => e.status === 'posted' && e.custodyHistoricalSettlementId === groupId).length === members.length
+      && locks.get(`custody_reconciliation__${groupId}`)?.entryId === funding.id
+      && funding.lines?.length === 2
+      && funding.lines.some(l => String(l.accountId) === ACC.BANK && halala(l.credit) === funded && !halala(l.debit))
+      && funding.lines.some(l => String(l.accountId) === ACC.EMPLOYEE_ADVANCE && halala(l.debit) === funded && !halala(l.credit))
+      && Array.isArray(sourceHashes) && sourceHashes.length === result.sourceCount
+      && new Set(sourceHashes.map(item => item.key)).size === sourceHashes.length
+      && sourceHashes.every(item => {
+        const [kind, ...idParts] = item.key.split(':'), sourceId = idParts.join(':');
+        const source = (t[FINANCE_KINDS[kind]?.collection] || []).find(row => row.id === sourceId);
+        const lock = locks.get(`${kind}__${sourceId}`), journal = byId.get(lock?.entryId);
+        return source && financeSourceHash(source) === item.after
+          && source.finance_metadata?.custodyHistoricalSettlementId === groupId
+          && lock?.custodyHistoricalSettlementId === groupId
+          && journal?.status === 'posted' && journal.custodyHistoricalSettlementId === groupId
+          && journal.sourceKind === kind && journal.sourceId === sourceId
+          && journal.sourceSnapshotHash === item.before;
+      })
+      && members.slice(1).every(e => e.sourceType === 'expense' && (e.lines || []).every(l =>
+        ![ACC.BANK, ACC.CASH].includes(String(l.accountId))
+        && (String(l.accountId) !== ACC.EMPLOYEE_ADVANCE || !halala(l.debit))))
+      && Array.isArray(evidence) && evidence.length > 0
+      && new Set(evidence.map(d => d.depositRowId)).size === evidence.length
+      && evidence.every(d => isRealDate(d.deliveryDate) && Number.isSafeInteger(halala(d.allocatedAmount)) && d.allocatedAmount > 0)
+      && evidence.every(d => {
+        const lock = locks.get(`custody_deposit__${financeHash(d.depositRowId).slice(0, 40)}`);
+        return lock?.depositRowId === d.depositRowId && lock.evidenceRef === d.evidenceRef
+          && lock.deliveryDate === d.deliveryDate && lock.depositAmountHalala === halala(d.depositAmount)
+          && lock.consumedHalala >= halala(d.allocatedAmount);
+      })
+      && evidence.reduce((n, d) => n + halala(d.allocatedAmount), 0) === funded
+      && funded > 0 && advanceDebit === funded && spent === funded
+      && result.fundedHalala === funded && result.consumedHalala === spent
+      && members.slice(1).every(e => isRealDate(e.originalPaidDate));
+    if (!valid) { issues.push('إيصال تسوية العهدة لا يثبت جسر التوقيت يوم القطع؛ أوقف قيد 3200.'); continue; }
+    const delivered = evidence.filter(d => d.deliveryDate <= cutoff).reduce((n, d) => n + halala(d.allocatedAmount), 0);
+    const consumed = members.slice(1).filter(e => e.originalPaidDate <= cutoff).reduce((n, e) => n + (e.lines || [])
+      .filter(l => String(l.accountId) === ACC.EMPLOYEE_ADVANCE)
+      .reduce((m, l) => m + halala(l.credit) - halala(l.debit), 0), 0);
+    if (consumed > delivered) { issues.push('استهلاك عهدة يوم القطع يتجاوز التمويل المسلّم قبله؛ أوقف قيد 3200.'); continue; }
+    amounts[ACC.BANK] -= delivered;
+    amounts[ACC.EMPLOYEE_ADVANCE] += delivered - consumed;
+    groups.push({ groupId, fundingJournalId: funding.id, deliveredHalala: delivered,
+      consumedHalala: consumed, outstandingHalala: delivered - consumed });
+  }
+  // Reused legacy funding has no independent bank correction journal to bridge.
+  // Until its cutoff movement is reconciled separately, do not let 3200 absorb
+  // a historical spend that was posted only on the later correction day.
+  for (const receipt of receipts.values()) {
+    const result = receipt.result;
+    if (result?.anchorMode === 'independent_historical_tranche' || !result?.groupId
+      || !Array.isArray(result.journalIds)) continue;
+    const members = result.journalIds.map(id => byId.get(id));
+    if (members.some(entry => entry?.status === 'posted' && entry.entryDate > cutoff
+      && (entry.originalPaidDate <= cutoff || result.historicalFundingDate <= cutoff)))
+      issues.push('تسوية عهدة تاريخية قديمة تحتاج مطابقة حركة يوم القطع قبل قيد 3200.');
+  }
+  return { amounts, groups, issues };
+}
+
 function isPayrollRow(kind, row) {
   return kind === 'monthly' && (row.recurrence === 'monthly' || row.biker_id || row.payrollSnapshot);
 }
@@ -167,6 +261,7 @@ export function foundingInputs(t) {
         date, supplier: row.supplier || '', hasProof: typeof row.invoice_url === 'string' && /^https:\/\//.test(row.invoice_url),
         statementLineRef: statementLineRefOf(row), protected: lock || effect.journals > 0 || Boolean(row.journal_entry_id || row.posted_entry_id || row.posting_status === 'posted'),
         effect: { cash: effect.cash, bank: effect.bank }, fundingType: row.finance_metadata?.fundingType || null,
+        custodySettlementId: row.finance_metadata?.custodyHistoricalSettlementId || null,
         paymentMethod: row.payment_method || null, vatQuarter: vatDay ? quarterOf(vatDay) : null,
         issues: financeProblems(kind, row, row.id) });
     }
@@ -194,14 +289,52 @@ export function foundingInputs(t) {
     description: l.description || '', decision: l.decision, linkKind: l.linkKind || null, linkId: l.linkId || null, status: l.status,
     appliedByName: l.appliedByName || null, appliedAtIso: l.appliedAtIso || null }));
   return { docs, payments, lines: statementLines, decisions, settings, book, posted, closedMonths, hadiLedger, partners,
+    custodyBridge: custodyCutoffBridge(t, settings.cutoffDate),
     review, chart: new Set(t.chart_of_accounts.map(a => a.id)),
     custodyHint: t.temporary_expenses.filter(x => x.status !== 'recovered' && documentDay(x.spent_date) && documentDay(x.spent_date) <= settings.cutoffDate)
       .reduce((n, x) => n + halala(x.amount) - halala(x.recovered_amount), 0) };
 }
 
-function planOf(t) {
-  const input = foundingInputs(t), plan = foundingPlan(input);
-  plan.entries = plan.entries.map(e => ({ ...e, hash: entryHash(e) }));
+async function planOf(db, tx, t) {
+  const input = foundingInputs(t);
+  const readTx = tx || { get: ref => ref.get() };
+  const groupProofs = new Map();
+  const receipts = new Map(t.finance_workbench_receipts.map(item => [item.id, item]));
+  for (const doc of input.docs.filter(d => d.fundingType === 'employee' || d.custodySettlementId)) {
+    const row = t[FINANCE_KINDS[doc.kind].collection].find(source => source.id === doc.sourceId);
+    if (!row) continue;
+    if (doc.custodySettlementId) {
+      const context = await financeSourceEvidence(db, readTx, doc.kind, doc.sourceId, row);
+      const receipt = receipts.get(`custody_h_${doc.custodySettlementId.slice(0, 40)}`);
+      if (!groupProofs.has(doc.custodySettlementId)) groupProofs.set(doc.custodySettlementId,
+        await historicalSettlementProof(db, readTx, doc.kind, doc.sourceId, row, context));
+      const proof = groupProofs.get(doc.custodySettlementId);
+      const member = receipt?.sourceHashes?.find(item => item.key === doc.key);
+      if (proof && !context.issues.length && member?.sourceContextHash === (context.contextHash || null)) {
+        doc.custodySettled = true;
+        const funding = receipt?.result?.fundingEvidence;
+        doc.custodyFundingAfterCutoff = Array.isArray(funding) && funding.length > 0
+          && funding.every(item => isRealDate(item.deliveryDate) && item.deliveryDate > input.settings.cutoffDate);
+      }
+      continue;
+    }
+    if (!row.finance_metadata?.employeeAdvanceLink) continue;
+    const verified = await verifyEmployeeAdvanceLink(db, readTx, doc.kind, doc.sourceId, row,
+      Number(row[FINANCE_KINDS[doc.kind].amount]));
+    if (!verified.proof || verified.issues.length) continue;
+    const funding = t.journal_entries.find(entry => entry.id === verified.proof.fundingJournalId);
+    doc.custodyFundingAfterCutoff = Boolean(funding && funding.entryDate > input.settings.cutoffDate);
+    const lock = t.posting_locks.find(item => item.id === postingLockId(doc.kind, doc.sourceId));
+    const posted = t.journal_entries.find(entry => entry.id === lock?.entryId);
+    doc.custodySettled = Boolean(posted?.status === 'posted' && posted.sourceType === 'expense'
+      && posted.sourceKind === doc.kind && posted.sourceId === doc.sourceId);
+  }
+  const plan = foundingPlan(input);
+  // Approval binds to the source and ledger snapshot as well as the displayed
+  // lines. A later custody correction, statement decision or source edit must
+  // require a fresh founding preview even if the rounded entry lines match.
+  const stateHash = financeHash(t);
+  plan.entries = plan.entries.map(e => ({ ...e, hash: entryHash(e, stateHash) }));
   if (plan.settlement.entry) plan.settlement.entry = plan.entries.find(e => e.key === plan.settlement.entry.key);
   return { input, plan };
 }
@@ -224,7 +357,7 @@ function ensureChartRows(db, tx, chart, codes) {
 async function postEntries(db, auth, r) {
   return db.runTransaction(async tx => {
     await adminOnly(db, auth, tx);
-    const t = await loadTables(db, tx), { input, plan } = planOf(t);
+    const t = await loadTables(db, tx), { input, plan } = await planOf(db, tx, t);
     const counterRef = db.collection('counters').doc('journal'), counter = await tx.get(counterRef);
     const highest = Math.max(0, ...t.journal_entries.map(e => Number(e.entryNumber) || 0));
     let next = counter.exists && Number.isSafeInteger(counter.data().nextNumber) ? counter.data().nextNumber : highest + 1;
@@ -293,7 +426,7 @@ async function saveSettings(db, auth, r) {
 async function decide(db, auth, r) {
   return db.runTransaction(async tx => {
     await adminOnly(db, auth, tx);
-    const t = await loadTables(db, tx), { input, plan } = planOf(t);
+    const t = await loadTables(db, tx), { input, plan } = await planOf(db, tx, t);
     const doc = input.docs.find(d => d.key === r.sourceKey), payment = input.payments.find(p => p.key === r.sourceKey);
     if (!doc && !payment) fail('المصدر غير موجود.', 'not-found');
     const allowed = doc ? [...DOC_DECISIONS, SMALL_DECISION] : PAYMENT_ARRIVALS;
@@ -302,6 +435,20 @@ async function decide(db, auth, r) {
     if (r.vatReviewed !== undefined && !plan.vatTouching.some(v => v.key === r.sourceKey)) fail('هذا المستند لا يمس إقرارًا مقدّمًا.', 'invalid-argument');
     const ref = db.collection('founding_decisions').doc(financeHash(r.sourceKey).slice(0, 40)), snap = await tx.get(ref);
     const before = snap.exists ? snap.data() : null;
+    if (doc && (doc.fundingType === 'employee' || doc.custodySettlementId) && r.decision !== undefined) {
+      // An old, unposted founding decision can be cleared explicitly so the
+      // custody review can proceed. Never create another payer decision, or
+      // erase one after either route has posted a financial effect.
+      const postedForSource = t.journal_entries.some(e => e.foundingEntry?.sourceKey === r.sourceKey
+        || (e.custodyHistoricalSettlementId && e.sourceId === doc.sourceId));
+      const sourceLocked = t.posting_locks.some(lock => lock.id === postingLockId(doc.kind, doc.sourceId)
+        || lock.id === legacyLockIdFor(doc.kind, doc.sourceId));
+      const custodyReceipt = doc.custodySettlementId && t.finance_workbench_receipts.some(receipt =>
+        receipt.id === `custody_h_${doc.custodySettlementId.slice(0, 40)}`);
+      if (r.decision !== null || before?.decision == null || sourceLocked || custodyReceipt
+        || postedForSource || r.vatReviewed !== undefined || r.partnerId != null)
+        fail('مستند العهدة يُسوّى من تمويلها ولا يُعاد تصنيف جهة دفعه في التأسيس.');
+    }
     // Only what the request names changes: a «راجعته» click keeps the payer decision, and the reverse.
     const decision = r.decision === undefined ? before?.decision ?? null : r.decision;
     const value = { sourceKey: r.sourceKey, decision, partnerId: decision === 'partner' ? (r.decision === undefined ? before?.partnerId ?? null : r.partnerId) : null,
@@ -316,8 +463,8 @@ async function decide(db, auth, r) {
 async function acceptSmall(db, auth, r) {
   return db.runTransaction(async tx => {
     await adminOnly(db, auth, tx);
-    const t = await loadTables(db, tx), { plan } = planOf(t), name = await actorName(db, auth, tx);
-    const small = new Map(plan.groups.small.filter(d => !d.decision?.decision).map(d => [d.key, d]));
+    const t = await loadTables(db, tx), { plan } = await planOf(db, tx, t), name = await actorName(db, auth, tx);
+    const small = new Map(plan.groups.small.filter(d => !d.custodyScoped && !d.decision?.decision).map(d => [d.key, d]));
     if (r.keys.some(k => !small.has(k))) fail('القائمة تغيرت؛ أعد القراءة قبل القبول.');
     for (const k of r.keys) {
       const value = { sourceKey: k, decision: SMALL_DECISION, partnerId: null, note: null, vatReviewed: false, revision: 1,
@@ -353,7 +500,7 @@ function fundingPatch(row, { fundingType, paymentMethod, paidDate, reference, ev
 }
 
 async function applyUpdate(db, auth, r, workbench) {
-  const t = await loadTables(db), { plan } = planOf(t);
+  const t = await loadTables(db), { plan } = await planOf(db, null, t);
   const update = plan.updates.find(u => u.key === r.key);
   if (!update) fail('لا يوجد تحديث مقترح لهذا المصدر الآن.');
   if (update.held) fail('المستند يمس إقرارًا مقدّمًا؛ علّمه «راجعته» أولًا.');
@@ -389,7 +536,7 @@ function options(t) {
 }
 
 async function statementSuggest(db, auth, r) {
-  const t = await loadTables(db), { input, plan } = planOf(t);
+  const t = await loadTables(db), { input, plan } = await planOf(db, null, t);
   const saved = new Map(t.bank_statement_lines.map(l => [l.id, l]));
   const linked = new Set(statementLinks(input.lines).keys());
   const held = new Set(plan.vatTouching.filter(v => !v.reviewed).map(v => v.key));
@@ -401,7 +548,7 @@ async function statementSuggest(db, auth, r) {
       const id = statementLineId(r.account, row), existing = saved.get(id);
       return { id, existing: existing ? { status: existing.status, decision: existing.decision, linkKind: existing.linkKind, linkId: existing.linkId,
         appliedByName: existing.appliedByName, appliedAtIso: existing.appliedAtIso } : null,
-      documents: documentCandidates(row, input.docs, linked).slice(0, 5).map(brief),
+      documents: documentCandidates(row, input.docs.filter(d => d.fundingType !== 'employee' && !d.custodySettlementId), linked).slice(0, 5).map(brief),
       payments: paymentCandidates(row, input.payments, linked).slice(0, 5).map(p => ({ key: p.key, id: p.id, partnerName: p.partnerName, amount: p.amount, date: p.date, protected: p.protected, days: p.days })) };
     }),
     expenseOptions: options(t), windowDays: MATCH_WINDOW_DAYS,
@@ -438,7 +585,7 @@ async function applyOne(db, auth, r, row, id, name, workbench) {
     await adminOnly(db, auth, tx);
     const ref = db.collection('bank_statement_lines').doc(id), snap = await tx.get(ref);
     if (snap.exists && snap.data().status === 'applied') return { done: true, line: snap.data() };
-    const t = await loadTables(db, tx), { input, plan } = planOf(t);
+    const t = await loadTables(db, tx), { input, plan } = await planOf(db, tx, t);
     const links = statementLinks(input.lines.filter(l => l.id !== id));
     let link = { linkKind: null, linkId: null, partnerId: null }, mode = 'recorded', target = null;
     if (row.decision === 'transfer') {
@@ -446,6 +593,8 @@ async function applyOne(db, auth, r, row, id, name, workbench) {
     } else if (row.decision === 'document') {
       const doc = input.docs.find(d => d.key === row.linkKey);
       if (row.direction !== 'debit' || !doc) fail('اختر مستندًا لهذا الخصم.', 'invalid-argument');
+      if (doc.fundingType === 'employee' || doc.custodySettlementId)
+        fail('مستند العهدة يُسوّى من تمويلها ولا يُربط مباشرة بخصم كشف البنك.');
       if (halala(doc.amount) !== halala(row.amount)) fail('مبلغ المستند لا يطابق الحركة.');
       if (!doc.date || row.txDate < doc.date || daysBetween(doc.date, row.txDate) > MATCH_WINDOW_DAYS) fail('تاريخ الحركة خارج نافذة المستند (من يومه إلى 7 أيام بعده).');
       if (links.has(doc.key)) fail('المستند مربوط بسطر كشف آخر.');
@@ -525,7 +674,7 @@ export async function foundingSettlement(db, auth, input, { workbench }) {
   if (!parsed.success) fail(parsed.error.issues.map(i => i.message).join(' '), 'invalid-argument');
   const r = parsed.data;
   if (r.action === 'read') {
-    const t = await loadTables(db), { input: data, plan } = planOf(t);
+    const t = await loadTables(db), { input: data, plan } = await planOf(db, null, t);
     return { plan, partners: data.partners, review: data.review, filedQuarters: FILED_VAT_QUARTERS,
       accounts: { hadi: data.chart.has(ACC.HADI_CURRENT), settlements: data.chart.has(ACC.FOUNDING_SETTLEMENTS) },
       custodyHint: data.custodyHint / 100, statementLines: data.lines, readAt: new Date().toISOString(),

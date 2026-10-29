@@ -591,6 +591,21 @@ export function buildVatReport({
   });
   const ledgerOutput = outputTaxFromLedger(entries, lines, { period, filing });
   const ledgerInput  = inputTaxFromLedger(entries, lines, { period, filing });
+  // A reviewed correction can book the input-VAT asset today while its
+  // purchase was already claimed in a submitted earlier return. Reconcile
+  // the timing difference without moving either the invoice or journal date.
+  const documentedPriorClaimTiming = round2((entries || []).reduce((sum, entry) => {
+    const snap = entry.purchaseTaxSnapshot;
+    if (entry.status !== 'posted' || !entry.custodyHistoricalSettlementId
+      || snap?.claimDisposition !== 'previously_claimed' || !snap.priorClaimEvidenceRef
+      || snap.submittedPeriod !== periodKeyFor(snap.invoiceDate, 'quarterly')) return sum;
+    const movement = round2((lines || []).filter(line => line.entryId === entry.id && String(line.accountId) === '1200')
+      .reduce((n, line) => n + Number(line.debit || 0) - Number(line.credit || 0), 0));
+    if (Math.abs(movement - Number(snap.vat)) >= 0.01) return sum;
+    const claimPeriod = filing === 'quarterly' ? snap.submittedPeriod : periodKeyFor(snap.invoiceDate, filing);
+    const postingPeriod = periodKeyFor(entry.entryDate, filing);
+    return sum + (claimPeriod === period ? movement : 0) - (postingPeriod === period ? movement : 0);
+  }, 0));
   // Where the ledger has nothing at all, the operational figure is all there
   // is — and the report says which one it used.
   //
@@ -648,6 +663,9 @@ export function buildVatReport({
     inputMismatch: ledgerInput.available && Math.abs(round2(ledgerInput.tax - inputTax)) >= 0.01
       ? round2(inputTax - ledgerInput.tax)
       : 0,
+    documentedPriorClaimTiming,
+    unexplainedInputMismatch: ledgerInput.available
+      ? round2(inputTax - ledgerInput.tax - documentedPriorClaimTiming) : null,
     unpostedEligible,
     unpostedInputTax,
     input: { tax: inputTax, gross: inputGross, net: inputNet, count: eligible.length },

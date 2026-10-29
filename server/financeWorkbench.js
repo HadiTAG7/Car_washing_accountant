@@ -10,12 +10,16 @@ import { FINANCE_KINDS, financeHash, financeSourceHash, financeReviewId, finance
 import { financeReadSnapshot } from './financeReadSnapshot.js';
 import { filterWorkbenchItems, hasPaymentConflict, documentDay } from '../src/lib/financeWorkbenchView.js';
 import { cashBankCorrection } from './cashBankCorrection.js';
+import { previewCustodyHistoricalReconciliation } from './custodyHistoricalReconciliation.js';
+import { saveCustodyHistoricalSettlement } from './custodyHistoricalSettlement.js';
+import { historicalSettlementProof } from './custodyHistoricalProof.js';
 import {cashResidualCorrection} from './cashResidualCorrection.js';
 import { payrollCashFunding } from './payrollCashFunding.js';
 import { invoiceLinesShapeIssues } from '../functions/src/financeInvoiceLines.js';
 import { financeSourceEvidence, sourceEvidenceShapeValid } from '../functions/src/financeSourceEvidence.js';
 import { financePostingHistory } from './financePostingHistory.js';
 import { financeWorkflowDimensions } from '../src/lib/financeWorkflowDimensions.js';
+import { verifyEmployeeAdvanceLink } from '../functions/src/financeEmployeeAdvance.js';
 import { foundingSettlement } from './foundingSettlement.js';
 
 const kindSchema = z.enum(['variable', 'monthly', 'annual', 'startup']);
@@ -35,6 +39,9 @@ const patchSchema = z.object({
   fundingType: z.enum(['unknown', 'company_cash', 'company_bank', 'vendor_liability', 'partner', 'employee', 'owner_current']).optional(),
   statementLineRef: z.string().regex(/^[A-Za-z0-9_-]{1,120}$/).nullable().optional(),
   fundingReference: nullableText.optional(), purpose: nullableText.optional(), evidenceRefs: z.array(z.string().trim().min(1).max(300)).max(20).optional(),
+  ownerStatementRef: nullableText.optional(),
+  employeeAdvanceLink: z.object({ version: z.literal(1), advanceId: id, employeeId: id, fundingJournalId: id,
+    allocatedAmount: z.number().finite().positive().max(1e9) }).strict().nullable().optional(),
   taxReviewRef: nullableText.optional(), taxBasis: z.enum(['document', 'verified_historical_policy']).optional(),
   invoiceLines: z.unknown().refine(value => value === null || invoiceLinesShapeIssues(value).length === 0, 'بنود الفاتورة غير صالحة.').optional(),
   quantityException: z.unknown().refine(sourceEvidenceShapeValid, 'دليل استثناء الكمية غير مكتمل.').optional(),
@@ -71,7 +78,10 @@ function applyPatch(kind, before, p) {
   if (p.parentId && !spec.fk) fail('هذا النوع لا يقبل بندًا أبًا.', 'invalid-argument');
   if (p.categoryId && spec.fk) fail('هذا النوع يتبع بند التأسيس أو السنوي.', 'invalid-argument');
   const meta = { ...(row.finance_metadata || {}) };
-  for (const key of ['fundingType', 'fundingReference', 'purpose', 'evidenceRefs', 'taxReviewRef', 'taxBasis']) if (Object.hasOwn(p, key)) meta[key] = p[key];
+  for (const key of ['fundingType', 'fundingReference', 'purpose', 'evidenceRefs', 'ownerStatementRef', 'taxReviewRef', 'taxBasis']) if (Object.hasOwn(p, key)) meta[key] = p[key];
+  if (Object.hasOwn(p, 'employeeAdvanceLink')) {
+    if (p.employeeAdvanceLink === null) delete meta.employeeAdvanceLink; else meta.employeeAdvanceLink = p.employeeAdvanceLink;
+  }
   if (Object.hasOwn(p, 'statementLineRef')) {
     if (p.statementLineRef === null) delete meta.statementLineRef; else meta.statementLineRef = p.statementLineRef;
   }
@@ -148,12 +158,16 @@ async function postingPreview(db, tx, kind, sourceId, row, context = null) {
     const policy = policyAt(ADAPTERS[kind].dateOf(row));
     if (!policy.known) return { ready: false, issues: ['السياسة التاريخية غير مهيأة لهذا التاريخ.'], entry: null, lines: [] };
     const built = ADAPTERS[kind].build(row, sourceId, { recordDate: ADAPTERS[kind].dateOf(row), policyAt });
+    const gross = [...built.lines, ...(built.settlement?.lines || [])].filter(line => String(line.accountId) === '1300')
+      .reduce((sum, line) => sum + Number(line.credit || 0), 0);
+    const advance = await verifyEmployeeAdvanceLink(db, tx, kind, sourceId, row, gross);
+    if (advance.issues.length) return { ready: false, issues: advance.issues, ...built, employeeAdvanceProof: advance.proof };
     const accounts = await tx.get(db.collection('chart_of_accounts'));
     const known = new Set(accounts.docs.map(d => d.id));
     if ([...built.lines, ...(built.settlement?.lines || [])].some(l => !known.has(String(l.accountId)))) {
       return { ready: false, issues: ['حسابات القيد غير مكتملة في الدليل.'], entry: null, lines: [] };
     }
-    return { ready: true, issues: [], ...built, postingHash: sourceContext.contextHash
+    return { ready: true, issues: [], ...built, employeeAdvanceProof: advance.proof, postingHash: sourceContext.contextHash
       ? financeHash({ built, sourceContextHash: sourceContext.contextHash }) : financeHash(built) };
   } catch (error) { return { ready: false, issues: [error.message], entry: null, lines: [] }; }
 }
@@ -165,7 +179,9 @@ function publicRow(kind, sourceId, row, state, preview) {
 }
 async function workflowDocument(db, tx, kind, sourceId, row, currentState = null) {
   const state = currentState || await readState(db, tx, kind, sourceId, row);
-  const preview = await postingPreview(db, tx, kind, sourceId, row, state.sourceContext);
+  const settlementProof = await historicalSettlementProof(db, tx, kind, sourceId, row, state.sourceContext);
+  const preview = settlementProof ? { ready: false, issues: [], entry: null, lines: [], historicalSettlementProof: settlementProof }
+    : await postingPreview(db, tx, kind, sourceId, row, state.sourceContext);
   const detail = publicRow(kind, sourceId, row, state, preview);
   // Reporting the current checks, not replacing or relaxing any write gate.
   const additionalIssues = [];
@@ -178,17 +194,19 @@ async function workflowDocument(db, tx, kind, sourceId, row, currentState = null
   const reversed = postingHistory.reversed.length > 0;
   const posted = postingHistory.active.length > 0;
   const evidence = row.finance_metadata || {};
-  const paymentProven = row.payment_status === 'paid' && isRealDate(row.paid_date)
+  const paymentProven = Boolean(settlementProof && row.payment_status === 'paid' && isRealDate(row.paid_date)) || Boolean(row.payment_status === 'paid' && isRealDate(row.paid_date)
     && typeof evidence.fundingReference === 'string' && Boolean(evidence.fundingReference.trim())
     && Array.isArray(evidence.evidenceRefs) && evidence.evidenceRefs.length > 0 && evidence.evidenceRefs.every(ref => typeof ref === 'string' && ref.trim())
     && ((evidence.fundingType === 'company_cash' && row.payment_method === 'cash')
       || (evidence.fundingType === 'company_bank' && ['transfer', 'card'].includes(row.payment_method))
-      || (evidence.fundingType === 'owner_current' && row.payment_method === 'owner_current'));
+      || (evidence.fundingType === 'employee' && preview.ready && preview.employeeAdvanceProof && ['cash', 'transfer', 'card'].includes(row.payment_method))
+      || (evidence.fundingType === 'owner_current' && row.payment_method === 'owner_current')));
   const safeUnposted = !state.protectedSource && !state.closed && preview.ready && !additionalIssues.length && !detail.issues.length;
   const correctedNeedsReview = reversed && (detail.issues.length > 0 || postingHistory.issues.length > 0 || !paymentProven);
-  const workflowStage = posted ? correctedNeedsReview ? 'posted_review' : paymentProven ? 'complete' : 'posted_unproven'
+  const workflowStage = posted ? settlementProof ? 'complete' : correctedNeedsReview ? 'posted_review' : paymentProven ? 'complete' : 'posted_unproven'
     : safeUnposted ? detail.approved ? 'approved' : 'ready' : 'incomplete';
   const result = { ...detail, issues: [...detail.issues, ...additionalIssues, ...postingHistory.issues], workflowStage, postingHistory,
+    historicalSettlementProof: settlementProof,
     approvalReady: safeUnposted && !detail.approved && !detail.issues.length,
     postingReady: safeUnposted && detail.approved && !detail.issues.length,
     paymentProven, paymentConflict: hasPaymentConflict(row),
@@ -200,7 +218,8 @@ async function workflowDocument(db, tx, kind, sourceId, row, currentState = null
 }
 async function browseDocuments(db) {
   const names = [...Object.values(FINANCE_KINDS).flatMap(spec => [spec.collection, spec.parent || spec.category]),
-    'journal_entries', 'journal_lines', 'posting_locks', 'finance_reviews', 'accounting_periods', 'app_settings', 'chart_of_accounts',
+    'temporary_expenses', 'journal_entries', 'journal_lines', 'posting_locks', 'finance_reviews', 'finance_workbench_receipts',
+    'accounting_periods', 'app_settings', 'chart_of_accounts',
     // A record whose document is a bank-statement line is verified against it.
     'bank_statement_lines'];
   const snapshot = await financeReadSnapshot(db, names);
@@ -223,6 +242,8 @@ async function browseDocuments(db) {
 }
 export async function financeWorkbench(db, auth, input) {
   await adminOnly(db, auth);
+  if (input?.kind === 'custody_reconciliation') return input?.action === 'save'
+    ? saveCustodyHistoricalSettlement(db, auth, input) : previewCustodyHistoricalReconciliation(db, input);
   if(input?.kind==='cash_bank_correction')return cashBankCorrection(db,auth,input);
   if(input?.kind==='cash_residual_correction')return cashResidualCorrection(db,auth,input);
   if(input?.kind==='payroll_cash_funding')return payrollCashFunding(db,auth,input);

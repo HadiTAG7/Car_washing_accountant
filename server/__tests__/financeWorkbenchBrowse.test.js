@@ -11,6 +11,41 @@ async function create(db, key, overrides = {}) {
   return financeWorkbench(db, auth, { action: 'capture', ...request, previewHash: preview.previewHash, reason: 'مستند اختبار معزول', confirm: true });
 }
 describe('complete workbench browse and existing bulk approval', () => {
+  it('keeps browse, read and preview aligned for a funded advance and nested over-allocation', async () => {
+    const db = database();
+    db.rows.set('chart_of_accounts/1300', {});
+    db.rows.set('temporary_expenses/test-advance', { biker_id: 'test-worker', amount: 150, status: 'pending', recovered_amount: 0,
+      custody_expense_used_halala: 0, custody_balance_opened_journal_id: 'test-funding' });
+    db.rows.set('journal_entries/test-funding', { status: 'posted', sourceType: 'temporary_expense', sourceId: 'test-advance',
+      entryDate: '2026-10-17', lines: [{ accountId: '1300', debit: 150, credit: 0 }, { accountId: '1010', debit: 0, credit: 150 }] });
+    const linked = (amount, key) => ({ amount, quantity: 1, paymentStatus: 'paid', paymentMethod: 'card',
+      paidDate: '2026-10-18', fundingType: 'employee', fundingReference: 'TEST receipt',
+      employeeAdvanceLink: { version: 1, advanceId: 'test-advance', employeeId: 'test-worker',
+        fundingJournalId: 'test-funding', allocatedAmount: amount }, invoiceNumber: key });
+    const saved = [await create(db, 'ADVANCE-A', linked(100, 'A')), await create(db, 'ADVANCE-B', linked(50, 'B'))];
+    const compare = async ledgerMatched => {
+      const before = JSON.stringify([...db.rows]);
+      const browse = await financeWorkbench(db, auth, { action: 'browse' });
+      for (const item of saved) {
+        const row = browse.items.find(candidate => candidate.sourceId === item.sourceId);
+        const read = await financeWorkbench(db, auth, { action: 'read', kind: 'variable', sourceId: item.sourceId });
+        const preview = await financeWorkbench(db, auth, { action: 'preview', kind: 'variable', sourceId: item.sourceId,
+          sourceHash: read.sourceHash, patch: {} });
+        expect(row).toMatchObject({ approvalReady: read.approvalReady, workflowStage: read.workflowStage,
+          issueCount: read.issues.length, workflowDimensions: read.workflowDimensions });
+        expect(preview.postingPreview.ready).toBe(ledgerMatched);
+        expect(preview.issues).toEqual(read.postingPreview.issues);
+        expect(read.approvalReady).toBe(ledgerMatched);
+        expect(read.workflowDimensions.funding.ledgerMatched).toBe(ledgerMatched);
+      }
+      expect(JSON.stringify([...db.rows])).toBe(before);
+    };
+    await compare(true);
+    const snapshot = await financeReadSnapshot(db, ['variable_expenses']);
+    expect((await snapshot.collection('variable_expenses').where('finance_metadata.employeeAdvanceLink.advanceId', '==', 'test-advance').get()).size).toBe(2);
+    saved.push(await create(db, 'ADVANCE-C', linked(0.01, 'C')));
+    await compare(false);
+  });
   it('reads more than 30, classifies readiness from the existing server checks and changes nothing', async () => {
     const db = database();
     for (let i = 0; i < 36; i++) db.rows.set(`variable_expenses/incomplete-${i}`, { expense_name: `تحويل ${i}`, total_variable_cost: i + 1, logged_date: '2026-05-01', payment_method: 'cash' });

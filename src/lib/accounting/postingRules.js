@@ -192,6 +192,9 @@ export function buildExpenseEntry(expense, {
     : date;
   const split = status !== 'unpaid' && accrualDate !== date;
   const supplierLabel = expense.supplier ? `المورد: ${expense.supplier}` : 'سداد';
+  const employeeAdvance = sourceRow?.finance_metadata?.fundingType === 'employee';
+  if (employeeAdvance && !sourceRow.finance_metadata.employeeAdvanceLink) throw new Error('ربط عهدة الموظف غير مكتمل.');
+  const settlementAccount = employeeAdvance ? ACC.EMPLOYEE_ADVANCE : settlementAccountForPurchase(method, status);
 
   const lines = [
     { accountId: expenseAccount, debit: tax.net, credit: 0, description: expense.description || 'مصروف' },
@@ -203,7 +206,7 @@ export function buildExpenseEntry(expense, {
     });
   }
   lines.push({
-    accountId: split ? ACC.PAYABLE : settlementAccountForPurchase(method, status),
+    accountId: split ? ACC.PAYABLE : settlementAccount,
     debit: 0, credit: tax.gross,
     description: supplierLabel,
   });
@@ -239,7 +242,7 @@ export function buildExpenseEntry(expense, {
     lines: [
       { accountId: ACC.PAYABLE, debit: tax.gross, credit: 0, description: supplierLabel },
       {
-        accountId: settlementAccountForPurchase(method, 'paid'),
+        accountId: settlementAccount,
         debit: 0, credit: tax.gross,
         description: `سداد ${accrualDate}`,
       },
@@ -343,7 +346,10 @@ export function buildTemporaryExpenseEntry(temp, { createdBy = null } = {}) {
  *   دائن  عهد ومصروفات قابلة للاسترداد
  */
 export function buildRecoveryEntry(temp, { createdBy = null } = {}) {
-  const amount = round2(Number(temp.amount) || 0);
+  const used = temp.custodyExpenseUsedHalala ?? temp.custody_expense_used_halala ?? 0;
+  if (!Number.isSafeInteger(used) || used < 0) throw new Error('استهلاك العهدة غير صالح.');
+  const amount = round2(Number(temp.amount) - Number(temp.recoveredAmount ?? temp.recovered_amount ?? 0) - used / 100);
+  if (!(amount > 0)) throw new Error('لا يوجد رصيد عهدة قابل للاسترداد.');
   const method = temp.recoveryMethod || temp.paymentMethod || 'cash';
   const date   = String(temp.recoveredDate || '').slice(0, 10);
   return {

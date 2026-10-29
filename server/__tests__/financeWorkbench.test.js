@@ -1,18 +1,383 @@
 import { describe, expect, it } from 'vitest';
 import { financeWorkbench } from '../financeWorkbench.js';
-import { assertFinanceApproval, financeProblems } from '../../functions/src/financeReview.js';
+import { postSource, reverseEntry } from '../../functions/src/ledger.js';
+import { FieldValue } from 'firebase-admin/firestore';
+import { calculatePayrollPreview } from '../../functions/src/payroll.js';
+import { assertFinanceApproval, financeProblems, financeReviewId, financeSourceHash } from '../../functions/src/financeReview.js';
 import { expensePatch, memoryFinanceDb } from './financeFixtures';
 
 const auth = { uid: 'test-admin' };
 function database() { return memoryFinanceDb({ 'users/test-admin': { role: 'admin' }, 'variable_expense_categories/test-category': { name: 'اختبار' },
-  'app_settings/accounting': { value: { vatRegistered: false } }, 'chart_of_accounts/5100': {}, 'chart_of_accounts/2000': {} }); }
+  'app_settings/accounting': { value: { vatRegistered: false } }, 'chart_of_accounts/5100': {},
+  'chart_of_accounts/2000': {}, 'chart_of_accounts/1010': {}, 'chart_of_accounts/1020': {} }); }
 async function capture(db, overrides = {}) {
   const patch = expensePatch(overrides), request = { kind: 'variable', requestId: 'TEST-REQUEST', patch };
   const preview = await financeWorkbench(db, auth, { action: 'previewCapture', ...request });
   const result = await financeWorkbench(db, auth, { action: 'capture', ...request, previewHash: preview.previewHash, reason: 'مستند اختبار معزول', confirm: true });
   return { request, preview, result, read: await financeWorkbench(db, auth, { action: 'read', kind: 'variable', sourceId: result.sourceId }) };
 }
+function seedAdvance(db, amount = 150) {
+  db.rows.set('chart_of_accounts/1300', {});
+  db.rows.set('temporary_expenses/test-advance', { biker_id: 'test-employee', amount, status: 'pending', recovered_amount: 0,
+    custody_expense_used_halala: 0, custody_balance_opened_journal_id: 'test-funding' });
+  db.rows.set('journal_entries/test-funding', { status: 'posted', sourceType: 'temporary_expense', sourceId: 'test-advance',
+    entryDate: '2026-10-17', lines: [{ accountId: '1300', debit: amount, credit: 0 },
+      { accountId: '1010', debit: 0, credit: amount }] });
+}
+function employeeRequest(requestId, amount, kind = 'variable') {
+  return { kind, requestId, patch: expensePatch({ amount, quantity: 1,
+    invoiceNumber: `TEST-${requestId}`, invoiceUrl: `https://example.org/${requestId}`,
+    paymentStatus: 'paid', paymentMethod: 'card', paidDate: '2026-10-18',
+    fundingType: 'employee', fundingReference: 'TEST supplier receipt',
+    employeeAdvanceLink: { version: 1, advanceId: 'test-advance', employeeId: 'test-employee',
+      fundingJournalId: 'test-funding', allocatedAmount: amount } }) };
+}
 describe('finance workbench version-bound review', () => {
+  it('holds legacy partial custody against payroll, recovery and individual reversal', async () => {
+    const db = database();
+    db.rows.set('chart_of_accounts/1300', {});
+    const advance = { biker_id: 'test-employee', amount: 150, status: 'recovered',
+      recovered_date: '2026-10-20', recovered_amount: 0, custody_historical_partial_hold: true };
+    db.rows.set('temporary_expenses/held-advance', advance);
+    const payroll = calculatePayrollPreview({ periodKey: '2026-10',
+      bikers: [{ id: 'test-employee', name: 'TEST worker', salary: 500, start_date: '2026-10-01' }],
+      advances: [{ id: 'held-advance', ...advance, spent_date: '2026-10-17' }] });
+    expect(payroll.lines[0].advanceDeduction).toBe(0);
+    await expect(postSource(db, FieldValue, { kind: 'recovery', sourceId: 'held-advance' },
+      { userId: auth.uid })).rejects.toThrow(/تسوية جزئية/);
+    db.rows.set('journal_entries/held-settlement', { status: 'posted', sourceType: 'expense',
+      sourceId: 'held-invoice', custodyHistoricalSettlementId: 'TEST-BATCH',
+      entryDate: '2026-10-20', lines: [
+        { accountId: '5100', debit: 100, credit: 0 }, { accountId: '1300', debit: 0, credit: 100 },
+      ] });
+    await expect(reverseEntry(db, FieldValue, 'held-settlement',
+      { entryDate: '2026-10-21', userId: auth.uid })).rejects.toThrow(/لا يُعكس منفردًا/);
+  });
+  it('shows a dated, source-backed expense effect without posting it', async () => {
+    const db = database();
+    db.rows.set('temporary_expenses/legacy-preview', { biker_id: 'test-employee', amount: 150,
+      status: 'pending', recovered_amount: 0 });
+    db.rows.set('chart_of_accounts/1300', { active: true, accountType: 'asset' });
+    db.rows.set('chart_of_accounts/1020', { active: true, accountType: 'asset' });
+    db.rows.set('accounting_periods/2026-10', { status: 'open' });
+    const captured = await capture(db, { paymentStatus: 'paid', paidDate: '2026-10-18',
+      paymentMethod: 'card', fundingType: 'employee', fundingReference: 'TEST receipt' });
+    const before = [...db.rows.entries()];
+    const result = await financeWorkbench(db, auth, { action: 'preview', kind: 'custody_reconciliation',
+      advanceId: 'legacy-preview', employeeId: 'test-employee', amount: 100,
+      historicalFundingDate: '2026-10-17', correctionDate: '2026-10-29',
+      ownerStatementRef: 'TEST owner attestation', evidenceRefs: ['TEST bank transfer'],
+      allocations: [{ kind: 'variable', sourceId: captured.result.sourceId, amount: 100 }] });
+    expect(result.proposedExpenseEntries).toEqual([expect.objectContaining({
+      entryDate: '2026-10-29', originalPaidDate: '2026-10-18',
+      lines: expect.arrayContaining([expect.objectContaining({ accountId: '1300', credit: 100 })]),
+    })]);
+    expect(result.proposedCorrection).toMatchObject({ debitAccount: '1300', creditAccount: '1020',
+      freeAdvanceBalanceHalala: 0 });
+    expect(result.readyForPosting).toBe(false);
+    expect(db.rows).toEqual(new Map(before));
+  });
+  it('flags a historical input-tax movement before proposing a current correction', async () => {
+    const db = database();
+    db.rows.set('app_settings/accounting', { value: { vatRegistered: true } });
+    db.rows.set('temporary_expenses/tax-preview', { biker_id: 'test-employee', amount: 100,
+      status: 'pending', recovered_amount: 0 });
+    db.rows.set('chart_of_accounts/1300', { active: true, accountType: 'asset' });
+    db.rows.set('chart_of_accounts/1020', { active: true, accountType: 'asset' });
+    db.rows.set('accounting_periods/2026-10', { status: 'open' });
+    const input = { kind: 'variable', requestId: 'TEST-TAX-PREVIEW', patch: expensePatch({
+      paymentStatus: 'paid', paidDate: '2026-10-18', paymentMethod: 'card', fundingType: 'employee',
+      fundingReference: 'TEST receipt', isTaxInvoice: true, vatDeductible: true,
+      vatAmount: 13.04, vatRate: 0.15, taxReviewRef: 'TEST tax review',
+    }) };
+    const draft = await financeWorkbench(db, auth, { ...input, action: 'previewCapture' });
+    const saved = await financeWorkbench(db, auth, { ...input, action: 'capture',
+      previewHash: draft.previewHash, reason: 'Synthetic tax document', confirm: true });
+    const result = await financeWorkbench(db, auth, { action: 'preview', kind: 'custody_reconciliation',
+      advanceId: 'tax-preview', employeeId: 'test-employee', amount: 100,
+      historicalFundingDate: '2026-10-17', correctionDate: '2026-10-29',
+      ownerStatementRef: 'TEST owner attestation', evidenceRefs: ['TEST bank transfer'],
+      allocations: [{ kind: 'variable', sourceId: saved.sourceId, amount: 100 }] });
+    expect(result.proposedExpenseEntries[0]?.vatHalala).toBeGreaterThan(0);
+    expect(result.issues.join(' ')).toMatch(/مدخلات ضريبة تاريخية/);
+    expect(result.readyForPosting).toBe(false);
+  });
+  it('previews historical custody without treating a current correction as earlier funding', async () => {
+    const db = database();
+    db.rows.set('temporary_expenses/old-custody', { biker_id: 'test-employee', amount: 150,
+      status: 'pending', recovered_amount: 0 });
+    db.rows.set('chart_of_accounts/1300', { active: true });
+    db.rows.set('chart_of_accounts/1020', { active: true });
+    db.rows.set('variable_expenses/old-invoice', { total_variable_cost: 100, payment_status: 'paid', paid_date: '2026-10-18',
+      finance_metadata: { fundingType: 'employee' } });
+    const input = { action: 'preview', kind: 'custody_reconciliation', advanceId: 'old-custody',
+      employeeId: 'test-employee', amount: 100, historicalFundingDate: null, correctionDate: '2026-10-29',
+      ownerStatementRef: 'TEST owner statement', evidenceRefs: [],
+      allocations: [{ kind: 'variable', sourceId: 'old-invoice', amount: 100 }] };
+    const before = [...db.rows.entries()];
+    const preview = await financeWorkbench(db, auth, input);
+    expect(preview).toMatchObject({ financialPosting: false, readyForPosting: false,
+      proposedCorrection: { entryDate: '2026-10-29', historicalFundingDate: null,
+        entryDateIsHistoricalFundingDate: false }, ownerAttestation: { establishesHistoricalLedgerProof: false },
+      allocatedHalala: 10000, remainingHalala: 0, opensUnallocatedBalance: false });
+    expect(preview.issues.join(' ')).toMatch(/تاريخ تسليم التمويل.*غير مثبت/);
+    expect(db.rows).toEqual(new Map(before));
+    const afterInvoice = await financeWorkbench(db, auth, { ...input, historicalFundingDate: '2026-10-20',
+      evidenceRefs: ['TEST archived transfer'] });
+    expect(afterInvoice.issues.join(' ')).toMatch(/بعد دفع مستند/);
+    expect(afterInvoice.issues.join(' ')).toMatch(/لا يوجد قيد تمويل تاريخي/);
+    expect(afterInvoice.readyForPosting).toBe(false);
+    const beforeInvoice = await financeWorkbench(db, auth, { ...input, historicalFundingDate: '2026-10-17',
+      evidenceRefs: ['TEST archived transfer'] });
+    expect(beforeInvoice.issues.join(' ')).toMatch(/لا يوجد قيد تمويل تاريخي/);
+    expect(beforeInvoice.issues.join(' ')).not.toMatch(/بعد دفع مستند/);
+    expect(beforeInvoice.readyForPosting).toBe(false);
+    db.rows.set('journal_entries/old-funding', { status: 'posted', sourceType: 'temporary_expense',
+      sourceId: 'old-custody', entryDate: '2026-10-17', lines: [
+        { accountId: '1300', debit: 100, credit: 0 }, { accountId: '1020', debit: 0, credit: 100 },
+      ] });
+    const existingFunding = await financeWorkbench(db, auth, { ...input, historicalFundingDate: '2026-10-17',
+      evidenceRefs: ['TEST archived transfer'] });
+    expect(existingFunding).toMatchObject({ fundingRoute: 'reuse_existing_journal',
+      existingFundingJournalId: 'old-funding', proposedCorrection: null, readyForPosting: false });
+    db.rows.delete('journal_entries/old-funding');
+    const duplicated = await financeWorkbench(db, auth, { ...input,
+      allocations: [...input.allocations, ...input.allocations] });
+    expect(duplicated.issues.join(' ')).toMatch(/المصدر مكرر/);
+    const excessive = await financeWorkbench(db, auth, { ...input,
+      allocations: [{ ...input.allocations[0], amount: 151 }] });
+    expect(excessive.issues.join(' ')).toMatch(/يساوي التخصيصات بالضبط/);
+    await expect(financeWorkbench(db, auth, { ...input, action: 'save' }))
+      .rejects.toThrow(/غير مفعل|غير صالح/);
+    expect(db.rows).toEqual(new Map(before));
+  });
+  it('refuses a legacy advance without a verified opening balance even when a funding journal exists', async () => {
+    const db = database();
+    seedAdvance(db);
+    const row = db.rows.get('temporary_expenses/test-advance');
+    db.rows.set('temporary_expenses/test-advance', { biker_id: row.biker_id, amount: row.amount,
+      status: row.status, recovered_amount: row.recovered_amount });
+    const preview = await financeWorkbench(db, auth, { action: 'previewCapture', ...employeeRequest('LEGACY-ADVANCE', 100) });
+    expect(preview.postingPreview.ready).toBe(false);
+    expect(preview.issues.join(' ')).toMatch(/العهدة القديمة لم تُطابق/);
+    db.rows.set('temporary_expenses/test-advance', { ...db.rows.get('temporary_expenses/test-advance'),
+      custody_expense_used_halala: 0, custody_balance_opened_journal_id: 'another-funding' });
+    const mismatched = await financeWorkbench(db, auth, { action: 'previewCapture', ...employeeRequest('MISMATCHED-OPENING', 100) });
+    expect(mismatched.postingPreview.ready).toBe(false);
+    expect(mismatched.issues.join(' ')).toMatch(/العهدة القديمة لم تُطابق/);
+  });
+  it('separates owner statement from a matched and allocated 1300 posting preview', async () => {
+    const db = database();
+    seedAdvance(db);
+    const ownerOnly = await capture(db, { paymentStatus: 'paid', paymentMethod: 'card', paidDate: '2026-10-18',
+      fundingType: 'employee', fundingReference: 'TEST supplier receipt', ownerStatementRef: 'TEST owner statement' });
+    expect(ownerOnly.read.approvalReady).toBe(false);
+    expect(ownerOnly.read.paymentProven).toBe(false);
+    expect(ownerOnly.read.workflowDimensions.funding).toMatchObject({ ownerStatementRef: 'TEST owner statement', ledgerMatched: false });
+    const common = { kind: 'variable', sourceId: ownerOnly.result.sourceId, sourceHash: ownerOnly.read.sourceHash };
+    const patch = { employeeAdvanceLink: { version: 1, advanceId: 'test-advance', employeeId: 'test-employee',
+      fundingJournalId: 'test-funding', allocatedAmount: 100 } };
+    const preview = await financeWorkbench(db, auth, { action: 'preview', ...common, patch });
+    expect(preview.postingPreview.ready).toBe(true);
+    expect(preview.postingPreview.lines).toContainEqual(expect.objectContaining({ accountId: '1300', credit: 100 }));
+    expect(preview.postingPreview.lines.some(line => line.accountId === '1010' || line.accountId === '1020')).toBe(false);
+    const saved = await financeWorkbench(db, auth, { action: 'save', ...common, patch, previewHash: preview.previewHash,
+      reason: 'TEST advance linkage', confirm: true });
+    const read = await financeWorkbench(db, auth, { action: 'read', kind: 'variable', sourceId: saved.sourceId });
+    expect(read.approvalReady).toBe(true);
+    expect(read.paymentProven).toBe(true);
+    expect(read.workflowDimensions.funding.ledgerMatched).toBe(true);
+    await expect(financeWorkbench(db, auth, { action: 'approve', kind: 'variable', sourceId: saved.sourceId,
+      sourceHash: read.sourceHash, postingHash: 'a'.repeat(64), reason: 'TEST stale posting hash', confirm: true })).rejects.toThrow();
+    expect([...db.rows.keys()].some(key => key.startsWith('journal_entries/') && key !== 'journal_entries/test-funding')).toBe(false);
+    db.rows.set('temporary_expenses/test-advance', { ...db.rows.get('temporary_expenses/test-advance'),
+      status: 'recovered', recovered_amount: 150 });
+    const recoveredFirst = await financeWorkbench(db, auth, { action: 'read', kind: 'variable', sourceId: saved.sourceId });
+    expect(recoveredFirst.approvalReady).toBe(false);
+    expect(recoveredFirst.workflowDimensions.funding.ledgerMatched).toBe(false);
+    db.rows.set('temporary_expenses/test-advance', { ...db.rows.get('temporary_expenses/test-advance'),
+      status: 'pending', recovered_amount: 0 });
+    db.rows.set('journal_entries/test-funding', { ...db.rows.get('journal_entries/test-funding'), status: 'reversed' });
+    const reversed = await financeWorkbench(db, auth, { action: 'read', kind: 'variable', sourceId: saved.sourceId });
+    expect(reversed.approvalReady).toBe(false);
+    expect(reversed.paymentProven).toBe(false);
+    db.rows.set('journal_entries/test-funding', { ...db.rows.get('journal_entries/test-funding'), status: 'posted' });
+    const funding = db.rows.get('journal_entries/test-funding');
+    db.rows.set('journal_entries/test-funding', { ...funding, lines: undefined });
+    db.rows.set('journal_lines/test-debit', { entryId: 'test-funding', accountId: '1300', debit: 150, credit: 0 });
+    db.rows.set('journal_lines/test-credit', { entryId: 'test-funding', accountId: '1010', debit: 0, credit: 150 });
+    expect((await financeWorkbench(db, auth, { action: 'read', kind: 'variable', sourceId: saved.sourceId })).workflowDimensions.funding.ledgerMatched).toBe(true);
+    db.rows.set('journal_lines/test-credit', { entryId: 'test-funding', accountId: '2000', debit: 0, credit: 150 });
+    expect((await financeWorkbench(db, auth, { action: 'read', kind: 'variable', sourceId: saved.sourceId })).approvalReady).toBe(false);
+    db.rows.set('journal_lines/test-credit', { entryId: 'test-funding', accountId: '1010', debit: 0, credit: 150 });
+    const second = await financeWorkbench(db, auth, { action: 'previewCapture', kind: 'variable', requestId: 'SECOND-TEST',
+      patch: expensePatch({ amount: 60, quantity: 2, invoiceNumber: 'TEST-002', invoiceUrl: 'https://example.org/second-invoice',
+        paymentStatus: 'paid', paymentMethod: 'card', paidDate: '2026-10-18', fundingType: 'employee',
+        employeeAdvanceLink: { ...patch.employeeAdvanceLink, allocatedAmount: 60 } }) });
+    expect(second.postingPreview.ready).toBe(false);
+    expect(second.issues.join(' ')).toMatch(/تتجاوز التمويل/);
+  });
+  it('posts a matched expense once, shares the balance with payroll and releases it on reversal', async () => {
+    const db = database(); seedAdvance(db);
+    const request = employeeRequest('POST-ONCE', 100);
+    const preview = await financeWorkbench(db, auth, { action: 'previewCapture', ...request });
+    const saved = await financeWorkbench(db, auth, { action: 'capture', ...request, previewHash: preview.previewHash,
+      reason: 'TEST consume custody', confirm: true });
+    const common = { kind: 'variable', sourceId: saved.sourceId };
+    const read = await financeWorkbench(db, auth, { action: 'read', ...common });
+    expect(read.approvalReady).toBe(true);
+    await financeWorkbench(db, auth, { action: 'approve', ...common, sourceHash: read.sourceHash,
+      postingHash: read.postingPreview.postingHash, reason: 'TEST matched funding', confirm: true });
+    const posted = await postSource(db, FieldValue, common, { userId: auth.uid });
+    expect(db.rows.get('temporary_expenses/test-advance').custody_expense_used_halala).toBe(10000);
+    expect(db.rows.get(`journal_entries/${posted.entryId}`).lines).toContainEqual(expect.objectContaining({ accountId: '1300', credit: 100 }));
+    const payroll = calculatePayrollPreview({ periodKey: '2026-10', bikers: [{ id: 'test-employee', name: 'TEST worker', salary: 500,
+      start_date: '2026-10-01' }], advances: [{ id: 'test-advance', ...db.rows.get('temporary_expenses/test-advance'),
+      spent_date: '2026-10-17' }] });
+    expect(payroll.lines[0].advanceOutstanding).toBe(50);
+    await expect(postSource(db, FieldValue, common, { userId: auth.uid })).rejects.toThrow(/سبق ترحيل/);
+    await expect(reverseEntry(db, FieldValue, 'test-funding', { entryDate: '2026-10-19', userId: auth.uid })).rejects.toThrow(/مرتبط/);
+    await reverseEntry(db, FieldValue, posted.entryId, { entryDate: '2026-10-19', userId: auth.uid });
+    expect(db.rows.get('temporary_expenses/test-advance').custody_expense_used_halala).toBe(0);
+  });
+  it('allows the remaining funded amount after a payroll deduction', async () => {
+    const db = database(); seedAdvance(db);
+    db.rows.set('temporary_expenses/test-advance', { ...db.rows.get('temporary_expenses/test-advance'),
+      recovered_amount: 50, payroll_lock_id: 'test-payroll' });
+    const request = employeeRequest('PAYROLL-FIRST', 100);
+    const preview = await financeWorkbench(db, auth, { action: 'previewCapture', ...request });
+    expect(preview.postingPreview.ready).toBe(true);
+    const saved = await financeWorkbench(db, auth, { action: 'capture', ...request, previewHash: preview.previewHash,
+      reason: 'TEST prior payroll', confirm: true });
+    const read = await financeWorkbench(db, auth, { action: 'read', kind: 'variable', sourceId: saved.sourceId });
+    await financeWorkbench(db, auth, { action: 'approve', kind: 'variable', sourceId: saved.sourceId,
+      sourceHash: read.sourceHash, postingHash: read.postingPreview.postingHash, reason: 'TEST prior payroll', confirm: true });
+    await postSource(db, FieldValue, { kind: 'variable', sourceId: saved.sourceId }, { userId: auth.uid });
+    expect(db.rows.get('temporary_expenses/test-advance').custody_expense_used_halala).toBe(10000);
+    const payroll = calculatePayrollPreview({ periodKey: '2026-10', bikers: [{ id: 'test-employee', name: 'TEST worker', salary: 500,
+      start_date: '2026-10-01' }], advances: [{ id: 'test-advance', ...db.rows.get('temporary_expenses/test-advance'),
+      spent_date: '2026-10-17' }] });
+    expect(payroll.lines[0].advanceOutstanding).toBe(0);
+  });
+  it('recovers only the unspent balance and reverses recovery before the linked expense', async () => {
+    const db = database(); seedAdvance(db);
+    const request = employeeRequest('RECOVERY-AFTER', 100);
+    const preview = await financeWorkbench(db, auth, { action: 'previewCapture', ...request });
+    const saved = await financeWorkbench(db, auth, { action: 'capture', ...request, previewHash: preview.previewHash,
+      reason: 'TEST linked purchase', confirm: true });
+    const common = { kind: 'variable', sourceId: saved.sourceId };
+    const read = await financeWorkbench(db, auth, { action: 'read', ...common });
+    await financeWorkbench(db, auth, { action: 'approve', ...common, sourceHash: read.sourceHash,
+      postingHash: read.postingPreview.postingHash, reason: 'TEST linked purchase', confirm: true });
+    const expense = await postSource(db, FieldValue, common, { userId: auth.uid });
+    db.rows.set('temporary_expenses/test-advance', { ...db.rows.get('temporary_expenses/test-advance'),
+      status: 'recovered', recovered_date: '2026-10-19' });
+    const recovery = await postSource(db, FieldValue, { kind: 'recovery', sourceId: 'test-advance' }, { userId: auth.uid });
+    expect(db.rows.get(`journal_entries/${recovery.entryId}`).lines).toContainEqual(expect.objectContaining({ accountId: '1300', credit: 50 }));
+    const recoveryLock = db.rows.get('posting_locks/recovery__test-advance');
+    db.rows.delete('posting_locks/recovery__test-advance');
+    await expect(postSource(db, FieldValue, { kind: 'recovery', sourceId: 'test-advance' }, { userId: auth.uid }))
+      .rejects.toThrow(/لا يُرحّل مرتين/);
+    db.rows.set('posting_locks/recovery__test-advance', recoveryLock);
+    await expect(reverseEntry(db, FieldValue, expense.entryId, { entryDate: '2026-10-20', userId: auth.uid }))
+      .rejects.toThrow(/اعكس استرداد/);
+    await reverseEntry(db, FieldValue, recovery.entryId, { entryDate: '2026-10-20', userId: auth.uid });
+    expect(db.rows.get('temporary_expenses/test-advance').status).toBe('pending');
+    await reverseEntry(db, FieldValue, expense.entryId, { entryDate: '2026-10-20', userId: auth.uid });
+    expect(db.rows.get('temporary_expenses/test-advance').custody_expense_used_halala).toBe(0);
+  });
+  it('checks the exact advance allocation across expense kinds while withholding approval and rejecting duplicates', async () => {
+    const db = database(); seedAdvance(db);
+    db.rows.set('monthly_expense_categories/test-category', { name: 'TEST monthly' });
+    db.rows.set('chart_of_accounts/5200', {});
+    const first = employeeRequest('FIRST', 100), second = employeeRequest('SECOND', 50, 'monthly');
+    const saved = [];
+    for (const request of [first, second]) {
+      const preview = await financeWorkbench(db, auth, { action: 'previewCapture', ...request });
+      expect(preview.postingPreview.ready).toBe(true);
+      expect(preview.postingPreview.employeeAdvanceProof).toBeTruthy();
+      saved.push(await financeWorkbench(db, auth, { action: 'capture', ...request, previewHash: preview.previewHash,
+        reason: 'TEST exact allocation', confirm: true }));
+    }
+    for (const [index, item] of saved.entries()) {
+      const read = await financeWorkbench(db, auth, { action: 'read', kind: index ? 'monthly' : 'variable', sourceId: item.sourceId });
+      expect(read.approvalReady).toBe(true);
+      expect(read.workflowDimensions.funding.ledgerMatched).toBe(true);
+    }
+    const excess = await financeWorkbench(db, auth, { action: 'previewCapture', ...employeeRequest('EXCESS', 0.01) });
+    expect(excess.postingPreview.ready).toBe(false);
+    expect(excess.issues.join(' ')).toMatch(/تتجاوز التمويل/);
+    const duplicate = employeeRequest('DUPLICATE', 1);
+    duplicate.patch.invoiceUrl = first.patch.invoiceUrl;
+    await expect(financeWorkbench(db, auth, { action: 'previewCapture', ...duplicate })).rejects.toThrow(/مرتبط/);
+  });
+  it('rechecks concurrent saved allocations and blocks excess approval', async () => {
+    const db = database(); seedAdvance(db);
+    const first = employeeRequest('BASE', 100);
+    const firstPreview = await financeWorkbench(db, auth, { action: 'previewCapture', ...first });
+    await financeWorkbench(db, auth, { action: 'capture', ...first, previewHash: firstPreview.previewHash,
+      reason: 'TEST base allocation', confirm: true });
+    const contenders = [employeeRequest('RACE-A', 40), employeeRequest('RACE-B', 40)];
+    const previews = await Promise.all(contenders.map(request => financeWorkbench(db, auth, { action: 'previewCapture', ...request })));
+    expect(previews.every(preview => preview.postingPreview.ready && preview.postingPreview.employeeAdvanceProof)).toBe(true);
+    const saved = await Promise.all(contenders.map((request, index) => financeWorkbench(db, auth, { action: 'capture', ...request,
+      previewHash: previews[index].previewHash, reason: 'TEST racing allocation', confirm: true })));
+    for (const item of saved) {
+      const read = await financeWorkbench(db, auth, { action: 'read', kind: 'variable', sourceId: item.sourceId });
+      expect(read.approvalReady).toBe(false);
+      expect(read.issues.join(' ')).toMatch(/تتجاوز التمويل/);
+      await expect(financeWorkbench(db, auth, { action: 'approve', kind: 'variable', sourceId: item.sourceId,
+        sourceHash: read.sourceHash, postingHash: 'a'.repeat(64), reason: 'TEST refuse over-allocation', confirm: true })).rejects.toThrow();
+    }
+  });
+  it('refuses reversing linked advance funding and permits reversal after an unposted link is removed', async () => {
+    const db = database(); seedAdvance(db);
+    const request = employeeRequest('REVERSAL', 100);
+    const preview = await financeWorkbench(db, auth, { action: 'previewCapture', ...request });
+    const saved = await financeWorkbench(db, auth, { action: 'capture', ...request, previewHash: preview.previewHash,
+      reason: 'TEST linked advance', confirm: true });
+    const before = structuredClone([...db.rows]);
+    await expect(reverseEntry(db, FieldValue, 'test-funding', { entryDate: '2026-10-19', userId: 'test-admin' }))
+      .rejects.toThrow(/مرتبط بمصروفات/);
+    expect([...db.rows]).toEqual(before);
+    const row = db.rows.get(`variable_expenses/${saved.sourceId}`);
+    delete row.finance_metadata.employeeAdvanceLink;
+    const reversed = await reverseEntry(db, FieldValue, 'test-funding', { entryDate: '2026-10-19', userId: 'test-admin' });
+    expect(reversed.reversedEntryId).toBe('test-funding');
+    expect(db.rows.get('journal_entries/test-funding').status).toBe('reversed');
+  });
+  it('cannot make a stale linked expense eligible while funding reversal races with capture', async () => {
+    const db = database(); seedAdvance(db);
+    const request = employeeRequest('REVERSAL-RACE', 100);
+    const preview = await financeWorkbench(db, auth, { action: 'previewCapture', ...request });
+    const outcomes = await Promise.allSettled([
+      reverseEntry(db, FieldValue, 'test-funding', { entryDate: '2026-10-19', userId: auth.uid }),
+      financeWorkbench(db, auth, { action: 'capture', ...request, previewHash: preview.previewHash,
+        reason: 'TEST concurrent link', confirm: true }),
+    ]);
+    const captured = outcomes[1].status === 'fulfilled' ? outcomes[1].value : null;
+    if (captured) {
+      const read = await financeWorkbench(db, auth, { action: 'read', kind: 'variable', sourceId: captured.sourceId });
+      expect(read.approvalReady).toBe(db.rows.get('journal_entries/test-funding').status === 'posted');
+      expect(read.paymentProven).toBe(read.approvalReady);
+    }
+    expect([...db.rows.keys()].filter(key => key.startsWith('journal_entries/') && key !== 'journal_entries/test-funding'
+      && db.rows.get(key).sourceType === 'expense')).toEqual([]);
+  });
+  it('blocks the direct ledger posting door with a forged approved review', async () => {
+    const db = database(); seedAdvance(db);
+    const request = employeeRequest('FORGED-APPROVAL', 100);
+    const preview = await financeWorkbench(db, auth, { action: 'previewCapture', ...request });
+    const saved = await financeWorkbench(db, auth, { action: 'capture', ...request, previewHash: preview.previewHash,
+      reason: 'TEST linked source', confirm: true });
+    const row = db.rows.get(`variable_expenses/${saved.sourceId}`);
+    row.approval_status = 'approved';
+    db.rows.set(`finance_reviews/${financeReviewId('variable', saved.sourceId)}`,
+      { status: 'approved', sourceHash: financeSourceHash(row) });
+    await expect(postSource(db, FieldValue, { kind: 'variable', sourceId: saved.sourceId }, { userId: auth.uid }))
+      .rejects.toThrow(/معاينة الحسابات|اعتماد/);
+    expect([...db.rows.keys()].filter(key => key.startsWith('journal_entries/'))).toEqual(['journal_entries/test-funding']);
+  });
   it('a no-op correction or reverting values cannot resurrect an old approval receipt', async () => {
     const db = database(), data = await capture(db), common = { kind: 'variable', sourceId: data.result.sourceId, sourceHash: data.read.sourceHash };
     await financeWorkbench(db, auth, { action: 'approve', ...common, postingHash: data.read.postingPreview.postingHash, reason: 'اعتماد اختبار', confirm: true });

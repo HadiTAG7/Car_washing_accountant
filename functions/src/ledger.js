@@ -34,6 +34,7 @@ import {
 import { ADAPTERS, legacyLockIdFor } from './posting.js';
 import { taxPolicyAt } from './taxPolicy.js';
 import { assertFinanceApproval, financeHash } from './financeReview.js';
+import { verifyEmployeeAdvanceLink, custodyExpenseUsedCents } from './financeEmployeeAdvance.js';
 import { readCloseData, periodReadiness } from './periodReadiness.js';
 
 export const COL = {
@@ -249,6 +250,17 @@ export async function postSource(db, FieldValue, { kind, sourceId }, { userId = 
         { code: 'already-exists' },
       );
     }
+    if (kind === 'temporary_expense' && (row.custody_historical_partial_hold === true || row.custody_expense_used_halala != null
+      || row.custody_balance_opened_journal_id != null)) {
+      throw new LedgerError('العهدة تحمل رصيد استهلاك أو افتتاحًا سابقًا؛ يلزم فحصها قبل تمويل جديد.');
+    }
+    if (kind === 'recovery') {
+      const prior = await tx.get(db.collection(COL.ENTRIES).where('sourceId', '==', id).limit(101));
+      if (prior.size > 100 || prior.docs.some(doc => doc.data().sourceType === 'recovery' && doc.data().status === 'posted'
+        && !doc.data().reversalOf && !doc.data().reversedBy)) {
+        throw new LedgerError('استرداد العهدة له قيد سارٍ أو تاريخ ترحيل يحتاج مراجعة؛ لا يُرحّل مرتين.');
+      }
+    }
 
     const financeApproval = await assertFinanceApproval(db, tx, kind, id, row, expectedFinanceSourceHash);
 
@@ -279,6 +291,15 @@ export async function postSource(db, FieldValue, { kind, sourceId }, { userId = 
       // March's rate. Only the builder knows which date it needs.
       policyAt: (d) => taxPolicyAt(d, settings),
     });
+    let advanceConsumption = null;
+    if (financeApproval && row.finance_metadata?.fundingType === 'employee') {
+      const gross = [...built.lines, ...(built.settlement?.lines || [])].filter(line => String(line.accountId) === '1300')
+        .reduce((sum, line) => sum + Number(line.credit || 0), 0);
+      const advance = await verifyEmployeeAdvanceLink(db, tx, kind, id, row, gross);
+      if (advance.issues.length) throw new LedgerError(advance.issues.join(' '));
+      if (!advance.consumption) throw new LedgerError('استهلاك عهدة الموظف مربوط بقيد مرحل بالفعل.');
+      advanceConsumption = advance.consumption;
+    }
 
     const normEntry = normalizeEntry(built.entry);
     if (financeApproval && financeApproval.postingHash !== (financeApproval.sourceContextHash
@@ -346,6 +367,7 @@ export async function postSource(db, FieldValue, { kind, sourceId }, { userId = 
       // Names the payment entry that belongs to this one, so a reader — and
       // the reversal — can find the other half rather than infer it.
       settlementEntryId: settlementRef ? settlementRef.id : null,
+      ...(advanceConsumption ? { employeeAdvanceConsumption: advanceConsumption } : {}),
       lines: normLines,
       lineCount: normLines.length,
       totalDebit: totals.debit,
@@ -407,6 +429,13 @@ export async function postSource(db, FieldValue, { kind, sourceId }, { userId = 
         FieldValue,
       ),
       { merge: true });
+    if (advanceConsumption) tx.update(db.collection('temporary_expenses').doc(advanceConsumption.advanceId), {
+      custody_expense_used_halala: advanceConsumption.usedAfterHalala,
+    });
+    if (kind === 'temporary_expense') tx.update(sourceRef, {
+      custody_expense_used_halala: 0,
+      custody_balance_opened_journal_id: entryRef.id,
+    });
     tx.set(db.collection(COL.AUDIT).doc(), auditRecord({
       action: 'post', collectionName: COL.ENTRIES, documentId: entryRef.id, userId,
       after: {
@@ -468,6 +497,9 @@ export async function reverseEntry(db, FieldValue, entryId, { entryDate, descrip
 
     if (!originalSnap.exists) throw new LedgerError('القيد غير موجود.', { code: 'not-found' });
     const original = originalSnap.data();
+    if (original.custodyHistoricalSettlementId) {
+      throw new LedgerError('قيد التسوية التاريخية لا يُعكس منفردًا؛ استخدم عكس المجموعة المنسق.');
+    }
 
     // The lock is read INSIDE the transaction, so the decision to release it
     // is made on the same snapshot as everything else.
@@ -488,6 +520,45 @@ export async function reverseEntry(db, FieldValue, entryId, { entryDate, descrip
       : null;
     const settlement = settlementSnap?.exists ? settlementSnap.data() : null;
     const reverseSettlement = Boolean(settlement && settlement.status === 'posted');
+    if (original.settlementOf) {
+      const accrual = await tx.get(db.collection(COL.ENTRIES).doc(original.settlementOf));
+      if (accrual.exists && accrual.data().employeeAdvanceConsumption) {
+        throw new LedgerError('سداد مصروف العهدة يُعكس مع قيد الفاتورة الأصلي، لا منفردًا.');
+      }
+    }
+    const advanceConsumption = original.employeeAdvanceConsumption || null;
+    let advanceRef = null, expenseUsedAfterReversal = null;
+    if (advanceConsumption) {
+      if (original.settlementEntryId && !reverseSettlement) {
+        throw new LedgerError('قيد سداد العهدة المرتبط ليس ساريًا؛ يحتاج تصحيحًا منسقًا قبل العكس.');
+      }
+      if (!advanceConsumption.advanceId || !Number.isSafeInteger(advanceConsumption.amountHalala)
+        || advanceConsumption.amountHalala <= 0) throw new LedgerError('بيان استهلاك العهدة في القيد غير صالح.');
+      advanceRef = db.collection('temporary_expenses').doc(advanceConsumption.advanceId);
+      const advanceSnap = await tx.get(advanceRef);
+      if (!advanceSnap.exists) throw new LedgerError('سجل العهدة المرتبط بالقيد غير موجود.');
+      const used = custodyExpenseUsedCents(advanceSnap.data());
+      if (used < advanceConsumption.amountHalala) throw new LedgerError('رصيد استهلاك العهدة لا يطابق القيد المراد عكسه.');
+      const recoveryLock = await tx.get(db.collection(COL.LOCKS).doc(`recovery__${advanceConsumption.advanceId}`));
+      const related = await tx.get(db.collection(COL.ENTRIES).where('sourceId', '==', advanceConsumption.advanceId).limit(101));
+      if (recoveryLock.exists || related.size > 100 || related.docs.some(doc => doc.data().sourceType === 'recovery'
+        && doc.data().status === 'posted' && !doc.data().reversalOf && !doc.data().reversedBy)) {
+        throw new LedgerError('اعكس استرداد العهدة المرتبط أولًا ثم اعكس مصروفها.');
+      }
+      expenseUsedAfterReversal = used - advanceConsumption.amountHalala;
+    }
+    let recoveryAdvanceRef = null;
+    if (original.sourceType === 'recovery' && original.sourceId) {
+      const ref = db.collection('temporary_expenses').doc(original.sourceId);
+      const snap = await tx.get(ref);
+      if (snap.exists && (custodyExpenseUsedCents(snap.data()) > 0
+        || snap.data().custody_balance_opened_journal_id)) {
+        if (snap.data().status !== 'recovered' || snap.data().payroll_lock_id) {
+          throw new LedgerError('حالة العهدة تغيرت بعد الاسترداد؛ يلزم تصحيح منسق قبل العكس.');
+        }
+        recoveryAdvanceRef = ref;
+      }
+    }
 
     if (original.status !== 'posted') {
       throw new LedgerError('لا يمكن عكس قيد غير مُرحّل.');
@@ -503,6 +574,29 @@ export async function reverseEntry(db, FieldValue, entryId, { entryDate, descrip
       throw new LedgerError(
         'لا يُعكس قيد عكسي — سجّل قيد تسوية جديداً يوضّح التصحيح.',
       );
+    }
+    if (original.sourceType === 'temporary_expense') {
+      // A funded purchase credits 1300 against this exact funding entry.
+      // Reversing the debit alone would orphan that credit. Pending links
+      // also block until they are removed through their versioned review.
+      const advance = original.sourceId ? await tx.get(db.collection('temporary_expenses').doc(original.sourceId)) : null;
+      if (advance?.exists && (custodyExpenseUsedCents(advance.data()) > 0
+        || Number(advance.data().recovered_amount || 0) > 0 || advance.data().payroll_lock_id
+        || advance.data().status === 'recovered')) {
+        throw new LedgerError('قيد تمويل العهدة مستهلك بمصروف أو راتب أو استرداد؛ اعكس الاستهلاك المرتبط أولًا.');
+      }
+      if (original.sourceId) {
+        const related = await tx.get(db.collection(COL.ENTRIES).where('sourceId', '==', original.sourceId).limit(101));
+        if (related.size > 100 || related.docs.some(doc => doc.data().sourceType === 'recovery'
+          && doc.data().status === 'posted' && !doc.data().reversalOf && !doc.data().reversedBy)) {
+          throw new LedgerError('قيد تمويل العهدة له استرداد مرحل؛ اعكس الاسترداد قبل التمويل.');
+        }
+      }
+      for (const collection of ['variable_expenses', 'monthly_expenses', 'annual_expense_entries', 'startup_cost_entries']) {
+        const linked = await tx.get(db.collection(collection)
+          .where('finance_metadata.employeeAdvanceLink.fundingJournalId', '==', originalRef.id).limit(1));
+        if (!linked.empty) throw new LedgerError('قيد تمويل العهدة مرتبط بمصروفات؛ فك الربط غير المرحل أو نفذ تصحيحًا محاسبيًا منسقًا قبل العكس.');
+      }
     }
 
     // ── فاتورة سارية تشير إلى هذا القيد ──
@@ -612,6 +706,8 @@ export async function reverseEntry(db, FieldValue, entryId, { entryDate, descrip
       reversedBy: revRef.id,
       reversedAt: FieldValue.serverTimestamp(),
     });
+    if (advanceRef) tx.update(advanceRef, { custody_expense_used_halala: expenseUsedAfterReversal });
+    if (recoveryAdvanceRef) tx.update(recoveryAdvanceRef, { status: 'pending', recovered_date: null });
     if (reverseSettlement) {
       const st = totalsOf(settlementRevLines);
       tx.set(settlementRevRef, {

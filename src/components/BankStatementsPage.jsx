@@ -6,7 +6,7 @@ import { useFounding } from '../hooks/useFounding';
 import { readStatementFile, StatementFileError } from '../lib/bankStatement/readSpreadsheet';
 import { detectColumns, emptyMapping, mappingProblems, statementTransactions, columnOptions } from '../lib/bankStatement/statementColumns';
 import { ConfirmButton, Messages } from './founding/FoundingCommon';
-import { money, day } from '../lib/founding/foundingFormat';
+import { money, day, when } from '../lib/founding/foundingFormat';
 import './FinanceWorkspace.css';
 import './founding/Founding.css';
 
@@ -186,7 +186,7 @@ export default function BankStatementsPage() {
 function DecisionCard({ t, account, suggestion, choice, options, onChange }) {
   if (!suggestion) return null;
   if (suggestion.existing?.status === 'applied') {
-    return <article className="fw-panel founding-card"><Header t={t} /><p>مطبّقة سابقًا ({DECISIONS[suggestion.existing.decision] || suggestion.existing.decision}) — {suggestion.existing.appliedByName || ''} {suggestion.existing.appliedAtIso ? day(suggestion.existing.appliedAtIso.slice(0, 10)) : ''}</p></article>;
+    return <article className="fw-panel founding-card"><Header t={t} /><p>مطبّقة سابقًا ({DECISIONS[suggestion.existing.decision] || suggestion.existing.decision}) — {suggestion.existing.appliedByName || ''} <bdi>{when(suggestion.existing.appliedAtIso)}</bdi></p></article>;
   }
   const debit = t.direction === 'debit';
   const kind = choice.expense?.kind || 'variable';
@@ -254,7 +254,7 @@ function SavedLines({ founding }) {
       <tbody>{[...lines].sort((a, b) => b.txDate.localeCompare(a.txDate)).map(l => <tr key={l.id}>
         <td>{ACCOUNTS[l.account]}</td><td>{day(l.txDate)}</td><td>{l.description}</td>
         <td>{l.direction === 'debit' ? '−' : '+'}{money(l.amount)}</td><td>{DECISIONS[l.decision] || l.decision}</td><td>{l.status === 'applied' ? 'مطبّقة' : l.status === 'failed' ? 'تعذّرت' : 'قيد التطبيق'}</td>
-        <td>{l.appliedByName} {l.appliedAtIso ? `· ${day(l.appliedAtIso.slice(0, 10))}` : ''}</td>
+        <td>{l.appliedByName} {l.appliedAtIso ? <bdi>· {when(l.appliedAtIso)}</bdi> : ''}</td>
       </tr>)}</tbody>
     </table></div>}
   </section>;

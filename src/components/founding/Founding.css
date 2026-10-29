@@ -24,6 +24,7 @@
 .founding-picker { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .founding-row { align-items: end; }
 .founding-check { flex-direction: row !important; align-items: center !important; }
+.founding-status { white-space: nowrap; }
 .founding-status--posted { background: #e7f7ee; color: #205236; }
 .founding-status--held_vat, .founding-status--blocked_period { background: #fff7e4; color: #664006; }
 .dark .founding-status--posted { background: #123226; color: #b9f0d0; }

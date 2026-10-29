@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { foundingPlan, documentCandidates, paymentCandidates, balanceMeaning, completenessGaps, ruleGaps, dayBefore } from '../founding/foundingPlan';
+import { when } from '../founding/foundingFormat';
 
 const doc = (id, over = {}) => ({ key: `variable:${id}`, kind: 'variable', sourceId: id, title: id, amount: 100, date: '2026-09-01', supplier: 'مورد',
   hasProof: false, protected: false, effect: { cash: 0, bank: 0 }, fundingType: null, paymentMethod: 'cash', vatQuarter: null, issues: [], ...over });
@@ -174,3 +175,11 @@ describe('Hadi’s current account against his statement', () => {
   });
 });
 
+
+describe('applied-by timestamps', () => {
+  it('shows who-applied times in Riyadh time, across the UTC midnight', () => {
+    expect(when('2026-10-29T14:20:11.000Z')).toBe('2026-10-29 17:20');
+    expect(when('2026-10-29T22:05:00.000Z')).toBe('2026-10-30 01:05');
+    expect(when(null)).toBe('');
+  });
+});

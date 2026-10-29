@@ -201,7 +201,7 @@ function Entries({ plan, founding, names }) {
   const s = plan.settlement;
   return <section className="fw-panel" aria-label="قيود التصحيح والتسوية">
     <h2>قيود التصحيح والتسوية</h2>
-    <p>تنقل ما سُجّل على البنك (1020) أو الصندوق (1010) وهو فعليًا مرّ على حسابك إلى «حساب هادي الجاري» (2300). قيود ما قبل القطع مؤرخة بيوم القطع {day(plan.settings.cutoffDate)} لأن أشهر التأسيس الأولى مقفلة.</p>
+    <p>تنقل أثر ما سُجّل على البنك (1020) أو الصندوق (1010) أو الموردين (2000) إلى من دفع فعلًا: «حساب هادي الجاري» (2300)، أو العهدة (1300)، أو رأس مال الشريك. قيود فترة التأسيس مؤرخة بآخر يوم فيها {day(plan.settings.foundingEnd)} لأن أشهر التأسيس الأولى مقفلة.</p>
     {plan.entries.length === 0 && <p>لا قيود مقترحة بعد: اربط الكشوف أو قرر جهات الدفع أولًا.</p>}
     {plan.entries.map(e => <article key={e.key} className="founding-entry">
       <header>

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Gavel, Scale } from 'lucide-react';
 import { ConfirmButton, EntryLines, StatusBadge } from './FoundingCommon';
-import { money, day } from '../../lib/founding/foundingFormat';
+import { money, day, when } from '../../lib/founding/foundingFormat';
 
 const KIND = { variable: 'متغيرة', monthly: 'شهرية', annual: 'سنوية', startup: 'تأسيس' };
 const ACTION = { update: 'يتعدل عبر صندوق العمل المالي', entry: 'مرحّل: قيد تصحيح بانتظار موافقتك', none: 'مرحّل بلا أثر على الصندوق أو البنك', blocked: 'في فترة مقفلة — لا يتعدل' };
@@ -34,8 +34,8 @@ export function DefaultRule({ founding, partners, names, progress, setProgress }
     <p>كل مستند قبل {day(plan.settings.cutoffDate)} لم يُحسم من دفعه، وناقصه حساب التمويل أو تاريخ الدفع أو طريقة الدفع:
       حساب التمويل <strong>2300 حساب هادي الجاري</strong>، وتاريخ الدفع = تاريخ المستند، وطريقة الدفع <strong>«دفع شخصي - فترة التأسيس»</strong>.
       المرحّل لا يتعدل: يُربط بالقاعدة، ويُقترح له قيد تصحيح ينتظر موافقتك. ما يمس إقرارًا مقدّمًا يبقى محجوزًا حتى تراجعه.</p>
-    {rule.applied && <p role="status" className="fw-success">طُبّقت على {rule.applied.count} مستندًا ({money(rule.applied.total)}) — {rule.applied.byName}، {rule.applied.atIso.slice(0, 16).replace('T', ' ')}.</p>}
-    {rule.pendingUpdates.length > 0 && !progress && <div className="fw-warning" role="status">
+    {rule.applied && <p role="status" className="fw-success">طُبّقت على {rule.applied.count} مستندًا ({money(rule.applied.total)}) — {rule.applied.byName}، <bdi>{when(rule.applied.atIso)}</bdi>.</p>}
+    {rule.pendingUpdates.length > 0 && !progress && (rule.applied || rule.count === 0) && <div className="fw-warning" role="status">
       <span>{rule.pendingUpdates.length} مستندًا غير مرحّل (بالقاعدة أو باستثناء أو قرار) لم يتعدل بعد.</span>
       <ConfirmButton label="تطبيق المتبقي" confirmText="يعدّل جهة الدفع وتاريخه في هذه المستندات فقط عبر صندوق العمل المالي." disabled={founding.busy}
         onConfirm={() => runUpdates(rule.pendingUpdates)} />

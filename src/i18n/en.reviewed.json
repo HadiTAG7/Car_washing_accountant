@@ -4525,7 +4525,7 @@
   "راجعت أثر التغيير على الإقرار.": "I reviewed the effect of the change on the return.",
   "سُجّلت المراجعة.": "Review recorded.",
   "قيود التصحيح والتسوية": "Correction and settlement entries",
-  "تنقل ما سُجّل على البنك (1020) أو الصندوق (1010) وهو فعليًا مرّ على حسابك إلى «حساب هادي الجاري» (2300). قيود ما قبل القطع مؤرخة بيوم القطع": "They move what was recorded on the bank (1020) or the cash box (1010) but actually went through your account to «Hadi's current account» (2300). Entries before the cutoff are dated on the cutoff day",
+  "تنقل أثر ما سُجّل على البنك (1020) أو الصندوق (1010) أو الموردين (2000) إلى من دفع فعلًا: «حساب هادي الجاري» (2300)، أو العهدة (1300)، أو رأس مال الشريك. قيود فترة التأسيس مؤرخة بآخر يوم فيها": "They move the effect of what was recorded on the bank (1020), the cash box (1010) or suppliers (2000) to whoever actually paid: «Hadi's current account» (2300), custody (1300), or the partner's capital. Founding-period entries are dated on its last day",
   "لأن أشهر التأسيس الأولى مقفلة.": "because the first founding months are closed.",
   "لا قيود مقترحة بعد: اربط الكشوف أو قرر جهات الدفع أولًا.": "No proposed entries yet: link statements or decide who paid first.",
   "اختيار القيد: [VAR0]": "Select entry: [VAR0]",

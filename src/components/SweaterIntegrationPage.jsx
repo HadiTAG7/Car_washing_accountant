@@ -43,6 +43,7 @@ export default function SweaterIntegrationPage() {
   const [readiness, setReadiness] = useState(null);
   // نوافذ داخلية بدل `prompt` — الأخيرة محجوبةٌ في المتصفح الآلي.
   const [createOpen, setCreateOpen] = useState(false);
+  const [n8nOpen, setN8nOpen] = useState(false);
   const [revokeKeyRow, setRevokeKey] = useState(null);
   const [dialogError, setDialogError] = useState(null);
   const [busy, setBusy] = useState(null);
@@ -80,7 +81,8 @@ export default function SweaterIntegrationPage() {
   const latestCounts = lastSuccessIso && lastSuccessIso === st?.lastOperationalSuccessAtIso ? st.lastOperationalCounts : st?.lastCounts;
   const agentAlert = ['session_expired', 'otp_required', 'blocked'].includes(st?.lastAgentStatus);
 
-  const activeKeys = useMemo(() => integ.keys.filter((k) => k.status === 'active'), [integ.keys]);
+  const activeKeys = useMemo(() => integ.keys.filter((k) => k.status === 'active'
+    && (!k.expiresAtIso || Date.parse(k.expiresAtIso) > now)), [integ.keys, now]);
 
   return (
     <>
@@ -96,7 +98,7 @@ export default function SweaterIntegrationPage() {
           <Card className="p-4 sm:p-5 border-emerald-200 dark:border-emerald-500/40">
             <SectionHeader
               title="المفتاح الجديد — انسخه الآن"
-              subtitle="لن يُعرض مرة أخرى. المخزَّن مُعمّى ولا يُسترجَع، وفقدُه يعني إنشاء غيره."
+              subtitle="لن يُعرض مرة أخرى. احفظه في بيانات اعتماد الخدمة؛ فقدُه يعني إنشاء غيره."
             />
             <div className="mt-3 flex items-center gap-2 flex-wrap">
               <code className="flex-1 min-w-0 break-all font-mono text-[12px] bg-slate-900 text-emerald-300 px-3 py-2.5 rounded-control">
@@ -117,8 +119,10 @@ export default function SweaterIntegrationPage() {
               </button>
             </div>
             <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-              المعرّف: <code className="font-mono">{freshSecret.keyId}</code> · ضعهما في إعداد وكيل
-              المتصفح كما في <code>docs/SWEATER_BROWSER_AGENT.md</code>.
+              المعرّف: <code className="font-mono">{freshSecret.keyId}</code> · {freshSecret.authMode === 'bearer-sha256'
+                ? 'في n8n اختر Header Auth؛ الاسم Authorization والقيمة Bearer ثم مسافة ثم المفتاح. لا تضعه في نص العقد أو رابط الطلب.'
+                : <>ضعه مع السرّ في إعداد وكيل المتصفح كما في <code>docs/SWEATER_BROWSER_AGENT.md</code>.</>}
+              {freshSecret.expiresAtIso && <> · ينتهي: <bdi>{freshSecret.expiresAtIso.slice(0, 10)}</bdi></>}
             </p>
           </Card>
         )}
@@ -203,6 +207,22 @@ export default function SweaterIntegrationPage() {
 
         {/* ── المفاتيح ── */}
         <Card className="p-4 sm:p-6">
+          <SectionHeader title="الربط مع n8n" subtitle="استيراد الغسلات باتصال مستقل يمكن إلغاؤه؛ دون صلاحية قبض أو رواتب أو ترحيل مالي." />
+          <p className="mt-3 text-sm text-slate-600 dark:text-slate-400">
+            الربط يستقبل بيانات الغسلات التي يجمعها مسار n8n. دخول بوابة سويتر وجلب الحجوزات خطوة مستقلة؛ إنشاء المفتاح لا يبدأ المزامنة.
+          </p>
+          <p className="mt-2 text-xs break-all" dir="ltr">POST {typeof window !== 'undefined' ? window.location.origin : ''}/api/integrations/sweater/n8n</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {canMutate && role === 'admin' && !isPartnerView && <button type="button" disabled={busy !== null}
+              onClick={() => { setDialogError(null); setN8nOpen(true); }} className="sw-button sw-button--sm sw-button--primary">
+              <KeyRound size={16} /> إنشاء اتصال n8n
+            </button>}
+            <a className="sw-button sw-button--sm sw-button--secondary" href="/integrations/sweater-n8n.json" download>تنزيل مسار الاستيراد لـ n8n</a>
+          </div>
+          <p className="mt-2 text-xs text-slate-500">المفتاح صالح 90 يومًا، ويظهر مرة واحدة. احفظه في Header Auth داخل n8n. المسار يفحص الدفعة قبل الحفظ ويتحقق من النتيجة بعده.</p>
+        </Card>
+
+        <Card className="p-4 sm:p-6">
           <SectionHeader
             title="مفاتيح الوكيل"
             subtitle="السرّ يُعرض مرة واحدة عند الإنشاء. المخزَّن مُعمّى ولا يُسترجَع — والتدوير إنشاءٌ ثم إلغاء."
@@ -242,7 +262,9 @@ export default function SweaterIntegrationPage() {
                 <tbody>
                   {integ.keys.map((k) => (
                     <tr key={k.keyId} className="border-b border-slate-50 dark:border-slate-800/60 last:border-0">
-                      <td className="py-3 px-4 font-medium text-slate-800 dark:text-slate-200">{k.label || '—'}</td>
+                      <td className="py-3 px-4 font-medium text-slate-800 dark:text-slate-200">{k.label || '—'}
+                        {k.authMode === 'bearer-sha256' && <p className="text-xs text-slate-500">n8n · ينتهي {k.expiresAtIso?.slice(0, 10) || '—'}</p>}
+                      </td>
                       <td className="py-3 px-4 font-mono text-[12px] text-slate-600 dark:text-slate-400">{k.keyId}</td>
                       <td className="py-3 px-4 font-mono text-[11px] text-slate-500 dark:text-slate-400">…{k.fingerprint?.slice(-8)}</td>
                       <td className="py-3 px-4 text-[12px] text-slate-600 dark:text-slate-400 tabular-nums">
@@ -250,7 +272,7 @@ export default function SweaterIntegrationPage() {
                       </td>
                       <td className="py-3 px-4">
                         <span className={`text-[11px] font-bold ${k.status === 'active' ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-400'}`}>
-                          {k.status === 'active' ? 'فعّال' : 'مُلغى'}
+                          {k.status !== 'active' ? 'مُلغى' : k.expiresAtIso && Date.parse(k.expiresAtIso) <= now ? 'منتهي' : 'فعّال'}
                         </span>
                       </td>
                       <td className="py-3 px-4 text-left">
@@ -380,6 +402,22 @@ export default function SweaterIntegrationPage() {
       />
 
       {/* ── إلغاء مفتاح ── */}
+      <SweaterActionDialog open={n8nOpen} title="إنشاء اتصال n8n" icon={KeyRound}
+        subtitle="يسمح بمعاينة وحفظ غسلات من المصدر والتحقق منها فقط. لا يمنح إدارة الحساب أو تأكيد التحصيل. يظهر المفتاح مرة واحدة وينتهي بعد 90 يومًا."
+        busy={busy === 'n8n'} error={dialogError} confirmLabel="إنشاء مفتاح n8n" busyLabel="جارٍ الإنشاء…"
+        fields={[{ name: 'label', label: 'اسم اتصال n8n', type: 'text', required: true, defaultValue: 'n8n — تسجيل الغسلات' }]}
+        onClose={() => { setN8nOpen(false); setDialogError(null); }}
+        onConfirm={async ({ label }) => {
+          setDialogError(null); setBusy('n8n');
+          try {
+            const r = await integ.createN8nKey(label);
+            if (r?.secret) setFreshSecret(r);
+            setN8nOpen(false); showToast('أُنشئ اتصال n8n');
+          } catch (e) {
+            setDialogError(describeBackendError(e) || 'تعذّر إنشاء اتصال n8n');
+          } finally { setBusy(null); }
+        }} />
+
       <SweaterActionDialog
         open={Boolean(revokeKeyRow)}
         title="إلغاء مفتاح التكامل"

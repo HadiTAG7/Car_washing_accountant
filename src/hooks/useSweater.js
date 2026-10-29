@@ -161,6 +161,11 @@ export function useSweaterIntegration() {
       await keys.refetch();
       return r;
     }, [keys]),
+    createN8nKey: useCallback(async (label) => {
+      const r = await callServer('sweaterCreateN8nKey', { label });
+      await keys.refetch();
+      return r;
+    }, [keys]),
     revokeKey: useCallback(async (keyId, reason) => {
       const r = await callServer('sweaterRevokeIntegrationKey', { keyId, reason });
       await keys.refetch();

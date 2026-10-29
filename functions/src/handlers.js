@@ -259,6 +259,7 @@ import {
 import {
   createIntegrationKey, revokeIntegrationKey, listIntegrationKeys,
 } from './sweater/integrationKeys.js';
+import { createN8nKey } from './sweater/n8nKeys.js';
 import {
   createPartnerMcpKey, revokePartnerMcpKey, PartnerMcpKeyError,
   KEYS_COL as PARTNER_MCP_KEYS_COL,
@@ -615,6 +616,12 @@ export const HANDLERS = {
   sweaterCreateIntegrationKey: {
     guard: 'admin',
     run: ({ db, FieldValue, data, uid }) => createIntegrationKey(db, FieldValue, {
+      label: data?.label ?? null, actor: uid,
+    }),
+  },
+  sweaterCreateN8nKey: {
+    guard: 'admin',
+    run: ({ db, FieldValue, data, uid }) => createN8nKey(db, FieldValue, {
       label: data?.label ?? null, actor: uid,
     }),
   },

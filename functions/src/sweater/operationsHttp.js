@@ -11,8 +11,10 @@ const STATUS = { unauthenticated: 401, 'permission-denied': 403, 'invalid-argume
   'already-exists': 409, 'failed-precondition': 412, 'resource-exhausted': 429 };
 const header = (req, key) => req.headers?.[key] ?? '';
 
-export function operationsHandler({ getDb, FieldValue, verify = verifyIngestRequest }) {
+export function operationsHandler({ getDb, FieldValue, verify = verifyIngestRequest,
+  allowedActions = ['preview', 'save', 'status', 'metrics'], requiredPrincipal = INTEGRATION_PRINCIPAL }) {
   return async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
     if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return res.status(405).json({ error: { code: 'invalid-argument', message: 'POST only.' } }); }
     try {
       const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
@@ -20,15 +22,16 @@ export function operationsHandler({ getDb, FieldValue, verify = verifyIngestRequ
         return res.status(413).json({ error: { code: 'invalid-argument', message: 'Request exceeds the operational contract.' } });
       }
       const allowed = body.action === 'save' ? ['action', 'payload', 'reviewedPayloadHash', 'previewStateHash'] : ['action', 'payload'];
-      if (!['preview', 'save', 'status', 'metrics'].includes(body.action) || Object.keys(body).some(k => !allowed.includes(k))) {
-        throw new SweaterIngestError('Only preview, save, status or metrics requests are allowed.');
+      if (!allowedActions.includes(body.action) || Object.keys(body).some(k => !allowed.includes(k))) {
+        throw new SweaterIngestError(`Only ${allowedActions.join(', ')} requests are allowed.`);
       }
       // metrics: one month's reading of Sweater's dashboards, under the same key, principal and signature.
       if (body.action === 'metrics') checkMetricsSnapshot(body.payload); else validateOperationsPayload(body.payload);
       const db = getDb();
       const auth = await verify(db, FieldValue, { keyId: header(req, 'x-sweater-key-id'), timestamp: header(req, 'x-sweater-timestamp'),
         signature: header(req, 'x-sweater-signature'), importRunId: body.payload.importRunId,
-        bodyHash: operationsSigningHash(body), requiredPrincipal: INTEGRATION_PRINCIPAL });
+        bodyHash: operationsSigningHash(body), requiredPrincipal,
+        authorization: header(req, 'authorization') });
       const result = body.action === 'metrics' ? await saveMetricsSnapshot(db, FieldValue, body.payload, { keyId: auth.keyId })
         : body.action === 'preview' ? await previewOperations(db, body.payload)
           : body.action === 'status' ? await operationsStatus(db, body.payload)

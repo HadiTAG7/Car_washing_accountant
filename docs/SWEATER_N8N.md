@@ -83,3 +83,44 @@ Do not add a schedule until source access and credential selection are ready.
 Testing uses synthetic isolated data. Do not save a real SSP booking as a
 software test. Production readiness requires a real authorized source run
 and verified readback; a successful deploy alone does not establish that.
+
+## Cloud source controller
+
+`scripts/ssp-cloud-collector.mjs` reads SSP's rendered tables and booking
+detail dialogs, never private APIs or browser storage. It visits every page
+for both individual and B2B modules for one to seven completed service days.
+It checks the active date/page filters, repeated IDs, loading and explicit
+empty states. A changed page contract or missing coverage prevents import.
+The browser timezone is fixed and verified as `Asia/Riyadh` before reading
+event times. Minute-only source displays retain that precision in `notes`.
+The owner's regular-wash classification is explicitly identified when SSP
+does not display a service label. Missing events remain null. Collection,
+payroll payment and journal posting are outside this workflow.
+
+Generate the deployment script and controller template:
+
+```sh
+node scripts/generate-n8n-cloud-sync.mjs
+```
+
+Publish `public/integrations/sweater-browserbase-function.js` in Browserbase
+Playground with `rangeFrom` and `rangeTo` Function parameters. The deployed
+handler uses the Function's browser session; its caller supplies the saved
+SSP Context in `sessionCreateParams`. No API key or Context ID is committed
+in the script. Authenticate manually in that Context, and serialize its runs.
+
+Configure the cloud workflow's Function ID, Context ID and existing verified
+import workflow ID. Select the Browserbase credential on both source HTTP
+nodes and the restricted platform Header Auth on preview. Credentials must
+have stored IDs, not merely display names. Validate one completed day using
+`validationMode:true, days:1`, then use `validationMode:false, days:7` for
+production. Publish only after source coverage, preview and saved readback
+pass. The schedule is `0 0 * * *` with workflow timezone `Asia/Riyadh`.
+
+The controller polls the same invocation, requires complete source coverage,
+splits records into batches of at most 100, and runs the existing import
+sub-workflow once per batch. Each batch keeps its full immutable payload and
+execution-based run ID. Final success requires verification of every batch.
+The platform can resolve an omitted worker map from a single established
+source-driver link already present in washes; unknown or conflicting links
+remain for review. No worker profiles need to be exported to the collector.

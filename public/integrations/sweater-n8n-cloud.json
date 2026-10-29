@@ -1,0 +1,485 @@
+{
+  "name": "Sweater | Daily wash sync",
+  "nodes": [
+    {
+      "id": "manual-sync",
+      "name": "Manual sync",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "midnight-riyadh",
+      "name": "Midnight Riyadh",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        220
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 0 * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "prepare-source-job",
+      "name": "Prepare source job",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        100
+      ],
+      "parameters": {
+        "jsCode": "const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Riyadh',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());\nconst day=Object.fromEntries(parts.map(p=>[p.type,p.value]));const today=Date.parse(day.year+'-'+day.month+'-'+day.day+'T00:00:00Z');\nconst rangeFrom=new Date(today-7*86400000).toISOString().slice(0,10),rangeTo=new Date(today-86400000).toISOString().slice(0,10);\nconst request={params:{rangeFrom,rangeTo},sessionCreateParams:{browserSettings:{context:{id:\"SET_SSP_CONTEXT_ID\",persist:true},recordSession:false,logSession:false},timeout:900}};\nreturn [{json:{rangeFrom,rangeTo,validationMode:true,request}}];"
+      }
+    },
+    {
+      "id": "invoke-ssp-collector",
+      "name": "Invoke SSP collector",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        100
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.browserbase.com/v1/functions/SET_BROWSERBASE_FUNCTION_ID/invoke",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "browserbaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.request) }}",
+        "options": {
+          "timeout": 60000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "browserbaseApi": {
+          "name": "Browserbase account"
+        }
+      },
+      "retryOnFail": false,
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "wait-for-source",
+      "name": "Wait for source",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        720,
+        100
+      ],
+      "parameters": {
+        "resume": "timeInterval",
+        "amount": 15,
+        "unit": "seconds"
+      }
+    },
+    {
+      "id": "read-collector-result",
+      "name": "Read collector result",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        100
+      ],
+      "parameters": {
+        "url": "={{ 'https://api.browserbase.com/v1/functions/invocations/' + $('Invoke SSP collector').first().json.id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "browserbaseApi",
+        "options": {
+          "timeout": 60000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "browserbaseApi": {
+          "name": "Browserbase account"
+        }
+      },
+      "retryOnFail": false,
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "check-collector-state",
+      "name": "Check collector state",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        100
+      ],
+      "parameters": {
+        "jsCode": "const r=$input.first().json;\nif (!['PENDING','RUNNING','COMPLETED'].includes(r.status)) throw new Error('SSP collector failed; check its invocation. No batch was saved.');\nif ($runIndex>=64 && r.status!=='COMPLETED') throw new Error('SSP collector polling limit reached. Review the existing invocation before rerunning.');\nreturn [{json:r}];"
+      }
+    },
+    {
+      "id": "source-ready",
+      "name": "Source ready",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1440,
+        100
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "complete",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "COMPLETED",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "prepare-verified-batches",
+      "name": "Prepare verified batches",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        0
+      ],
+      "parameters": {
+        "jsCode": "function makeVerifiedSourceBatches(source, executionId, validationMode) {\n  const c=source?.coverage, records=source?.records;\n  if (!c || !Array.isArray(records) || c.recordCount !== records.length || c.isComplete !== true\n    || c.pagesFetched !== c.pageCount || c.pageCount < 1 || !Array.isArray(c.gaps) || c.gaps.length\n    || c.modules?.individual !== 'complete' || c.modules?.corporate !== 'complete'\n    || !Number.isFinite(Date.parse(c.extractedAt)) || records.length > 2000) throw new Error('Complete, verified SSP coverage is required before import');\n  if (!/^[A-Za-z0-9_-]{1,100}$/.test(String(executionId))) throw new Error('Invalid execution ID');\n  const allowed=new Set(['sspBookingId','bookingKind','serviceDate','serviceType','serviceTypeLabel','driverExternalId','rawStatus','serviceTime','arrivedAt','startedAt','completedAt','platformAmount','sourceUrl','notes']);\n  const seen=new Set();\n  for (const r of records) {\n    const prefix='https://ssp-portal.sweater.sa'+(r.bookingKind==='individual'?'/bookings':'/b2b-bookings')+'?';\n    if (typeof r.sourceUrl!=='string' || !r.sourceUrl.startsWith(prefix) || /[#@]/.test(r.sourceUrl)) throw new Error('Invalid source URL');\n    const entries=r.sourceUrl.slice(prefix.length).split('&').map(part=>part.split('=').map(decodeURIComponent));\n    const query=Object.fromEntries(entries);\n    if (Object.keys(r).some(k=>!allowed.has(k)) || !/^[A-Z]-\\d+$/.test(r.sspBookingId) || seen.has(r.sspBookingId)\n      || !['individual','corporate'].includes(r.bookingKind) || !r.rawStatus || !r.serviceType\n      || r.serviceDate < c.rangeFrom || r.serviceDate > c.rangeTo || entries.length!==Object.keys(query).length\n      || query.fromDate !== r.serviceDate || query.toDate !== r.serviceDate\n      || Object.keys(query).some(k=>!['page','pageSize','fromDate','toDate'].includes(k))) throw new Error('Invalid or repeated source record');\n    seen.add(r.sspBookingId);\n  }\n  const result=[];\n  for (let i=0;i<Math.max(1,records.length);i+=100) {\n    const batch=records.slice(i,i+100);\n    result.push({json:{validationMode, payload:{contractVersion:2,importRunId:`n8n-${executionId}-b${i/100+1}`,agentStatus:'ok',\n      coverage:{...c,recordCount:batch.length},workerLinks:{},records:batch}}});\n  }\n  return result;\n}\nconst r=$input.first().json;\nreturn makeVerifiedSourceBatches(r.results,$execution.id,$('Prepare source job').first().json.validationMode);"
+      }
+    },
+    {
+      "id": "validation-only",
+      "name": "Validation only",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1920,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "dry-run",
+              "leftValue": "={{ $json.validationMode }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "preview-source-batches",
+      "name": "Preview source batches",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2160,
+        -180
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://app.hadialghanim.com/api/integrations/sweater/n8n",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({action:'preview',payload:$json.payload}) }}",
+        "options": {
+          "timeout": 60000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "Sweater | Wash import"
+        }
+      },
+      "retryOnFail": false,
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "verify-previews",
+      "name": "Verify previews",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2400,
+        -180
+      ],
+      "parameters": {
+        "jsCode": "const results=$input.all().map(i=>i.json.result);\nif(results.length!==$('Prepare verified batches').all().length || results.some(r=>!r || r.dryRun!==true || r.saved!==false || r.counts?.rejected>0)) throw new Error('Source preview failed. Nothing was saved.');\nreturn [{json:{validationOnly:true,saved:false,batches:results.length,records:$('Prepare verified batches').all().reduce((n,i)=>n+i.json.payload.records.length,0),previews:results}}];"
+      }
+    },
+    {
+      "id": "import-and-verify-each-batch",
+      "name": "Import and verify each batch",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        2160,
+        100
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "SET_IMPORT_WORKFLOW_ID",
+          "mode": "id"
+        },
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "require-all-batches-verified",
+      "name": "Require all batches verified",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2400,
+        100
+      ],
+      "parameters": {
+        "jsCode": "const results=$input.all().map(i=>i.json);\nif(results.length!==$('Prepare verified batches').all().length || results.some(r=>r.verified!==true)) throw new Error('Not every saved batch was verified. Review existing run IDs before rerunning.');\nconst counts={new:0,modified:0,duplicate:0,rejected:0,needsReview:0};let washesCreated=0;\nfor(const r of results){for(const k of Object.keys(counts))counts[k]+=r.result?.counts?.[k]||0;washesCreated+=r.result?.washesCreated||0;}\nreturn [{json:{verified:true,batches:results.length,records:$('Prepare verified batches').all().reduce((n,i)=>n+i.json.payload.records.length,0),washesCreated,counts,ledgerPosted:false,payrollPaid:false,runIds:results.map(r=>r.importRunId)}}];"
+      }
+    },
+    {
+      "id": "cloud-sync-operating-notes",
+      "name": "Cloud sync operating notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        240,
+        -450
+      ],
+      "parameters": {
+        "width": 1100,
+        "height": 300,
+        "content": "## Sweater cloud source → verified import\n\n00:00 Asia/Riyadh; previous seven completed service days. Browserbase reads every individual and B2B page plus booking event details. Customer data is excluded. The platform reuses only established stable biker links. Missing or conflicting links remain reviewable.\n\nValidation mode calls preview only. Production mode runs the existing atomic import workflow separately for each batch of at most 100 records, then requires verification for every batch. No collection, payroll payment or ledger posting.\n\nA logged-out source, changed page contract, failed function or incomplete coverage stops before import. Refresh SSP login manually in the saved Browserbase Context when needed. Never start concurrent source runs with the same Context."
+      }
+    }
+  ],
+  "connections": {
+    "Manual sync": {
+      "main": [
+        [
+          {
+            "node": "Prepare source job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Midnight Riyadh": {
+      "main": [
+        [
+          {
+            "node": "Prepare source job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare source job": {
+      "main": [
+        [
+          {
+            "node": "Invoke SSP collector",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Invoke SSP collector": {
+      "main": [
+        [
+          {
+            "node": "Wait for source",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for source": {
+      "main": [
+        [
+          {
+            "node": "Read collector result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read collector result": {
+      "main": [
+        [
+          {
+            "node": "Check collector state",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check collector state": {
+      "main": [
+        [
+          {
+            "node": "Source ready",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Source ready": {
+      "main": [
+        [
+          {
+            "node": "Prepare verified batches",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait for source",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare verified batches": {
+      "main": [
+        [
+          {
+            "node": "Validation only",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validation only": {
+      "main": [
+        [
+          {
+            "node": "Preview source batches",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Import and verify each batch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preview source batches": {
+      "main": [
+        [
+          {
+            "node": "Verify previews",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Import and verify each batch": {
+      "main": [
+        [
+          {
+            "node": "Require all batches verified",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "timezone": "Asia/Riyadh",
+    "executionOrder": "v1",
+    "executionTimeout": 1200
+  }
+}

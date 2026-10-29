@@ -4878,5 +4878,6 @@
   "إيصال تسوية العهدة لا يثبت جسر التوقيت يوم القطع؛ أوقف قيد 3200.": "The custody receipt does not establish the cutoff timing bridge; block the 3200 entry.",
   "استهلاك عهدة يوم القطع يتجاوز التمويل المسلّم قبله؛ أوقف قيد 3200.": "Custody used by the cutoff exceeds funding delivered by then; block the 3200 entry.",
   "مستند العهدة يُسوّى من تمويلها ولا يُعاد تصنيف جهة دفعه في التأسيس.": "Settle the custody document from its funding; do not reclassify its payer in founding.",
-  "مستند العهدة يُسوّى من تمويلها ولا يُربط مباشرة بخصم كشف البنك.": "Settle the custody document from its funding; do not link it directly to a bank debit."
+  "مستند العهدة يُسوّى من تمويلها ولا يُربط مباشرة بخصم كشف البنك.": "Settle the custody document from its funding; do not link it directly to a bank debit.",
+  "تسوية عهدة تاريخية قديمة تحتاج مطابقة حركة يوم القطع قبل قيد 3200.": "A legacy custody settlement needs its cutoff movement reconciled before the 3200 entry."
 }

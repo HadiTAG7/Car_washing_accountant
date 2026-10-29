@@ -107,6 +107,28 @@ describe('atomic historical custody settlement, synthetic only', () => {
     expect(financial(db)).toEqual(before);
   });
 
+  it('clears only an old unposted founding payer decision before a fresh custody preview', async () => {
+    const { db, input, sourceId } = await setup();
+    const sourceKey = `variable:${sourceId}`;
+    const decisionId = financeHash(sourceKey).slice(0, 40);
+    db.rows.set(`founding_decisions/${decisionId}`, { sourceKey, decision: 'hadi',
+      partnerId: null, revision: 1, decidedBy: 'TEST prior reviewer' });
+    const blocked = await financeWorkbench(db, auth, input);
+    expect(blocked.blockingIssues).toEqual(expect.arrayContaining([expect.stringMatching(/قرار جهة دفع/)]));
+    await expect(financeWorkbench(db, auth, { kind: 'founding', request: { action: 'decide',
+      sourceKey, decision: 'cash', confirm: true } })).rejects.toThrow(/العهدة/);
+    const cleared = await financeWorkbench(db, auth, { kind: 'founding', request: { action: 'decide',
+      sourceKey, decision: null, confirm: true } });
+    expect(cleared.decision).toMatchObject({ decision: null, partnerId: null, revision: 2 });
+    expect((await financeWorkbench(db, auth, input)).blockingIssues).toEqual([]);
+    db.rows.get(`variable_expenses/${sourceId}`).finance_metadata.custodyHistoricalSettlementId = 'TEST-posted-group';
+    db.rows.get(`founding_decisions/${decisionId}`).decision = 'hadi';
+    db.rows.set('journal_entries/TEST-posted-group-entry', { sourceType: 'expense', sourceKind: 'variable', sourceId,
+      custodyHistoricalSettlementId: 'TEST-posted-group', status: 'posted', entryDate: postingDay, lines: [] });
+    await expect(financeWorkbench(db, auth, { kind: 'founding', request: { action: 'decide',
+      sourceKey, decision: null, confirm: true } })).rejects.toThrow(/العهدة/);
+  });
+
   it('rejects a new correction dated before the actual posting day even with an approved preview', async () => {
     const { db, input, save } = await setup();
     const backdated = { ...input, correctionDate: priorDay };
@@ -158,10 +180,19 @@ describe('atomic historical custody settlement, synthetic only', () => {
       differences: { 1020: 0, 1010: 0, 1300: 0 } });
     expect(founding.plan.entries.filter(entry => entry.type === 'document')).toEqual([]);
     expect(founding.plan.vatTouching).toEqual([]);
+    await financeWorkbench(db, auth, { kind: 'founding', request: { action: 'saveSettings', revision: 1,
+      cutoffDate: '2026-09-30', threshold: 500, confirm: true,
+      actuals: { bankOpen: true, bankBalance: 0, cash: 0, custody: [] } } });
+    const earlier = await financeWorkbench(db, auth, { kind: 'founding', request: { action: 'read' } });
+    expect(earlier.plan.settlement.unresolvedCustodyCount).toBe(0);
+    expect(earlier.plan.settlement.status).toBe('balanced');
+    expect(earlier.plan.settlement.timingBridge).toMatchObject({ 1020: 0, 1300: 0 });
     const second = await financeWorkbench(db, auth, save);
     expect(second).toMatchObject({ groupId: result.groupId, replay: true });
     db.rows.get(`posting_locks/custody_deposit__${financeHash('test-row-a').slice(0, 40)}`).consumedHalala = 0;
     expect((await financeWorkbench(db, auth, { action: 'read', kind: 'variable', sourceId })).workflowStage).not.toBe('complete');
+    const stale = await financeWorkbench(db, auth, { kind: 'founding', request: { action: 'read' } });
+    expect(stale.plan.settlement).toMatchObject({ status: 'waiting_custody', unresolvedCustodyCount: 1 });
   });
 
   it('rejects a deposit allocation exceeding the unconsumed row balance atomically', async () => {

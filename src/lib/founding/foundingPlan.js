@@ -193,7 +193,12 @@ export function foundingPlan(input) {
       ...(posted.get(key) || {}) });
   }
 
-  const unresolvedCustody = (input.docs || []).filter(d => d.fundingType === 'employee' && !d.custodySettlementId && !d.protected);
+  // A client-writable marker or status is never proof that the historical
+  // source was settled. Only the server-verified receipt/ledger/lock path may
+  // remove a source from this cutoff guard. A verified later funding date is
+  // the sole exception for an earlier founding cutoff.
+  const unresolvedCustody = (input.docs || []).filter(d => (d.fundingType === 'employee' || d.custodySettlementId)
+    && !d.custodySettled && !d.custodyFundingAfterCutoff);
   const settlement = settlementFor({ settings, book: input.book || {}, entries, posted, closed,
     custodyBridge: input.custodyBridge, unresolvedCustody });
   if (settlement.entry) entries.push(settlement.entry);

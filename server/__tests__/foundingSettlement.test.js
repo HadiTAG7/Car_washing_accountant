@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { financeWorkbench } from '../financeWorkbench.js';
 import { statementLineId, foundingEntryId, ledgerEffects, custodyCutoffBridge } from '../foundingSettlement.js';
-import { financeProblems } from '../../functions/src/financeReview.js';
+import { financeProblems, financeHash, financeSourceHash } from '../../functions/src/financeReview.js';
 import { memoryFinanceDb } from './financeFixtures.js';
 import { foundingSeed as seed, foundingAuth as auth } from './foundingFixture.js';
 
@@ -34,17 +34,30 @@ describe('Hadi current account and founding-period settlement', () => {
     const funding = { id: fundingId, status: 'posted', sourceKind: 'custody_reconciliation',
       custodyAnchorMode: 'independent_historical_tranche', custodyHistoricalSettlementId: groupId,
       entryDate: '2026-10-29', lines: [{ accountId: '1300', debit: 100, credit: 0 }, { accountId: '1020', debit: 0, credit: 100 }] };
-    const expense = { id: expenseId, status: 'posted', custodyHistoricalSettlementId: groupId,
+    const source = { id: 'source', finance_metadata: { fundingType: 'employee', custodyHistoricalSettlementId: groupId } };
+    const expense = { id: expenseId, status: 'posted', sourceType: 'expense', sourceKind: 'variable', sourceId: source.id,
+      sourceSnapshotHash: 'b'.repeat(64), custodyHistoricalSettlementId: groupId,
       originalPaidDate: '2026-10-02', lines: [{ accountId: '5100', debit: 100, credit: 0 }, { accountId: '1300', debit: 0, credit: 100 }] };
     const result = { groupId, fundingJournalId: fundingId, anchorMode: 'independent_historical_tranche',
       journalIds: [fundingId, expenseId], sourceCount: 1, fundedHalala: 10000, consumedHalala: 10000,
-      fundingEvidence: [{ deliveryDate: '2026-09-17', allocatedAmount: 100 }] };
-    const tables = { journal_entries: [funding, expense], finance_workbench_receipts: [{ id: `custody_h_${groupId.slice(0, 40)}`, result }],
-      posting_locks: [{ id: `custody_reconciliation__${groupId}` }] };
+      fundingEvidence: [{ depositRowId: 'test-row', evidenceRef: 'TEST row', deliveryDate: '2026-09-17',
+        depositAmount: 100, allocatedAmount: 100 }] };
+    const tables = { journal_entries: [funding, expense], variable_expenses: [source],
+      finance_workbench_receipts: [{ id: `custody_h_${groupId.slice(0, 40)}`, result,
+        sourceHashes: [{ key: `variable:${source.id}`, before: expense.sourceSnapshotHash, after: financeSourceHash(source) }] }],
+      posting_locks: [{ id: `custody_reconciliation__${groupId}` },
+        { id: `variable__${source.id}`, entryId: expense.id, custodyHistoricalSettlementId: groupId },
+        { id: `custody_deposit__${financeHash('test-row').slice(0, 40)}`, depositRowId: 'test-row',
+          evidenceRef: 'TEST row', deliveryDate: '2026-09-17', depositAmountHalala: 10000, consumedHalala: 10000 }] };
     expect(custodyCutoffBridge(tables, '2026-09-30')).toMatchObject({
       amounts: { 1020: -10000, 1010: 0, 1300: 10000 }, issues: [] });
     expect(custodyCutoffBridge({ ...tables, finance_workbench_receipts: [] }, '2026-09-30').issues).toHaveLength(1);
     expect(custodyCutoffBridge({ ...tables, posting_locks: [] }, '2026-09-30').issues).toHaveLength(1);
+    const legacy = { ...tables, finance_workbench_receipts: [{ id: 'legacy', result: {
+      groupId: 'legacy', anchorMode: 'existing_advance', historicalFundingDate: '2026-09-17',
+      journalIds: [fundingId, expenseId] } }] };
+    expect(custodyCutoffBridge(legacy, '2026-09-30').issues)
+      .toEqual(expect.arrayContaining([expect.stringMatching(/عهدة تاريخية قديمة/)]));
   });
 
   it('keeps employee custody out of direct founding payer and bank-statement decisions', async () => {
@@ -57,6 +70,22 @@ describe('Hadi current account and founding-period settlement', () => {
       { txDate: '2026-09-06', direction: 'debit', amount: 230, description: 'synthetic', reference: '', balance: null, occurrence: 1 },
     ] });
     expect(suggested.rows[0].documents).toEqual([]);
+  });
+
+  it('does not trust a forged settlement marker or posted-looking source fields to release 3200', async () => {
+    const data = seed();
+    data['variable_expenses/v1'].finance_metadata = { fundingType: 'employee', custodyHistoricalSettlementId: 'a'.repeat(64) };
+    data['variable_expenses/v1'].posting_status = 'posted';
+    const db = memoryFinanceDb(data);
+    await call(db, { action: 'saveSettings', revision: 0, cutoffDate: '2026-09-30', threshold: 500,
+      actuals: { bankOpen: true, bankBalance: 0, cash: 0, custody: [] }, confirm: true });
+    const read = await call(db, { action: 'read' });
+    expect(read.plan.settlement).toMatchObject({ status: 'waiting_custody', unresolvedCustodyCount: 1 });
+    db.rows.get('variable_expenses/v1').finance_metadata.fundingType = 'company_bank';
+    expect((await call(db, { action: 'read' })).plan.settlement)
+      .toMatchObject({ status: 'waiting_custody', unresolvedCustodyCount: 1 });
+    await expect(call(db, { action: 'postEntries', reason: 'TEST invalid marker', confirm: true,
+      entries: [{ key: 'settlement:2026-09-30', hash: read.plan.settlement.entry.hash }] })).rejects.toThrow();
   });
 
   it('invalidates an approved founding preview when source or ledger facts change', async () => {

@@ -35,12 +35,17 @@ describe('founding plan', () => {
     expect(before.settlement.status).toBe('waiting_custody');
     expect(before.entries.filter(e => e.type === 'document')).toEqual([]);
     expect(before.updates).toEqual([]);
-    const after = foundingPlan({ ...base, docs: [{ ...source, protected: true, custodySettlementId: 'group' }],
+    const after = foundingPlan({ ...base, docs: [{ ...source, protected: true, custodySettlementId: 'group', custodySettled: true }],
       custodyBridge: { amounts: { 1020: -10000, 1300: 0 }, groups: [{ groupId: 'group' }], issues: [] } });
     expect(after.settlement.status).toBe('balanced');
     expect(after.settlement.bookAfterTimingBridge).toMatchObject({ 1020: 90000, 1300: 0 });
     expect(after.settlement.differences).toMatchObject({ 1020: 0, 1300: 0 });
     expect(after.vatTouching).toEqual([]);
+    const forged = foundingPlan({ ...base, docs: [{ ...source, protected: true, custodySettlementId: 'forged' }] });
+    expect(forged.settlement.status).toBe('waiting_custody');
+    const laterFunding = foundingPlan({ ...base, docs: [{ ...source, date: '2026-10-18', custodyFundingAfterCutoff: true }] });
+    expect(laterFunding.settlement.unresolvedCustodyCount).toBe(0);
+    expect(laterFunding.settlement.status).toBe('proposed');
   });
   it('splits pre-cutoff documents into the four groups by statement, proof and threshold', () => {
     const plan = foundingPlan({ docs: [doc('linked', { amount: 900 }), doc('proof', { hasProof: true }), doc('small', { amount: 499.99 }), doc('big', { amount: 500 }),

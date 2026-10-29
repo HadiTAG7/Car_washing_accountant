@@ -45,6 +45,13 @@ export async function verifyEmployeeAdvanceLink(db, tx, kind, sourceId, row, gro
   ]);
   const advance = advanceSnap.exists ? advanceSnap.data() : null;
   const journal = journalSnap.exists ? journalSnap.data() : null;
+  // Older advances may already have been consumed outside this counter. Only
+  // funding posted with the shared balance initialized by the ledger is safe
+  // to allocate without a separate, audited reconciliation.
+  if (advance && (advance.custody_balance_opened_journal_id !== link.fundingJournalId
+    || !Object.hasOwn(advance, 'custody_expense_used_halala'))) {
+    return { issues: ['العهدة القديمة لم تُطابق مع سجل الاستهلاك المشترك؛ يلزم فحصها قبل تخصيص مصروف.'], proof: null };
+  }
   const fundingLines = journal ? await linesOf(db, tx, link.fundingJournalId, journal) : [];
   const funded = fundingLines.filter(line => String(line.accountId) === '1300')
     .reduce((sum, line) => sum + cents(line.debit || 0) - cents(line.credit || 0), 0);

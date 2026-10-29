@@ -18,7 +18,8 @@ async function capture(db, overrides = {}) {
 }
 function seedAdvance(db, amount = 150) {
   db.rows.set('chart_of_accounts/1300', {});
-  db.rows.set('temporary_expenses/test-advance', { biker_id: 'test-employee', amount, status: 'pending', recovered_amount: 0 });
+  db.rows.set('temporary_expenses/test-advance', { biker_id: 'test-employee', amount, status: 'pending', recovered_amount: 0,
+    custody_expense_used_halala: 0, custody_balance_opened_journal_id: 'test-funding' });
   db.rows.set('journal_entries/test-funding', { status: 'posted', sourceType: 'temporary_expense', sourceId: 'test-advance',
     entryDate: '2026-10-17', lines: [{ accountId: '1300', debit: amount, credit: 0 },
       { accountId: '1010', debit: 0, credit: amount }] });
@@ -32,6 +33,21 @@ function employeeRequest(requestId, amount, kind = 'variable') {
       fundingJournalId: 'test-funding', allocatedAmount: amount } }) };
 }
 describe('finance workbench version-bound review', () => {
+  it('refuses a legacy advance without a verified opening balance even when a funding journal exists', async () => {
+    const db = database();
+    seedAdvance(db);
+    const row = db.rows.get('temporary_expenses/test-advance');
+    db.rows.set('temporary_expenses/test-advance', { biker_id: row.biker_id, amount: row.amount,
+      status: row.status, recovered_amount: row.recovered_amount });
+    const preview = await financeWorkbench(db, auth, { action: 'previewCapture', ...employeeRequest('LEGACY-ADVANCE', 100) });
+    expect(preview.postingPreview.ready).toBe(false);
+    expect(preview.issues.join(' ')).toMatch(/العهدة القديمة لم تُطابق/);
+    db.rows.set('temporary_expenses/test-advance', { ...db.rows.get('temporary_expenses/test-advance'),
+      custody_expense_used_halala: 0, custody_balance_opened_journal_id: 'another-funding' });
+    const mismatched = await financeWorkbench(db, auth, { action: 'previewCapture', ...employeeRequest('MISMATCHED-OPENING', 100) });
+    expect(mismatched.postingPreview.ready).toBe(false);
+    expect(mismatched.issues.join(' ')).toMatch(/العهدة القديمة لم تُطابق/);
+  });
   it('separates owner statement from a matched and allocated 1300 posting preview', async () => {
     const db = database();
     seedAdvance(db);

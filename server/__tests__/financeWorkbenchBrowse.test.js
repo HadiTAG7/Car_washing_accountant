@@ -14,7 +14,8 @@ describe('complete workbench browse and existing bulk approval', () => {
   it('keeps browse, read and preview aligned for a funded advance and nested over-allocation', async () => {
     const db = database();
     db.rows.set('chart_of_accounts/1300', {});
-    db.rows.set('temporary_expenses/test-advance', { biker_id: 'test-worker', amount: 150, status: 'pending', recovered_amount: 0 });
+    db.rows.set('temporary_expenses/test-advance', { biker_id: 'test-worker', amount: 150, status: 'pending', recovered_amount: 0,
+      custody_expense_used_halala: 0, custody_balance_opened_journal_id: 'test-funding' });
     db.rows.set('journal_entries/test-funding', { status: 'posted', sourceType: 'temporary_expense', sourceId: 'test-advance',
       entryDate: '2026-10-17', lines: [{ accountId: '1300', debit: 150, credit: 0 }, { accountId: '1010', debit: 0, credit: 150 }] });
     const linked = (amount, key) => ({ amount, quantity: 1, paymentStatus: 'paid', paymentMethod: 'card',

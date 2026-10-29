@@ -46,17 +46,25 @@ describe.skipIf(!enabled)('finance real Firestore workflow — isolated demo onl
   afterAll(async () => { if (rules) await rules.cleanup(); if (db) await db.terminate(); if (app) await deleteApp(app); });
   const call = input => financeWorkbench(db, auth, input);
 
-  it('keeps the custody consumption counter server-owned while allowing a legacy advance without it', async () => {
+  it('keeps the custody balance and provenance server-owned while allowing a legacy record without eligibility', async () => {
     const client = rules.authenticatedContext('operator').firestore();
     const row = { biker_id: 'test-worker', amount: 150, status: 'pending', spent_date: '2026-10-17' };
     await assertFails(setDoc(doc(client, 'temporary_expenses', 'forged'), { ...row, custody_expense_used_halala: 10000 }));
+    await assertFails(setDoc(doc(client, 'temporary_expenses', 'forged-marker'), { ...row, custody_balance_opened_journal_id: 'forged' }));
     await assertSucceeds(setDoc(doc(client, 'temporary_expenses', 'legacy'), row));
     await assertFails(setDoc(doc(client, 'temporary_expenses', 'legacy'), { custody_expense_used_halala: 10000 }, { merge: true }));
+    await assertFails(setDoc(doc(client, 'temporary_expenses', 'legacy'), { custody_balance_opened_journal_id: 'forged' }, { merge: true }));
+    await db.doc('temporary_expenses/new-funding').set({ ...row, payment_method: 'bank' });
+    const posted = await postSource(db, FieldValue, { kind: 'temporary_expense', sourceId: 'new-funding' }, { userId: auth.uid });
+    expect((await db.doc('temporary_expenses/new-funding').get()).data()).toMatchObject({
+      custody_expense_used_halala: 0, custody_balance_opened_journal_id: posted.entryId,
+    });
   }, 120000);
 
   it('posts only a matched employee advance, then recovers the remaining balance and reverses in order', async () => {
     await db.doc('temporary_expenses/test-advance').set({ biker_id: 'test-worker', amount: 150, status: 'pending',
-      recovered_amount: 0, spent_date: '2026-10-17' });
+      recovered_amount: 0, spent_date: '2026-10-17', custody_expense_used_halala: 0,
+      custody_balance_opened_journal_id: 'test-funding' });
     const funding = { status: 'posted', sourceType: 'temporary_expense', sourceId: 'test-advance', entryDate: '2026-10-17',
       lines: [{ accountId: '1300', debit: 150, credit: 0 }, { accountId: '1010', debit: 0, credit: 150 }] };
     await db.doc('journal_entries/test-funding').set(funding);
@@ -105,7 +113,8 @@ describe.skipIf(!enabled)('finance real Firestore workflow — isolated demo onl
   it('uses the same advance balance when payroll precedes a linked expense, then reverses both safely', async () => {
     await db.doc('bikers/test-worker').set({ name: 'TEST worker', salary: 500, start_date: '2026-10-01' });
     await db.doc('temporary_expenses/test-advance').set({ biker_id: 'test-worker', amount: 150, status: 'pending',
-      recovered_amount: 0, spent_date: '2026-10-17' });
+      recovered_amount: 0, spent_date: '2026-10-17', custody_expense_used_halala: 0,
+      custody_balance_opened_journal_id: 'test-funding' });
     await db.doc('journal_entries/test-funding').set({ status: 'posted', sourceType: 'temporary_expense',
       sourceId: 'test-advance', entryDate: '2026-10-17', lines: [
         { accountId: '1300', debit: 150, credit: 0 }, { accountId: '1020', debit: 0, credit: 150 },
@@ -145,7 +154,8 @@ describe.skipIf(!enabled)('finance real Firestore workflow — isolated demo onl
   it('commits at most one of two competing expense and payroll consumers', async () => {
     await db.doc('bikers/test-worker').set({ name: 'TEST worker', salary: 500, start_date: '2026-10-01' });
     await db.doc('temporary_expenses/test-advance').set({ biker_id: 'test-worker', amount: 150, status: 'pending',
-      recovered_amount: 0, spent_date: '2026-10-17' });
+      recovered_amount: 0, spent_date: '2026-10-17', custody_expense_used_halala: 0,
+      custody_balance_opened_journal_id: 'test-funding' });
     await db.doc('journal_entries/test-funding').set({ status: 'posted', sourceType: 'temporary_expense',
       sourceId: 'test-advance', entryDate: '2026-10-17', lines: [
         { accountId: '1300', debit: 150, credit: 0 }, { accountId: '1020', debit: 0, credit: 150 },

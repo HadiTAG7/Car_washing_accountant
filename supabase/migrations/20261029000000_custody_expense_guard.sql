@@ -6,11 +6,13 @@ language plpgsql set search_path = '' as $$
 begin
   if current_user <> 'authenticated' then return new; end if;
   if tg_op = 'INSERT' then
-    if app.doc_temporary_expenses(new) ? 'custody_expense_used_halala' then
+    if app.doc_temporary_expenses(new) ?| array['custody_expense_used_halala', 'custody_balance_opened_journal_id'] then
       raise exception 'استهلاك العهدة يكتبه دفتر الأستاذ فقط' using errcode = '42501';
     end if;
   elsif (app.doc_temporary_expenses(old) -> 'custody_expense_used_halala')
-      is distinct from (app.doc_temporary_expenses(new) -> 'custody_expense_used_halala') then
+      is distinct from (app.doc_temporary_expenses(new) -> 'custody_expense_used_halala')
+      or (app.doc_temporary_expenses(old) -> 'custody_balance_opened_journal_id')
+      is distinct from (app.doc_temporary_expenses(new) -> 'custody_balance_opened_journal_id') then
     raise exception 'استهلاك العهدة يكتبه دفتر الأستاذ فقط' using errcode = '42501';
   end if;
   return new;

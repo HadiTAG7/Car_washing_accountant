@@ -234,6 +234,10 @@ export async function postSource(db, FieldValue, { kind, sourceId }, { userId = 
       throw new LedgerError('السجل المصدر غير موجود.', { code: 'not-found' });
     }
     const row = sourceSnap.data();
+    if (kind === 'temporary_expense' && (row.custody_expense_used_halala != null
+      || row.custody_balance_opened_journal_id != null)) {
+      throw new LedgerError('العهدة تحمل رصيد استهلاك أو افتتاحًا سابقًا؛ يلزم فحصها قبل تمويل جديد.');
+    }
     if (financeAuthorizer) await financeAuthorizer(tx);
     if (adapter.approved && !adapter.approved(row)) {
       // نصٌّ أو دالة: معظم المُحوِّلات لها سببٌ واحد ثابت، وغسلةُ سويتر لها
@@ -427,6 +431,10 @@ export async function postSource(db, FieldValue, { kind, sourceId }, { userId = 
       { merge: true });
     if (advanceConsumption) tx.update(db.collection('temporary_expenses').doc(advanceConsumption.advanceId), {
       custody_expense_used_halala: advanceConsumption.usedAfterHalala,
+    });
+    if (kind === 'temporary_expense') tx.update(sourceRef, {
+      custody_expense_used_halala: 0,
+      custody_balance_opened_journal_id: entryRef.id,
     });
     tx.set(db.collection(COL.AUDIT).doc(), auditRecord({
       action: 'post', collectionName: COL.ENTRIES, documentId: entryRef.id, userId,

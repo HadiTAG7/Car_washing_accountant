@@ -363,11 +363,11 @@ export default function VatRecoveryPage() {
         {/* ── مطابقة التقرير بالدفاتر ────────────────────────────
             Both sides get the same treatment: a figure the report claims but
             the ledger has never seen is a gap worth naming, not averaging. */}
-        {(report.outputMismatch !== 0 || report.inputMismatch !== 0) && (
+        {(report.outputMismatch !== 0 || report.inputMismatch !== 0 || report.documentedPriorClaimTiming !== 0) && (
           <div role="alert" className="flex items-start gap-2.5 bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/30 text-amber-800 dark:text-amber-300 text-xs px-4 py-3 rounded-control leading-relaxed">
             <AlertTriangle size={16} className="shrink-0 mt-0.5" />
             <div className="min-w-0">
-              <p className="font-bold">التقرير لا يطابق الدفاتر — عمليات لم تُرحَّل بعد.</p>
+              <p className="font-bold">فروق التقرير والدفاتر تحتاج مطابقة فترة وسبب.</p>
               {report.outputMismatch !== 0 && (
                 <p className="mt-1">
                   <span className="font-semibold">المخرجات:</span> من الغسلات{' '}
@@ -388,7 +388,19 @@ export default function VatRecoveryPage() {
                   <strong className="tabular-nums">{formatCurrencyPrecise(report.inputMismatch)}</strong>
                 </p>
               )}
-              <p className="mt-1">شغّل «إقفال الفترة ← فحص غير المُرحّل ← ترحيل» لتتطابق الأرقام.</p>
+              {report.documentedPriorClaimTiming !== 0 && (
+                <p className="mt-1">
+                  فرق توقيت موثق لمطالبة مقدمة سابقًا:{' '}
+                  <strong className="tabular-nums">{formatCurrencyPrecise(report.documentedPriorClaimTiming)}</strong>{' '}
+                  · المتبقي غير المفسر:{' '}
+                  <strong className="tabular-nums">{report.unexplainedInputMismatch == null
+                    ? 'لا تتوفر حركة مدخلات دفترية كافية' : formatCurrencyPrecise(report.unexplainedInputMismatch)}</strong>
+                  . لا تنشئ مطالبة جديدة عن هذا الفرق.
+                </p>
+              )}
+              {(report.outputMismatch !== 0 || (report.unexplainedInputMismatch != null && report.unexplainedInputMismatch !== 0)) && (
+                <p className="mt-1">افحص المصادر والقيود والفترة قبل أي إقفال أو ترحيل إضافي.</p>
+              )}
             </div>
           </div>
         )}

@@ -18,7 +18,7 @@ export const journalMatchesFinanceSource = (kind, entry) => entry.sourceKind
   ? entry.sourceKind === kind : !entry.sourceType || entry.sourceType === 'expense';
 const realDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
   && Number.isFinite(Date.parse(`${value}T12:00:00Z`)) && new Date(`${value}T12:00:00Z`).toISOString().slice(0, 10) === value;
-export function financeProblems(kind, row, sourceId = null) {
+function financeProblemsCore(kind, row, sourceId, checkEmployeeLink) {
   const spec = FINANCE_KINDS[kind], issues = [];
   if (!spec) return ['نوع السجل ليس مصروفًا مؤهلًا لهذا المسار.'];
   issues.push(...printedDiscountSourceProblems(kind, sourceId, row));
@@ -45,7 +45,7 @@ export function financeProblems(kind, row, sourceId = null) {
   const types = { company_cash: ['cash'], company_bank: ['card', 'transfer'], vendor_liability: ['credit'], employee: ['cash', 'card', 'transfer'] };
   if (!types[meta?.fundingType]) issues.push('الحساب المقابل لهذا التمويل غير محسوم؛ لا يفترض الصندوق أو البنك.');
   else if (!types[meta.fundingType].includes(row.payment_method)) issues.push('طريقة الدفع تتعارض مع التمويل المثبت.');
-  issues.push(...employeeAdvanceLinkProblems(meta));
+  if (checkEmployeeLink) issues.push(...employeeAdvanceLinkProblems(meta));
   if ((meta?.fundingType === 'vendor_liability') !== (row.payment_status === 'unpaid')) issues.push('حالة السداد لا تطابق الذمة أو التمويل.');
   if (typeof row.is_tax_invoice !== 'boolean' || typeof row.vat_deductible !== 'boolean') issues.push('المعالجة الضريبية غير محسومة.');
   if (!row.is_tax_invoice && row.vat_deductible !== false) issues.push('المستند غير الضريبي لا يثبت مطالبة مدخلات.');
@@ -57,6 +57,12 @@ export function financeProblems(kind, row, sourceId = null) {
     || (!taxAmountKnown && !taxRateKnown && !reviewedDatedPolicy) || !['inclusive', 'exclusive'].includes(row.price_mode))) issues.push('حقول الفاتورة الضريبية غير مكتملة.');
   return issues;
 }
+export const financeProblems = (kind, row, sourceId = null) => financeProblemsCore(kind, row, sourceId, true);
+// The historical settlement verifies funding inside its own atomic plan.
+// This checks the same source, invoice, and tax facts without inventing a
+// version-1 advance link that was never present on the source.
+export const financeHistoricalSourceProblems = (kind, row, sourceId = null) =>
+  financeProblemsCore(kind, row, sourceId, false);
 export class FinanceReviewError extends Error {
   constructor(message, code = 'failed-precondition') { super(message); this.code = code; }
 }

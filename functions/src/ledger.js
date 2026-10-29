@@ -250,7 +250,7 @@ export async function postSource(db, FieldValue, { kind, sourceId }, { userId = 
         { code: 'already-exists' },
       );
     }
-    if (kind === 'temporary_expense' && (row.custody_expense_used_halala != null
+    if (kind === 'temporary_expense' && (row.custody_historical_partial_hold === true || row.custody_expense_used_halala != null
       || row.custody_balance_opened_journal_id != null)) {
       throw new LedgerError('العهدة تحمل رصيد استهلاك أو افتتاحًا سابقًا؛ يلزم فحصها قبل تمويل جديد.');
     }
@@ -497,6 +497,9 @@ export async function reverseEntry(db, FieldValue, entryId, { entryDate, descrip
 
     if (!originalSnap.exists) throw new LedgerError('القيد غير موجود.', { code: 'not-found' });
     const original = originalSnap.data();
+    if (original.custodyHistoricalSettlementId) {
+      throw new LedgerError('قيد التسوية التاريخية لا يُعكس منفردًا؛ استخدم عكس المجموعة المنسق.');
+    }
 
     // The lock is read INSIDE the transaction, so the decision to release it
     // is made on the same snapshot as everything else.

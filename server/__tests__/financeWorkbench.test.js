@@ -33,6 +33,26 @@ function employeeRequest(requestId, amount, kind = 'variable') {
       fundingJournalId: 'test-funding', allocatedAmount: amount } }) };
 }
 describe('finance workbench version-bound review', () => {
+  it('holds legacy partial custody against payroll, recovery and individual reversal', async () => {
+    const db = database();
+    db.rows.set('chart_of_accounts/1300', {});
+    const advance = { biker_id: 'test-employee', amount: 150, status: 'recovered',
+      recovered_date: '2026-10-20', recovered_amount: 0, custody_historical_partial_hold: true };
+    db.rows.set('temporary_expenses/held-advance', advance);
+    expect(() => calculatePayrollPreview({ periodKey: '2026-10',
+      bikers: [{ id: 'test-employee', name: 'TEST worker', salary: 500, start_date: '2026-10-01' }],
+      advances: [{ id: 'held-advance', ...advance, spent_date: '2026-10-17' }] }))
+      .toThrow(/تسوية جزئية/);
+    await expect(postSource(db, FieldValue, { kind: 'recovery', sourceId: 'held-advance' },
+      { userId: auth.uid })).rejects.toThrow(/تسوية جزئية/);
+    db.rows.set('journal_entries/held-settlement', { status: 'posted', sourceType: 'expense',
+      sourceId: 'held-invoice', custodyHistoricalSettlementId: 'TEST-BATCH',
+      entryDate: '2026-10-20', lines: [
+        { accountId: '5100', debit: 100, credit: 0 }, { accountId: '1300', debit: 0, credit: 100 },
+      ] });
+    await expect(reverseEntry(db, FieldValue, 'held-settlement',
+      { entryDate: '2026-10-21', userId: auth.uid })).rejects.toThrow(/لا يُعكس منفردًا/);
+  });
   it('shows a dated, source-backed expense effect without posting it', async () => {
     const db = database();
     db.rows.set('temporary_expenses/legacy-preview', { biker_id: 'test-employee', amount: 150,
@@ -114,7 +134,7 @@ describe('finance workbench version-bound review', () => {
     expect(beforeInvoice.readyForPosting).toBe(false);
     db.rows.set('journal_entries/old-funding', { status: 'posted', sourceType: 'temporary_expense',
       sourceId: 'old-custody', entryDate: '2026-10-17', lines: [
-        { accountId: '1300', debit: 150, credit: 0 }, { accountId: '1020', debit: 0, credit: 150 },
+        { accountId: '1300', debit: 100, credit: 0 }, { accountId: '1020', debit: 0, credit: 100 },
       ] });
     const existingFunding = await financeWorkbench(db, auth, { ...input, historicalFundingDate: '2026-10-17',
       evidenceRefs: ['TEST archived transfer'] });
@@ -128,7 +148,7 @@ describe('finance workbench version-bound review', () => {
       allocations: [{ ...input.allocations[0], amount: 151 }] });
     expect(excessive.issues.join(' ')).toMatch(/يساوي التخصيصات بالضبط/);
     await expect(financeWorkbench(db, auth, { ...input, action: 'save' }))
-      .rejects.toThrow(/غير صالح/);
+      .rejects.toThrow(/غير مفعل|غير صالح/);
     expect(db.rows).toEqual(new Map(before));
   });
   it('refuses a legacy advance without a verified opening balance even when a funding journal exists', async () => {

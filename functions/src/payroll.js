@@ -196,6 +196,7 @@ function completedWash(row) {
 }
 
 function outstandingOfAdvance(row) {
+  if (row.custody_historical_partial_hold === true) fail('العهدة التاريخية تحت تسوية جزئية؛ يلزم مطابقة الرصيد قبل خصمها من الراتب.');
   const amount = money(row.amount, 'قيمة السلفة');
   const expenseUsed = custodyExpenseUsedCents(row) / 100;
   if (row.status === 'recovered') return 0;

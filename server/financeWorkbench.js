@@ -11,6 +11,7 @@ import { financeReadSnapshot } from './financeReadSnapshot.js';
 import { filterWorkbenchItems, hasPaymentConflict, documentDay } from '../src/lib/financeWorkbenchView.js';
 import { cashBankCorrection } from './cashBankCorrection.js';
 import { previewCustodyHistoricalReconciliation } from './custodyHistoricalReconciliation.js';
+import { saveCustodyHistoricalSettlement } from './custodyHistoricalSettlement.js';
 import {cashResidualCorrection} from './cashResidualCorrection.js';
 import { payrollCashFunding } from './payrollCashFunding.js';
 import { invoiceLinesShapeIssues } from '../functions/src/financeInvoiceLines.js';
@@ -164,6 +165,45 @@ async function postingPreview(db, tx, kind, sourceId, row, context = null) {
       ? financeHash({ built, sourceContextHash: sourceContext.contextHash }) : financeHash(built) };
   } catch (error) { return { ready: false, issues: [error.message], entry: null, lines: [] }; }
 }
+async function historicalSettlementProof(db, tx, kind, sourceId, row, sourceContext) {
+  const groupId = row.finance_metadata?.custodyHistoricalSettlementId;
+  if (!groupId || !/^[a-f0-9]{64}$/.test(groupId)) return null;
+  const receipt = await tx.get(db.collection('finance_workbench_receipts').doc(`custody_h_${groupId.slice(0, 40)}`));
+  if (!receipt.exists) return null;
+  const { result, sourceHashes } = receipt.data();
+  if (result?.groupId !== groupId || !Array.isArray(sourceHashes) || sourceHashes.length !== result.sourceCount
+    || !sourceHashes.some(item => item.key === `${kind}:${sourceId}`
+      && item.sourceContextHash === (sourceContext.contextHash || null)) || sourceContext.issues.length) return null;
+  const [advance, groupLock, ...journals] = await Promise.all([
+    tx.get(db.collection('temporary_expenses').doc(result.advanceId)),
+    tx.get(db.collection('posting_locks').doc(`custody_reconciliation__${groupId}`)),
+    ...result.journalIds.map(id => tx.get(db.collection('journal_entries').doc(id))),
+  ]);
+  if (!advance.exists || advance.data().custody_historical_partial_hold !== true || !groupLock.exists
+    || journals.length !== result.sourceCount + 1 || journals.some(doc => !doc.exists
+      || doc.data().status !== 'posted' || doc.data().custodyHistoricalSettlementId !== groupId)) return null;
+  const consumed = journals.reduce((sum, doc) => sum + (doc.data().lines || [])
+    .filter(line => String(line.accountId) === '1300')
+    .reduce((n, line) => n + Math.round(Number(line.credit || 0) * 100) - Math.round(Number(line.debit || 0) * 100), 0), 0);
+  if (consumed !== 0 || result.fundedHalala !== result.consumedHalala) return null;
+  for (const item of sourceHashes) {
+    const [sourceKind, ...idParts] = item.key.split(':');
+    const id = idParts.join(':');
+    if (!FINANCE_KINDS[sourceKind]) return null;
+    const [source, lock] = await Promise.all([
+      tx.get(db.collection(FINANCE_KINDS[sourceKind].collection).doc(id)),
+      tx.get(db.collection('posting_locks').doc(`${sourceKind}__${id}`)),
+    ]);
+    if (!source.exists || financeSourceHash(source.data()) !== item.after
+      || source.data().finance_metadata?.custodyHistoricalSettlementId !== groupId
+      || !lock.exists || lock.data().custodyHistoricalSettlementId !== groupId) return null;
+    const posted = journals.find(doc => doc.id === lock.data().entryId);
+    if (!posted || posted.data().sourceKind !== sourceKind || posted.data().sourceId !== id
+      || posted.data().sourceSnapshotHash !== item.before) return null;
+  }
+  return { groupId, advanceId: result.advanceId, fundingJournalId: result.fundingJournalId,
+    receiptVerified: true, ownerStatementIsBankReconciliation: false };
+}
 function publicRow(kind, sourceId, row, state, preview) {
   const approved = Boolean(state.approved && preview.ready && state.review?.postingHash === preview.postingHash);
   return { kind, sourceId, row, ...state, approved,
@@ -172,7 +212,9 @@ function publicRow(kind, sourceId, row, state, preview) {
 }
 async function workflowDocument(db, tx, kind, sourceId, row, currentState = null) {
   const state = currentState || await readState(db, tx, kind, sourceId, row);
-  const preview = await postingPreview(db, tx, kind, sourceId, row, state.sourceContext);
+  const settlementProof = await historicalSettlementProof(db, tx, kind, sourceId, row, state.sourceContext);
+  const preview = settlementProof ? { ready: false, issues: [], entry: null, lines: [], historicalSettlementProof: settlementProof }
+    : await postingPreview(db, tx, kind, sourceId, row, state.sourceContext);
   const detail = publicRow(kind, sourceId, row, state, preview);
   // Reporting the current checks, not replacing or relaxing any write gate.
   const additionalIssues = [];
@@ -185,7 +227,7 @@ async function workflowDocument(db, tx, kind, sourceId, row, currentState = null
   const reversed = postingHistory.reversed.length > 0;
   const posted = postingHistory.active.length > 0;
   const evidence = row.finance_metadata || {};
-  const paymentProven = Boolean(row.payment_status === 'paid' && isRealDate(row.paid_date)
+  const paymentProven = Boolean(settlementProof && row.payment_status === 'paid' && isRealDate(row.paid_date)) || Boolean(row.payment_status === 'paid' && isRealDate(row.paid_date)
     && typeof evidence.fundingReference === 'string' && Boolean(evidence.fundingReference.trim())
     && Array.isArray(evidence.evidenceRefs) && evidence.evidenceRefs.length > 0 && evidence.evidenceRefs.every(ref => typeof ref === 'string' && ref.trim())
     && ((evidence.fundingType === 'company_cash' && row.payment_method === 'cash')
@@ -193,9 +235,10 @@ async function workflowDocument(db, tx, kind, sourceId, row, currentState = null
       || (evidence.fundingType === 'employee' && preview.ready && preview.employeeAdvanceProof && ['cash', 'transfer', 'card'].includes(row.payment_method))));
   const safeUnposted = !state.protectedSource && !state.closed && preview.ready && !additionalIssues.length && !detail.issues.length;
   const correctedNeedsReview = reversed && (detail.issues.length > 0 || postingHistory.issues.length > 0 || !paymentProven);
-  const workflowStage = posted ? correctedNeedsReview ? 'posted_review' : paymentProven ? 'complete' : 'posted_unproven'
+  const workflowStage = posted ? settlementProof ? 'complete' : correctedNeedsReview ? 'posted_review' : paymentProven ? 'complete' : 'posted_unproven'
     : safeUnposted ? detail.approved ? 'approved' : 'ready' : 'incomplete';
   const result = { ...detail, issues: [...detail.issues, ...additionalIssues, ...postingHistory.issues], workflowStage, postingHistory,
+    historicalSettlementProof: settlementProof,
     approvalReady: safeUnposted && !detail.approved && !detail.issues.length,
     postingReady: safeUnposted && detail.approved && !detail.issues.length,
     paymentProven, paymentConflict: hasPaymentConflict(row),
@@ -207,7 +250,8 @@ async function workflowDocument(db, tx, kind, sourceId, row, currentState = null
 }
 async function browseDocuments(db) {
   const names = [...Object.values(FINANCE_KINDS).flatMap(spec => [spec.collection, spec.parent || spec.category]),
-    'temporary_expenses', 'journal_entries', 'journal_lines', 'posting_locks', 'finance_reviews', 'accounting_periods', 'app_settings', 'chart_of_accounts'];
+    'temporary_expenses', 'journal_entries', 'journal_lines', 'posting_locks', 'finance_reviews', 'finance_workbench_receipts',
+    'accounting_periods', 'app_settings', 'chart_of_accounts'];
   const snapshot = await financeReadSnapshot(db, names);
   const tx = { get: reference => reference.get() };
   const items = [];
@@ -228,7 +272,8 @@ async function browseDocuments(db) {
 }
 export async function financeWorkbench(db, auth, input) {
   await adminOnly(db, auth);
-  if (input?.kind === 'custody_reconciliation') return previewCustodyHistoricalReconciliation(db, input);
+  if (input?.kind === 'custody_reconciliation') return input?.action === 'save'
+    ? saveCustodyHistoricalSettlement(db, auth, input) : previewCustodyHistoricalReconciliation(db, input);
   if(input?.kind==='cash_bank_correction')return cashBankCorrection(db,auth,input);
   if(input?.kind==='cash_residual_correction')return cashResidualCorrection(db,auth,input);
   if(input?.kind==='payroll_cash_funding')return payrollCashFunding(db,auth,input);

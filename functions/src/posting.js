@@ -167,7 +167,7 @@ export function purchaseFieldsOf(kind, row) {
  *
  * كل ما يخص الضريبة من `resolvePurchaseTax`.
  */
-function buildExpense(kind, row, id, { policyAt = null, recordDate = null } = {}) {
+function buildExpense(kind, row, id, { policyAt = null, recordDate = null, historicalReconciliation = null } = {}) {
   // The SAME date the poster resolved the policy from. Computing it twice let
   // the two drift — the voucher adapter read `due_date` while the builder read
   // `dueDate` — so an entry could be dated one day and taxed under another.
@@ -219,7 +219,12 @@ function buildExpense(kind, row, id, { policyAt = null, recordDate = null } = {}
     });
   }
   const employeeAdvance = kind !== 'voucher' && row.finance_metadata?.fundingType === 'employee';
-  if (employeeAdvance && !row.finance_metadata?.employeeAdvanceLink) throw new Error('ربط عهدة الموظف غير مكتمل.');
+  const reconciled = historicalReconciliation?.verified === true
+    && historicalReconciliation.sourceId === id
+    && historicalReconciliation.kind === kind
+    && historicalReconciliation.amountHalala === Math.round(tax.gross * 100);
+  if (employeeAdvance && !row.finance_metadata?.employeeAdvanceLink && !reconciled)
+    throw new Error('ربط عهدة الموظف غير مكتمل.');
   const settlementAccount = employeeAdvance ? ACC.EMPLOYEE_ADVANCE : settlementForPurchase(method, paid);
   lines.push({
     accountId: split ? ACC.PAYABLE : settlementAccount,
@@ -424,6 +429,7 @@ export const ADAPTERS = {
     approved: (r) => r.status === 'recovered' && Boolean(r.recovered_date) && !r.payroll_lock_id,
     notApproved: 'العهدة لم تُسترد بعد.',
     build: (row, id) => {
+      if (row.custody_historical_partial_hold === true) throw new Error('العهدة التاريخية تحت تسوية جزئية؛ لا يُرحّل استرداد منفرد.');
       const recovered = Number(row.recovered_amount || 0);
       const expenseUsed = custodyExpenseUsedCents(row);
       if (!Number.isFinite(recovered) || recovered < 0 || Math.abs(recovered * 100 - Math.round(recovered * 100)) > 1e-6

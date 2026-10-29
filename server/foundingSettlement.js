@@ -287,15 +287,20 @@ export function foundingInputs(t) {
 async function planOf(db, tx, t) {
   const input = foundingInputs(t);
   const readTx = tx || { get: ref => ref.get() };
+  const groupProofs = new Map();
+  const receipts = new Map(t.finance_workbench_receipts.map(item => [item.id, item]));
   for (const doc of input.docs.filter(d => d.fundingType === 'employee' || d.custodySettlementId)) {
     const row = t[FINANCE_KINDS[doc.kind].collection].find(source => source.id === doc.sourceId);
     if (!row) continue;
     if (doc.custodySettlementId) {
       const context = await financeSourceEvidence(db, readTx, doc.kind, doc.sourceId, row);
-      const proof = await historicalSettlementProof(db, readTx, doc.kind, doc.sourceId, row, context);
-      if (proof) {
+      const receipt = receipts.get(`custody_h_${doc.custodySettlementId.slice(0, 40)}`);
+      if (!groupProofs.has(doc.custodySettlementId)) groupProofs.set(doc.custodySettlementId,
+        await historicalSettlementProof(db, readTx, doc.kind, doc.sourceId, row, context));
+      const proof = groupProofs.get(doc.custodySettlementId);
+      const member = receipt?.sourceHashes?.find(item => item.key === doc.key);
+      if (proof && !context.issues.length && member?.sourceContextHash === (context.contextHash || null)) {
         doc.custodySettled = true;
-        const receipt = t.finance_workbench_receipts.find(item => item.id === `custody_h_${proof.groupId.slice(0, 40)}`);
         const funding = receipt?.result?.fundingEvidence;
         doc.custodyFundingAfterCutoff = Array.isArray(funding) && funding.length > 0
           && funding.every(item => isRealDate(item.deliveryDate) && item.deliveryDate > input.settings.cutoffDate);

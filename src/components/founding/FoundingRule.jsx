@@ -119,7 +119,7 @@ export function StatementComparison({ plan, names }) {
       <tbody>
         <tr><th scope="row">مستندات دفعتها (بالقاعدة أو الكشف أو قرارك)</th><td>{money(c.paid)}</td></tr>
         <tr><th scope="row">تحويلات بينك وبين حساب الشركة (صافي)</th><td>{money(c.transfers)}</td></tr>
-        <tr><th scope="row">دفعات شركاء وصلتك</th><td>−{money(c.received)}</td></tr>
+        <tr><th scope="row">دفعات شركاء وصلتك</th><td>{money(-c.received)}</td></tr>
         <tr><th scope="row">حسب المستندات</th><td><strong>{money(c.byDocuments)}</strong> · {owed(c.byDocuments)}</td></tr>
         <tr><th scope="row">سطور كشفك المعلّمة ({c.statementLines})</th><td>خرج {money(c.statementOut)} − دخل {money(c.statementIn)} = <strong>{money(c.byStatement)}</strong></td></tr>
         <tr><th scope="row">الفرق</th><td><strong>{money(c.difference)}</strong></td></tr>

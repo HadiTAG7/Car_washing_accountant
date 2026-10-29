@@ -1,8 +1,21 @@
 import { describe, it, expect } from 'vitest';
 import { makeVerifiedSourceBatches, makeN8nCloudSync } from '../../scripts/generate-n8n-cloud-sync.mjs';
+import { packSspSource } from '../../scripts/ssp-cloud-collector.mjs';
 const source = (count=1) => ({ coverage:{rangeFrom:'2026-10-28',rangeTo:'2026-10-28',extractedAt:'2026-10-29T00:00:00+03:00',pageCount:12,pagesFetched:12,recordCount:count,isComplete:true,modules:{individual:'complete',corporate:'complete'},gaps:[],sourceUrl:'https://ssp-portal.sweater.sa/bookings'},
   records:Array.from({length:count},(_,i)=>({sspBookingId:`S-${990000+i}`,bookingKind:'individual',serviceDate:'2026-10-28',serviceType:'interior_exterior_wash',rawStatus:'Collecting Payment',driverExternalId:'2001',sourceUrl:'https://ssp-portal.sweater.sa/bookings?page=1&fromDate=2026-10-28&toDate=2026-10-28'})) });
 describe('verified cloud batch boundary', () => {
+  it('round-trips a full week below the cloud result limit without losing optional or null facts', () => {
+    const data=source(350);
+    data.records.forEach((r,i)=>Object.assign(r,{arrivedAt:`2026-10-28T${String(i%24).padStart(2,'0')}:00:00+03:00`,startedAt:`2026-10-28T${String(i%24).padStart(2,'0')}:01:00+03:00`,completedAt:i%10?`2026-10-28T${String(i%24).padStart(2,'0')}:15:00+03:00`:null,platformAmount:20,notes:'Displayed event times have minute precision; browser timezone fixed to Asia/Riyadh. Classification follows the owner rule.'}));
+    const packed=packSspSource(data);
+    expect(Buffer.byteLength(JSON.stringify(data))).toBeGreaterThan(65536);
+    expect(Buffer.byteLength(JSON.stringify(packed))).toBeLessThan(64000);
+    expect(makeVerifiedSourceBatches(packed,'week',false)).toEqual(makeVerifiedSourceBatches(data,'week',false));
+    const sandbox=new Function('URL','source',`return (${makeVerifiedSourceBatches.toString()})(source,'week',false);`);
+    expect(sandbox(undefined,packed)).toEqual(makeVerifiedSourceBatches(data,'week',false));
+    packed.columns[0].indices[0]=99999;
+    expect(()=>makeVerifiedSourceBatches(packed,'week',false)).toThrow('Invalid source transport index');
+  });
   it('splits a full source result into stable bounded run IDs without exporting worker data', () => {
     const data=source(205), batches=makeVerifiedSourceBatches(data,'execution-1',false);
     expect(batches.map(i=>i.json.payload.records.length)).toEqual([100,100,5]);

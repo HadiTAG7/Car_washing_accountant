@@ -8,6 +8,30 @@ import { calculatePayrollPreview } from '../src/payroll.js';
 import { syncPayload, syncDb, syncFV, syncRequest } from './helpers/sweaterOperationsFixture.js';
 const save = async (db, payload) => saveOperations(db, syncFV, syncRequest(payload, await previewOperations(db, payload)), 'sweater-browser-agent');
 
+describe('cloud source worker matching without exporting worker profiles', () => {
+  it('reuses one established source ID link when the collector supplies no worker map', async () => {
+    const db = syncDb(), payload = syncPayload();
+    payload.workerLinks = {};
+    db.rows.set('washes/older-established-wash', { driver_external_id: 'driver-1', biker_id: 'worker-1', ssp_booking_id: 'B-older' });
+    await save(db, payload);
+    expect(db.rows.get('sweater_bookings/C-990001').operationalWorkerId).toBe('worker-1');
+    expect(await operationsStatus(db, payload)).toMatchObject({ verified: true });
+  });
+  it.each(['unknown', 'conflicting'])('keeps %s source ID links for review', async kind => {
+    const db = syncDb(), payload = syncPayload();
+    payload.workerLinks = {};
+    if (kind === 'conflicting') {
+      for (const id of ['worker-1', 'worker-2']) db.rows.set(`washes/older-${id}`, {
+        driver_external_id: 'driver-1', biker_id: id, ssp_booking_id: `B-older-${id}`,
+      });
+    }
+    await save(db, payload);
+    expect(db.rows.get('sweater_bookings/C-990001')).toMatchObject({
+      operationalWorkerId: null, processingStatus: 'needs_review',
+    });
+  });
+});
+
 // Characterize the boundary before implementing the separately authorized
 // execution register. These assertions do NOT mean that v2 creates washes.
 describe('execution-independent-of-collection implementation boundary', () => {

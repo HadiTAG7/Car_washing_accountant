@@ -107,11 +107,15 @@ async function plan(db, payload, read) {
     const existing = documents.find(d => d.collection === COL.BOOKINGS && d.id === id)?.data ?? null;
     const claimRef = db.collection(CLAIMS).doc(bookingDocId(identity));
     const claimSnap = await read(claimRef), claim = claimSnap.exists ? claimSnap.data() : null;
-    const candidate = payload.workerLinks[record.driverExternalId] ?? null;
-    const workerSnap = candidate ? await read(db.collection('bikers').doc(candidate)) : null;
-    const worker = workerSnap?.exists ? workerSnap.data() : null;
     const existingWorkerIds = new Set(documents.filter(d => d.collection === 'washes' && d.data.driver_external_id === record.driverExternalId)
       .map(d => d.data.biker_id).filter(Boolean));
+    // Cloud collectors never need a copy of private worker profiles. Reuse only
+    // an unambiguous, already-established source ID link from existing washes.
+    // New or conflicting driver IDs still require an explicit reviewed link.
+    const candidate = payload.workerLinks[record.driverExternalId]
+      ?? (record.driverExternalId && existingWorkerIds.size === 1 ? [...existingWorkerIds][0] : null);
+    const workerSnap = candidate ? await read(db.collection('bikers').doc(candidate)) : null;
+    const worker = workerSnap?.exists ? workerSnap.data() : null;
     const established = Boolean(record.driverExternalId && worker?.name && (
       worker.driver_external_id === record.driverExternalId || existingWorkerIds.has(candidate)) && existingWorkerIds.size <= 1);
     const protectedRows = related.filter(d => d.collection !== COL.BOOKINGS || d.id !== id);

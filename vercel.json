@@ -12,6 +12,9 @@
     "api/integrations/sweater/operations.js": {
       "maxDuration": 60
     },
+    "api/integrations/sweater/n8n.js": {
+      "maxDuration": 60
+    },
     "api/agent-command-center-ingest.js": {
       "maxDuration": 30
     },

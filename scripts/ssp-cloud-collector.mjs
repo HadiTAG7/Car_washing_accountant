@@ -53,6 +53,26 @@ export function sspSourceRecord(row, details, kind, sourceUrl) {
   };
 }
 
+// Browserbase Functions caps the returned JSON at 64 KiB. Dictionary columns
+// remove repeated keys/notes/URLs without dropping any source facts.
+export function packSspSource(source) {
+  const keys = [...new Set(source.records.flatMap(r => Object.keys(r)))];
+  const columns = keys.map(key => {
+    const values = [], lookup = new Map();
+    const indices = source.records.map(record => {
+      if (!Object.hasOwn(record, key)) return -1;
+      const value = record[key];
+      if (value !== null && !['string','number','boolean'].includes(typeof value)) throw new Error('Invalid source transport value');
+      if (!lookup.has(value)) { lookup.set(value, values.length); values.push(value); }
+      return lookup.get(value);
+    });
+    return {key, values, indices};
+  });
+  const packed = {format:'ssp-columnar-v1', coverage:source.coverage, columns};
+  if (new TextEncoder().encode(JSON.stringify(packed)).length > 64000) throw new Error('Complete SSP transport exceeds the function result limit; no batch was saved');
+  return packed;
+}
+
 export async function collectSspWashes(page, input) {
   const { rangeFrom, rangeTo } = input;
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Riyadh', year:'numeric', month:'2-digit', day:'2-digit' }).format(new Date());

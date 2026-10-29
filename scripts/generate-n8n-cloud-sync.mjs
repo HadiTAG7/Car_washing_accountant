@@ -2,6 +2,22 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 export function makeVerifiedSourceBatches(source, executionId, validationMode) {
+  if (source?.format === 'ssp-columnar-v1') {
+    const count=source.coverage?.recordCount;
+    if (!Number.isInteger(count) || count<0 || count>2000 || !Array.isArray(source.columns) || source.columns.length>14) throw new Error('Invalid source transport');
+    const records=Array.from({length:count},()=>({})), keys=new Set();
+    for (const {key,values,indices} of source.columns) {
+      if (typeof key!=='string' || ['__proto__','constructor','prototype'].includes(key) || keys.has(key)
+        || !Array.isArray(values) || !Array.isArray(indices) || indices.length!==count
+        || values.some(v=>v!==null && !['string','number','boolean'].includes(typeof v))) throw new Error('Invalid source transport column');
+      keys.add(key);
+      indices.forEach((index,i)=>{
+        if (!Number.isInteger(index) || index < -1 || index>=values.length) throw new Error('Invalid source transport index');
+        if(index!==-1)records[i][key]=values[index];
+      });
+    }
+    source={coverage:source.coverage,records};
+  }
   const c=source?.coverage, records=source?.records;
   if (!c || !Array.isArray(records) || c.recordCount !== records.length || c.isComplete !== true
     || c.pagesFetched !== c.pageCount || c.pageCount < 1 || !Array.isArray(c.gaps) || c.gaps.length
@@ -38,7 +54,7 @@ try {
   const context=remote.contexts()[0], page=context.pages()[0];
   const cdp=await context.newCDPSession(page);
   await cdp.send('Emulation.setTimezoneOverride',{timezoneId:'Asia/Riyadh'});
-  return await collectSspWashes(page,{rangeFrom:params.rangeFrom,rangeTo:params.rangeTo});
+  return packSspSource(await collectSspWashes(page,{rangeFrom:params.rangeFrom,rangeTo:params.rangeTo}));
 } finally { await remote.close(); }
 ${core}`;
 }

@@ -62,6 +62,10 @@ suite('source observation promotion in isolated demo transactions', () => {
     expect((await db.doc(`washes/ssp__B-${c.number}`).get()).data()).toMatchObject({
       biker_id: c.toWorker, driver_external_id: c.to, worker_commission_per_wash: 4.5, worker_commission_paid: false,
       collection_status: 'pending', payment_method: null });
+    const actualWash = (await db.doc(`washes/ssp__B-${c.number}`).get()).data();
+    if (c.number === '5677597') expect(actualWash.execution_worker_decision).toMatchObject({
+      humanMessageId: '01a188ad-76a5-7c83-9c0d-dc7483ddc9e4', driverExternalId: '1988', commissionPerWash: 4.5, commissionPaid: false });
+    expect(actualWash.source_assignment_review.assignmentChangedAt).toBeNull();
     expect(await operationsStatus(db, final)).toMatchObject({ verified: true, rawVerified: true, linksVerified: true });
     expect((await save({ ...final, importRunId: 'synthetic-next-source-observation' })).washesCreated).toBe(0);
     for (const col of ['journal_entries', 'payroll_runs', 'sweater_owner_collection_confirmations', 'sweater_collections']) expect((await db.collection(col).get()).empty).toBe(true);

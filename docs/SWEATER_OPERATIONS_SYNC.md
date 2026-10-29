@@ -69,14 +69,23 @@ execution, and its extraction must precede Start. The latest source and final
 execution must agree on the verified actual worker and service. All existing
 wash, financial-link, period and settlement checks still apply.
 
-For 5677597, the current worker was first observed while Washing Started,
-after the actual Start; for 5677684, the current worker was observed On the Way
-before Start. Neither proves the exact assignment-change time. The separate
+For 5677597, Hadi separately and explicitly accepted worker 1988 in human reply
+`01a188ad-76a5-7c83-9c0d-dc7483ddc9e4`, conversation
+`019ff1c9-38ba-7212-8f1a-f26709c33b99`, answering the booking-specific question
+that disclosed missing assignment timing and the 4.50 unpaid commission. This
+worker is credited by that decision, not by claiming SSP proved the Start actor.
+The new wash retains `execution_worker_decision` separately from source facts;
+its complete hash and receipt are verified in readback. Without the exact scoped
+decision, this conflicting first-worker history does not qualify.
+
+For 5677684, the execution worker was observed On the Way before Start. Neither
+case proves the exact assignment-change time. The separate
 `sourceAssignmentReview` receipt records the owner scope and observation cuts,
 with `assignmentChangedAt: null`; it does not rewrite either historical worker
-or the original claim. This is the source's execution-worker attribution under
-the specific owner instruction, not a claim to know an unobserved assignment
-event. Other identities or changed facts remain protected. The general v2 and
+or the original claim. Source attribution and the separate owner worker decision
+retain their different bases; neither claims an unobserved assignment event.
+The general four-booking instruction cannot substitute for the separate
+5677597 worker decision. Other identities or changed facts remain protected. The general v2 and
 administrative reassignment restrictions above remain in force.
 
 The existing 20/3/23 pricing and unpaid 4.50 commission representation are

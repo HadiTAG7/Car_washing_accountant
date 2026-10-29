@@ -178,6 +178,10 @@ async function plan(db, payload, read) {
       _washRef: writeWash ? db.collection('washes').doc(proposedWashId) : null,
       _wash: writeWash ? { ...executionWash(record, candidate, historicalResolution?.public.eligible
         ? historicalResolution.public.acceptance.acceptedSourceName : worker.name),
+        ...(promotion?.public.eligible && promotion.public.sourceAssignmentReview
+          ? { source_assignment_review: promotion.public.sourceAssignmentReview,
+            ...(promotion.public.sourceAssignmentReview.workerDecision
+              ? { execution_worker_decision: promotion.public.sourceAssignmentReview.workerDecision } : {}) } : {}),
         ...(historicalResolution?.public.eligible ? { historical_identity_acceptance: historicalResolution.public.acceptance } : {}) } : null };
     rows.push(row); counts[outcome === 'needs_review' ? 'needsReview' : outcome]++;
     state.push({ id: record.sspBookingId, related, claim, worker, existingWorkerIds: [...existingWorkerIds].sort(),

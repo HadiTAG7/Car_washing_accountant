@@ -83,10 +83,10 @@ describe('atomic historical custody settlement, synthetic only', () => {
     db.rows.get('temporary_expenses/synthetic-advance').recovered_date = '2026-10-29';
     await expect(postSource(db, FieldValue, { kind: 'recovery', sourceId: 'synthetic-advance' },
       { userId: auth.uid })).rejects.toThrow(/تسوية جزئية/);
-    expect(() => calculatePayrollPreview({ periodKey: '2026-10',
+    const payroll = calculatePayrollPreview({ periodKey: '2026-10',
       bikers: [{ id: 'synthetic-worker', name: 'TEST worker', salary: 500, start_date: '2026-10-01' }],
-      advances: [{ id: 'synthetic-advance', ...db.rows.get('temporary_expenses/synthetic-advance') }] }))
-      .toThrow(/تسوية جزئية/);
+      advances: [{ id: 'synthetic-advance', ...db.rows.get('temporary_expenses/synthetic-advance') }] });
+    expect(payroll.lines[0].advanceDeduction).toBe(0);
   });
 
   it('requires an exact server-approved manifest before any financial write', async () => {
@@ -97,18 +97,58 @@ describe('atomic historical custody settlement, synthetic only', () => {
     expect(financial(db)).toEqual(before);
   });
 
+  it('seals an independent tranche for a documented beneficiary without inventing an advance or employee ID', async () => {
+    const { db, sourceId } = await setup();
+    const input = { action: 'preview', kind: 'custody_reconciliation',
+      beneficiary: { name: 'TEST beneficiary', sourceRef: 'TEST identity record' },
+      amount: 100, correctionDate: '2026-10-29', ownerStatementRef: 'TEST owner statement',
+      evidenceRefs: ['TEST deposit row A', 'TEST deposit row B'],
+      fundingEvidence: [
+        { depositRowId: 'test-row-a', evidenceRef: 'TEST deposit row A', deliveryDate: '2026-10-16',
+          depositAmount: 150, allocatedAmount: 60 },
+        { depositRowId: 'test-row-b', evidenceRef: 'TEST deposit row B', deliveryDate: '2026-10-17',
+          depositAmount: 100, allocatedAmount: 40 },
+      ],
+      allocations: [{ kind: 'variable', sourceId, amount: 100,
+        allocationDecisionRef: 'TEST reviewed allocation', fundingParts: [
+          { depositRowId: 'test-row-a', amount: 60 }, { depositRowId: 'test-row-b', amount: 40 },
+        ] }],
+    };
+    const preview = await financeWorkbench(db, auth, input);
+    expect(preview.blockingIssues).toEqual([]);
+    const save = { ...input, action: 'save', previewHash: preview.snapshotHash,
+      ownerApprovalRef: 'TEST exact approval', evidenceReviewRef: 'TEST transfer review',
+      ledgerReviewRef: 'TEST ledger review', reviewedUnrelatedJournalIds: [],
+      priorClaims: [], reason: 'TEST isolated settlement', confirm: true };
+    process.env.CUSTODY_HISTORICAL_APPROVED_MANIFEST_HASH = custodySettlementManifestHash(save);
+    const result = await financeWorkbench(db, auth, save);
+    expect(result).toMatchObject({ saved: true, advanceId: null, employeeId: null,
+      anchorMode: 'independent_historical_tranche', freeAdvanceBalanceHalala: 0 });
+    expect([...db.rows.keys()].filter(key => key.startsWith('temporary_expenses/'))).toEqual(['temporary_expenses/synthetic-advance']);
+    expect((await financeWorkbench(db, auth, { action: 'read', kind: 'variable', sourceId })))
+      .toMatchObject({ workflowStage: 'complete', historicalSettlementProof: { receiptVerified: true } });
+    const second = await financeWorkbench(db, auth, save);
+    expect(second).toMatchObject({ groupId: result.groupId, replay: true });
+    db.rows.get(`posting_locks/custody_deposit__${(await import('../../functions/src/financeReview.js')).financeHash('test-row-a').slice(0, 40)}`).consumedHalala = 0;
+    expect((await financeWorkbench(db, auth, { action: 'read', kind: 'variable', sourceId })).workflowStage).not.toBe('complete');
+  });
+
   it('rejects stale sources, changed requests, overlapping evidence and mismatched VAT evidence without writes', async () => {
     const { db, input, preview, save, sourceId } = await setup();
     const before = financial(db);
-    await expect(financeWorkbench(db, auth, { ...save, previewHash: 'a'.repeat(64) })).rejects.toThrow(/تغيرت مصادر/);
+    await expect(financeWorkbench(db, auth, { ...save, previewHash: 'a'.repeat(64) })).rejects.toThrow(/لم يُعتمد/);
     expect(financial(db)).toEqual(before);
     db.rows.get(`variable_expenses/${sourceId}`).total_variable_cost = 99;
     await expect(financeWorkbench(db, auth, save)).rejects.toThrow(/تغيرت مصادر/);
     expect(financial(db)).toEqual(before);
     db.rows.get(`variable_expenses/${sourceId}`).total_variable_cost = 100;
+    db.rows.get(`variable_expenses/${sourceId}`).description = 'TEST revised business fact';
     const fresh = await financeWorkbench(db, auth, input);
-    const result = await financeWorkbench(db, auth, { ...save, previewHash: fresh.snapshotHash });
-    await expect(financeWorkbench(db, auth, { ...save, previewHash: fresh.snapshotHash,
+    const revised = { ...save, previewHash: fresh.snapshotHash };
+    await expect(financeWorkbench(db, auth, revised)).rejects.toThrow(/لم يُعتمد/);
+    process.env.CUSTODY_HISTORICAL_APPROVED_MANIFEST_HASH = custodySettlementManifestHash(revised);
+    const result = await financeWorkbench(db, auth, revised);
+    await expect(financeWorkbench(db, auth, { ...revised,
       reason: 'Different reviewed decision' })).rejects.toThrow(/طلب مختلف/);
     expect(result.saved).toBe(true);
     const tax = await setup({ tax: true });

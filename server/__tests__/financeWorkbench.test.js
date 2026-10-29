@@ -39,10 +39,10 @@ describe('finance workbench version-bound review', () => {
     const advance = { biker_id: 'test-employee', amount: 150, status: 'recovered',
       recovered_date: '2026-10-20', recovered_amount: 0, custody_historical_partial_hold: true };
     db.rows.set('temporary_expenses/held-advance', advance);
-    expect(() => calculatePayrollPreview({ periodKey: '2026-10',
+    const payroll = calculatePayrollPreview({ periodKey: '2026-10',
       bikers: [{ id: 'test-employee', name: 'TEST worker', salary: 500, start_date: '2026-10-01' }],
-      advances: [{ id: 'held-advance', ...advance, spent_date: '2026-10-17' }] }))
-      .toThrow(/تسوية جزئية/);
+      advances: [{ id: 'held-advance', ...advance, spent_date: '2026-10-17' }] });
+    expect(payroll.lines[0].advanceDeduction).toBe(0);
     await expect(postSource(db, FieldValue, { kind: 'recovery', sourceId: 'held-advance' },
       { userId: auth.uid })).rejects.toThrow(/تسوية جزئية/);
     db.rows.set('journal_entries/held-settlement', { status: 'posted', sourceType: 'expense',

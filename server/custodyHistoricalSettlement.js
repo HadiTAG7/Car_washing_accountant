@@ -3,8 +3,9 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { callerRole } from '../functions/src/handlers.js';
 import { financeHash, financeSourceHash, FINANCE_KINDS, FinanceReviewError } from '../functions/src/financeReview.js';
 import { normalizeEntry, normalizeLines, validateEntry, totalsOf, journalCounterUpdate } from '../functions/src/invariants.js';
-import { custodyHistoricalPlan, custodyReconciliationPreviewSchema } from './custodyHistoricalReconciliation.js';
+import { custodyHistoricalPlan, custodyReconciliationPreviewSchema, custodyGroupId, custodyAnchorId } from './custodyHistoricalReconciliation.js';
 import { periodKeyFor } from '../src/lib/accounting/vatReturn.js';
+import { financeSourceEvidence } from '../functions/src/financeSourceEvidence.js';
 
 const hash = z.string().regex(/^[a-f0-9]{64}$/);
 const ref = z.string().trim().min(3).max(500);
@@ -24,7 +25,7 @@ const cents = amount => Math.round(Number(amount) * 100);
 export function custodySettlementManifestHash(input) {
   const r = schema.parse(input);
   return financeHash(Object.fromEntries(Object.entries(r).filter(([key]) =>
-    !['action', 'previewHash', 'confirm', 'reason'].includes(key))));
+    !['action', 'confirm', 'reason'].includes(key))));
 }
 
 // The save route is intentionally disabled in production until an exact
@@ -38,7 +39,7 @@ export async function saveCustodyHistoricalSettlement(db, auth, input) {
     fail('بيان التسوية المحدد لم يُعتمد في إعدادات الخادم.', 'permission-denied');
   const core = Object.fromEntries(Object.entries(r).filter(([key]) => custodyReconciliationPreviewSchema.shape[key]));
   core.action = 'preview';
-  const groupId = financeHash({ advanceId: r.advanceId, allocations: r.allocations });
+  const groupId = custodyGroupId(r), anchorId = custodyAnchorId(r);
   const receiptRef = db.collection('finance_workbench_receipts').doc(`custody_h_${groupId.slice(0, 40)}`);
   const requestHash = financeHash(r);
   return db.runTransaction(async tx => {
@@ -49,10 +50,10 @@ export async function saveCustodyHistoricalSettlement(db, auth, input) {
       const { result, sourceHashes } = prior.data();
       const entries = await Promise.all(result.journalIds.map(id => tx.get(db.collection('journal_entries').doc(id))));
       const [advance, groupLock] = await Promise.all([
-        tx.get(db.collection('temporary_expenses').doc(result.advanceId)),
+        result.advanceId ? tx.get(db.collection('temporary_expenses').doc(result.advanceId)) : Promise.resolve(null),
         tx.get(db.collection('posting_locks').doc(`custody_reconciliation__${groupId}`)),
       ]);
-      if (!advance.exists || advance.data().custody_historical_partial_hold !== true || !groupLock.exists
+      if ((result.advanceId && (!advance.exists || advance.data().custody_historical_partial_hold !== true)) || !groupLock.exists
         || !Array.isArray(sourceHashes) || sourceHashes.length !== result.sourceCount
         || entries.length !== result.sourceCount + 1
         || entries.some(snap => !snap.exists || snap.data().status !== 'posted'
@@ -77,8 +78,19 @@ export async function saveCustodyHistoricalSettlement(db, auth, input) {
         .reduce((n, line) => n + cents(line.debit || 0) - cents(line.credit || 0), 0), 0);
       if (netAdvance !== 0 || result.fundedHalala !== result.consumedHalala)
         fail('إيصال التسوية لا يطابق رصيد العهدة الصفري.');
+      for (const deposit of result.fundingEvidence || []) {
+        const snap = await tx.get(db.collection('posting_locks').doc(`custody_deposit__${financeHash(deposit.depositRowId).slice(0, 40)}`));
+        if (!snap.exists || snap.data().depositRowId !== deposit.depositRowId
+          || snap.data().evidenceRef !== deposit.evidenceRef
+          || snap.data().deliveryDate !== deposit.deliveryDate
+          || snap.data().depositAmountHalala !== cents(deposit.depositAmount)
+          || snap.data().consumedHalala < cents(deposit.allocatedAmount))
+          fail('إيصال التسوية لا يطابق استهلاك صف الإيداع.');
+      }
       return { ...result, replay: true };
     }
+    if (r.correctionDate !== new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Riyadh' }).format(new Date()))
+      fail('تاريخ قيد التسوية يجب أن يساوي يوم الترحيل الحالي؛ أعد المعاينة والاعتماد.');
     const plan = await custodyHistoricalPlan(db, tx, core);
     if (plan.snapshotHash !== r.previewHash) fail('تغيرت مصادر التسوية أو دفترها أو الحسابات بعد المعاينة.');
     if (plan.blockingIssues.length || plan.proposedExpenseEntries.length !== r.allocations.length)
@@ -100,17 +112,34 @@ export async function saveCustodyHistoricalSettlement(db, auth, input) {
       || financeHash(reviewed) !== financeHash(plan.unassignedAdvanceMovementIds))
       fail('حركات حساب العهدة غير المرتبطة لم تُراجع كاملةً؛ لا يُضاف تمويل مكرر.');
     const globalLock = db.collection('posting_locks').doc(`custody_reconciliation__${groupId}`);
-    const evidenceLocks = [...new Set(r.evidenceRefs)].map(value => db.collection('posting_locks').doc(`custody_evidence__${financeHash(value).slice(0, 40)}`));
-    const fundingLock = db.collection('posting_locks').doc(`temporary_expense__${r.advanceId}`);
-    const [globalSnap, fundingSnap, ...evidenceSnaps] = await Promise.all([
-      tx.get(globalLock), tx.get(fundingLock), ...evidenceLocks.map(lock => tx.get(lock)),
+    const independent = plan.anchorMode === 'independent_historical_tranche';
+    const evidenceLocks = independent ? [] : [...new Set(r.evidenceRefs)]
+      .map(value => db.collection('posting_locks').doc(`custody_evidence__${financeHash(value).slice(0, 40)}`));
+    const depositLocks = independent ? r.fundingEvidence.map(item =>
+      db.collection('posting_locks').doc(`custody_deposit__${financeHash(item.depositRowId).slice(0, 40)}`)) : [];
+    const fundingLock = independent ? null : db.collection('posting_locks').doc(`temporary_expense__${r.advanceId}`);
+    const [globalSnap, fundingSnap, ...otherSnaps] = await Promise.all([
+      tx.get(globalLock), fundingLock ? tx.get(fundingLock) : Promise.resolve(null),
+      ...[...evidenceLocks, ...depositLocks].map(lock => tx.get(lock)),
     ]);
+    const evidenceSnaps = otherSnaps.slice(0, evidenceLocks.length);
+    const depositSnaps = otherSnaps.slice(evidenceLocks.length);
     if (globalSnap.exists || evidenceSnaps.some(snap => snap.exists)) fail('الشريحة أو دليل الإيداع مرتبط بتسوية سابقة.');
-    if (fundingSnap.exists && (!plan.existingFundingJournalId
+    if (fundingSnap?.exists && (!plan.existingFundingJournalId
       || fundingSnap.data().entryId !== plan.existingFundingJournalId))
       fail('سجل العهدة له قفل تمويل سابق مختلف؛ افحصه قبل تصحيح جديد.');
-    if (plan.existingFundingJournalId && !fundingSnap.exists)
+    if (plan.existingFundingJournalId && !fundingSnap?.exists)
       fail('قيد التمويل التاريخي بلا قفل مصدر موثوق؛ يلزم مراجعته قبل استخدامه.');
+    for (const [index, item] of (r.fundingEvidence || []).entries()) {
+      const priorDeposit = depositSnaps[index];
+      if (priorDeposit?.exists && (priorDeposit.data().depositRowId !== item.depositRowId
+        || priorDeposit.data().evidenceRef !== item.evidenceRef
+        || priorDeposit.data().deliveryDate !== item.deliveryDate
+        || priorDeposit.data().depositAmountHalala !== cents(item.depositAmount)))
+        fail('بيانات صف الإيداع تغيرت بين التسويات؛ لا يُستهلك رصيده.');
+      if ((priorDeposit?.exists ? priorDeposit.data().consumedHalala : 0) + cents(item.allocatedAmount) > cents(item.depositAmount))
+        fail('تخصيص صف الإيداع يتجاوز رصيده غير المستخدم في التسويات.');
+    }
     const sources = await Promise.all(plan.proposedExpenseEntries.map(async item => {
       const [kind, ...idParts] = item.key.split(':');
       const sourceId = idParts.join(':');
@@ -119,8 +148,21 @@ export async function saveCustodyHistoricalSettlement(db, auth, input) {
       if (!source.exists || financeSourceHash(source.data()) !== item.sourceHash) fail('تغير المصدر داخل التسوية.');
       const after = { ...source.data(), finance_metadata: { ...(source.data().finance_metadata || {}),
         custodyHistoricalSettlementId: groupId } };
-      return { ref: sourceRef, item, afterHash: financeSourceHash(after), metadata: after.finance_metadata };
+      return { ref: sourceRef, item, after, afterHash: financeSourceHash(after), metadata: after.finance_metadata };
     }));
+    // Source evidence may depend on a peer document. Verify the context that will
+    // exist after every member receives its settlement marker, before writing.
+    const projected = new Map(sources.map(source => [source.ref.path, source.after]));
+    const projectedTx = { get: async ref => {
+      if (projected.has(ref.path)) return { id: ref.id, exists: true, data: () => projected.get(ref.path) };
+      return tx.get(ref);
+    } };
+    for (const source of sources) {
+      const [kind, ...idParts] = source.item.key.split(':');
+      const context = await financeSourceEvidence(db, projectedTx, kind, idParts.join(':'), source.after);
+      if (context.issues.length) fail(context.issues.join(' '));
+      source.afterContextHash = context.contextHash || null;
+    }
     const chart = await tx.get(db.collection('chart_of_accounts'));
     const knownAccountCodes = new Set(chart.docs.map(doc => doc.id));
     const counterRef = db.collection('counters').doc('journal'), counter = await tx.get(counterRef);
@@ -130,7 +172,7 @@ export async function saveCustodyHistoricalSettlement(db, auth, input) {
     const journalData = [];
     if (!plan.existingFundingJournalId) {
       const entry = normalizeEntry({ entryDate: r.correctionDate, sourceType: 'adjustment',
-        sourceId: r.advanceId, description: 'تسوية تمويل عهدة تاريخية مخصصة بالكامل' });
+        sourceId: anchorId, description: 'تسوية تمويل عهدة تاريخية مخصصة بالكامل' });
       const lines = normalizeLines([
         { accountId: '1300', debit: r.amount, credit: 0, description: 'تمويل عهدة تاريخي مخصص' },
         { accountId: '1020', debit: 0, credit: r.amount, description: 'تمويل من بنك الشركة' },
@@ -141,8 +183,11 @@ export async function saveCustodyHistoricalSettlement(db, auth, input) {
       journalData.push({ id: fundingId, entry: { ...entry, lines, lineCount: lines.length,
         totalDebit: totals.debit, totalCredit: totals.credit, entryNumber: next,
         sourceKind: 'custody_reconciliation', custodyHistoricalSettlementId: groupId,
-        historicalFundingDate: r.historicalFundingDate, ownerStatementRef: r.ownerStatementRef,
-        evidenceRefs: r.evidenceRefs, evidenceReviewRef: r.evidenceReviewRef,
+        custodyAnchorMode: plan.anchorMode, custodyAnchorId: anchorId,
+        beneficiary: r.beneficiary || null,
+        historicalFundingDate: r.historicalFundingDate || null, ownerStatementRef: r.ownerStatementRef,
+        evidenceRefs: r.evidenceRefs, fundingEvidence: r.fundingEvidence || null,
+        evidenceReviewRef: r.evidenceReviewRef,
         ledgerReviewRef: r.ledgerReviewRef, ownerApprovalRef: r.ownerApprovalRef,
         createdBy: auth.uid, createdAt: FieldValue.serverTimestamp(), postedAt: FieldValue.serverTimestamp() } });
       journalIds.push(fundingId);
@@ -180,7 +225,17 @@ export async function saveCustodyHistoricalSettlement(db, auth, input) {
       custodyHistoricalSettlementId: groupId, custodyHistoricalFundingReused: true });
     tx.create(globalLock, lockData);
     for (const evidenceLock of evidenceLocks) tx.create(evidenceLock, lockData);
-    if (!plan.existingFundingJournalId) tx.create(fundingLock, lockData);
+    for (const [index, item] of (r.fundingEvidence || []).entries()) {
+      const priorDeposit = depositSnaps[index];
+      const depositData = { kind: 'custody_deposit', sourceId: item.depositRowId,
+        depositRowId: item.depositRowId, evidenceRef: item.evidenceRef, deliveryDate: item.deliveryDate,
+        depositAmountHalala: cents(item.depositAmount),
+        consumedHalala: (priorDeposit?.exists ? priorDeposit.data().consumedHalala : 0) + cents(item.allocatedAmount),
+        lastSettlementId: groupId, updatedAt: FieldValue.serverTimestamp() };
+      if (priorDeposit?.exists) tx.update(depositLocks[index], depositData);
+      else tx.create(depositLocks[index], depositData);
+    }
+    if (fundingLock && !plan.existingFundingJournalId) tx.create(fundingLock, lockData);
     for (const [index, source] of sources.entries()) {
       const [kind, ...idParts] = source.item.key.split(':');
       const sourceId = idParts.join(':');
@@ -191,18 +246,21 @@ export async function saveCustodyHistoricalSettlement(db, auth, input) {
         lockedBy: auth.uid, lockedAt: FieldValue.serverTimestamp(), custodyHistoricalSettlementId: groupId,
       });
     }
-    tx.update(db.collection('temporary_expenses').doc(r.advanceId), { custody_historical_partial_hold: true });
+    if (r.advanceId) tx.update(db.collection('temporary_expenses').doc(r.advanceId), { custody_historical_partial_hold: true });
     tx.set(counterRef, journalCounterUpdate(counter, number - 1, r.correctionDate, FieldValue), { merge: true });
-    const result = { saved: true, financialPosting: true, groupId, advanceId: r.advanceId,
+    const result = { saved: true, financialPosting: true, groupId, advanceId: r.advanceId || null,
+      employeeId: r.employeeId || null, beneficiary: r.beneficiary || null,
+      anchorId, anchorMode: plan.anchorMode,
       sourceHash: plan.snapshotHash,
       journalIds, fundingJournalId: fundingId, sourceCount: r.allocations.length,
       fundedHalala: cents(r.amount), consumedHalala: consumed, freeAdvanceBalanceHalala: 0,
-      entryDate: r.correctionDate, historicalFundingDate: r.historicalFundingDate };
+      entryDate: r.correctionDate, historicalFundingDate: r.historicalFundingDate || null,
+      fundingEvidence: r.fundingEvidence || null };
     tx.create(receiptRef, { requestHash, result, ownerStatementRef: r.ownerStatementRef,
       ownerApprovalRef: r.ownerApprovalRef, evidenceReviewRef: r.evidenceReviewRef,
       ledgerReviewRef: r.ledgerReviewRef, reviewedUnrelatedJournalIds: reviewed,
       sourceHashes: sources.map(source => ({ key: source.item.key, before: source.item.sourceHash,
-        after: source.afterHash, sourceContextHash: source.item.sourceContextHash })),
+        after: source.afterHash, sourceContextHash: source.afterContextHash })),
       priorClaims: r.priorClaims,
       at: FieldValue.serverTimestamp(), userId: auth.uid });
     tx.create(db.collection('audit_logs').doc(), { action: 'custody-historical-settlement',

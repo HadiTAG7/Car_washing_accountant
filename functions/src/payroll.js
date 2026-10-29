@@ -284,9 +284,13 @@ export function calculatePayrollPreview({
   }
 
   const advanceMap = new Map();
+  const heldAdvanceBikers = new Set();
   for (const row of advances || []) {
     const bikerId = String(row.biker_id || '').trim();
-    if (!bikerId || outstandingOfAdvance(row) <= 0 || advanceAssignmentMonth(row) !== bounds.periodKey) continue;
+    if (!bikerId || advanceAssignmentMonth(row) !== bounds.periodKey
+      || !(bikers || []).some(biker => String(biker.id || '') === bikerId)) continue;
+    if (row.custody_historical_partial_hold === true) { heldAdvanceBikers.add(bikerId); continue; }
+    if (outstandingOfAdvance(row) <= 0) continue;
     const list = advanceMap.get(bikerId) || [];
     list.push(row);
     advanceMap.set(bikerId, list);
@@ -308,6 +312,8 @@ export function calculatePayrollPreview({
     if (eligibility.daysEntitled === 0) continue;
 
     const adj = adjustmentMap.get(biker.id) || normalizeAdjustment({ bikerId: biker.id });
+    if (adj.hasAdvanceDeduction && heldAdvanceBikers.has(biker.id))
+      fail('العهدة التاريخية تحت تسوية جزئية؛ يلزم مطابقة الرصيد قبل خصمها من الراتب.');
     const basicDue = basicSalaryDue({
       monthlySalary: biker.salary, daysEntitled: eligibility.daysEntitled, monthDays: bounds.monthDays,
     });

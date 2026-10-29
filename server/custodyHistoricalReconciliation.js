@@ -9,14 +9,24 @@ const identifier = z.string().regex(/^[\p{L}\p{N}_.:-]{1,160}$/u);
 const day = z.string().refine(isRealDate);
 const money = z.number().finite().positive().max(1e9).refine(v => Math.abs(Math.round(v * 100) - v * 100) < 1e-6);
 const request = z.object({ action: z.literal('preview'), kind: z.literal('custody_reconciliation'),
-  advanceId: identifier, employeeId: identifier, amount: money,
-  historicalFundingDate: day.nullable(), correctionDate: day,
+  advanceId: identifier.optional(), employeeId: identifier.optional(),
+  beneficiary: z.object({ name: z.string().trim().min(2).max(160), sourceRef: z.string().trim().min(3).max(500) }).strict().optional(),
+  amount: money,
+  historicalFundingDate: day.nullable().optional(), correctionDate: day,
   ownerStatementRef: z.string().trim().min(3).max(500),
   evidenceRefs: z.array(z.string().trim().min(3).max(500)).max(30),
+  fundingEvidence: z.array(z.object({ depositRowId: identifier, evidenceRef: z.string().trim().min(3).max(500),
+    deliveryDate: day, depositAmount: money, allocatedAmount: money }).strict()).min(1).max(30).optional(),
   allocations: z.array(z.object({ kind: z.enum(['variable', 'monthly', 'annual', 'startup']),
-    sourceId: identifier, amount: money }).strict()).min(1).max(100),
+    sourceId: identifier, amount: money, allocationDecisionRef: z.string().trim().min(3).max(500).optional(),
+    fundingParts: z.array(z.object({ depositRowId: identifier, amount: money }).strict()).min(1).max(30).optional(),
+  }).strict()).min(1).max(100),
 }).strict();
 export const custodyReconciliationPreviewSchema = request;
+export const custodyGroupId = r => financeHash(r.advanceId
+  ? { advanceId: r.advanceId, allocations: r.allocations }
+  : { beneficiary: r.beneficiary, allocations: r.allocations });
+export const custodyAnchorId = r => r.advanceId || `custody_anchor_${custodyGroupId(r).slice(0, 40)}`;
 
 const collectionOf = { variable: 'variable_expenses', monthly: 'monthly_expenses',
   annual: 'annual_expense_entries', startup: 'startup_cost_entries' };
@@ -33,9 +43,25 @@ export async function previewCustodyHistoricalReconciliation(db, input) {
 
 export async function custodyHistoricalPlan(db, tx, r) {
     const problems = [], notices = [];
+    const independent = !r.advanceId, anchorId = custodyAnchorId(r);
+    const evidence = new Map((r.fundingEvidence || []).map(item => [item.depositRowId, item]));
+    if (independent) {
+      if (!r.beneficiary || r.employeeId) problems.push('الشريحة المستقلة تحتاج هوية مستفيد موثقة دون معرف موظف مفترض.');
+      if (!r.fundingEvidence?.length || evidence.size !== r.fundingEvidence.length)
+        problems.push('شريحة العهدة المستقلة تحتاج إيداعات مؤرخة فريدة.');
+      if (r.historicalFundingDate != null) problems.push('الشريحة المستقلة تستخدم تواريخ الإيداعات لا تاريخ تمويل واحد.');
+      if (financeHash([...evidence.values()].map(item => item.evidenceRef).sort()) !== financeHash([...new Set(r.evidenceRefs)].sort())
+        || new Set(r.evidenceRefs).size !== r.evidenceRefs.length)
+        problems.push('مراجع الإيداعات لا تطابق أدلة التمويل المحددة.');
+      if ([...evidence.values()].some(item => halala(item.allocatedAmount) > halala(item.depositAmount)))
+        problems.push('مبلغ مخصص من إيداع يتجاوز مبلغ الإيداع المراجع.');
+    } else {
+      if (!r.employeeId || r.beneficiary) problems.push('مسار العهدة القائمة يحتاج معرف الموظف المسجل دون هوية بديلة.');
+      if (r.fundingEvidence?.length) problems.push('مسار العهدة القائمة لا يخلط سجل التمويل مع شريحة إيداعات مستقلة.');
+    }
     const [advanceSnap, related, accountAdvance, accountBank, ledger, legacyLines, period, settingsSnap, chartSnap, counterSnap] = await Promise.all([
-      tx.get(db.collection('temporary_expenses').doc(r.advanceId)),
-      tx.get(db.collection('journal_entries').where('sourceId', '==', r.advanceId).limit(101)),
+      r.advanceId ? tx.get(db.collection('temporary_expenses').doc(r.advanceId)) : Promise.resolve({ exists: false }),
+      tx.get(db.collection('journal_entries').where('sourceId', '==', anchorId).limit(101)),
       tx.get(db.collection('chart_of_accounts').doc('1300')),
       tx.get(db.collection('chart_of_accounts').doc('1020')),
       tx.get(db.collection('journal_entries').limit(1001)),
@@ -46,10 +72,12 @@ export async function custodyHistoricalPlan(db, tx, r) {
       tx.get(db.collection('counters').doc('journal')),
     ]);
     const advance = advanceSnap.exists ? advanceSnap.data() : null;
-    if (!advance) problems.push('سجل العهدة غير موجود؛ لا يمكن اقتراح ربط دفتر.');
-    else {
+    if (!independent && !advance) problems.push('سجل العهدة غير موجود؛ لا يمكن اقتراح ربط دفتر.');
+    else if (advance) {
       if (String(advance.biker_id || '') !== r.employeeId) problems.push('الموظف لا يطابق سجل العهدة.');
       if (halala(advance.amount) < halala(r.amount)) problems.push('مبلغ الشريحة المقترحة يتجاوز سجل العهدة.');
+      if (advance.custody_historical_partial_hold === true)
+        problems.push('العهدة تحمل تسوية تاريخية سابقة؛ لا يعاد استهلاك تمويلها.');
       if (advance.custody_balance_opened_journal_id != null || advance.custody_expense_used_halala != null)
         problems.push('العهدة لها رصيد مشترك مفتوح أو سجل استهلاك؛ يلزم فحصه قبل تسوية تاريخية.');
       if (Number(advance.recovered_amount || 0) !== 0 || advance.payroll_lock_id || advance.status === 'recovered')
@@ -66,7 +94,7 @@ export async function custodyHistoricalPlan(db, tx, r) {
     }
     const unassigned1300 = ledger.docs.filter(doc => {
       const entry = doc.data();
-      if (entry.status !== 'posted' || entry.reversedBy || entry.sourceId === r.advanceId) return false;
+      if (entry.status !== 'posted' || entry.reversedBy || entry.sourceId === anchorId) return false;
       const lines = linesOf(entry).length ? linesOf(entry) : (separateLines.get(doc.id) || []);
       return lines.some(line => String(line.accountId) === '1300' && Number(line.debit || 0) > 0);
     }).map(doc => doc.id).sort();
@@ -78,12 +106,15 @@ export async function custodyHistoricalPlan(db, tx, r) {
       problems.push('نوع حساب العهدة أو البنك لا يطابق أصلًا ماليًا.');
     if (!period.exists || period.data().status !== 'open')
       problems.push('فترة القيد التصحيحي غير مثبتة مفتوحة؛ لا تُفتح تلقائيًا.');
-    if (r.historicalFundingDate == null) problems.push('تاريخ تسليم التمويل الفعلي غير مثبت.');
-    if (r.historicalFundingDate && r.historicalFundingDate > r.correctionDate)
+    if (!independent && r.historicalFundingDate == null) problems.push('تاريخ تسليم التمويل الفعلي غير مثبت.');
+    if (!independent && r.historicalFundingDate && r.historicalFundingDate > r.correctionDate)
       problems.push('تاريخ التمويل الفعلي يأتي بعد تاريخ التصحيح.');
+    if (independent && [...evidence.values()].some(item => item.deliveryDate > r.correctionDate))
+      problems.push('تاريخ تسليم إيداع يأتي بعد تاريخ التصحيح.');
     if (!r.evidenceRefs.length) problems.push('مراجع مستندات التمويل التاريخي غير محددة؛ إفادة المالك وحدها ليست مطابقة دفترية.');
     else notices.push('مراجع الأدلة مقدمة للفحص ولم تُطابق بعد مع تحويل البنك وتسليم العهدة.');
-    if (r.correctionDate > new Date().toISOString().slice(0, 10)) problems.push('تاريخ القيد المقترح مستقبلي.');
+    if (r.correctionDate > new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Riyadh' }).format(new Date()))
+      problems.push('تاريخ القيد المقترح مستقبلي.');
     const keys = new Set(), records = [], proposedExpenseEntries = [];
     const settings = settingsSnap.exists ? settingsSnap.data().value || {} : {};
     for (const allocation of r.allocations) {
@@ -105,6 +136,18 @@ export async function custodyHistoricalPlan(db, tx, r) {
         if (row.payment_status !== 'paid' || !isRealDate(row.paid_date)) problems.push('سداد مستند التخصيص غير مثبت بتاريخ صالح.');
         if (r.historicalFundingDate && row.paid_date < r.historicalFundingDate)
           problems.push('تاريخ التمويل الفعلي يأتي بعد دفع مستند مخصص.');
+        if (independent) {
+          const parts = allocation.fundingParts || [];
+          if (!allocation.allocationDecisionRef || !parts.length
+            || halala(parts.reduce((sum, part) => sum + part.amount, 0)) !== halala(allocation.amount)
+            || new Set(parts.map(part => part.depositRowId)).size !== parts.length)
+            problems.push('تخصيص إيداعات المستند يحتاج قرارًا ومبالغ متطابقة دون تكرار.');
+          for (const part of parts) {
+            const deposit = evidence.get(part.depositRowId);
+            if (!deposit || deposit.deliveryDate > row.paid_date)
+              problems.push('إيداع مخصص للمستند غير مثبت أو يأتي بعد تاريخ سداده.');
+          }
+        }
         if (row.finance_metadata?.employeeAdvanceLink)
           problems.push('المستند مرتبط بعهدة مسبقًا؛ يلزم فحص الربط قبل تسوية تاريخية.');
         if (row.finance_metadata?.custodyHistoricalSettlementId)
@@ -151,8 +194,18 @@ export async function custodyHistoricalPlan(db, tx, r) {
     const allocatedHalala = r.allocations.reduce((sum, a) => sum + halala(a.amount), 0);
     if (allocatedHalala !== halala(r.amount))
       problems.push('مبلغ الشريحة المقترحة يجب أن يساوي التخصيصات بالضبط؛ لا يُفتح رصيد غير مخصص.');
-    const historicalLedgerEntry = existing.find(d => {
+    if (independent) {
+      for (const deposit of evidence.values()) {
+        const used = r.allocations.flatMap(a => a.fundingParts || []).filter(part => part.depositRowId === deposit.depositRowId)
+          .reduce((sum, part) => sum + halala(part.amount), 0);
+        if (used !== halala(deposit.allocatedAmount)) problems.push('تخصيص الإيداع لا يساوي مجموع حصص المستندات.');
+      }
+      if ([...evidence.values()].reduce((sum, deposit) => sum + halala(deposit.allocatedAmount), 0) !== halala(r.amount))
+        problems.push('تخصيصات الإيداعات لا تساوي الشريحة المقترحة.');
+    }
+    const historicalLedgerEntry = independent ? null : existing.find(d => {
       if (d.data().sourceType !== 'temporary_expense' || d.data().entryDate > r.historicalFundingDate) return false;
+      if (d.data().custodyHistoricalSettlementId) return false;
       const lines = linesOf(d.data()).length ? linesOf(d.data()) : (separateLines.get(d.id) || []);
       return lines.length === 2
         && lines.some(l => String(l.accountId) === '1300' && halala(l.debit) === halala(r.amount)
@@ -166,17 +219,19 @@ export async function custodyHistoricalPlan(db, tx, r) {
     if (!counterSnap.exists || !Number.isSafeInteger(counterSnap.data().nextNumber)
       || counterSnap.data().nextNumber <= Math.max(0, ...ledger.docs.map(doc => Number(doc.data().entryNumber) || 0)))
       problems.push('عداد القيود يحتاج مراجعة قبل التسوية.');
-    const snapshotHash = financeHash({ advance, journals: ledger.docs.map(d => ({ id: d.id, ...d.data() })),
+    const snapshotHash = financeHash({ advance, anchorId, journals: ledger.docs.map(d => ({ id: d.id, ...d.data() })),
       legacyLines: legacyLines.docs.map(d => ({ id: d.id, ...d.data() })),
       records, accounts: chartSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })), counter: counterSnap.data(),
       period: period.data(), settings,
       proposedExpenseEntries, request: r });
     return { preview: true, financialPosting: false, readyForPosting: false,
+      anchorMode: independent ? 'independent_historical_tranche' : 'existing_advance', anchorId,
       ownerAttestation: { reference: r.ownerStatementRef, establishesHistoricalLedgerProof: false },
       fundingRoute: historicalLedgerEntry ? 'reuse_existing_journal' : 'propose_current_correction',
       existingFundingJournalId: historicalLedgerEntry?.id || null,
       proposedCorrection: historicalLedgerEntry ? null : { entryDate: r.correctionDate,
         historicalFundingDate: r.historicalFundingDate, debitAccount: '1300', creditAccount: '1020',
+        fundingEvidence: r.fundingEvidence || null,
         amountHalala: halala(r.amount), entryDateIsHistoricalFundingDate: false,
         requiresAtomicExpenseConsumptionHalala: allocatedHalala, freeAdvanceBalanceHalala: 0 },
       proposedExpenseEntries,

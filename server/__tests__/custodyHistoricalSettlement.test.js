@@ -8,9 +8,13 @@ import { expensePatch, memoryFinanceDb } from './financeFixtures.js';
 import { financeHash } from '../../functions/src/financeReview.js';
 
 const auth = { uid: 'synthetic-admin' };
+const postingDay = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Riyadh' }).format(new Date());
+const priorPostingDay = new Date(`${postingDay}T00:00:00Z`);
+priorPostingDay.setUTCDate(priorPostingDay.getUTCDate() - 1);
+const priorDay = priorPostingDay.toISOString().slice(0, 10);
 const previewBase = { action: 'preview', kind: 'custody_reconciliation', advanceId: 'synthetic-advance',
   employeeId: 'synthetic-worker', amount: 100, historicalFundingDate: '2026-10-17',
-  correctionDate: '2026-10-29', ownerStatementRef: 'TEST owner statement',
+  correctionDate: postingDay, ownerStatementRef: 'TEST owner statement',
   evidenceRefs: ['TEST transfer evidence'] };
 
 async function setup({ tax = false } = {}) {
@@ -20,7 +24,7 @@ async function setup({ tax = false } = {}) {
       status: 'pending', recovered_amount: 0, spent_date: '2026-10-17' },
     'app_settings/accounting': { value: { vatRegistered: tax } },
     'variable_expense_categories/synthetic-category': { name: 'Synthetic category' },
-    'accounting_periods/2026-10': { status: 'open' },
+    [`accounting_periods/${postingDay.slice(0, 7)}`]: { status: 'open' },
     'counters/journal': { nextNumber: 1 },
     'chart_of_accounts/1020': { active: true, accountType: 'asset' },
     'chart_of_accounts/1300': { active: true, accountType: 'asset' },
@@ -64,11 +68,11 @@ describe('atomic historical custody settlement, synthetic only', () => {
     const { db, save, sourceId } = await setup();
     const [first, replay] = await Promise.all([financeWorkbench(db, auth, save), financeWorkbench(db, auth, save)]);
     expect(first).toMatchObject({ saved: true, fundedHalala: 10000, consumedHalala: 10000,
-      freeAdvanceBalanceHalala: 0, entryDate: '2026-10-29' });
+      freeAdvanceBalanceHalala: 0, entryDate: postingDay });
     expect(replay).toMatchObject({ groupId: first.groupId, replay: true });
     const entries = [...db.rows].filter(([key]) => key.startsWith('journal_entries/')).map(([, entry]) => entry);
     expect(entries).toHaveLength(2);
-    expect(entries.every(entry => entry.entryDate === '2026-10-29')).toBe(true);
+    expect(entries.every(entry => entry.entryDate === postingDay)).toBe(true);
     expect(entries.reduce((sum, entry) => sum + entry.lines.filter(line => line.accountId === '1300')
       .reduce((n, line) => n + line.debit - line.credit, 0), 0)).toBe(0);
     const read = await financeWorkbench(db, auth, { action: 'read', kind: 'variable', sourceId });
@@ -79,9 +83,9 @@ describe('atomic historical custody settlement, synthetic only', () => {
     expect(read.workflowDimensions.funding.ledgerMatched).toBe(true);
     expect(db.rows.get('temporary_expenses/synthetic-advance')).toMatchObject({ custody_historical_partial_hold: true });
     await expect(reverseEntry(db, FieldValue, first.journalIds[0],
-      { entryDate: '2026-10-29', userId: auth.uid })).rejects.toThrow(/لا يُعكس منفردًا/);
+      { entryDate: postingDay, userId: auth.uid })).rejects.toThrow(/لا يُعكس منفردًا/);
     db.rows.get('temporary_expenses/synthetic-advance').status = 'recovered';
-    db.rows.get('temporary_expenses/synthetic-advance').recovered_date = '2026-10-29';
+    db.rows.get('temporary_expenses/synthetic-advance').recovered_date = postingDay;
     await expect(postSource(db, FieldValue, { kind: 'recovery', sourceId: 'synthetic-advance' },
       { userId: auth.uid })).rejects.toThrow(/تسوية جزئية/);
     const payroll = calculatePayrollPreview({ periodKey: '2026-10',
@@ -105,7 +109,7 @@ describe('atomic historical custody settlement, synthetic only', () => {
 
   it('rejects a new correction dated before the actual posting day even with an approved preview', async () => {
     const { db, input, save } = await setup();
-    const backdated = { ...input, correctionDate: '2026-10-28' };
+    const backdated = { ...input, correctionDate: priorDay };
     const preview = await financeWorkbench(db, auth, backdated);
     const request = { ...save, correctionDate: backdated.correctionDate, previewHash: preview.snapshotHash };
     process.env.CUSTODY_HISTORICAL_APPROVED_MANIFEST_HASH = custodySettlementManifestHash(request);
@@ -118,7 +122,7 @@ describe('atomic historical custody settlement, synthetic only', () => {
     const { db, sourceId } = await setup();
     const input = { action: 'preview', kind: 'custody_reconciliation',
       beneficiary: { name: 'TEST beneficiary', sourceRef: 'TEST identity record' },
-      amount: 100, correctionDate: '2026-10-29', ownerStatementRef: 'TEST owner statement',
+      amount: 100, correctionDate: postingDay, ownerStatementRef: 'TEST owner statement',
       evidenceRefs: ['TEST deposit row A', 'TEST deposit row B'],
       fundingEvidence: [
         { depositRowId: 'test-row-a', evidenceRef: 'TEST deposit row A', deliveryDate: '2026-10-16',
@@ -154,7 +158,7 @@ describe('atomic historical custody settlement, synthetic only', () => {
     const { db, sourceId } = await setup();
     const core = { action: 'preview', kind: 'custody_reconciliation',
       beneficiary: { name: 'TEST beneficiary', sourceRef: 'TEST identity record' },
-      amount: 100, correctionDate: '2026-10-29', ownerStatementRef: 'TEST owner statement',
+      amount: 100, correctionDate: postingDay, ownerStatementRef: 'TEST owner statement',
       evidenceRefs: ['TEST deposit row'], fundingEvidence: [{ depositRowId: 'test-deposit',
         evidenceRef: 'TEST deposit row', deliveryDate: '2026-10-17', depositAmount: 150, allocatedAmount: 100 }],
       allocations: [{ kind: 'variable', sourceId, amount: 100, allocationDecisionRef: 'TEST reviewed allocation',
@@ -213,14 +217,14 @@ describe('atomic historical custody settlement, synthetic only', () => {
     const { db, save, sourceId } = await setup({ tax: true });
     const saved = await financeWorkbench(db, auth, save);
     const expense = db.rows.get(`journal_entries/${saved.journalIds[1]}`);
-    expect(expense).toMatchObject({ entryDate: '2026-10-29', originalInvoiceDate: '2026-09-18',
+    expect(expense).toMatchObject({ entryDate: postingDay, originalInvoiceDate: '2026-09-18',
       purchaseTaxSnapshot: { claimDisposition: 'previously_claimed', submittedPeriod: '2026-Q3',
         priorClaimEvidenceRef: 'TEST filed return', invoiceDate: '2026-09-18' } });
     expect((await financeWorkbench(db, auth, { action: 'read', kind: 'variable', sourceId })).workflowStage).toBe('complete');
   });
 
   it.each([
-    ['period', db => { db.rows.get('accounting_periods/2026-10').status = 'closed'; }],
+    ['period', db => { db.rows.get(`accounting_periods/${postingDay.slice(0, 7)}`).status = 'closed'; }],
     ['account', db => { db.rows.get('chart_of_accounts/1020').active = false; }],
     ['role', db => { db.rows.get('users/synthetic-admin').role = 'operator'; }],
     ['advance', db => { db.rows.get('temporary_expenses/synthetic-advance').recovered_amount = 50; }],

@@ -8,6 +8,7 @@ import { expensePatch } from './financeFixtures.js';
 const enabled = process.env.CUSTODY_PG_TESTS === '1';
 const url = 'postgresql://postgres@127.0.0.1:55432/postgres';
 const auth = { uid: '11111111-1111-4111-8111-111111111111' };
+const postingDay = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Riyadh' }).format(new Date());
 describe.skipIf(!enabled)('historical settlement through disposable PgStore', () => {
   let db, pool;
   const token = `custody-h-${Date.now()}`;
@@ -24,7 +25,7 @@ describe.skipIf(!enabled)('historical settlement through disposable PgStore', ()
     await db.doc(`users/${auth.uid}`).set({ role: 'admin' });
     await db.doc('app_settings/accounting').set({ value: { vatRegistered: false } });
     await db.doc(`variable_expense_categories/${token}`).set({ name: 'Synthetic category' });
-    await db.doc('accounting_periods/2026-10').set({ status: 'open' });
+    await db.doc(`accounting_periods/${postingDay.slice(0, 7)}`).set({ status: 'open' });
     if (!(await db.doc('counters/journal').get()).exists) await db.doc('counters/journal').set({ nextNumber: 1 });
     for (const [code, accountType] of [['1020', 'asset'], ['1200', 'asset'], ['1300', 'asset'], ['2000', 'liability'], ['5100', 'expense']]) {
       await db.doc(`chart_of_accounts/${code}`).set({ code, nameArabic: 'Synthetic account', active: true, accountType });
@@ -50,7 +51,7 @@ describe.skipIf(!enabled)('historical settlement through disposable PgStore', ()
       previewHash: draft.previewHash, reason: 'Synthetic capture', confirm: true });
     const core = { action: 'preview', kind: 'custody_reconciliation', advanceId,
       employeeId: `${token}-worker`, amount: 100, historicalFundingDate: '2026-10-17',
-      correctionDate: '2026-10-29', ownerStatementRef: 'TEST owner attestation',
+      correctionDate: postingDay, ownerStatementRef: 'TEST owner attestation',
       evidenceRefs: [`TEST transfer ${token}`], allocations: [{ kind: 'variable', sourceId: captured.sourceId, amount: 100 }] };
     const preview = await financeWorkbench(db, auth, core);
     expect(preview.blockingIssues).toEqual([]);
@@ -98,7 +99,7 @@ describe.skipIf(!enabled)('historical settlement through disposable PgStore', ()
     const journalIds = first.journalIds;
     expect(journalIds).toHaveLength(2);
     const journals = await Promise.all(journalIds.map(id => db.doc(`journal_entries/${id}`).get()));
-    expect(journals.every(j => j.exists && j.data().entryDate === '2026-10-29')).toBe(true);
+    expect(journals.every(j => j.exists && j.data().entryDate === postingDay)).toBe(true);
     await expect(financeWorkbench(db, auth, { ...save, reason: 'Changed approval' })).rejects.toThrow(/طلب مختلف/);
   }, 120000);
   it('preserves a previously filed invoice-period claim in the isolated adapter', async () => {
@@ -118,7 +119,7 @@ describe.skipIf(!enabled)('historical settlement through disposable PgStore', ()
       previewHash: draft.previewHash, reason: 'Synthetic tax capture', confirm: true });
     const core = { action: 'preview', kind: 'custody_reconciliation', advanceId,
       employeeId: `${token}-worker`, amount: 100, historicalFundingDate: '2026-09-17',
-      correctionDate: '2026-10-29', ownerStatementRef: 'TEST owner attestation',
+      correctionDate: postingDay, ownerStatementRef: 'TEST owner attestation',
       evidenceRefs: [`TEST tax transfer ${token}`], allocations: [{ kind: 'variable', sourceId: captured.sourceId, amount: 100 }] };
     const preview = await financeWorkbench(db, auth, core);
     expect(preview.blockingIssues).toEqual([]);
@@ -131,7 +132,7 @@ describe.skipIf(!enabled)('historical settlement through disposable PgStore', ()
     process.env.CUSTODY_HISTORICAL_APPROVED_MANIFEST_HASH = custodySettlementManifestHash(save);
     const result = await financeWorkbench(db, auth, save);
     const journal = (await db.doc(`journal_entries/${result.journalIds[1]}`).get()).data();
-    expect(journal).toMatchObject({ entryDate: '2026-10-29', originalInvoiceDate: '2026-09-18',
+    expect(journal).toMatchObject({ entryDate: postingDay, originalInvoiceDate: '2026-09-18',
       purchaseTaxSnapshot: { claimDisposition: 'previously_claimed', submittedPeriod: '2026-Q3',
         invoiceDate: '2026-09-18', priorClaimEvidenceRef: 'TEST filed return' } });
     expect(journal.lines).toContainEqual(expect.objectContaining({ accountId: '1200', debit: 13.04 }));

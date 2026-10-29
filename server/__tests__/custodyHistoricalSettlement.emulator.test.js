@@ -8,6 +8,7 @@ import { expensePatch } from './financeFixtures.js';
 const projectId = 'demo-sweater-finance';
 const enabled = /^(127\.0\.0\.1|localhost):19080$/.test(process.env.FIRESTORE_EMULATOR_HOST || '');
 const auth = { uid: 'synthetic-admin' };
+const postingDay = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Riyadh' }).format(new Date());
 describe.skipIf(!enabled)('historical custody settlement on isolated Firestore', () => {
   let app, db;
   beforeAll(() => {
@@ -25,7 +26,7 @@ describe.skipIf(!enabled)('historical custody settlement on isolated Firestore',
         status: 'pending', recovered_amount: 0, spent_date: '2026-10-17' },
       'app_settings/accounting': { value: { vatRegistered: false } },
       'variable_expense_categories/synthetic-category': { name: 'Synthetic category' },
-      'accounting_periods/2026-10': { status: 'open' },
+      [`accounting_periods/${postingDay.slice(0, 7)}`]: { status: 'open' },
       'counters/journal': { nextNumber: 1 },
       'chart_of_accounts/1020': { active: true, accountType: 'asset' },
       'chart_of_accounts/1300': { active: true, accountType: 'asset' },
@@ -54,7 +55,7 @@ describe.skipIf(!enabled)('historical custody settlement on isolated Firestore',
         depositAmount: 150, allocatedAmount: 100 }] }
       : { advanceId: 'synthetic-advance', employeeId: 'synthetic-worker', historicalFundingDate: '2026-10-17' };
     const core = { action: 'preview', kind: 'custody_reconciliation', ...anchor, amount: 100,
-      correctionDate: '2026-10-29', ownerStatementRef: 'TEST owner statement',
+      correctionDate: postingDay, ownerStatementRef: 'TEST owner statement',
       evidenceRefs: ['TEST deposit'], allocations: [{ kind: 'variable', sourceId: source.sourceId, amount: 100,
         ...(independent ? { allocationDecisionRef: 'TEST allocation decision',
           fundingParts: [{ depositRowId: 'test-row', amount: 100 }] } : {}) }] };

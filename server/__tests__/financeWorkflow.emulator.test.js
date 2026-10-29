@@ -57,7 +57,11 @@ describe.skipIf(!enabled)('finance real Firestore workflow — isolated demo onl
         fundingJournalId: 'test-funding', allocatedAmount: 100 } }) };
     const preview = await call({ action: 'previewCapture', ...request });
     expect(preview.postingPreview.ready).toBe(false);
-    expect(preview.postingPreview.lines).toEqual(expect.arrayContaining([expect.objectContaining({ accountId: '1300', credit: 100 })]));
+    expect(preview.postingPreview.lines).toEqual(expect.arrayContaining([expect.objectContaining({ accountId: '2000', credit: 100 })]));
+    expect(preview.postingPreview.settlement.lines).toEqual(expect.arrayContaining([
+      expect.objectContaining({ accountId: '2000', debit: 100 }),
+      expect.objectContaining({ accountId: '1300', credit: 100 }),
+    ]));
     const captured = await call({ action: 'capture', ...request, previewHash: preview.previewHash, reason: 'TEST advance', confirm: true });
     const common = { kind: 'variable', sourceId: captured.sourceId };
     const read = await call({ action: 'read', ...common });

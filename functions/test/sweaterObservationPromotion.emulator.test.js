@@ -7,6 +7,7 @@ import { operationsHandler, operationsSigningHash } from '../src/sweater/operati
 import { createIntegrationKey, computeSignature } from '../src/sweater/integrationKeys.js';
 import { syncPayload, syncRequest } from './helpers/sweaterOperationsFixture.js';
 import { assignmentCases, reviewedPayloads } from './helpers/sweaterAssignmentReviewFixture.js';
+import { seedUnconsumedCompletion } from './helpers/sweaterUnconsumedCompletionFixture.js';
 
 const suite = process.env.FIRESTORE_EMULATOR_HOST ? describe : describe.skip;
 let app, db, previousEncryption;
@@ -43,6 +44,29 @@ suite('source observation promotion in isolated demo transactions', () => {
   afterAll(async () => {
     if (previousEncryption == null) delete process.env.SWEATER_KEY_ENCRYPTION_KEY; else process.env.SWEATER_KEY_ENCRYPTION_KEY = previousEncryption;
     await db?.terminate(); if (app) await deleteApp(app);
+  });
+  it('promotes a retained completed source with a zero-wash historical receipt after a later prefix change exactly once', async () => {
+    const fixture = await seedUnconsumedCompletion();
+    for (const [path, row] of fixture.db.rows) {
+      const data = { ...row };
+      for (const key of ['claimedAt', 'updatedAt', 'fetchedAt']) if (data[key] === 'synthetic-time') data[key] = FieldValue.serverTimestamp();
+      await db.doc(path).set(data);
+    }
+    const paths = [...fixture.db.rows.keys()].filter(p => p !== 'sweater_integration_state/current');
+    const originals = await Promise.all(paths.map(path => db.doc(path).get()));
+    expect(await operationsStatus(db, fixture.old)).toMatchObject({ verified: true, result: { washesCreated: 0 } });
+    const p = await previewOperations(db, fixture.current);
+    expect(p.rows[0].observationPromotion).toMatchObject({ eligible: true, retainedCompletedSource: true });
+    expect((await db.collection('washes').get()).empty).toBe(true);
+    const results = await Promise.all([1, 2].map(() => saveOperations(db, FieldValue, syncRequest(fixture.current, p), 'synthetic')));
+    expect(results.filter(r => !r.replay)).toHaveLength(1); expect((await db.collection('washes').get()).size).toBe(1);
+    for (const original of originals) expect((await original.ref.get()).updateTime.isEqual(original.updateTime)).toBe(true);
+    expect((await db.doc('washes/ssp__B-990301').get()).data()).toMatchObject({
+      biker_id: 'worker-1', worker_commission_per_wash: 4.5, worker_commission_paid: false, collection_status: 'pending', payment_method: null });
+    expect(await operationsStatus(db, fixture.current)).toMatchObject({ verified: true, rawVerified: true, linksVerified: true });
+    expect((await save(fixture.old))).toMatchObject({ replay: true, washesCreated: 0 });
+    expect((await save({ ...fixture.current, importRunId: 'synthetic-later-completed-alias' })).washesCreated).toBe(0);
+    for (const col of ['journal_entries', 'payroll_runs', 'sweater_owner_collection_confirmations', 'sweater_collections']) expect((await db.collection(col).get()).empty).toBe(true);
   });
   it.each(assignmentCases)('keeps historical assignee $from and creates one execution for source worker $to in the owner-scoped case $number', async c => {
     await db.doc(`bikers/${c.fromWorker}`).set({ name: 'Synthetic previous assignee', driver_external_id: c.from });

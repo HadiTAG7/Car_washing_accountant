@@ -12,19 +12,22 @@ const BOOKING_KEYS = new Set(['sspBookingId', 'bookingNumber', 'record', 'source
   'recognitionReason', 'operationalWorkerId', 'updatedAtIso', 'updatedAt']);
 const CLAIM_KEYS = new Set(['bookingNumber', 'sspBookingId', 'washId', 'source', 'importRunId', 'claimedBy', 'claimedAt']);
 const exactKeys = (row, allowed) => Boolean(row && Object.keys(row).every(key => allowed.has(key)));
+const retainedCompleted = prior => prior?.normalizedStatus === 'unknown' && prior.rawStatus?.trim().toLowerCase() === 'completed';
 const pendingSourceReason = prior => {
   if (['washing_started', 'on_the_way'].includes(prior?.normalizedStatus)) return 'execution_not_final';
   // These exact observed labels are unexecuted source evidence, not new
   // global/financial status mappings. Their original hashes remain valid.
-  if (prior?.normalizedStatus === 'unknown' && ['initiated', 'reached'].includes(prior.rawStatus?.trim().toLowerCase())) return 'unknown_status';
+  if (prior?.normalizedStatus === 'unknown' && ['initiated', 'reached', 'completed'].includes(prior.rawStatus?.trim().toLowerCase())) return 'unknown_status';
   return null;
 };
 const pendingSource = (prior, current, expectedDriver = current.driverExternalId) => Boolean(prior && pendingSourceReason(prior)
   && prior.sspBookingId && ownerBookingIdentity(prior.sspBookingId) === ownerBookingIdentity(current.sspBookingId)
   && prior.driverExternalId === expectedDriver && prior.serviceDate === current.serviceDate
   && prior.bookingKind === 'individual' && prior.bookingKind === current.bookingKind && prior.serviceType === current.serviceType
-  && !prior.completedAt && (prior.normalizedStatus === 'washing_started'
-    ? prior.startedAt === current.startedAt && Boolean(prior.startedAt) : !prior.startedAt));
+  && (retainedCompleted(prior)
+    ? prior.startedAt === current.startedAt && prior.completedAt === current.completedAt
+    : !prior.completedAt && (prior.normalizedStatus === 'washing_started'
+      ? prior.startedAt === current.startedAt && Boolean(prior.startedAt) : !prior.startedAt)));
 
 // A later source observation may complete an unexecuted reservation under a
 // different SSP prefix. It is NOT an owner decision or a generic merge: only
@@ -48,7 +51,7 @@ export async function inspectObservationPromotion({ db, read, payload, record, d
     && legacy.operationalWorkerId === candidate && legacy.record.sspBookingId === legacy.sspBookingId
     && legacy.record.driverExternalId === record.driverExternalId && legacy.record.serviceDate === record.serviceDate
     && legacy.record.bookingKind === record.bookingKind && record.bookingKind === 'individual'
-    && !legacy.record.completedAt && legacy.sourceHash === hashRecord(legacy.record)
+    && legacy.sourceHash === hashRecord(legacy.record)
     && claim.bookingNumber === number && claim.source === SOURCE && !hasProtectedIdentityEffect(claim)
     && claim.washId === `ssp__${legacyId}`
     && [claim.importRunId, legacy.lastImportRunId].every(id => typeof id === 'string' && /^[A-Za-z0-9_-][A-Za-z0-9_.:-]{0,159}$/.test(id))
@@ -92,8 +95,10 @@ export async function inspectObservationPromotion({ db, read, payload, record, d
         && historicalRow.driverExternalId === expectedDriver
         && historicalRow.rawId === rawId && historicalRow.sourceHash === raw?.sourceHash
         && historicalRow.reasonCode === pendingSourceReason(prior)
-        && (prior?.normalizedStatus === 'washing_started' ? cut >= Date.parse(record.startedAt) : cut < Date.parse(record.startedAt))
-        && cut < Date.parse(record.completedAt) && Date.parse(payload.coverage.extractedAt) > cut),
+        && (retainedCompleted(prior) ? cut >= Date.parse(record.completedAt)
+          : (prior?.normalizedStatus === 'washing_started' ? cut >= Date.parse(record.startedAt) : cut < Date.parse(record.startedAt))
+            && cut < Date.parse(record.completedAt))
+        && Date.parse(payload.coverage.extractedAt) > cut),
     };
   });
   const financialRefs = financialSnaps.flatMap((snap, i) => snap.docs.flatMap(d => {
@@ -120,6 +125,7 @@ export async function inspectObservationPromotion({ db, read, payload, record, d
   return { public: { kind: KIND, bookingNumber: number, legacyBookingId: legacy.sspBookingId,
     currentBookingId: record.sspBookingId, canonicalWashId: claim.washId, eligible: Object.values(checks).every(Boolean),
     checks, claimPreserved: true, promotionSaved: false, evidenceRefs,
+    ...(retainedCompleted(legacy.record) ? { retainedCompletedSource: true } : {}),
     ...(assignmentScope ? { sourceAssignmentReview: assignmentReviewReceipt(assignmentScope, history) } : {}) },
     state: { checks, evidenceRefs, financialRefs, ...(assignmentScope ? { sourceAssignmentReview: assignmentReviewReceipt(assignmentScope, history) } : {}) } };
 }

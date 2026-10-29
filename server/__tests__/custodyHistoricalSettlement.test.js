@@ -180,17 +180,22 @@ describe('atomic historical custody settlement, synthetic only', () => {
 
   it('posts a fully consumed thirty-document synthetic tranche as one atomic group', async () => {
     const { db, sourceId } = await setup();
-    const ids = [sourceId];
+    db.rows.set('startup_costs/TEST-startup-plan', { name: 'TEST startup plan' });
+    db.rows.set('chart_of_accounts/1500', { active: true, accountType: 'asset' });
+    const sources = [{ kind: 'variable', sourceId }];
     for (let index = 1; index < 30; index += 1) {
-      const request = { action: 'previewCapture', kind: 'variable', requestId: `TEST-doc-${index}`,
-        patch: expensePatch({ amount: 100, quantity: 1, categoryId: 'synthetic-category',
+      const kind = index < 27 ? 'variable' : 'startup';
+      const patch = expensePatch({ amount: 100, quantity: 1, categoryId: 'synthetic-category',
+          ...(kind === 'startup' ? { parentId: 'TEST-startup-plan' } : {}),
           invoiceNumber: `TEST-invoice-${index}`, invoiceUrl: `https://example.org/TEST-${index}`,
           paymentStatus: 'paid', paymentMethod: 'card', paidDate: '2026-10-18',
-          fundingType: 'employee', fundingReference: `TEST receipt ${index}` }) };
+          fundingType: 'employee', fundingReference: `TEST receipt ${index}` });
+      if (kind === 'startup') delete patch.categoryId;
+      const request = { action: 'previewCapture', kind, requestId: `TEST-doc-${index}`, patch };
       const draft = await financeWorkbench(db, auth, request);
       const captured = await financeWorkbench(db, auth, { ...request, action: 'capture',
         previewHash: draft.previewHash, reason: 'TEST synthetic source', confirm: true });
-      ids.push(captured.sourceId);
+      sources.push({ kind, sourceId: captured.sourceId });
     }
     const core = { action: 'preview', kind: 'custody_reconciliation',
       beneficiary: { name: 'TEST beneficiary', sourceRef: 'TEST identity source' },
@@ -198,7 +203,7 @@ describe('atomic historical custody settlement, synthetic only', () => {
       evidenceRefs: ['TEST single deposit'], fundingEvidence: [{ depositRowId: 'test-row',
         evidenceRef: 'TEST single deposit', deliveryDate: '2026-10-17', depositAmount: 3000,
         allocatedAmount: 3000 }],
-      allocations: ids.map(id => ({ kind: 'variable', sourceId: id, amount: 100,
+      allocations: sources.map(({ kind, sourceId: id }) => ({ kind, sourceId: id, amount: 100,
         allocationDecisionRef: 'TEST reviewed allocation',
         fundingParts: [{ depositRowId: 'test-row', amount: 100 }] })) };
     const preview = await financeWorkbench(db, auth, core);
@@ -212,8 +217,8 @@ describe('atomic historical custody settlement, synthetic only', () => {
     expect(result).toMatchObject({ sourceCount: 30, fundedHalala: 300000,
       consumedHalala: 300000, freeAdvanceBalanceHalala: 0 });
     expect(result.journalIds).toHaveLength(31);
-    expect((await financeWorkbench(db, auth, { action: 'read', kind: 'variable', sourceId: ids[0] })).workflowStage).toBe('complete');
-    expect((await financeWorkbench(db, auth, { action: 'read', kind: 'variable', sourceId: ids[29] })).workflowStage).toBe('complete');
+    expect((await financeWorkbench(db, auth, { action: 'read', ...sources[0] })).workflowStage).toBe('complete');
+    expect((await financeWorkbench(db, auth, { action: 'read', ...sources[29] })).workflowStage).toBe('complete');
   });
 
   it('rejects stale sources, changed requests, overlapping evidence and mismatched VAT evidence without writes', async () => {

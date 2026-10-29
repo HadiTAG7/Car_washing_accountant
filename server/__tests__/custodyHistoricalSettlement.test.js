@@ -178,6 +178,44 @@ describe('atomic historical custody settlement, synthetic only', () => {
     expect(financial(db)).toEqual(before);
   });
 
+  it('posts a fully consumed thirty-document synthetic tranche as one atomic group', async () => {
+    const { db, sourceId } = await setup();
+    const ids = [sourceId];
+    for (let index = 1; index < 30; index += 1) {
+      const request = { action: 'previewCapture', kind: 'variable', requestId: `TEST-doc-${index}`,
+        patch: expensePatch({ amount: 100, quantity: 1, categoryId: 'synthetic-category',
+          invoiceNumber: `TEST-invoice-${index}`, invoiceUrl: `https://example.org/TEST-${index}`,
+          paymentStatus: 'paid', paymentMethod: 'card', paidDate: '2026-10-18',
+          fundingType: 'employee', fundingReference: `TEST receipt ${index}` }) };
+      const draft = await financeWorkbench(db, auth, request);
+      const captured = await financeWorkbench(db, auth, { ...request, action: 'capture',
+        previewHash: draft.previewHash, reason: 'TEST synthetic source', confirm: true });
+      ids.push(captured.sourceId);
+    }
+    const core = { action: 'preview', kind: 'custody_reconciliation',
+      beneficiary: { name: 'TEST beneficiary', sourceRef: 'TEST identity source' },
+      amount: 3000, correctionDate: postingDay, ownerStatementRef: 'TEST owner statement',
+      evidenceRefs: ['TEST single deposit'], fundingEvidence: [{ depositRowId: 'test-row',
+        evidenceRef: 'TEST single deposit', deliveryDate: '2026-10-17', depositAmount: 3000,
+        allocatedAmount: 3000 }],
+      allocations: ids.map(id => ({ kind: 'variable', sourceId: id, amount: 100,
+        allocationDecisionRef: 'TEST reviewed allocation',
+        fundingParts: [{ depositRowId: 'test-row', amount: 100 }] })) };
+    const preview = await financeWorkbench(db, auth, core);
+    expect(preview.blockingIssues).toEqual([]);
+    const save = { ...core, action: 'save', previewHash: preview.snapshotHash,
+      ownerApprovalRef: 'TEST exact approval', evidenceReviewRef: 'TEST deposit review',
+      ledgerReviewRef: 'TEST ledger review', reviewedUnrelatedJournalIds: [], priorClaims: [],
+      reason: 'TEST isolated group', confirm: true };
+    process.env.CUSTODY_HISTORICAL_APPROVED_MANIFEST_HASH = custodySettlementManifestHash(save);
+    const result = await financeWorkbench(db, auth, save);
+    expect(result).toMatchObject({ sourceCount: 30, fundedHalala: 300000,
+      consumedHalala: 300000, freeAdvanceBalanceHalala: 0 });
+    expect(result.journalIds).toHaveLength(31);
+    expect((await financeWorkbench(db, auth, { action: 'read', kind: 'variable', sourceId: ids[0] })).workflowStage).toBe('complete');
+    expect((await financeWorkbench(db, auth, { action: 'read', kind: 'variable', sourceId: ids[29] })).workflowStage).toBe('complete');
+  });
+
   it('rejects stale sources, changed requests, overlapping evidence and mismatched VAT evidence without writes', async () => {
     const { db, input, preview, save, sourceId } = await setup();
     const before = financial(db);

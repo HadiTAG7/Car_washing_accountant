@@ -38,6 +38,11 @@ Each node pins the endpoint and disables redirects and automatic retries.
 
 `POST https://app.hadialghanim.com/api/integrations/sweater/n8n`
 
+Vercel rewrites this URL to the existing operations function with the explicit
+`n8nEndpoint=1` selector. The function chooses one authenticator; a failed
+HMAC request never falls back to Bearer. No extra serverless function is
+deployed, keeping the application within its current hosting function limit.
+
 Only `preview`, `save` and `status` are accepted, with the same exact bodies,
 contract v2 payload, limits, preview hashes and response shapes documented in
 [SWEATER_OPERATIONS_SYNC.md](SWEATER_OPERATIONS_SYNC.md). The route calls the

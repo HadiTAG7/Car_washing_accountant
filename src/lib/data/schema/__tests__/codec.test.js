@@ -25,8 +25,9 @@ const roundTrip = (collection, id, data) => {
 };
 
 describe('سجل الجداول', () => {
-  it('round-trips the server-owned advance consumption counter in existing extra JSON', () => {
-    const advance = { amount: 150, status: 'pending', recovered_amount: 0, custody_expense_used_halala: 10000 };
+  it('round-trips the server-owned advance balance and opening journal in existing extra JSON', () => {
+    const advance = { amount: 150, status: 'pending', recovered_amount: 0, custody_expense_used_halala: 10000,
+      custody_balance_opened_journal_id: 'test-funding' };
     expect(roundTrip('temporary_expenses', 'test-advance', advance)).toEqual(advance);
     const journal = { sourceType: 'expense', sourceId: 'test-expense', status: 'posted',
       employeeAdvanceConsumption: { advanceId: 'test-advance', amountHalala: 10000, usedAfterHalala: 10000,

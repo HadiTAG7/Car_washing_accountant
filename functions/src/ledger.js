@@ -234,10 +234,6 @@ export async function postSource(db, FieldValue, { kind, sourceId }, { userId = 
       throw new LedgerError('السجل المصدر غير موجود.', { code: 'not-found' });
     }
     const row = sourceSnap.data();
-    if (kind === 'temporary_expense' && (row.custody_expense_used_halala != null
-      || row.custody_balance_opened_journal_id != null)) {
-      throw new LedgerError('العهدة تحمل رصيد استهلاك أو افتتاحًا سابقًا؛ يلزم فحصها قبل تمويل جديد.');
-    }
     if (financeAuthorizer) await financeAuthorizer(tx);
     if (adapter.approved && !adapter.approved(row)) {
       // نصٌّ أو دالة: معظم المُحوِّلات لها سببٌ واحد ثابت، وغسلةُ سويتر لها
@@ -253,6 +249,10 @@ export async function postSource(db, FieldValue, { kind, sourceId }, { userId = 
         `سبق ترحيل هذا السجل بالقيد رقم ${existing.data().entryNumber ?? '—'} — لا يُرحّل مرتين.`,
         { code: 'already-exists' },
       );
+    }
+    if (kind === 'temporary_expense' && (row.custody_expense_used_halala != null
+      || row.custody_balance_opened_journal_id != null)) {
+      throw new LedgerError('العهدة تحمل رصيد استهلاك أو افتتاحًا سابقًا؛ يلزم فحصها قبل تمويل جديد.');
     }
     if (kind === 'recovery') {
       const prior = await tx.get(db.collection(COL.ENTRIES).where('sourceId', '==', id).limit(101));
@@ -548,7 +548,8 @@ export async function reverseEntry(db, FieldValue, entryId, { entryDate, descrip
     if (original.sourceType === 'recovery' && original.sourceId) {
       const ref = db.collection('temporary_expenses').doc(original.sourceId);
       const snap = await tx.get(ref);
-      if (snap.exists && custodyExpenseUsedCents(snap.data()) > 0) {
+      if (snap.exists && (custodyExpenseUsedCents(snap.data()) > 0
+        || snap.data().custody_balance_opened_journal_id)) {
         if (snap.data().status !== 'recovered' || snap.data().payroll_lock_id) {
           throw new LedgerError('حالة العهدة تغيرت بعد الاسترداد؛ يلزم تصحيح منسق قبل العكس.');
         }

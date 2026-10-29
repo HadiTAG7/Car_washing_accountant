@@ -59,6 +59,15 @@ describe.skipIf(!enabled)('finance real Firestore workflow — isolated demo onl
     expect((await db.doc('temporary_expenses/new-funding').get()).data()).toMatchObject({
       custody_expense_used_halala: 0, custody_balance_opened_journal_id: posted.entryId,
     });
+    await expect(postSource(db, FieldValue, { kind: 'temporary_expense', sourceId: 'new-funding' }, { userId: auth.uid }))
+      .rejects.toThrow(/سبق ترحيل/);
+    await db.doc('temporary_expenses/new-funding').update({ status: 'recovered', recovered_date: '2026-10-19' });
+    const recovered = await postSource(db, FieldValue, { kind: 'recovery', sourceId: 'new-funding' }, { userId: auth.uid });
+    await expect(reverseEntry(db, FieldValue, posted.entryId, { entryDate: '2026-10-20', userId: auth.uid }))
+      .rejects.toThrow(/مستهلك/);
+    await reverseEntry(db, FieldValue, recovered.entryId, { entryDate: '2026-10-20', userId: auth.uid });
+    expect((await db.doc('temporary_expenses/new-funding').get()).data().status).toBe('pending');
+    await reverseEntry(db, FieldValue, posted.entryId, { entryDate: '2026-10-20', userId: auth.uid });
   }, 120000);
 
   it('posts only a matched employee advance, then recovers the remaining balance and reverses in order', async () => {

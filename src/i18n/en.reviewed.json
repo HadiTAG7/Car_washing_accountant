@@ -4407,5 +4407,7 @@
   "رصيد استرداد العهدة لا يطابق الخصومات المحفوظة؛ يلزم فحصه.": "The advance recovery balance does not match recorded deductions and needs review.",
   "لا يوجد رصيد عهدة قابل للاسترداد؛ راجع المصروفات وخصومات الرواتب.": "No advance balance remains to recover; review expenses and payroll deductions.",
   "استرداد العهدة له قيد سارٍ أو تاريخ ترحيل يحتاج مراجعة؛ لا يُرحّل مرتين.": "The advance recovery has an active entry or posting history that needs review; it cannot be posted twice.",
-  "قيد تمويل العهدة له استرداد مرحل؛ اعكس الاسترداد قبل التمويل.": "The advance funding entry has a posted recovery; reverse the recovery before the funding."
+  "قيد تمويل العهدة له استرداد مرحل؛ اعكس الاسترداد قبل التمويل.": "The advance funding entry has a posted recovery; reverse the recovery before the funding.",
+  "العهدة القديمة لم تُطابق مع سجل الاستهلاك المشترك؛ يلزم فحصها قبل تخصيص مصروف.": "The legacy advance has not been reconciled with the shared consumption ledger; review it before allocating an expense.",
+  "العهدة تحمل رصيد استهلاك أو افتتاحًا سابقًا؛ يلزم فحصها قبل تمويل جديد.": "The advance already carries consumption or an opening entry; review it before posting new funding."
 }

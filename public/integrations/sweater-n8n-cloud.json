@@ -76,11 +76,6 @@
           }
         }
       },
-      "credentials": {
-        "browserbaseApi": {
-          "name": "Browserbase account"
-        }
-      },
       "retryOnFail": false,
       "onError": "stopWorkflow"
     },
@@ -124,11 +119,6 @@
               "responseFormat": "json"
             }
           }
-        }
-      },
-      "credentials": {
-        "browserbaseApi": {
-          "name": "Browserbase account"
         }
       },
       "retryOnFail": false,
@@ -189,7 +179,7 @@
         0
       ],
       "parameters": {
-        "jsCode": "function makeVerifiedSourceBatches(source, executionId, validationMode) {\n  if (source?.format === 'ssp-columnar-v1') {\n    const count=source.coverage?.recordCount;\n    if (!Number.isInteger(count) || count<0 || count>2000 || !Array.isArray(source.columns) || source.columns.length>14) throw new Error('Invalid source transport');\n    const records=Array.from({length:count},()=>({})), keys=new Set();\n    for (const {key,values,indices} of source.columns) {\n      if (typeof key!=='string' || ['__proto__','constructor','prototype'].includes(key) || keys.has(key)\n        || !Array.isArray(values) || !Array.isArray(indices) || indices.length!==count\n        || values.some(v=>v!==null && !['string','number','boolean'].includes(typeof v))) throw new Error('Invalid source transport column');\n      keys.add(key);\n      indices.forEach((index,i)=>{\n        if (!Number.isInteger(index) || index < -1 || index>=values.length) throw new Error('Invalid source transport index');\n        if(index!==-1)records[i][key]=values[index];\n      });\n    }\n    source={coverage:source.coverage,records};\n  }\n  const c=source?.coverage, records=source?.records;\n  if (!c || !Array.isArray(records) || c.recordCount !== records.length || c.isComplete !== true\n    || c.pagesFetched !== c.pageCount || c.pageCount < 1 || !Array.isArray(c.gaps) || c.gaps.length\n    || c.modules?.individual !== 'complete' || c.modules?.corporate !== 'complete'\n    || !Number.isFinite(Date.parse(c.extractedAt)) || records.length > 2000) throw new Error('Complete, verified SSP coverage is required before import');\n  if (!/^[A-Za-z0-9_-]{1,100}$/.test(String(executionId))) throw new Error('Invalid execution ID');\n  const allowed=new Set(['sspBookingId','bookingKind','serviceDate','serviceType','serviceTypeLabel','driverExternalId','rawStatus','serviceTime','arrivedAt','startedAt','completedAt','platformAmount','sourceUrl','notes']);\n  const seen=new Set();\n  for (const r of records) {\n    const prefix='https://ssp-portal.sweater.sa'+(r.bookingKind==='individual'?'/bookings':'/b2b-bookings')+'?';\n    if (typeof r.sourceUrl!=='string' || !r.sourceUrl.startsWith(prefix) || /[#@]/.test(r.sourceUrl)) throw new Error('Invalid source URL');\n    const entries=r.sourceUrl.slice(prefix.length).split('&').map(part=>part.split('=').map(decodeURIComponent));\n    const query=Object.fromEntries(entries);\n    if (Object.keys(r).some(k=>!allowed.has(k)) || !/^[A-Z]-\\d+$/.test(r.sspBookingId) || seen.has(r.sspBookingId)\n      || !['individual','corporate'].includes(r.bookingKind) || !r.rawStatus || !r.serviceType\n      || r.serviceDate < c.rangeFrom || r.serviceDate > c.rangeTo || entries.length!==Object.keys(query).length\n      || query.fromDate !== r.serviceDate || query.toDate !== r.serviceDate\n      || Object.keys(query).some(k=>!['page','pageSize','fromDate','toDate'].includes(k))) throw new Error('Invalid or repeated source record');\n    seen.add(r.sspBookingId);\n  }\n  const result=[];\n  for (let i=0;i<Math.max(1,records.length);i+=100) {\n    const batch=records.slice(i,i+100);\n    result.push({json:{validationMode, payload:{contractVersion:2,importRunId:`n8n-${executionId}-b${i/100+1}`,agentStatus:'ok',\n      coverage:{...c,recordCount:batch.length},workerLinks:{},records:batch}}});\n  }\n  return result;\n}\nconst r=$input.first().json;\nreturn makeVerifiedSourceBatches(r.results,$execution.id,$('Prepare source job').first().json.validationMode);"
+        "jsCode": "function makeVerifiedSourceBatches(source, executionId, validationMode) {\r\n  if (source?.format === 'ssp-columnar-v1') {\r\n    const count=source.coverage?.recordCount;\r\n    if (!Number.isInteger(count) || count<0 || count>2000 || !Array.isArray(source.columns) || source.columns.length>14) throw new Error('Invalid source transport');\r\n    const records=Array.from({length:count},()=>({})), keys=new Set();\r\n    for (const {key,values,indices} of source.columns) {\r\n      if (typeof key!=='string' || ['__proto__','constructor','prototype'].includes(key) || keys.has(key)\r\n        || !Array.isArray(values) || !Array.isArray(indices) || indices.length!==count\r\n        || values.some(v=>v!==null && !['string','number','boolean'].includes(typeof v))) throw new Error('Invalid source transport column');\r\n      keys.add(key);\r\n      indices.forEach((index,i)=>{\r\n        if (!Number.isInteger(index) || index < -1 || index>=values.length) throw new Error('Invalid source transport index');\r\n        if(index!==-1)records[i][key]=values[index];\r\n      });\r\n    }\r\n    source={coverage:source.coverage,records};\r\n  }\r\n  const c=source?.coverage, records=source?.records;\r\n  if (!c || !Array.isArray(records) || c.recordCount !== records.length || c.isComplete !== true\r\n    || c.pagesFetched !== c.pageCount || c.pageCount < 1 || !Array.isArray(c.gaps) || c.gaps.length\r\n    || c.modules?.individual !== 'complete' || c.modules?.corporate !== 'complete'\r\n    || !Number.isFinite(Date.parse(c.extractedAt)) || records.length > 2000) throw new Error('Complete, verified SSP coverage is required before import');\r\n  if (!/^[A-Za-z0-9_-]{1,100}$/.test(String(executionId))) throw new Error('Invalid execution ID');\r\n  const allowed=new Set(['sspBookingId','bookingKind','serviceDate','serviceType','serviceTypeLabel','driverExternalId','rawStatus','serviceTime','arrivedAt','startedAt','completedAt','platformAmount','sourceUrl','notes']);\r\n  const seen=new Set();\r\n  for (const r of records) {\r\n    const prefix='https://ssp-portal.sweater.sa'+(r.bookingKind==='individual'?'/bookings':'/b2b-bookings')+'?';\r\n    if (typeof r.sourceUrl!=='string' || !r.sourceUrl.startsWith(prefix) || /[#@]/.test(r.sourceUrl)) throw new Error('Invalid source URL');\r\n    const entries=r.sourceUrl.slice(prefix.length).split('&').map(part=>part.split('=').map(decodeURIComponent));\r\n    const query=Object.fromEntries(entries);\r\n    if (Object.keys(r).some(k=>!allowed.has(k)) || !/^[A-Z]-\\d+$/.test(r.sspBookingId) || seen.has(r.sspBookingId)\r\n      || !['individual','corporate'].includes(r.bookingKind) || !r.rawStatus || !r.serviceType\r\n      || r.serviceDate < c.rangeFrom || r.serviceDate > c.rangeTo || entries.length!==Object.keys(query).length\r\n      || query.fromDate !== r.serviceDate || query.toDate !== r.serviceDate\r\n      || Object.keys(query).some(k=>!['page','pageSize','fromDate','toDate'].includes(k))) throw new Error('Invalid or repeated source record');\r\n    seen.add(r.sspBookingId);\r\n  }\r\n  const result=[];\r\n  for (let i=0;i<Math.max(1,records.length);i+=100) {\r\n    const batch=records.slice(i,i+100);\r\n    result.push({json:{validationMode, payload:{contractVersion:2,importRunId:`n8n-${executionId}-b${i/100+1}`,agentStatus:'ok',\r\n      coverage:{...c,recordCount:batch.length},workerLinks:{},records:batch}}});\r\n  }\r\n  return result;\r\n}\nconst r=$input.first().json;\nreturn makeVerifiedSourceBatches(r.results,$execution.id,$('Prepare source job').first().json.validationMode);"
       }
     },
     {
@@ -254,11 +244,6 @@
               "responseFormat": "json"
             }
           }
-        }
-      },
-      "credentials": {
-        "httpHeaderAuth": {
-          "name": "Sweater | Wash import"
         }
       },
       "retryOnFail": false,

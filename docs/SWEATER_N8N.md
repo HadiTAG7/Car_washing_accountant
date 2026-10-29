@@ -117,6 +117,13 @@ have stored IDs, not merely display names. Validate one completed day using
 production. Publish only after source coverage, preview and saved readback
 pass. The schedule is `0 0 * * *` with workflow timezone `Asia/Riyadh`.
 
+The public downloadable templates contain no credential bindings and remain
+inactive. Select existing credentials explicitly after importing into n8n.
+For instance-specific generation, supply `sourceCredentialId` and
+`importCredentialId`; display names alone never create a binding. The cloud
+wash collector does not refresh Business Dashboard, Tips or Compensations;
+those display snapshots still use the separately authorized metrics path.
+
 The controller polls the same invocation, requires complete source coverage,
 splits records into batches of at most 100, and runs the existing import
 sub-workflow once per batch. Each batch keeps its full immutable payload and

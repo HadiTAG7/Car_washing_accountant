@@ -56,4 +56,29 @@ export default defineConfig([
       globals: { ...globals.node },
     },
   },
+  // Browserbase Playground executes this generated artifact as an async
+  // function body, not a standalone module. Keep lint enabled for its code.
+  {
+    files: ['public/integrations/sweater-browserbase-function.js'],
+    plugins: {
+      browserbase: {
+        processors: {
+          'async-body': {
+            preprocess(text) { return [`async function _browserbaseFunction() {\n${text}\n}`] },
+            postprocess(messageLists) {
+              return messageLists.flat().map(message => ({
+                ...message,
+                line: Math.max(1, message.line - 1),
+                ...(message.endLine ? { endLine: Math.max(1, message.endLine - 1) } : {}),
+              }))
+            },
+          },
+        },
+      },
+    },
+    processor: 'browserbase/async-body',
+    languageOptions: {
+      globals: { chromium: 'readonly', connectUrl: 'readonly', params: 'readonly' },
+    },
+  },
 ])

@@ -176,7 +176,9 @@ describe('Hadi current account and founding-period settlement', () => {
     expect([...db.rows.keys()].filter(k => k.startsWith('founding_decisions/'))).toHaveLength(2);
 
     const applied = await call(db, { action: 'applyRule', hash: rule.hash, confirm: true });
-    expect(applied).toMatchObject({ applied: 3, updates: ['variable:v1'] });
+    expect(applied).toMatchObject({ applied: 3 });
+    // The exceptions saved before the rule run with it.
+    expect(applied.updates.sort()).toEqual(['variable:v1', 'variable:v2', 'variable:v4']);
     const decisions = Object.fromEntries([...db.rows].filter(([k]) => k.startsWith('founding_decisions/')).map(([, v]) => [v.sourceKey, v]));
     expect(decisions['variable:v3']).toMatchObject({ decision: 'founding_rule', decidedBy: 'test-admin', decidedByName: 'مدير الاختبار' });
     expect(db.rows.get('founding_review/current').lastRule).toMatchObject({ count: 3, total: 2030, byName: 'مدير الاختبار', cutoffDate: '2026-10-01' });
@@ -187,7 +189,7 @@ describe('Hadi current account and founding-period settlement', () => {
 
     read = await call(db, { action: 'read' });
     expect(read.plan.rule.count).toBe(0);
-    expect(read.plan.rule.pendingUpdates).toEqual(['variable:v1']);
+    expect(read.plan.rule.pendingUpdates.sort()).toEqual(['variable:v1', 'variable:v2', 'variable:v4']);
     const updates = await call(db, { action: 'applyUpdates', keys: ['variable:v1', 'variable:v2', 'variable:v4'], confirm: true });
     expect(updates.results.map(r => [r.key, r.ok])).toEqual([['variable:v1', true], ['variable:v2', true], ['variable:v4', true]]);
     const v1 = db.rows.get('variable_expenses/v1'), v2 = db.rows.get('variable_expenses/v2'), v4 = db.rows.get('variable_expenses/v4');

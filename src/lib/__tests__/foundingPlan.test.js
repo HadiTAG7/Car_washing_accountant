@@ -131,6 +131,7 @@ describe('the founding-period default rule', () => {
     const plan = foundingPlan({ docs: docs(), decisions: applied, closedMonths: new Set(['2026-06']) });
     expect(plan.rule.count).toBe(0);
     expect(plan.rule.pendingUpdates).toEqual(['variable:open']);
+    expect(plan.rule.toUpdate).toBe(1);
     expect(plan.updates.find(u => u.key === 'variable:june')).toMatchObject({ source: 'rule', blocked: true });
     expect(plan.entries.filter(e => e.status === 'proposed').map(e => e.sourceKey)).toEqual(['variable:posted', 'variable:owed', 'variable:excepted']);
     expect(plan.entries.find(e => e.sourceKey === 'variable:posted').description).toContain('دفع شخصي - فترة التأسيس');

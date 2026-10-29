@@ -9,9 +9,9 @@ const EXCEPTIONS = { partner: 'دفعها الشريك', custody: 'من عهدة
 const BATCH = 5;
 
 /** «تطبيق القاعدة الافتراضية لفترة التأسيس»: معاينة كاملة، استثناءات، ثم تطبيق بموافقة. */
-export function DefaultRule({ founding, partners, names }) {
+export function DefaultRule({ founding, partners, names, progress, setProgress }) {
   const { plan } = founding.data, rule = plan.rule;
-  const [query, setQuery] = useState(''), [progress, setProgress] = useState(null);
+  const [query, setQuery] = useState('');
   const visible = rule.candidates.filter(c => !query || `${c.title} ${c.amount} ${c.date}`.includes(query.trim()));
   async function runUpdates(keys) {
     const failed = [];
@@ -36,7 +36,7 @@ export function DefaultRule({ founding, partners, names }) {
       المرحّل لا يتعدل: يُربط بالقاعدة، ويُقترح له قيد تصحيح ينتظر موافقتك. ما يمس إقرارًا مقدّمًا يبقى محجوزًا حتى تراجعه.</p>
     {rule.applied && <p role="status" className="fw-success">طُبّقت على {rule.applied.count} مستندًا ({money(rule.applied.total)}) — {rule.applied.byName}، {rule.applied.atIso.slice(0, 16).replace('T', ' ')}.</p>}
     {rule.pendingUpdates.length > 0 && !progress && <div className="fw-warning" role="status">
-      <span>{rule.pendingUpdates.length} مستندًا غير مرحّل تحت القاعدة لم يتعدل بعد.</span>
+      <span>{rule.pendingUpdates.length} مستندًا غير مرحّل (بالقاعدة أو باستثناء أو قرار) لم يتعدل بعد.</span>
       <ConfirmButton label="تطبيق المتبقي" confirmText="يعدّل جهة الدفع وتاريخه في هذه المستندات فقط عبر صندوق العمل المالي." disabled={founding.busy}
         onConfirm={() => runUpdates(rule.pendingUpdates)} />
     </div>}
@@ -72,7 +72,7 @@ export function DefaultRule({ founding, partners, names }) {
       </details>
       <div className="fw-actions">
         <ConfirmButton primary label={`تطبيق القاعدة على ${rule.count} مستندًا`} disabled={founding.busy || Boolean(progress && progress.done < progress.total)}
-          confirmText={`يحفظ أن دافع ${rule.count} مستندًا (${money(rule.total)}) هو هادي باسمك ووقتك، ويعدّل ${rule.unposted.count - rule.blocked} مستندًا غير مرحّل عبر صندوق العمل المالي. قيود المرحّلة (${rule.entries.length}) تنتظر موافقتك. لا ترحيل.`}
+          confirmText={`يحفظ أن دافع ${rule.count} مستندًا (${money(rule.total)}) هو هادي باسمك ووقتك، ويعدّل ${rule.toUpdate} مستندًا غير مرحّل (مع الاستثناءات) عبر صندوق العمل المالي. قيود المرحّلة (${rule.entries.length}) تنتظر موافقتك. لا ترحيل.`}
           onConfirm={apply} />
       </div>
     </>}

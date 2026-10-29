@@ -90,7 +90,8 @@ describe.skipIf(!enabled)('founding settlement on Postgres with the production s
     await expect(call({ action: 'applyRule', hash: rule.hash, confirm: true })).rejects.toThrow(/تغيرت/);
     read = await call({ action: 'read' });
     const applied = await call({ action: 'applyRule', hash: read.plan.rule.hash, confirm: true });
-    expect(applied).toMatchObject({ applied: 3, updates: ['variable:v1'] });
+    expect(applied).toMatchObject({ applied: 3 });
+    expect(applied.updates.sort()).toEqual(['variable:v1', 'variable:v2']);
     const result = await call({ action: 'applyUpdates', keys: ['variable:v1', 'variable:v2'], confirm: true });
     expect(result.results.every(r => r.ok)).toBe(true);
     const rows = (await pool.query("select id, payment_method, paid_date, finance_metadata->>'fundingType' as funding from public.variable_expenses where id in ('v1','v2') order by id")).rows;

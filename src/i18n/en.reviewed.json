@@ -4740,7 +4740,6 @@
   ". المرحّل لا يتعدل: يُربط بالقاعدة، ويُقترح له قيد تصحيح ينتظر موافقتك. ما يمس إقرارًا مقدّمًا يبقى محجوزًا حتى تراجعه.": ". Posted documents do not change: they are linked to the rule, and a correction entry awaiting your approval is proposed. Anything affecting a filed return stays held until you review it.",
   "طُبّقت على": "Applied to",
   "مستندًا (": "documents (",
-  "مستندًا غير مرحّل تحت القاعدة لم يتعدل بعد.": "unposted documents under the rule have not been updated yet.",
   "تطبيق المتبقي": "Apply the rest",
   "يعدّل جهة الدفع وتاريخه في هذه المستندات فقط عبر صندوق العمل المالي.": "Changes only the payer and payment date in these documents, through the finance workbench.",
   "تقدم التعديل": "Update progress",
@@ -4766,10 +4765,8 @@
   "تطبيق القاعدة على [VAR0] مستندًا": "Apply the rule to [VAR0] documents",
   "تطبيق القاعدة على": "Apply the rule to",
   "مستندًا": "documents",
-  "يحفظ أن دافع [VAR0] مستندًا ([VAR1]) هو هادي باسمك ووقتك، ويعدّل [VAR2] مستندًا غير مرحّل عبر صندوق العمل المالي. قيود المرحّلة ([VAR3]) تنتظر موافقتك. لا ترحيل.": "Saves that Hadi paid [VAR0] documents ([VAR1]) under your name and time, and changes [VAR2] unposted documents through the finance workbench. Entries for posted documents ([VAR3]) await your approval. Nothing is posted.",
   "يحفظ أن دافع": "Saves that Hadi paid",
   ") هو هادي باسمك ووقتك، ويعدّل": ") under your name and time, and changes",
-  "مستندًا غير مرحّل عبر صندوق العمل المالي. قيود المرحّلة (": "unposted documents through the finance workbench. Entries for posted documents (",
   ") تنتظر موافقتك. لا ترحيل.": ") await your approval. Nothing is posted.",
   "استثناء: [VAR0]": "Exception: [VAR0]",
   "استثناء:": "Exception:",
@@ -4817,5 +4814,8 @@
   "تاريخ المستند في فترة مقفلة؛ لا يتعدل إلا بفتحها.": "The document date is in a closed period; it changes only if the period is reopened.",
   "[VAR0] (قبل [VAR1])": "[VAR0] (before [VAR1])",
   "(قبل": "(before",
-  "تطبيق القاعدة الافتراضية لفترة التأسيس": "Apply the founding-period default rule"
+  "تطبيق القاعدة الافتراضية لفترة التأسيس": "Apply the founding-period default rule",
+  "مستندًا غير مرحّل (بالقاعدة أو باستثناء أو قرار) لم يتعدل بعد.": "unposted documents (by the rule, an exception or a decision) have not been updated yet.",
+  "يحفظ أن دافع [VAR0] مستندًا ([VAR1]) هو هادي باسمك ووقتك، ويعدّل [VAR2] مستندًا غير مرحّل (مع الاستثناءات) عبر صندوق العمل المالي. قيود المرحّلة ([VAR3]) تنتظر موافقتك. لا ترحيل.": "Saves that Hadi paid [VAR0] documents ([VAR1]) under your name and time, and changes [VAR2] unposted documents (with the exceptions) through the finance workbench. Entries for posted documents ([VAR3]) await your approval. Nothing is posted.",
+  "مستندًا غير مرحّل (مع الاستثناءات) عبر صندوق العمل المالي. قيود المرحّلة (": "unposted documents (with the exceptions) through the finance workbench. Entries for posted documents ("
 }

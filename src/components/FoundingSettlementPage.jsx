@@ -19,6 +19,8 @@ const KIND = { variable: 'متغيرة', monthly: 'شهرية', annual: 'سنو�
 export default function FoundingSettlementPage() {
   const founding = useFounding();
   const data = founding.data, plan = data?.plan;
+  // Kept here, not in the rule section: a re-read unmounts the plan while it loads.
+  const [ruleProgress, setRuleProgress] = useState(null);
   if (!founding.allowed) return <div className="fw-page"><p role="alert">تسوية فترة التأسيس للإدارة فقط.</p></div>;
   return <>
     <TopBar title="تسوية فترة التأسيس" subtitle="مطابقة ما قبل تاريخ القطع، والقيود المقترحة بانتظار موافقتك" />
@@ -32,7 +34,7 @@ export default function FoundingSettlementPage() {
       {plan && <>
         {/* A saved revision remounts the form with the stored values. */}
         <Settings key={Number(data.review?.revision) || 0} founding={founding} />
-        <DefaultRule founding={founding} partners={data.partners} names={data.accountNames} />
+        <DefaultRule founding={founding} partners={data.partners} names={data.accountNames} progress={ruleProgress} setProgress={setRuleProgress} />
         <StatementComparison plan={plan} names={data.accountNames} />
         <div className="fw-metrics">
           {[['matched', 'أ) مطابقة لكشف'], ['small', 'ب) تحت الحد بلا إثبات'], ['large', 'ج) فوق الحد بلا إثبات'], ['partners', 'د) دفعات الشركاء'], ['withProof', 'بإثبات ولم تطابق كشفًا']]

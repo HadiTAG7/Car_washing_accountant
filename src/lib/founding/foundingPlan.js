@@ -254,6 +254,7 @@ function planCore(input) {
 }
 
 // ── القاعدة الافتراضية لفترة التأسيس ───────────────────────────────────
+const runnable = u => !u.held && !u.blocked;
 /**
  * كل مستند قبل القطع لم يُحسم من دفعه (لا كشف ولا قرار) وناقصه حساب التمويل
  * أو تاريخ الدفع أو طريقة الدفع ← دفعه هادي من حسابه («دفع شخصي - فترة
@@ -285,8 +286,10 @@ function ruleProposal(input, core) {
     lines: [...byAccount.values()].sort((a, b) => a.accountId.localeCompare(b.accountId))
       .map(t => ({ accountId: t.accountId, debit: riyal(t.debit), credit: riyal(t.credit) })),
     applied: input.settings?.lastRule || null,
-    // Unposted documents the rule already covers whose update is still to run.
-    pendingUpdates: core.updates.filter(u => u.source === 'rule' && !u.held && !u.blocked).map(u => u.key),
+    // What «تطبيق» changes in unposted records: the rule's documents and every
+    // saved decision or exception still to apply — not what is held or closed.
+    toUpdate: [...new Set([...updates, ...core.updates].filter(runnable).map(u => u.key))].length,
+    pendingUpdates: core.updates.filter(runnable).map(u => u.key),
   };
 }
 

@@ -375,7 +375,9 @@ async function applyRule(db, auth, r) {
     ...stamp(auth.uid, name) });
     tx.create(db.collection('audit_logs').doc(), { action: 'founding-rule', collectionName: 'founding_decisions', documentId: plan.settings.cutoffDate,
       userId: auth.uid, after: { ...lastRule, keys: plan.rule.candidates.map(c => c.key), accountsCreated: created }, at: FieldValue.serverTimestamp() });
-    return { applied: plan.rule.count, updates: plan.rule.updates.filter(u => !u.held && !u.blocked).map(u => u.key), lastRule };
+    // The rule's unposted documents, and the exceptions/decisions saved before it, in one run.
+    const updates = [...new Set([...plan.rule.updates, ...plan.updates].filter(u => !u.held && !u.blocked).map(u => u.key))];
+    return { applied: plan.rule.count, updates, lastRule };
   });
 }
 

@@ -39,7 +39,8 @@ function toPatch(kind, form) {
   if (form.priceMode) p.priceMode = form.priceMode;
   return p;
 }
-const paymentNames = { cash: 'نقد', transfer: 'تحويل بنكي', card: 'مدى / بطاقة', credit: 'على الحساب', owner_current: 'من حساب هادي الشخصي' };
+const paymentNames = { cash: 'نقد', transfer: 'تحويل بنكي', card: 'مدى / بطاقة', credit: 'على الحساب', owner_current: 'من حساب هادي الشخصي',
+  founding_personal: 'دفع شخصي - فترة التأسيس', custody: 'من عهدة', partner_paid: 'دفعه شريك من جيبه' };
 
 export default function FinanceExpenseForm({ kind, detail, requestId, options, onSaved, onMessage, onCancel, onEdit, onBusy, onReload }) {
   const initial = fromRow(kind, detail?.row);
@@ -119,7 +120,9 @@ export default function FinanceExpenseForm({ kind, detail, requestId, options, o
     {error && <div className="fw-warning" role="alert">{error}</div>}
     <section aria-label="الأساسي"><h3 className="fw-form-section-title">الأساسي</h3><div className="fw-form">
       {input('الوصف', 'description')}{input('المبلغ بالريال', 'amount', 'number')}{input('تاريخ المصروف', 'date', 'date')}{input('المورد', 'supplier')}
-      {select('طريقة الدفع', 'paymentMethod', [['unknown', 'غير محددة'], ['cash', 'نقد'], ['transfer', 'تحويل بنكي'], ['card', 'مدى / بطاقة'], ['credit', 'على الحساب'], ['owner_current', 'من حساب هادي الشخصي']])}
+      {select('طريقة الدفع', 'paymentMethod', [['unknown', 'غير محددة'], ['cash', 'نقد'], ['transfer', 'تحويل بنكي'], ['card', 'مدى / بطاقة'], ['credit', 'على الحساب'], ['owner_current', 'من حساب هادي الشخصي'], ['founding_personal', 'دفع شخصي - فترة التأسيس'],
+        // Set by the founding-period settlement with the partner / custodian named; shown, not offered.
+        ...(['custody', 'partner_paid'].includes(form.paymentMethod) ? [[form.paymentMethod, paymentNames[form.paymentMethod]]] : [])])}
       {input('تاريخ السداد', 'paidDate', 'date')}{input('رابط الإيصال', 'invoiceUrl', 'url')}
     </div></section>
     {suggestion && form.paymentMethod !== suggestion && <div className="fw-suggestion" role="status"><span>اقتراح للمستند الجديد: {paymentNames[suggestion]}. لا يُطبق إلا بتأكيدك.</span>
@@ -134,7 +137,7 @@ export default function FinanceExpenseForm({ kind, detail, requestId, options, o
     </div></details>
     <details className="fw-form-section"><summary>السداد والتمويل</summary><div className="fw-form">
       {select('حالة السداد', 'paymentStatus', [['unknown', 'غير مثبتة'], ['unpaid', 'لم يُسدد بعد'], ['paid', 'تم السداد بدليله']])}
-      {select('من أين دُفع المبلغ؟', 'fundingType', [['unknown', 'غير مثبت'], ['company_cash', 'صندوق المنشأة'], ['company_bank', 'بنك المنشأة'], ['vendor_liability', 'لم يُدفع — ذمة مورد'], ['partner', 'دفع شريك — يحتاج حسم الحساب'], ['employee', 'دفع موظف — يحتاج حسم الحساب'], ['owner_current', 'حساب هادي الجاري']])}
+      {select('من أين دُفع المبلغ؟', 'fundingType', [['unknown', 'غير مثبت'], ['company_cash', 'صندوق المنشأة'], ['company_bank', 'بنك المنشأة'], ['vendor_liability', 'لم يُدفع — ذمة مورد'], ['partner', 'دفع شريك — يحتاج حسم الحساب'], ['employee', 'دفع موظف — يحتاج حسم الحساب'], ['owner_current', 'حساب هادي الجاري'], ...(form.fundingType === 'custody' ? [['custody', 'من عهدة']] : [])])}
       {input('دليل الدفع أو ذمة المورد', 'fundingReference')}{input('سبب المصروف للمشروع', 'purpose')}
     </div></details>
     <details className="fw-form-section"><summary>التصنيف والمراجع</summary><div className="fw-form">

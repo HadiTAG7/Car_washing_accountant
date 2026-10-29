@@ -37,6 +37,9 @@ export const PAYMENT_METHOD_LABELS = {
   transfer: 'تحويل بنكي',
   credit:   'آجل',
   owner_current: 'من حساب هادي الشخصي',
+  founding_personal: 'دفع شخصي - فترة التأسيس',
+  custody: 'من عهدة',
+  partner_paid: 'دفعه شريك من جيبه',
 };
 
 /** The account money moves through for a given method, on the SALES side. */
@@ -51,15 +54,23 @@ export function settlementAccountForSale(method) {
 }
 
 /** The account money moves through for a given method, on the PURCHASE side. */
-export function settlementAccountForPurchase(method, paymentStatus) {
+export function settlementAccountForPurchase(method, paymentStatus, fundingPartnerId = null) {
   // An unpaid purchase is a liability regardless of the intended method.
   if (paymentStatus === 'unpaid' || method === 'credit') return ACC.PAYABLE;
   switch (method) {
     case 'cash':     return ACC.CASH;
     case 'card':
     case 'transfer': return ACC.BANK;
-    // دفعه هادي من حسابه الشخصي: المشروع مدين له في حسابه الجاري.
-    case 'owner_current': return ACC.HADI_CURRENT;
+    // دفعه هادي من حسابه الشخصي (بكشف أو بقاعدة فترة التأسيس): المشروع مدين له.
+    case 'owner_current':
+    case 'founding_personal': return ACC.HADI_CURRENT;
+    // من عهدة شخص: تنقص العهدة.
+    case 'custody':  return ACC.EMPLOYEE_ADVANCE;
+    // دفعه شريك من جيبه: مساهمة في رأس ماله.
+    case 'partner_paid': {
+      if (!fundingPartnerId) throw new Error('الشريك الذي دفع غير محدد.');
+      return partnerCapitalCode(fundingPartnerId);
+    }
     default:         return ACC.CASH;
   }
 }
@@ -156,6 +167,7 @@ export function buildExpenseEntry(expense, {
 } = {}) {
   const method = expense.paymentMethod || 'cash';
   const status = expense.paymentStatus || 'paid';
+  const fundingPartner = expense.fundingPartnerId ?? expense.finance_metadata?.fundingPartnerId ?? expense.financeMetadata?.fundingPartnerId ?? null;
   const date = String(expense.date || expense.invoiceDate || '').slice(0, 10);
   if (sourceRow) {
     const issues = printedDiscountSourceProblems(sourceKind, expense.id, sourceRow);
@@ -203,7 +215,7 @@ export function buildExpenseEntry(expense, {
     });
   }
   lines.push({
-    accountId: split ? ACC.PAYABLE : settlementAccountForPurchase(method, status),
+    accountId: split ? ACC.PAYABLE : settlementAccountForPurchase(method, status, fundingPartner),
     debit: 0, credit: tax.gross,
     description: supplierLabel,
   });
@@ -239,7 +251,7 @@ export function buildExpenseEntry(expense, {
     lines: [
       { accountId: ACC.PAYABLE, debit: tax.gross, credit: 0, description: supplierLabel },
       {
-        accountId: settlementAccountForPurchase(method, 'paid'),
+        accountId: settlementAccountForPurchase(method, 'paid', fundingPartner),
         debit: 0, credit: tax.gross,
         description: `سداد ${accrualDate}`,
       },

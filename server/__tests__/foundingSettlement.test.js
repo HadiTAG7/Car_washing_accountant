@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { financeWorkbench } from '../financeWorkbench.js';
 import { statementLineId, foundingEntryId, ledgerEffects } from '../foundingSettlement.js';
 import { financeProblems } from '../../functions/src/financeReview.js';
+import { ADAPTERS } from '../../functions/src/posting.js';
+import { taxPolicyAt } from '../../functions/src/taxPolicy.js';
 import { memoryFinanceDb } from './financeFixtures.js';
 import { foundingSeed as seed, foundingAuth as auth } from './foundingFixture.js';
 
@@ -91,11 +93,14 @@ describe('Hadi current account and founding-period settlement', () => {
     expect(read.accounts.hadi).toBe(true); // created on the first personal apply
 
     await call(db, { action: 'acceptSmall', keys: ['variable:v1', 'variable:v2'], confirm: true });
-    await call(db, { action: 'saveSettings', revision: 0, cutoffDate: '2026-09-30', threshold: 500, confirm: true,
+    expect(Object.values(Object.fromEntries([...db.rows].filter(([k]) => k.startsWith('founding_decisions/')))).filter(d => d.attested)).toHaveLength(2);
+    await call(db, { action: 'saveSettings', revision: 0, cutoffDate: '2026-10-01', threshold: 500, confirm: true,
       actuals: { bankOpen: true, bankBalance: 500, cash: 0, custody: [] } });
     read = await call(db, { action: 'read' });
     expect(read.plan.settlement.status).toBe('waiting');
-    const corrections = read.plan.entries.filter(e => e.status === 'proposed');
+    // Documents say Hadi paid 1875 + transferred 2000 − received 5000; his marked lines say −1925: v3 (800) is not in them.
+    expect(read.plan.comparison).toMatchObject({ byDocuments: -1125, byStatement: -1925, difference: 800, status: 'proposed' });
+    const corrections = read.plan.entries.filter(e => e.status === 'proposed' && e.type !== 'hadi_statement');
     await expect(call(db, { action: 'postEntries', reason: 'موافقة اختبار', confirm: true, entries: corrections.map(e => ({ key: e.key, hash: '0'.repeat(64) })) }))
       .rejects.toThrow(/تغيرت/);
     await expect(call(db, { action: 'postEntries', reason: 'موافقة اختبار', confirm: true, entries: [{ key: corrections[0].key, hash: corrections[0].hash }] }, { uid: 'test-accountant' }))
@@ -103,22 +108,28 @@ describe('Hadi current account and founding-period settlement', () => {
     const posted = await call(db, { action: 'postEntries', reason: 'موافقة اختبار', confirm: true, entries: corrections.map(e => ({ key: e.key, hash: e.hash })) });
     expect(posted.posted.map(p => p.entryNumber)).toEqual([10, 11, 12, 13]);
     expect(db.rows.get('counters/journal').nextNumber).toBe(14);
-    expect(db.rows.get(`journal_entries/${foundingEntryId('doc:startup:se1')}`)).toMatchObject({ sourceType: 'adjustment', sourceKind: 'founding_document', status: 'posted' });
+    expect(db.rows.get(`journal_entries/${foundingEntryId('doc:startup:se1')}`)).toMatchObject({ sourceType: 'adjustment', sourceKind: 'founding_document', status: 'posted', entryDate: '2026-09-30' });
     await expect(call(db, { action: 'postEntries', reason: 'تكرار', confirm: true, entries: [{ key: corrections[0].key, hash: corrections[0].hash }] })).rejects.toThrow();
 
     read = await call(db, { action: 'read' });
-    // Book after the corrections at the cutoff: bank −5000+5000(pp1)… see lines above; the settlement takes the rest to 3200.
+    // The settlement takes what is left on the bank (book after corrections vs 500) to 3200.
     const settlement = read.plan.settlement;
     expect(settlement.status).toBe('proposed');
     const lines = settlement.entry.lines.map(l => [l.accountId, l.debit, l.credit]);
     expect(lines.find(l => l[0] === '3200')).toBeTruthy();
     expect(lines.reduce((n, l) => n + Math.round(l[1] * 100) - Math.round(l[2] * 100), 0)).toBe(0);
-    await call(db, { action: 'postEntries', reason: 'تسوية اختبار', confirm: true, entries: [{ key: settlement.entry.key, hash: settlement.entry.hash }] });
+    const comparison = read.plan.comparison.entry;
+    expect(comparison.lines.map(l => [l.accountId, l.debit, l.credit])).toEqual([['2300', 800, 0], ['3200', 0, 800]]);
+    await call(db, { action: 'postEntries', reason: 'تسوية اختبار', confirm: true, entries: [settlement.entry, comparison].map(e => ({ key: e.key, hash: e.hash })) });
     read = await call(db, { action: 'read' });
     expect(read.plan.settlement.status).toBe('posted');
-    // Hadi: paid 1000 + 800 + transferred 2000, received 5000 → he holds 1200 for the project.
-    expect(read.plan.hadi.postedBalance).toBe(-1200);
-    expect(read.plan.hadi.meaning).toEqual({ kind: 'held_by_hadi', amount: 1200 });
+    expect(read.plan.comparison.status).toBe('posted');
+    expect(db.rows.get(`journal_entries/${foundingEntryId(comparison.key)}`)).toMatchObject({ sourceKind: 'founding_hadi_statement', entryDate: '2026-09-30' });
+    // Hadi: paid 1000 + 800 + transferred 2000, received 5000, then aligned to his statement (−800) → he holds 2000;
+    // with the unposted 75 from the statement, exactly his statement's −1925.
+    expect(read.plan.hadi.postedBalance).toBe(-2000);
+    expect(read.plan.hadi.projectedBalance).toBe(-1925);
+    expect(read.plan.hadi.meaning).toEqual({ kind: 'held_by_hadi', amount: 2000 });
   });
 
   it('holds a document whose input VAT was in a filed quarter until it is marked reviewed', async () => {
@@ -143,4 +154,58 @@ describe('Hadi current account and founding-period settlement', () => {
     ]);
     expect(effects.get('expense:x')).toMatchObject({ cash: 0, bank: 10000 });
   });
+
+  it('applies the founding-period default rule only on approval, with exceptions, and never posts by itself', async () => {
+    const data = seed();
+    data['variable_expenses/v4'] = { expense_name: 'وجبات', total_variable_cost: 260, logged_date: '2026-09-07', category_id: 'cat1', quantity: 1, unit_cost: 260, payment_method: 'cash' };
+    const db = memoryFinanceDb(data);
+    await call(db, { action: 'decide', sourceKey: 'variable:v2', decision: 'custody', custodian: 'سالم', confirm: true });
+    await call(db, { action: 'decide', sourceKey: 'variable:v4', decision: 'partner', partnerId: 'p1', confirm: true });
+    await expect(call(db, { action: 'decide', sourceKey: 'variable:v1', decision: 'custody', custodian: '', confirm: true })).rejects.toMatchObject({ code: 'invalid-argument' });
+    const journalsBefore = [...db.rows.keys()].filter(k => k.startsWith('journal_entries/')).length;
+    let read = await call(db, { action: 'read' });
+    const rule = read.plan.rule;
+    expect(rule.candidates.map(c => [c.key, c.action]).sort()).toEqual([['startup:se1', 'entry'], ['variable:v1', 'update'], ['variable:v3', 'entry']]);
+    expect(rule).toMatchObject({ count: 3, total: 2030, unposted: { count: 1, amount: 230 }, posted: { count: 2, amount: 1800 } });
+    expect(rule.entries.map(e => e.lines.map(l => [l.accountId, l.debit, l.credit]))).toEqual(
+      expect.arrayContaining([[['1020', 1000, 0], ['2300', 0, 1000]], [['1010', 800, 0], ['2300', 0, 800]]]));
+    // Reading saved nothing; a stale or forged approval saves nothing either.
+    expect([...db.rows.keys()].filter(k => k.startsWith('founding_decisions/'))).toHaveLength(2);
+    await expect(call(db, { action: 'applyRule', hash: '0'.repeat(64), confirm: true })).rejects.toThrow(/تغيرت/);
+    await expect(call(db, { action: 'applyRule', hash: rule.hash, confirm: true }, { uid: 'test-accountant' })).rejects.toMatchObject({ code: 'permission-denied' });
+    expect([...db.rows.keys()].filter(k => k.startsWith('founding_decisions/'))).toHaveLength(2);
+
+    const applied = await call(db, { action: 'applyRule', hash: rule.hash, confirm: true });
+    expect(applied).toMatchObject({ applied: 3, updates: ['variable:v1'] });
+    const decisions = Object.fromEntries([...db.rows].filter(([k]) => k.startsWith('founding_decisions/')).map(([, v]) => [v.sourceKey, v]));
+    expect(decisions['variable:v3']).toMatchObject({ decision: 'founding_rule', decidedBy: 'test-admin', decidedByName: 'مدير الاختبار' });
+    expect(db.rows.get('founding_review/current').lastRule).toMatchObject({ count: 3, total: 2030, byName: 'مدير الاختبار', cutoffDate: '2026-10-01' });
+    expect(db.rows.get('chart_of_accounts/2300')).toMatchObject({ nameArabic: 'حساب هادي الجاري مع المشروع' });
+    // The rule changed no document yet, and posted nothing.
+    expect(db.rows.get('variable_expenses/v1').payment_method).toBe('cash');
+    expect([...db.rows.keys()].filter(k => k.startsWith('journal_entries/'))).toHaveLength(journalsBefore);
+
+    read = await call(db, { action: 'read' });
+    expect(read.plan.rule.count).toBe(0);
+    expect(read.plan.rule.pendingUpdates).toEqual(['variable:v1']);
+    const updates = await call(db, { action: 'applyUpdates', keys: ['variable:v1', 'variable:v2', 'variable:v4'], confirm: true });
+    expect(updates.results.map(r => [r.key, r.ok])).toEqual([['variable:v1', true], ['variable:v2', true], ['variable:v4', true]]);
+    const v1 = db.rows.get('variable_expenses/v1'), v2 = db.rows.get('variable_expenses/v2'), v4 = db.rows.get('variable_expenses/v4');
+    expect(v1).toMatchObject({ payment_method: 'founding_personal', payment_status: 'paid', paid_date: '2026-09-05', approval_status: 'pending', updated_by: 'test-admin' });
+    expect(v1.finance_metadata).toMatchObject({ fundingType: 'owner_current', fundingReference: 'قاعدة فترة التأسيس (قبل 2026-10-01)' });
+    expect(v2.finance_metadata).toMatchObject({ fundingType: 'custody', custodian: 'سالم' });
+    expect(v4.finance_metadata).toMatchObject({ fundingType: 'partner', fundingPartnerId: 'p1' });
+    expect([...db.rows.values()].filter(v => v.action === 'finance-save' && v.reason === 'تطبيق القاعدة الافتراضية لفترة التأسيس')).toHaveLength(1);
+    // When approved and posted later, each lands on its own account.
+    const credit = (id, row) => ADAPTERS.variable.build(row, id, { recordDate: ADAPTERS.variable.dateOf(row), policyAt: d => taxPolicyAt(d, { vatRegistered: false }) })
+      .lines.find(l => l.credit > 0).accountId;
+    expect([credit('v1', v1), credit('v2', v2), credit('v4', v4)]).toEqual(['2300', '1300', '3000-p1']);
+    expect(financeProblems('variable', { ...v4, finance_metadata: { ...v4.finance_metadata, fundingPartnerId: null } }, 'v4')).toContain('الشريك الذي دفع غير محدد.');
+
+    read = await call(db, { action: 'read' });
+    expect(read.plan.entries.filter(e => e.status === 'proposed').map(e => e.key).sort()).toEqual(['doc:startup:se1', 'doc:variable:v3']);
+    expect(read.plan.updates).toEqual([]);
+    expect([...db.rows.keys()].filter(k => k.startsWith('journal_entries/'))).toHaveLength(journalsBefore);
+  });
 });
+

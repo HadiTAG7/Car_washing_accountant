@@ -30,9 +30,10 @@ const patchSchema = z.object({
   invoiceUrl: z.string().url().refine(v => v.startsWith('https://') && !/\/api\/mcp\//i.test(v)).nullable().optional(),
   isTaxInvoice: z.boolean().optional(), vatAmount: z.number().finite().nonnegative().nullable().optional(),
   vatRate: z.number().finite().min(0).max(1).nullable().optional(), vatDeductible: z.boolean().optional(),
-  priceMode: z.enum(['inclusive', 'exclusive']).optional(), paymentMethod: z.enum(['unknown', 'cash', 'transfer', 'card', 'credit', 'owner_current']).optional(),
+  priceMode: z.enum(['inclusive', 'exclusive']).optional(), paymentMethod: z.enum(['unknown', 'cash', 'transfer', 'card', 'credit', 'owner_current', 'founding_personal', 'custody', 'partner_paid']).optional(),
   paymentStatus: z.enum(['unknown', 'paid', 'unpaid']).optional(), paidDate: date.nullable().optional(),
-  fundingType: z.enum(['unknown', 'company_cash', 'company_bank', 'vendor_liability', 'partner', 'employee', 'owner_current']).optional(),
+  fundingType: z.enum(['unknown', 'company_cash', 'company_bank', 'vendor_liability', 'partner', 'employee', 'owner_current', 'custody']).optional(),
+  fundingPartnerId: id.nullable().optional(), custodian: z.string().trim().min(1).max(80).nullable().optional(),
   statementLineRef: z.string().regex(/^[A-Za-z0-9_-]{1,120}$/).nullable().optional(),
   fundingReference: nullableText.optional(), purpose: nullableText.optional(), evidenceRefs: z.array(z.string().trim().min(1).max(300)).max(20).optional(),
   taxReviewRef: nullableText.optional(), taxBasis: z.enum(['document', 'verified_historical_policy']).optional(),
@@ -72,8 +73,8 @@ function applyPatch(kind, before, p) {
   if (p.categoryId && spec.fk) fail('هذا النوع يتبع بند التأسيس أو السنوي.', 'invalid-argument');
   const meta = { ...(row.finance_metadata || {}) };
   for (const key of ['fundingType', 'fundingReference', 'purpose', 'evidenceRefs', 'taxReviewRef', 'taxBasis']) if (Object.hasOwn(p, key)) meta[key] = p[key];
-  if (Object.hasOwn(p, 'statementLineRef')) {
-    if (p.statementLineRef === null) delete meta.statementLineRef; else meta.statementLineRef = p.statementLineRef;
+  for (const key of ['statementLineRef', 'fundingPartnerId', 'custodian']) if (Object.hasOwn(p, key)) {
+    if (p[key] === null) delete meta[key]; else meta[key] = p[key];
   }
   if (Object.hasOwn(p, 'invoiceLines')) {
     if (p.invoiceLines === null) delete meta.invoiceLines;

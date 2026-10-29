@@ -81,4 +81,25 @@ describe.skipIf(!enabled)('founding settlement on Postgres with the production s
     expect(await read(accountant)).toBe(0);
     expect(await read(admin)).toBe(1);
   }, 120000);
+
+  it('applies the default rule on Postgres: decisions, workbench updates through RLS, and entries that still need approval', async () => {
+    let read = await call({ action: 'read' });
+    const rule = read.plan.rule;
+    expect(rule.candidates.map(c => c.key).sort()).toEqual(['startup:se1', 'variable:v1', 'variable:v2', 'variable:v3']);
+    await call({ action: 'decide', sourceKey: 'variable:v2', decision: 'custody', custodian: 'مشرف', confirm: true });
+    await expect(call({ action: 'applyRule', hash: rule.hash, confirm: true })).rejects.toThrow(/تغيرت/);
+    read = await call({ action: 'read' });
+    const applied = await call({ action: 'applyRule', hash: read.plan.rule.hash, confirm: true });
+    expect(applied).toMatchObject({ applied: 3, updates: ['variable:v1'] });
+    const result = await call({ action: 'applyUpdates', keys: ['variable:v1', 'variable:v2'], confirm: true });
+    expect(result.results.every(r => r.ok)).toBe(true);
+    const rows = (await pool.query("select id, payment_method, paid_date, finance_metadata->>'fundingType' as funding from public.variable_expenses where id in ('v1','v2') order by id")).rows;
+    expect(rows).toEqual([{ id: 'v1', payment_method: 'founding_personal', paid_date: '2026-09-05', funding: 'owner_current' },
+      { id: 'v2', payment_method: 'custody', paid_date: '2026-09-10', funding: 'custody' }]);
+    expect((await pool.query("select count(*)::int as n from public.founding_decisions where decision = 'founding_rule' and decided_by = $1", [admin])).rows[0].n).toBe(3);
+    expect((await pool.query("select count(*)::int as n from public.journal_entries where source_kind like 'founding_%'")).rows[0].n).toBe(0);
+    read = await call({ action: 'read' });
+    expect(read.plan.entries.filter(e => e.status === 'proposed').map(e => e.key).sort()).toEqual(['doc:startup:se1', 'doc:variable:v3']);
+  }, 120000);
 });
+

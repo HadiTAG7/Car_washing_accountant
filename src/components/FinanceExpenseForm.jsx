@@ -154,7 +154,7 @@ export default function FinanceExpenseForm({ kind, detail, requestId, options, o
         {input('معرف العهدة في الدفتر', 'advanceId')}{input('معرف الموظف', 'advanceEmployeeId')}
         {input('معرف قيد تمويل العهدة المرحل', 'advanceJournalId')}
         {input('مبلغ هذا المستند المخصص من العهدة', 'advanceAllocatedAmount', 'number')}
-        <small>الإفادة تحفظ بصفتها إفادة فقط. حتى بعد مطابقة القيد، يبقى اعتماد مصروف العهدة متوقفًا إلى أن يتشارك مع الرواتب والاسترداد رصيدًا واحدًا.</small>
+        <small>الإفادة تحفظ بصفتها إفادة فقط. يتطلب الاعتماد قيد تمويل مرحلًا مطابقًا وتخصيصًا ضمن الرصيد المشترك مع الرواتب والاسترداد؛ لا تُستنتج أي دفعة من الإفادة.</small>
       </>}
     </div></details>
     <details className="fw-form-section"><summary>التصنيف والمراجع</summary><div className="fw-form">

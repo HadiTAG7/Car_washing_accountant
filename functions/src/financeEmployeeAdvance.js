@@ -1,10 +1,18 @@
 // An owner's statement records a claim; only a posted, employee-specific
 // advance can justify crediting 1300 for a purchase made from that advance.
 const COLLECTIONS = ['variable_expenses', 'monthly_expenses', 'annual_expense_entries', 'startup_cost_entries'];
-export const EMPLOYEE_ADVANCE_SETTLEMENT_BLOCKER = 'تسوية عهدة الموظف مع الرواتب والاسترداد غير مفعلة؛ الاعتماد والترحيل متوقفان حتى توحيد الرصيد.';
 const id = value => typeof value === 'string' && /^[\p{L}\p{N}_.:-]{1,160}$/u.test(value);
 const cents = value => Math.round(Number(value) * 100);
 const halala = value => Number.isFinite(value) && value > 0 && Math.abs(value * 100 - cents(value)) < 1e-6;
+export function custodyExpenseUsedCents(row) {
+  const used = row?.custody_expense_used_halala ?? 0;
+  const amount = cents(row?.amount);
+  if (!Number.isSafeInteger(used) || used < 0 || !Number.isSafeInteger(amount) || amount < 0 || used > amount
+    || !Number.isFinite(Number(row?.amount)) || Math.abs(Number(row.amount) * 100 - amount) > 1e-6) {
+    throw new Error('رصيد استهلاك عهدة الموظف غير صالح؛ يلزم فحصه قبل أي إجراء مالي.');
+  }
+  return used;
+}
 async function linesOf(db, tx, journalId, journal) {
   if (Array.isArray(journal?.lines) && journal.lines.length) return journal.lines;
   const lines = await tx.get(db.collection('journal_lines').where('entryId', '==', journalId).limit(101));
@@ -43,7 +51,6 @@ export async function verifyEmployeeAdvanceLink(db, tx, kind, sourceId, row, gro
   const companyOutflow = fundingLines.filter(line => ['1010', '1020'].includes(String(line.accountId)))
     .reduce((sum, line) => sum + cents(line.credit || 0) - cents(line.debit || 0), 0);
   if (!advance || String(advance.biker_id || '') !== link.employeeId
-    || advance.status === 'recovered' || Number(advance.recovered_amount || 0) !== 0 || advance.payroll_lock_id
     || !journal || journal.status !== 'posted' || journal.reversalOf || journal.reversedBy || journal.sourceType !== 'temporary_expense'
     || journal.sourceId !== link.advanceId || funded <= 0 || funded !== cents(advance.amount) || companyOutflow !== funded
     || typeof journal.entryDate !== 'string' || journal.entryDate > row.paid_date) {
@@ -60,6 +67,22 @@ export async function verifyEmployeeAdvanceLink(db, tx, kind, sourceId, row, gro
   }
   if (available <= 0 || available > funded) {
     return { issues: ['رصيد العهدة المرتبط بالقيد المحدد غير متاح أو يحتاج مطابقة.'], proof: null };
+  }
+  let used, recovered;
+  try {
+    used = custodyExpenseUsedCents(advance);
+    recovered = cents(advance.recovered_amount || 0);
+    if (!Number.isSafeInteger(recovered) || recovered < 0 || recovered > funded
+      || Math.abs(Number(advance.recovered_amount || 0) * 100 - recovered) > 1e-6) throw new Error();
+  } catch {
+    return { issues: ['رصيد استهلاك العهدة أو خصم الراتب غير صالح؛ يلزم فحصه.'], proof: null };
+  }
+  // `available` includes the funding and any posted cash recovery. Payroll
+  // deductions are recorded on the advance, not with its sourceId in the
+  // journal, so they must be subtracted separately.
+  const allocatable = available - recovered;
+  if (allocatable <= 0 || used > allocatable) {
+    return { issues: ['رصيد عهدة الموظف استُهلك بالرواتب أو الاسترداد أو المصروفات.'], proof: null };
   }
   let allocated = 0;
   for (const collection of COLLECTIONS) {
@@ -79,11 +102,25 @@ export async function verifyEmployeeAdvanceLink(db, tx, kind, sourceId, row, gro
   const saved = await tx.get(db.collection(collection).doc(sourceId));
   if (!saved.exists || saved.data().finance_metadata?.employeeAdvanceLink?.advanceId !== link.advanceId) allocated += cents(link.allocatedAmount);
   else allocated += cents(link.allocatedAmount) - cents(saved.data().finance_metadata.employeeAdvanceLink.allocatedAmount || 0);
-  if (allocated > available) return { issues: ['تخصيصات عهدة الموظف تتجاوز التمويل المرحل المتاح.'], proof: null };
-  // Payroll and recovery still consume temporary_expenses.amount independently.
-  // Until all three posting paths share one transactional balance, even a
-  // matched funding entry cannot safely authorize another credit to 1300.
-  return { issues: [EMPLOYEE_ADVANCE_SETTLEMENT_BLOCKER],
+  if (allocated > allocatable) return { issues: ['تخصيصات عهدة الموظف تتجاوز التمويل المرحل المتاح.'], proof: null };
+  const lock = await tx.get(db.collection('posting_locks').doc(`${kind}__${sourceId}`));
+  let alreadyConsumed = false;
+  if (lock.exists) {
+    const entry = await tx.get(db.collection('journal_entries').doc(lock.data().entryId));
+    alreadyConsumed = entry.exists && entry.data().status === 'posted'
+      && entry.data().employeeAdvanceConsumption?.advanceId === link.advanceId
+      && entry.data().employeeAdvanceConsumption?.amountHalala === cents(link.allocatedAmount);
+    if (!alreadyConsumed) return { issues: ['قفل ترحيل عهدة الموظف لا يطابق استهلاكها المحفوظ.'], proof: null };
+  }
+  if (advance.status === 'recovered' && !alreadyConsumed) {
+    return { issues: ['العهدة مسجلة مستردة؛ لا يمكن تخصيص مصروف جديد منها.'], proof: null };
+  }
+  if (used + (alreadyConsumed ? 0 : cents(link.allocatedAmount)) > allocatable) {
+    return { issues: ['المصروف والرواتب والاسترداد تتجاوز رصيد العهدة المتاح.'], proof: null };
+  }
+  return { issues: [], consumption: alreadyConsumed ? null : { advanceId: link.advanceId, amountHalala: cents(link.allocatedAmount),
+    usedAfterHalala: used + cents(link.allocatedAmount), fundingJournalId: link.fundingJournalId },
     proof: { advanceId: link.advanceId, employeeId: link.employeeId,
-      fundingJournalId: link.fundingJournalId, fundedAmount: funded / 100, availableAmount: available / 100, allocatedAmount: allocated / 100 } };
+      fundingJournalId: link.fundingJournalId, fundedAmount: funded / 100,
+      availableAmount: (allocatable - used) / 100, allocatedAmount: allocated / 100 } };
 }

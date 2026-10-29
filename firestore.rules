@@ -399,9 +399,11 @@ service cloud.firestore {
     }
     match /temporary_expenses/{id} {
       allow read:   if isStaff();
-      allow create: if isOperator();
+      allow create: if isOperator()
+        && !request.resource.data.keys().hasAny(['custody_expense_used_halala']);
       allow update: if isOperator() && notPosted('recovery', id)
         && !resource.data.keys().hasAny(['payroll_lock_id'])
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['custody_expense_used_halala'])
         && (notPosted('temporary_expense', id) || recoveryFlipOnly());
       allow delete: if isOperator()
         && !resource.data.keys().hasAny(['payroll_lock_id'])

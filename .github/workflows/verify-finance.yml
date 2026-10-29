@@ -8,8 +8,13 @@ on:
       - functions/src/financeReview.js
       - functions/src/posting.js
       - functions/src/ledger.js
+      - functions/src/payroll.js
+      - functions/src/payrollPreapproval.js
+      - functions/src/payrollRecoveryReconciliation.js
       - server/financeWorkbench.js
       - server/financeReadSnapshot.js
+      - firestore.rules
+      - supabase/migrations/20261029000000_custody_expense_guard.sql
       - server/__tests__/financeWorkbenchBrowse.test.js
       - server/__tests__/financeWorkflow.emulator.test.js
       - src/components/FinanceExpenseForm.jsx

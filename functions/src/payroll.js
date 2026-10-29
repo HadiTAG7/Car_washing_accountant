@@ -1,4 +1,5 @@
 import { payrollRecoveryReconciliation } from './payrollRecoveryReconciliation.js';
+import { custodyExpenseUsedCents } from './financeEmployeeAdvance.js';
 import { createHash } from 'node:crypto';
 import {
   buildReversalLines,
@@ -196,9 +197,11 @@ function completedWash(row) {
 
 function outstandingOfAdvance(row) {
   const amount = money(row.amount, 'قيمة السلفة');
+  const expenseUsed = custodyExpenseUsedCents(row) / 100;
   if (row.status === 'recovered') return 0;
   const recovered = Math.min(amount, money(row.recovered_amount, 'المسترد من السلفة'));
-  return round2(amount - recovered);
+  if (round2(recovered + expenseUsed) > amount) fail('استهلاك السلفة يتجاوز التمويل؛ يلزم فحصه قبل صرف الراتب.');
+  return round2(amount - recovered - expenseUsed);
 }
 
 function commissionPolicy(periodKey, stored = null) {
@@ -945,7 +948,9 @@ export async function payPayroll(db, FieldValue, payload, {
       const current = { id: snap.id, ...snap.data() };
       const outstanding = outstandingOfAdvance(current);
       if (row.allocation.recoveryReconciliation) {
-        if (current.status !== 'recovered' || Number(current.recovered_amount || 0) !== 0 || current.payroll_lock_id || Number(current.amount) !== row.allocation.amount || advanceAssignmentMonth(current) !== run.periodKey) fail('تغيرت السلفة المستردة بعد معاينة المطابقة.');
+        if (current.status !== 'recovered' || Number(current.recovered_amount || 0) !== 0 || current.payroll_lock_id
+          || custodyExpenseUsedCents(current) !== 0 || Number(current.amount) !== row.allocation.amount
+          || advanceAssignmentMonth(current) !== run.periodKey) fail('تغيرت السلفة المستردة بعد معاينة المطابقة.');
         continue;
       }
       if (recordExternal && (String(current.biker_id || '') !== String(row.item.bikerId) || advanceAssignmentMonth(current) !== run.periodKey)) fail('السلفة لا تخص العامل أو شهر المسير المحدد.');

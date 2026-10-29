@@ -9,6 +9,7 @@ import { financeWorkbench } from '../financeWorkbench.js';
 import { exceptionSources, allocationSources, originalUrl, evidenceSeed, evidenceCall, saveEvidence, linkAllocation, approveEvidence } from './financeSourceEvidenceFixtures.js';
 import { financeReports } from '../financeReports.js';
 import { postSource, reverseEntry } from '../../functions/src/ledger.js';
+import { savePayrollDraft, approvePayroll, payPayroll, reversePayroll } from '../../functions/src/payroll.js';
 import { expensePatch, financeFixture, syntheticFinanceInvoiceLines, syntheticPrintedInvoiceLines, syntheticSharedInvoiceLines } from './financeFixtures.js';
 import { financeReviewId, financeSourceHash } from '../../functions/src/financeReview.js';
 import { approveFinanceSelection } from '../../src/lib/financeWorkbenchActions.js';
@@ -45,8 +46,17 @@ describe.skipIf(!enabled)('finance real Firestore workflow — isolated demo onl
   afterAll(async () => { if (rules) await rules.cleanup(); if (db) await db.terminate(); if (app) await deleteApp(app); });
   const call = input => financeWorkbench(db, auth, input);
 
-  it('displays a matched employee advance but blocks both posting doors and reversing linked funding', async () => {
-    await db.doc('temporary_expenses/test-advance').set({ biker_id: 'test-worker', amount: 150, status: 'pending', recovered_amount: 0 });
+  it('keeps the custody consumption counter server-owned while allowing a legacy advance without it', async () => {
+    const client = rules.authenticatedContext('operator').firestore();
+    const row = { biker_id: 'test-worker', amount: 150, status: 'pending', spent_date: '2026-10-17' };
+    await assertFails(setDoc(doc(client, 'temporary_expenses', 'forged'), { ...row, custody_expense_used_halala: 10000 }));
+    await assertSucceeds(setDoc(doc(client, 'temporary_expenses', 'legacy'), row));
+    await assertFails(setDoc(doc(client, 'temporary_expenses', 'legacy'), { custody_expense_used_halala: 10000 }, { merge: true }));
+  }, 120000);
+
+  it('posts only a matched employee advance, then recovers the remaining balance and reverses in order', async () => {
+    await db.doc('temporary_expenses/test-advance').set({ biker_id: 'test-worker', amount: 150, status: 'pending',
+      recovered_amount: 0, spent_date: '2026-10-17' });
     const funding = { status: 'posted', sourceType: 'temporary_expense', sourceId: 'test-advance', entryDate: '2026-10-17',
       lines: [{ accountId: '1300', debit: 150, credit: 0 }, { accountId: '1010', debit: 0, credit: 150 }] };
     await db.doc('journal_entries/test-funding').set(funding);
@@ -56,7 +66,7 @@ describe.skipIf(!enabled)('finance real Firestore workflow — isolated demo onl
       employeeAdvanceLink: { version: 1, advanceId: 'test-advance', employeeId: 'test-worker',
         fundingJournalId: 'test-funding', allocatedAmount: 100 } }) };
     const preview = await call({ action: 'previewCapture', ...request });
-    expect(preview.postingPreview.ready).toBe(false);
+    expect(preview.postingPreview.ready).toBe(true);
     expect(preview.postingPreview.lines).toEqual(expect.arrayContaining([expect.objectContaining({ accountId: '2000', credit: 100 })]));
     expect(preview.postingPreview.settlement.lines).toEqual(expect.arrayContaining([
       expect.objectContaining({ accountId: '2000', debit: 100 }),
@@ -65,20 +75,106 @@ describe.skipIf(!enabled)('finance real Firestore workflow — isolated demo onl
     const captured = await call({ action: 'capture', ...request, previewHash: preview.previewHash, reason: 'TEST advance', confirm: true });
     const common = { kind: 'variable', sourceId: captured.sourceId };
     const read = await call({ action: 'read', ...common });
-    expect(read.approvalReady).toBe(false);
+    expect(read.approvalReady).toBe(true);
     expect(read.workflowDimensions.funding.ledgerMatched).toBe(true);
     const browsed = (await call({ action: 'browse' })).items.find(item => item.sourceId === captured.sourceId);
-    expect(browsed).toMatchObject({ approvalReady: false, workflowStage: read.workflowStage,
+    expect(browsed).toMatchObject({ approvalReady: true, workflowStage: read.workflowStage,
       workflowDimensions: read.workflowDimensions, issueCount: read.issues.length });
-    await expect(call({ action: 'approve', ...common, sourceHash: read.sourceHash,
-      postingHash: 'a'.repeat(64), reason: 'TEST matched advance', confirm: true })).rejects.toThrow(/الرواتب والاسترداد/);
-    await expect(postSource(db, FieldValue, common, { userId: auth.uid })).rejects.toThrow(/اعتماد/);
+    await call({ action: 'approve', ...common, sourceHash: read.sourceHash,
+      postingHash: read.postingPreview.postingHash, reason: 'TEST matched advance', confirm: true });
+    const posted = await call({ action: 'post', ...common, sourceHash: read.sourceHash, confirm: true });
+    expect((await db.doc('temporary_expenses/test-advance').get()).data().custody_expense_used_halala).toBe(10000);
+    expect((await call({ action: 'read', ...common })).workflowStage).toBe('complete');
+    await expect(postSource(db, FieldValue, common, { userId: auth.uid })).rejects.toThrow(/سبق ترحيل/);
     await expect(reverseEntry(db, FieldValue, 'test-funding', { entryDate: '2026-10-19', userId: auth.uid }))
       .rejects.toThrow(/مرتبط بمصروفات/);
-    await db.doc('journal_entries/test-funding').update({ status: 'reversed' });
-    expect((await call({ action: 'browse' })).items.find(item => item.sourceId === captured.sourceId).approvalReady).toBe(false);
-    expect((await db.collection('journal_entries').where('sourceId', '==', captured.sourceId).get()).size).toBe(0);
+    await db.doc('temporary_expenses/test-advance').update({ status: 'recovered', recovered_date: '2026-10-19' });
+    const recovery = await postSource(db, FieldValue, { kind: 'recovery', sourceId: 'test-advance' }, { userId: auth.uid });
+    expect((await db.doc(`journal_entries/${recovery.entryId}`).get()).data().lines)
+      .toContainEqual(expect.objectContaining({ accountId: '1300', credit: 50 }));
+    expect((await call({ action: 'read', ...common })).workflowStage).toBe('complete');
+    await expect(reverseEntry(db, FieldValue, posted.result.entryId, { entryDate: '2026-10-20', userId: auth.uid }))
+      .rejects.toThrow(/اعكس استرداد/);
+    await reverseEntry(db, FieldValue, recovery.entryId, { entryDate: '2026-10-20', userId: auth.uid });
+    expect((await db.doc('temporary_expenses/test-advance').get()).data().status).toBe('pending');
+    await reverseEntry(db, FieldValue, posted.result.entryId, { entryDate: '2026-10-20', userId: auth.uid });
+    expect((await db.doc('temporary_expenses/test-advance').get()).data().custody_expense_used_halala).toBe(0);
     expect((await db.collection('payroll_runs').get()).size).toBe(0);
+  }, 120000);
+
+  it('uses the same advance balance when payroll precedes a linked expense, then reverses both safely', async () => {
+    await db.doc('bikers/test-worker').set({ name: 'TEST worker', salary: 500, start_date: '2026-10-01' });
+    await db.doc('temporary_expenses/test-advance').set({ biker_id: 'test-worker', amount: 150, status: 'pending',
+      recovered_amount: 0, spent_date: '2026-10-17' });
+    await db.doc('journal_entries/test-funding').set({ status: 'posted', sourceType: 'temporary_expense',
+      sourceId: 'test-advance', entryDate: '2026-10-17', lines: [
+        { accountId: '1300', debit: 150, credit: 0 }, { accountId: '1020', debit: 0, credit: 150 },
+      ] });
+    const now = new Date('2026-11-01T08:00:00Z');
+    const draft = await savePayrollDraft(db, FieldValue, { periodKey: '2026-10',
+      adjustments: [{ bikerId: 'test-worker', advanceDeduction: 50 }] }, { userId: auth.uid, now });
+    await approvePayroll(db, FieldValue, { runId: draft.runId }, { userId: auth.uid, now });
+    await payPayroll(db, FieldValue, { runId: draft.runId, paymentMethod: 'bank', payDate: '2026-11-01' },
+      { userId: auth.uid, now });
+    expect((await db.doc('temporary_expenses/test-advance').get()).data().recovered_amount).toBe(50);
+    await expect(reverseEntry(db, FieldValue, 'test-funding', { entryDate: '2026-11-02', userId: auth.uid }))
+      .rejects.toThrow(/مستهلك/);
+    const request = { action: 'previewCapture', kind: 'variable', requestId: 'PAYROLL-FIRST', patch: expensePatch({
+      paymentStatus: 'paid', paymentMethod: 'card', paidDate: '2026-10-18', fundingType: 'employee',
+      fundingReference: 'TEST supplier receipt', employeeAdvanceLink: { version: 1, advanceId: 'test-advance',
+        employeeId: 'test-worker', fundingJournalId: 'test-funding', allocatedAmount: 100 } }) };
+    const preview = await call(request);
+    expect(preview.postingPreview.ready).toBe(true);
+    const saved = await call({ ...request, action: 'capture', previewHash: preview.previewHash,
+      reason: 'TEST balance after payroll', confirm: true });
+    const common = { kind: 'variable', sourceId: saved.sourceId };
+    const read = await call({ action: 'read', ...common });
+    await call({ action: 'approve', ...common, sourceHash: read.sourceHash,
+      postingHash: read.postingPreview.postingHash, reason: 'TEST funded remainder', confirm: true });
+    const posted = await call({ action: 'post', ...common, sourceHash: read.sourceHash, confirm: true });
+    expect((await db.doc('temporary_expenses/test-advance').get()).data())
+      .toMatchObject({ recovered_amount: 50, custody_expense_used_halala: 10000 });
+    await reversePayroll(db, FieldValue, { runId: draft.runId, reversalDate: '2026-11-02',
+      reason: 'TEST reverse payroll' }, { userId: auth.uid, now: new Date('2026-11-02T08:00:00Z') });
+    expect((await db.doc('temporary_expenses/test-advance').get()).data())
+      .toMatchObject({ recovered_amount: 0, custody_expense_used_halala: 10000 });
+    await reverseEntry(db, FieldValue, posted.result.entryId, { entryDate: '2026-11-02', userId: auth.uid });
+    expect((await db.doc('temporary_expenses/test-advance').get()).data().custody_expense_used_halala).toBe(0);
+  }, 120000);
+
+  it('commits at most one of two competing expense and payroll consumers', async () => {
+    await db.doc('bikers/test-worker').set({ name: 'TEST worker', salary: 500, start_date: '2026-10-01' });
+    await db.doc('temporary_expenses/test-advance').set({ biker_id: 'test-worker', amount: 150, status: 'pending',
+      recovered_amount: 0, spent_date: '2026-10-17' });
+    await db.doc('journal_entries/test-funding').set({ status: 'posted', sourceType: 'temporary_expense',
+      sourceId: 'test-advance', entryDate: '2026-10-17', lines: [
+        { accountId: '1300', debit: 150, credit: 0 }, { accountId: '1020', debit: 0, credit: 150 },
+      ] });
+    const request = { kind: 'variable', requestId: 'COMPETING-CONSUMERS', patch: expensePatch({
+      paymentStatus: 'paid', paymentMethod: 'card', paidDate: '2026-10-18', fundingType: 'employee',
+      fundingReference: 'TEST supplier receipt', employeeAdvanceLink: { version: 1, advanceId: 'test-advance',
+        employeeId: 'test-worker', fundingJournalId: 'test-funding', allocatedAmount: 100 } }) };
+    const preview = await call({ action: 'previewCapture', ...request });
+    const saved = await call({ action: 'capture', ...request, previewHash: preview.previewHash,
+      reason: 'TEST competing expense', confirm: true });
+    const common = { kind: 'variable', sourceId: saved.sourceId };
+    const read = await call({ action: 'read', ...common });
+    await call({ action: 'approve', ...common, sourceHash: read.sourceHash,
+      postingHash: read.postingPreview.postingHash, reason: 'TEST competing allocation', confirm: true });
+    const now = new Date('2026-11-01T08:00:00Z');
+    const draft = await savePayrollDraft(db, FieldValue, { periodKey: '2026-10',
+      adjustments: [{ bikerId: 'test-worker', advanceDeduction: 100 }] }, { userId: auth.uid, now });
+    await approvePayroll(db, FieldValue, { runId: draft.runId }, { userId: auth.uid, now });
+    const outcomes = await Promise.allSettled([
+      postSource(db, FieldValue, common, { userId: auth.uid }),
+      payPayroll(db, FieldValue, { runId: draft.runId, paymentMethod: 'bank', payDate: '2026-11-01' },
+        { userId: auth.uid, now }),
+    ]);
+    expect(outcomes.filter(outcome => outcome.status === 'fulfilled')).toHaveLength(1);
+    const advance = (await db.doc('temporary_expenses/test-advance').get()).data();
+    expect((advance.custody_expense_used_halala || 0) + 100 * Number(advance.recovered_amount || 0)).toBe(10000);
+    expect((await db.collection('journal_entries').where('sourceId', '==', saved.sourceId).get()).size)
+      .toBe(outcomes[0].status === 'fulfilled' ? 1 : 0);
   }, 120000);
 
   it.each(identitySources.flatMap((source, index) => ['workbench', 'legacy'].map(door => [source[0], index, door])))('posts bounded identity %s (#%i) through %s without a fabricated number or return action', async (sourceId, index, door) => {

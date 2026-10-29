@@ -343,7 +343,10 @@ export function buildTemporaryExpenseEntry(temp, { createdBy = null } = {}) {
  *   دائن  عهد ومصروفات قابلة للاسترداد
  */
 export function buildRecoveryEntry(temp, { createdBy = null } = {}) {
-  const amount = round2(Number(temp.amount) || 0);
+  const used = temp.custodyExpenseUsedHalala ?? temp.custody_expense_used_halala ?? 0;
+  if (!Number.isSafeInteger(used) || used < 0) throw new Error('استهلاك العهدة غير صالح.');
+  const amount = round2(Number(temp.amount) - Number(temp.recoveredAmount ?? temp.recovered_amount ?? 0) - used / 100);
+  if (!(amount > 0)) throw new Error('لا يوجد رصيد عهدة قابل للاسترداد.');
   const method = temp.recoveryMethod || temp.paymentMethod || 'cash';
   const date   = String(temp.recoveredDate || '').slice(0, 10);
   return {

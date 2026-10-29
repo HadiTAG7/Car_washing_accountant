@@ -32,6 +32,12 @@ describe('payroll preapproval evidence', () => {
     expect(r.pendingUnDeducted).toMatchObject({ count: 1, amount: 50 });
     expect(r.unassignedAdvances).toEqual({ count: 1, amount: 15000 });
   });
+  it('shows only the unspent custody balance in preapproval evidence', () => {
+    const r = review({ advances: [{ id: 'advance', biker_id: 'b1', amount: 150, recovered_amount: 20,
+      custody_expense_used_halala: 10000, assignment_month: '2026-10' }] });
+    expect(r.byBiker[0]).toMatchObject({ outstanding: 30, assigned: 30 });
+    expect(r.pendingUnDeducted).toMatchObject({ count: 1, amount: 30 });
+  });
   it('uses completed deduplicated washes and does not infer absence or count another month', () => {
     const wash = { id: 'w1', biker_id: 'b1', status: ' completed ', quantity: 1, wash_date: '2026-10-10', ssp_booking_id: '123' };
     const r = review({ washes: [wash, { ...wash, id: 'duplicate' }, { ...wash, id: 'old', ssp_booking_id: '456', wash_date: '2026-09-10' }] });

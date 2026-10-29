@@ -21,8 +21,9 @@ export function temporaryClassification(row) {
   }
   const amount = Number(row.amount) || 0;
   const recovered = row.status === 'recovered' ? amount : Math.min(amount, Math.max(0, Number(row.recoveredAmount ?? row.recovered_amount) || 0));
+  const expenseUsed = Math.max(0, Number(row.custodyExpenseUsedHalala ?? row.custody_expense_used_halala ?? 0) / 100);
   return { source: row, id: row.id, title, date, amount, group, destination: ADMINISTRATION_GROUPS[group], note,
-    bikerId, status: row.status, recovered, outstanding: Math.round((amount - recovered) * 100) / 100,
+    bikerId, status: row.status, recovered, outstanding: Math.round(Math.max(0, amount - recovered - expenseUsed) * 100) / 100,
     assignmentMonth: row.assignmentMonth || row.assignment_month || null };
 }
 export const temporaryProposals = rows => rows.map(temporaryClassification);

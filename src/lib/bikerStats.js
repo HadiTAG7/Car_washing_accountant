@@ -45,7 +45,8 @@ export function pendingAdvancesFor(bikerId, temporaryExpenses = []) {
     .filter((t) => t.bikerId === bikerId && t.status === 'pending')
     .map((t) => ({
       ...t,
-      outstandingAmount: Math.max(0, (Number(t.amount) || 0) - (Number(t.recoveredAmount) || 0)),
+      outstandingAmount: Math.max(0, (Number(t.amount) || 0) - (Number(t.recoveredAmount) || 0)
+        - Number(t.custodyExpenseUsedHalala ?? t.custody_expense_used_halala ?? 0) / 100),
     }))
     .filter((t) => t.outstandingAmount > 0);
   return {

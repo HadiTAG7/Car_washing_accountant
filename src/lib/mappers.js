@@ -720,6 +720,7 @@ export function mapTemporaryExpense(row) {
     bikerId:        row.biker_id || null,
     paymentMethod:  clampAdvanceMethod(row.payment_method),
     recoveredAmount: Math.max(0, Number(row.recovered_amount) || 0),
+    custodyExpenseUsedHalala: row.custody_expense_used_halala ?? 0,
     payrollLockId:   row.payroll_lock_id || null,
   };
 }

@@ -18,6 +18,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { round2 } from './invariants.js';
+import { custodyExpenseUsedCents } from './financeEmployeeAdvance.js';
 import { resolvePurchaseTax } from './purchaseTax.js';
 import { applyReviewedPartialVat, requiresReviewedPartialVat } from './financeReviewedVat.js';
 import { financeInvoiceLineProblems } from './financeInvoiceLines.js';
@@ -423,7 +424,15 @@ export const ADAPTERS = {
     approved: (r) => r.status === 'recovered' && Boolean(r.recovered_date) && !r.payroll_lock_id,
     notApproved: 'العهدة لم تُسترد بعد.',
     build: (row, id) => {
-      const amount = round2(row.amount);
+      const recovered = Number(row.recovered_amount || 0);
+      const expenseUsed = custodyExpenseUsedCents(row);
+      if (!Number.isFinite(recovered) || recovered < 0 || Math.abs(recovered * 100 - Math.round(recovered * 100)) > 1e-6
+        || Math.round(recovered * 100) + expenseUsed > Math.round(Number(row.amount) * 100)
+        || (recovered > 0 && !row.payroll_lock_id)) {
+        throw new Error('رصيد استرداد العهدة لا يطابق الخصومات المحفوظة؛ يلزم فحصه.');
+      }
+      const amount = round2(Number(row.amount) - recovered - expenseUsed / 100);
+      if (!(amount > 0)) throw new Error('لا يوجد رصيد عهدة قابل للاسترداد؛ راجع المصروفات وخصومات الرواتب.');
       const method = row.recovery_method || row.payment_method || 'cash';
       return {
         entry: {

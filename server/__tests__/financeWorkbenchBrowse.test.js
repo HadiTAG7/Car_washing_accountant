@@ -32,9 +32,9 @@ describe('complete workbench browse and existing bulk approval', () => {
           sourceHash: read.sourceHash, patch: {} });
         expect(row).toMatchObject({ approvalReady: read.approvalReady, workflowStage: read.workflowStage,
           issueCount: read.issues.length, workflowDimensions: read.workflowDimensions });
-        expect(preview.postingPreview.ready).toBe(false);
+        expect(preview.postingPreview.ready).toBe(ledgerMatched);
         expect(preview.issues).toEqual(read.postingPreview.issues);
-        expect(read.approvalReady).toBe(false);
+        expect(read.approvalReady).toBe(ledgerMatched);
         expect(read.workflowDimensions.funding.ledgerMatched).toBe(ledgerMatched);
       }
       expect(JSON.stringify([...db.rows])).toBe(before);

@@ -1,11 +1,13 @@
 import { advanceAssignmentMonth } from '../../src/lib/advanceMonth.js';
 import { round2 } from './invariants.js';
 import { uniqueCompletedCommissionWashes } from './washCommission.js';
+import { custodyExpenseUsedCents } from './financeEmployeeAdvance.js';
 
 export const departedWithoutEndDate = biker => /هرب|مشيناه/.test(String(biker.current_status ?? biker.currentStatus ?? ''))
   && !String(biker.end_date ?? biker.endDate ?? '').trim();
 export const pendingAdvance = row => row.status === 'recovered' ? 0
-  : round2(Math.max(0, Number(row.amount || 0) - Math.max(0, Number(row.recovered_amount ?? row.recoveredAmount ?? 0))));
+  : round2(Math.max(0, Number(row.amount || 0) - Math.max(0, Number(row.recovered_amount ?? row.recoveredAmount ?? 0))
+    - custodyExpenseUsedCents(row) / 100));
 const total = rows => round2(rows.reduce((sum, row) => sum + row.amount, 0));
 
 // This is evidence for review, never a new entitlement/deduction rule.

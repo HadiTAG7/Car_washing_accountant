@@ -17,7 +17,7 @@ export default function TemporaryProposalTable({ rows, bikers = [], showDestinat
     </tr></thead><tbody>{visible.map(row=><tr key={row.id} className="border-t border-slate-200 dark:border-slate-700">
       <td className="p-3 min-w-56">{row.title}</td><td className="p-3 whitespace-nowrap">{formatCurrencyPrecise(row.amount)}</td>
       <td className="p-3 whitespace-nowrap">{row.date?formatDate(row.date):'تاريخ غير مسجل'}</td><td className="p-3">{name(row)}{row.assignmentMonth&&<small className="block">شهر الإسناد: <bdi>{row.assignmentMonth}</bdi></small>}</td>
-      <td className="p-3">{row.status==='recovered'?'مسترد حسب الحالة المحفوظة':row.outstanding<row.amount?'مسترد جزئيًا':'بانتظار الاسترداد'}</td>
+      <td className="p-3">{row.status==='recovered'?'مسترد حسب الحالة المحفوظة':row.outstanding<row.amount?'مستهلك أو مسترد جزئيًا':'بانتظار الاسترداد'}</td>
       <td className="p-3 whitespace-nowrap">{formatCurrencyPrecise(row.outstanding)}</td>{showDestination&&<td className="p-3">{row.destination}</td>}
       <td className="p-3 min-w-56">{row.note}</td>
     </tr>)}</tbody></table></ScrollableTable>

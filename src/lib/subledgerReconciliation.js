@@ -25,7 +25,9 @@ export function subledgerReconciliation({ accounts, entries, lines, today, tempo
       loading: Boolean(state.loading), error: state.error || (!available && !state.loading ? 'تعذرت قراءة المصدر كاملًا' : null) });
   }
   add('advances', 'العهد والسلف', '1300', sum(code => code === '1300'),
-    temporaries.filter(row => row.status === 'pending').reduce((total, row) => total + Number(row.amount || 0), 0),
+    temporaries.filter(row => row.status === 'pending').reduce((total, row) => total
+      + Math.max(0, Number(row.amount || 0) - Number(row.recoveredAmount ?? row.recovered_amount ?? 0)
+        - Number(row.custodyExpenseUsedHalala ?? row.custody_expense_used_halala ?? 0) / 100), 0),
     '?page=temporary_expenses', 'المعلق في صفحة المصروفات المؤقتة مقابل الرصيد الدفتري؛ حالة السداد الحالية وليست لقطة تاريخية.');
   add('assets', 'الأصول الثابتة', '1500', sum(code => code === '1500'), registerSummary(assets, today.slice(0, 7)).cost,
     '?page=assets', 'تكلفة الأصول المسجلة في سجل الأصول، لا إجمالي مبالغ التأسيس الشاملة للضريبة.');

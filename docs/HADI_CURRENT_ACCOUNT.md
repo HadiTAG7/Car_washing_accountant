@@ -39,4 +39,4 @@
 
 ## التخزين
 
-Migration `supabase/migrations/20261029090000_hadi_current_account.sql` (مولَّد من السجل): `bank_statement_lines`، `founding_review`، `founding_decisions`. القراءة للإدارة، والكتابة للخادم وحده.
+Migration `supabase/migrations/20261029131858_hadi_current_account.sql` (مولَّد من السجل): `bank_statement_lines`، `founding_review`، `founding_decisions`. القراءة للإدارة، والكتابة للخادم وحده.

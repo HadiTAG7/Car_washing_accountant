@@ -202,11 +202,11 @@ export const TABLES = [
   { collection: 'bank_statement_lines', columns: `account:text! txDate:day! direction:text! amount:money balance:money description reference
       fileName fileHash rowHash:text! decision:text! linkKind linkId:id! partnerId:id status:text! result:json
       appliedBy:id appliedByName appliedAt:ts appliedAtIso`,
-    policy: { read: 'admin', write: 'none' }, migration: '20261029090000_hadi_current_account' },
+    policy: { read: 'admin', write: 'none' }, migration: '20261029131858_hadi_current_account' },
   { collection: 'founding_review', columns: 'cutoffDate:day threshold:money actuals:json revision:int updatedBy:id updatedByName updatedAtIso',
-    policy: { read: 'admin', write: 'none' }, migration: '20261029090000_hadi_current_account' },
+    policy: { read: 'admin', write: 'none' }, migration: '20261029131858_hadi_current_account' },
   { collection: 'founding_decisions', columns: 'sourceKey:text! decision:text! partnerId:id note vatReviewed:bool revision:int decidedBy:id decidedByName decidedAtIso',
-    policy: { read: 'admin', write: 'none' }, migration: '20261029090000_hadi_current_account' },
+    policy: { read: 'admin', write: 'none' }, migration: '20261029131858_hadi_current_account' },
 
   // ── مركز قيادة الوكلاء ──
   { collection: 'agent_command_agents', columns: '', policy: { read: 'accountant', write: 'none' }, realtime: true },

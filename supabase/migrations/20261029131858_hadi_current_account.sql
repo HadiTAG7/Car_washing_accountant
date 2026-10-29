@@ -1,5 +1,5 @@
 -- ═══════════════════════════════════════════════════════════════════════════
--- 20261029090000_hadi_current_account — مولَّد من src/lib/data/schema/registry.js بـ
+-- 20261029131858_hadi_current_account — مولَّد من src/lib/data/schema/registry.js بـ
 --   node scripts/migration/generate-schema-sql.mjs
 -- لا تعدّله بيدك: عدّل السجل وأعد التوليد (اختبار يفشل إن اختلفا).
 -- جدول أُضيف بعد التشغيل: الجدول ثم صلاحياته، كما في الملفين الأساسيين.

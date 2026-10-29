@@ -428,9 +428,8 @@ async function decide(db, auth, r) {
       // An old, unposted founding decision can be cleared explicitly so the
       // custody review can proceed. Never create another payer decision, or
       // erase one after either route has posted a financial effect.
-      const postedForSource = t.journal_entries.some(e => e.status === 'posted' && !e.reversedBy
-        && (e.foundingEntry?.sourceKey === r.sourceKey
-          || (e.custodyHistoricalSettlementId && e.sourceId === doc.sourceId)));
+      const postedForSource = t.journal_entries.some(e => e.foundingEntry?.sourceKey === r.sourceKey
+        || (e.custodyHistoricalSettlementId && e.sourceId === doc.sourceId));
       const sourceLocked = t.posting_locks.some(lock => lock.id === postingLockId(doc.kind, doc.sourceId)
         || lock.id === legacyLockIdFor(doc.kind, doc.sourceId));
       const custodyReceipt = doc.custodySettlementId && t.finance_workbench_receipts.some(receipt =>

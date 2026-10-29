@@ -63,6 +63,14 @@ describe('finance workbench version-bound review', () => {
     expect(beforeInvoice.issues.join(' ')).toMatch(/لا يوجد قيد تمويل تاريخي/);
     expect(beforeInvoice.issues.join(' ')).not.toMatch(/بعد دفع مستند/);
     expect(beforeInvoice.readyForPosting).toBe(false);
+    const duplicated = await financeWorkbench(db, auth, { ...input,
+      allocations: [...input.allocations, ...input.allocations] });
+    expect(duplicated.issues.join(' ')).toMatch(/المصدر مكرر/);
+    const excessive = await financeWorkbench(db, auth, { ...input,
+      allocations: [{ ...input.allocations[0], amount: 151 }] });
+    expect(excessive.issues.join(' ')).toMatch(/تتجاوز مبلغ العهدة/);
+    await expect(financeWorkbench(db, auth, { ...input, action: 'save' }))
+      .rejects.toThrow(/غير صالح/);
     expect(db.rows).toEqual(new Map(before));
   });
   it('refuses a legacy advance without a verified opening balance even when a funding journal exists', async () => {

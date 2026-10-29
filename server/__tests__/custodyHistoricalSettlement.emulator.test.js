@@ -92,7 +92,8 @@ describe.skipIf(!enabled)('historical custody settlement on isolated Firestore',
     const [first, replay] = await Promise.all([financeWorkbench(db, auth, save), financeWorkbench(db, auth, save)]);
     expect(first).toMatchObject({ saved: true, advanceId: null,
       anchorMode: 'independent_historical_tranche', freeAdvanceBalanceHalala: 0 });
-    expect(replay).toMatchObject({ groupId: first.groupId, replay: true });
+    expect(replay.groupId).toBe(first.groupId);
+    expect([first, replay].filter(result => result.replay)).toHaveLength(1);
     const read = await financeWorkbench(db, auth, { action: 'read', kind: 'variable', sourceId });
     const browse = (await financeWorkbench(db, auth, { action: 'browse' })).items.find(item => item.sourceId === sourceId);
     expect(read).toMatchObject({ workflowStage: 'complete', historicalSettlementProof: { receiptVerified: true } });

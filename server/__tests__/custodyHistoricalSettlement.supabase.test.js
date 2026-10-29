@@ -137,4 +137,42 @@ describe.skipIf(!enabled)('historical settlement through disposable PgStore', ()
         invoiceDate: '2026-09-18', priorClaimEvidenceRef: 'TEST filed return' } });
     expect(journal.lines).toContainEqual(expect.objectContaining({ accountId: '1200', debit: 13.04 }));
   }, 120000);
+  it('atomically posts an independent deposit tranche through PgStore without a legacy advance', async () => {
+    await db.doc('app_settings/accounting').set({ value: { vatRegistered: false } });
+    const request = { action: 'previewCapture', kind: 'variable', requestId: `${token}-independent`,
+      patch: expensePatch({ amount: 100, quantity: 1, categoryId: token,
+        invoiceNumber: `${token}-independent-invoice`, invoiceUrl: `https://example.org/${token}-independent`,
+        paymentStatus: 'paid', paymentMethod: 'card', paidDate: '2026-10-18',
+        fundingType: 'employee', fundingReference: 'TEST isolated receipt' }) };
+    const draft = await financeWorkbench(db, auth, request);
+    const captured = await financeWorkbench(db, auth, { ...request, action: 'capture',
+      previewHash: draft.previewHash, reason: 'TEST isolated source', confirm: true });
+    const core = { action: 'preview', kind: 'custody_reconciliation',
+      beneficiary: { name: 'TEST beneficiary', sourceRef: 'TEST identity source' },
+      amount: 100, correctionDate: postingDay, ownerStatementRef: 'TEST owner statement',
+      evidenceRefs: [`TEST deposit ${token}`], fundingEvidence: [{ depositRowId: `${token}-row`,
+        evidenceRef: `TEST deposit ${token}`, deliveryDate: '2026-10-17',
+        depositAmount: 150, allocatedAmount: 100 }],
+      allocations: [{ kind: 'variable', sourceId: captured.sourceId, amount: 100,
+        allocationDecisionRef: 'TEST reviewed allocation',
+        fundingParts: [{ depositRowId: `${token}-row`, amount: 100 }] }] };
+    const preview = await financeWorkbench(db, auth, core);
+    expect(preview.blockingIssues).toEqual([]);
+    const save = { ...core, action: 'save', previewHash: preview.snapshotHash,
+      ownerApprovalRef: 'TEST exact approval', evidenceReviewRef: 'TEST evidence review',
+      ledgerReviewRef: 'TEST ledger review', reviewedUnrelatedJournalIds: preview.unassignedAdvanceMovementIds,
+      priorClaims: [], reason: 'TEST isolated settlement', confirm: true };
+    process.env.CUSTODY_HISTORICAL_APPROVED_MANIFEST_HASH = custodySettlementManifestHash(save);
+    const [first, second] = await Promise.all([financeWorkbench(db, auth, save), financeWorkbench(db, auth, save)]);
+    expect(first).toMatchObject({ advanceId: null, anchorMode: 'independent_historical_tranche',
+      freeAdvanceBalanceHalala: 0 });
+    expect(first.groupId).toBe(second.groupId);
+    expect([first, second].filter(result => result.replay)).toHaveLength(1);
+    expect((await financeWorkbench(db, auth, { action: 'read', kind: 'variable', sourceId: captured.sourceId })))
+      .toMatchObject({ workflowStage: 'complete', historicalSettlementProof: { receiptVerified: true } });
+    const funding = (await db.doc(`journal_entries/${first.fundingJournalId}`).get()).data();
+    expect(funding).toMatchObject({ entryDate: postingDay, sourceId: first.anchorId,
+      custodyAnchorMode: 'independent_historical_tranche' });
+    expect(funding.lines.filter(line => line.accountId === '1300')).toContainEqual(expect.objectContaining({ debit: 100 }));
+  }, 120000);
 });

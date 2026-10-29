@@ -1,9 +1,45 @@
 import { describe, it, expect } from 'vitest';
-import { makeVerifiedSourceBatches, makeN8nCloudSync } from '../../scripts/generate-n8n-cloud-sync.mjs';
+import { readFileSync } from 'node:fs';
+import { ESLint } from 'eslint';
+import { makeVerifiedSourceBatches, makeN8nCloudSync, browserbaseCollectorScript } from '../../scripts/generate-n8n-cloud-sync.mjs';
 import { packSspSource } from '../../scripts/ssp-cloud-collector.mjs';
 const source = (count=1) => ({ coverage:{rangeFrom:'2026-10-28',rangeTo:'2026-10-28',extractedAt:'2026-10-29T00:00:00+03:00',pageCount:12,pagesFetched:12,recordCount:count,isComplete:true,modules:{individual:'complete',corporate:'complete'},gaps:[],sourceUrl:'https://ssp-portal.sweater.sa/bookings'},
   records:Array.from({length:count},(_,i)=>({sspBookingId:`S-${990000+i}`,bookingKind:'individual',serviceDate:'2026-10-28',serviceType:'interior_exterior_wash',rawStatus:'Collecting Payment',driverExternalId:'2001',sourceUrl:'https://ssp-portal.sweater.sa/bookings?page=1&fromDate=2026-10-28&toDate=2026-10-28'})) });
 describe('verified cloud batch boundary', () => {
+  it('lints Playground bodies without ignoring undefined names or invalid syntax', async () => {
+    const lint = new ESLint();
+    const filePath = 'public/integrations/sweater-browserbase-function.js';
+    const valid = await lint.lintText('return await chromium.connectOverCDP(connectUrl);', { filePath });
+    expect(valid[0].errorCount).toBe(0);
+    const unknown = await lint.lintText('return missingGeneratedFunction(params);', { filePath });
+    expect(unknown[0].messages).toEqual(expect.arrayContaining([expect.objectContaining({ ruleId: 'no-undef', line: 1 })]));
+    const invalid = await lint.lintText('return (', { filePath });
+    expect(invalid[0].fatalErrorCount).toBeGreaterThan(0);
+  });
+  it('ships the generated collector as a valid async Function body', () => {
+    const source = browserbaseCollectorScript();
+    const artifact = readFileSync(new URL('../../public/integrations/sweater-browserbase-function.js', import.meta.url), 'utf8');
+    expect(artifact.replaceAll('\r\n', '\n')).toBe(source.replaceAll('\r\n', '\n'));
+    const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+    expect(() => new AsyncFunction('chromium', 'connectUrl', 'params', source)).not.toThrow();
+  });
+  it('exports an inactive public template without credential bindings', () => {
+    const workflow = makeN8nCloudSync();
+    expect(workflow.active).toBe(false);
+    expect(workflow.nodes.every(node => node.credentials === undefined)).toBe(true);
+  });
+  it('binds only explicitly supplied stored credential IDs, not display names alone', () => {
+    const unbound = makeN8nCloudSync({ sourceCredentialName: 'Source display name', importCredentialName: 'Import display name' });
+    expect(unbound.nodes.every(node => node.credentials === undefined)).toBe(true);
+    const configured = makeN8nCloudSync({ sourceCredentialId: 'source-fixture-id', importCredentialId: 'import-fixture-id' });
+    expect(configured.nodes.find(node => node.name === 'Invoke SSP collector').credentials)
+      .toEqual({ browserbaseApi: { id: 'source-fixture-id', name: 'Browserbase account' } });
+    expect(configured.nodes.find(node => node.name === 'Read collector result').credentials)
+      .toEqual({ browserbaseApi: { id: 'source-fixture-id', name: 'Browserbase account' } });
+    expect(configured.nodes.find(node => node.name === 'Preview source batches').credentials)
+      .toEqual({ httpHeaderAuth: { id: 'import-fixture-id', name: 'Sweater | Wash import' } });
+    expect(configured.active).toBe(false);
+  });
   it('round-trips a full week below the cloud result limit without losing optional or null facts', () => {
     const data=source(350);
     data.records.forEach((r,i)=>Object.assign(r,{arrivedAt:`2026-10-28T${String(i%24).padStart(2,'0')}:00:00+03:00`,startedAt:`2026-10-28T${String(i%24).padStart(2,'0')}:01:00+03:00`,completedAt:i%10?`2026-10-28T${String(i%24).padStart(2,'0')}:15:00+03:00`:null,platformAmount:20,notes:'Displayed event times have minute precision; browser timezone fixed to Asia/Riyadh. Classification follows the owner rule.'}));

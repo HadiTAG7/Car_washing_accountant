@@ -60,13 +60,15 @@ ${core}`;
 }
 
 export function makeN8nCloudSync({functionId='SET_BROWSERBASE_FUNCTION_ID',contextId='SET_SSP_CONTEXT_ID',importWorkflowId='SET_IMPORT_WORKFLOW_ID',
-  sourceCredentialName='Browserbase account',importCredentialId,importCredentialName='Sweater | Wash import',validationMode=true,days=7}={}) {
+  sourceCredentialId,sourceCredentialName='Browserbase account',importCredentialId,importCredentialName='Sweater | Wash import',validationMode=true,days=7}={}) {
   if (![1,7].includes(days)) throw new Error('Use one completed day for initial validation or seven for daily sync');
   const node=(name,type,version,x,y,parameters)=>({id:name.toLowerCase().replace(/[^a-z0-9]+/g,'-'),name,type:`n8n-nodes-base.${type}`,typeVersion:version,position:[x,y],parameters});
   const code=(name,x,y,jsCode)=>node(name,'code',2,x,y,{jsCode});
-  const http=(name,x,y,parameters,credential)=>({...node(name,'httpRequest',4.2,x,y,{...parameters,options:{timeout:60000,redirect:{redirect:{followRedirects:false}},response:{response:{responseFormat:'json'}}}}),credentials:credential,retryOnFail:false,onError:'stopWorkflow'});
-  const sourceAuth={browserbaseApi:{name:sourceCredentialName}};
-  const appAuth={httpHeaderAuth:{...(importCredentialId?{id:importCredentialId}:{}),name:importCredentialName}};
+  const http=(name,x,y,parameters,credential)=>({...node(name,'httpRequest',4.2,x,y,{...parameters,options:{timeout:60000,redirect:{redirect:{followRedirects:false}},response:{response:{responseFormat:'json'}}}}),...(credential?{credentials:credential}:{}),retryOnFail:false,onError:'stopWorkflow'});
+  // Public exports must not look connected merely because an account name exists.
+  // Bind credentials only when configuring a specific n8n instance with stored IDs.
+  const sourceAuth=sourceCredentialId?{browserbaseApi:{id:sourceCredentialId,name:sourceCredentialName}}:undefined;
+  const appAuth=importCredentialId?{httpHeaderAuth:{id:importCredentialId,name:importCredentialName}}:undefined;
   const nodes=[
     node('Manual sync','manualTrigger',1,0,0,{}),
     node('Midnight Riyadh','scheduleTrigger',1.2,0,220,{rule:{interval:[{field:'cronExpression',expression:'0 0 * * *'}]}}),

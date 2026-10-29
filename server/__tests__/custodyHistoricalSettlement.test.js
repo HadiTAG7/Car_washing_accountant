@@ -5,6 +5,7 @@ import { custodySettlementManifestHash } from '../custodyHistoricalSettlement.js
 import { postSource, reverseEntry } from '../../functions/src/ledger.js';
 import { calculatePayrollPreview } from '../../functions/src/payroll.js';
 import { expensePatch, memoryFinanceDb } from './financeFixtures.js';
+import { financeHash } from '../../functions/src/financeReview.js';
 
 const auth = { uid: 'synthetic-admin' };
 const previewBase = { action: 'preview', kind: 'custody_reconciliation', advanceId: 'synthetic-advance',
@@ -140,8 +141,32 @@ describe('atomic historical custody settlement, synthetic only', () => {
       .toMatchObject({ workflowStage: 'complete', historicalSettlementProof: { receiptVerified: true } });
     const second = await financeWorkbench(db, auth, save);
     expect(second).toMatchObject({ groupId: result.groupId, replay: true });
-    db.rows.get(`posting_locks/custody_deposit__${(await import('../../functions/src/financeReview.js')).financeHash('test-row-a').slice(0, 40)}`).consumedHalala = 0;
+    db.rows.get(`posting_locks/custody_deposit__${financeHash('test-row-a').slice(0, 40)}`).consumedHalala = 0;
     expect((await financeWorkbench(db, auth, { action: 'read', kind: 'variable', sourceId })).workflowStage).not.toBe('complete');
+  });
+
+  it('rejects a deposit allocation exceeding the unconsumed row balance atomically', async () => {
+    const { db, sourceId } = await setup();
+    const core = { action: 'preview', kind: 'custody_reconciliation',
+      beneficiary: { name: 'TEST beneficiary', sourceRef: 'TEST identity record' },
+      amount: 100, correctionDate: '2026-10-29', ownerStatementRef: 'TEST owner statement',
+      evidenceRefs: ['TEST deposit row'], fundingEvidence: [{ depositRowId: 'test-deposit',
+        evidenceRef: 'TEST deposit row', deliveryDate: '2026-10-17', depositAmount: 150, allocatedAmount: 100 }],
+      allocations: [{ kind: 'variable', sourceId, amount: 100, allocationDecisionRef: 'TEST reviewed allocation',
+        fundingParts: [{ depositRowId: 'test-deposit', amount: 100 }] }] };
+    const preview = await financeWorkbench(db, auth, core);
+    expect(preview.blockingIssues).toEqual([]);
+    const save = { ...core, action: 'save', previewHash: preview.snapshotHash,
+      ownerApprovalRef: 'TEST exact approval', evidenceReviewRef: 'TEST evidence review',
+      ledgerReviewRef: 'TEST ledger review', reviewedUnrelatedJournalIds: [], priorClaims: [],
+      reason: 'TEST isolated settlement', confirm: true };
+    process.env.CUSTODY_HISTORICAL_APPROVED_MANIFEST_HASH = custodySettlementManifestHash(save);
+    db.rows.set(`posting_locks/custody_deposit__${financeHash('test-deposit').slice(0, 40)}`, {
+      depositRowId: 'test-deposit', evidenceRef: 'TEST deposit row', deliveryDate: '2026-10-17',
+      depositAmountHalala: 15000, consumedHalala: 6000 });
+    const before = financial(db);
+    await expect(financeWorkbench(db, auth, save)).rejects.toThrow(/يتجاوز رصيده/);
+    expect(financial(db)).toEqual(before);
   });
 
   it('rejects stale sources, changed requests, overlapping evidence and mismatched VAT evidence without writes', async () => {

@@ -97,6 +97,17 @@ describe('atomic historical custody settlement, synthetic only', () => {
     expect(financial(db)).toEqual(before);
   });
 
+  it('rejects a new correction dated before the actual posting day even with an approved preview', async () => {
+    const { db, input, save } = await setup();
+    const backdated = { ...input, correctionDate: '2026-10-28' };
+    const preview = await financeWorkbench(db, auth, backdated);
+    const request = { ...save, correctionDate: backdated.correctionDate, previewHash: preview.snapshotHash };
+    process.env.CUSTODY_HISTORICAL_APPROVED_MANIFEST_HASH = custodySettlementManifestHash(request);
+    const before = financial(db);
+    await expect(financeWorkbench(db, auth, request)).rejects.toThrow(/يوم الترحيل الحالي/);
+    expect(financial(db)).toEqual(before);
+  });
+
   it('seals an independent tranche for a documented beneficiary without inventing an advance or employee ID', async () => {
     const { db, sourceId } = await setup();
     const input = { action: 'preview', kind: 'custody_reconciliation',

@@ -40,7 +40,7 @@ describe.skipIf(!enabled)('historical custody settlement on isolated Firestore',
     if (db) await db.terminate();
     if (app) await deleteApp(app);
   });
-  async function request() {
+  async function request(independent = false) {
     const capture = { action: 'previewCapture', kind: 'variable', requestId: 'synthetic-source',
       patch: expensePatch({ amount: 100, quantity: 1, categoryId: 'synthetic-category',
         invoiceNumber: 'TEST-CUSTODY-1', invoiceUrl: 'https://example.org/synthetic-firestore',
@@ -49,10 +49,15 @@ describe.skipIf(!enabled)('historical custody settlement on isolated Firestore',
     const draft = await financeWorkbench(db, auth, capture);
     const source = await financeWorkbench(db, auth, { ...capture, action: 'capture',
       previewHash: draft.previewHash, reason: 'Synthetic invoice', confirm: true });
-    const core = { action: 'preview', kind: 'custody_reconciliation', advanceId: 'synthetic-advance',
-      employeeId: 'synthetic-worker', amount: 100, historicalFundingDate: '2026-10-17',
+    const anchor = independent ? { beneficiary: { name: 'TEST beneficiary', sourceRef: 'TEST identity source' },
+      fundingEvidence: [{ depositRowId: 'test-row', evidenceRef: 'TEST deposit', deliveryDate: '2026-10-17',
+        depositAmount: 150, allocatedAmount: 100 }] }
+      : { advanceId: 'synthetic-advance', employeeId: 'synthetic-worker', historicalFundingDate: '2026-10-17' };
+    const core = { action: 'preview', kind: 'custody_reconciliation', ...anchor, amount: 100,
       correctionDate: '2026-10-29', ownerStatementRef: 'TEST owner statement',
-      evidenceRefs: ['TEST deposit'], allocations: [{ kind: 'variable', sourceId: source.sourceId, amount: 100 }] };
+      evidenceRefs: ['TEST deposit'], allocations: [{ kind: 'variable', sourceId: source.sourceId, amount: 100,
+        ...(independent ? { allocationDecisionRef: 'TEST allocation decision',
+          fundingParts: [{ depositRowId: 'test-row', amount: 100 }] } : {}) }] };
     const preview = await financeWorkbench(db, auth, core);
     const save = { ...core, action: 'save', previewHash: preview.snapshotHash,
       ownerApprovalRef: 'TEST exact approval', evidenceReviewRef: 'TEST deposit review',
@@ -79,6 +84,19 @@ describe.skipIf(!enabled)('historical custody settlement on isolated Firestore',
     await db.doc(`variable_expenses/${sourceId}`).update({ total_variable_cost: 99 });
     await expect(financeWorkbench(db, auth, save)).rejects.toThrow(/تغيرت مصادر/);
     expect((await db.collection('journal_entries').get()).size).toBe(0);
+    expect((await db.doc('temporary_expenses/synthetic-advance').get()).data().custody_historical_partial_hold).toBeUndefined();
+  }, 180000);
+  it('atomically seals a deposit-funded tranche without a legacy advance', async () => {
+    const { sourceId, preview, save } = await request(true);
+    expect(preview.blockingIssues).toEqual([]);
+    const [first, replay] = await Promise.all([financeWorkbench(db, auth, save), financeWorkbench(db, auth, save)]);
+    expect(first).toMatchObject({ saved: true, advanceId: null,
+      anchorMode: 'independent_historical_tranche', freeAdvanceBalanceHalala: 0 });
+    expect(replay).toMatchObject({ groupId: first.groupId, replay: true });
+    const read = await financeWorkbench(db, auth, { action: 'read', kind: 'variable', sourceId });
+    const browse = (await financeWorkbench(db, auth, { action: 'browse' })).items.find(item => item.sourceId === sourceId);
+    expect(read).toMatchObject({ workflowStage: 'complete', historicalSettlementProof: { receiptVerified: true } });
+    expect(browse.workflowStage).toBe('complete');
     expect((await db.doc('temporary_expenses/synthetic-advance').get()).data().custody_historical_partial_hold).toBeUndefined();
   }, 180000);
 });

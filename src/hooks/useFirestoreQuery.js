@@ -91,13 +91,15 @@ export function useFirestoreQuery(fetcher, {
   }, [run]);
 
   // Another reader of the same key stored newer data (a write elsewhere
-  // refetched it); show it. The refresh button re-reads what is on screen.
+  // refetched it); show it. The refresh button re-reads what is on screen,
+  // and so does a posting to a collection this reader holds.
   useEffect(() => {
     if (!enabled || !cacheKey) return undefined;
     const unwatch = watchCached(cacheKey, (rows) => {
       if (mounted.current) setState({ data: shape(rows), loading: false, error: null, queryKey });
     });
-    const unrefresh = onReadRefresh(() => run({ force: true }));
+    // Named by what it read, so a posting to one of those collections re-reads it now.
+    const unrefresh = onReadRefresh(({ force = true } = {}) => run({ force }), tags);
     return () => { unwatch(); unrefresh(); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, cacheKey, queryKey, run]);

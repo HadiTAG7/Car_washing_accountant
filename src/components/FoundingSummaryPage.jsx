@@ -3,7 +3,7 @@ import TopBar from './TopBar';
 import LoadingState from './LoadingState';
 import { useFounding } from '../hooks/useFounding';
 import { Messages } from './founding/FoundingCommon';
-import { money, day, when, meaningText } from '../lib/founding/foundingFormat';
+import { money, day, when, meaningText, TRANSFER_SOURCE as SOURCE } from '../lib/founding/foundingFormat';
 import './FinanceWorkspace.css';
 import './founding/Founding.css';
 
@@ -72,11 +72,12 @@ function Summary({ s, readAt }) {
 
     <section aria-label="ما انحوّل لحساب الشركة">
       <h2>4. ما انحوّل لحساب الشركة</h2>
-      {s.transfers.length === 0 ? <p>لا تحويلات معلّمة من كشف حساب الشركة أو كشف هادي.</p> : <div className="fw-table-scroll"><table>
-        <thead><tr><th>التاريخ</th><th>البيان</th><th>الاتجاه</th><th>المبلغ</th></tr></thead>
-        <tbody>{s.transfers.map(t => <tr key={t.key}><td>{day(t.date)}</td><td>{t.title}</td><td>{t.toCompany ? 'من هادي لحساب الشركة' : 'من حساب الشركة لهادي'}</td>
+      {s.transfers.length === 0 ? <p>لا تحويلات لحساب الشركة بعد (من كشف أو بلا كشف).</p> : <div className="fw-table-scroll"><table>
+        <thead><tr><th>التاريخ</th><th>البيان</th><th>المصدر</th><th>الاتجاه</th><th>المبلغ</th></tr></thead>
+        <tbody>{s.transfers.map(t => <tr key={t.key}><td>{day(t.date)}</td><td>{t.title}</td><td>{SOURCE[t.account] || t.account}{t.status !== 'posted' ? ' — لم يُرحّل' : ''}</td>
+          <td>{t.toCompany ? 'من هادي لحساب الشركة' : 'من حساب الشركة لهادي'}</td>
           <td>{money(t.amount)}</td></tr>)}</tbody>
-        <tfoot><tr><th scope="row" colSpan={3}>صافي ما انحوّل لحساب الشركة</th><td>{money(b.toCompany - b.toHadi)}</td></tr></tfoot>
+        <tfoot><tr><th scope="row" colSpan={4}>صافي ما انحوّل لحساب الشركة</th><td>{money(b.toCompany - b.toHadi)}</td></tr></tfoot>
       </table></div>}
     </section>
 

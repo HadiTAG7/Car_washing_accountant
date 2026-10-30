@@ -9,14 +9,15 @@ import { usePartnerPayments } from '../hooks/usePartnerPayments';
 import { useLedger } from '../hooks/useLedger';
 import { formatCurrency, formatDate } from '../data/initialData';
 import { paymentHref, reconcilePartnerCapital } from '../lib/partnerCapitalReconciliation';
+import { ReceiptPostings } from './founding/FoundingReceipts';
 
 export default function PartnerCapitalPage() {
   const { role, isPartnerView } = usePartnerView();
   if (isPartnerView || !['admin', 'accountant'].includes(role)) return <p className="p-6">هذه الصفحة للإدارة المحاسبية.</p>;
-  return <CapitalContent />;
+  return <CapitalContent role={role} />;
 }
 
-function CapitalContent() {
+function CapitalContent({ role }) {
   const partners = usePartners();
   const payments = usePartnerPayments();
   const ledger = useLedger();
@@ -31,7 +32,7 @@ function CapitalContent() {
           {[["المسجّل في سندات القبض", result.totals.recorded], ["المرحّل في دفتر الأستاذ", result.totals.posted], ["الفرق", result.totals.difference]].map(([title, value]) =>
             <Card key={title} className="p-5"><p>{title}</p><strong className={`block mt-3 text-2xl tabular-nums ${title === 'الفرق' && value ? 'text-rose-500' : ''}`}>{formatCurrency(value)}</strong></Card>)}
         </div>
-        <p className="text-sm text-slate-500 dark:text-slate-400">المطلوب حسب العمالة. المدفوع من سندات القبض، والمرحّل من حساب رأس مال كل شريك. هذه الصفحة لا ترحّل دفعات.</p>
+        <p className="text-sm text-slate-500 dark:text-slate-400">المطلوب حسب العمالة. المدفوع من سندات القبض، والمرحّل من حساب رأس مال كل شريك. لا ترحيل هنا إلا قيود السندات التي وصلت لحساب هادي، بموافقة المدير.</p>
         {result.orphanPayments.length > 0 && <p role="alert" className="text-rose-500">توجد {result.orphanPayments.length} دفعات بلا شريك معروف؛ لم تدخل مجموع الشركاء.</p>}
         <Card className="p-4 overflow-x-auto"><table className="w-full text-sm min-w-[640px]">
           <caption className="text-right font-bold mb-4">مطابقة الشركاء</caption>
@@ -39,6 +40,7 @@ function CapitalContent() {
           <tbody>{result.rows.map(row => <PartnerRow key={row.partner.id} row={row} />)}</tbody>
           <tfoot><tr className="font-bold border-t"><td className="p-3">الإجمالي</td>{['required', 'recorded', 'posted', 'difference'].map(key => <td key={key} className="p-3 tabular-nums">{formatCurrency(result.totals[key])}</td>)}</tr></tfoot>
         </table></Card>
+        {role === 'admin' && <ReceiptPostings onPosted={() => { payments.refetch(); ledger.refetch(); }} />}
       </>}
     </main></>;
 }

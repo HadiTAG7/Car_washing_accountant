@@ -106,6 +106,8 @@ export default function FinanceExpenseForm({ kind, detail, requestId, options, o
       <div><dt>الترحيل</dt><dd>{detail.protectedSource ? 'المصدر محمي وله أثر سابق' : 'غير مرحل'}</dd></div>
       <div><dt>السداد</dt><dd>{detail.paymentProven ? 'مثبت في المصدر' : ({ paid: 'مسجل مدفوع — يحتاج دليل', unpaid: 'غير مسدد' })[detail.row.payment_status] || 'غير مثبت'}</dd></div>
     </dl>}
+    {detail?.postingDate && !detail.protectedSource && <p className="fw-warning" role="note" aria-label="تاريخ القيد">
+      <AlertTriangle size={18} /><span>تاريخ القيد {detail.postingDate} — شهر المستند مقفل، ويُقيَّد بآخر يوم في فترة التأسيس والشهر يبقى مقفلًا.</span></p>}
     {conflict && <div className="fw-payment-warning" role="note"><AlertTriangle size={18} /><span>طريقة دفع متناقضة: المستند يشير إلى تحويل أو مدى أو بنكي، لكن المسجل نقد. التنبيه لا يغيّر البيانات.</span></div>}
     {detail?.workflowNote && <p className="fw-warning">{detail.workflowNote}</p>}
     {detail?.postingHistory && (detail.postingHistory.active.length > 0 || detail.postingHistory.reversed.length > 0) &&

@@ -130,4 +130,50 @@ describe.skipIf(!enabled)('founding settlement on Postgres with the production s
     read = await call({ action: 'read' });
     expect(read.plan.hadiBalance).toMatchObject({ received: 5000, net: -4954.5, attestation: { changed: true } });
   }, 120000);
+
+  it('posts a closed-month founding document on the last founding day, holds a filed return until reviewed, and posts a receipt under its own lock', async () => {
+    const wb = (sourceId, request) => financeWorkbench(db, { uid: admin }, { kind: 'variable', sourceId, ...request });
+    const complete = { category_id: 'cat1', quantity: 1, supplier: 'مورد', invoice_url: 'https://example.org/july', price_mode: 'inclusive',
+      payment_method: 'cash', payment_status: 'paid', finance_metadata: { fundingType: 'company_cash', fundingReference: 'صندوق', purpose: 'تجهيز', evidenceRefs: ['ref'] } };
+    const batch = db.batch();
+    batch.set(db.doc('app_settings/accounting'), { value: { vatRegistered: true } });
+    batch.set(db.doc('chart_of_accounts/1200'), { code: '1200', nameArabic: '1200', accountType: 'asset', active: true });
+    batch.set(db.doc('variable_expenses/v5'), { ...complete, expense_name: 'مصروف يوليو', total_variable_cost: 150, unit_cost: 150, logged_date: '2026-07-15',
+      paid_date: '2026-07-15', is_tax_invoice: false, vat_deductible: false });
+    batch.set(db.doc('variable_expenses/v7'), { ...complete, expense_name: 'فاتورة ضريبية يوليو', total_variable_cost: 115, unit_cost: 115, logged_date: '2026-07-16',
+      paid_date: '2026-07-16', is_tax_invoice: true, vat_deductible: true, vat_amount: 15, invoice_number: 'INV-7', invoice_date: '2026-07-16', invoice_url: 'https://example.org/july-7',
+      finance_metadata: { ...complete.finance_metadata, taxReviewRef: 'REV-7' } });
+    batch.set(db.doc('partner_payments/pp2'), { partner_id: 'p1', amount: 3000, payment_date: '2026-07-20', payment_method: 'owner_current' });
+    await batch.commit();
+
+    let detail = await wb('v5', { action: 'read' });
+    expect(detail).toMatchObject({ closed: false, postingDate: '2026-09-30' });
+    await wb('v5', { action: 'approve', sourceHash: detail.sourceHash, postingHash: detail.postingPreview.postingHash, reason: 'اعتماد', confirm: true });
+    detail = await wb('v5', { action: 'read' });
+    const posted = await wb('v5', { action: 'post', sourceHash: detail.sourceHash, confirm: true });
+    const entry = (await pool.query('select entry_date, period_key from public.journal_entries where id = $1', [posted.verification.journalIds[0]])).rows[0];
+    expect(entry).toMatchObject({ entry_date: '2026-09-30', period_key: '2026-09' });
+    expect((await pool.query("select status from public.accounting_periods where id = '2026-07'")).rows[0].status).toBe('closed');
+    expect((await pool.query("select logged_date from public.variable_expenses where id = 'v5'")).rows[0].logged_date).toBe('2026-07-15');
+
+    // Input VAT in a filed quarter: held until reviewed in the founding settlement.
+    detail = await wb('v7', { action: 'read' });
+    expect(detail.postingPreview).toMatchObject({ ready: false });
+    expect(detail.postingPreview.issues.join(' ')).toContain('راجعته');
+    await call({ action: 'decide', sourceKey: 'variable:v7', vatReviewed: true, confirm: true });
+    detail = await wb('v7', { action: 'read' });
+    expect(detail.postingPreview.ready).toBe(true);
+    expect(detail.postingPreview.lines.map(l => [String(l.accountId), l.debit, l.credit])).toEqual([['5100', 100, 0], ['1200', 15, 0], ['1010', 0, 115]]);
+
+    // A receipt that reached Hadi with no entry: proposed with a reason, posted on approval, locked.
+    await call({ action: 'proposeReceipts', keys: ['partner_payment:pp2'], reason: 'وصلت لحسابي الشخصي', confirm: true });
+    const read = await call({ action: 'read' });
+    const receipt = read.plan.entries.find(e => e.key === 'receipt:partner_payment:pp2');
+    await call({ action: 'postEntries', reason: 'موافقة', confirm: true, entries: [{ key: receipt.key, hash: receipt.hash }] });
+    const rows = (await pool.query(`select e.entry_date, e.source_type, e.source_id, l.account_id, l.debit, l.credit from public.journal_entries e
+      join public.journal_entry_lines l on l.entry_id = e.id where e.source_kind = 'founding_receipt' order by l.line_no`)).rows;
+    expect(rows.map(r => [r.entry_date, r.source_type, r.source_id, r.account_id, Number(r.debit), Number(r.credit)])).toEqual([
+      ['2026-09-30', 'partner_payment', 'pp2', '2300', 3000, 0], ['2026-09-30', 'partner_payment', 'pp2', '3000-p1', 0, 3000]]);
+    expect((await pool.query("select count(*)::int as n from public.posting_locks where id = 'partner_payment__pp2'")).rows[0].n).toBe(1);
+  }, 120000);
 });

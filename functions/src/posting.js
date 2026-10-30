@@ -182,7 +182,7 @@ export function purchaseFieldsOf(kind, row) {
  *
  * كل ما يخص الضريبة من `resolvePurchaseTax`.
  */
-function buildExpense(kind, row, id, { policyAt = null, recordDate = null } = {}) {
+function buildExpense(kind, row, id, { policyAt = null, recordDate = null, postingDate = null } = {}) {
   // The SAME date the poster resolved the policy from. Computing it twice let
   // the two drift — the voucher adapter read `due_date` while the builder read
   // `dueDate` — so an entry could be dated one day and taxed under another.
@@ -215,10 +215,14 @@ function buildExpense(kind, row, id, { policyAt = null, recordDate = null } = {}
     : settlementDate;
   const ref = fields.invoiceNumber ? ` — فاتورة ${fields.invoiceNumber}` : '';
   const supplierLabel = fields.supplier ? `المورد: ${fields.supplier}` : 'سداد';
+  // A founding-period document whose month is closed posts on the period's last
+  // day, as one entry, the month left closed; its tax still follows its own dates.
+  const dated = postingDate ? String(postingDate).slice(0, 10) : null;
+  const note = dated ? ` — مستند ${accrualDate} قُيّد بآخر يوم في فترة التأسيس (شهره مقفل)` : '';
   // Split only when the two days differ AND the money actually moved. An
   // unpaid purchase has no settlement to date, and a same-day one would net a
   // payable against itself for no reader's benefit.
-  const split = paid === 'paid' && accrualDate !== settlementDate;
+  const split = !dated && paid === 'paid' && accrualDate !== settlementDate;
 
   const lines = [
     // The expense or asset takes the NET; a non-deductible tax stays inside it,
@@ -241,10 +245,10 @@ function buildExpense(kind, row, id, { policyAt = null, recordDate = null } = {}
 
   const built = {
     entry: {
-      entryDate: accrualDate,
+      entryDate: dated || accrualDate,
       sourceType: 'expense',
       sourceId: id,
-      description: `${description}${ref}`,
+      description: `${description}${ref}${note}`,
     },
     lines,
     purchaseTaxSnapshot: tax.snapshot,

@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { FilePlus2, Landmark, Wallet } from 'lucide-react';
+import { ArrowLeftRight, FilePlus2, Landmark, Wallet } from 'lucide-react';
 import { ConfirmButton, EntryLines, StatusBadge } from './FoundingCommon';
-import { money, day, when, meaningText } from '../../lib/founding/foundingFormat';
+import { money, day, when, meaningText, TRANSFER_SOURCE as SOURCE } from '../../lib/founding/foundingFormat';
 import { uploadInvoiceFile } from '../../lib/firebaseClient';
 
 const KIND = { variable: 'متغيرة', monthly: 'شهرية', annual: 'سنوية', startup: 'تأسيس' };
@@ -37,7 +37,7 @@ export function HadiBalance({ founding }) {
       <tbody>
         <tr><th scope="row">مستندات دفعتها ({b.paidCount}){b.attestedCount ? ` — منها بإقرار المدير ${b.attestedCount} · ${money(b.attested)}` : ''}</th><td>{money(b.paid)}</td></tr>
         <tr><th scope="row">دفعات شركاء وصلتك ({b.receivedCount})</th><td>{money(-b.received)}</td></tr>
-        <tr><th scope="row">تحويلاتك لحساب الشركة (من كشف الشركة)</th><td>{money(b.toCompany)}</td></tr>
+        <tr><th scope="row">تحويلاتك لحساب الشركة (من كشف الشركة أو بلا كشف)</th><td>{money(b.toCompany)}</td></tr>
         {b.toHadi > 0 && <tr><th scope="row">تحويلات من حساب الشركة لك</th><td>{money(-b.toHadi)}</td></tr>}
         <tr><th scope="row">الصافي</th><td><strong>{money(b.net)}</strong> · {meaningText(b.meaning)}</td></tr>
         {b.adjustments !== 0 && <tr><th scope="row">بعد التسويات على 3200</th><td><strong>{money(b.afterAdjustments)}</strong> · {meaningText(b.afterMeaning)}</td></tr>}
@@ -52,7 +52,7 @@ export function HadiBalance({ founding }) {
     {b.transfers.length > 0 ? <details className="fw-form-section"><summary>التحويلات بينك وبين حساب الشركة ({b.transfers.length})</summary>
       <div className="fw-table-scroll"><table>
         <thead><tr><th>التاريخ</th><th>الوصف</th><th>الكشف</th><th>الاتجاه</th><th>المبلغ</th><th>القيد</th></tr></thead>
-        <tbody>{b.transfers.map(t => <tr key={t.key}><td>{day(t.date)}</td><td>{t.title}</td><td>{t.account === 'company' ? 'كشف الشركة' : 'كشفك'}</td>
+        <tbody>{b.transfers.map(t => <tr key={t.key}><td>{day(t.date)}</td><td>{t.title}</td><td>{SOURCE[t.account] || t.account}</td>
           <td>{t.toCompany ? 'منك لحساب الشركة' : 'من حساب الشركة لك'}</td><td>{money(t.amount)}</td><td><StatusBadge status={t.status} /></td></tr>)}</tbody>
       </table></div>
     </details> : <small>لا تحويلات معلّمة بعد. ارفع كشف حساب الشركة من «كشوف الحساب» وعلّم إيداعاتك «تحويل بين هادي والشركة».</small>}
@@ -99,6 +99,40 @@ export function Adjustments({ founding, names }) {
       <small> — {e.proposedByName}، <bdi>{when(e.proposedAtIso)}</bdi>{e.postedReason ? ` · سبب الموافقة: ${e.postedReason}` : ''}</small>
       {e.status !== 'posted' && <ConfirmButton label="حذف" disabled={founding.busy} confirmText="يحذف التسوية المقترحة. لا قيد."
         onConfirm={() => founding.act({ action: 'removeAdjustment', id: e.id, confirm: true }, 'حُذفت التسوية.')} />}
+    </li>)}</ul>}
+  </section>;
+}
+
+/** تحويل هادي لحساب الشركة بلا كشف: التاريخ والمبلغ والبيان والسبب ← قيد مقترح (مدين 1020 / دائن 2300). */
+export function ManualTransfers({ founding, names }) {
+  const { plan } = founding.data, list = plan.entries.filter(e => e.key.startsWith('manual_transfer:'));
+  const blank = { date: '', amount: '', description: '', reason: '' };
+  const [form, setForm] = useState(blank);
+  const set = patch => setForm(f => ({ ...f, ...patch }));
+  const amount = Number(form.amount);
+  const ready = form.date && halalaOnly(form.amount) && form.description.trim().length >= 2 && form.reason.trim().length >= 5;
+  return <section className="fw-panel" aria-label="تحويل لحساب الشركة بدون كشف">
+    <h2><ArrowLeftRight size={18} /> تحويلك لحساب الشركة — بدون كشف</h2>
+    <p>تحويل من حسابك لحساب الشركة ما له سطر في كشف مرفوع. يُحفظ قيدًا مقترحًا باسمك: مدين 1020 البنك، دائن 2300 حسابك الجاري، ويُحسب ضمن «تحويلاتك لحساب الشركة» مثل الإيداعات المعلّمة من الكشف. لا يُرحّل إلا بموافقتك من «قيود التصحيح والتسوية».</p>
+    <div className="fw-form">
+      <label>التاريخ<input type="date" value={form.date} onChange={e => set({ date: e.target.value })} /></label>
+      <label>المبلغ<input type="number" min="0" step="0.01" value={form.amount} onChange={e => set({ amount: e.target.value })} /></label>
+      <label className="fw-wide">البيان<input value={form.description} onChange={e => set({ description: e.target.value })} placeholder="مثلًا: حوالة من حسابي في الراجحي لحساب الشركة" /></label>
+      <label className="fw-wide">السبب<input value={form.reason} onChange={e => set({ reason: e.target.value })} placeholder="مثلًا: ما رفعت كشف الشركة لهذا الشهر بعد" /></label>
+    </div>
+    {halalaOnly(form.amount) && <EntryLines names={names} lines={[{ accountId: '1020', debit: amount, credit: 0, description: `تحويل من هادي إلى حساب الشركة — ${form.description.trim() || '—'}` },
+      { accountId: '2300', debit: 0, credit: amount, description: form.description.trim() || '—' }]} />}
+    <div className="fw-actions"><ConfirmButton primary label="حفظ التحويل قيدًا مقترحًا" disabled={founding.busy || !ready}
+      confirmText={`يحفظ قيدًا مقترحًا بـ ${money(amount || 0)} بتاريخ ${day(form.date)} بسببك، باسمك ووقتك. لا ترحيل.`}
+      onConfirm={async () => { if (await founding.act({ action: 'proposeTransfer', date: form.date, amount, description: form.description.trim(), reason: form.reason.trim(), confirm: true },
+        'حُفظ التحويل مقترحًا.')) setForm(blank); }} /></div>
+    {list.length > 0 && <ul className="founding-list">{list.map(e => <li key={e.key}>
+      <strong>{e.title}</strong> · {money(e.amount)} · {day(e.originalDate)}{e.date !== e.originalDate ? ` (يُقيَّد ${day(e.date)} — شهره مقفل)` : ''} <StatusBadge status={e.status} />
+      {e.entryNumber ? <span> قيد رقم {e.entryNumber}</span> : null}
+      <small> — السبب: {e.reason} · {e.proposedByName}، <bdi>{when(e.proposedAtIso)}</bdi>{e.postedReason ? ` · سبب الموافقة: ${e.postedReason}` : ''}</small>
+      {e.possibleTwin && e.status !== 'posted' && <small className="founding-error">انتبه: في {e.possibleTwin.account === 'company' ? 'كشف الشركة' : 'كشفك'} تحويل بنفس المبلغ بتاريخ {day(e.possibleTwin.txDate)} — لا تحسبه مرتين.</small>}
+      {e.status !== 'posted' && <ConfirmButton label="حذف" disabled={founding.busy} confirmText="يحذف التحويل المقترح. لا قيد."
+        onConfirm={() => founding.act({ action: 'removeTransfer', id: e.id, confirm: true }, 'حُذف التحويل.')} />}
     </li>)}</ul>}
   </section>;
 }

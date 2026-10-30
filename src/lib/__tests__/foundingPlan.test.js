@@ -114,8 +114,11 @@ describe('the founding-period default rule', () => {
     const plan = foundingPlan({ docs: docs(), decisions, closedMonths: new Set(['2026-06']) });
     const rule = plan.rule;
     expect(rule.candidates.map(c => [c.sourceId, c.action])).toEqual([
-      ['open', 'update'], ['posted', 'entry'], ['owed', 'entry'], ['vat', 'entry'], ['june', 'blocked']]);
-    expect(rule).toMatchObject({ count: 5, total: 625, unposted: { count: 2, amount: 160 }, posted: { count: 3, amount: 465 }, held: 1, blocked: 1 });
+      ['open', 'update'], ['posted', 'entry'], ['owed', 'entry'], ['vat', 'entry'], ['june', 'update']]);
+    // June is closed, but a founding-period document now posts on the period's last day.
+    expect(rule).toMatchObject({ count: 5, total: 625, unposted: { count: 2, amount: 160 }, posted: { count: 3, amount: 465 }, held: 1, blocked: 0 });
+    // Unless that day's month is closed too.
+    expect(foundingPlan({ docs: docs(), decisions, closedMonths: new Set(['2026-06', '2026-09']) }).rule.candidates.find(c => c.sourceId === 'june').action).toBe('blocked');
     expect(rule.updates.find(u => u.key === 'variable:open').patch).toEqual({ fundingType: 'owner_current', paymentMethod: 'founding_personal', paidDate: '2026-09-01' });
     expect(rule.entries.map(e => [e.sourceKey, e.date, e.status, e.lines.map(l => [l.accountId, l.debit, l.credit])])).toEqual([
       ['variable:posted', '2026-09-30', 'proposed', [['1020', 300, 0], ['2300', 0, 300]]],
@@ -132,9 +135,9 @@ describe('the founding-period default rule', () => {
     const applied = { ...decisions, ...Object.fromEntries(['open', 'posted', 'owed', 'vat', 'june'].map(id => [`variable:${id}`, { decision: 'founding_rule' }])) };
     const plan = foundingPlan({ docs: docs(), decisions: applied, closedMonths: new Set(['2026-06']) });
     expect(plan.rule.count).toBe(0);
-    expect(plan.rule.pendingUpdates).toEqual(['variable:open']);
-    expect(plan.rule.toUpdate).toBe(1);
-    expect(plan.updates.find(u => u.key === 'variable:june')).toMatchObject({ source: 'rule', blocked: true });
+    expect(plan.rule.pendingUpdates).toEqual(['variable:open', 'variable:june']);
+    expect(plan.rule.toUpdate).toBe(2);
+    expect(plan.updates.find(u => u.key === 'variable:june')).toMatchObject({ source: 'rule', blocked: false });
     expect(plan.entries.filter(e => e.status === 'proposed').map(e => e.sourceKey)).toEqual(['variable:posted', 'variable:owed', 'variable:excepted']);
     expect(plan.entries.find(e => e.sourceKey === 'variable:posted').description).toContain('دفع شخصي - فترة التأسيس');
     expect(plan.hadi.pending.filter(p => p.status === 'unposted').map(p => p.key)).toEqual(['variable:june', 'variable:open']);
@@ -288,6 +291,38 @@ describe('without a personal statement', () => {
     expect(summary.transfers).toMatchObject([{ amount: 300, toCompany: true, account: 'company' }]);
     expect(summary.settlements).toEqual([{ key: 'adjustment:adj1', type: 'adjustment', title: 'تسوية على 3200: تنازل عن الفرق', date: '2026-09-30',
       status: 'posted', entryNumber: 7, reason: 'موافقة الشركاء', approvedByName: 'هادي', amount: 475 }]);
+  });
+});
+
+describe('Hadi’s transfer without a statement, and partner receipts that reached him', () => {
+  const lines = ls => ls.map(l => [l.accountId, l.debit, l.credit]);
+  it('turns a written transfer into a proposed entry, counted with the statement transfers', () => {
+    const manualTransfers = [{ id: 'tr_1', date: '2026-10-05', amount: 7000, description: 'حوالة من حسابي', reason: 'لا كشف شخصي لهذا التحويل', byName: 'هادي' },
+      { id: 'tr_2', date: '2026-07-10', amount: 300, description: 'إيداع نقدي', reason: 'إيداع في فرع البنك', byName: 'هادي' }];
+    const plan = foundingPlan({ settings: { manualTransfers }, closedMonths: new Set(['2026-07']),
+      lines: [line('c1', { account: 'company', direction: 'credit', amount: 7000, txDate: '2026-10-07', decision: 'transfer' })] });
+    const first = plan.entries.find(e => e.key === 'manual_transfer:tr_1');
+    expect(first).toMatchObject({ type: 'transfer', date: '2026-10-05', status: 'proposed', account: 'manual', toCompany: true,
+      reason: 'لا كشف شخصي لهذا التحويل', possibleTwin: { txDate: '2026-10-07', account: 'company' } });
+    expect(lines(first.lines)).toEqual([['1020', 7000, 0], ['2300', 0, 7000]]);
+    // In a closed founding month it is dated on the period's last day, like the corrections.
+    expect(plan.entries.find(e => e.key === 'manual_transfer:tr_2')).toMatchObject({ date: '2026-09-30', originalDate: '2026-07-10', status: 'proposed' });
+    expect(plan.hadiBalance.toCompany).toBe(14300);
+    expect(plan.summary.transfers.map(t => t.account).sort()).toEqual(['company', 'manual', 'manual']);
+  });
+  it('proposes Dr 2300 / Cr the partner’s capital for a receipt that reached Hadi with no entry, only once proposed with a reason', () => {
+    const pay = (id, over) => ({ key: `partner_payment:${id}`, id, partnerId: 'a', partnerName: 'أ', amount: 100, date: '2026-08-05', method: 'bank_transfer', protected: false, ...over });
+    const base = { closedMonths: new Set(['2026-07']), partners: [{ id: 'a', name: 'أ' }],
+      payments: [pay('p1', { amount: 1000, date: '2026-07-03' }), pay('p2', { amount: 500, method: 'owner_current' }), pay('p3', { protected: true }), pay('p4')],
+      decisions: { 'partner_payment:p1': { decision: 'hadi' }, 'partner_payment:p3': { decision: 'hadi' } } };
+    // p3 is posted already; p4 did not reach Hadi.
+    expect(foundingPlan(base).receipts.map(r => [r.id, r.postingDate, r.arrivalSource])).toEqual([['p1', '2026-09-30', 'decision'], ['p2', '2026-08-05', 'recorded']]);
+    const plan = foundingPlan({ ...base, settings: { receiptProposals: [{ id: 'p1', reason: 'وصلت لحسابي الشخصي', byName: 'هادي' }] } });
+    const entry = plan.entries.find(e => e.key === 'receipt:partner_payment:p1');
+    expect(entry).toMatchObject({ type: 'receipt', paymentId: 'p1', date: '2026-09-30', originalDate: '2026-07-03', status: 'proposed', reason: 'وصلت لحسابي الشخصي' });
+    expect(lines(entry.lines)).toEqual([['2300', 1000, 0], ['3000-a', 0, 1000]]);
+    expect(plan.receipts.map(r => r.id)).toEqual(['p2']);
+    expect(plan.entries.some(e => e.lines.some(l => l.accountId === '3200'))).toBe(false);
   });
 });
 

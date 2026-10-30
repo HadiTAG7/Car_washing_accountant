@@ -198,13 +198,15 @@ export async function postEntry(db, FieldValue, { entry, lines }, {
  * first write, which a Firestore transaction requires and which also means the
  * whole decision is made on one consistent snapshot.
  */
-export async function postSource(db, FieldValue, { kind, sourceId }, { userId = null, expectedFinanceSourceHash = null, financeAuthorizer = null } = {}) {
+export async function postSource(db, FieldValue, { kind, sourceId }, { userId = null, expectedFinanceSourceHash = null, financeAuthorizer = null, postingDate = null } = {}) {
   const adapter = ADAPTERS[String(kind)];
   if (!adapter) throw new LedgerError(`نوع سجل غير معروف: ${kind}`, { code: 'invalid-argument' });
   const id = String(sourceId ?? '').trim();
   // An operational entry without a source id has nothing to be idempotent
   // against, so it could be posted again and again.
   if (!id) throw new LedgerError('معرّف السجل المصدر مطلوب.', { code: 'invalid-argument' });
+  // Only the finance workbench names one (a founding-period document in a closed month).
+  if (postingDate != null && !/^\d{4}-\d{2}-\d{2}$/.test(String(postingDate))) throw new LedgerError('تاريخ القيد غير صالح.', { code: 'invalid-argument' });
 
   // The chart is a collection read; taken before the transaction so the
   // transaction body holds only document reads, in one clean block.
@@ -273,6 +275,7 @@ export async function postSource(db, FieldValue, { kind, sourceId }, { userId = 
       washPriceMode: policy.washPriceMode,
       vatRate: policy.vatRate,
       recordDate,
+      postingDate,
       // The whole dated record, not one resolved policy. A purchase is taxed
       // under its INVOICE's date, which is routinely earlier than the day the
       // money left — a March invoice paid in April is deducted in March, at

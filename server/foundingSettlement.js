@@ -72,6 +72,11 @@ const requestSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('proposeAdjustment'), amount: z.number().finite().positive().max(1e9).refine(v => Math.round(v * 100) === v * 100, 'المبلغ بالهللة.'),
     direction: z.enum(ADJUSTMENT_DIRECTIONS), reason: text(500).pipe(z.string().min(5)), ...confirm }).strict(),
   z.object({ action: z.literal('removeAdjustment'), id: z.string().regex(/^adj_[a-f0-9]{16}$/), ...confirm }).strict(),
+  z.object({ action: z.literal('proposeTransfer'), date: day, amount: z.number().finite().positive().max(1e9).refine(v => Math.round(v * 100) === v * 100, 'المبلغ بالهللة.'),
+    description: text(300).pipe(z.string().min(2)), reason: text(500).pipe(z.string().min(5)), ...confirm }).strict(),
+  z.object({ action: z.literal('removeTransfer'), id: z.string().regex(/^tr_[a-f0-9]{16}$/), ...confirm }).strict(),
+  z.object({ action: z.literal('proposeReceipts'), keys: z.array(key).min(1).max(200), reason: text(500).pipe(z.string().min(5)), ...confirm }).strict(),
+  z.object({ action: z.literal('removeReceipt'), key, ...confirm }).strict(),
   z.object({ action: z.literal('statementSuggest'), account: z.enum(['personal', 'company']), rows: z.array(statementRow).min(1).max(2000) }).strict(),
   z.object({ action: z.literal('statementApply'), account: z.enum(['personal', 'company']), fileName: text(200), fileHash: z.string().max(128),
     rows: z.array(applyRow).min(1).max(500), ...confirm }).strict(),
@@ -189,7 +194,9 @@ export function foundingInputs(t) {
   const review = t.founding_review.find(r => r.id === SETTINGS_ID) || null;
   const settings = { ...FOUNDING_DEFAULTS, ...(review ? { cutoffDate: review.cutoffDate, threshold: Number(review.threshold), actuals: review.actuals || null,
     lastRule: review.lastRule || null, noPersonalStatement: review.noPersonalStatement === true, hadiAttestation: review.hadiAttestation || null,
-    adjustments: Array.isArray(review.adjustments) ? review.adjustments : [] } : {}) };
+    adjustments: Array.isArray(review.adjustments) ? review.adjustments : [],
+    manualTransfers: Array.isArray(review.manualTransfers) ? review.manualTransfers : [],
+    receiptProposals: Array.isArray(review.receiptProposals) ? review.receiptProposals : [] } : {}) };
   const categoryOf = categoryLabels(t);
   const decisions = Object.fromEntries(t.founding_decisions.map(d => [d.sourceKey, d]));
   const partners = t.partners.map(p => ({ id: p.id, name: p.partner_name || 'شريك' }));
@@ -307,7 +314,10 @@ async function postEntries(db, auth, r) {
     for (const e of selected) {
       if (periods.get(e.date.slice(0, 7))?.status === 'closed') fail(`الفترة ${e.date.slice(0, 7)} مقفلة.`);
       const entryId = foundingEntryId(e.key);
-      const entry = { ...normalizeEntry({ entryDate: e.date, sourceType: 'adjustment', sourceId: entryId, description: e.description }), sourceKind: `founding_${e.type}` };
+      // A partner receipt posts as that receipt's own entry, under its own lock: nothing posts it twice.
+      const receipt = e.type === 'receipt';
+      const entry = { ...normalizeEntry({ entryDate: e.date, sourceType: receipt ? 'partner_payment' : 'adjustment', sourceId: receipt ? e.paymentId : entryId,
+        description: e.description }), sourceKind: `founding_${e.type}` };
       const lines = normalizeLines(e.lines);
       const problems = validateEntry(entry, lines, { knownAccountCodes: input.chart });
       if (problems.length) fail(problems[0]);
@@ -317,6 +327,8 @@ async function postEntries(db, auth, r) {
       tx.create(db.collection('journal_entries').doc(entryId), { ...journal, createdAt: FieldValue.serverTimestamp(), postedAt: FieldValue.serverTimestamp() });
       tx.create(db.collection('posting_locks').doc(postingLockId('founding', entryId)), { kind: 'founding', sourceType: 'adjustment', sourceId: entryId,
         entryId, entryNumber: next, lockedBy: auth.uid, lockedAt: FieldValue.serverTimestamp() });
+      if (receipt) tx.create(db.collection('posting_locks').doc(postingLockId('partner_payment', e.paymentId)), { kind: 'partner_payment',
+        sourceType: 'partner_payment', sourceId: e.paymentId, entryId, entryNumber: next, lockedBy: auth.uid, lockedAt: FieldValue.serverTimestamp() });
       tx.create(db.collection('audit_logs').doc(), { action: 'founding-post', collectionName: 'journal_entries', documentId: entryId, userId: auth.uid,
         sourceId: e.key, reason: r.reason, after: { entryNumber: next, lines, date: e.date }, at: FieldValue.serverTimestamp() });
       results.push({ key: e.key, entryId, entryNumber: next });
@@ -519,6 +531,63 @@ async function removeAdjustment(db, auth, r) {
     if (entry?.status === 'posted') fail('التسوية مرحّلة؛ تصحيحها بقيد عكسي.');
     writeReview(db, tx, input.review, plan, { adjustments: list.filter(a => a.id !== r.id) }, auth, name);
     audit(db, tx, auth, 'founding-adjustment-removed', r.id, { removed: list.find(a => a.id === r.id) });
+    return { saved: true };
+  });
+}
+
+/** تحويل هادي لحساب الشركة بلا كشف: يُحفظ قيدًا مقترحًا (مدين 1020 / دائن 2300) بسبب مكتوب. */
+async function proposeTransfer(db, auth, r) {
+  return db.runTransaction(async tx => {
+    await adminOnly(db, auth, tx);
+    const t = await loadTables(db, tx), { input, plan } = planOf(t), name = await actorName(db, auth, tx);
+    const list = plan.settings.manualTransfers || [];
+    if (list.length >= 100) fail('تحويلات كثيرة؛ رحّل أو احذف بعضها أولًا.');
+    const at = new Date().toISOString();
+    const transfer = { id: `tr_${financeHash({ uid: auth.uid, at, date: r.date, amount: r.amount, description: r.description }).slice(0, 16)}`,
+      date: r.date, amount: r.amount, description: r.description, reason: r.reason, by: auth.uid, byName: name, atIso: at };
+    writeReview(db, tx, input.review, plan, { manualTransfers: [...list, transfer] }, auth, name);
+    audit(db, tx, auth, 'founding-transfer', transfer.id, transfer);
+    return { saved: true, transfer };
+  });
+}
+
+async function removeTransfer(db, auth, r) {
+  return db.runTransaction(async tx => {
+    await adminOnly(db, auth, tx);
+    const t = await loadTables(db, tx), { input, plan } = planOf(t), name = await actorName(db, auth, tx);
+    const list = plan.settings.manualTransfers || [];
+    if (!list.some(x => x.id === r.id)) fail('التحويل غير موجود.', 'not-found');
+    if (plan.entries.find(e => e.key === `manual_transfer:${r.id}`)?.status === 'posted') fail('التحويل مرحّل؛ تصحيحه بقيد عكسي.');
+    writeReview(db, tx, input.review, plan, { manualTransfers: list.filter(x => x.id !== r.id) }, auth, name);
+    audit(db, tx, auth, 'founding-transfer-removed', r.id, { removed: list.find(x => x.id === r.id) });
+    return { saved: true };
+  });
+}
+
+/** سندات قبض وصلت لحساب هادي بلا قيد: تُحفظ قيودًا مقترحة بسبب مكتوب، وتُرحّل بالموافقة. */
+async function proposeReceipts(db, auth, r) {
+  return db.runTransaction(async tx => {
+    await adminOnly(db, auth, tx);
+    const t = await loadTables(db, tx), { input, plan } = planOf(t), name = await actorName(db, auth, tx);
+    const open = new Map(plan.receipts.map(x => [x.key, x]));
+    if (r.keys.some(k => !open.has(k))) fail('القائمة تغيرت؛ أعد القراءة قبل الحفظ.');
+    const at = new Date().toISOString(), added = r.keys.map(k => ({ id: open.get(k).id, reason: r.reason, by: auth.uid, byName: name, atIso: at }));
+    writeReview(db, tx, input.review, plan, { receiptProposals: [...(plan.settings.receiptProposals || []), ...added] }, auth, name);
+    audit(db, tx, auth, 'founding-receipts', 'receipts', { keys: r.keys, reason: r.reason,
+      total: r.keys.reduce((n, k) => n + halala(open.get(k).amount), 0) / 100 });
+    return { saved: true, count: added.length };
+  });
+}
+
+async function removeReceipt(db, auth, r) {
+  return db.runTransaction(async tx => {
+    await adminOnly(db, auth, tx);
+    const t = await loadTables(db, tx), { input, plan } = planOf(t), name = await actorName(db, auth, tx);
+    const payment = input.payments.find(p => p.key === r.key), list = plan.settings.receiptProposals || [];
+    if (!payment || !list.some(x => x.id === payment.id)) fail('القيد المقترح غير موجود.', 'not-found');
+    if (plan.entries.find(e => e.key === `receipt:${r.key}`)?.status === 'posted') fail('السند مرحّل؛ تصحيحه بقيد عكسي.');
+    writeReview(db, tx, input.review, plan, { receiptProposals: list.filter(x => x.id !== payment.id) }, auth, name);
+    audit(db, tx, auth, 'founding-receipt-removed', r.key, { removed: list.find(x => x.id === payment.id) });
     return { saved: true };
   });
 }
@@ -771,6 +840,10 @@ export async function foundingSettlement(db, auth, input, { workbench }) {
   if (r.action === 'attestBalance') return attestBalance(db, auth, r);
   if (r.action === 'proposeAdjustment') return proposeAdjustment(db, auth, r);
   if (r.action === 'removeAdjustment') return removeAdjustment(db, auth, r);
+  if (r.action === 'proposeTransfer') return proposeTransfer(db, auth, r);
+  if (r.action === 'removeTransfer') return removeTransfer(db, auth, r);
+  if (r.action === 'proposeReceipts') return proposeReceipts(db, auth, r);
+  if (r.action === 'removeReceipt') return removeReceipt(db, auth, r);
   if (r.action === 'statementSuggest') return statementSuggest(db, auth, r);
   return statementApply(db, auth, r, workbench);
 }

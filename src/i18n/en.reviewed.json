@@ -5143,5 +5143,9 @@
   "الاستكمال للمستند المرحّل فقط؛ غير المرحّل يُعدَّل ويُحفظ من النموذج.": "Completion is for posted documents only; an unposted one is edited and saved from the form.",
   "الاستكمال يمس حقولًا مالية؛ مرفوض.": "The completion touches financial fields; refused.",
   "هذا الاستكمال يغيّر معالجة القيد (الحسابات أو المبالغ أو الضريبة)؛ مرفوض. المستند المرحّل يُستكمل بحقول غير مالية فقط.": "This completion changes the entry's treatment (accounts, amounts or tax); refused. A posted document is completed with non-financial fields only.",
-  "تغيرت المعاينة؛ أعد المعاينة قبل الحفظ.": "The preview changed; preview again before saving."
+  "تغيرت المعاينة؛ أعد المعاينة قبل الحفظ.": "The preview changed; preview again before saving.",
+  "مرحل ويحتاج مراجعة": "Posted; review required",
+  "اعتماد سابق — تغيّر سياق المستند": "Previous approval; document context changed",
+  "تغيّرت نسخة أحد جزأي المستند بعد الاعتماد؛ القيد محفوظ، والاعتماد الحالي يحتاج مراجعة.": "One allocated part changed after approval; the journal entry is preserved and current approval requires review.",
+  "تغيّر سياق مراجعة المستند بعد الاعتماد؛ القيد محفوظ، والاعتماد الحالي يحتاج مراجعة.": "The document review context changed after approval; the journal entry is preserved and current approval requires review."
 }

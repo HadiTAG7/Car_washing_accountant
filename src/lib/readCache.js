@@ -15,7 +15,7 @@
 
 const entries = new Map();      // key → { promise, data, hasData, at, tags }
 const watchers = new Map();     // key → Set(fn(data))
-const refreshers = new Set();   // fn() — mounted readers, for the refresh button
+const refreshers = new Map();   // fn → collections it reads (null: the refresh button only) — mounted readers
 let owner;
 let refreshedAt = Date.now();
 
@@ -81,9 +81,13 @@ export function invalidateAllReads() {
   entries.clear();
 }
 
-/** A mounted reader that should re-read when the user presses «تحديث». */
-export function onReadRefresh(fn) {
-  refreshers.add(fn);
+/**
+ * A mounted reader that should re-read when the user presses «تحديث», and —
+ * when it names the collections it reads — after a posting to one of them.
+ */
+export function onReadRefresh(fn, collections = null) {
+  listen();
+  refreshers.set(fn, collections);
   return () => refreshers.delete(fn);
 }
 
@@ -91,7 +95,41 @@ export function onReadRefresh(fn) {
 export function refreshAllReads() {
   entries.clear();
   refreshedAt = Date.now();
-  for (const fn of [...refreshers]) fn();
+  for (const fn of [...refreshers.keys()]) fn();
+}
+
+// ── بعد الترحيل ──
+// A posting changes the journal. What was read from it is dropped and the
+// readers on screen re-read it now — here and in this app's other open tabs
+// (same browser, same signed-in account) — so the trial balance and the
+// statements show the new entry without reloading. Only collection names
+// cross tabs, never data.
+const CHANNEL = 'sweater-read-cache';
+let bus;
+function listen() {
+  if (bus !== undefined) return bus;
+  bus = null;
+  try {
+    if (typeof BroadcastChannel === 'function') {
+      bus = new BroadcastChannel(CHANNEL);
+      bus.unref?.(); // Node (tests) only: never keeps the process alive.
+      bus.onmessage = ({ data }) => {
+        if (data?.type === 'refresh' && Array.isArray(data.collections)) {
+          refreshCollections(data.collections.filter(name => typeof name === 'string'), { broadcast: false });
+        }
+      };
+    }
+  } catch { bus = null; }
+  return bus;
+}
+
+/** Drops these collections' reads and re-reads the mounted readers that hold them; tells the other tabs too. */
+export function refreshCollections(collections, { broadcast = true } = {}) {
+  const names = new Set(collections);
+  invalidateCollections([...names]);
+  // Readers of the same key share one read: the entries were just dropped, so no forced re-read.
+  for (const [fn, reads] of [...refreshers]) if (reads?.some(tag => tag === '*' || names.has(tag))) fn({ force: false });
+  if (broadcast) listen()?.postMessage({ type: 'refresh', collections: [...names] });
 }
 
 export const readsRefreshedAt = () => refreshedAt;
@@ -100,4 +138,5 @@ export const readsRefreshedAt = () => refreshedAt;
 export function __resetReadCache() {
   entries.clear(); watchers.clear(); refreshers.clear();
   owner = undefined; refreshedAt = Date.now();
+  bus?.close(); bus = undefined;
 }

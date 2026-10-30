@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { callFinanceApi } from '../financeApi';
-import { cachedRead, peekCached, __resetReadCache } from '../readCache';
+import { cachedRead, peekCached, onReadRefresh, __resetReadCache } from '../readCache';
 
 vi.mock('../firebaseClient', () => ({ auth: { currentUser: { getIdToken: async () => 'TEST-TOKEN' } } }));
 
@@ -39,6 +39,30 @@ describe('finance calls and the shared read cache', () => {
     await primeJournal();
     await callFinanceApi(endpoint, input);
     expect(peekCached('journal_entries')).toBeNull();
+  });
+
+  it.each([
+    ['finance-workbench', { kind: 'founding', request: { action: 'postEntries' } }],
+    ['finance-workbench', { action: 'post', kind: 'variable', sourceId: 'x' }],
+    ['finance-workbench', { action: 'save', kind: 'cash_bank_correction', sourceId: 'x' }],
+  ])('a posting (%s %j) re-reads the ledger on screen now', async (endpoint, input) => {
+    vi.stubGlobal('fetch', vi.fn(async () => ok({ posted: 1 })));
+    const ledger = vi.fn(), other = vi.fn();
+    onReadRefresh(ledger, ['journal_entries']); onReadRefresh(other, ['bikers']);
+    await callFinanceApi(endpoint, input);
+    expect(ledger).toHaveBeenCalledWith({ force: false });
+    expect(other).not.toHaveBeenCalled();
+  });
+
+  it('does not re-read the ledger for a write that posts nothing, or a posting the server refused', async () => {
+    const ledger = vi.fn();
+    onReadRefresh(ledger, ['journal_entries']);
+    vi.stubGlobal('fetch', vi.fn(async () => ok({ saved: true })));
+    await callFinanceApi('finance-workbench', { kind: 'founding', request: { action: 'proposeTransfer' } });
+    await callFinanceApi('finance-workbench', { action: 'approve', kind: 'variable', sourceId: 'x' });
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, json: async () => ({ error: { message: 'تغيّرت القيود' } }) })));
+    await expect(callFinanceApi('finance-workbench', { kind: 'founding', request: { action: 'postEntries' } })).rejects.toThrow('تغيّرت القيود');
+    expect(ledger).not.toHaveBeenCalled();
   });
 
   it('drops cached reads after a write that failed or was cut off', async () => {

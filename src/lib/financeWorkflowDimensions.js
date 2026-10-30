@@ -21,6 +21,8 @@ export function financeWorkflowDimensions(detail, { recorded = false } = {}) {
   const revision = Number.isSafeInteger(row.finance_revision) && row.finance_revision > 0 ? row.finance_revision : null;
   const detailsSaved = Boolean(revision || reviewSaved);
   const blockers = [...new Set(detail.issues || [])].map(text => ({ category: financeBlockerCategory(text), text }));
+  // Settled by the founding-period rule: listed apart, never counted as blockers.
+  const ruleResolved = [...new Set(detail.resolvedByRule || [])].map(text => ({ category: financeBlockerCategory(text), text }));
   const sourceGaps = blockers.filter(item => item.category === 'source');
   const active = Array.isArray(detail.postingHistory?.active) ? detail.postingHistory.active.length : 0;
   const reversed = Array.isArray(detail.postingHistory?.reversed) ? detail.postingHistory.reversed.length : 0;
@@ -34,17 +36,19 @@ export function financeWorkflowDimensions(detail, { recorded = false } = {}) {
       label: detailsSaved ? sourceGaps.length ? 'تفاصيل محفوظة — بها نواقص مصدر' : 'تفاصيل محفوظة' : 'مصدر مسجل — دون نسخة مراجعة محفوظة' },
     review: { recordSaved: reviewSaved, status: reviewStatus, matchesSource, verificationKind: review?.verificationKind || null, label: reviewLabel },
     approval: { current: Boolean(detail.approved), label: detail.approved ? 'اعتماد النسخة الحالية'
+      : detail.approvalBeforeCompletion ? 'اعتُمد قبل الترحيل — استُكملت بعده حقول غير مالية'
       : row.approval_status === 'approved' || review?.status === 'approved' ? 'اعتماد سابق يحتاج مراجعة' : 'غير معتمد' },
     posting: { status: active ? 'posted' : reversed ? 'reversed' : detail.protectedSource ? 'protected' : 'unposted',
       label: active ? 'مرحل بقيد سارٍ' : reversed ? 'قيده معكوس — المصدر ما زال مسجلًا' : detail.protectedSource ? 'محمي وله أثر يحتاج مراجعة' : 'غير مرحل',
       ready: Boolean(detail.postingReady) },
     // Proven by a statement or a receipt, or — a founding-period record Hadi paid, posted on 2300 — by the manager's rule.
     payment: { proven: Boolean(detail.paymentProven), basis: detail.paymentProven ? detail.paymentProof || 'evidence' : null, rule: detail.paymentRule || null,
+      ruleEntry: detail.paymentRuleEntry ?? null,
       recordedStatus: row.payment_status || 'unknown', method: row.payment_method || null, paidDate: row.paid_date || null,
       label: detail.paymentProof === 'founding_rule' ? PAYMENT_PROOF_LABELS.founding_rule : detail.paymentProven ? PAYMENT_PROOF_LABELS.evidence
         : row.payment_status === 'paid' ? 'مسجل مدفوع — تحقق المسار غير مكتمل'
         : row.payment_status === 'unpaid' ? 'مسجل غير مسدد' : 'حالة السداد غير مثبتة' },
-    sourceGaps, postingBlockers: blockers,
+    sourceGaps, postingBlockers: blockers, ruleResolved,
     sourceFacts: { invoiceNumber: typeof row.invoice_number === 'string' || Number.isFinite(row.invoice_number) ? row.invoice_number : null,
       isTaxInvoice: typeof row.is_tax_invoice === 'boolean' ? row.is_tax_invoice : null,
       vatDeductible: typeof row.vat_deductible === 'boolean' ? row.vat_deductible : null,

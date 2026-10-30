@@ -16,10 +16,11 @@ import { payrollCashFunding } from './payrollCashFunding.js';
 import { invoiceLinesShapeIssues } from '../functions/src/financeInvoiceLines.js';
 import { financeSourceEvidence, sourceEvidenceShapeValid } from '../functions/src/financeSourceEvidence.js';
 import { financePostingHistory } from './financePostingHistory.js';
-import { financeWorkflowDimensions } from '../src/lib/financeWorkflowDimensions.js';
+import { financeBlockerCategory, financeWorkflowDimensions } from '../src/lib/financeWorkflowDimensions.js';
 import { foundingSettlement, foundingEntryId } from './foundingSettlement.js';
 import { ACC } from '../src/lib/accounting/chartOfAccounts.js';
 import { employeeCustody } from '../functions/src/custodyRecovery.js';
+import { applyCompletion, approvedBeforeCompletion, completionBaseHash, completionHistoryOf, completionSchema, onlyCompletionFieldsChanged } from './financePostedCompletion.js';
 import { FOUNDING_DEFAULTS, FILED_VAT_QUARTERS, dayBefore, quarterOf } from '../src/lib/founding/foundingPlan.js';
 
 const kindSchema = z.enum(['variable', 'monthly', 'annual', 'startup']);
@@ -62,8 +63,13 @@ const requestSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('capture'), ...capture, previewHash: hash, reason: z.string().trim().min(3).max(1000), confirm: z.literal(true) }).strict(),
   z.object({ action: z.literal('approve'), ...common, sourceHash: hash, postingHash: hash, reason: z.string().trim().min(3).max(1000), confirm: z.literal(true) }).strict(),
   z.object({ action: z.literal('post'), ...common, sourceHash: hash, confirm: z.literal(true) }).strict(),
+  // A posted record: its non-financial fields only, see completePosted.
+  z.object({ action: z.literal('previewCompletion'), ...common, sourceHash: hash, completion: completionSchema }).strict(),
+  z.object({ action: z.literal('complete'), ...common, sourceHash: hash, completion: completionSchema, previewHash: hash,
+    reason: z.string().trim().min(3).max(1000), confirm: z.literal(true) }).strict(),
 ]);
 const fail = (message, code) => { throw new FinanceReviewError(message, code); };
+const PURPOSE_AND_EVIDENCE = 'الغرض ودليل المراجعة غير مكتملين.';
 async function adminOnly(db, auth) {
   if (await callerRole(db, auth) !== 'admin') fail('صندوق العمل المالي للإدارة فقط.', 'permission-denied');
 }
@@ -232,17 +238,26 @@ async function workflowDocument(db, tx, kind, sourceId, row, currentState = null
   const cutoffDate = await foundingCutoffOf(db, tx), day = documentDay(row[FINANCE_KINDS[kind].date]), attestation = managerAttestationOf(row);
   const foundingRule = posted && !paymentEvidence && day && day < cutoffDate ? await foundingPaymentRule(db, tx, kind, sourceId, row, journals) : null;
   const paymentProof = paymentEvidence ? 'evidence' : foundingRule ? 'founding_rule' : null, paymentProven = Boolean(paymentProof);
+  // The rule settles who paid and from which account: its payment, funding and counter-account blockers are
+  // resolved, listed apart, and its entry is the review evidence once the purpose is written. Read only.
+  const resolvedByRule = foundingRule ? detail.issues.filter(issue => ['payment', 'funding'].includes(financeBlockerCategory(issue))
+    || (issue === PURPOSE_AND_EVIDENCE && typeof evidence.purpose === 'string' && evidence.purpose.trim())) : [];
+  const openIssues = detail.issues.filter(issue => !resolvedByRule.includes(issue));
   const safeUnposted = !state.protectedSource && !state.closed && preview.ready && !additionalIssues.length && !detail.issues.length;
-  const correctedNeedsReview = reversed && (detail.issues.length > 0 || postingHistory.issues.length > 0 || !paymentProven);
+  const correctedNeedsReview = reversed && (openIssues.length > 0 || postingHistory.issues.length > 0 || !paymentProven);
   // «بلا إيصال، بإقرار المدير»: offered on a founding-period record not yet posted; the founding endpoint re-checks on save.
   const founding = { cutoffDate, attestation: attestation ? { byName: attestation.byName || null, atIso: attestation.atIso, approxDate: attestation.approxDate, note: attestation.note || null } : null,
     attestable: Boolean(day && day < cutoffDate && !state.protectedSource && !state.closed && !attestation && !statementLineRefOf(row)) };
   const workflowStage = posted ? correctedNeedsReview ? 'posted_review' : paymentProven ? 'complete' : 'posted_unproven'
     : safeUnposted ? detail.approved ? 'approved' : 'ready' : 'incomplete';
-  const result = { ...detail, issues: [...detail.issues, ...additionalIssues, ...postingHistory.issues], workflowStage, postingHistory,
+  const result = { ...detail, issues: [...openIssues, ...additionalIssues, ...postingHistory.issues], resolvedByRule, workflowStage, postingHistory,
     approvalReady: safeUnposted && !detail.approved && !detail.issues.length,
     postingReady: safeUnposted && detail.approved && !detail.issues.length,
-    paymentProven, paymentProof, paymentRule: foundingRule, paymentConflict: hasPaymentConflict(row), founding,
+    paymentProven, paymentProof, paymentRule: foundingRule?.rule || null, paymentRuleEntry: foundingRule?.entryNumber ?? null,
+    paymentConflict: hasPaymentConflict(row), founding,
+    // «استكمال مستند مرحّل»: offered on a record with a live entry; an approval given before it stays shown as such.
+    completion: { available: posted, history: completionHistoryOf(row) },
+    approvalBeforeCompletion: posted && !detail.approved && approvedBeforeCompletion(row, state.review),
     workflowNote: reversed && posted ? 'له قيود مرحلة سارية بعد عكس الأصل؛ لا يعاد ترحيله. اكتمال الدليل والسداد منفصل عن وجود القيود.'
       : reversed ? 'له قيد معكوس دون بديل مرحل مثبت؛ المصدر محمي ويحتاج مراجعة.' : state.closed ? 'الفترة مقفلة؛ العرض فقط.'
       : state.protectedSource && !posted ? 'المصدر محمي؛ لم يثبت قيد مرحّل صالح في القراءة الحالية.' : null,
@@ -251,12 +266,54 @@ async function workflowDocument(db, tx, kind, sourceId, row, currentState = null
 }
 const creditsHadi = entry => (entry?.lines || []).some(line => String(line.accountId) === ACC.HADI_CURRENT && Number(line.credit) > 0);
 const liveEntry = entry => entry?.status === 'posted' && !entry.reversalOf && !entry.reversedBy;
-/** Which founding rule proves the payment: the record's own entry on 2300, or the founding «تصحيح جهة دفع» entry moving it there. */
+/** Which founding rule proves the payment, and its entry: the record's own entry on 2300, or the founding «تصحيح جهة دفع» entry moving it there. */
 async function foundingPaymentRule(db, tx, kind, sourceId, row, journals) {
-  if (row.payment_method === 'founding_personal' && journals.some(j => liveEntry(j.data()) && creditsHadi(j.data()))) return 'own_entry';
+  const own = row.payment_method === 'founding_personal' ? journals.find(j => liveEntry(j.data()) && creditsHadi(j.data())) : null;
+  if (own) return { rule: 'own_entry', entryNumber: own.data().entryNumber ?? null };
   const correction = await tx.get(db.collection('journal_entries').doc(foundingEntryId(`doc:${kind}:${sourceId}`)));
   return correction.exists && liveEntry(correction.data()) && correction.data().foundingEntry?.sourceKey === `${kind}:${sourceId}`
-    && creditsHadi(correction.data()) ? 'payment_correction' : null;
+    && creditsHadi(correction.data()) ? { rule: 'payment_correction', entryNumber: correction.data().entryNumber ?? null } : null;
+}
+/**
+ * «استكمال مستند مرحّل»: the purpose, the quantity and how it is represented, and the tax review reference
+ * of a record with a live entry. The record's posting is rebuilt before and after and must be identical — no
+ * amount, account, date or tax moves — nothing else on the record may change, no new gap may appear, and no
+ * entry, lock or review is written. Who completed which fields, when and why, is kept on the record and in the audit log.
+ */
+async function completePosted(db, tx, auth, r, { sourceRef, before, state, receiptRef, requestHash }) {
+  const { kind, sourceId } = r;
+  const journals = await Promise.all(state.journalIds.map(key => tx.get(db.collection('journal_entries').doc(key))));
+  const history = await financePostingHistory(db, tx, journals, sourceId);
+  if (!history.active.length) fail('الاستكمال للمستند المرحّل فقط؛ غير المرحّل يُعدَّل ويُحفظ من النموذج.');
+  if (state.sourceHash !== r.sourceHash) fail('تغير السجل؛ أعد القراءة والمعاينة.');
+  const { after, fields } = applyCompletion(kind, before, r.completion);
+  if (!onlyCompletionFieldsChanged(before, after)) fail('الاستكمال يمس حقولًا مالية؛ مرفوض.');
+  const settings = await tx.get(db.collection('app_settings').doc('accounting'));
+  const policyAt = day => taxPolicyAt(day, settings.exists ? settings.data().value || {} : {});
+  const { postingDate } = await foundingPosting(db, tx, kind, before);
+  const treatment = row => {
+    try { return financeHash(ADAPTERS[kind].build(row, sourceId, { recordDate: ADAPTERS[kind].dateOf(row), policyAt, postingDate })); }
+    catch (error) { return `error:${error.message}`; }
+  };
+  if (treatment(before) !== treatment(after)) fail('هذا الاستكمال يغيّر معالجة القيد (الحسابات أو المبالغ أو الضريبة)؛ مرفوض. المستند المرحّل يُستكمل بحقول غير مالية فقط.');
+  const known = new Set(financeProblems(kind, before, sourceId)), added = financeProblems(kind, after, sourceId).filter(issue => !known.has(issue));
+  if (added.length) fail(added.join(' '), 'invalid-argument');
+  const previewHash = financeHash({ kind, sourceId, sourceHash: state.sourceHash, completion: r.completion, after });
+  if (r.action === 'previewCompletion') return { kind, sourceId, sourceHash: state.sourceHash, previewHash, fields, treatmentUnchanged: true, financialPosting: false };
+  if (r.previewHash !== previewHash) fail('تغيرت المعاينة؛ أعد المعاينة قبل الحفظ.');
+  const user = await tx.get(db.collection('users').doc(auth.uid));
+  const byName = (user.exists && (user.data().displayName || user.data().email)) || auth.email || auth.uid;
+  const entry = { byUid: auth.uid, byName, atIso: new Date().toISOString(), reason: r.reason, fields,
+    beforeHash: completionBaseHash(before), afterHash: completionBaseHash(after) };
+  const saved = { ...after, finance_metadata: { ...after.finance_metadata,
+    postedCompletion: [...(Array.isArray(before.finance_metadata?.postedCompletion) ? before.finance_metadata.postedCompletion : []), entry] } };
+  const auditRef = db.collection('audit_logs').doc();
+  tx.set(sourceRef, { ...saved, updated_at: FieldValue.serverTimestamp(), updated_by: auth.uid });
+  tx.set(auditRef, { action: 'finance-complete-posted', userId: auth.uid, kind, sourceId, before, after: saved, fields, reason: r.reason,
+    sourceHash: financeSourceHash(saved), journalIds: state.journalIds, at: FieldValue.serverTimestamp() });
+  const result = { saved: true, action: r.action, kind, sourceId, sourceHash: financeSourceHash(saved), auditId: auditRef.id, fields, financialPosting: false };
+  tx.set(receiptRef, { requestHash, result, at: FieldValue.serverTimestamp(), userId: auth.uid });
+  return result;
 }
 async function browseDocuments(db) {
   const names = [...Object.values(FINANCE_KINDS).flatMap(spec => [spec.collection, spec.parent || spec.category]),
@@ -348,7 +405,7 @@ export async function financeWorkbench(db, auth, input) {
       key: r.action === 'approve' ? { sourceHash: r.sourceHash, postingHash: r.postingHash } : r.previewHash || r.sourceHash || r.requestId || sourceId }));
     const receipt = await tx.get(receiptRef);
     const requestHash = financeHash(r);
-    if (receipt.exists && ['save', 'capture', 'approve'].includes(r.action)) {
+    if (receipt.exists && ['save', 'capture', 'approve', 'complete'].includes(r.action)) {
       if (receipt.data().requestHash !== requestHash) fail('تغير الطلب بعد تنفيذه؛ لا تعاد ببصمة قديمة.');
       if (r.action === 'approve') {
         if (!snap.exists) fail('المصروف غير موجود.', 'not-found');
@@ -365,6 +422,7 @@ export async function financeWorkbench(db, auth, input) {
     const before = snap.exists ? snap.data() : {};
     const state = await readState(db, tx, r.kind, sourceId, before);
     if (r.action === 'read') return workflowDocument(db, tx, r.kind, sourceId, before, state);
+    if (['previewCompletion', 'complete'].includes(r.action)) return completePosted(db, tx, auth, r, { sourceRef, before, state, receiptRef, requestHash });
     if (state.protectedSource) fail('مصدر له قيد أو قفل أو تاريخ ترحيل؛ التصحيح وإعادة الاعتماد مرفوضان.');
     if (state.closed) fail('الفترة مقفلة.');
     if (!isCapture && state.sourceHash !== r.sourceHash) fail('تغير السجل؛ أعد القراءة والمعاينة.');

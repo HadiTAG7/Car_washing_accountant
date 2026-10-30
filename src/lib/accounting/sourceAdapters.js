@@ -16,6 +16,7 @@
 // UI, and re-reading the stored row means posting what was actually saved.
 // ═══════════════════════════════════════════════════════════════════════════
 
+import { cashRecoveryAmount, cashRecoveryDue } from '../../../functions/src/custodyRecovery.js';
 import { washPostabilityProblem } from '../sweater/revenueOriginClient.js';
 import {
   buildWashEntry, buildExpenseEntry, buildPartnerPaymentEntry,
@@ -207,11 +208,12 @@ export const ADAPTERS = {
     sourceType: 'recovery',
     sourceId: (r) => r.id,
     dateOf: (r) => r.recovered_date,
-    isApproved: (r) => r.status === 'recovered' && Boolean(r.recovered_date) && !r.payroll_lock_id,
-    notApprovedReason: 'لم تُسترد بعد',
+    // Only the cash part: what expense documents settled was credited to 1300 by those documents.
+    isApproved: (r) => cashRecoveryDue(r),
+    notApprovedReason: 'لم تُسترد نقدًا بعد',
     label: (r) => `استرداد ${r.title || ''}`.trim(),
     build: (r) => buildRecoveryEntry({
-      id: r.id, title: r.title, amount: r.amount, recoveredDate: r.recovered_date,
+      id: r.id, title: r.title, amount: cashRecoveryAmount(r), recoveredDate: r.recovered_date,
       paymentMethod: r.payment_method || 'cash',
     }),
   },

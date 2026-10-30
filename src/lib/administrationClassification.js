@@ -23,6 +23,8 @@ export function temporaryClassification(row) {
   const recovered = row.status === 'recovered' ? amount : Math.min(amount, Math.max(0, Number(row.recoveredAmount ?? row.recovered_amount) || 0));
   return { source: row, id: row.id, title, date, amount, group, destination: ADMINISTRATION_GROUPS[group], note,
     bikerId, status: row.status, recovered, outstanding: Math.round((amount - recovered) * 100) / 100,
+    // Settled by expense documents paid from this custody (workbench «من عهدة شخص» / «دفع موظف»).
+    documentRecovered: Math.max(0, Number(row.documentRecovered) || 0), recoveryMethod: row.recoveryMethod ?? row.recovery_method ?? null,
     assignmentMonth: row.assignmentMonth || row.assignment_month || null };
 }
 export const temporaryProposals = rows => rows.map(temporaryClassification);

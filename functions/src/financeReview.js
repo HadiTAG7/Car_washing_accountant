@@ -1,3 +1,4 @@
+import { custodyBikerOf } from './custodyRecovery.js';
 import { financeHash, financeSourceHash } from './financeHash.js';
 import { financeSourceEvidence, quantityExceptionProblems, allowedAllocationSibling } from './financeSourceEvidence.js';
 export { financeHash, financeSourceHash } from './financeHash.js';
@@ -54,6 +55,8 @@ export function financeProblems(kind, row, sourceId = null) {
   if (attestation && meta?.fundingType !== 'owner_current') issues.push('مصروف بإقرار المدير دفعه هادي: التمويل من حسابه الجاري (2300).');
   if (meta?.fundingType === 'partner' && !fundingPartnerOf(row)) issues.push('الشريك الذي دفع غير محدد.');
   if (meta?.fundingType === 'custody' && !(typeof meta.custodian === 'string' && meta.custodian.trim())) issues.push('صاحب العهدة غير محدد.');
+  // «دفع موظف» settles against that employee's own custody (1300): he must be named.
+  if (meta?.fundingType === 'employee' && !custodyBikerOf(row)) issues.push('الموظف الذي دفع غير محدد.');
   if ((meta?.fundingType === 'vendor_liability') !== (row.payment_status === 'unpaid')) issues.push('حالة السداد لا تطابق الذمة أو التمويل.');
   if (typeof row.is_tax_invoice !== 'boolean' || typeof row.vat_deductible !== 'boolean') issues.push('المعالجة الضريبية غير محسومة.');
   if (!row.is_tax_invoice && row.vat_deductible !== false) issues.push('المستند غير الضريبي لا يثبت مطالبة مدخلات.');
@@ -68,7 +71,7 @@ export function financeProblems(kind, row, sourceId = null) {
 // Who paid, and the payment methods each funding allows. «partner» and
 // «custody» resolve only with their partner / custodian named on the record.
 export const FUNDING_METHODS = Object.freeze({ company_cash: ['cash'], company_bank: ['card', 'transfer'], vendor_liability: ['credit'],
-  owner_current: ['owner_current', 'founding_personal'], custody: ['custody'], partner: ['partner_paid'] });
+  owner_current: ['owner_current', 'founding_personal'], custody: ['custody'], employee: ['custody'], partner: ['partner_paid'] });
 export const FINANCE_PAYMENT_METHODS = Object.freeze(['cash', 'transfer', 'card', 'credit', 'owner_current', 'founding_personal', 'custody', 'partner_paid']);
 export function fundingPartnerOf(row) {
   const id = row?.finance_metadata?.fundingPartnerId;

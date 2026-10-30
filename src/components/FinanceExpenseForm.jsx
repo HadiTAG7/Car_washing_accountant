@@ -5,6 +5,7 @@ import { EXPENSE_KIND_LABELS, hasPaymentConflict, suggestedPaymentMethod, WORKBE
 import FinanceInvoiceLines, { InvoiceLinesRead } from './FinanceInvoiceLines';
 import FinanceDocumentStatus from './FinanceDocumentStatus';
 import FinanceAttestation from './FinanceAttestation';
+import FinanceCustodyHolder from './FinanceCustodyHolder';
 
 const fields = { variable: ['expense_name', 'total_variable_cost', 'logged_date'], monthly: ['expense_name', 'total_monthly_cost', 'logged_date'],
   annual: ['description', 'amount', 'spent_date', 'annual_expense_id'], startup: ['description', 'amount', 'spent_date', 'startup_cost_id'] };
@@ -16,7 +17,7 @@ function fromRow(kind, row = {}) {
     invoiceDate: row.invoice_date || '', invoiceUrl: row.invoice_url || '', isTaxInvoice: bool(row.is_tax_invoice), vatAmount: row.vat_amount ?? '',
     vatRate: row.vat_rate ?? '', vatDeductible: bool(row.vat_deductible), priceMode: row.price_mode || '',
     paymentMethod: row.payment_method || 'unknown', paymentStatus: row.payment_status || 'unknown', paidDate: row.paid_date || '',
-    fundingType: meta.fundingType || 'unknown', fundingReference: meta.fundingReference || '', purpose: meta.purpose || '',
+    fundingType: meta.fundingType || 'unknown', custodyBikerId: meta.custodyBikerId || '', fundingReference: meta.fundingReference || '', purpose: meta.purpose || '',
     taxBasis: meta.taxBasis || 'document', taxReviewRef: meta.taxReviewRef || '', evidenceRefs: (meta.evidenceRefs || []).join('\n'),
     invoiceLines: meta.invoiceLines ? structuredClone(meta.invoiceLines) : null,
     quantityException: meta.quantityException ? structuredClone(meta.quantityException) : null,
@@ -33,6 +34,7 @@ function toPatch(kind, form) {
     invoiceUrl: form.invoiceUrl.trim() || null, vatAmount: form.vatAmount === '' ? null : Number(form.vatAmount),
     vatRate: form.vatRate === '' ? null : Number(form.vatRate), paidDate: form.paidDate || null,
     paymentMethod: form.paymentMethod, paymentStatus: form.paymentStatus, fundingType: form.fundingType,
+    custodyBikerId: CUSTODY_FUNDINGS.includes(form.fundingType) ? form.custodyBikerId || null : null,
     fundingReference: form.fundingReference.trim() || null, purpose: form.purpose.trim() || null,
     taxBasis: form.taxBasis, taxReviewRef: form.taxReviewRef.trim() || null, evidenceRefs: form.evidenceRefs.split('\n').map(v => v.trim()).filter(Boolean) };
   if (form.classification) p[kind === 'annual' || kind === 'startup' ? 'parentId' : 'categoryId'] = form.classification;
@@ -40,6 +42,10 @@ function toPatch(kind, form) {
   if (form.priceMode) p.priceMode = form.priceMode;
   return p;
 }
+// «من عهدة شخص» / «دفع موظف» pay from an employee's custody: the method follows the choice.
+const CUSTODY_FUNDINGS = ['custody', 'employee'];
+const fundingFollowUp = (form, value) => CUSTODY_FUNDINGS.includes(value) ? { paymentMethod: 'custody' }
+  : form.paymentMethod === 'custody' ? { paymentMethod: 'unknown', custodyBikerId: '' } : {};
 const paymentNames = { cash: 'نقد', transfer: 'تحويل بنكي', card: 'مدى / بطاقة', credit: 'على الحساب', owner_current: 'من حساب هادي الشخصي',
   founding_personal: 'دفع شخصي - فترة التأسيس', custody: 'من عهدة', partner_paid: 'دفعه شريك من جيبه' };
 
@@ -54,7 +60,7 @@ export default function FinanceExpenseForm({ kind, detail, requestId, options, o
   const protectedRow = Boolean(detail?.protectedSource || detail?.closed);
   const next = !detail || dirty || (!detail.approved && !detail.approvalReady) ? 'save' : detail.approved ? 'post' : 'approve';
   const set = (key, value) => {
-    setForm(f => ({ ...f, [key]: value })); setPreview(null); setConfirmed(false); setError(''); onEdit?.();
+    setForm(f => ({ ...f, [key]: value, ...(key === 'fundingType' ? fundingFollowUp(f, value) : {}) })); setPreview(null); setConfirmed(false); setError(''); onEdit?.();
     if (key === 'isTaxInvoice' && value === 'true') setTaxOpen(true);
   };
   const input = (label, key, type = 'text') => <label key={key}>{label}<input type={type} step={type === 'number' ? 'any' : undefined} value={form[key]}
@@ -141,7 +147,8 @@ export default function FinanceExpenseForm({ kind, detail, requestId, options, o
     </div></details>
     <details className="fw-form-section"><summary>السداد والتمويل</summary><div className="fw-form">
       {select('حالة السداد', 'paymentStatus', [['unknown', 'غير مثبتة'], ['unpaid', 'لم يُسدد بعد'], ['paid', 'تم السداد بدليله']])}
-      {select('من أين دُفع المبلغ؟', 'fundingType', [['unknown', 'غير مثبت'], ['company_cash', 'صندوق المنشأة'], ['company_bank', 'بنك المنشأة'], ['vendor_liability', 'لم يُدفع — ذمة مورد'], ['partner', 'دفع شريك — يحتاج حسم الحساب'], ['employee', 'دفع موظف — يحتاج حسم الحساب'], ['owner_current', 'حساب هادي الجاري'], ...(form.fundingType === 'custody' ? [['custody', 'من عهدة']] : [])])}
+      {select('من أين دُفع المبلغ؟', 'fundingType', [['unknown', 'غير مثبت'], ['company_cash', 'صندوق المنشأة'], ['company_bank', 'بنك المنشأة'], ['vendor_liability', 'لم يُدفع — ذمة مورد'], ['partner', 'دفع شريك — يحتاج حسم الحساب'], ['employee', 'دفع موظف — يُخصم من عهدته'], ['custody', 'من عهدة شخص'], ['owner_current', 'حساب هادي الجاري']])}
+      <FinanceCustodyHolder form={form} detail={detail} holders={options.data?.custodyHolders} disabled={protectedRow || busy} onChange={value => set('custodyBikerId', value)} />
       {input('دليل الدفع أو ذمة المورد', 'fundingReference')}{input('سبب المصروف للمشروع', 'purpose')}
     </div></details>
     <details className="fw-form-section"><summary>التصنيف والمراجع</summary><div className="fw-form">

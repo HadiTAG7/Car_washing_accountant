@@ -19,6 +19,7 @@ import { financePostingHistory } from './financePostingHistory.js';
 import { financeWorkflowDimensions } from '../src/lib/financeWorkflowDimensions.js';
 import { foundingSettlement } from './foundingSettlement.js';
 import { ACC } from '../src/lib/accounting/chartOfAccounts.js';
+import { employeeCustody } from '../functions/src/custodyRecovery.js';
 import { FOUNDING_DEFAULTS, FILED_VAT_QUARTERS, dayBefore, quarterOf } from '../src/lib/founding/foundingPlan.js';
 
 const kindSchema = z.enum(['variable', 'monthly', 'annual', 'startup']);
@@ -36,7 +37,7 @@ const patchSchema = z.object({
   priceMode: z.enum(['inclusive', 'exclusive']).optional(), paymentMethod: z.enum(['unknown', 'cash', 'transfer', 'card', 'credit', 'owner_current', 'founding_personal', 'custody', 'partner_paid']).optional(),
   paymentStatus: z.enum(['unknown', 'paid', 'unpaid']).optional(), paidDate: date.nullable().optional(),
   fundingType: z.enum(['unknown', 'company_cash', 'company_bank', 'vendor_liability', 'partner', 'employee', 'owner_current', 'custody']).optional(),
-  fundingPartnerId: id.nullable().optional(), custodian: z.string().trim().min(1).max(80).nullable().optional(),
+  fundingPartnerId: id.nullable().optional(), custodian: z.string().trim().min(1).max(80).nullable().optional(), custodyBikerId: id.nullable().optional(),
   statementLineRef: z.string().regex(/^[A-Za-z0-9_-]{1,120}$/).nullable().optional(),
   managerAttestation: z.object({ by: id, byName: z.string().trim().min(1).max(200), atIso: z.string().regex(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/),
     approxDate: date, note: z.string().trim().min(1).max(500).optional() }).strict().nullable().optional(),
@@ -80,6 +81,10 @@ function applyPatch(kind, before, p) {
   for (const key of ['fundingType', 'fundingReference', 'purpose', 'evidenceRefs', 'taxReviewRef', 'taxBasis']) if (Object.hasOwn(p, key)) meta[key] = p[key];
   for (const key of ['statementLineRef', 'fundingPartnerId', 'custodian', 'managerAttestation']) if (Object.hasOwn(p, key)) {
     if (p[key] === null) delete meta[key]; else meta[key] = p[key];
+  }
+  // The employee whose custody pays; his name is written by the server from the registry.
+  if (Object.hasOwn(p, 'custodyBikerId')) {
+    if (p.custodyBikerId === null) { if (meta.custodyBikerId) delete meta.custodian; delete meta.custodyBikerId; } else meta.custodyBikerId = p.custodyBikerId;
   }
   if (Object.hasOwn(p, 'invoiceLines')) {
     if (p.invoiceLines === null) delete meta.invoiceLines;
@@ -280,10 +285,16 @@ export async function financeWorkbench(db, auth, input) {
     return result;
   }
   if (r.action === 'options') {
-    const snap = await db.collection(spec.parent || spec.category).limit(101).get();
+    const [snap, bikers, advances] = await Promise.all([db.collection(spec.parent || spec.category).limit(101).get(),
+      db.collection('bikers').get(), db.collection('temporary_expenses').get()]);
+    // «من عهدة شخص» / «دفع موظف»: every employee, with what is still open on his custody (posted documents already settled theirs).
+    const open = advances.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const custodyHolders = bikers.docs.map(doc => ({ id: doc.id, name: doc.data().name || doc.data().name_ar || doc.id,
+      left: Boolean(doc.data().end_date), outstanding: employeeCustody(open, doc.id).outstanding }))
+      .sort((a, b) => (b.outstanding - a.outstanding) || a.name.localeCompare(b.name, 'ar'));
     return { items: snap.docs.slice(0, 100).map(doc => ({ id: doc.id,
       label: doc.data().label || doc.data().name || doc.data().item_name || doc.data().expense_name || doc.data().title || doc.data().description || 'تصنيف بدون اسم' })),
-    limited: snap.size > 100, parent: Boolean(spec.parent) };
+    limited: snap.size > 100, parent: Boolean(spec.parent), custodyHolders };
   }
   if (r.action === 'list') {
     let query = db.collection(spec.collection).orderBy('__name__');
@@ -356,6 +367,14 @@ export async function financeWorkbench(db, auth, input) {
       if (attestation.by !== auth.uid) fail('إقرار المدير يُسجّل باسم من يحفظه فقط.', 'permission-denied');
       const attestedDay = documentDay(after[spec.date]), cutoff = await foundingCutoffOf(db, tx);
       if (!attestedDay || attestedDay >= cutoff) fail(`إقرار المدير لمستندات فترة التأسيس فقط (قبل ${cutoff}).`, 'invalid-argument');
+    }
+    // «من عهدة شخص» / «دفع موظف»: an employee from the registry, named by the server.
+    const custodyBiker = r.action === 'approve' ? null : after.finance_metadata?.custodyBikerId;
+    if (custodyBiker) {
+      if (!['custody', 'employee'].includes(after.finance_metadata.fundingType)) fail('صاحب العهدة يُحدد مع «من عهدة شخص» أو «دفع موظف» فقط.', 'invalid-argument');
+      const biker = await tx.get(db.collection('bikers').doc(custodyBiker));
+      if (!biker.exists) fail('الموظف غير موجود في قائمة البايكرز.', 'not-found');
+      after.finance_metadata = { ...after.finance_metadata, custodian: biker.data().name || biker.data().name_ar || custodyBiker };
     }
     // A same-record edit never relocates or deletes a source, nor moves a
     // booked date to an open month to evade the original period lock.

@@ -17,7 +17,7 @@ import { invoiceLinesShapeIssues } from '../functions/src/financeInvoiceLines.js
 import { financeSourceEvidence, sourceEvidenceShapeValid } from '../functions/src/financeSourceEvidence.js';
 import { financePostingHistory } from './financePostingHistory.js';
 import { financeWorkflowDimensions } from '../src/lib/financeWorkflowDimensions.js';
-import { foundingSettlement } from './foundingSettlement.js';
+import { foundingSettlement, foundingEntryId } from './foundingSettlement.js';
 import { ACC } from '../src/lib/accounting/chartOfAccounts.js';
 import { employeeCustody } from '../functions/src/custodyRecovery.js';
 import { FOUNDING_DEFAULTS, FILED_VAT_QUARTERS, dayBefore, quarterOf } from '../src/lib/founding/foundingPlan.js';
@@ -220,16 +220,21 @@ async function workflowDocument(db, tx, kind, sourceId, row, currentState = null
   const reversed = postingHistory.reversed.length > 0;
   const posted = postingHistory.active.length > 0;
   const evidence = row.finance_metadata || {};
-  const paymentProven = row.payment_status === 'paid' && isRealDate(row.paid_date)
+  const paymentEvidence = row.payment_status === 'paid' && isRealDate(row.paid_date)
     && typeof evidence.fundingReference === 'string' && Boolean(evidence.fundingReference.trim())
     && Array.isArray(evidence.evidenceRefs) && evidence.evidenceRefs.length > 0 && evidence.evidenceRefs.every(ref => typeof ref === 'string' && ref.trim())
     && ((evidence.fundingType === 'company_cash' && row.payment_method === 'cash')
       || (evidence.fundingType === 'company_bank' && ['transfer', 'card'].includes(row.payment_method))
       || (evidence.fundingType === 'owner_current' && row.payment_method === 'owner_current'));
+  // «مثبت بإقرار المدير — قاعدة فترة التأسيس»: a posted founding-period record that Hadi paid, on 2300 —
+  // by its own entry (paid «دفع شخصي - فترة التأسيس») or by a posted «تصحيح جهة دفع» from the founding
+  // settlement. Kept apart from proof by a statement or a receipt; read only, nothing is written.
+  const cutoffDate = await foundingCutoffOf(db, tx), day = documentDay(row[FINANCE_KINDS[kind].date]), attestation = managerAttestationOf(row);
+  const foundingRule = posted && !paymentEvidence && day && day < cutoffDate ? await foundingPaymentRule(db, tx, kind, sourceId, row, journals) : null;
+  const paymentProof = paymentEvidence ? 'evidence' : foundingRule ? 'founding_rule' : null, paymentProven = Boolean(paymentProof);
   const safeUnposted = !state.protectedSource && !state.closed && preview.ready && !additionalIssues.length && !detail.issues.length;
   const correctedNeedsReview = reversed && (detail.issues.length > 0 || postingHistory.issues.length > 0 || !paymentProven);
   // «بلا إيصال، بإقرار المدير»: offered on a founding-period record not yet posted; the founding endpoint re-checks on save.
-  const cutoffDate = await foundingCutoffOf(db, tx), day = documentDay(row[FINANCE_KINDS[kind].date]), attestation = managerAttestationOf(row);
   const founding = { cutoffDate, attestation: attestation ? { byName: attestation.byName || null, atIso: attestation.atIso, approxDate: attestation.approxDate, note: attestation.note || null } : null,
     attestable: Boolean(day && day < cutoffDate && !state.protectedSource && !state.closed && !attestation && !statementLineRefOf(row)) };
   const workflowStage = posted ? correctedNeedsReview ? 'posted_review' : paymentProven ? 'complete' : 'posted_unproven'
@@ -237,12 +242,21 @@ async function workflowDocument(db, tx, kind, sourceId, row, currentState = null
   const result = { ...detail, issues: [...detail.issues, ...additionalIssues, ...postingHistory.issues], workflowStage, postingHistory,
     approvalReady: safeUnposted && !detail.approved && !detail.issues.length,
     postingReady: safeUnposted && detail.approved && !detail.issues.length,
-    paymentProven, paymentConflict: hasPaymentConflict(row), founding,
+    paymentProven, paymentProof, paymentRule: foundingRule, paymentConflict: hasPaymentConflict(row), founding,
     workflowNote: reversed && posted ? 'له قيود مرحلة سارية بعد عكس الأصل؛ لا يعاد ترحيله. اكتمال الدليل والسداد منفصل عن وجود القيود.'
       : reversed ? 'له قيد معكوس دون بديل مرحل مثبت؛ المصدر محمي ويحتاج مراجعة.' : state.closed ? 'الفترة مقفلة؛ العرض فقط.'
       : state.protectedSource && !posted ? 'المصدر محمي؛ لم يثبت قيد مرحّل صالح في القراءة الحالية.' : null,
     journalNumbers: journals.map(j => j.data()?.entryNumber).filter(Number.isFinite) };
   return { ...result, workflowDimensions: financeWorkflowDimensions(result, { recorded: true }) };
+}
+const creditsHadi = entry => (entry?.lines || []).some(line => String(line.accountId) === ACC.HADI_CURRENT && Number(line.credit) > 0);
+const liveEntry = entry => entry?.status === 'posted' && !entry.reversalOf && !entry.reversedBy;
+/** Which founding rule proves the payment: the record's own entry on 2300, or the founding «تصحيح جهة دفع» entry moving it there. */
+async function foundingPaymentRule(db, tx, kind, sourceId, row, journals) {
+  if (row.payment_method === 'founding_personal' && journals.some(j => liveEntry(j.data()) && creditsHadi(j.data()))) return 'own_entry';
+  const correction = await tx.get(db.collection('journal_entries').doc(foundingEntryId(`doc:${kind}:${sourceId}`)));
+  return correction.exists && liveEntry(correction.data()) && correction.data().foundingEntry?.sourceKey === `${kind}:${sourceId}`
+    && creditsHadi(correction.data()) ? 'payment_correction' : null;
 }
 async function browseDocuments(db) {
   const names = [...Object.values(FINANCE_KINDS).flatMap(spec => [spec.collection, spec.parent || spec.category]),

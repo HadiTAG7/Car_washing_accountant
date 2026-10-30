@@ -105,6 +105,7 @@ export default function FinanceWorkbenchPage() {
           <small>{documentDay(item.date) || 'التاريخ غير مثبت'} · {EXPENSE_KIND_LABELS[item.kind]}</small>
           <small>{item.supplier || 'المورد غير مثبت'}{item.documentNumber ? ` · مستند ${item.documentNumber}` : ''}</small>
           <span className={`fw-stage fw-stage--${item.workflowStage}`}>{WORKBENCH_STAGES[item.workflowStage] || 'غير متاح'}</span>
+          {item.workflowStage === 'complete' && item.workflowDimensions?.payment?.basis === 'founding_rule' && <small>{item.workflowDimensions.payment.label}</small>}
           {item.workflowDimensions && <small>{item.workflowDimensions.details.label} · {item.workflowDimensions.review.label}</small>}
           {age > 30 && item.workflowStage !== 'complete' && <small className="fw-age-warning">أقدم من 30 يومًا ولم يكتمل · {age} يومًا</small>}
           {item.paymentConflict && <small className="fw-age-warning">طريقة دفع متناقضة</small>}

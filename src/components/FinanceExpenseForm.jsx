@@ -104,6 +104,7 @@ export default function FinanceExpenseForm({ kind, detail, requestId, options, o
     {detail?.workflowDimensions ? <FinanceDocumentStatus dimensions={detail.workflowDimensions} /> : detail && <dl className="fw-document-status" aria-label="حالات المصروف المنفصلة">
       <div><dt>الاعتماد</dt><dd>{detail.approved ? 'اعتماد النسخة الحالية' : 'غير معتمد'}</dd></div>
       <div><dt>الترحيل</dt><dd>{detail.protectedSource ? 'المصدر محمي وله أثر سابق' : 'غير مرحل'}</dd></div>
+      {detail.postingDate && !detail.protectedSource && <div><dt>تاريخ القيد</dt><dd>{detail.postingDate} — شهر المستند مقفل، ويُقيَّد بآخر يوم في فترة التأسيس والشهر يبقى مقفلًا</dd></div>}
       <div><dt>السداد</dt><dd>{detail.paymentProven ? 'مثبت في المصدر' : ({ paid: 'مسجل مدفوع — يحتاج دليل', unpaid: 'غير مسدد' })[detail.row.payment_status] || 'غير مثبت'}</dd></div>
     </dl>}
     {conflict && <div className="fw-payment-warning" role="note"><AlertTriangle size={18} /><span>طريقة دفع متناقضة: المستند يشير إلى تحويل أو مدى أو بنكي، لكن المسجل نقد. التنبيه لا يغيّر البيانات.</span></div>}

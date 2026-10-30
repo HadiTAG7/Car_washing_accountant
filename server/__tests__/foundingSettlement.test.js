@@ -291,4 +291,68 @@ describe('Hadi current account and founding-period settlement', () => {
     // Only the approved adjustment was posted.
     expect(journals()).toBe(journalsBefore + 1);
   });
+
+  it('proposes Hadi’s transfer without a statement and an unposted partner receipt with written reasons, and posts each only on approval', async () => {
+    const data = seed();
+    data['partner_payments/pp2'] = { partner_id: 'p1', amount: 3000, payment_date: '2026-07-20', payment_method: 'bank_transfer' };
+    const db = memoryFinanceDb(data);
+    const journals = () => [...db.rows.keys()].filter(k => k.startsWith('journal_entries/')).length, before = journals();
+    await expect(call(db, { action: 'proposeTransfer', date: '2026-10-03', amount: 12000, description: 'حوالة لحساب الشركة', reason: 'قصير', confirm: true }))
+      .rejects.toMatchObject({ code: 'invalid-argument' });
+    await call(db, { action: 'proposeTransfer', date: '2026-10-03', amount: 12000, description: 'حوالة لحساب الشركة', reason: 'بلا كشف شخصي لهذا التحويل', confirm: true });
+    await call(db, { action: 'decide', sourceKey: 'partner_payment:pp2', decision: 'hadi', confirm: true });
+    let read = await call(db, { action: 'read' });
+    expect(read.plan.receipts.map(r => [r.key, r.postingDate])).toEqual([['partner_payment:pp2', '2026-09-30']]);
+    await expect(call(db, { action: 'proposeReceipts', keys: ['partner_payment:pp1'], reason: 'وصلت لحسابي', confirm: true })).rejects.toThrow(/تغيرت/);
+    await call(db, { action: 'proposeReceipts', keys: ['partner_payment:pp2'], reason: 'وصلت لحسابي الشخصي', confirm: true });
+    expect(db.rows.get('founding_review/current')).toMatchObject({ manualTransfers: [{ amount: 12000, reason: 'بلا كشف شخصي لهذا التحويل', byName: 'مدير الاختبار' }],
+      receiptProposals: [{ id: 'pp2', reason: 'وصلت لحسابي الشخصي', byName: 'مدير الاختبار' }] });
+    read = await call(db, { action: 'read' });
+    const transfer = read.plan.entries.find(e => e.key.startsWith('manual_transfer:')), receipt = read.plan.entries.find(e => e.key === 'receipt:partner_payment:pp2');
+    expect(transfer).toMatchObject({ status: 'proposed', date: '2026-10-03', account: 'manual' });
+    expect(receipt).toMatchObject({ status: 'proposed', date: '2026-09-30', originalDate: '2026-07-20' });
+    expect(read.plan.hadiBalance).toMatchObject({ toCompany: 12000, received: 3000 });
+    expect(journals()).toBe(before);
+    await call(db, { action: 'postEntries', reason: 'موافقة هادي', confirm: true, entries: [transfer, receipt].map(e => ({ key: e.key, hash: e.hash })) });
+    const posted = db.rows.get(`journal_entries/${foundingEntryId(transfer.key)}`), postedReceipt = db.rows.get(`journal_entries/${foundingEntryId(receipt.key)}`);
+    expect(posted.lines.map(l => [l.accountId, l.debit, l.credit])).toEqual([['1020', 12000, 0], ['2300', 0, 12000]]);
+    expect(postedReceipt).toMatchObject({ entryDate: '2026-09-30', sourceType: 'partner_payment', sourceId: 'pp2', sourceKind: 'founding_receipt' });
+    expect(postedReceipt.lines.map(l => [l.accountId, l.debit, l.credit])).toEqual([['2300', 3000, 0], ['3000-p1', 0, 3000]]);
+    // The receipt carries its own lock: no other path posts it again.
+    expect(db.rows.get('posting_locks/partner_payment__pp2')).toMatchObject({ sourceId: 'pp2', entryId: foundingEntryId(receipt.key) });
+    read = await call(db, { action: 'read' });
+    expect(read.plan.receipts).toEqual([]);
+    expect(read.plan.entries.find(e => e.key === receipt.key)).toMatchObject({ status: 'posted', postedReason: 'موافقة هادي' });
+    await expect(call(db, { action: 'removeReceipt', key: 'partner_payment:pp2', confirm: true })).rejects.toThrow(/مرحّل/);
+    expect(journals()).toBe(before + 2);
+    expect([...db.rows.values()].some(v => Array.isArray(v?.lines) && v.lines.some(l => String(l.accountId) === '3200'))).toBe(false);
+  });
+
+  it('edits, approves and dates on the last founding day a founding document whose month is closed, the month left closed', async () => {
+    const data = seed();
+    const complete = { category_id: 'cat1', quantity: 1, supplier: 'مورد', invoice_url: 'https://example.org/july', is_tax_invoice: false, vat_deductible: false,
+      price_mode: 'inclusive', payment_method: 'cash', payment_status: 'paid',
+      finance_metadata: { fundingType: 'company_cash', fundingReference: 'صندوق', purpose: 'تجهيز', evidenceRefs: ['ref'] } };
+    data['variable_expenses/v5'] = { ...complete, expense_name: 'مصروف يوليو', total_variable_cost: 150, unit_cost: 150, logged_date: '2026-07-15', paid_date: '2026-07-15' };
+    const db = memoryFinanceDb(data), wb = request => financeWorkbench(db, auth, { kind: 'variable', sourceId: 'v5', ...request });
+    let detail = await wb({ action: 'read' });
+    expect(detail).toMatchObject({ closed: false, postingDate: '2026-09-30', approvalReady: true });
+    expect(detail.postingPreview.entry).toMatchObject({ entryDate: '2026-09-30' });
+    expect(detail.postingPreview.entry.description).toContain('قُيّد بآخر يوم في فترة التأسيس');
+    // An edit keeps its closed dates; moving them to an open month is refused.
+    await expect(wb({ action: 'preview', patch: { date: '2026-08-10', paidDate: '2026-08-10' }, sourceHash: detail.sourceHash })).rejects.toThrow(/يبقى بتاريخه/);
+    const preview = await wb({ action: 'preview', patch: { supplier: 'مورد معدّل' }, sourceHash: detail.sourceHash });
+    await wb({ action: 'save', patch: { supplier: 'مورد معدّل' }, sourceHash: detail.sourceHash, previewHash: preview.previewHash, reason: 'تصحيح المورد', confirm: true });
+    expect(db.rows.get('variable_expenses/v5')).toMatchObject({ supplier: 'مورد معدّل', logged_date: '2026-07-15', approval_status: 'pending' });
+    detail = await wb({ action: 'read' });
+    await wb({ action: 'approve', sourceHash: detail.sourceHash, postingHash: detail.postingPreview.postingHash, reason: 'اعتماد مستند التأسيس', confirm: true });
+    detail = await wb({ action: 'read' });
+    expect(detail).toMatchObject({ approved: true, postingDate: '2026-09-30' });
+    // A new record is not written into the closed month.
+    await expect(financeWorkbench(db, auth, { action: 'previewCapture', kind: 'variable', requestId: 'july-new',
+      patch: { description: 'جديد', amount: 10, date: '2026-07-20', quantity: 1, categoryId: 'cat1', invoiceUrl: 'https://example.org/new' } })).rejects.toThrow(/مقفل/);
+    // Once the cutoff moves before July, July is no longer founding: closed as before.
+    await call(db, { action: 'saveSettings', revision: 0, cutoffDate: '2026-07-01', threshold: 500, actuals: null, confirm: true });
+    expect(await wb({ action: 'read' })).toMatchObject({ closed: true, postingDate: null });
+  });
 });

@@ -17,6 +17,8 @@ import { financeSourceEvidence, sourceEvidenceShapeValid } from '../functions/sr
 import { financePostingHistory } from './financePostingHistory.js';
 import { financeWorkflowDimensions } from '../src/lib/financeWorkflowDimensions.js';
 import { foundingSettlement } from './foundingSettlement.js';
+import { ACC } from '../src/lib/accounting/chartOfAccounts.js';
+import { FOUNDING_DEFAULTS, FILED_VAT_QUARTERS, dayBefore, quarterOf } from '../src/lib/founding/foundingPlan.js';
 
 const kindSchema = z.enum(['variable', 'monthly', 'annual', 'startup']);
 const id = z.string().regex(/^[\p{L}\p{N}_.:-]{1,160}$/u);
@@ -107,18 +109,35 @@ async function readState(db, tx, kind, sourceId, row) {
   const locks = await Promise.all(lockIds.map(key => tx.get(db.collection('posting_locks').doc(key))));
   const journals = await tx.get(db.collection('journal_entries').where('sourceId', '==', sourceId));
   const review = await tx.get(db.collection('finance_reviews').doc(financeReviewId(kind, sourceId)));
-  const spec = FINANCE_KINDS[kind], dates = [...new Set([row[spec.date], row.paid_date, row.invoice_date].filter(Boolean))];
-  const periods = await Promise.all(dates.filter(isRealDate).map(day => tx.get(db.collection('accounting_periods').doc(day.slice(0, 7)))));
+  const { closed, postingDate } = await foundingPosting(db, tx, kind, row);
   const matchingJournals = journals.docs.filter(d => journalMatchesFinanceSource(kind, d.data()));
   const protectedSource = locks.some(l => l.exists) || matchingJournals.length > 0 || Boolean(row.journal_entry_id || row.posted_entry_id || row.posting_status === 'posted');
-  const closed = periods.some(p => p.exists && p.data().status === 'closed');
   const reviewValue = review.exists ? review.data() : null, sourceHash = financeSourceHash(row);
   const sourceContext = await financeSourceEvidence(db, tx, kind, sourceId, row);
-  return { protectedSource, closed, sourceHash, review: reviewValue, sourceContext,
+  return { protectedSource, closed, postingDate, sourceHash, review: reviewValue, sourceContext,
     approved: row.approval_status === 'approved' && reviewValue?.status === 'approved' && reviewValue?.sourceHash === sourceHash
       && !sourceContext.issues.length && (reviewValue?.sourceContextHash || null) === sourceContext.contextHash,
     journalIds: matchingJournals.map(d => d.id) };
 }
+/**
+ * الشهر المقفل يبقى مقفلًا. مستند فترة التأسيس (قبل تاريخ القطع) كل تواريخه
+ * المقفلة قبل القطع يُعدَّل ويُعتمد ويُرحَّل بقيد مؤرخ بآخر يوم فيها — مثل قيود
+ * التصحيح — ما دام شهر ذلك اليوم مفتوحًا. غير ذلك: مقفل كما كان.
+ */
+async function foundingPosting(db, tx, kind, row) {
+  const spec = FINANCE_KINDS[kind], dates = [...new Set([row[spec.date], row.paid_date, row.invoice_date].filter(isRealDate))];
+  const periods = await Promise.all(dates.map(day => tx.get(db.collection('accounting_periods').doc(day.slice(0, 7)))));
+  const closedDays = dates.filter((_, i) => periods[i].exists && periods[i].data().status === 'closed');
+  if (!closedDays.length) return { closed: false, postingDate: null };
+  const review = await tx.get(db.collection('founding_review').doc('current'));
+  const saved = review.exists ? review.data().cutoffDate : null;
+  const cutoff = isRealDate(saved) ? saved : FOUNDING_DEFAULTS.cutoffDate;
+  if (!isRealDate(row[spec.date]) || row[spec.date] >= cutoff || closedDays.some(day => day >= cutoff)) return { closed: true, postingDate: null };
+  const end = dayBefore(cutoff), endPeriod = await tx.get(db.collection('accounting_periods').doc(end.slice(0, 7)));
+  if (endPeriod.exists && endPeriod.data().status === 'closed') return { closed: true, postingDate: null };
+  return { closed: false, postingDate: end };
+}
+
 async function validateClassification(db, tx, kind, row) {
   const spec = FINANCE_KINDS[kind];
   if (spec.fk && row[spec.fk]) {
@@ -150,7 +169,16 @@ async function postingPreview(db, tx, kind, sourceId, row, context = null) {
     const policyAt = day => taxPolicyAt(day, settings.exists ? settings.data().value || {} : {});
     const policy = policyAt(ADAPTERS[kind].dateOf(row));
     if (!policy.known) return { ready: false, issues: ['السياسة التاريخية غير مهيأة لهذا التاريخ.'], entry: null, lines: [] };
-    const built = ADAPTERS[kind].build(row, sourceId, { recordDate: ADAPTERS[kind].dateOf(row), policyAt });
+    const { postingDate } = await foundingPosting(db, tx, kind, row);
+    const built = ADAPTERS[kind].build(row, sourceId, { recordDate: ADAPTERS[kind].dateOf(row), policyAt, postingDate });
+    // Input VAT in a filed return stays held until Hadi marks it reviewed in the founding settlement.
+    const vatDay = isRealDate(row.invoice_date) ? row.invoice_date : ADAPTERS[kind].dateOf(row);
+    if (postingDate && built.lines.some(l => String(l.accountId) === ACC.INPUT_VAT && Number(l.debit) > 0) && FILED_VAT_QUARTERS.includes(quarterOf(vatDay))) {
+      const decision = await tx.get(db.collection('founding_decisions').doc(financeHash(`${kind}:${sourceId}`).slice(0, 40)));
+      if (!(decision.exists && decision.data().vatReviewed === true)) {
+        return { ready: false, issues: [`ضريبة مدخلاته في إقرار مقدّم (${quarterOf(vatDay)}): علّمه «راجعته» في تسوية فترة التأسيس قبل ترحيله بتاريخ ${postingDate}.`], entry: null, lines: [] };
+      }
+    }
     const accounts = await tx.get(db.collection('chart_of_accounts'));
     const known = new Set(accounts.docs.map(d => d.id));
     if ([...built.lines, ...(built.settlement?.lines || [])].some(l => !known.has(String(l.accountId)))) {
@@ -204,8 +232,9 @@ async function workflowDocument(db, tx, kind, sourceId, row, currentState = null
 async function browseDocuments(db) {
   const names = [...Object.values(FINANCE_KINDS).flatMap(spec => [spec.collection, spec.parent || spec.category]),
     'journal_entries', 'journal_lines', 'posting_locks', 'finance_reviews', 'accounting_periods', 'app_settings', 'chart_of_accounts',
-    // A record whose document is a bank-statement line is verified against it.
-    'bank_statement_lines'];
+    // A record whose document is a bank-statement line is verified against it;
+    // a founding-period one in a closed month reads the cutoff and its decision.
+    'bank_statement_lines', 'founding_review', 'founding_decisions'];
   const snapshot = await financeReadSnapshot(db, names);
   const tx = { get: reference => reference.get() };
   const items = [];
@@ -261,7 +290,7 @@ export async function financeWorkbench(db, auth, input) {
     const before = await financeWorkbench(db, auth, { action: 'read', kind: r.kind, sourceId });
     if (before.sourceHash !== r.sourceHash || !before.approved || !before.postingPreview.ready || before.protectedSource || before.closed) fail('تغيرت النسخة أو لم تكتمل أهلية الترحيل.');
     const result = await postSource(db, FieldValue, { kind: r.kind, sourceId }, { userId: auth.uid,
-      expectedFinanceSourceHash: r.sourceHash, financeAuthorizer: tx => adminOnly(authTx(db, tx), auth) });
+      expectedFinanceSourceHash: r.sourceHash, financeAuthorizer: tx => adminOnly(authTx(db, tx), auth), postingDate: before.postingDate || null });
     const after = await financeWorkbench(db, auth, { action: 'read', kind: r.kind, sourceId });
     if (!after.protectedSource || !after.journalIds.length) fail('استجابة الترحيل لا تكفي؛ تعذر التحقق من الربط.');
     const expected = [before.postingPreview, ...(before.postingPreview.settlement ? [before.postingPreview.settlement] : [])];
@@ -319,6 +348,9 @@ export async function financeWorkbench(db, auth, input) {
     // booked date to an open month to evade the original period lock.
     const afterState = await readState(db, tx, r.kind, sourceId, after);
     if (afterState.closed) fail('أحد تواريخ المصدر أو الفاتورة أو السداد مقفل.');
+    if (state.postingDate && !afterState.postingDate) fail('مستند فترة التأسيس في شهر مقفل يبقى بتاريخه؛ لا يُنقل إلى شهر مفتوح.');
+    // Existing founding documents only: a new record is not written into a closed month.
+    if (isCapture && afterState.postingDate) fail('شهر المستند مقفل: لا يُسجّل فيه مستند جديد.');
     if (before[spec.fk] && r.patch?.parentId && r.patch.parentId !== before[spec.fk]) fail('نقل البند الأب ليس تصحيحًا لنفس السجل في هذا المسار.');
     const parent = await validateClassification(db, tx, r.kind, after);
     const sourceContext = await checkDuplicate(db, tx, r.kind, sourceId, after, { allowIncompleteAllocation: r.action !== 'approve' });

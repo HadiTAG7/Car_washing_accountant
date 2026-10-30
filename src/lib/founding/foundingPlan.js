@@ -172,6 +172,10 @@ function planCore(input) {
   const status = (key, date, held) => posted.has(key) ? 'posted' : held ? 'held_vat' : closed.has(date.slice(0, 7)) ? 'blocked_period' : 'proposed';
   const entries = [], updates = [], rows = [];
   const groups = { matched: [], small: [], large: [], withProof: [], partners: [] };
+  // A founding-period document in a closed month is edited and posted on the
+  // period's last day (the month stays closed) — unless that day's month is closed too.
+  const endClosed = closed.has(foundingEnd.slice(0, 7));
+  const blockedDoc = doc => [doc.date, doc.paidDate].some(d => d && closed.has(d.slice(0, 7)) && (!inFounding(doc.date) || d >= cutoff || endClosed));
 
   // ── المستندات ──
   for (const doc of input.docs || []) {
@@ -194,7 +198,7 @@ function planCore(input) {
     if (!doc.protected) {
       const patch = documentPatchFor(pay);
       if (patch && needsPatch(doc, patch)) {
-        const blocked = [doc.date, doc.paidDate].some(d => d && closed.has(d.slice(0, 7)));
+        const blocked = blockedDoc(doc);
         updates.push({ key: doc.key, type: 'document', kind: doc.kind, sourceId: doc.sourceId, title: doc.title, amount: doc.amount,
           date: doc.date, payer: pay.payer, source: pay.source, patch: { ...patch, ...(doc.paidDate ? {} : { paidDate: doc.date }) },
           held: vatHeld, blocked });
@@ -270,6 +274,40 @@ function planCore(input) {
       ...(posted.get(key) || {}) });
   }
 
+  // ── تحويل هادي لحساب الشركة بلا كشف: قيد مقترح بسبب يكتبه ──
+  for (const t of settings.manualTransfers || []) {
+    const key = `manual_transfer:${t.id}`, amount = riyal(halala(t.amount));
+    const date = closed.has(String(t.date).slice(0, 7)) ? dateFor(t.date) : t.date;
+    // A marked statement deposit of the same amount within a week may be this very transfer.
+    const twin = transferLines.find(l => halala(l.amount) === halala(t.amount) && Math.abs(daysBetween(l.txDate, t.date)) <= MATCH_WINDOW_DAYS
+      && (l.account === 'company' ? l.direction === 'credit' : l.direction === 'debit'));
+    entries.push({ key, type: 'transfer', sourceKey: key, id: t.id, title: t.description, amount, date, originalDate: t.date, payer: 'hadi',
+      account: 'manual', toCompany: true, reason: t.reason, proposedByName: t.byName || null, proposedAtIso: t.atIso || null,
+      possibleTwin: twin ? { txDate: twin.txDate, account: twin.account, description: twin.description } : null,
+      lines: [{ accountId: ACCOUNTS.BANK, debit: amount, credit: 0, description: `تحويل من هادي إلى حساب الشركة — ${t.description}` },
+        { accountId: ACCOUNTS.HADI, debit: 0, credit: amount, description: t.description }],
+      status: status(key, date, false), description: `تحويل من هادي إلى حساب الشركة بلا كشف (${t.date}) — ${t.reason}`, ...(posted.get(key) || {}) });
+  }
+
+  // ── سندات قبض وصلت لحساب هادي بلا قيد: مدين 2300 ودائن رأس مال الشريك ──
+  const proposals = new Map((settings.receiptProposals || []).map(r => [r.id, r]));
+  const receiptDate = p => (closed.has(String(p.date).slice(0, 7)) ? dateFor(p.date) : p.date);
+  for (const [id, proposal] of proposals) {
+    const p = paymentRows.find(x => x.id === id), key = p ? `receipt:${p.key}` : null;
+    // Posted some other way, or no longer Hadi's: nothing left to propose.
+    if (!p || (!posted.has(key) && (p.protected || p.arrival !== 'hadi' || !p.partnerId || !p.date))) continue;
+    const amount = riyal(halala(p.amount)), date = receiptDate(p);
+    entries.push({ key, type: 'receipt', sourceKey: p.key, paymentId: p.id, partnerId: p.partnerId, title: `سند قبض ${p.partnerName}`, amount, date,
+      originalDate: p.date, payer: 'hadi', reason: proposal.reason, proposedByName: proposal.byName || null, proposedAtIso: proposal.atIso || null,
+      lines: [{ accountId: ACCOUNTS.HADI, debit: amount, credit: 0, description: `دفعة ${p.partnerName} وصلت لحساب هادي` },
+        { accountId: `3000-${p.partnerId}`, debit: 0, credit: amount, description: `رأس مال ${p.partnerName}` }],
+      status: status(key, date, false), description: `سند قبض ${p.partnerName} (${p.date}) وصل لحساب هادي — ${proposal.reason}`, ...(posted.get(key) || {}) });
+  }
+  const receipts = paymentRows.filter(p => p.arrival === 'hadi' && !p.protected && p.partnerId && p.date && !proposals.has(p.id))
+    .map(p => ({ key: p.key, id: p.id, partnerId: p.partnerId, partnerName: p.partnerName, amount: p.amount, date: p.date, method: p.method,
+      arrivalSource: p.arrivalSource, postingDate: receiptDate(p), blocked: closed.has(receiptDate(p).slice(0, 7)) }))
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+
   const comparison = statementComparison({ rows, payments: groups.partners, lines: input.lines || [], cutoff, foundingEnd, posted, closed,
     off: Boolean(settings.noPersonalStatement) });
   if (comparison.entry) entries.push(comparison.entry);
@@ -292,7 +330,7 @@ function planCore(input) {
     .sort((a, b) => String(a.approxDate).localeCompare(String(b.approxDate)));
   const hadiBalance = hadiBalanceOf({ rows, payments: paymentRows, entries, cutoff, saved: settings.hadiAttestation || null });
   return { settings: { ...settings, foundingEnd }, groups, totals, rows, entries, updates, settlement, comparison, vatTouching, postCutoff, exceptions,
-    attestedExpenses, hadiBalance,
+    attestedExpenses, hadiBalance, receipts,
     summary: foundingSummary({ rows, payments: paymentRows, entries, hadiBalance, attestedExpenses, settings: { ...settings, foundingEnd } }),
     hadi: hadiStatement({ hadiLedger: input.hadiLedger || [], rows, payments: paymentRows, entries }) };
 }
@@ -528,6 +566,7 @@ const KIND_LABEL = {
   founding_document: 'تصحيح: مصروف دفعه هادي', founding_payment: 'تصحيح: دفعة شريك استلمها هادي',
   founding_transfer: 'تحويل بين هادي وحساب الشركة', founding_settlement: 'تسوية فترة التأسيس',
   founding_hadi_statement: 'تسوية الحساب الجاري على الكشف', founding_adjustment: 'تسوية على 3200 بقرارك',
+  founding_receipt: 'دفعة شريك استلمها هادي',
 };
 export function movementLabel(sourceType, sourceKind) {
   return KIND_LABEL[sourceKind] || KIND_LABEL[sourceType] || 'حركة أخرى';

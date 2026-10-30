@@ -6,7 +6,7 @@ import { useFounding } from '../hooks/useFounding';
 import { ConfirmButton, EntryLines, Messages, StatusBadge } from './founding/FoundingCommon';
 import { money, day, when } from '../lib/founding/foundingFormat';
 import { DefaultRule, StatementComparison } from './founding/FoundingRule';
-import { HadiBalance, Adjustments, AttestedExpenses } from './founding/FoundingBalance';
+import { HadiBalance, Adjustments, AttestedExpenses, ManualTransfers } from './founding/FoundingBalance';
 import './FinanceWorkspace.css';
 import './founding/Founding.css';
 
@@ -37,6 +37,7 @@ export default function FoundingSettlementPage() {
         <Settings key={Number(data.review?.revision) || 0} founding={founding} />
         <DefaultRule founding={founding} partners={data.partners} names={data.accountNames} progress={ruleProgress} setProgress={setRuleProgress} />
         {plan.settings.noPersonalStatement ? <HadiBalance founding={founding} /> : <StatementComparison plan={plan} names={data.accountNames} />}
+        <ManualTransfers founding={founding} names={data.accountNames} />
         <Adjustments founding={founding} names={data.accountNames} />
         <AttestedExpenses founding={founding} />
         <div className="fw-metrics">

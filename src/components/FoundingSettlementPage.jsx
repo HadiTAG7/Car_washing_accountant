@@ -7,6 +7,7 @@ import { ConfirmButton, EntryLines, Messages, StatusBadge } from './founding/Fou
 import { money, day, when } from '../lib/founding/foundingFormat';
 import { DefaultRule, StatementComparison } from './founding/FoundingRule';
 import { HadiBalance, Adjustments, AttestedExpenses, ManualTransfers } from './founding/FoundingBalance';
+import { DuplicateCancellations, CustodySettlements } from './founding/FoundingCorrections';
 import './FinanceWorkspace.css';
 import './founding/Founding.css';
 
@@ -39,6 +40,8 @@ export default function FoundingSettlementPage() {
         {plan.settings.noPersonalStatement ? <HadiBalance founding={founding} /> : <StatementComparison plan={plan} names={data.accountNames} />}
         <ManualTransfers founding={founding} names={data.accountNames} />
         <Adjustments founding={founding} names={data.accountNames} />
+        <DuplicateCancellations founding={founding} names={data.accountNames} />
+        <CustodySettlements founding={founding} names={data.accountNames} />
         <AttestedExpenses founding={founding} />
         <div className="fw-metrics">
           {[['matched', 'أ) مطابقة لكشف'], ['small', 'ب) تحت الحد بلا إثبات'], ['large', 'ج) فوق الحد بلا إثبات'], ['partners', 'د) دفعات الشركاء'], ['withProof', 'بإثبات ولم تطابق كشفًا']]
@@ -233,7 +236,7 @@ function Entries({ plan, founding, names }) {
     <div className="fw-actions">
       <button type="button" disabled={!proposed.length} onClick={() => setSelected(new Set(proposed.map(e => e.key)))}>اختيار كل الجاهز ({proposed.length})</button>
       <ConfirmButton primary label={`موافقة وترحيل المحدد (${chosen.length})`} disabled={!chosen.length || reason.trim().length < 3 || founding.busy}
-        confirmText={`يرحّل ${chosen.length} قيدًا بأسطرها المعروضة. لا يغيّر أي مستند.`}
+        confirmText={`يرحّل ${chosen.length} قيدًا بأسطرها المعروضة. لا يغيّر أي مستند${chosen.some(e => e.type === 'custody_settlement') ? '، ويعلّم البنود المؤقتة المحددة مسوّاة بقيدها' : ''}.`}
         onConfirm={async () => { const done = await founding.act({ action: 'postEntries', reason: reason.trim(), confirm: true, entries: chosen.map(e => ({ key: e.key, hash: e.hash })) }, 'رُحّلت القيود المحددة.'); if (done) setSelected(new Set()); }} />
     </div>
   </section>;

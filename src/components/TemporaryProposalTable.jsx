@@ -17,8 +17,8 @@ export default function TemporaryProposalTable({ rows, bikers = [], showDestinat
     </tr></thead><tbody>{visible.map(row=><tr key={row.id} className="border-t border-slate-200 dark:border-slate-700">
       <td className="p-3 min-w-56">{row.title}</td><td className="p-3 whitespace-nowrap">{formatCurrencyPrecise(row.amount)}</td>
       <td className="p-3 whitespace-nowrap">{row.date?formatDate(row.date):'تاريخ غير مسجل'}</td><td className="p-3">{name(row)}{row.assignmentMonth&&<small className="block">شهر الإسناد: <bdi>{row.assignmentMonth}</bdi></small>}</td>
-      <td className="p-3">{row.status==='recovered'?(row.recoveryMethod==='expense_document'?'سُوّيت بمستندات مصروف':'مسترد حسب الحالة المحفوظة'):row.outstanding<row.amount?'مسترد جزئيًا':'بانتظار الاسترداد'}
-        {row.documentRecovered>0&&<small className="block">منه بمستندات مصروف {formatCurrencyPrecise(row.documentRecovered)}</small>}</td>
+      <td className="p-3">{row.status==='recovered'?(row.recoveryMethod==='expense_document'?(row.settledByEntry?'سُوّيت بقيد تسوية مصروف':'سُوّيت بمستندات مصروف'):'مسترد حسب الحالة المحفوظة'):row.outstanding<row.amount?'مسترد جزئيًا':'بانتظار الاسترداد'}
+        {row.documentRecovered>0&&<small className="block">{row.settledByEntry?'منه بقيد تسوية مصروف':'منه بمستندات مصروف'} {formatCurrencyPrecise(row.documentRecovered)}</small>}</td>
       <td className="p-3 whitespace-nowrap">{formatCurrencyPrecise(row.outstanding)}</td>{showDestination&&<td className="p-3">{row.destination}</td>}
       <td className="p-3 min-w-56">{row.note}</td>
     </tr>)}</tbody></table></ScrollableTable>

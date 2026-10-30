@@ -62,6 +62,7 @@ function Summary({ s, readAt }) {
         <tfoot><tr><th scope="row" colSpan={2}>المجموع</th><td>{s.documented.count}</td><td>{money(s.documented.amount)}</td>
           <td>{money(s.categories.reduce((n, c) => n + c.byHadi, 0))}</td></tr></tfoot>
       </table></div>}
+      {s.cancelled?.count > 0 && <p>استُبعد {s.cancelled.count} مستند ملغى لأنه مكرر ({money(s.cancelled.amount)}): {s.cancelled.rows.map(d => `«${d.title}» مكرر لـ«${d.originalTitle || d.originalKey}»`).join('، ')}.</p>}
     </section>
 
     <section aria-label="مصاريف بإقرار المدير">

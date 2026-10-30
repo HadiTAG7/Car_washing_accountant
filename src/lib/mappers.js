@@ -727,6 +727,8 @@ export function mapTemporaryExpense(row) {
     // The part settled by expense documents paid from this custody (workbench «من عهدة شخص» / «دفع موظف»).
     recoveryMethod:  row.recovery_method || null,
     documentRecovered: documentRecoveredOf(row),
+    // Settled by a «تسوية مصروف مؤقت» entry from the founding settlement rather than a document.
+    settledByEntry: Array.isArray(row.document_recoveries) && row.document_recoveries.some(r => r?.kind === 'founding'),
   };
 }
 export function toTemporaryExpenseInsert({ title, amount, spentDate, status, recoveredDate, notes, bikerId, paymentMethod, assignmentMonth }) {

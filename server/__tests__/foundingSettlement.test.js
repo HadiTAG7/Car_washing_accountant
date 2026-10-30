@@ -355,4 +355,70 @@ describe('Hadi current account and founding-period settlement', () => {
     await call(db, { action: 'saveSettings', revision: 0, cutoffDate: '2026-07-01', threshold: 500, actuals: null, confirm: true });
     expect(await wb({ action: 'read' })).toMatchObject({ closed: true, postingDate: null });
   });
+
+  it('marks an unposted founding document «بلا إيصال، بإقرار المدير» on the same record, then approves and posts it to 2300', async () => {
+    const data = seed();
+    // A July (closed month) tax invoice with no receipt link and no supplier, paid from the company cash.
+    data['variable_expenses/v6'] = { expense_name: 'نقل أغراض السكن', total_variable_cost: 115, logged_date: '2026-07-15', category_id: 'cat1', quantity: 1, unit_cost: 115,
+      is_tax_invoice: true, vat_deductible: true, vat_amount: 15, vat_rate: 0.15, invoice_number: 'INV-6', invoice_date: '2026-07-15', price_mode: 'inclusive',
+      payment_method: 'cash', payment_status: 'paid', finance_metadata: { fundingType: 'company_cash', fundingReference: 'صندوق', purpose: 'تجهيز السكن', evidenceRefs: ['ref'] } };
+    data['variable_expenses/v7'] = { expense_name: 'بعد بدء البنك', total_variable_cost: 40, logged_date: '2026-10-05', category_id: 'cat1', quantity: 1, unit_cost: 40, payment_method: 'cash' };
+    const db = memoryFinanceDb(data), wb = (sourceId, request, who = auth) => financeWorkbench(db, who, { kind: 'variable', sourceId, ...request });
+    const attest = (sourceId, sourceHash, extra = {}) => call(db, { action: 'attestDocument', kind: 'variable', sourceId, sourceHash,
+      reason: 'دفعته من حسابي ولم أحتفظ بالإيصال', confirm: true, ...extra }, extra.who);
+    const count = () => [...db.rows.keys()].filter(k => k.startsWith('variable_expenses/')).length, documents = count();
+    await call(db, { action: 'ensureAccounts', confirm: true });
+    let detail = await wb('v6', { action: 'read' });
+    expect(detail.founding).toMatchObject({ cutoffDate: '2026-10-01', attestation: null, attestable: true });
+    expect(detail.issues).toContain('رابط المستند غير مكتمل.');
+    // Founding-period, unposted records only; the record the admin saw; a written reason; the admin only.
+    const after = await wb('v7', { action: 'read' });
+    expect(after.founding.attestable).toBe(false);
+    await expect(attest('v7', after.sourceHash)).rejects.toThrow(/فترة التأسيس/);
+    await expect(attest('v3', (await wb('v3', { action: 'read' })).sourceHash)).rejects.toThrow(/مرحّل/);
+    await expect(attest('v6', '0'.repeat(64))).rejects.toThrow(/تغيّر/);
+    await expect(attest('v6', detail.sourceHash, { reason: 'لا' })).rejects.toMatchObject({ code: 'invalid-argument' });
+    await expect(call(db, { action: 'attestDocument', kind: 'variable', sourceId: 'v6', sourceHash: detail.sourceHash, reason: 'دفعته من حسابي', confirm: true },
+      { uid: 'test-accountant' })).rejects.toMatchObject({ code: 'permission-denied' });
+    // Nor through the workbench directly on a record after the cutoff.
+    const stamp = { by: 'test-admin', byName: 'مدير الاختبار', atIso: '2026-10-30T09:00:00.000Z', approxDate: '2026-10-05', note: 'بلا إيصال' };
+    await expect(wb('v7', { action: 'preview', patch: { managerAttestation: stamp }, sourceHash: after.sourceHash })).rejects.toThrow(/فترة التأسيس فقط/);
+
+    const saved = await attest('v6', detail.sourceHash);
+    expect(saved).toMatchObject({ saved: true, kind: 'variable', sourceId: 'v6' });
+    // The same record, not deleted, no new one: no receipt needed, no tax, paid by Hadi, his name and time kept.
+    expect(count()).toBe(documents);
+    const row = db.rows.get('variable_expenses/v6');
+    expect(row).toMatchObject({ expense_name: 'نقل أغراض السكن', logged_date: '2026-07-15', total_variable_cost: 115, is_tax_invoice: false, vat_deductible: false,
+      vat_amount: null, vat_rate: null, payment_method: 'founding_personal', payment_status: 'paid', paid_date: '2026-07-15', approval_status: 'pending' });
+    expect(row.invoice_url).toBeUndefined();
+    expect(row.finance_metadata).toMatchObject({ fundingType: 'owner_current', fundingReference: 'إقرار المدير — مدير الاختبار', purpose: 'تجهيز السكن',
+      evidenceRefs: ['ref', 'founding:attestation'], managerAttestation: { by: 'test-admin', byName: 'مدير الاختبار', approxDate: '2026-07-15', note: 'دفعته من حسابي ولم أحتفظ بالإيصال' } });
+    expect(row.finance_metadata.managerAttestation.atIso).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    const audit = [...db.rows.entries()].find(([k, v]) => k.startsWith('audit_logs/') && v.sourceId === 'v6');
+    expect(audit[1]).toMatchObject({ action: 'finance-save', userId: 'test-admin', reason: 'بلا إيصال، بإقرار المدير: دفعته من حسابي ولم أحتفظ بالإيصال' });
+    detail = await wb('v6', { action: 'read' });
+    expect(detail).toMatchObject({ issues: [], approvalReady: true, postingDate: '2026-09-30',
+      founding: { attestable: false, attestation: { byName: 'مدير الاختبار', note: 'دفعته من حسابي ولم أحتفظ بالإيصال', approxDate: '2026-07-15' } } });
+    await expect(attest('v6', detail.sourceHash)).rejects.toMatchObject({ code: 'already-exists' });
+    // An attested expense is Hadi's: any other funding is flagged.
+    expect(financeProblems('variable', { ...row, finance_metadata: { ...row.finance_metadata, fundingType: 'company_cash' }, payment_method: 'cash' }, 'v6'))
+      .toContain('مصروف بإقرار المدير دفعه هادي: التمويل من حسابه الجاري (2300).');
+
+    // The summary lists it under «مصاريف بإقرار المدير».
+    const read = await call(db, { action: 'read' });
+    expect(read.plan.attestedExpenses).toMatchObject([{ sourceId: 'v6', amount: 115, approxDate: '2026-07-15', byName: 'مدير الاختبار' }]);
+    expect(read.plan.summary.attestedRows.map(e => e.sourceId)).toEqual(['v6']);
+    expect(read.plan.summary.attested).toMatchObject({ count: 1, amount: 115 });
+
+    // Then the usual approval and posting: expense against Hadi's current account, dated the last founding day (July is closed).
+    await wb('v6', { action: 'approve', sourceHash: detail.sourceHash, postingHash: detail.postingPreview.postingHash, reason: 'اعتماد بإقرار المدير', confirm: true });
+    detail = await wb('v6', { action: 'read' });
+    const posted = await wb('v6', { action: 'post', sourceHash: detail.sourceHash, confirm: true });
+    expect(posted.verification).toMatchObject({ verified: true, linesMatched: true });
+    const entry = db.rows.get(`journal_entries/${posted.verification.journalIds[0]}`);
+    expect(entry).toMatchObject({ entryDate: '2026-09-30', sourceId: 'v6', status: 'posted' });
+    expect(entry.lines.map(l => [l.accountId, l.debit, l.credit])).toEqual([['5100', 115, 0], ['2300', 0, 115]]);
+    expect(db.rows.get('accounting_periods/2026-07').status).toBe('closed');
+  });
 });

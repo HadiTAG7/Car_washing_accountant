@@ -50,6 +50,8 @@ export function financeProblems(kind, row, sourceId = null) {
   const types = FUNDING_METHODS;
   if (!types[meta?.fundingType]) issues.push('الحساب المقابل لهذا التمويل غير محسوم؛ لا يفترض الصندوق أو البنك.');
   else if (!types[meta.fundingType].includes(row.payment_method)) issues.push('طريقة الدفع تتعارض مع التمويل المثبت.');
+  // Hadi attests to what he paid himself: it posts against his current account (2300), nothing else.
+  if (attestation && meta?.fundingType !== 'owner_current') issues.push('مصروف بإقرار المدير دفعه هادي: التمويل من حسابه الجاري (2300).');
   if (meta?.fundingType === 'partner' && !fundingPartnerOf(row)) issues.push('الشريك الذي دفع غير محدد.');
   if (meta?.fundingType === 'custody' && !(typeof meta.custodian === 'string' && meta.custodian.trim())) issues.push('صاحب العهدة غير محدد.');
   if ((meta?.fundingType === 'vendor_liability') !== (row.payment_status === 'unpaid')) issues.push('حالة السداد لا تطابق الذمة أو التمويل.');

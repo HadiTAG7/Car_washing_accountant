@@ -4,6 +4,7 @@ import { callFinanceApi } from '../lib/financeApi';
 import { EXPENSE_KIND_LABELS, hasPaymentConflict, suggestedPaymentMethod, WORKBENCH_STAGES } from '../lib/financeWorkbenchView';
 import FinanceInvoiceLines, { InvoiceLinesRead } from './FinanceInvoiceLines';
 import FinanceDocumentStatus from './FinanceDocumentStatus';
+import FinanceAttestation from './FinanceAttestation';
 
 const fields = { variable: ['expense_name', 'total_variable_cost', 'logged_date'], monthly: ['expense_name', 'total_monthly_cost', 'logged_date'],
   annual: ['description', 'amount', 'spent_date', 'annual_expense_id'], startup: ['description', 'amount', 'spent_date', 'startup_cost_id'] };
@@ -108,6 +109,7 @@ export default function FinanceExpenseForm({ kind, detail, requestId, options, o
     </dl>}
     {detail?.postingDate && !detail.protectedSource && <p className="fw-warning" role="note" aria-label="تاريخ القيد">
       <AlertTriangle size={18} /><span>تاريخ القيد {detail.postingDate} — شهر المستند مقفل، ويُقيَّد بآخر يوم في فترة التأسيس والشهر يبقى مقفلًا.</span></p>}
+    {detail && <FinanceAttestation kind={kind} detail={detail} dirty={dirty} busy={busy} onDone={onSaved} onMessage={onMessage} />}
     {conflict && <div className="fw-payment-warning" role="note"><AlertTriangle size={18} /><span>طريقة دفع متناقضة: المستند يشير إلى تحويل أو مدى أو بنكي، لكن المسجل نقد. التنبيه لا يغيّر البيانات.</span></div>}
     {detail?.workflowNote && <p className="fw-warning">{detail.workflowNote}</p>}
     {detail?.postingHistory && (detail.postingHistory.active.length > 0 || detail.postingHistory.reversed.length > 0) &&

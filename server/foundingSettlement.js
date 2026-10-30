@@ -69,6 +69,8 @@ const requestSchema = z.discriminatedUnion('action', [
     proofUrl: z.string().url().refine(v => v.startsWith('https://') && !/\/api\/mcp\//i.test(v)).nullable().default(null),
     note: text(500).nullable().default(null), ...confirm }).strict(),
   z.object({ action: z.literal('attestBalance'), hash, note: text(1000).pipe(z.string().min(3)), ...confirm }).strict(),
+  z.object({ action: z.literal('attestDocument'), kind: z.enum(['variable', 'monthly', 'annual', 'startup']), sourceId: z.string().regex(/^[\p{L}\p{N}_.:-]{1,160}$/u),
+    sourceHash: hash, reason: text(500).pipe(z.string().min(5)), ...confirm }).strict(),
   z.object({ action: z.literal('proposeAdjustment'), amount: z.number().finite().positive().max(1e9).refine(v => Math.round(v * 100) === v * 100, 'المبلغ بالهللة.'),
     direction: z.enum(ADJUSTMENT_DIRECTIONS), reason: text(500).pipe(z.string().min(5)), ...confirm }).strict(),
   z.object({ action: z.literal('removeAdjustment'), id: z.string().regex(/^adj_[a-f0-9]{16}$/), ...confirm }).strict(),
@@ -492,6 +494,35 @@ async function attestExpense(db, auth, r, workbench) {
   return { saved: true, kind: r.kind, sourceId: saved.sourceId, recordDate, auditId: saved.auditId || null };
 }
 
+/**
+ * «بلا إيصال، بإقرار المدير» على مستند فترة تأسيس قائم لم يُرحّل: يسقط شرط
+ * رابط الإيصال (والمورد)، ويصير غير ضريبي بلا ضريبة مدخلات، ودفعه هادي من
+ * حسابه الجاري (2300)، بسبب مكتوب وباسم من أقرّ ووقته (يختمهما الخادم). يُحفظ
+ * عبر صندوق العمل المالي (معاينة ثم حفظ بضوابطه) ويعود بانتظار الاعتماد
+ * والترحيل العاديين. لا يُحذف المستند ولا يُنشأ غيره.
+ */
+async function attestDocument(db, auth, r, workbench) {
+  const detail = await workbench(db, auth, { action: 'read', kind: r.kind, sourceId: r.sourceId });
+  if (detail.sourceHash !== r.sourceHash) fail('تغيّر المستند بعد عرضه؛ أعد القراءة.');
+  if (detail.founding?.attestation) fail('المستند مسجّل بإقرار المدير.', 'already-exists');
+  if (detail.protectedSource) fail('المستند مرحّل أو له قفل؛ لا يتغيّر.');
+  if (!detail.founding?.attestable) fail('إقرار المدير لمستندات فترة التأسيس غير المرحّلة فقط، وغير المربوطة بسطر كشف حساب.');
+  const row = detail.row, meta = row.finance_metadata || {}, spec = FINANCE_KINDS[r.kind], name = await actorName(db, auth);
+  const docDay = documentDay(row[spec.date]), cutoff = detail.founding.cutoffDate;
+  const paidDay = documentDay(row.paid_date), reason = r.reason.trim();
+  const managerAttestation = { by: auth.uid, byName: name, atIso: new Date().toISOString(), approxDate: docDay, note: reason };
+  const patch = { isTaxInvoice: false, vatDeductible: false, vatAmount: null, vatRate: null, priceMode: 'inclusive',
+    fundingType: 'owner_current', paymentMethod: 'founding_personal', paymentStatus: 'paid', paidDate: paidDay && paidDay < cutoff ? paidDay : docDay,
+    fundingPartnerId: null, custodian: null, fundingReference: `إقرار المدير — ${name}`,
+    purpose: typeof meta.purpose === 'string' && meta.purpose.trim() ? meta.purpose : 'مصروف تأسيس بإقرار المدير',
+    evidenceRefs: [...new Set([...(Array.isArray(meta.evidenceRefs) ? meta.evidenceRefs : []), 'founding:attestation'])].slice(-20), managerAttestation };
+  const why = `بلا إيصال، بإقرار المدير: ${reason}`;
+  const preview = await workbench(db, auth, { action: 'preview', kind: r.kind, sourceId: r.sourceId, sourceHash: r.sourceHash, patch });
+  const saved = await workbench(db, auth, { action: 'save', kind: r.kind, sourceId: r.sourceId, sourceHash: r.sourceHash, patch,
+    previewHash: preview.previewHash, reason: why, confirm: true });
+  return { saved: true, kind: r.kind, sourceId: r.sourceId, sourceHash: saved.sourceHash, auditId: saved.auditId || null };
+}
+
 /** إقرار المدير على رصيد 2300 حسب المستندات، بملاحظة، باسمه ووقته — بلا قيد. */
 async function attestBalance(db, auth, r) {
   return db.runTransaction(async tx => {
@@ -838,6 +869,7 @@ export async function foundingSettlement(db, auth, input, { workbench }) {
   if (r.action === 'decidePayments') return decidePayments(db, auth, r);
   if (r.action === 'attestExpense') return attestExpense(db, auth, r, workbench);
   if (r.action === 'attestBalance') return attestBalance(db, auth, r);
+  if (r.action === 'attestDocument') return attestDocument(db, auth, r, workbench);
   if (r.action === 'proposeAdjustment') return proposeAdjustment(db, auth, r);
   if (r.action === 'removeAdjustment') return removeAdjustment(db, auth, r);
   if (r.action === 'proposeTransfer') return proposeTransfer(db, auth, r);

@@ -3,8 +3,8 @@ import pg from 'pg';
 import { createStore } from '../db/pgstore/index.js';
 import { SCHEMA } from '../../src/lib/data/schema/registry.js';
 import { financeWorkbench } from '../financeWorkbench.js';
-import { statementLineId } from '../foundingSettlement.js';
-import { foundingSeed } from './foundingFixture.js';
+import { statementLineId, foundingEntryId } from '../foundingSettlement.js';
+import { foundingSeed, foundingCorrectionsSeed } from './foundingFixture.js';
 import { FieldValue } from 'firebase-admin/firestore';
 import { reverseEntry } from '../../functions/src/ledger.js';
 
@@ -269,5 +269,36 @@ describe.skipIf(!enabled)('founding settlement on Postgres with the production s
     expect(await ledger()).toEqual(before);
     expect((await pool.query("select count(*)::int as n from public.audit_logs where action = 'finance-complete-posted'")).rows[0].n).toBe(1);
     expect((await wb({ action: 'read', sourceId })).workflowDimensions.approval.label).toBe('اعتُمد قبل الترحيل — استُكملت بعده حقول غير مالية');
+  }, 120000);
+
+  it('cancels a posted duplicate and settles a temporary item on 1300 on Postgres, posted only on approval, no original entry changed', async () => {
+    await call({ action: 'ensureAccounts', confirm: true });
+    const batch = db.batch();
+    for (const [path, value] of Object.entries(foundingCorrectionsSeed())) batch.set(db.doc(path), value);
+    await batch.commit();
+    const ledger = async () => (await pool.query(`select e.id, e.status, e.entry_date, l.account_id, l.debit, l.credit from public.journal_entries e
+      join public.journal_entry_lines l on l.entry_id = e.id order by e.id, l.line_no`)).rows;
+    const before = await ledger();
+    await call({ action: 'proposeDuplicate', key: 'startup:se2', originalKey: 'startup:se1', reason: 'نفس الفاتورة سُجّلت مرتين', confirm: true });
+    await call({ action: 'proposeCustodySettlement', advanceId: 't1', accountId: '5300', reason: 'صُرفت على المشروع ولا تُسترد', confirm: true });
+    await call({ action: 'decide', sourceKey: 'startup:se2', vatReviewed: true, confirm: true });
+    expect(await ledger()).toEqual(before);
+    let read = await call({ action: 'read' });
+    const chosen = read.plan.entries.filter(e => ['duplicate', 'custody_settlement'].includes(e.type));
+    expect(chosen.map(e => [e.key, e.status])).toEqual([['duplicate:startup:se2', 'proposed'], ['custody_settlement:t1', 'proposed']]);
+    await call({ action: 'postEntries', reason: 'موافقة هادي', confirm: true, entries: chosen.map(e => ({ key: e.key, hash: e.hash })) });
+    const after = await ledger();
+    expect(after.filter(l => before.some(b => b.id === l.id))).toEqual(before);
+    const added = id => after.filter(l => l.id === id).map(l => [l.entry_date, l.account_id, Number(l.debit), Number(l.credit)]);
+    expect(added(foundingEntryId('duplicate:startup:se2'))).toEqual([['2026-09-30', '2300', 1000, 0], ['2026-09-30', '1200', 0, 130.43], ['2026-09-30', '1500', 0, 869.57]]);
+    expect(added(foundingEntryId('custody_settlement:t1'))).toEqual([['2026-09-30', '5300', 300, 0], ['2026-09-30', '1300', 0, 300]]);
+    const t1 = (await db.doc('temporary_expenses/t1').get()).data();
+    expect(t1).toMatchObject({ status: 'recovered', recovered_amount: 300, recovered_date: '2026-09-30', recovery_method: 'expense_document',
+      document_recoveries: [{ kind: 'founding', sourceId: 'custody_settlement:t1', entryId: foundingEntryId('custody_settlement:t1'), amount: 300 }] });
+    read = await call({ action: 'read' });
+    expect(read.plan.cancelled.map(d => [d.key, d.originalTitle])).toEqual([['startup:se2', 'تجهيز المغسلة']]);
+    expect(read.plan.rows.some(d => d.key === 'startup:se2')).toBe(false);
+    const detail = await financeWorkbench(db, { uid: admin }, { action: 'read', kind: 'startup', sourceId: 'se2' });
+    expect(detail.workflowStage).toBe('cancelled');
   }, 120000);
 });

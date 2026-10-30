@@ -252,7 +252,9 @@ async function workflowDocument(db, tx, kind, sourceId, row, currentState = null
   // «بلا إيصال، بإقرار المدير»: offered on a founding-period record not yet posted; the founding endpoint re-checks on save.
   const founding = { cutoffDate, attestation: attestation ? { byName: attestation.byName || null, atIso: attestation.atIso, approxDate: attestation.approxDate, note: attestation.note || null } : null,
     attestable: Boolean(day && day < cutoffDate && !state.protectedSource && !state.closed && !attestation && !statementLineRefOf(row)) };
-  const workflowStage = posted ? correctedNeedsReview || approvalContextChanged ? 'posted_review' : paymentProven ? 'complete' : 'posted_unproven'
+  // «ملغى — مكرر»: a posted cancellation from the founding settlement reverses all its live effects.
+  const cancelled = await duplicateCancellationOf(db, tx, kind, sourceId);
+  const workflowStage = cancelled ? 'cancelled' : posted ? correctedNeedsReview || approvalContextChanged ? 'posted_review' : paymentProven ? 'complete' : 'posted_unproven'
     : safeUnposted ? detail.approved ? 'approved' : 'ready' : 'incomplete';
   const result = { ...detail, issues: [...openIssues, ...additionalIssues, ...postingHistory.issues], resolvedByRule, workflowStage, postingHistory,
     approvalReady: safeUnposted && !detail.approved && !detail.issues.length,
@@ -260,10 +262,11 @@ async function workflowDocument(db, tx, kind, sourceId, row, currentState = null
     paymentProven, paymentProof, paymentRule: foundingRule?.rule || null, paymentRuleEntry: foundingRule?.entryNumber ?? null,
     paymentConflict: hasPaymentConflict(row), founding,
     // «استكمال مستند مرحّل»: offered on a record with a live entry; an approval given before it stays shown as such.
-    completion: { available: posted, history: completionHistoryOf(row) },
+    completion: { available: posted && !cancelled, history: completionHistoryOf(row) }, cancelled,
     approvalBeforeCompletion: posted && !detail.approved && approvedBeforeCompletion(row, state.review),
     approvalContextChanged,
-    workflowNote: posted && approvalContextChanged ? state.sourceContext.allocationGrant
+    workflowNote: cancelled ? `ملغى — مكرر لـ«${cancelled.originalTitle || cancelled.originalKey || 'الأصلي'}»: قيد الإلغاء ${cancelled.entryNumber != null ? `#${cancelled.entryNumber} ` : ''}عكس كل أثره، ولا يدخل ملخص فترة التأسيس ولا حساب 2300.`
+      : posted && approvalContextChanged ? state.sourceContext.allocationGrant
       ? 'تغيّرت نسخة أحد جزأي المستند بعد الاعتماد؛ القيد محفوظ، والاعتماد الحالي يحتاج مراجعة.'
       : 'تغيّر سياق مراجعة المستند بعد الاعتماد؛ القيد محفوظ، والاعتماد الحالي يحتاج مراجعة.'
       : reversed && posted ? 'له قيود مرحلة سارية بعد عكس الأصل؛ لا يعاد ترحيله. اكتمال الدليل والسداد منفصل عن وجود القيود.'
@@ -275,6 +278,15 @@ async function workflowDocument(db, tx, kind, sourceId, row, currentState = null
 const creditsHadi = entry => (entry?.lines || []).some(line => String(line.accountId) === ACC.HADI_CURRENT && Number(line.credit) > 0);
 const liveEntry = entry => entry?.status === 'posted' && !entry.reversalOf && !entry.reversedBy;
 /** Which founding rule proves the payment, and its entry: the record's own entry on 2300, or the founding «تصحيح جهة دفع» entry moving it there. */
+/** The posted «إلغاء مستند مكرر» entry of this record, and the original it duplicates. */
+async function duplicateCancellationOf(db, tx, kind, sourceId) {
+  const entry = await tx.get(db.collection('journal_entries').doc(foundingEntryId(`duplicate:${kind}:${sourceId}`)));
+  if (!entry.exists || !liveEntry(entry.data()) || entry.data().foundingEntry?.sourceKey !== `${kind}:${sourceId}`) return null;
+  const originalKey = entry.data().foundingEntry.originalKey || null, [originalKind, ...rest] = String(originalKey || '').split(':');
+  const original = FINANCE_KINDS[originalKind] && rest.length ? await tx.get(db.collection(FINANCE_KINDS[originalKind].collection).doc(rest.join(':'))) : null;
+  return { originalKey, originalTitle: original?.exists ? original.data()[FINANCE_KINDS[originalKind].title] || null : null,
+    entryNumber: entry.data().entryNumber ?? null, entryId: entry.id };
+}
 async function foundingPaymentRule(db, tx, kind, sourceId, row, journals) {
   const own = row.payment_method === 'founding_personal' ? journals.find(j => liveEntry(j.data()) && creditsHadi(j.data())) : null;
   if (own) return { rule: 'own_entry', entryNumber: own.data().entryNumber ?? null };

@@ -25,6 +25,7 @@ export function temporaryClassification(row) {
     bikerId, status: row.status, recovered, outstanding: Math.round((amount - recovered) * 100) / 100,
     // Settled by expense documents paid from this custody (workbench «من عهدة شخص» / «دفع موظف»).
     documentRecovered: Math.max(0, Number(row.documentRecovered) || 0), recoveryMethod: row.recoveryMethod ?? row.recovery_method ?? null,
+    settledByEntry: Boolean(row.settledByEntry),
     assignmentMonth: row.assignmentMonth || row.assignment_month || null };
 }
 export const temporaryProposals = rows => rows.map(temporaryClassification);

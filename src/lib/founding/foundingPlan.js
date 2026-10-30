@@ -176,14 +176,31 @@ function planCore(input) {
   // period's last day (the month stays closed) — unless that day's month is closed too.
   const endClosed = closed.has(foundingEnd.slice(0, 7));
   const blockedDoc = doc => [doc.date, doc.paidDate].some(d => d && closed.has(d.slice(0, 7)) && (!inFounding(doc.date) || d >= cutoff || endClosed));
+  // «إلغاء مستند مكرر»: proposed, it holds the document's own corrections; posted, the document is «ملغى — مكرر».
+  const duplicates = new Map((settings.duplicateCancellations || []).map(p => [p.key, p]));
+  const docByKey = new Map((input.docs || []).map(d => [d.key, d]));
+  const cancelledRows = [];
 
   // ── المستندات ──
   for (const doc of input.docs || []) {
+    const gone = posted.get(`duplicate:${doc.key}`);
+    if (gone) {
+      const originalKey = gone.originalKey || duplicates.get(doc.key)?.originalKey || null, original = docByKey.get(originalKey);
+      cancelledRows.push({ key: doc.key, kind: doc.kind, sourceId: doc.sourceId, title: doc.title, amount: doc.amount, date: doc.date,
+        founding: inFounding(doc.date), originalKey, originalTitle: original?.title || duplicates.get(doc.key)?.originalTitle || null, entryNumber: gone.entryNumber ?? null });
+      // Out of the groups, the summary and Hadi's balance; a correction it had stays listed as posted.
+      const correction = posted.get(`doc:${doc.key}`);
+      if (correction) entries.push({ key: `doc:${doc.key}`, type: 'document', sourceKey: doc.key, title: doc.title, amount: doc.amount, date: dateFor(doc.date),
+        originalDate: doc.date, status: 'posted', description: `تصحيح جهة دفع «${doc.title}» (${doc.date || 'بلا تاريخ'}) — ألغي المستند مكررًا`, ...correction });
+      continue;
+    }
     const pay = payerOf(doc, links, decisions);
     const decision = decisions[doc.key] || null;
     const vatHeld = Boolean(doc.vatQuarter && FILED_VAT_QUARTERS.includes(doc.vatQuarter) && !decision?.vatReviewed);
+    const proposedDuplicate = duplicates.get(doc.key);
     const row = { ...doc, payer: pay.payer, payerSource: pay.source, statementLine: pay.line || null, partnerId: pay.partnerId || null,
-      custodian: pay.custodian || null, vatHeld, decision, attested: isAttested(decision), founding: inFounding(doc.date) };
+      custodian: pay.custodian || null, vatHeld, decision, attested: isAttested(decision), founding: inFounding(doc.date),
+      duplicate: proposedDuplicate ? { originalKey: proposedDuplicate.originalKey, originalTitle: docByKey.get(proposedDuplicate.originalKey)?.title || proposedDuplicate.originalTitle || null } : null };
     rows.push(row);
     // «مصروف تأسيس بإقرار المدير» له قائمته؛ لا يدخل مجموعات الإثبات.
     if (row.founding && !doc.attestation) {
@@ -213,7 +230,8 @@ function planCore(input) {
       lines.push({ accountId: account, debit: riyal(amount), credit: 0, description: `${text} — ${doc.title}` });
       lines.push({ accountId: target, debit: 0, credit: riyal(amount), description: payerLineText(pay, partnerName(pay.partnerId)) });
     }
-    if (!lines.length && !posted.has(key)) continue;
+    // A document proposed as a duplicate gets no new correction: its cancellation reverses what is live.
+    if ((!lines.length || proposedDuplicate) && !posted.has(key)) continue;
     entries.push({ key, type: 'document', sourceKey: doc.key, title: doc.title, amount: doc.amount, date, originalDate: doc.date,
       payer: pay.payer, payerSource: pay.source, lines, status: status(key, date, vatHeld),
       description: `تصحيح جهة دفع «${doc.title}» (${doc.date || 'بلا تاريخ'}) — ${label}`, ...(posted.get(key) || {}) });
@@ -312,6 +330,21 @@ function planCore(input) {
     off: Boolean(settings.noPersonalStatement) });
   if (comparison.entry) entries.push(comparison.entry);
   for (const a of settings.adjustments || []) entries.push(adjustmentEntry(a, { cutoff, foundingEnd, posted, closed }));
+  for (const p of duplicates.values()) {
+    const e = duplicateEntry(p, { doc: docByKey.get(p.key), original: docByKey.get(p.originalKey), effects: input.duplicateEffects?.[p.key] || [],
+      dateFor, status, held: !decisions[p.key]?.vatReviewed, posted });
+    if (e) entries.push(e);
+  }
+  const advances = new Map((input.advances || []).map(a => [a.id, a]));
+  const settling = new Set((settings.custodySettlements || []).map(p => p.advanceId));
+  for (const p of settings.custodySettlements || []) {
+    const e = custodySettlementEntry(p, { advance: advances.get(p.advanceId), dateFor, status, posted });
+    if (e) entries.push(e);
+  }
+  // What «تسوية مصروف مؤقت» can still pick: posted on 1300, something left on it, not proposed already.
+  const custodyItems = [...advances.values()].filter(a => a.outstanding > 0 && !settling.has(a.id))
+    .map(a => ({ ...a, outstanding: riyal(a.outstanding), postingDate: dateFor(a.spentDate) }))
+    .sort((a, b) => String(a.spentDate).localeCompare(String(b.spentDate)) || String(a.id).localeCompare(String(b.id)));
   const settlement = settlementFor({ settings, foundingEnd, book: input.book || {}, entries, posted, closed });
   if (settlement.entry) entries.push(settlement.entry);
   const vatTouching = rows.filter(d => d.vatQuarter && FILED_VAT_QUARTERS.includes(d.vatQuarter))
@@ -330,8 +363,8 @@ function planCore(input) {
     .sort((a, b) => String(a.approxDate).localeCompare(String(b.approxDate)));
   const hadiBalance = hadiBalanceOf({ rows, payments: paymentRows, entries, cutoff, saved: settings.hadiAttestation || null });
   return { settings: { ...settings, foundingEnd }, groups, totals, rows, entries, updates, settlement, comparison, vatTouching, postCutoff, exceptions,
-    attestedExpenses, hadiBalance, receipts,
-    summary: foundingSummary({ rows, payments: paymentRows, entries, hadiBalance, attestedExpenses, settings: { ...settings, foundingEnd } }),
+    attestedExpenses, hadiBalance, receipts, cancelled: cancelledRows, custodyItems,
+    summary: foundingSummary({ rows, payments: paymentRows, entries, hadiBalance, attestedExpenses, cancelled: cancelledRows, settings: { ...settings, foundingEnd } }),
     hadi: hadiStatement({ hadiLedger: input.hadiLedger || [], rows, payments: paymentRows, entries }) };
 }
 
@@ -376,8 +409,47 @@ function adjustmentEntry(a, { cutoff, foundingEnd, posted, closed }) {
     description: `تسوية على 3200 بقرار هادي (قبل ${cutoff}) — ${a.reason}`, ...(posted.get(key) || {}) };
 }
 
+const ROLE_LABEL = { own: 'قيد المستند', payment_correction: '«تصحيح جهة دفع»', cash_bank_share: 'حصته من تصحيح الصندوق والبنك' };
+/**
+ * «إلغاء مستند مكرر»: قيد واحد يعكس كل أثر المستند الساري — قيوده و«تصحيح جهة دفع» وحصته من تصحيحات
+ * الصندوق والبنك — صافيًا لكل حساب. ضريبة مدخلات في إقرار مقدّم تنتظر «راجعته» مثل بقية القيود.
+ */
+function duplicateEntry(p, { doc, original, effects, dateFor, status, held, posted }) {
+  const key = `duplicate:${p.key}`, done = posted.get(key), title = doc?.title || p.title || p.key, originalTitle = original?.title || p.originalTitle || p.originalKey;
+  const net = new Map(), refs = new Map();
+  for (const effect of effects) for (const l of effect.lines) {
+    net.set(l.accountId, (net.get(l.accountId) || 0) + l.credit - l.debit);
+    if (effect.entryNumber != null) refs.set(l.accountId, new Set([...(refs.get(l.accountId) || []), effect.entryNumber]));
+  }
+  const text = a => `إلغاء «${title}» مكررًا — عكس ${[...(refs.get(a) || [])].sort((x, y) => x - y).map(n => `#${n}`).join('، ') || 'أثره'}`;
+  const lines = [...net].filter(([, h]) => h !== 0).sort(([a, x], [b, y]) => (y > 0) - (x > 0) || a.localeCompare(b))
+    .map(([accountId, h]) => h > 0 ? { accountId, debit: riyal(h), credit: 0, description: text(accountId) } : { accountId, debit: 0, credit: riyal(-h), description: text(accountId) });
+  if (!lines.length && !done) return null;
+  const date = dateFor(doc?.date), vat = Boolean(doc?.vatQuarter && FILED_VAT_QUARTERS.includes(doc.vatQuarter)) && lines.some(l => l.accountId === '1200');
+  const sources = effects.map(e => ({ entryNumber: e.entryNumber, role: e.role, label: ROLE_LABEL[e.role] }));
+  return { key, type: 'duplicate', sourceKey: p.key, originalKey: p.originalKey, id: p.id, title: `إلغاء مستند مكرر: ${title}`, originalTitle,
+    amount: doc?.amount ?? null, date, originalDate: doc?.date || null, lines, sources, status: status(key, date, vat && held),
+    reason: p.reason, proposedByName: p.byName || null, proposedAtIso: p.atIso || null,
+    description: `إلغاء «${title}» (${doc?.date || 'بلا تاريخ'}) — مكرر لـ«${originalTitle}» — ${p.reason}`, ...(done || {}) };
+}
+/** «تسوية مصروف مؤقت»: مدين حساب المصروف، دائن 1300 بالباقي على البند؛ قبل القطع بآخر يوم في فترة التأسيس. */
+function custodySettlementEntry(p, { advance, dateFor, status, posted }) {
+  const key = `custody_settlement:${p.advanceId}`, done = posted.get(key);
+  // Settled or recovered another way meanwhile: nothing left to propose.
+  if (!done && !(advance?.outstanding > 0)) return null;
+  const title = advance?.title || p.title || p.advanceId, holder = advance?.holder || p.holder || null;
+  // Posted: the amount it posted (the item is settled now, nothing is left on it).
+  const amount = done ? riyal((done.lines || []).reduce((n, l) => n + halala(l.debit), 0)) : riyal(advance?.outstanding || 0), date = dateFor(advance?.spentDate);
+  return { key, type: 'custody_settlement', sourceKey: key, id: p.id, advanceId: p.advanceId, accountId: p.accountId, title: `تسوية مصروف مؤقت: ${title}`,
+    holder, amount, date, originalDate: advance?.spentDate || null, entryNumberOfItem: advance?.entryNumber ?? null,
+    lines: [{ accountId: p.accountId, debit: amount, credit: 0, description: `تسوية مصروف مؤقت — ${title}` },
+      { accountId: ACCOUNTS.ADVANCES, debit: 0, credit: amount, description: holder ? `${title} — عهدة ${holder}` : title }],
+    status: status(key, date, false), reason: p.reason, proposedByName: p.byName || null, proposedAtIso: p.atIso || null,
+    description: `تسوية مصروف مؤقت «${title}» (${advance?.spentDate || 'بلا تاريخ'}) على ${p.accountId} — ${p.reason}`, ...(done || {}) };
+}
+
 // ── ملخص فترة التأسيس للشركاء ───────────────────────────────────────────
-function foundingSummary({ rows, payments, entries, hadiBalance, attestedExpenses, settings }) {
+function foundingSummary({ rows, payments, entries, hadiBalance, attestedExpenses, cancelled = [], settings }) {
   const partners = new Map();
   for (const p of payments.filter(x => x.founding)) {
     const t = partners.get(p.partnerId) || { partnerId: p.partnerId, name: p.partnerName, count: 0, total: 0, hadi: 0, company: 0, undecided: 0 };
@@ -407,6 +479,8 @@ function foundingSummary({ rows, payments, entries, hadiBalance, attestedExpense
     documented: { count: documented.length, amount: riyal(HALALA_SUM(documented)) },
     attested: { count: founding.length - documented.length, amount: riyal(HALALA_SUM(founding.filter(d => d.attestation))) },
     attestedRows: attestedExpenses.filter(e => e.date && e.date < settings.cutoffDate),
+    // Cancelled as duplicates: listed apart, counted nowhere above.
+    cancelled: (() => { const list = cancelled.filter(d => d.founding); return { count: list.length, amount: riyal(HALALA_SUM(list)), rows: list }; })(),
     transfers: hadiBalance.transfers, balance: hadiBalance, settlements,
   };
 }
@@ -421,7 +495,7 @@ const runnable = u => !u.held && !u.blocked;
  * رسوم البنك نفسه تبقى على البنك ولا تدخل أيًّا منهما.
  */
 export function ruleGroupOf(d) {
-  if (!d.founding || d.attestation) return null;
+  if (!d.founding || d.attestation || d.duplicate) return null;
   if (!d.payer && ruleGaps(d).length) return 'missing';
   if (d.payerSource === 'recorded' && ['company_bank', 'cash'].includes(d.payer)) return 'recorded';
   return null;
@@ -566,7 +640,8 @@ const KIND_LABEL = {
   founding_document: 'تصحيح: مصروف دفعه هادي', founding_payment: 'تصحيح: دفعة شريك استلمها هادي',
   founding_transfer: 'تحويل بين هادي وحساب الشركة', founding_settlement: 'تسوية فترة التأسيس',
   founding_hadi_statement: 'تسوية الحساب الجاري على الكشف', founding_adjustment: 'تسوية على 3200 بقرارك',
-  founding_receipt: 'دفعة شريك استلمها هادي',
+  founding_receipt: 'دفعة شريك استلمها هادي', founding_duplicate: 'إلغاء مستند مكرر',
+  founding_custody_settlement: 'تسوية مصروف مؤقت',
 };
 export function movementLabel(sourceType, sourceKind) {
   return KIND_LABEL[sourceKind] || KIND_LABEL[sourceType] || 'حركة أخرى';

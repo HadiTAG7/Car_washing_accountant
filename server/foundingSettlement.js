@@ -13,7 +13,8 @@
 import { z } from 'zod';
 import { FieldValue } from 'firebase-admin/firestore';
 import { callerRole } from '../functions/src/handlers.js';
-import { FINANCE_KINDS, financeHash, financeProblems, FinanceReviewError, statementLineRefOf, managerAttestationOf } from '../functions/src/financeReview.js';
+import { FINANCE_KINDS, financeHash, financeProblems, FinanceReviewError, statementLineRefOf, managerAttestationOf, journalMatchesFinanceSource } from '../functions/src/financeReview.js';
+import { outstandingCustody, applyDocumentRecovery } from '../functions/src/custodyRecovery.js';
 import { normalizeEntry, normalizeLines, validateEntry, journalCounterUpdate, isRealDate, postingLockId } from '../functions/src/invariants.js';
 import { legacyLockIdFor } from '../functions/src/posting.js';
 import { postedLines } from '../src/lib/accounting/reports.js';
@@ -79,6 +80,11 @@ const requestSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('removeTransfer'), id: z.string().regex(/^tr_[a-f0-9]{16}$/), ...confirm }).strict(),
   z.object({ action: z.literal('proposeReceipts'), keys: z.array(key).min(1).max(200), reason: text(500).pipe(z.string().min(5)), ...confirm }).strict(),
   z.object({ action: z.literal('removeReceipt'), key, ...confirm }).strict(),
+  z.object({ action: z.literal('proposeDuplicate'), key, originalKey: key, reason: text(500).pipe(z.string().min(5)), ...confirm }).strict(),
+  z.object({ action: z.literal('removeDuplicate'), id: z.string().regex(/^dup_[a-f0-9]{16}$/), ...confirm }).strict(),
+  z.object({ action: z.literal('proposeCustodySettlement'), advanceId: z.string().regex(/^[\p{L}\p{N}_.:-]{1,160}$/u), accountId: z.string().regex(/^[0-9A-Za-z-]{2,40}$/),
+    reason: text(500).pipe(z.string().min(5)), ...confirm }).strict(),
+  z.object({ action: z.literal('removeCustodySettlement'), id: z.string().regex(/^cs_[a-f0-9]{16}$/), ...confirm }).strict(),
   z.object({ action: z.literal('statementSuggest'), account: z.enum(['personal', 'company']), rows: z.array(statementRow).min(1).max(2000) }).strict(),
   z.object({ action: z.literal('statementApply'), account: z.enum(['personal', 'company']), fileName: text(200), fileHash: z.string().max(128),
     rows: z.array(applyRow).min(1).max(500), ...confirm }).strict(),
@@ -106,7 +112,7 @@ const entryHash = e => financeHash({ key: e.key, date: e.date, description: e.de
 const COLLECTIONS = [...new Set([...Object.values(FINANCE_KINDS).map(s => s.collection), 'partner_payments', 'partners', 'journal_entries',
   'journal_lines', 'posting_locks', 'bank_statement_lines', 'founding_review', 'founding_decisions', 'chart_of_accounts',
   'accounting_periods', 'temporary_expenses', 'variable_expense_categories', 'monthly_expense_categories', 'annual_expenses', 'startup_costs',
-  'categories', 'annual_expense_categories'])];
+  'categories', 'annual_expense_categories', 'bikers'])];
 
 async function loadTables(db, tx = null) {
   const snaps = await Promise.all(COLLECTIONS.map(name => tx ? tx.get(db.collection(name)) : db.collection(name).get()));
@@ -165,6 +171,39 @@ export function ledgerEffects(entries) {
   return effects;
 }
 
+const liveEntry = e => e?.status === 'posted' && !e.reversalOf && !e.reversedBy;
+/**
+ * «إلغاء مستند مكرر»: what a document still moves in the books, entry by entry — its own live
+ * entries, its founding «تصحيح جهة دفع», and its share of the cash/bank corrections that name it.
+ * Lines in halala; reversing all of them leaves the document with no effect at all.
+ */
+export function documentLiveEffects(entries, kind, sourceId, legacyLines = new Map()) {
+  const linesOf = e => (e.lines?.length ? e.lines : legacyLines.get(e.id) || [])
+    .map(l => ({ accountId: String(l.accountId), debit: halala(l.debit), credit: halala(l.credit) }));
+  const effects = [];
+  for (const e of entries) {
+    if (!liveEntry(e)) continue;
+    if (e.sourceId === sourceId && journalMatchesFinanceSource(kind, e) && !e.foundingEntry) {
+      effects.push({ entryId: e.id, entryNumber: e.entryNumber ?? null, role: 'own', lines: linesOf(e), custody: Boolean(e.custodyRecovery) });
+      continue;
+    }
+    if (e.foundingEntry?.key === `doc:${kind}:${sourceId}`) {
+      effects.push({ entryId: e.id, entryNumber: e.entryNumber ?? null, role: 'payment_correction', lines: linesOf(e) });
+      continue;
+    }
+    const sources = e.cashBankCorrection?.sources || e.cashResidualCorrection?.sources;
+    const accounts = new Set(linesOf(e).map(l => l.accountId));
+    if (!Array.isArray(sources) || accounts.size !== 2 || !accounts.has(ACC.CASH) || !accounts.has(ACC.BANK)) continue;
+    const share = sources.find(x => (x.source || (x.sourceType === 'expense' && x.sourceId ? `expense:${x.sourceId}` : null)) === `expense:${sourceId}`);
+    if (!share || !Number.isSafeInteger(share.netCashCreditHalala) || share.netCashCreditHalala <= 0) continue;
+    const cashDebit = linesOf(e).some(l => l.accountId === ACC.CASH && l.debit > 0), h = share.netCashCreditHalala;
+    effects.push({ entryId: e.id, entryNumber: e.entryNumber ?? null, role: 'cash_bank_share', lines: cashDebit
+      ? [{ accountId: ACC.CASH, debit: h, credit: 0 }, { accountId: ACC.BANK, debit: 0, credit: h }]
+      : [{ accountId: ACC.BANK, debit: h, credit: 0 }, { accountId: ACC.CASH, debit: 0, credit: h }] });
+  }
+  return effects.sort((a, b) => (a.entryNumber ?? Infinity) - (b.entryNumber ?? Infinity));
+}
+
 /** اسم التصنيف كما يراه هادي: تصنيف المصروف، أو تصنيف البند الأب (أو اسمه). */
 function categoryLabels(t) {
   const label = x => x?.label || x?.name || null;
@@ -198,7 +237,9 @@ export function foundingInputs(t) {
     lastRule: review.lastRule || null, noPersonalStatement: review.noPersonalStatement === true, hadiAttestation: review.hadiAttestation || null,
     adjustments: Array.isArray(review.adjustments) ? review.adjustments : [],
     manualTransfers: Array.isArray(review.manualTransfers) ? review.manualTransfers : [],
-    receiptProposals: Array.isArray(review.receiptProposals) ? review.receiptProposals : [] } : {}) };
+    receiptProposals: Array.isArray(review.receiptProposals) ? review.receiptProposals : [],
+    duplicateCancellations: Array.isArray(review.duplicateCancellations) ? review.duplicateCancellations : [],
+    custodySettlements: Array.isArray(review.custodySettlements) ? review.custodySettlements : [] } : {}) };
   const categoryOf = categoryLabels(t);
   const decisions = Object.fromEntries(t.founding_decisions.map(d => [d.sourceKey, d]));
   const partners = t.partners.map(p => ({ id: p.id, name: p.partner_name || 'شريك' }));
@@ -231,6 +272,7 @@ export function foundingInputs(t) {
   });
   const posted = new Map(entries.filter(e => e.foundingEntry?.key && e.status === 'posted')
     .map(e => [e.foundingEntry.key, { entryId: e.id, entryNumber: e.entryNumber, postedReason: e.foundingEntry.reason || null, postedByName: e.foundingEntry.approvedByName || null,
+      ...(e.foundingEntry.originalKey ? { originalKey: e.foundingEntry.originalKey } : {}),
       lines: (e.lines || []).map(l => ({ accountId: String(l.accountId), debit: Number(l.debit) || 0, credit: Number(l.credit) || 0, description: l.description || '' })) }]));
   const ledger = postedLines(entries, lines);
   const byId = new Map(entries.map(e => [e.id, e]));
@@ -246,8 +288,25 @@ export function foundingInputs(t) {
   const statementLines = t.bank_statement_lines.map(l => ({ id: l.id, account: l.account, txDate: l.txDate, direction: l.direction, amount: Number(l.amount) || 0,
     description: l.description || '', decision: l.decision, linkKind: l.linkKind || null, linkId: l.linkId || null, status: l.status,
     appliedByName: l.appliedByName || null, appliedAtIso: l.appliedAtIso || null }));
+  const legacyLines = new Map();
+  for (const l of t.journal_lines) legacyLines.set(String(l.entryId), [...(legacyLines.get(String(l.entryId)) || []), l]);
+  const duplicateEffects = Object.fromEntries((settings.duplicateCancellations || []).map(p => {
+    const [kind, ...rest] = String(p.key).split(':');
+    return [p.key, FINANCE_KINDS[kind] ? documentLiveEffects(entries, kind, rest.join(':'), legacyLines) : []];
+  }));
+  // «تسوية مصروف مؤقت»: temporary items whose own live entry debited 1300.
+  const temporaryEntries = new Map(entries.filter(e => liveEntry(e) && e.sourceType === 'temporary_expense' && e.sourceId)
+    .map(e => [String(e.sourceId), e]));
+  const bikerNames = new Map(t.bikers.map(b => [b.id, b.name || b.name_ar || b.id]));
+  const advances = t.temporary_expenses.flatMap(a => {
+    const e = temporaryEntries.get(a.id), lines = e ? (e.lines?.length ? e.lines : legacyLines.get(e.id) || []) : [];
+    if (!lines.some(l => String(l.accountId) === ACC.EMPLOYEE_ADVANCE && halala(l.debit) > 0)) return [];
+    return [{ id: a.id, title: a.title || a.description || 'مصروف مؤقت', holder: a.biker_id ? bikerNames.get(a.biker_id) || null : null,
+      amount: Number(a.amount) || 0, outstanding: halala(outstandingCustody(a)), spentDate: documentDay(a.spent_date), status: a.status || null,
+      entryId: e.id, entryNumber: e.entryNumber ?? null }];
+  });
   return { docs, payments, lines: statementLines, decisions, settings, book, posted, closedMonths, hadiLedger, partners,
-    review, chart: new Set(t.chart_of_accounts.map(a => a.id)),
+    review, chart: new Set(t.chart_of_accounts.map(a => a.id)), duplicateEffects, advances,
     custodyHint: t.temporary_expenses.filter(x => x.status !== 'recovered' && documentDay(x.spent_date) && documentDay(x.spent_date) < settings.cutoffDate)
       .reduce((n, x) => n + halala(x.amount) - halala(x.recovered_amount), 0) };
 }
@@ -324,13 +383,20 @@ async function postEntries(db, auth, r) {
       const problems = validateEntry(entry, lines, { knownAccountCodes: input.chart });
       if (problems.length) fail(problems[0]);
       const total = Math.round(lines.reduce((n, l) => n + halala(l.debit), 0)) / 100;
+      // «تسوية مصروف مؤقت»: the item is settled by this entry — payroll and a cash recovery no longer count it; a reversal reopens it.
+      const advance = e.type === 'custody_settlement' ? t.temporary_expenses.find(a => a.id === e.advanceId) : null;
+      if (e.type === 'custody_settlement' && (!advance || halala(outstandingCustody(advance)) !== halala(e.amount))) fail('تغيّر المصروف المؤقت بعد عرضه؛ أعد القراءة.');
       const journal = { ...entry, lines, lineCount: lines.length, totalDebit: total, totalCredit: total, entryNumber: next, createdBy: auth.uid,
-        foundingEntry: { key: e.key, type: e.type, sourceKey: e.sourceKey, cutoffDate: input.settings.cutoffDate, approvedByName: name, reason: r.reason, hash: e.hash } };
+        foundingEntry: { key: e.key, type: e.type, sourceKey: e.sourceKey, cutoffDate: input.settings.cutoffDate, approvedByName: name, reason: r.reason, hash: e.hash,
+          ...(e.originalKey ? { originalKey: e.originalKey } : {}), ...(advance ? { advanceId: advance.id } : {}) },
+        ...(advance ? { custodyRecovery: { bikerId: advance.biker_id || null, amount: e.amount, excess: 0, allocations: [{ advanceId: advance.id, amount: e.amount }] } } : {}) };
       tx.create(db.collection('journal_entries').doc(entryId), { ...journal, createdAt: FieldValue.serverTimestamp(), postedAt: FieldValue.serverTimestamp() });
       tx.create(db.collection('posting_locks').doc(postingLockId('founding', entryId)), { kind: 'founding', sourceType: 'adjustment', sourceId: entryId,
         entryId, entryNumber: next, lockedBy: auth.uid, lockedAt: FieldValue.serverTimestamp() });
       if (receipt) tx.create(db.collection('posting_locks').doc(postingLockId('partner_payment', e.paymentId)), { kind: 'partner_payment',
         sourceType: 'partner_payment', sourceId: e.paymentId, entryId, entryNumber: next, lockedBy: auth.uid, lockedAt: FieldValue.serverTimestamp() });
+      if (advance) tx.update(db.collection('temporary_expenses').doc(advance.id),
+        applyDocumentRecovery(advance, { advanceId: advance.id, amount: e.amount }, { date: e.date, kind: 'founding', sourceId: e.key, entryId }));
       tx.create(db.collection('audit_logs').doc(), { action: 'founding-post', collectionName: 'journal_entries', documentId: entryId, userId: auth.uid,
         sourceId: e.key, reason: r.reason, after: { entryNumber: next, lines, date: e.date }, at: FieldValue.serverTimestamp() });
       results.push({ key: e.key, entryId, entryNumber: next });
@@ -623,6 +689,88 @@ async function removeReceipt(db, auth, r) {
   });
 }
 
+/**
+ * «إلغاء مستند مكرر»: مستند مرحّل يكرر مستندًا أصليًا. يُحفظ اقتراحًا بسبب مكتوب، وقيده يعكس كل أثره
+ * السارية (قيوده، و«تصحيح جهة دفع»، وحصته من تصحيحات الصندوق والبنك) ولا يُرحّل إلا بموافقة هادي.
+ * لا يعدّل أي قيد أصلي. بعد ترحيله يصير المستند «ملغى — مكرر» ويخرج من الملخص ومن 2300 حسب المستندات.
+ */
+async function proposeDuplicate(db, auth, r) {
+  return db.runTransaction(async tx => {
+    await adminOnly(db, auth, tx);
+    const t = await loadTables(db, tx), { input, plan } = planOf(t), name = await actorName(db, auth, tx);
+    const list = plan.settings.duplicateCancellations || [];
+    if (list.length >= 100) fail('مستندات مكررة كثيرة؛ رحّل أو احذف بعضها أولًا.');
+    if (r.key === r.originalKey) fail('المستند لا يكرر نفسه؛ اختر الأصلي.', 'invalid-argument');
+    const doc = input.docs.find(d => d.key === r.key), original = input.docs.find(d => d.key === r.originalKey);
+    if (!doc || !original) fail('المستند أو الأصلي غير موجود.', 'not-found');
+    if (list.some(p => p.key === r.key)) fail('هذا المستند مقترح إلغاؤه مكررًا أصلًا.');
+    if (list.some(p => p.key === r.originalKey)) fail('الأصلي نفسه مقترح إلغاؤه مكررًا؛ اختر مستندًا باقيًا.');
+    const [kind, ...rest] = r.key.split(':');
+    const legacy = new Map();
+    for (const l of t.journal_lines) legacy.set(String(l.entryId), [...(legacy.get(String(l.entryId)) || []), l]);
+    const effects = documentLiveEffects(t.journal_entries, kind, rest.join(':'), legacy);
+    if (!effects.some(x => x.role === 'own')) fail('المستند غير مرحّل بقيد سارٍ؛ المكرر غير المرحّل يُعالج من صندوق العمل المالي.');
+    if (effects.some(x => x.custody)) fail('قيد المستند سوّى عهدة موظف؛ اعكسه من دفتر القيود لتعود العهدة مفتوحة.');
+    const at = new Date().toISOString();
+    const proposal = { id: `dup_${financeHash({ uid: auth.uid, at, key: r.key, originalKey: r.originalKey }).slice(0, 16)}`, key: r.key, originalKey: r.originalKey,
+      title: doc.title, originalTitle: original.title, reason: r.reason, by: auth.uid, byName: name, atIso: at };
+    writeReview(db, tx, input.review, plan, { duplicateCancellations: [...list, proposal] }, auth, name);
+    audit(db, tx, auth, 'founding-duplicate', r.key, proposal);
+    return { saved: true, proposal };
+  });
+}
+
+async function removeDuplicate(db, auth, r) {
+  return db.runTransaction(async tx => {
+    await adminOnly(db, auth, tx);
+    const t = await loadTables(db, tx), { input, plan } = planOf(t), name = await actorName(db, auth, tx);
+    const list = plan.settings.duplicateCancellations || [], proposal = list.find(p => p.id === r.id);
+    if (!proposal) fail('الاقتراح غير موجود.', 'not-found');
+    if (input.posted.has(`duplicate:${proposal.key}`)) fail('الإلغاء مرحّل؛ تصحيحه بقيد عكسي.');
+    writeReview(db, tx, input.review, plan, { duplicateCancellations: list.filter(p => p.id !== r.id) }, auth, name);
+    audit(db, tx, auth, 'founding-duplicate-removed', proposal.key, { removed: proposal });
+    return { saved: true };
+  });
+}
+
+/**
+ * «تسوية مصروف مؤقت»: بند مؤقت مرحّل على 1300 يُحمّل على حساب مصروف يختاره هادي — مدين المصروف، دائن 1300،
+ * بتاريخ آخر يوم في فترة التأسيس لو البند قبل القطع. يُحفظ اقتراحًا بسبب مكتوب ولا يُرحّل إلا بموافقته.
+ */
+async function proposeCustodySettlement(db, auth, r) {
+  return db.runTransaction(async tx => {
+    await adminOnly(db, auth, tx);
+    const t = await loadTables(db, tx), { input, plan } = planOf(t), name = await actorName(db, auth, tx);
+    const list = plan.settings.custodySettlements || [];
+    if (list.length >= 200) fail('تسويات كثيرة؛ رحّل أو احذف بعضها أولًا.');
+    const advance = input.advances.find(a => a.id === r.advanceId);
+    if (!advance) fail('البند غير مرحّل على 1300 بقيد سارٍ.', 'not-found');
+    if (advance.outstanding <= 0) fail('البند مسوّى أو مسترد كله؛ لا باقي عليه.');
+    if (list.some(p => p.advanceId === r.advanceId)) fail('هذا البند مقترحة تسويته أصلًا.');
+    const account = t.chart_of_accounts.find(a => a.id === r.accountId);
+    if (!account || account.accountType !== 'expense' || account.active === false) fail('اختر حساب مصروف فعّالًا من الدليل.', 'invalid-argument');
+    const at = new Date().toISOString();
+    const proposal = { id: `cs_${financeHash({ uid: auth.uid, at, advanceId: r.advanceId, accountId: r.accountId }).slice(0, 16)}`, advanceId: r.advanceId,
+      accountId: r.accountId, title: advance.title, holder: advance.holder, reason: r.reason, by: auth.uid, byName: name, atIso: at };
+    writeReview(db, tx, input.review, plan, { custodySettlements: [...list, proposal] }, auth, name);
+    audit(db, tx, auth, 'founding-custody-settlement', r.advanceId, proposal);
+    return { saved: true, proposal };
+  });
+}
+
+async function removeCustodySettlement(db, auth, r) {
+  return db.runTransaction(async tx => {
+    await adminOnly(db, auth, tx);
+    const t = await loadTables(db, tx), { input, plan } = planOf(t), name = await actorName(db, auth, tx);
+    const list = plan.settings.custodySettlements || [], proposal = list.find(p => p.id === r.id);
+    if (!proposal) fail('الاقتراح غير موجود.', 'not-found');
+    if (input.posted.has(`custody_settlement:${proposal.advanceId}`)) fail('التسوية مرحّلة؛ تصحيحها بقيد عكسي.');
+    writeReview(db, tx, input.review, plan, { custodySettlements: list.filter(p => p.id !== r.id) }, auth, name);
+    audit(db, tx, auth, 'founding-custody-settlement-removed', proposal.advanceId, { removed: proposal });
+    return { saved: true };
+  });
+}
+
 async function ensureAccounts(db, auth) {
   return db.runTransaction(async tx => {
     await adminOnly(db, auth, tx);
@@ -856,6 +1004,8 @@ export async function foundingSettlement(db, auth, input, { workbench }) {
       accounts: { hadi: data.chart.has(ACC.HADI_CURRENT), settlements: data.chart.has(ACC.FOUNDING_SETTLEMENTS) },
       custodyHint: data.custodyHint / 100, statementLines: data.lines, readAt: new Date().toISOString(), expenseOptions: options(t),
       closedMonths: [...data.closedMonths].sort(),
+      expenseAccounts: t.chart_of_accounts.filter(a => a.accountType === 'expense' && a.active !== false)
+        .map(a => ({ code: a.id, name: a.nameArabic || a.id })).sort((a, b) => a.code.localeCompare(b.code)),
       accountNames: Object.fromEntries([...DEFAULT_CHART_OF_ACCOUNTS.map(x => [x.code, x.nameArabic]), ...t.chart_of_accounts.map(x => [x.id, x.nameArabic || x.id])]) };
   }
   if (r.action === 'saveSettings') return saveSettings(db, auth, r);
@@ -876,6 +1026,10 @@ export async function foundingSettlement(db, auth, input, { workbench }) {
   if (r.action === 'removeTransfer') return removeTransfer(db, auth, r);
   if (r.action === 'proposeReceipts') return proposeReceipts(db, auth, r);
   if (r.action === 'removeReceipt') return removeReceipt(db, auth, r);
+  if (r.action === 'proposeDuplicate') return proposeDuplicate(db, auth, r);
+  if (r.action === 'removeDuplicate') return removeDuplicate(db, auth, r);
+  if (r.action === 'proposeCustodySettlement') return proposeCustodySettlement(db, auth, r);
+  if (r.action === 'removeCustodySettlement') return removeCustodySettlement(db, auth, r);
   if (r.action === 'statementSuggest') return statementSuggest(db, auth, r);
   return statementApply(db, auth, r, workbench);
 }

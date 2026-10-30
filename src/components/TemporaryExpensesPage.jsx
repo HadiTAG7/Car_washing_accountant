@@ -277,7 +277,7 @@ export default function TemporaryExpensesPage({ embedded = false } = {}) {
                         <td className="py-3 px-4 whitespace-nowrap">{bikers.loading ? '…' : bikers.error ? 'غير متاح' : <span className={advanceBikerState(e, bikers.bikers).risky ? 'font-semibold text-rose-700 dark:text-rose-300' : ''}>{advanceBikerState(e, bikers.bikers).label}</span>}</td>
                         <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums font-bold text-slate-900 dark:text-slate-100">
                           {formatCurrency((e.amount || 0) * scalingFactor)}
-                          {e.documentRecovered > 0 && <div className="text-[11px] font-normal text-slate-500 dark:text-slate-400">منه بمستندات مصروف {formatCurrency(e.documentRecovered * scalingFactor)}</div>}
+                          {e.documentRecovered > 0 && <div className="text-[11px] font-normal text-slate-500 dark:text-slate-400">{e.settledByEntry ? 'منه بقيد تسوية مصروف' : 'منه بمستندات مصروف'} {formatCurrency(e.documentRecovered * scalingFactor)}</div>}
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap tabular-nums text-slate-700 dark:text-slate-300">
                           {formatDate(e.spentDate)}

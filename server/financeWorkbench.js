@@ -245,10 +245,14 @@ async function workflowDocument(db, tx, kind, sourceId, row, currentState = null
   const openIssues = detail.issues.filter(issue => !resolvedByRule.includes(issue));
   const safeUnposted = !state.protectedSource && !state.closed && preview.ready && !additionalIssues.length && !detail.issues.length;
   const correctedNeedsReview = reversed && (openIssues.length > 0 || postingHistory.issues.length > 0 || !paymentProven);
+  // Read/display only: a peer may change after this source was posted. Keep
+  // the strict approval/context hashes and the existing journal untouched.
+  const approvalContextChanged = Boolean(state.review?.status === 'approved' && state.review.sourceHash === state.sourceHash
+    && (state.review.sourceContextHash || null) !== state.sourceContext.contextHash);
   // «بلا إيصال، بإقرار المدير»: offered on a founding-period record not yet posted; the founding endpoint re-checks on save.
   const founding = { cutoffDate, attestation: attestation ? { byName: attestation.byName || null, atIso: attestation.atIso, approxDate: attestation.approxDate, note: attestation.note || null } : null,
     attestable: Boolean(day && day < cutoffDate && !state.protectedSource && !state.closed && !attestation && !statementLineRefOf(row)) };
-  const workflowStage = posted ? correctedNeedsReview ? 'posted_review' : paymentProven ? 'complete' : 'posted_unproven'
+  const workflowStage = posted ? correctedNeedsReview || approvalContextChanged ? 'posted_review' : paymentProven ? 'complete' : 'posted_unproven'
     : safeUnposted ? detail.approved ? 'approved' : 'ready' : 'incomplete';
   const result = { ...detail, issues: [...openIssues, ...additionalIssues, ...postingHistory.issues], resolvedByRule, workflowStage, postingHistory,
     approvalReady: safeUnposted && !detail.approved && !detail.issues.length,
@@ -258,7 +262,11 @@ async function workflowDocument(db, tx, kind, sourceId, row, currentState = null
     // «استكمال مستند مرحّل»: offered on a record with a live entry; an approval given before it stays shown as such.
     completion: { available: posted, history: completionHistoryOf(row) },
     approvalBeforeCompletion: posted && !detail.approved && approvedBeforeCompletion(row, state.review),
-    workflowNote: reversed && posted ? 'له قيود مرحلة سارية بعد عكس الأصل؛ لا يعاد ترحيله. اكتمال الدليل والسداد منفصل عن وجود القيود.'
+    approvalContextChanged,
+    workflowNote: posted && approvalContextChanged ? state.sourceContext.allocationGrant
+      ? 'تغيّرت نسخة أحد جزأي المستند بعد الاعتماد؛ القيد محفوظ، والاعتماد الحالي يحتاج مراجعة.'
+      : 'تغيّر سياق مراجعة المستند بعد الاعتماد؛ القيد محفوظ، والاعتماد الحالي يحتاج مراجعة.'
+      : reversed && posted ? 'له قيود مرحلة سارية بعد عكس الأصل؛ لا يعاد ترحيله. اكتمال الدليل والسداد منفصل عن وجود القيود.'
       : reversed ? 'له قيد معكوس دون بديل مرحل مثبت؛ المصدر محمي ويحتاج مراجعة.' : state.closed ? 'الفترة مقفلة؛ العرض فقط.'
       : state.protectedSource && !posted ? 'المصدر محمي؛ لم يثبت قيد مرحّل صالح في القراءة الحالية.' : null,
     journalNumbers: journals.map(j => j.data()?.entryNumber).filter(Number.isFinite) };

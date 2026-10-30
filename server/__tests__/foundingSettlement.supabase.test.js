@@ -176,4 +176,31 @@ describe.skipIf(!enabled)('founding settlement on Postgres with the production s
       ['2026-09-30', 'partner_payment', 'pp2', '2300', 3000, 0], ['2026-09-30', 'partner_payment', 'pp2', '3000-p1', 0, 3000]]);
     expect((await pool.query("select count(*)::int as n from public.posting_locks where id = 'partner_payment__pp2'")).rows[0].n).toBe(1);
   }, 120000);
+
+  it('marks an existing closed-month founding document «بلا إيصال، بإقرار المدير» in Postgres, then approves and posts it to 2300', async () => {
+    const wb = (sourceId, request) => financeWorkbench(db, { uid: admin }, { kind: 'variable', sourceId, ...request });
+    await db.doc('variable_expenses/v8').set({ expense_name: 'أجرة نقل', total_variable_cost: 80, unit_cost: 80, quantity: 1, logged_date: '2026-07-18', category_id: 'cat1',
+      payment_method: 'cash', is_tax_invoice: true, vat_deductible: true, vat_amount: 10.43 });
+    const documents = (await pool.query('select count(*)::int as n from public.variable_expenses')).rows[0].n;
+    await call({ action: 'ensureAccounts', confirm: true });
+    let detail = await wb('v8', { action: 'read' });
+    expect(detail.founding).toMatchObject({ attestable: true, attestation: null });
+    await call({ action: 'attestDocument', kind: 'variable', sourceId: 'v8', sourceHash: detail.sourceHash, reason: 'دفعتها كاش ولا عندي إيصال', confirm: true });
+    const row = (await pool.query(`select id, logged_date, is_tax_invoice, vat_deductible, vat_amount, payment_method, paid_date, approval_status,
+      finance_metadata->>'fundingType' as funding, finance_metadata->'managerAttestation' as attestation from public.variable_expenses where id = 'v8'`)).rows[0];
+    expect(row).toMatchObject({ logged_date: '2026-07-18', is_tax_invoice: false, vat_deductible: false, vat_amount: null, payment_method: 'founding_personal',
+      paid_date: '2026-07-18', approval_status: 'pending', funding: 'owner_current', attestation: { by: admin, approxDate: '2026-07-18', note: 'دفعتها كاش ولا عندي إيصال' } });
+    expect((await pool.query('select count(*)::int as n from public.variable_expenses')).rows[0].n).toBe(documents);
+    detail = await wb('v8', { action: 'read' });
+    expect(detail).toMatchObject({ issues: [], approvalReady: true, postingDate: '2026-09-30' });
+    const read = await call({ action: 'read' });
+    expect(read.plan.summary.attestedRows.map(e => e.sourceId)).toContain('v8');
+    await wb('v8', { action: 'approve', sourceHash: detail.sourceHash, postingHash: detail.postingPreview.postingHash, reason: 'اعتماد', confirm: true });
+    detail = await wb('v8', { action: 'read' });
+    const posted = await wb('v8', { action: 'post', sourceHash: detail.sourceHash, confirm: true });
+    const lines = (await pool.query(`select e.entry_date, l.account_id, l.debit, l.credit from public.journal_entries e join public.journal_entry_lines l on l.entry_id = e.id
+      where e.id = $1 order by l.line_no`, [posted.verification.journalIds[0]])).rows;
+    expect(lines.map(l => [l.entry_date, l.account_id, Number(l.debit), Number(l.credit)])).toEqual([['2026-09-30', '5100', 80, 0], ['2026-09-30', '2300', 0, 80]]);
+    expect((await pool.query("select status from public.accounting_periods where id = '2026-07'")).rows[0].status).toBe('closed');
+  }, 120000);
 });

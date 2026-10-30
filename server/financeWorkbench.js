@@ -6,7 +6,8 @@ import { postSource } from '../functions/src/ledger.js';
 import { taxPolicyAt } from '../functions/src/taxPolicy.js';
 import { startupRollup, startupParentHasLegacyTaxFields } from '../functions/src/startupMigration.js';
 import { isRealDate, postingLockId, round2 } from '../functions/src/invariants.js';
-import { FINANCE_KINDS, financeHash, financeSourceHash, financeReviewId, financeProblems, journalMatchesFinanceSource, assertFinanceDocumentUniqueness, FinanceReviewError } from '../functions/src/financeReview.js';
+import { FINANCE_KINDS, financeHash, financeSourceHash, financeReviewId, financeProblems, journalMatchesFinanceSource, assertFinanceDocumentUniqueness, FinanceReviewError,
+  managerAttestationOf, statementLineRefOf } from '../functions/src/financeReview.js';
 import { financeReadSnapshot } from './financeReadSnapshot.js';
 import { filterWorkbenchItems, hasPaymentConflict, documentDay } from '../src/lib/financeWorkbenchView.js';
 import { cashBankCorrection } from './cashBankCorrection.js';
@@ -129,13 +130,18 @@ async function foundingPosting(db, tx, kind, row) {
   const periods = await Promise.all(dates.map(day => tx.get(db.collection('accounting_periods').doc(day.slice(0, 7)))));
   const closedDays = dates.filter((_, i) => periods[i].exists && periods[i].data().status === 'closed');
   if (!closedDays.length) return { closed: false, postingDate: null };
-  const review = await tx.get(db.collection('founding_review').doc('current'));
-  const saved = review.exists ? review.data().cutoffDate : null;
-  const cutoff = isRealDate(saved) ? saved : FOUNDING_DEFAULTS.cutoffDate;
+  const cutoff = await foundingCutoffOf(db, tx);
   if (!isRealDate(row[spec.date]) || row[spec.date] >= cutoff || closedDays.some(day => day >= cutoff)) return { closed: true, postingDate: null };
   const end = dayBefore(cutoff), endPeriod = await tx.get(db.collection('accounting_periods').doc(end.slice(0, 7)));
   if (endPeriod.exists && endPeriod.data().status === 'closed') return { closed: true, postingDate: null };
   return { closed: false, postingDate: end };
+}
+
+/** The day the company bank account started: a record dated before it belongs to the founding period. */
+async function foundingCutoffOf(db, tx) {
+  const review = await tx.get(db.collection('founding_review').doc('current'));
+  const saved = review.exists ? review.data().cutoffDate : null;
+  return isRealDate(saved) ? saved : FOUNDING_DEFAULTS.cutoffDate;
 }
 
 async function validateClassification(db, tx, kind, row) {
@@ -217,12 +223,16 @@ async function workflowDocument(db, tx, kind, sourceId, row, currentState = null
       || (evidence.fundingType === 'owner_current' && row.payment_method === 'owner_current'));
   const safeUnposted = !state.protectedSource && !state.closed && preview.ready && !additionalIssues.length && !detail.issues.length;
   const correctedNeedsReview = reversed && (detail.issues.length > 0 || postingHistory.issues.length > 0 || !paymentProven);
+  // «بلا إيصال، بإقرار المدير»: offered on a founding-period record not yet posted; the founding endpoint re-checks on save.
+  const cutoffDate = await foundingCutoffOf(db, tx), day = documentDay(row[FINANCE_KINDS[kind].date]), attestation = managerAttestationOf(row);
+  const founding = { cutoffDate, attestation: attestation ? { byName: attestation.byName || null, atIso: attestation.atIso, approxDate: attestation.approxDate, note: attestation.note || null } : null,
+    attestable: Boolean(day && day < cutoffDate && !state.protectedSource && !state.closed && !attestation && !statementLineRefOf(row)) };
   const workflowStage = posted ? correctedNeedsReview ? 'posted_review' : paymentProven ? 'complete' : 'posted_unproven'
     : safeUnposted ? detail.approved ? 'approved' : 'ready' : 'incomplete';
   const result = { ...detail, issues: [...detail.issues, ...additionalIssues, ...postingHistory.issues], workflowStage, postingHistory,
     approvalReady: safeUnposted && !detail.approved && !detail.issues.length,
     postingReady: safeUnposted && detail.approved && !detail.issues.length,
-    paymentProven, paymentConflict: hasPaymentConflict(row),
+    paymentProven, paymentConflict: hasPaymentConflict(row), founding,
     workflowNote: reversed && posted ? 'له قيود مرحلة سارية بعد عكس الأصل؛ لا يعاد ترحيله. اكتمال الدليل والسداد منفصل عن وجود القيود.'
       : reversed ? 'له قيد معكوس دون بديل مرحل مثبت؛ المصدر محمي ويحتاج مراجعة.' : state.closed ? 'الفترة مقفلة؛ العرض فقط.'
       : state.protectedSource && !posted ? 'المصدر محمي؛ لم يثبت قيد مرحّل صالح في القراءة الحالية.' : null,
@@ -342,8 +352,11 @@ export async function financeWorkbench(db, auth, input) {
     if (isCapture && !after.invoice_url && !after.finance_metadata?.statementLineRef && !after.finance_metadata?.managerAttestation) fail('رابط المستند مطلوب لمنع التكرار.');
     // A manager's attestation is the saver's own, never written in another's name.
     const attestation = after.finance_metadata?.managerAttestation;
-    if (attestation && JSON.stringify(attestation) !== JSON.stringify(before.finance_metadata?.managerAttestation ?? null)
-      && attestation.by !== auth.uid) fail('إقرار المدير يُسجّل باسم من يحفظه فقط.', 'permission-denied');
+    if (attestation && JSON.stringify(attestation) !== JSON.stringify(before.finance_metadata?.managerAttestation ?? null)) {
+      if (attestation.by !== auth.uid) fail('إقرار المدير يُسجّل باسم من يحفظه فقط.', 'permission-denied');
+      const attestedDay = documentDay(after[spec.date]), cutoff = await foundingCutoffOf(db, tx);
+      if (!attestedDay || attestedDay >= cutoff) fail(`إقرار المدير لمستندات فترة التأسيس فقط (قبل ${cutoff}).`, 'invalid-argument');
+    }
     // A same-record edit never relocates or deletes a source, nor moves a
     // booked date to an open month to evade the original period lock.
     const afterState = await readState(db, tx, r.kind, sourceId, after);

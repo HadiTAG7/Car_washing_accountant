@@ -5064,5 +5064,21 @@
   "القيد المقترح غير موجود.": "The proposed entry does not exist.",
   "السند مرحّل؛ تصحيحه بقيد عكسي.": "The receipt is posted; correct it with a reversing entry.",
   "— شهر المستند مقفل، ويُقيَّد بآخر يوم في فترة التأسيس والشهر يبقى مقفلًا.": "— the document's month is closed; it is posted on the last day of the founding period and the month stays closed.",
-  "تحويلاتك لحساب الشركة (من كشف الشركة أو بلا كشف)": "Your transfers to the company account (from the company statement or without a statement)"
+  "تحويلاتك لحساب الشركة (من كشف الشركة أو بلا كشف)": "Your transfers to the company account (from the company statement or without a statement)",
+  "بلا إيصال، بإقرار المدير — أقرّه": "No receipt, on the manager's attestation — attested by",
+  "». غير ضريبي بلا ضريبة مدخلات، ودفعه هادي (2300).": "». Non-tax with no input VAT, paid by Hadi (2300).",
+  "بلا إيصال، بإقرار المدير": "No receipt, on the manager's attestation",
+  "مستند فترة تأسيس لم يُرحّل. يسقط شرط رابط الإيصال (والمورد)، ويصير غير ضريبي بلا ضريبة مدخلات، ودفعه هادي من حسابه الجاري: مدين المصروف، دائن 2300. يُحفظ على نفس المستند باسمك ووقتك وسببك، ويظهر في «ملخص فترة التأسيس» ضمن «مصاريف بإقرار المدير». بعدها الاعتماد والترحيل العاديان. لا يُحذف المستند ولا يُنشأ غيره.": "An unposted founding-period document. The receipt-link (and supplier) requirement is dropped, it becomes non-tax with no input VAT, and Hadi paid it from his current account: Dr the expense, Cr 2300. It is saved on the same document with your name, time and reason, and appears in «Founding period summary» under «Expenses on the manager's attestation». Then the usual approval and posting. The document is not deleted and no new one is created.",
+  "احفظ تعديلاتك على المستند أو تراجع عنها أولًا.": "Save or discard your edits to the document first.",
+  "مثلًا: دفعته من حسابي ولم أحتفظ بالإيصال": "e.g. I paid it from my account and did not keep the receipt",
+  "يحفظ المستند بإقرارك: بلا إيصال، غير ضريبي، دفعه هادي (2300). لا اعتماد ولا ترحيل.": "Saves the document on your attestation: no receipt, non-tax, paid by Hadi (2300). No approval or posting.",
+  "مصروف بإقرار المدير دفعه هادي: التمويل من حسابه الجاري (2300).": "An expense on the manager's attestation was paid by Hadi: funding is from his current account (2300).",
+  "إقرار المدير لمستندات فترة التأسيس فقط (قبل [VAR0]).": "The manager's attestation is for founding-period documents only (before [VAR0]).",
+  "إقرار المدير لمستندات فترة التأسيس فقط (قبل": "The manager's attestation is for founding-period documents only (before",
+  "تغيّر المستند بعد عرضه؛ أعد القراءة.": "The document changed after it was shown; read it again.",
+  "المستند مسجّل بإقرار المدير.": "The document is already on the manager's attestation.",
+  "المستند مرحّل أو له قفل؛ لا يتغيّر.": "The document is posted or locked; it does not change.",
+  "إقرار المدير لمستندات فترة التأسيس غير المرحّلة فقط، وغير المربوطة بسطر كشف حساب.": "The manager's attestation is only for unposted founding-period documents that are not linked to a bank-statement line.",
+  "بلا إيصال، بإقرار المدير: [VAR0]": "No receipt, on the manager's attestation: [VAR0]",
+  "بلا إيصال، بإقرار المدير:": "No receipt, on the manager's attestation:"
 }

@@ -13,6 +13,7 @@ export function financeBlockerCategory(message) {
   if (/وصف المصروف|المبلغ غير مثبت|تاريخ المصروف|الكمية|سعر الوحدة|بنود الفاتورة|بند الفاتورة|المورد غير|رابط المستند|الغرض ودليل/.test(message)) return 'source';
   return 'review';
 }
+export const PAYMENT_PROOF_LABELS = Object.freeze({ evidence: 'مثبت بكشف أو إيصال', founding_rule: 'مثبت بإقرار المدير — قاعدة فترة التأسيس' });
 export function financeWorkflowDimensions(detail, { recorded = false } = {}) {
   const row = detail.row || {}, review = detail.review;
   const reviewSaved = Boolean(review), comparable = typeof detail.sourceHash === 'string' && detail.sourceHash.length > 0 && typeof review?.sourceHash === 'string';
@@ -37,8 +38,11 @@ export function financeWorkflowDimensions(detail, { recorded = false } = {}) {
     posting: { status: active ? 'posted' : reversed ? 'reversed' : detail.protectedSource ? 'protected' : 'unposted',
       label: active ? 'مرحل بقيد سارٍ' : reversed ? 'قيده معكوس — المصدر ما زال مسجلًا' : detail.protectedSource ? 'محمي وله أثر يحتاج مراجعة' : 'غير مرحل',
       ready: Boolean(detail.postingReady) },
-    payment: { proven: Boolean(detail.paymentProven), recordedStatus: row.payment_status || 'unknown', method: row.payment_method || null, paidDate: row.paid_date || null,
-      label: detail.paymentProven ? 'إثبات السداد مكتمل' : row.payment_status === 'paid' ? 'مسجل مدفوع — تحقق المسار غير مكتمل'
+    // Proven by a statement or a receipt, or — a founding-period record Hadi paid, posted on 2300 — by the manager's rule.
+    payment: { proven: Boolean(detail.paymentProven), basis: detail.paymentProven ? detail.paymentProof || 'evidence' : null, rule: detail.paymentRule || null,
+      recordedStatus: row.payment_status || 'unknown', method: row.payment_method || null, paidDate: row.paid_date || null,
+      label: detail.paymentProof === 'founding_rule' ? PAYMENT_PROOF_LABELS.founding_rule : detail.paymentProven ? PAYMENT_PROOF_LABELS.evidence
+        : row.payment_status === 'paid' ? 'مسجل مدفوع — تحقق المسار غير مكتمل'
         : row.payment_status === 'unpaid' ? 'مسجل غير مسدد' : 'حالة السداد غير مثبتة' },
     sourceGaps, postingBlockers: blockers,
     sourceFacts: { invoiceNumber: typeof row.invoice_number === 'string' || Number.isFinite(row.invoice_number) ? row.invoice_number : null,

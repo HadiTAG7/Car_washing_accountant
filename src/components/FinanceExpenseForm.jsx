@@ -4,6 +4,7 @@ import { callFinanceApi } from '../lib/financeApi';
 import { EXPENSE_KIND_LABELS, hasPaymentConflict, suggestedPaymentMethod, WORKBENCH_STAGES } from '../lib/financeWorkbenchView';
 import FinanceInvoiceLines, { InvoiceLinesRead } from './FinanceInvoiceLines';
 import FinanceDocumentStatus from './FinanceDocumentStatus';
+import { PAYMENT_PROOF_LABELS } from '../lib/financeWorkflowDimensions';
 import FinanceAttestation from './FinanceAttestation';
 import FinanceCustodyHolder from './FinanceCustodyHolder';
 
@@ -111,7 +112,7 @@ export default function FinanceExpenseForm({ kind, detail, requestId, options, o
     {detail?.workflowDimensions ? <FinanceDocumentStatus dimensions={detail.workflowDimensions} /> : detail && <dl className="fw-document-status" aria-label="حالات المصروف المنفصلة">
       <div><dt>الاعتماد</dt><dd>{detail.approved ? 'اعتماد النسخة الحالية' : 'غير معتمد'}</dd></div>
       <div><dt>الترحيل</dt><dd>{detail.protectedSource ? 'المصدر محمي وله أثر سابق' : 'غير مرحل'}</dd></div>
-      <div><dt>السداد</dt><dd>{detail.paymentProven ? 'مثبت في المصدر' : ({ paid: 'مسجل مدفوع — يحتاج دليل', unpaid: 'غير مسدد' })[detail.row.payment_status] || 'غير مثبت'}</dd></div>
+      <div><dt>السداد</dt><dd>{detail.paymentProven ? PAYMENT_PROOF_LABELS[detail.paymentProof] || PAYMENT_PROOF_LABELS.evidence : ({ paid: 'مسجل مدفوع — يحتاج دليل', unpaid: 'غير مسدد' })[detail.row.payment_status] || 'غير مثبت'}</dd></div>
     </dl>}
     {detail?.postingDate && !detail.protectedSource && <p className="fw-warning" role="note" aria-label="تاريخ القيد">
       <AlertTriangle size={18} /><span>تاريخ القيد {detail.postingDate} — شهر المستند مقفل، ويُقيَّد بآخر يوم في فترة التأسيس والشهر يبقى مقفلًا.</span></p>}

@@ -2900,7 +2900,6 @@
   "عرض المستند": "View document",
   "المصدر محمي وله أثر سابق": "Protected source with an existing accounting record",
   "غير مرحل": "Not posted",
-  "مثبت في المصدر": "Evidenced in the source",
   "طريقة دفع متناقضة: المستند يشير إلى تحويل أو مدى أو بنكي، لكن المسجل نقد. التنبيه لا يغيّر البيانات.": "Conflicting payment method: the document mentions a bank transfer or Mada, but cash is recorded. This warning does not change data.",
   "المصدر محمي أو الفترة مقفلة؛ العرض فقط. لا تعديل للمصدر المرحّل من هذا المسار.": "The source is protected or the period is closed. View only; posted sources cannot be edited here.",
   "المبلغ بالريال": "Amount in SAR",
@@ -4293,7 +4292,6 @@
   "مرحل بقيد سارٍ": "Posted with an active entry",
   "قيده معكوس — المصدر ما زال مسجلًا": "Entry reversed — source remains registered",
   "محمي وله أثر يحتاج مراجعة": "Protected with an effect requiring review",
-  "إثبات السداد مكتمل": "Payment evidence verified",
   "مسجل مدفوع — تحقق المسار غير مكتمل": "Recorded as paid — workflow verification incomplete",
   "مسجل غير مسدد": "Recorded as unpaid",
   "حالة السداد غير مثبتة": "Payment status not evidenced",
@@ -5106,5 +5104,7 @@
   "العهدة سُوّيت كلها بمستندات مصروف؛ لا استرداد نقدي لها.": "The custody was settled entirely by expense documents; it has no cash recovery.",
   "صاحب العهدة يُحدد مع «من عهدة شخص» أو «دفع موظف» فقط.": "A custody holder is set only with «From a person's custody» or «Paid by an employee».",
   "الموظف غير موجود في قائمة البايكرز.": "The employee is not in the bikers list.",
-  "سُوّيت بمستندات مصروف": "Settled by expense documents"
+  "سُوّيت بمستندات مصروف": "Settled by expense documents",
+  "مثبت بكشف أو إيصال": "Proven by a statement or a receipt",
+  "مثبت بإقرار المدير — قاعدة فترة التأسيس": "Proven by the manager's attestation — founding-period rule"
 }

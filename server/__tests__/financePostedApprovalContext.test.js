@@ -49,4 +49,3 @@ describe('posted source approval-context display',()=>{
    await expect(assertFinanceApproval(db,{get:ref=>ref.get()},'startup',first,stale.row)).rejects.toThrow(/توزيع الأصل/);
  });
 });
-

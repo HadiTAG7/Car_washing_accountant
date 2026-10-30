@@ -2,7 +2,7 @@
 export const WORKBENCH_STAGES = {
   incomplete: 'مسجل — نواقص أو موانع ترحيل', ready: 'جاهز للاعتماد', approved: 'معتمد غير مرحل',
   posted_unproven: 'مرحل والسداد غير مثبت', complete: 'مكتمل',
-  posted_review: 'مرحل ويحتاج استكمال', cancelled: 'ملغى — مكرر',
+  posted_review: 'مرحل ويحتاج مراجعة', cancelled: 'ملغى — مكرر',
 };
 export const EXPENSE_KIND_LABELS = { variable: 'المتغيرة', monthly: 'الشهرية المفردة', annual: 'السنوية', startup: 'التأسيسية' };
 const clean = value => String(value || '').normalize('NFKC').replace(/[\u064b-\u065f\u0670]/g, '').toLowerCase();

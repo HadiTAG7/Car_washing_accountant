@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import FinanceExpenseForm from '../FinanceExpenseForm';
 import FinanceWorkbenchPage from '../FinanceWorkbenchPage';
+import { financeWorkflowDimensions } from '../../lib/financeWorkflowDimensions';
 const mock = vi.hoisted(() => ({ api: vi.fn(), read: vi.fn() }));
 vi.mock('../../lib/financeApi', () => ({ callFinanceApi: (...args) => mock.api(...args) }));
 vi.mock('../../hooks/useFinanceRead', () => ({ useFinanceRead: (...args) => mock.read(...args) }));
@@ -17,7 +18,7 @@ it('shows corrected posting and financing history read-only without treating mis
     postingHistory: { active: [{ id: 'purchase', number: 137 }, { id: 'payment', number: 138, settlementOf: 'purchase' }],
       reversed: [{ id: 'old', number: 4, reversal: { number: 130 }, mirrorMatched: true }], fundingCorrections: [{ id: 'funding', number: 168 }] } };
   render(<FinanceExpenseForm kind="startup" detail={detail} {...callbacks()} />);
-  expect(screen.getByText('مرحل ويحتاج استكمال')).toBeTruthy();
+  expect(screen.getByText('مرحل ويحتاج مراجعة')).toBeTruthy();
   const history = screen.getByRole('region', { name: 'القيود السارية وسجل العكس' });
   expect(history.textContent).toContain('#137، #138 (سداد)');
   expect(history.textContent).toContain('الأصل #4 معكوس');
@@ -25,6 +26,21 @@ it('shows corrected posting and financing history read-only without treating mis
   expect(screen.queryByRole('button', { name: 'رحّل' })).toBeNull();
   expect(screen.queryByRole('button', { name: 'اعتمد' })).toBeNull();
   expect(screen.getByText('دليل المصدر ناقص')).toBeTruthy(); expect(mock.api).not.toHaveBeenCalled();
+});
+it('shows a posted stale-context approval as review-needed without offering approval or reposting', () => {
+  const detail = { sourceId: 'synthetic-context', sourceHash: 'current', row: { description: 'مستند اختبار', amount: 200, approval_status: 'approved' },
+    review: { status: 'approved', sourceHash: 'current', sourceContextHash: 'old' }, sourceContext: { contextHash: 'new' }, approved: false,
+    approvalContextChanged: true, protectedSource: true, workflowStage: 'posted_review', issues: [], paymentProven: true,
+    workflowNote: 'تغيّرت نسخة أحد جزأي المستند بعد الاعتماد؛ القيد محفوظ، والاعتماد الحالي يحتاج مراجعة.',
+    postingHistory: { active: [{ id: 'synthetic-journal', number: 9001 }], reversed: [], fundingCorrections: [] } };
+  detail.workflowDimensions = financeWorkflowDimensions(detail, { recorded: true });
+  render(<FinanceExpenseForm kind="startup" detail={detail} {...callbacks()} />);
+  expect(screen.getByText('مرحل ويحتاج مراجعة')).toBeTruthy();
+  expect(screen.getByText('اعتماد سابق — تغيّر سياق المستند')).toBeTruthy();
+  expect(screen.getByText(detail.workflowNote)).toBeTruthy();
+  expect(screen.queryByText('اعتماد النسخة الحالية')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'اعتمد' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'رحّل' })).toBeNull(); expect(mock.api).not.toHaveBeenCalled();
 });
 it('keeps exactly seven basic fields, opens only tax invoices, hides opaque source codes and never edits existing payment on a warning', () => {
   const detail = { sourceId: 'opaque-secret-id', row: { description: 'تحويل بنكي', amount: 100, spent_date: '2026-10-18', payment_method: 'cash', is_tax_invoice: true }, workflowStage: 'incomplete', issues: [] };

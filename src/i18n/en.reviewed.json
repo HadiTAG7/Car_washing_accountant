@@ -5238,5 +5238,9 @@
   "هذا البند مقترحة تسويته أصلًا.": "This item is already proposed for settlement.",
   "اختر حساب مصروف فعّالًا من الدليل.": "Choose an active expense account from the chart.",
   "منه بقيد تسوية مصروف": "of which by an expense settlement entry",
-  "سُوّيت بقيد تسوية مصروف": "Settled by an expense settlement entry"
+  "سُوّيت بقيد تسوية مصروف": "Settled by an expense settlement entry",
+  "مرحل ويحتاج مراجعة": "Posted; review required",
+  "اعتماد سابق — تغيّر سياق المستند": "Previous approval; document context changed",
+  "تغيّرت نسخة أحد جزأي المستند بعد الاعتماد؛ القيد محفوظ، والاعتماد الحالي يحتاج مراجعة.": "One allocated part changed after approval; the journal entry is preserved and current approval requires review.",
+  "تغيّر سياق مراجعة المستند بعد الاعتماد؛ القيد محفوظ، والاعتماد الحالي يحتاج مراجعة.": "The document review context changed after approval; the journal entry is preserved and current approval requires review."
 }

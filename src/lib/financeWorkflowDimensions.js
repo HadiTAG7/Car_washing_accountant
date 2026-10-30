@@ -18,6 +18,8 @@ export function financeWorkflowDimensions(detail, { recorded = false } = {}) {
   const row = detail.row || {}, review = detail.review;
   const reviewSaved = Boolean(review), comparable = typeof detail.sourceHash === 'string' && detail.sourceHash.length > 0 && typeof review?.sourceHash === 'string';
   const matchesSource = reviewSaved && comparable && review.sourceHash === detail.sourceHash;
+  const contextMatches = reviewSaved && detail.sourceContext && Object.hasOwn(detail.sourceContext, 'contextHash')
+    ? (review.sourceContextHash || null) === (detail.sourceContext.contextHash || null) : null;
   const revision = Number.isSafeInteger(row.finance_revision) && row.finance_revision > 0 ? row.finance_revision : null;
   const detailsSaved = Boolean(revision || reviewSaved);
   const blockers = [...new Set(detail.issues || [])].map(text => ({ category: financeBlockerCategory(text), text }));
@@ -35,7 +37,8 @@ export function financeWorkflowDimensions(detail, { recorded = false } = {}) {
     details: { saved: detailsSaved, revision, sourceGapCount: sourceGaps.length,
       label: detailsSaved ? sourceGaps.length ? 'تفاصيل محفوظة — بها نواقص مصدر' : 'تفاصيل محفوظة' : 'مصدر مسجل — دون نسخة مراجعة محفوظة' },
     review: { recordSaved: reviewSaved, status: reviewStatus, matchesSource, verificationKind: review?.verificationKind || null, label: reviewLabel },
-    approval: { current: Boolean(detail.approved), label: detail.approved ? 'اعتماد النسخة الحالية'
+    approval: { current: Boolean(detail.approved), contextMatches, label: detail.approved ? 'اعتماد النسخة الحالية'
+      : detail.approvalContextChanged ? 'اعتماد سابق — تغيّر سياق المستند'
       : detail.approvalBeforeCompletion ? 'اعتُمد قبل الترحيل — استُكملت بعده حقول غير مالية'
       : row.approval_status === 'approved' || review?.status === 'approved' ? 'اعتماد سابق يحتاج مراجعة' : 'غير معتمد' },
     posting: { status: active ? 'posted' : reversed ? 'reversed' : detail.protectedSource ? 'protected' : 'unposted',

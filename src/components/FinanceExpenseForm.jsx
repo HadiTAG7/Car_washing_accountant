@@ -7,6 +7,7 @@ import FinanceDocumentStatus from './FinanceDocumentStatus';
 import { PAYMENT_PROOF_LABELS } from '../lib/financeWorkflowDimensions';
 import FinanceAttestation from './FinanceAttestation';
 import FinanceCustodyHolder from './FinanceCustodyHolder';
+import FinancePostedCompletion from './FinancePostedCompletion';
 
 const fields = { variable: ['expense_name', 'total_variable_cost', 'logged_date'], monthly: ['expense_name', 'total_monthly_cost', 'logged_date'],
   annual: ['description', 'amount', 'spent_date', 'annual_expense_id'], startup: ['description', 'amount', 'spent_date', 'startup_cost_id'] };
@@ -127,7 +128,10 @@ export default function FinanceExpenseForm({ kind, detail, requestId, options, o
         {detail.postingHistory.fundingCorrections.length > 0 && <p>تصحيح جهة السداد المسجل: {detail.postingHistory.fundingCorrections.map(entry => `#${entry.number ?? 'غير مرقم'}`).join('، ')}. هذا ربط دفتري، وليس مطابقة كشف البنك.</p>}
         <p>القيود لا تعني اكتمال دليل المستند أو اعتماد نسخته الحالية. تبقى النواقص ظاهرة، ولا يسمح بإعادة الترحيل.</p>
       </section>}
-    {protectedRow && <p className="fw-protected-note">المصدر محمي أو الفترة مقفلة؛ العرض فقط. لا تعديل للمصدر المرحّل من هذا المسار.</p>}
+    {detail && <FinancePostedCompletion key={detail.sourceHash} kind={kind} detail={detail} busy={busy} onDone={onSaved} onMessage={onMessage} />}
+    {protectedRow && <p className="fw-protected-note">{detail?.completion?.available
+      ? 'المصدر مرحّل؛ حقوله المالية للعرض فقط. الحقول غير المالية تُستكمل من «استكمال المستند المرحّل» أعلاه.'
+      : 'المصدر محمي أو الفترة مقفلة؛ العرض فقط. لا تعديل للمصدر المرحّل من هذا المسار.'}</p>}
     {error && <div className="fw-warning" role="alert">{error}</div>}
     <section aria-label="الأساسي"><h3 className="fw-form-section-title">الأساسي</h3><div className="fw-form">
       {input('الوصف', 'description')}{input('المبلغ بالريال', 'amount', 'number')}{input('تاريخ المصروف', 'date', 'date')}{input('المورد', 'supplier')}

@@ -240,4 +240,34 @@ describe.skipIf(!enabled)('founding settlement on Postgres with the production s
     expect(rows.t1).toMatchObject({ status: 'pending', recovered_amount: 0, recovered_date: null, recovery_method: null, document_recoveries: [] });
     expect(rows.t2).toMatchObject({ status: 'pending', recovered_amount: 0, document_recoveries: [] });
   }, 120000);
+
+  it('completes a posted document’s non-financial fields on Postgres without touching its entry, and keeps who and when', async () => {
+    const wb = request => financeWorkbench(db, { uid: admin }, { kind: 'variable', ...request });
+    const patch = { description: 'مواد تنظيف', amount: 90, date: '2026-10-12', quantity: 1, categoryId: 'cat1', supplier: 'محل', invoiceUrl: 'https://example.org/pg-complete',
+      isTaxInvoice: false, vatDeductible: false, priceMode: 'inclusive', paymentMethod: 'cash', paymentStatus: 'paid', paidDate: '2026-10-12',
+      fundingType: 'company_cash', fundingReference: 'إيصال الصندوق', purpose: 'تشغيل', evidenceRefs: ['pg'] };
+    const preview = await wb({ action: 'previewCapture', requestId: 'pg-complete-1', patch });
+    const { sourceId } = await wb({ action: 'capture', requestId: 'pg-complete-1', patch, previewHash: preview.previewHash, reason: 'اختبار', confirm: true });
+    let detail = await wb({ action: 'read', sourceId });
+    await wb({ action: 'approve', sourceId, sourceHash: detail.sourceHash, postingHash: detail.postingPreview.postingHash, reason: 'اعتماد', confirm: true });
+    detail = await wb({ action: 'read', sourceId });
+    await wb({ action: 'post', sourceId, sourceHash: detail.sourceHash, confirm: true });
+    const ledger = async () => (await pool.query(`select e.id, e.status, e.entry_date, l.account_id, l.debit, l.credit from public.journal_entries e
+      join public.journal_entry_lines l on l.entry_id = e.id order by e.id, l.line_no`)).rows;
+    const before = await ledger();
+    detail = await wb({ action: 'read', sourceId });
+    const completion = { purpose: 'تنظيف المغسلة اليومي', quantityMode: 'single', quantity: 3, taxReviewRef: 'غير ضريبي — لا مدخلات' };
+    const check = await wb({ action: 'previewCompletion', sourceId, sourceHash: detail.sourceHash, completion });
+    expect(check).toMatchObject({ treatmentUnchanged: true, fields: { purpose: { before: 'تشغيل', after: 'تنظيف المغسلة اليومي' } } });
+    await wb({ action: 'complete', sourceId, sourceHash: detail.sourceHash, completion, previewHash: check.previewHash, reason: 'استكمال', confirm: true });
+    const row = (await pool.query(`select total_variable_cost, quantity, unit_cost, approval_status, updated_by, finance_metadata->>'purpose' as purpose,
+      finance_metadata->'postedCompletion' as history from public.variable_expenses where id = $1`, [sourceId])).rows[0];
+    expect(row).toMatchObject({ purpose: 'تنظيف المغسلة اليومي', approval_status: 'approved', updated_by: admin });
+    expect([Number(row.total_variable_cost), Number(row.quantity), Number(row.unit_cost)]).toEqual([90, 3, 30]);
+    expect(row.history).toHaveLength(1);
+    expect(row.history[0]).toMatchObject({ byUid: admin, reason: 'استكمال', atIso: expect.any(String) });
+    expect(await ledger()).toEqual(before);
+    expect((await pool.query("select count(*)::int as n from public.audit_logs where action = 'finance-complete-posted'")).rows[0].n).toBe(1);
+    expect((await wb({ action: 'read', sourceId })).workflowDimensions.approval.label).toBe('اعتُمد قبل الترحيل — استُكملت بعده حقول غير مالية');
+  }, 120000);
 });

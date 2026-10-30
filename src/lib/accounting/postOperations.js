@@ -15,6 +15,7 @@
 // skipped. Re-running the whole sweep is therefore always safe.
 // ═══════════════════════════════════════════════════════════════════════════
 
+import { cashRecoveryDue } from '../../../functions/src/custodyRecovery.js';
 import { fetchRows } from '../firestoreCrud.js';
 import { postSource, hasPostedEntryFor, fetchEntries, fetchAccounts, ensureAccount } from './firestoreLedger.js';
 import { ADAPTERS } from './sourceAdapters.js';
@@ -90,7 +91,7 @@ export async function collectUnposted() {
   // record goes through two adapters.
   for (const t of temps) {
     consider('temporary_expense', t);
-    if (t.status === 'recovered' && t.recovered_date && !t.payroll_lock_id) consider('recovery', t);
+    if (cashRecoveryDue(t)) consider('recovery', t);
   }
 
   ready.sort((a, b) => String(a.date).localeCompare(String(b.date)));

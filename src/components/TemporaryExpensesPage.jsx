@@ -61,8 +61,10 @@ export default function TemporaryExpensesPage({ embedded = false } = {}) {
     const totalAll = expenses.reduce((s, e) => s + (e.amount || 0), 0);
     const recoveredRows = expenses.filter((e) => e.status === 'recovered');
     const pendingRows   = expenses.filter((e) => e.status === 'pending');
-    const totalRecovered = recoveredRows.reduce((s, e) => s + (e.amount || 0), 0);
-    const totalPending   = pendingRows.reduce((s, e) => s + (e.amount || 0), 0);
+    // Pending is what is still open: a part already recovered (payroll, or an
+    // expense document paid from the custody) is not pending any more.
+    const totalPending   = pendingRows.reduce((s, e) => s + Math.max(0, (e.amount || 0) - (e.recoveredAmount || 0)), 0);
+    const totalRecovered = totalAll - totalPending;
     // Pro-rata: aggregate amounts scale by the viewing partner's share.
     // Counts round to the nearest integer so the KPI text stays sensible
     // ("1 سجل بانتظار الاسترداد" rather than "0.3 سجل").
@@ -90,6 +92,11 @@ export default function TemporaryExpensesPage({ embedded = false } = {}) {
   }
 
   async function handleToggle(expense) {
+    // Settled by expense documents: undone only by reversing their entries.
+    if (expense.recoveryMethod === 'expense_document') {
+      showToast('سُوّيت هذه العهدة بمستندات مصروف مرحّلة؛ تُعاد بعكس قيودها، لا من هنا.', 'error');
+      return;
+    }
     try {
       setMutationError(null);
       await toggleRecoveryStatus(expense.id, expense.status);
@@ -270,6 +277,7 @@ export default function TemporaryExpensesPage({ embedded = false } = {}) {
                         <td className="py-3 px-4 whitespace-nowrap">{bikers.loading ? '…' : bikers.error ? 'غير متاح' : <span className={advanceBikerState(e, bikers.bikers).risky ? 'font-semibold text-rose-700 dark:text-rose-300' : ''}>{advanceBikerState(e, bikers.bikers).label}</span>}</td>
                         <td className="py-3 px-4 whitespace-nowrap text-left tabular-nums font-bold text-slate-900 dark:text-slate-100">
                           {formatCurrency((e.amount || 0) * scalingFactor)}
+                          {e.documentRecovered > 0 && <div className="text-[11px] font-normal text-slate-500 dark:text-slate-400">منه بمستندات مصروف {formatCurrency(e.documentRecovered * scalingFactor)}</div>}
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap tabular-nums text-slate-700 dark:text-slate-300">
                           {formatDate(e.spentDate)}

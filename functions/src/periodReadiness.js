@@ -7,6 +7,7 @@ import { depreciationForPeriod, periodEndDate, validateAsset } from '../../src/l
 import { reconcileAssetCost } from '../../src/lib/accounting/assetReconciliation.js';
 import { closePreflight } from '../../src/lib/accounting/periods.js';
 import { round2 } from './invariants.js';
+import { cashRecoveryAmount, cashRecoveryDue } from './custodyRecovery.js';
 
 export const CLOSE_COLLECTIONS = [
   'journal_entries', 'journal_lines', 'accounting_periods', 'chart_of_accounts',
@@ -24,7 +25,7 @@ const dateOf = value => {
 const live = entry => entry?.status === 'posted' && !entry.reversalOf;
 const sourcePosted = (entries, kind, id, sourceType) => entries.some(e => live(e)
   && String(e.sourceId) === String(id) && (e.sourceKind ? e.sourceKind === kind : e.sourceType === sourceType));
-const amountOf = (kind, row) => round2(kind === 'wash' ? Number(row.quantity) * Number(row.price)
+const amountOf = (kind, row) => round2(kind === 'wash' ? Number(row.quantity) * Number(row.price) : kind === 'recovery' ? cashRecoveryAmount(row)
   : row.amount ?? row.total_variable_cost ?? row.total_monthly_cost ?? 0);
 
 export async function readCloseData(db, tx = null) {
@@ -46,7 +47,7 @@ export function periodReadiness(periodKey, data, { today = riyadhDay() } = {}) {
   const unposted = [], excluded = [], awaiting = [];
   for (const [kind, adapter] of Object.entries(ADAPTERS)) {
     for (const row of rows(adapter.collection)) {
-      if (kind === 'recovery' && !(row.status === 'recovered' && row.recovered_date && !row.payroll_lock_id)) continue;
+      if (kind === 'recovery' && !cashRecoveryDue(row)) continue;
       const date = dateOf(adapter.dateOf(row));
       if (date.slice(0, 7) !== periodKey) continue;
       const item = { kind, id: row.id, date, amount: amountOf(kind, row), label: adapter.label(row) };

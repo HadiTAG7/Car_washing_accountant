@@ -15,7 +15,8 @@ it('returns identical factual dimensions in browse/read while keeping the stored
   expect(browse.items[0].workflowDimensions).toEqual(read.workflowDimensions);
   expect(read.workflowStage).toBe('incomplete'); expect(read.approvalReady).toBe(false); expect(read.postingReady).toBe(false);
   expect(read.workflowDimensions).toMatchObject({ registration: { status: 'recorded' }, details: { saved: true }, review: { status: 'saved_pending' }, approval: { current: false }, sourceGaps: [] });
-  expect(read.workflowDimensions.postingBlockers.map(item => item.category)).toEqual(['funding', 'tax']);
+  // «دفع موظف» paid by card: the method conflicts with the funding, and the employee is not named yet.
+  expect(read.workflowDimensions.postingBlockers.map(item => item.category)).toEqual(['funding', 'funding', 'tax']);
   expect(read.row).toMatchObject({ is_tax_invoice: true, vat_deductible: false, invoice_number: null, finance_metadata: { fundingType: 'employee' } });
   expect([...db.rows]).toEqual(storedBefore);
   await expect(financeWorkbench(db, auth, { action: 'approve', kind: 'variable', sourceId: read.sourceId, sourceHash: read.sourceHash,

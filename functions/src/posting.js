@@ -17,6 +17,7 @@
 // decides what it is.
 // ═══════════════════════════════════════════════════════════════════════════
 
+import { cashRecoveryAmount, cashRecoveryDue } from './custodyRecovery.js';
 import { round2 } from './invariants.js';
 import { resolvePurchaseTax } from './purchaseTax.js';
 import { applyReviewedPartialVat, requiresReviewedPartialVat } from './financeReviewedVat.js';
@@ -437,10 +438,11 @@ export const ADAPTERS = {
     collection: 'temporary_expenses',
     lockKind: 'recovery',
     dateOf: (r) => String(r.recovered_date || '').slice(0, 10),
-    approved: (r) => r.status === 'recovered' && Boolean(r.recovered_date) && !r.payroll_lock_id,
-    notApproved: 'العهدة لم تُسترد بعد.',
+    // Only the cash part: what expense documents settled was credited to 1300 by those documents.
+    approved: (r) => cashRecoveryDue(r),
+    notApproved: (r) => (r.status === 'recovered' && cashRecoveryAmount(r) <= 0 ? 'العهدة سُوّيت كلها بمستندات مصروف؛ لا استرداد نقدي لها.' : 'العهدة لم تُسترد بعد.'),
     build: (row, id) => {
-      const amount = round2(row.amount);
+      const amount = cashRecoveryAmount(row);
       const method = row.recovery_method || row.payment_method || 'cash';
       return {
         entry: {

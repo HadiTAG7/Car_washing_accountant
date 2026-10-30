@@ -31,7 +31,8 @@ import {
   buildReversalLines, postingLockId, periodKeyOf, round2,
   isRealDate, isValidPeriodKey, journalCounterUpdate,
 } from './invariants.js';
-import { ADAPTERS, legacyLockIdFor } from './posting.js';
+import { ADAPTERS, ACC, legacyLockIdFor } from './posting.js';
+import { settlesEmployeeCustody, custodyBikerOf, allocateCustody, applyDocumentRecovery, revertDocumentRecovery } from './custodyRecovery.js';
 import { taxPolicyAt } from './taxPolicy.js';
 import { assertFinanceApproval, financeHash } from './financeReview.js';
 import { readCloseData, periodReadiness } from './periodReadiness.js';
@@ -198,6 +199,24 @@ export async function postEntry(db, FieldValue, { entry, lines }, {
  * first write, which a Firestore transaction requires and which also means the
  * whole decision is made on one consistent snapshot.
  */
+/**
+ * عهدة الموظف: an expense paid from an employee's custody (or by him) settles
+ * his oldest open custody records with the amount credited to 1300, on the
+ * date of the entry that credits it. Read inside the posting transaction.
+ */
+async function readCustodySettlement(db, tx, row, { entry, lines, settlement }) {
+  if (!settlesEmployeeCustody(row)) return null;
+  const credit = list => list.reduce((n, l) => n + (String(l.accountId) === ACC.EMPLOYEE_ADVANCE ? Number(l.credit) || 0 : 0), 0);
+  const target = settlement && credit(settlement.lines) > 0 ? 'settlement' : credit(lines) > 0 ? 'entry' : null;
+  if (!target) return null;
+  const bikerId = custodyBikerOf(row), amount = round2(credit(target === 'settlement' ? settlement.lines : lines));
+  const snap = await tx.get(db.collection('temporary_expenses').where('biker_id', '==', bikerId));
+  const advances = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const { allocations, excess } = allocateCustody(amount, advances, bikerId);
+  return { target, bikerId, amount, excess, allocations, date: (target === 'settlement' ? settlement.entry : entry).entryDate,
+    byId: new Map(advances.map((a) => [a.id, a])) };
+}
+
 export async function postSource(db, FieldValue, { kind, sourceId }, { userId = null, expectedFinanceSourceHash = null, financeAuthorizer = null, postingDate = null } = {}) {
   const adapter = ADAPTERS[String(kind)];
   if (!adapter) throw new LedgerError(`نوع سجل غير معروف: ${kind}`, { code: 'invalid-argument' });
@@ -314,6 +333,9 @@ export async function postSource(db, FieldValue, { kind, sourceId }, { userId = 
     // Both periods are read, and BOTH must be open: half a purchase in the
     // books is worse than none, and committing the accrual into an open March
     // while April is closed would leave a payable nobody can ever settle.
+    const custody = await readCustodySettlement(db, tx, row, { entry: normEntry, lines: normLines, settlement });
+    const custodyRecord = custody ? { bikerId: custody.bikerId, amount: custody.amount, allocations: custody.allocations, excess: custody.excess } : null;
+
     const periodKeys = settlement && settlement.entry.periodKey !== normEntry.periodKey
       ? [normEntry.periodKey, settlement.entry.periodKey]
       : [normEntry.periodKey];
@@ -349,6 +371,8 @@ export async function postSource(db, FieldValue, { kind, sourceId }, { userId = 
       // Names the payment entry that belongs to this one, so a reader — and
       // the reversal — can find the other half rather than infer it.
       settlementEntryId: settlementRef ? settlementRef.id : null,
+      // Which custody records this entry settled, so its reversal can undo them.
+      ...(custody?.target === 'entry' ? { custodyRecovery: custodyRecord } : {}),
       lines: normLines,
       lineCount: normLines.length,
       totalDebit: totals.debit,
@@ -370,6 +394,7 @@ export async function postSource(db, FieldValue, { kind, sourceId }, { userId = 
         // deduction for any reader that sums snapshots.
         purchaseTaxSnapshot: null,
         settlementOf: entryRef.id,
+        ...(custody?.target === 'settlement' ? { custodyRecovery: custodyRecord } : {}),
         lines: settlement.lines,
         lineCount: settlement.lines.length,
         totalDebit: settlementTotals.debit,
@@ -378,6 +403,13 @@ export async function postSource(db, FieldValue, { kind, sourceId }, { userId = 
         createdAt: FieldValue.serverTimestamp(),
         postedAt: FieldValue.serverTimestamp(),
       });
+    }
+    if (custody) {
+      const entryId = custody.target === 'settlement' ? settlementRef.id : entryRef.id;
+      for (const allocation of custody.allocations) {
+        tx.update(db.collection('temporary_expenses').doc(allocation.advanceId),
+          applyDocumentRecovery(custody.byId.get(allocation.advanceId), allocation, { date: custody.date, kind: String(kind), sourceId: id, entryId }));
+      }
     }
     for (const [i, snap] of periodSnaps.entries()) {
       if (!snap.exists) {
@@ -570,6 +602,20 @@ export async function reverseEntry(db, FieldValue, entryId, { entryDate, descrip
       settlementRevLines = buildReversalLines(lines);
     }
 
+    // ── عهدة الموظف ── the custody records this entry (or its payment) settled go back to open.
+    const custodyReverts = [];
+    for (const [entryRef, entry] of [[originalRef.id, original], ...(reverseSettlement ? [[settlementSnap.id, settlement]] : [])]) {
+      for (const allocation of entry.custodyRecovery?.allocations || []) {
+        const ref = db.collection('temporary_expenses').doc(String(allocation.advanceId)), snap = await tx.get(ref);
+        if (!snap.exists) continue;
+        const patch = revertDocumentRecovery(snap.data(), entryRef);
+        if (patch?.blocked) {
+          throw new LedgerError('العهدة التي سوّاها هذا القيد استُردت بعده براتب أو نقدًا — راجعها في صفحة العهد قبل عكس القيد.');
+        }
+        if (patch) custodyReverts.push([ref, patch]);
+      }
+    }
+
     const nextNumber = counterSnap.exists ? (Number(counterSnap.data().nextNumber) || 1) : 1;
     const settlementRevNumber = reverseSettlement ? nextNumber + 1 : null;
     const revRef = db.collection(COL.ENTRIES).doc();
@@ -615,6 +661,7 @@ export async function reverseEntry(db, FieldValue, entryId, { entryDate, descrip
       reversedBy: revRef.id,
       reversedAt: FieldValue.serverTimestamp(),
     });
+    for (const [ref, patch] of custodyReverts) tx.update(ref, patch);
     if (reverseSettlement) {
       const st = totalsOf(settlementRevLines);
       tx.set(settlementRevRef, {

@@ -1,4 +1,5 @@
 import { advanceAssignmentMonth, isAssignmentMonth } from './advanceMonth.js';
+import { documentRecoveredOf } from '../../functions/src/custodyRecovery.js';
 import { clampRevenueOrigin } from './sweater/revenueOriginClient.js';
 import { bikerNameFields } from './bikerNames.js';
 // ═══════════════════════════════════════════════════════════════════════════
@@ -723,6 +724,9 @@ export function mapTemporaryExpense(row) {
     paymentMethod:  clampAdvanceMethod(row.payment_method),
     recoveredAmount: Math.max(0, Number(row.recovered_amount) || 0),
     payrollLockId:   row.payroll_lock_id || null,
+    // The part settled by expense documents paid from this custody (workbench «من عهدة شخص» / «دفع موظف»).
+    recoveryMethod:  row.recovery_method || null,
+    documentRecovered: documentRecoveredOf(row),
   };
 }
 export function toTemporaryExpenseInsert({ title, amount, spentDate, status, recoveredDate, notes, bikerId, paymentMethod, assignmentMonth }) {

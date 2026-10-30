@@ -5,7 +5,7 @@ export const FINANCE_BLOCKER_LABELS = {
   policy: 'السياسة التاريخية والحسابات', allocation: 'ربط الأصل ومنع التكرار', review: 'المراجعة والربط',
 };
 export function financeBlockerCategory(message) {
-  if (/التمويل|الحساب المقابل|ذمة المورد/.test(message)) return 'funding';
+  if (/التمويل|الحساب المقابل|ذمة المورد|الموظف الذي دفع|صاحب العهدة/.test(message)) return 'funding';
   if (/السداد|طريقة الدفع/.test(message)) return 'payment';
   if (/السياسة التاريخية|حسابات القيد|معاينة الحسابات/.test(message)) return 'policy';
   if (/الضريب|المدخلات/.test(message)) return 'tax';

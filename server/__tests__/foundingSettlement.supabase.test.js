@@ -5,6 +5,8 @@ import { SCHEMA } from '../../src/lib/data/schema/registry.js';
 import { financeWorkbench } from '../financeWorkbench.js';
 import { statementLineId } from '../foundingSettlement.js';
 import { foundingSeed } from './foundingFixture.js';
+import { FieldValue } from 'firebase-admin/firestore';
+import { reverseEntry } from '../../functions/src/ledger.js';
 
 // The local Supabase only (truncated here): migrations, RLS, triggers and pgstore as ledger_server.
 const url = 'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
@@ -202,5 +204,40 @@ describe.skipIf(!enabled)('founding settlement on Postgres with the production s
       where e.id = $1 order by l.line_no`, [posted.verification.journalIds[0]])).rows;
     expect(lines.map(l => [l.entry_date, l.account_id, Number(l.debit), Number(l.credit)])).toEqual([['2026-09-30', '5100', 80, 0], ['2026-09-30', '2300', 0, 80]]);
     expect((await pool.query("select status from public.accounting_periods where id = '2026-07'")).rows[0].status).toBe('closed');
+  }, 120000);
+
+  it('settles an employee’s oldest open custody when a document paid from it posts on Postgres, and reopens it on reversal', async () => {
+    const wb = request => financeWorkbench(db, { uid: admin }, { kind: 'variable', ...request });
+    const batch = db.batch();
+    batch.set(db.doc('bikers/b1'), { name: 'سالم', driver_external_id: 'PG-D1' });
+    batch.set(db.doc('temporary_expenses/t1'), { biker_id: 'b1', title: 'عهدة أولى', amount: 100, spent_date: '2026-10-01', status: 'pending', recovered_amount: 0, payment_method: 'cash' });
+    batch.set(db.doc('temporary_expenses/t2'), { biker_id: 'b1', title: 'عهدة ثانية', amount: 50, spent_date: '2026-10-05', status: 'pending', recovered_amount: 0, payment_method: 'cash' });
+    batch.set(db.doc('chart_of_accounts/1300'), { code: '1300', nameArabic: 'عهد ومصروفات قابلة للاسترداد', accountType: 'asset', active: true });
+    await batch.commit();
+    const patch = { description: 'أدوات من عهدة سالم', amount: 120, date: '2026-10-18', quantity: 1, categoryId: 'cat1', supplier: 'محل', invoiceUrl: 'https://example.org/pg-custody',
+      isTaxInvoice: false, vatDeductible: false, priceMode: 'inclusive', paymentMethod: 'custody', paymentStatus: 'paid', paidDate: '2026-10-18',
+      fundingType: 'custody', custodyBikerId: 'b1', fundingReference: 'إيصال سلّمه سالم', purpose: 'تشغيل', evidenceRefs: ['pg'] };
+    const preview = await wb({ action: 'previewCapture', requestId: 'pg-custody-1', patch });
+    const { sourceId } = await wb({ action: 'capture', requestId: 'pg-custody-1', patch, previewHash: preview.previewHash, reason: 'اختبار', confirm: true });
+    let detail = await wb({ action: 'read', sourceId });
+    expect(detail).toMatchObject({ issues: [], approvalReady: true });
+    await wb({ action: 'approve', sourceId, sourceHash: detail.sourceHash, postingHash: detail.postingPreview.postingHash, reason: 'اعتماد', confirm: true });
+    detail = await wb({ action: 'read', sourceId });
+    const posted = await wb({ action: 'post', sourceId, sourceHash: detail.sourceHash, confirm: true });
+    const entryId = posted.verification.journalIds[0];
+    const lines = (await pool.query('select account_id, debit, credit from public.journal_entry_lines where entry_id = $1 order by line_no', [entryId])).rows;
+    expect(lines.map(l => [l.account_id, Number(l.debit), Number(l.credit)])).toEqual([['5100', 120, 0], ['1300', 0, 120]]);
+    const advances = async () => Object.fromEntries((await db.collection('temporary_expenses').get()).docs.map(d => [d.id, d.data()]));
+    let rows = await advances();
+    expect(rows.t1).toMatchObject({ status: 'recovered', recovered_amount: 100, recovered_date: '2026-10-18', recovery_method: 'expense_document',
+      document_recoveries: [{ kind: 'variable', sourceId, entryId, amount: 100, date: '2026-10-18' }] });
+    expect(rows.t2).toMatchObject({ status: 'pending', recovered_amount: 20 });
+    expect((await db.doc(`journal_entries/${entryId}`).get()).data().custodyRecovery).toMatchObject({ bikerId: 'b1', amount: 120, excess: 0 });
+    const holders = (await wb({ action: 'options' })).custodyHolders;
+    expect(holders.find(h => h.id === 'b1')).toMatchObject({ name: 'سالم', outstanding: 30 });
+    await reverseEntry(db, FieldValue, entryId, { entryDate: '2026-10-28', userId: admin });
+    rows = await advances();
+    expect(rows.t1).toMatchObject({ status: 'pending', recovered_amount: 0, recovered_date: null, recovery_method: null, document_recoveries: [] });
+    expect(rows.t2).toMatchObject({ status: 'pending', recovered_amount: 0, document_recoveries: [] });
   }, 120000);
 });

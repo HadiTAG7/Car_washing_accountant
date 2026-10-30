@@ -4881,7 +4881,6 @@
   "— منها بإقرار المدير [VAR0] · [VAR1]": "— of which manager-attested [VAR0] · [VAR1]",
   "— منها بإقرار المدير": "— of which manager-attested",
   "دفعات شركاء وصلتك (": "Partner payments that reached you (",
-  "تحويلاتك لحساب الشركة (من كشف الشركة)": "Your transfers to the company account (from the company statement)",
   "تحويلات من حساب الشركة لك": "Transfers from the company account to you",
   "دفعات شركاء في فترة التأسيس لم تُحسم وجهتها:": "Founding-period partner payments whose destination is not decided:",
   ". لا تدخل الصافي حتى تُحسم (هنا كلها، أو كل دفعة في «د) دفعات الشركاء»).": ". They are not in the net until decided (all of them here, or each payment in «D) Partner payments»).",
@@ -4991,7 +4990,6 @@
   "يحفظ أن [VAR0] دفعة مجموعها [VAR1] وصلت لحسابك الشخصي، باسمك ووقتك، ويعدّل جهة استلام غير المرحّلة منها ([VAR2]). المرحّلة لها قيود تصحيح تنتظر موافقتك. لا ترحيل.": "Saves that [VAR0] payments totalling [VAR1] reached your personal account, under your name and time, and updates where the unposted ones were received ([VAR2]). Posted ones get correction entries awaiting your approval. Nothing is posted.",
   "وصلت لحسابك الشخصي، باسمك ووقتك، ويعدّل جهة استلام غير المرحّلة منها (": "reached your personal account, under your name and time, and updates where the unposted ones were received (",
   "). المرحّلة لها قيود تصحيح تنتظر موافقتك. لا ترحيل.": "). Posted ones get correction entries awaiting your approval. Nothing is posted.",
-  "— شهر المستند مقفل، ويُقيَّد بآخر يوم في فترة التأسيس والشهر يبقى مقفلًا": "— the document's month is closed; it is posted on the last day of the founding period and the month stays closed",
   "لا تحويلات لحساب الشركة بعد (من كشف أو بلا كشف).": "No transfers to the company account yet (from a statement or without one).",
   "— لم يُرحّل": "— not posted",
   "المطلوب حسب العمالة. المدفوع من سندات القبض، والمرحّل من حساب رأس مال كل شريك. لا ترحيل هنا إلا قيود السندات التي وصلت لحساب هادي، بموافقة المدير.": "Required by headcount. Paid from the receipts, and posted from each partner's capital account. Nothing posts here except the entries for receipts that reached Hadi's account, on the manager's approval.",
@@ -5064,5 +5062,7 @@
   "التحويل غير موجود.": "The transfer does not exist.",
   "التحويل مرحّل؛ تصحيحه بقيد عكسي.": "The transfer is posted; correct it with a reversing entry.",
   "القيد المقترح غير موجود.": "The proposed entry does not exist.",
-  "السند مرحّل؛ تصحيحه بقيد عكسي.": "The receipt is posted; correct it with a reversing entry."
+  "السند مرحّل؛ تصحيحه بقيد عكسي.": "The receipt is posted; correct it with a reversing entry.",
+  "— شهر المستند مقفل، ويُقيَّد بآخر يوم في فترة التأسيس والشهر يبقى مقفلًا.": "— the document's month is closed; it is posted on the last day of the founding period and the month stays closed.",
+  "تحويلاتك لحساب الشركة (من كشف الشركة أو بلا كشف)": "Your transfers to the company account (from the company statement or without a statement)"
 }

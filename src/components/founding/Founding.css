@@ -45,3 +45,4 @@
   .founding-summary section { break-inside: avoid; }
   .founding-summary .fw-table-scroll { overflow: visible; }
 }
+.fw-page.founding-embed { padding: 0; max-width: none; }

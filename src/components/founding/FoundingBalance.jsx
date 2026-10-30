@@ -37,7 +37,7 @@ export function HadiBalance({ founding }) {
       <tbody>
         <tr><th scope="row">مستندات دفعتها ({b.paidCount}){b.attestedCount ? ` — منها بإقرار المدير ${b.attestedCount} · ${money(b.attested)}` : ''}</th><td>{money(b.paid)}</td></tr>
         <tr><th scope="row">دفعات شركاء وصلتك ({b.receivedCount})</th><td>{money(-b.received)}</td></tr>
-        <tr><th scope="row">تحويلاتك لحساب الشركة (من كشف الشركة)</th><td>{money(b.toCompany)}</td></tr>
+        <tr><th scope="row">تحويلاتك لحساب الشركة (من كشف الشركة أو بلا كشف)</th><td>{money(b.toCompany)}</td></tr>
         {b.toHadi > 0 && <tr><th scope="row">تحويلات من حساب الشركة لك</th><td>{money(-b.toHadi)}</td></tr>}
         <tr><th scope="row">الصافي</th><td><strong>{money(b.net)}</strong> · {meaningText(b.meaning)}</td></tr>
         {b.adjustments !== 0 && <tr><th scope="row">بعد التسويات على 3200</th><td><strong>{money(b.afterAdjustments)}</strong> · {meaningText(b.afterMeaning)}</td></tr>}

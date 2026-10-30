@@ -22,7 +22,8 @@ export function ReceiptPostings({ onPosted }) {
   const ready = proposed.filter(e => e.status === 'proposed'), toPost = ready.filter(e => approve.has(e.key));
   const toggle = (set, key) => set(cur => { const next = new Set(cur); if (next.has(key)) next.delete(key); else next.add(key); return next; });
   const total = list => list.reduce((n, x) => n + Number(x.amount), 0);
-  return <section className="fw-panel founding-page" dir="rtl" aria-label="سندات قبض وصلت لحساب هادي بلا قيد">
+  // The finance styles live under .fw-page; embedded here without its page padding.
+  return <div className="fw-page founding-page founding-embed" dir="rtl"><section className="fw-panel" aria-label="سندات قبض وصلت لحساب هادي بلا قيد">
     <h2><HandCoins size={18} /> سندات قبض وصلت لحساب هادي بلا قيد</h2>
     <p>لكل سند: مدين 2300 حساب هادي الجاري، ودائن رأس مال الشريك، بتاريخ السند. السند في شهر مقفل من فترة التأسيس يُقيَّد بآخر يوم فيها، والشهر يبقى مقفلًا.
       يُحفظ قيدًا مقترحًا بسببك، ولا يُرحّل إلا بموافقتك. «وصلت لحساب هادي» من قرارك في تسوية فترة التأسيس أو مما سُجّل في السند.</p>
@@ -72,5 +73,5 @@ export function ReceiptPostings({ onPosted }) {
         </div>
       </>}
     </>}
-  </section>;
+  </section></div>;
 }

@@ -35,6 +35,14 @@ describe('trial balance period presentation', () => {
     expect(r.rows.find(a => a.code === '1010').closingSigned).toBe(0);
     expect(r.totalCredit).toBe(100);
   });
+  it('counts an entry dated on «إلى تاريخ» itself and on «من تاريخ», not the day after', () => {
+    const edge = [...entries, { id: 'to-day', entryDate: '2026-10-30', status: 'posted' }, { id: 'next-day', entryDate: '2026-10-31', status: 'posted' }];
+    const edgeLines = [...lines, { entryId: 'to-day', accountId: '1010', debit: 70 }, { entryId: 'to-day', accountId: '3000', credit: 70 },
+      { entryId: 'next-day', accountId: '1010', debit: 5 }, { entryId: 'next-day', accountId: '3000', credit: 5 }];
+    const r = trialBalancePeriod(accounts, edge, edgeLines, { from: '2026-10-02', to: '2026-10-30' });
+    expect(r.rows.find(a => a.code === '1010')).toMatchObject({ openingSigned: 100, debit: 70, credit: 130, closingSigned: 40 });
+    expect(r.balanced).toBe(true);
+  });
   it('round trips account and exact dates to the ledger; rejects malformed URL values', () => {
     expect(ledgerLocationFilters(ledgerPeriodHref('1010', '2026-09-01', '2026-09-30'))).toEqual({ account: '1010', from: '2026-09-01', to: '2026-09-30' });
     expect(ledgerLocationFilters('?account=<bad>&from=2026-02-30&to=bad')).toEqual({ account: '', from: '', to: '' });

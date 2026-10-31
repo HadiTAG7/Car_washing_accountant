@@ -99,7 +99,7 @@ export default function WashesPage() {
   // Ticket status only for the rows on screen, not one read per Sweater wash.
   const bookingIds = shown.filter(wash => wash.revenueOrigin === 'sweater' && wash.sspBookingId).map(wash => wash.sspBookingId);
   const washDetails = useSweaterWashDetails(bookingIds, bookingIds.length > 0);
-  const byBookingId = new Map(washDetails.bookings.map(booking => [booking.sspBookingId, booking.record]));
+  const byBookingId = new Map(washDetails.bookings.map(booking => [booking.requestedId ?? booking.sspBookingId, booking.record]));
 
   const [localOpen, setLocalOpen]         = useState(false);
   const [editingItem, setEditingItem]     = useState(null);

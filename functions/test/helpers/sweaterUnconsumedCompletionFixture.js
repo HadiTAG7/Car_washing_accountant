@@ -1,5 +1,6 @@
 import { syncDb, syncFV, syncPayload, syncRequest } from './sweaterOperationsFixture.js';
-import { previewOperations, saveOperations } from '../../src/sweater/operationsSync.js';
+// History as the writer of that time filed it (a booking per prefixed id); the later observation runs on today's writer.
+import { previewOperations, saveOperations } from './legacyOperationsSync.js';
 import { normalizeRecord, hashRecord, hashBody } from '../../src/sweater/record.js';
 
 export async function seedUnconsumedCompletion() {

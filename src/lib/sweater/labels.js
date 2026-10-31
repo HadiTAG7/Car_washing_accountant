@@ -47,6 +47,7 @@ export const PROCESSING_STATUS_AR = Object.freeze({
   ready_for_posting: 'جاهزة للترحيل',
   posted:            'مُرحَّلة',
   needs_review:      'تحتاج مراجعة',
+  pending_source:    'بانتظار قراءة سويتر التالية',
 });
 
 export const SETTLEMENT_STATUS_AR = Object.freeze({
@@ -105,6 +106,17 @@ export const REVIEW_REASON_AR = Object.freeze({
   modified_after_posting: 'تعديل بعد الترحيل',
   duplicate_conflict:     'تعارض تكرار',
   forbidden_field:        'حقل ممنوع من الوكيل',
+  // أسباب مزامنة التشغيل (operations_sync_v2) وتوحيد الحجوزات برقمها.
+  execution_not_final:        'الحجز ما زال قيد التنفيذ في سويتر',
+  protected_existing_record:  'يخالف سجلًا محفوظًا أو قرارًا سابقًا — القرار لك',
+  unverified_worker_link:     'البايكر غير مربوط بمعرّفه في سويتر',
+  missing_execution_evidence: 'منجز في سويتر بلا وقت بدء وانتهاء يثبت الغسلة',
+  execution_without_wash:     'غسلة مثبتة في سويتر بلا غسلة مسجلة عندنا',
+  awaiting_identity_cleanup:  'بانتظار توحيد الحجوزات برقمها',
+  older_observation:          'قراءة أقدم من المحفوظة',
+  execution_commission_policy_review: 'قبل سريان سياسة العمولة',
+  execution_worker_date_review: 'خارج فترة عمل البايكر',
+  unsupported_execution_service_type: 'خدمة غير الغسيل الكامل',
 });
 
 /** ترجمةٌ آمنة: رمزٌ بلا اسم يُعرض كما هو بدل أن يختفي السطر. */

@@ -1,6 +1,6 @@
 import { reviewAdministrativeCompletion, ADMIN_COMPLETION_WARNING, isApprovedMissingStartCompletion, isApprovedOngoingCompletion } from '../../../src/lib/sweater/administrativeCompletion.js';
 import { ownerBookingIdentity } from '../../../src/lib/sweater/bookingIdentity.js';
-import { COL, bookingDocId, rawDocId, SweaterIngestError } from './ingest.js';
+import { COL, bookingDocId, sspKey, sspWashDocId, rawDocId, SweaterIngestError } from './ingest.js';
 import { hashBody, hashRecord, normalizeRecord } from './record.js';
 import { executionWash } from './operationsExecution.js';
 import { WASH_COMMISSION_EFFECTIVE_MONTH } from '../washCommission.js';
@@ -36,8 +36,11 @@ async function plan(db, payload, read, actor) {
   const docs = snaps.flatMap((s,i) => s.docs.map(d => ({ collection: collections[i], id: d.id, data: d.data() })));
   const rows = [], state = [], counts = { new: 0, modified: 0, duplicate: 0, rejected: 0, needsReview: 0 };
   for (const raw of payload.records) {
-    const record = normalizeRecord(raw), number = ownerBookingIdentity(record.sspBookingId), id = bookingDocId(record.sspBookingId), washId = `ssp__${id}`;
-    const related = docs.filter(d => identity(d.data) === number), booking = related.find(d => d.collection === COL.BOOKINGS && d.id === id)?.data;
+    const record = normalizeRecord(raw), number = ownerBookingIdentity(record.sspBookingId), id = bookingDocId(record.sspBookingId), washId = sspWashDocId(record.sspBookingId);
+    // Until the identity cleanup runs, the booking may still be filed under the prefixed id it was seen with.
+    const bookingDoc = docs.find(d => d.collection === COL.BOOKINGS && d.id === id)
+      ?? docs.find(d => d.collection === COL.BOOKINGS && d.id === sspKey(record.sspBookingId));
+    const related = docs.filter(d => identity(d.data) === number), booking = bookingDoc?.data;
     const claimRef = db.collection(CLAIMS).doc(bookingDocId(number)), claim = (await read(claimRef)).data();
     const bikerId = payload.workerLinks[record.driverExternalId], worker = (await read(db.collection('bikers').doc(bikerId))).data();
     const linkedWorkers = new Set(docs.filter(d => d.collection === 'washes' && d.data.driver_external_id === record.driverExternalId).map(d => d.data.biker_id).filter(Boolean));
@@ -47,7 +50,7 @@ async function plan(db, payload, read, actor) {
     const wash = { ...executionWash(record, bikerId, worker?.name || ''), ssp_booking_number: number, ssp_raw_status: record.rawStatus,
       owner_completion_decision: decision, completion_basis: 'owner_administrative_decision' };
     const hash = hashBody(wash), existingWash = related.find(d => d.collection === 'washes' && d.id === washId)?.data;
-    const expectedLinks = [`b__${id}`, `w__${encodeURIComponent(washId)}`];
+    const expectedLinks = [`b__${sspKey(record.sspBookingId)}`, `w__${encodeURIComponent(washId)}`];
     const foreignRelated = related.some(d => (d.data.ssp_booking_id || d.data.sspBookingId || d.data.record?.sspBookingId) !== record.sspBookingId
       || d.collection === 'sweater_owner_collection_confirmations' || d.collection === 'sweater_booking_links'
       || (d.collection === 'washes' && d.id !== washId)
@@ -81,7 +84,7 @@ async function plan(db, payload, read, actor) {
       reasonAr: conflict ? 'تعارض في الهوية أو العامل أو سجل محمي؛ لا يُستبدل الموجود.' : 'قرار اكتمال إداري مستقل؛ التحصيل غير مثبت.',
       assertedAmount: wash.net_amount, vatAmount: wash.vat_amount, grossAmount: wash.gross_amount, workerCommission: wash.worker_commission_per_wash,
       _raw: raw, _record: record, _decision: decision, _wash: wash, _washHash: hash, _claimRef: claimRef, _claim: claim,
-      _bookingRef: db.collection(COL.BOOKINGS).doc(id), _booking: booking, _washRef: db.collection('washes').doc(washId), _links: links, _existingWash: existingWash };
+      _bookingRef: db.collection(COL.BOOKINGS).doc(bookingDoc?.id ?? id), _booking: booking, _washRef: db.collection('washes').doc(washId), _links: links, _existingWash: existingWash };
     rows.push(row); state.push({ number, related, claim, worker, period: periodSnap.data() || null, settlement: settlementSnap.data() || null });
   }
   return { runRef, payloadHash, rows, counts, stateHash: hashBody(state) };
@@ -123,7 +126,7 @@ export async function saveAdministrativeCompletion(db, FieldValue, request, acto
         source: ADMIN_COMPLETION_SOURCE, lastImportRunId: p.importRunId, serviceDate: r.serviceDate, periodKey: r.serviceDate.slice(0,7),
         normalizedStatus: r.normalizedStatus, processingStatus: 'needs_review', recognitionEligibility: null, recognitionReason: null } : {}),
         ownerCompletionDecision: r._decision, administrativeCompletionRunId: p.importRunId, updatedAtIso: now, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
-      for (const [key, side] of [[`b__${bookingDocId(r.sspBookingId)}`, 'booking'], [`w__${encodeURIComponent(r.washId)}`, 'wash']]) {
+      for (const [key, side] of [[`b__${sspKey(r.sspBookingId)}`, 'booking'], [`w__${encodeURIComponent(r.washId)}`, 'wash']]) {
         if (!r._links.some(l => l.id === key)) tx.set(db.collection(LINKS).doc(key), { washId: r.washId, sspBookingId: r.sspBookingId, side, linkedBy: actor, linkedAtIso: now, linkedAt: FieldValue.serverTimestamp() });
       }
     }

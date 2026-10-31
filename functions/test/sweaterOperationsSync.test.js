@@ -14,7 +14,7 @@ describe('cloud source worker matching without exporting worker profiles', () =>
     payload.workerLinks = {};
     db.rows.set('washes/older-established-wash', { driver_external_id: 'driver-1', biker_id: 'worker-1', ssp_booking_id: 'B-older' });
     await save(db, payload);
-    expect(db.rows.get('sweater_bookings/C-990001').operationalWorkerId).toBe('worker-1');
+    expect(db.rows.get('sweater_bookings/990001').operationalWorkerId).toBe('worker-1');
     expect(await operationsStatus(db, payload)).toMatchObject({ verified: true });
   });
   it.each(['unknown', 'conflicting'])('keeps %s source ID links for review', async kind => {
@@ -26,7 +26,7 @@ describe('cloud source worker matching without exporting worker profiles', () =>
       });
     }
     await save(db, payload);
-    expect(db.rows.get('sweater_bookings/C-990001')).toMatchObject({
+    expect(db.rows.get('sweater_bookings/990001')).toMatchObject({
       operationalWorkerId: null, processingStatus: 'needs_review',
     });
   });
@@ -46,7 +46,7 @@ describe('execution-independent-of-collection implementation boundary', () => {
     });
     const status = await operationsStatus(db, payload);
     expect(status).toMatchObject({ verified: true, rawVerified: true, linksVerified: true });
-    expect(db.rows.get('sweater_bookings/C-990001')).toMatchObject({
+    expect(db.rows.get('sweater_bookings/990001')).toMatchObject({
       processingStatus: 'needs_review', recognitionEligibility: null,
       operationalWorkerId: 'worker-1', record: {
         paymentStatus: 'pending', completedAt: '2026-10-08T10:30:00+03:00',
@@ -60,7 +60,7 @@ describe('execution-independent-of-collection implementation boundary', () => {
     const db = syncDb(), payload = syncPayload();
     Object.assign(payload.records[0], { rawPaymentStatus: 'Recorded', rawStatus });
     await save(db, payload);
-    expect(db.rows.get('sweater_bookings/C-990001').record).toMatchObject({
+    expect(db.rows.get('sweater_bookings/990001').record).toMatchObject({
       paymentStatus: 'recorded', completedAt: null,
     });
     expect([...db.rows.keys()].filter(path => path.startsWith('washes/'))).toEqual([]);
@@ -91,7 +91,7 @@ describe('execution-independent-of-collection implementation boundary', () => {
       startedAt: '2026-10-08T23:45:00+03:00', completedAt: '2026-10-09T00:10:00+03:00',
     });
     await save(db, payload);
-    expect(db.rows.get('sweater_bookings/C-990001')).toMatchObject({
+    expect(db.rows.get('sweater_bookings/990001')).toMatchObject({
       serviceDate: '2026-10-08', periodKey: '2026-10',
       record: { serviceDate: '2026-10-08', completedAt: '2026-10-09T00:10:00+03:00' },
     });
@@ -104,8 +104,8 @@ describe('bounded operational raw sync, not a financial or owner assertion', () 
     const db = syncDb(), b = syncPayload(); const p = await previewOperations(db, b); expect(db.writes).toEqual([]);
     const result = await saveOperations(db, syncFV, syncRequest(b, p), 'sweater-browser-agent');
     expect(result).toMatchObject({ saved: true, status: 'completed_with_gaps', washesCreated: 0, ledgerPosted: false, payrollPaid: false });
-    expect(db.rows.get('sweater_bookings/C-990001').record).toMatchObject({ rawStatus: 'Collecting Payment', platformAmount: null, completedAt: null });
-    expect(db.rows.get('sweater_bookings/C-990001').recognitionEligibility).toBeNull();
+    expect(db.rows.get('sweater_bookings/990001').record).toMatchObject({ rawStatus: 'Collecting Payment', platformAmount: null, completedAt: null });
+    expect(db.rows.get('sweater_bookings/990001').recognitionEligibility).toBeNull();
     expect(db.writes.every(p => p.startsWith('sweater_'))).toBe(true);
     expect(await operationsStatus(db, b)).toMatchObject({ found: true, verified: true, result: { washesCreated: 0 } });
   });
@@ -130,18 +130,21 @@ describe('bounded operational raw sync, not a financial or owner assertion', () 
     const original = { sspBookingId: 'S-990001', ssp_booking_id: 'S-990001', postedEntryId: 'protected-entry', washId: 'legacy-wash' };
     db.rows.set(path, original); const result = await save(db, b);
     expect(result.rows[0]).toMatchObject({ outcome: 'needs_review', rawSaved: true, bookingSaved: false });
-    expect(db.rows.get(path)).toEqual(original); expect(db.rows.has('sweater_bookings/C-990001')).toBe(false);
+    expect(db.rows.get(path)).toEqual(original); expect(db.rows.has('sweater_bookings/990001')).toBe(false);
   });
   it('does not modify a financially locked booking even when a new run carries a new status', async () => {
     const db = syncDb(), b = syncPayload(); await save(db, b);
-    const row = db.rows.get('sweater_bookings/C-990001'); row.settlementId = 'protected-settlement';
+    const row = db.rows.get('sweater_bookings/990001'); row.settlementId = 'protected-settlement';
     const original = structuredClone(row); b.importRunId = 'synthetic-change'; b.records[0].rawStatus = 'Cancelled by Admin';
-    expect((await save(db, b)).rows[0].outcome).toBe('needs_review'); expect(db.rows.get('sweater_bookings/C-990001')).toEqual(original);
+    expect((await save(db, b)).rows[0].outcome).toBe('needs_review'); expect(db.rows.get('sweater_bookings/990001')).toEqual(original);
   });
-  it.each(['Initiated', 'An entirely new status'])('retains %s as raw review, not completed, paid, or owner-confirmed', async rawStatus => {
+  it.each([
+    ['Initiated', 'new', 'pending_source'],
+    ['An entirely new status', 'needs_review', 'needs_review'],
+  ])('retains %s raw, not completed, paid, or owner-confirmed (only an unknown status needs a decision)', async (rawStatus, outcome, processingStatus) => {
     const db = syncDb(), b = syncPayload(); b.records[0].rawStatus = rawStatus;
-    expect((await save(db, b)).rows[0]).toMatchObject({ outcome: 'needs_review', rawSaved: true, reasonCode: 'unknown_status' });
-    expect(db.rows.get('sweater_bookings/C-990001').processingStatus).toBe('needs_review');
+    expect((await save(db, b)).rows[0]).toMatchObject({ outcome, rawSaved: true, processingStatus });
+    expect(db.rows.get('sweater_bookings/990001')).toMatchObject({ processingStatus, reviewReasonCode: 'unknown_status' });
     expect(db.writes.some(p => /^(washes|journal_entries|sweater_owner_collection_confirmations)\//.test(p))).toBe(false);
   });
   it('missing service is retained for raw review only; financial validation still rejects it', async () => {
@@ -152,7 +155,7 @@ describe('bounded operational raw sync, not a financial or owner assertion', () 
     const result = await saveOperations(db, syncFV, syncRequest(b, preview), 'agent');
     expect(result).toMatchObject({ rawSavedCount: 1, bookingSavedCount: 1, washesCreated: 0, ledgerPosted: false, payrollPaid: false });
     expect(result.rows[0]).toMatchObject({ outcome: 'needs_review', rawSaved: true, reasonCode: 'unknown_service_type' });
-    const booking = db.rows.get('sweater_bookings/C-990001');
+    const booking = db.rows.get('sweater_bookings/990001');
     expect(booking).toMatchObject({ processingStatus: 'needs_review', reviewReasonCode: 'unknown_service_type', recognitionEligibility: null });
     expect(booking.record.serviceType).toBe('');
     expect(recordProblems(booking.record)).toContainEqual(expect.objectContaining({ code: 'unknown_service_type' }));
@@ -174,10 +177,11 @@ describe('bounded operational raw sync, not a financial or owner assertion', () 
   });
   it('an incomplete observation never erases an existing known service, even on an unposted booking', async () => {
     const db = syncDb(), b = syncPayload(); await save(db, b);
-    const original = structuredClone(db.rows.get('sweater_bookings/C-990001'));
+    const original = structuredClone(db.rows.get('sweater_bookings/990001'));
     b.importRunId = 'synthetic-service-gap'; delete b.records[0].serviceType;
-    expect((await save(db, b)).rows[0]).toMatchObject({ outcome: 'needs_review', reasonCode: 'unknown_service_type', rawSaved: true, bookingSaved: false });
-    expect(db.rows.get('sweater_bookings/C-990001')).toEqual(original);
+    // The known service is kept, so this reading changes nothing and raises nothing.
+    expect((await save(db, b)).rows[0]).toMatchObject({ outcome: 'duplicate', reasonCode: null, rawSaved: true, bookingSaved: false });
+    expect(db.rows.get('sweater_bookings/990001')).toEqual(original);
     expect(await operationsStatus(db, b)).toMatchObject({ verified: true });
   });
   it.each([
@@ -199,8 +203,8 @@ describe('bounded operational raw sync, not a financial or owner assertion', () 
     b.importRunId = 'synthetic-evidenced-service'; b.records[0].serviceType = 'observed-service';
     const result = await save(db, b);
     expect(result).toMatchObject({ bookingSavedCount: 1, washesCreated: 0, ledgerPosted: false });
-    expect(db.rows.get('sweater_bookings/C-990001').record.serviceType).toBe('observed-service');
-    expect(db.rows.get('sweater_bookings/C-990001').recognitionEligibility).toBeNull();
+    expect(db.rows.get('sweater_bookings/990001').record.serviceType).toBe('observed-service');
+    expect(db.rows.get('sweater_bookings/990001').recognitionEligibility).toBeNull();
     expect(await operationsStatus(db, b)).toMatchObject({ verified: true });
   });
   it('a worker map is not enough without an established registry or existing operational link', async () => {
@@ -233,11 +237,11 @@ describe('bounded operational raw sync, not a financial or owner assertion', () 
   it('does not choose the first of conflicting same-number rows in a batch', async () => {
     const db = syncDb(), b = syncPayload(); b.records.push({ ...b.records[0], sspBookingId: 'S-990001', rawStatus: 'Cancelled by Admin' }); b.coverage.recordCount = 2;
     const result = await save(db, b); expect(result.counts.rejected).toBe(2);
-    expect(result.rawSavedCount).toBe(0); expect(db.rows.has('sweater_bookings/C-990001')).toBe(false);
+    expect(result.rawSavedCount).toBe(0); expect(db.rows.has('sweater_bookings/990001')).toBe(false);
   });
   it('reports historical raw persistence separately from changed current booking/links', async () => {
     const db = syncDb(), b = syncPayload(); await save(db, b);
-    db.rows.get('sweater_bookings/C-990001').sourceHash = 'changed-after-save';
+    db.rows.get('sweater_bookings/990001').sourceHash = 'changed-after-save';
     expect(await operationsStatus(db, b)).toMatchObject({ found: true, verified: false, rawVerified: true, linksVerified: false });
   });
   it('an established existing worker/wash mapping supports raw facts without changing worker or wash', async () => {
@@ -245,5 +249,43 @@ describe('bounded operational raw sync, not a financial or owner assertion', () 
     db.rows.set('washes/prior-other-booking', { ssp_booking_id: 'C-880002', driver_external_id: 'driver-1', biker_id: 'worker-1' });
     expect((await save(db, b)).rows[0]).toMatchObject({ outcome: 'new', bikerId: 'worker-1' });
     expect(db.writes.some(p => p.startsWith('washes/'))).toBe(false);
+  });
+});
+
+describe('«نافذة السحب»: the last days plus every booking still moving in Sweater', () => {
+  const later = (b, fields) => { const p = structuredClone(b); p.importRunId = `synthetic-later-${Object.values(fields).join('-').replace(/\W/g, '')}`;
+    Object.assign(p.coverage, { rangeFrom: '2026-10-20', rangeTo: '2026-10-22', extractedAt: '2026-10-22T10:00:00+03:00' }); Object.assign(p.records[0], fields); return p; };
+  it('takes an out-of-window reading only for a booking listed for re-reading and still open here', async () => {
+    const db = syncDb(), b = syncPayload(); b.records[0].rawStatus = 'On the Way'; await save(db, b);
+    expect(db.rows.get('sweater_bookings/990001')).toMatchObject({ processingStatus: 'pending_source' });
+    // Outside the window and not listed: refused, as before.
+    const unlisted = later(b, { rawStatus: 'Collecting Payment' });
+    expect((await save(db, unlisted)).rows[0]).toMatchObject({ outcome: 'rejected', reasonCode: 'invalid_source_scope' });
+    const listed = later(b, { sspBookingId: 'S-990001', rawStatus: 'Collecting Payment' }); listed.importRunId += '-listed'; listed.rechecks = ['B-990001'];
+    expect((await save(db, listed)).rows[0]).toMatchObject({ outcome: 'modified', bookingSaved: true });
+    expect(db.rows.get('sweater_bookings/990001')).toMatchObject({ sspBookingId: 'S-990001', normalizedStatus: 'payment_collection',
+      serviceDate: '2026-10-08', periodKey: '2026-10' });
+    // Final now: a further out-of-window reading is not taken.
+    const again = later(b, { sspBookingId: 'C-990001', rawStatus: 'Cancelled by Admin' }); again.importRunId += '-again'; again.rechecks = ['990001'];
+    expect((await save(db, again)).rows[0]).toMatchObject({ outcome: 'rejected', reasonCode: 'recheck_not_open', rawSaved: false });
+  });
+  it.each([
+    ['an unsafe id', ['x/y']], ['not a booking number', ['manual']], ['one number twice', ['B-1', 'S-1']],
+    ['more than a batch', Array.from({ length: 101 }, (_, i) => String(i))], ['not a list', 'B-1'],
+  ])('refuses a re-read list with %s', (_label, rechecks) => {
+    const b = syncPayload(); b.rechecks = rechecks;
+    expect(() => validateOperationsPayload(b)).toThrow();
+  });
+  it('lists what is still open, whatever its date, from the latest reading', async () => {
+    const { pendingBookings, validatePendingRequest } = await import('../src/sweater/operationsSync.js');
+    const db = syncDb(), b = syncPayload(); b.records[0].rawStatus = 'Washing Started'; await save(db, b);
+    const done = syncPayload(); done.importRunId = 'synthetic-done'; done.records[0].sspBookingId = 'S-990002'; await save(db, done);
+    db.rows.set('sweater_bookings/990003', { sspBookingId: 'S-990003', record: { normalizedStatus: 'payment_collection' }, ownerCompletionDecision: { approved: true },
+      latestObservation: { sspBookingId: 'B-990003', rawStatus: 'On the Way', normalizedStatus: 'on_the_way', observedAtIso: '2026-10-07T10:00:00+03:00' },
+      serviceDate: '2026-10-07' });
+    expect(() => validatePendingRequest({ contract: 'sweater-pending-v1', importRunId: 'pending-1', extra: true })).toThrow();
+    const list = await pendingBookings(db);
+    expect(list.bookings.map(r => [r.bookingNumber, r.sspBookingId, r.rawStatus])).toEqual([['990003', 'B-990003', 'On the Way'], ['990001', 'C-990001', 'Washing Started']]);
+    expect(list).toMatchObject({ contract: 'sweater-pending-v1', count: 2 });
   });
 });

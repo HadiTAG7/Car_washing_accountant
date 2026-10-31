@@ -9,7 +9,7 @@ import { executionEligibility } from '../src/sweater/operationsExecution.js';
 function seed(p) {
   const r = normalizeRecord(p.records[0]);
   return { 'users/admin': { role: 'admin' }, 'bikers/worker1': { name: 'Synthetic worker', driver_external_id: '1982', start_date: '2026-10-01' },
-    [`sweater_bookings/${r.sspBookingId}`]: { source: 'operations_sync_v2', sspBookingId: r.sspBookingId, record: r,
+    [`sweater_bookings/${r.sspBookingId.replace(/^[A-Z]+-/, '')}`]: { source: 'operations_sync_v2', sspBookingId: r.sspBookingId, record: r,
       sourceHash: hashRecord(r), operationalWorkerId: 'worker1', processingStatus: 'needs_review', reviewReasonCode: 'execution_not_final' },
     'sweater_owner_booking_claims/880001': { sspBookingId: r.sspBookingId, washId: `ssp__${r.sspBookingId}`, bookingNumber: '880001', source: 'operations_sync_v2' } };
 }
@@ -38,7 +38,7 @@ describe('standing owner approval for actual ongoing execution', () => {
     const p = ongoingCompletionFixture(); mutate(p); expect(reviewAdministrativeCompletion(p).ready).toBe(false);
   });
   it.each(['missing', 'worker', 'status', 'start', 'end', 'service', 'source', 'kind'])('requires the existing verified observation: %s', async kind => {
-    const p = ongoingCompletionFixture(), data = seed(p), path = 'sweater_bookings/B-880001';
+    const p = ongoingCompletionFixture(), data = seed(p), path = 'sweater_bookings/880001';
     if (kind === 'missing') delete data[path];
     else if (kind === 'worker') data[path].operationalWorkerId = 'unverified';
     else if (kind === 'source') data[path].source = 'manual';

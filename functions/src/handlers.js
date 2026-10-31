@@ -272,6 +272,7 @@ import { previewSweaterHandoff } from './sweater/preview.js';
 import { previewAdministrativeCompletion, saveAdministrativeCompletion } from './sweater/administrativeCompletion.js';
 import { saveOwnerHandoff } from './sweater/staffHandoff.js';
 import { previewOwnerWashTax, saveOwnerWashTax } from './sweater/ownerWashTax.js';
+import { previewBookingIdentityCleanup, applyBookingIdentityCleanup, previewServiceTypeFill, applyServiceTypeFill } from './sweater/bookingCleanup.js';
 import { SweaterIngestError } from './sweater/ingest.js';
 import { getPartnerEligibility, setPartnerEligibility } from './partnerWorkerEligibility.js';
 import { supervisorOverview, supervisorRecords } from './supervisorRead.js';
@@ -551,6 +552,11 @@ export const HANDLERS = {
   },
   payrollPreviewAdvanceMonth: { guard: 'accountant', run: ({ db, data }) => previewAdvanceMonth(db, data) },
   payrollSaveAdvanceMonth: { guard: 'accountant', run: ({ db, FieldValue, data, uid }) => saveAdvanceMonth(db, FieldValue, data, uid) },
+  // توحيد حجوزات سويتر برقمها وتعبئة نوع الخدمة: معاينة بلا كتابة، ثم تطبيق بسبب مكتوب باسم المدير.
+  sweaterBookingCleanupPreview: { guard: 'admin', run: ({ db }) => previewBookingIdentityCleanup(db) },
+  sweaterBookingCleanupApply: { guard: 'admin', run: ({ db, FieldValue, data, uid }) => applyBookingIdentityCleanup(db, FieldValue, data, uid) },
+  sweaterServiceTypeFillPreview: { guard: 'admin', run: ({ db, data }) => previewServiceTypeFill(db, data) },
+  sweaterServiceTypeFillApply: { guard: 'admin', run: ({ db, FieldValue, data, uid }) => applyServiceTypeFill(db, FieldValue, data, uid) },
   sweaterPreviewOwnerWashTax: {
     guard: 'accountant',
     run: ({ db, data }) => previewOwnerWashTax(db, data),

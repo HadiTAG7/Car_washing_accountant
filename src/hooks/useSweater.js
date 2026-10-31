@@ -211,3 +211,13 @@ export function useSweaterServiceTypes(allowed) {
   );
   return { serviceTypes: query.data ?? [], error: query.error ?? null };
 }
+
+/** توحيد الحجوزات برقمها وتعبئة نوع الخدمة — للمدير: معاينة بلا كتابة، ثم تطبيق بسبب. */
+export function useSweaterBookingCleanup() {
+  return {
+    preview: useCallback(() => callServer('sweaterBookingCleanupPreview', {}), []),
+    apply: useCallback(input => callServer('sweaterBookingCleanupApply', input), []),
+    fillPreview: useCallback(input => callServer('sweaterServiceTypeFillPreview', input), []),
+    fillApply: useCallback(input => callServer('sweaterServiceTypeFillApply', input), []),
+  };
+}

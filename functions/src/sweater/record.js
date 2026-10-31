@@ -18,7 +18,7 @@
 
 import { createHash } from 'node:crypto';
 import { round2 } from '../invariants.js';
-import { normalizeBookingStatus, UNKNOWN_STATUS } from './vocab.js';
+import { normalizeBookingStatus, normalizeServiceType, UNKNOWN_STATUS } from './vocab.js';
 import { isoDay } from './datedConfig.js';
 
 /** يُرفع حين يتغيّر شكل السجل بما يكسر القديم — ويُخزَّن على كل صفٍّ خام. */
@@ -41,7 +41,7 @@ export function normalizeRecord(rec) {
     sspBookingId: str(rec.sspBookingId),
     bookingKind: ['individual', 'corporate'].includes(str(rec.bookingKind))
       ? str(rec.bookingKind) : UNKNOWN_STATUS,
-    serviceType: str(rec.serviceType),
+    serviceType: normalizeServiceType(str(rec.serviceType)),
     serviceTypeLabel: s(rec.serviceTypeLabel),
     serviceDate: isoDay(rec.serviceDate) || null,
     serviceTime: s(rec.serviceTime),

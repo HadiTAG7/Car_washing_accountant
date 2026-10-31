@@ -47,6 +47,8 @@ export const RECOGNITION_ELIGIBILITY = Object.freeze([
 export const PROCESSING_STATUS = Object.freeze([
   'fetched', 'normalized', 'validated', 'duplicate_checked',
   'matched', 'ready_for_posting', 'posted', 'needs_review',
+  // Still moving in Sweater: re-read on every sync until final, not a question for the owner.
+  'pending_source',
 ]);
 
 /** حالات التسوية الشهرية. */
@@ -84,6 +86,17 @@ export const REVIEW_REASON = Object.freeze([
   'modified_after_posting',
   'duplicate_conflict',
   'forbidden_field',
+  // Operations sync v2 and the booking identity cleanup.
+  'execution_not_final',
+  'protected_existing_record',
+  'unverified_worker_link',
+  'missing_execution_evidence',
+  'execution_without_wash',
+  'awaiting_identity_cleanup',
+  'older_observation',
+  'execution_commission_policy_review',
+  'execution_worker_date_review',
+  'unsupported_execution_service_type',
 ]);
 
 const asSet = (arr) => new Set(arr);
@@ -96,6 +109,17 @@ export function normalizeBookingStatus(raw) {
   if (code === 'collecting_payment' || code === 'collectingpayment') return 'payment_collection';
   if (code === 'cancelled_by_admin') return 'admin_cancelled';
   return STATUS_SET.has(code) ? code : UNKNOWN_STATUS;
+}
+
+// ── نوع الخدمة: اسم واحد للغسيل الداخلي والخارجي ──
+// سويتر يكتبه «Full Wash» في تقرير الحجوزات والإكراميات، والسجلات القديمة «غسيل».
+// الثلاثة خدمة واحدة بسعر واحد؛ غيرها يبقى كما ورد ولا يُخمَّن.
+export const FULL_WASH_SERVICE = 'interior_exterior_wash';
+const FULL_WASH_SPELLINGS = new Set(['interior_exterior_wash', 'full_wash', 'fullwash', 'غسيل', 'غسيل_داخلي_وخارجي', 'داخلي_وخارجي']);
+/** The one code for a full (interior + exterior) wash; anything else stays as received. */
+export function normalizeServiceType(raw) {
+  const text = String(raw ?? '').trim();
+  return FULL_WASH_SPELLINGS.has(text.toLowerCase().replace(/[\s-]+/g, '_')) ? FULL_WASH_SERVICE : text;
 }
 
 export function isKnownBookingStatus(code) {

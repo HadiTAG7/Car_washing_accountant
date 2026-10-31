@@ -2,14 +2,14 @@ import { ownerBookingIdentity } from '../../../src/lib/sweater/bookingIdentity.j
 import { ownerConfirmationTaxSplit } from '../../../src/lib/sweater/ownerConfirmation.js';
 import { WASH_COMMISSION_RATE } from '../washCommission.js';
 import { reviewSweaterHandoff, ownerHandoffCoverageComplete } from '../../../src/lib/sweater/handoff.js';
-import { bookingDocId, rawDocId, classifyRecord, COL, SweaterIngestError } from './ingest.js';
+import { bookingDocId, sspKey, sspWashDocId, rawDocId, readBookingDoc, classifyRecord, COL, SweaterIngestError } from './ingest.js';
 import { hashBody, hashRecord, normalizeRecord, SCHEMA_VERSION } from './record.js';
 import { LINKS_COL } from './revenueOrigin.js';
 
 export const OWNER_CONFIRMATIONS = 'sweater_owner_collection_confirmations';
 export const OWNER_BOOKING_CLAIMS = 'sweater_owner_booking_claims';
 export const OPERATIONAL_LINKS = 'sweater_operational_wash_links';
-export const sspWashId = id => `ssp__${bookingDocId(id)}`;
+export const sspWashId = id => sspWashDocId(id);
 const fail = (message, code = 'failed-precondition') => { throw new SweaterIngestError(message, { code }); };
 
 function reviewedInput(payload) {
@@ -58,7 +58,10 @@ async function plan(db, input, read) {
   for (const raw of input.records) {
     const record = normalizeRecord(raw);
     const sourceHash = hashRecord(record);
-    const id = bookingDocId(record.sspBookingId);
+    // The booking is keyed by its number; the confirmation and the links keep the observed prefixed key.
+    // Until the identity cleanup runs, a booking may still be filed under the prefixed id it was seen with.
+    const observedKey = sspKey(record.sspBookingId), filedSnap = await readBookingDoc(db, read, record.sspBookingId);
+    const id = filedSnap.exists ? filedSnap.id : bookingDocId(record.sspBookingId);
     const bookingRef = db.collection(COL.BOOKINGS).doc(id);
     const identity = ownerBookingIdentity(record.sspBookingId);
     const claimRef = db.collection(OWNER_BOOKING_CLAIMS).doc(bookingDocId(identity));
@@ -66,19 +69,19 @@ async function plan(db, input, read) {
     const claim = claimSnap.exists ? claimSnap.data() : null;
     const aliases = legacyIds.filter(row => ownerBookingIdentity(row.id) === identity && row.id !== record.sspBookingId);
     aliases.sort((a,b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
-    const evidenceRef = db.collection(OWNER_CONFIRMATIONS).doc(id);
+    const evidenceRef = db.collection(OWNER_CONFIRMATIONS).doc(observedKey);
     const washId = sspWashId(record.sspBookingId);
     const washRef = db.collection('washes').doc(washId);
     const bikerId = input.workerLinks[record.driverExternalId];
     const bikerRef = db.collection('bikers').doc(bikerId);
     // Financial legacy links mean "already posted via wash" in settlement.
     // Keep operational links separate so importing a wash never claims that.
-    const bookingLinkRef = db.collection(OPERATIONAL_LINKS).doc(`b__${id}`);
+    const bookingLinkRef = db.collection(OPERATIONAL_LINKS).doc(`b__${observedKey}`);
     const washLinkRef = db.collection(OPERATIONAL_LINKS).doc(`w__${encodeURIComponent(washId)}`);
     const [bookingSnap, evidenceSnap, washSnap, bikerSnap, bookingLinkSnap, washLinkSnap, otherWashes, financialLinkSnap] = await Promise.all([
       read(bookingRef), read(evidenceRef), read(washRef), read(bikerRef), read(bookingLinkRef), read(washLinkRef),
       read(db.collection('washes').where('ssp_booking_id', '==', record.sspBookingId)),
-      read(db.collection(LINKS_COL).doc(`b__${id}`)),
+      read(db.collection(LINKS_COL).doc(`b__${observedKey}`)),
     ]);
     const existing = bookingSnap.exists ? bookingSnap.data() : null;
     const existingEvidence = evidenceSnap.exists ? evidenceSnap.data() : null;
@@ -208,12 +211,12 @@ export async function saveOwnerHandoff(db, FieldValue, data, actor) {
           importRunId: input.importRunId, recordedBy: actor,
           recordedAt: FieldValue.serverTimestamp(), recordedAtIso: now });
         tx.set(row._bookingRef, {
-          ownerCollectionConfirmation: { ...row._evidence, confirmationId: bookingDocId(row.sspBookingId), recordedBy: actor, recordedAtIso: now },
+          ownerCollectionConfirmation: { ...row._evidence, confirmationId: sspKey(row.sspBookingId), recordedBy: actor, recordedAtIso: now },
         }, { merge: true });
       }
     }
     const result = { ...publicResult(value), dryRun: false, replay: false, saved: true,
-      bookingIds: value.rows.map(row => row.sspBookingId), confirmationIds: value.rows.map(row => bookingDocId(row.sspBookingId)),
+      bookingIds: value.rows.map(row => row.sspBookingId), confirmationIds: value.rows.map(row => sspKey(row.sspBookingId)),
       washIds: value.rows.map(row => row.washId),
       ledgerPosted: false, payrollPaid: false };
     tx.set(value.runRef, {

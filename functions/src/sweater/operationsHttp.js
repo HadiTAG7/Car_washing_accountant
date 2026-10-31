@@ -1,7 +1,7 @@
 import { verifyIngestRequest, IntegrationAuthError, INTEGRATION_PRINCIPAL } from './integrationKeys.js';
 import { SweaterIngestError, MAX_BODY_BYTES } from './ingest.js';
 import { hashBody } from './record.js';
-import { validateOperationsPayload, previewOperations, saveOperations, operationsStatus } from './operationsSync.js';
+import { validateOperationsPayload, previewOperations, saveOperations, operationsStatus, validatePendingRequest, pendingBookings } from './operationsSync.js';
 import { checkMetricsSnapshot, saveMetricsSnapshot } from './metricsSnapshot.js';
 
 // Complete action + payload + preview hashes are signed. An import signature
@@ -12,7 +12,7 @@ const STATUS = { unauthenticated: 401, 'permission-denied': 403, 'invalid-argume
 const header = (req, key) => req.headers?.[key] ?? '';
 
 export function operationsHandler({ getDb, FieldValue, verify = verifyIngestRequest,
-  allowedActions = ['preview', 'save', 'status', 'metrics'], requiredPrincipal = INTEGRATION_PRINCIPAL }) {
+  allowedActions = ['preview', 'save', 'status', 'metrics', 'pending'], requiredPrincipal = INTEGRATION_PRINCIPAL }) {
   return async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return res.status(405).json({ error: { code: 'invalid-argument', message: 'POST only.' } }); }
@@ -26,13 +26,17 @@ export function operationsHandler({ getDb, FieldValue, verify = verifyIngestRequ
         throw new SweaterIngestError(`Only ${allowedActions.join(', ')} requests are allowed.`);
       }
       // metrics: one month's reading of Sweater's dashboards, under the same key, principal and signature.
-      if (body.action === 'metrics') checkMetricsSnapshot(body.payload); else validateOperationsPayload(body.payload);
+      // pending: the bookings still moving in Sweater, for the agent to re-read whatever their date. Read-only.
+      if (body.action === 'metrics') checkMetricsSnapshot(body.payload);
+      else if (body.action === 'pending') validatePendingRequest(body.payload);
+      else validateOperationsPayload(body.payload);
       const db = getDb();
       const auth = await verify(db, FieldValue, { keyId: header(req, 'x-sweater-key-id'), timestamp: header(req, 'x-sweater-timestamp'),
         signature: header(req, 'x-sweater-signature'), importRunId: body.payload.importRunId,
         bodyHash: operationsSigningHash(body), requiredPrincipal,
         authorization: header(req, 'authorization') });
       const result = body.action === 'metrics' ? await saveMetricsSnapshot(db, FieldValue, body.payload, { keyId: auth.keyId })
+        : body.action === 'pending' ? await pendingBookings(db)
         : body.action === 'preview' ? await previewOperations(db, body.payload)
           : body.action === 'status' ? await operationsStatus(db, body.payload)
             : await saveOperations(db, FieldValue, { payload: body.payload, reviewedPayloadHash: body.reviewedPayloadHash, previewStateHash: body.previewStateHash }, auth.principal);

@@ -119,14 +119,14 @@ describe('source biker deduction follow-up without payroll or financial writes',
   });
   it('does not infer biker blame from a cancellation status or ambiguous accident reason', async () => {
     const input = deductionInput({ sourceKind: 'booking', sourceId: 'C-990002', snapshotId: 'raw-test-run' });
-    db.rows.get('sweater_bookings/C-990002').sourceHash = 'changed';
+    db.rows.get('sweater_bookings/990002').sourceHash = 'changed';
     await expect(previewBikerDeduction(db, input, actor)).rejects.toThrow(/روابطه المحمية/);
   });
   it('accepts the import-verified existing worker link only when current booking and registry do not conflict', async () => {
     const input = deductionInput({ sourceKind: 'booking', sourceId: 'C-990002', snapshotId: 'raw-test-run' });
     db.rows.get('bikers/worker-one').driver_external_id = null;
     expect((await previewBikerDeduction(db, input, actor)).canSave).toBe(true);
-    db.rows.get('sweater_bookings/C-990002').operationalWorkerId = null;
+    db.rows.get('sweater_bookings/990002').operationalWorkerId = null;
     await expect(previewBikerDeduction(db, input, actor)).rejects.toThrow(/ربط العامل/);
   });
   it('reads actual invoice SAR from stored raw only, keeping the cancellation count and original observation separate', async () => {
@@ -138,7 +138,7 @@ describe('source biker deduction follow-up without payroll or financial writes',
       signedDeductionSAR: -129.95, netAmountSAR: -109.95, observedText: 'Invoice Optimal Amount 20.00 SAR Deductions Booking Cancelled (Reason 13) -129.95 SAR Net Amount -109.95 SAR' };
     record.notes += '\nSSP_INVOICE_DEDUCTION_V1=' + JSON.stringify(evidence);
     const sourceHash = hashRecord(record); rawEntry[1].sourceHash = sourceHash;
-    db.rows.get('sweater_bookings/C-990002').sourceHash = sourceHash;
+    db.rows.get('sweater_bookings/990002').sourceHash = sourceHash;
     db.rows.get('sweater_import_runs/raw-test-run').result.rows[0].sourceHash = sourceHash;
     const p = await previewBikerDeduction(db, input, actor);
     expect(p.proposed).toMatchObject({ amountSAR: 129.95, quantity: 1, unit: 'count', matchedToCompensations: false, sourceReadAt: evidence.sourceReadAt });

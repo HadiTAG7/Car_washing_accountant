@@ -18,7 +18,7 @@ export default function SweaterWashWorkerSummary({ washes, bikers = [], scalingF
     driverExternalId: recordedBikerSweaterId(group, bikers) })), { column: 'sweaterId', direction: 'asc' });
   const ownDetails = useSweaterWashDetails(groups.flatMap(group => group.washes.map(wash => wash.sspBookingId)), detailsOpen && !detailsSource);
   const { bookings, loading, error } = detailsSource || ownDetails;
-  const byBookingId = new Map(bookings.map(booking => [booking.sspBookingId, booking.record]));
+  const byBookingId = new Map(bookings.map(booking => [booking.requestedId ?? booking.sspBookingId, booking.record]));
   const statusLabel = rawStatus => {
     if (!rawStatus) return '—';
     const code = normalizeBookingStatus(rawStatus);

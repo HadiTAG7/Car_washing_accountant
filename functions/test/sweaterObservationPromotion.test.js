@@ -4,6 +4,10 @@ import { syncDb, syncFV, syncPayload, syncRequest } from './helpers/sweaterOpera
 import { hashRecord, normalizeRecord } from '../src/sweater/record.js';
 
 let db, legacy, completed;
+// The booking is kept under its number and always shows Sweater's latest reading; everything else stays as it was.
+const MOVES = new Set(['sweater_integration_state/current', 'sweater_bookings/990001']);
+const promotedBooking = { sspBookingId: 'S-990001', bookingNumber: '990001', aliases: ['B-990001', 'S-990001'],
+  processingStatus: 'validated', reviewReasonCode: null, observedAtIso: '2026-10-09T02:03:00+03:00' };
 const save = async payload => saveOperations(db, syncFV, syncRequest(payload, await previewOperations(db, payload)), 'synthetic-agent');
 const seed = async () => {
   db = syncDb(); legacy = syncPayload(); legacy.importRunId = 'synthetic-started';
@@ -29,12 +33,14 @@ describe('source-proven prefix observation promotion, no owner decision', () => 
     await save(next);
     const originals = new Map(db.rows);
     expect(db.rows.get('sweater_owner_booking_claims/990001').importRunId).toBe(legacy.importRunId);
-    expect(db.rows.get('sweater_bookings/B-990001').lastImportRunId).toBe(next.importRunId);
+    expect(db.rows.get('sweater_bookings/990001')).toMatchObject({ lastImportRunId: next.importRunId, processingStatus: 'pending_source',
+      reviewReasonCode: 'execution_not_final' });
     const p = await previewOperations(db, completed);
     expect(p.rows[0].observationPromotion?.eligible).toBe(true);
     const r = await saveOperations(db, syncFV, syncRequest(completed, p), 'synthetic-agent');
     expect(r.washesCreated).toBe(1);
-    for (const [path, value] of originals) if (path !== 'sweater_integration_state/current') expect(db.rows.get(path)).toEqual(value);
+    for (const [path, value] of originals) if (!MOVES.has(path)) expect(db.rows.get(path)).toEqual(value);
+    expect(db.rows.get('sweater_bookings/990001')).toMatchObject(promotedBooking);
     expect(await operationsStatus(db, completed)).toMatchObject({ verified: true, linksVerified: true });
   });
   it('proves an intact on-the-way claim with genuine later Start/End, never inferred completion', async () => {
@@ -42,10 +48,10 @@ describe('source-proven prefix observation promotion, no owner decision', () => 
     way.coverage.extractedAt = '2026-10-08T21:30:00+03:00';
     Object.assign(way.records[0], { rawStatus: 'On the Way', startedAt: null });
     await save(way);
-    const original = structuredClone(db.rows.get('sweater_bookings/B-990001'));
     const r = await save(completed);
     expect(r.washesCreated).toBe(1);
-    expect(db.rows.get('sweater_bookings/B-990001')).toEqual(original);
+    expect(db.rows.get('sweater_bookings/990001')).toMatchObject(promotedBooking);
+    expect([...db.rows.keys()].filter(p => p.startsWith('sweater_bookings/'))).toEqual(['sweater_bookings/990001']);
     expect(db.rows.get('washes/ssp__B-990001').worker_commission_paid).toBe(false);
     expect(await operationsStatus(db, completed)).toMatchObject({ verified: true, linksVerified: true });
   });
@@ -80,7 +86,7 @@ describe('source-proven prefix observation promotion, no owner decision', () => 
   ])('rejects a source chain with %s without replacing old evidence', async (_label, change) => {
     await seedChain(); change(db.rows, completed); const originals = new Map(db.rows);
     const r = await save(completed); expect(r.washesCreated).toBe(0);
-    for (const [path, value] of originals) if (path !== 'sweater_integration_state/current') expect(db.rows.get(path)).toEqual(value);
+    for (const [path, value] of originals) if (!MOVES.has(path)) expect(db.rows.get(path)).toEqual(value);
   });
   it('rejects conflicting claim source facts even if its own raw hash and receipt agree', async () => {
     await seedChain();
@@ -118,14 +124,16 @@ describe('source-proven prefix observation promotion, no owner decision', () => 
     const result = await saveOperations(db, syncFV, syncRequest(completed, p), 'synthetic-agent');
     expect(result).toMatchObject({ washesCreated: 1, ledgerPosted: false, payrollPaid: false });
     expect(result.rows[0].observationPromotion.promotionSaved).toBe(true);
-    for (const [path, value] of originals) if (path !== 'sweater_integration_state/current') expect(db.rows.get(path)).toEqual(value);
+    for (const [path, value] of originals) if (!MOVES.has(path)) expect(db.rows.get(path)).toEqual(value);
+    expect(db.rows.get('sweater_bookings/990001')).toMatchObject(promotedBooking);
     const wash = db.rows.get('washes/ssp__B-990001');
     expect(wash).toMatchObject({ ssp_booking_id: 'S-990001', quantity: 1, price: 20, net_amount: 20, vat_amount: 3,
       gross_amount: 23, payment_method: null, collection_status: 'pending', worker_commission_per_wash: 4.5, worker_commission_paid: false });
     expect(wash.owner_completion_decision).toBeUndefined();
     expect(await operationsStatus(db, completed)).toMatchObject({ verified: true, verification: [
       { currentNaturalClaimMatches: true, observationPromotionVerified: true }] });
-    expect(await operationsStatus(db, legacy)).toMatchObject({ verified: true });
+    // The first run still verifies: its raw row is intact and a later reading moved the booking on.
+    expect(await operationsStatus(db, legacy)).toMatchObject({ verified: true, verification: [{ currentBookingSupersededBy: 'synthetic-ended' }] });
     expect((await save(completed)).replay).toBe(true);
     expect((await save({ ...completed, importRunId: 'synthetic-new-run' })).washesCreated).toBe(0);
     expect((await save({ ...completed, importRunId: 'synthetic-other-prefix',
@@ -152,29 +160,34 @@ describe('source-proven prefix observation promotion, no owner decision', () => 
       completed.records[0][field] = values[field];
       expect((await save(completed)).washesCreated).toBe(0);
     });
+  // Another record about this number stands in the way of the wash: never a second wash, and the owner decides —
+  // except where a wash for this number already exists, which is the one wash it gets.
   it.each([
-    ['washes/ssp__C-990001', { ssp_booking_id: 'C-990001', price: 20 }],
-    ['washes/ssp__S-990001', { unrelated: true }],
-    ['sweater_owner_collection_confirmations/C-990001', { owner: true }],
-    ['sweater_booking_links/orphan', { source: { ref: { ssp_booking_id: 'C-990001' } } }],
-    ['journal_entries/orphan', { sourceId: 'C-990001' }],
-    ['posting_locks/orphan', { source: { bookingNumber: 990001 } }],
-    ['transactions/orphan', { washId: 'ssp__C-990001' }],
-    ['sweater_collections/orphan', { sourceRef: 'b__C-990001' }],
-    ['sweater_adjustments/orphan', { source: { ref: { ssp_booking_id: 'C-990001' } } }],
-    ['accounting_periods/2026-10', { status: 'closed' }],
-    ['sweater_settlements/2026-10', { status: 'approved' }],
-  ])('retains protection and preserves %s', async (path, value) => {
+    ['washes/ssp__C-990001', { ssp_booking_id: 'C-990001', price: 20 }, 'modified', null, true],
+    ['washes/ssp__S-990001', { unrelated: true }, 'needs_review', 'protected_existing_record', true],
+    ['sweater_owner_collection_confirmations/C-990001', { owner: true }, 'needs_review', 'protected_existing_record', false],
+    ['sweater_booking_links/orphan', { source: { ref: { ssp_booking_id: 'C-990001' } } }, 'needs_review', 'protected_existing_record', false],
+    ['journal_entries/orphan', { sourceId: 'C-990001' }, 'needs_review', 'protected_existing_record', true],
+    ['posting_locks/orphan', { source: { bookingNumber: 990001 } }, 'needs_review', 'protected_existing_record', true],
+    ['transactions/orphan', { washId: 'ssp__C-990001' }, 'needs_review', 'protected_existing_record', true],
+    ['sweater_collections/orphan', { sourceRef: 'b__C-990001' }, 'needs_review', 'protected_existing_record', true],
+    ['sweater_adjustments/orphan', { source: { ref: { ssp_booking_id: 'C-990001' } } }, 'needs_review', 'protected_existing_record', true],
+    ['accounting_periods/2026-10', { status: 'closed' }, 'needs_review', 'protected_existing_record', false],
+    ['sweater_settlements/2026-10', { status: 'approved' }, 'needs_review', 'protected_existing_record', false],
+  ])('retains protection and preserves %s', async (path, value, outcome, reasonCode, bookingSaved) => {
     db.rows.set(path, value);
     const before = new Map(db.rows);
     const result = await save(completed);
-    expect(result.rows[0]).toMatchObject({ outcome: 'needs_review', reasonCode: 'protected_existing_record', bookingSaved: false });
+    expect(result.rows[0]).toMatchObject({ outcome, reasonCode, bookingSaved });
     expect(result.washesCreated).toBe(0);
-    for (const [key, row] of before) if (key !== 'sweater_integration_state/current') expect(db.rows.get(key)).toEqual(row);
+    for (const [key, row] of before) if (!MOVES.has(key)) expect(db.rows.get(key)).toEqual(row);
+    if (!bookingSaved) expect(db.rows.get('sweater_bookings/990001')).toEqual(before.get('sweater_bookings/990001'));
+    if (outcome === 'needs_review') expect(db.rows.get('sweater_variances/ops__990001')).toMatchObject({ resolution: 'unresolved',
+      reasonCode, periodKey: '2026-10', bookingNumber: '990001', sspBookingId: 'S-990001' });
   });
   it.each([
-    ['sweater_bookings/B-990001', row => { row.ownerCompletionDecision = { decision: 'owner' }; }],
-    ['sweater_bookings/B-990001', row => { row.unrecognizedMetadata = true; }],
+    ['sweater_bookings/990001', row => { row.ownerCompletionDecision = { decision: 'owner' }; }],
+    ['sweater_bookings/990001', row => { row.unrecognizedMetadata = true; }],
     ['sweater_owner_booking_claims/990001', row => { row.source = 'staff_owner_confirmation'; }],
     ['sweater_raw_payloads/synthetic-started__B-990001', row => { row.sourceHash = 'different'; }],
     ['sweater_import_runs/synthetic-started', row => { row.status = 'processing'; }],
@@ -189,7 +202,7 @@ describe('source-proven prefix observation promotion, no owner decision', () => 
     await expect(saveOperations(db, syncFV, syncRequest(completed, p), 'synthetic-agent')).rejects.toMatchObject({ code: 'failed-precondition' });
     expect([...db.rows.keys()].filter(p => p.startsWith('washes/'))).toHaveLength(0);
     await seed(); await save(completed);
-    db.rows.get('sweater_bookings/B-990001').record.startedAt = 'changed';
+    db.rows.get('sweater_bookings/990001').record.startedAt = 'changed';
     expect(await operationsStatus(db, completed)).toMatchObject({ verified: false, rawVerified: true, linksVerified: false });
   });
 });

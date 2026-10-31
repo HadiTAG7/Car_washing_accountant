@@ -19,6 +19,7 @@
 
 import { cashRecoveryAmount, cashRecoveryDue } from './custodyRecovery.js';
 import { round2 } from './invariants.js';
+import { partnerReceiptCredits } from './capitalReceivable.js';
 import { resolvePurchaseTax } from './purchaseTax.js';
 import { applyReviewedPartialVat, requiresReviewedPartialVat } from './financeReviewedVat.js';
 import { financeInvoiceLineProblems } from './financeInvoiceLines.js';
@@ -397,7 +398,10 @@ export const ADAPTERS = {
     lockKind: 'partner_payment',
     dateOf: (r) => String(r.payment_date || '').slice(0, 10),
     approved: () => true,
-    build: (row, id) => {
+    // «ذمة رأس مال غير مسددة»: the partner's open receivable on 1100, read by
+    // `postSource` inside the posting transaction and handed to `build`.
+    readsCapitalReceivable: true,
+    build: (row, id, { capitalReceivable = null } = {}) => {
       const amount = round2(row.amount);
       const method = row.payment_method || 'transfer';
       return {
@@ -406,9 +410,11 @@ export const ADAPTERS = {
           sourceType: 'partner_payment', sourceId: id,
           description: 'دفعة رأس مال شريك',
         },
+        // مدين البنك أو 2300 أو الصندوق، ودائن 1100 حتى تنتهي ذمة رأس ماله، والباقي لرأس المال.
         lines: [
           { accountId: partnerPaymentAccount(method), debit: amount, credit: 0, description: 'استلام دفعة' },
-          { accountId: partnerCapitalCode(row.partner_id), debit: 0, credit: amount, description: 'رأس مال شريك' },
+          ...partnerReceiptCredits({ amount, outstanding: capitalReceivable?.outstanding || 0, partnerId: row.partner_id,
+            partnerName: capitalReceivable?.partnerName || '', capitalAccount: partnerCapitalCode(row.partner_id), capitalDescription: 'رأس مال شريك' }),
         ],
       };
     },

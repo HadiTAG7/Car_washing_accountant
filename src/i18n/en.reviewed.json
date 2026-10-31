@@ -3181,7 +3181,6 @@
   "المعلق في صفحة المصروفات المؤقتة مقابل الرصيد الدفتري؛ حالة السداد الحالية وليست لقطة تاريخية.": "Pending temporary expenses versus the ledger balance; current recovery status, not a historical snapshot.",
   "تكلفة الأصول المسجلة في سجل الأصول، لا إجمالي مبالغ التأسيس الشاملة للضريبة.": "Cost recorded in the asset register, not gross startup expenditure including VAT.",
   "كل الفواتير المؤهلة في صفحة الضريبة، مقابل رصيد 1200؛ لا يشمل تغييرًا في التسجيل الضريبي.": "All eligible invoices on the VAT page versus account 1200; tax registration is unchanged.",
-  "المدفوع في إدارة الشركاء مقابل حسابات رأس المال؛ العرض لا يسجل دفعات أو قيودًا.": "Partner management payments versus capital accounts; viewing does not record payments or entries.",
   "بعض أشهر قائمة الدخل غير متاحة؛ لا يعرض مجموع ناقص.": "Some income statement months are unavailable; an incomplete total is not shown.",
   "مصروفات قائمة الدخل": "Income statement expenses",
   "أشهر السنة حتى الشهر الحالي؛ الرواتب حسب شهر الاستحقاق في القائمة وتاريخ القيد في الميزان.": "Year to current month; wages use the earned month in the income statement and journal date in the trial balance.",
@@ -5409,5 +5408,14 @@
   "من مبلغ المصدر المحفوظ": "From the saved source amount",
   "مطابقة تفاصيل سويتر معلقة": "Sweater detail reconciliation pending",
   "السجلات المتعارضة المحفوظة": "Conflicting saved records",
-  "اعتبر كل الغاء ب 20 ريال الي مو محدد مبلغه لانه بنفس قيمة الغسلة": "Treat each cancellation with an unspecified amount as SAR 20, because it equals the wash price."
+  "اعتبر كل الغاء ب 20 ريال الي مو محدد مبلغه لانه بنفس قيمة الغسلة": "Treat each cancellation with an unspecified amount as SAR 20, because it equals the wash price.",
+  "ذمة رأس مال غير مسددة": "Unpaid capital receivable",
+  "«ذمة رأس مال غير مسددة» رصيد أسطر 1100 «ذمة رأس مال — اسم الشريك»: رأس مال مقيّد على الشريك ولم يُدفع، فهو عمود مستقل لا فرق. الفرق = المسجّل في السندات − (المرحّل في الدفتر − الذمة). سند القبض لشريك عليه ذمة يُرحّل دائنًا على 1100 حتى تنتهي، والباقي لرأس المال.": "«Unpaid capital receivable» is the balance of 1100 lines «ذمة رأس مال — partner name»: capital recorded against the partner and not yet paid, so it is its own column, not a difference. Difference = recorded in receipts − (posted in the ledger − receivable). A receipt from a partner with a receivable posts as a credit to 1100 until it is settled, and the rest to capital.",
+  "أسطر «ذمة رأس مال» على 1100 لا تسمّي شريكًا واحدًا معروفًا (": "«ذمة رأس مال» lines on 1100 that name no single known partner (",
+  ")؛ لم تدخل ذمم الشركاء.": "); not included in partner receivables.",
+  "المدفوع في إدارة الشركاء مقابل حسابات رأس المال[VAR0]؛ العرض لا يسجل دفعات أو قيودًا.": "Paid in partner management against the capital accounts[VAR0]; this view records no payments or entries.",
+  "بعد طرح ذمة رأس المال غير المسددة (1100)": "after deducting the unpaid capital receivable (1100)",
+  "المدفوع في إدارة الشركاء مقابل حسابات رأس المال": "Paid in partner management against the capital accounts",
+  "؛ العرض لا يسجل دفعات أو قيودًا.": "; this view records no payments or entries.",
+  "ذمة رأس مال": "Capital receivable"
 }

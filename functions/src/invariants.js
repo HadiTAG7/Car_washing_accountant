@@ -131,6 +131,8 @@ export function normalizeLines(input = []) {
     debit:       round2(l?.debit),
     credit:      round2(l?.credit),
     description: String(l?.description ?? '').slice(0, 500),
+    // «ذمة رأس مال»: a 1100 line names the partner it is owed by.
+    ...(l?.partnerId ? { partnerId: String(l.partnerId) } : {}),
   }));
 }
 
@@ -198,6 +200,8 @@ export function buildReversalLines(lines) {
     debit:       round2(l.credit),
     credit:      round2(l.debit),
     description: l.description || '',
+    // The mirror of a «ذمة رأس مال» line reopens the same partner's receivable.
+    ...(l.partnerId ? { partnerId: String(l.partnerId) } : {}),
   }));
 }
 

@@ -32,6 +32,7 @@ import {
   isRealDate, isValidPeriodKey, journalCounterUpdate,
 } from './invariants.js';
 import { ADAPTERS, ACC, legacyLockIdFor } from './posting.js';
+import { capitalReceivables } from './capitalReceivable.js';
 import { settlesEmployeeCustody, custodyBikerOf, allocateCustody, applyDocumentRecovery, revertDocumentRecovery } from './custodyRecovery.js';
 import { taxPolicyAt } from './taxPolicy.js';
 import { assertFinanceApproval, financeHash } from './financeReview.js';
@@ -217,6 +218,23 @@ async function readCustodySettlement(db, tx, row, { entry, lines, settlement }) 
     byId: new Map(advances.map((a) => [a.id, a])) };
 }
 
+/**
+ * «ذمة رأس مال غير مسددة» of one partner: the open balance of their 1100 lines
+ * over every posted entry, read inside the posting transaction so two receipts
+ * cannot both settle the same riyal.
+ */
+async function readCapitalReceivable(db, tx, partnerId) {
+  const id = String(partnerId ?? '').trim();
+  if (!id) return null;
+  const [partnersSnap, entriesSnap] = await Promise.all([tx.get(db.collection('partners')), tx.get(db.collection(COL.ENTRIES))]);
+  const partners = partnersSnap.docs.map((d) => ({ id: d.id, name: d.data().partner_name || '' }));
+  const lines = entriesSnap.docs.flatMap((d) => {
+    const e = d.data();
+    return (e.status === 'posted' || e.status === 'reversed') && Array.isArray(e.lines) ? e.lines : [];
+  });
+  return { outstanding: capitalReceivables(lines, partners).byPartner.get(id) || 0, partnerName: partners.find((p) => p.id === id)?.name || '' };
+}
+
 export async function postSource(db, FieldValue, { kind, sourceId }, { userId = null, expectedFinanceSourceHash = null, financeAuthorizer = null, postingDate = null } = {}) {
   const adapter = ADAPTERS[String(kind)];
   if (!adapter) throw new LedgerError(`نوع سجل غير معروف: ${kind}`, { code: 'invalid-argument' });
@@ -289,7 +307,9 @@ export async function postSource(db, FieldValue, { kind, sourceId }, { userId = 
         + 'هيّئ تاريخ بداية السياسة قبل ترحيل سجلات أقدم منه.',
       );
     }
+    const capitalReceivable = adapter.readsCapitalReceivable ? await readCapitalReceivable(db, tx, row.partner_id) : null;
     const built = adapter.build(row, id, {
+      capitalReceivable,
       vatRegistered: policy.vatRegistered,
       washPriceMode: policy.washPriceMode,
       vatRate: policy.vatRate,

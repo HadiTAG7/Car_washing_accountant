@@ -55,6 +55,14 @@ describe('رصيد رأس مال الشريك من الدفاتر', () => {
     expect(s.unposted).toBe(5000);
   });
 
+  it('ذمة رأس المال غير المسددة ليست فرقًا: رأس المال المقيّد عليه بلا دفع لا يُعرض للشريك كفرق', () => {
+    const owed = [...entries, { id: 'e3', status: 'posted' }];
+    const withReceivable = [...lines, { entryId: 'e3', accountId: '1100', debit: 5000, credit: 0, description: 'ذمة رأس مال — شريك أ' },
+      { entryId: 'e3', accountId: '3000-p1', debit: 0, credit: 5000 }];
+    const s = partnerPaidSummary('p1', { payments: [{ partnerId: 'p1', amount: 20000 }], entries: owed, lines: withReceivable, partners: [{ id: 'p1', partner_name: 'شريك أ' }] });
+    expect(s).toMatchObject({ paid: 20000, ledgerBalance: 25000, receivable: 5000, unposted: 0 });
+  });
+
   it('وبلا دفاتر لا يُبلَّغ عن فرق وهمي', () => {
     const s = partnerPaidSummary('p1', { payments: PAYMENTS, entries: [], lines: [] });
     expect(s.paid).toBe(25000);

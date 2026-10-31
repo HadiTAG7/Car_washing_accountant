@@ -7,6 +7,9 @@ const state = vi.hoisted(() => ({ partnerView: false, qualityLoading: false, qua
   compositeLoading: false, compositeError: null, compositeReports: [] }));
 const readQuality = vi.hoisted(() => vi.fn());
 const readComposite = vi.hoisted(() => vi.fn());
+// The fixtures are October 2026 and the profile opens on the current Riyadh month: pin the clock (Date only).
+beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-31T12:00:00+03:00')); });
+afterEach(() => vi.useRealTimers());
 vi.mock('../../hooks/useBikerQualityReports', () => ({ useBikerQualityReports: (...args) => {
   readComposite(...args); return { available: !state.compositeLoading && !state.compositeError,
     data: { reports: state.compositeReports }, loading: state.compositeLoading, error: state.compositeError, refetch: vi.fn() };

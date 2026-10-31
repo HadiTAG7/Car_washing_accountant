@@ -140,6 +140,7 @@ describe('bounded operational raw sync, not a financial or owner assertion', () 
   });
   it.each([
     ['Initiated', 'new', 'pending_source'],
+    ['pending', 'new', 'pending_source'],
     ['An entirely new status', 'needs_review', 'needs_review'],
   ])('retains %s raw, not completed, paid, or owner-confirmed (only an unknown status needs a decision)', async (rawStatus, outcome, processingStatus) => {
     const db = syncDb(), b = syncPayload(); b.records[0].rawStatus = rawStatus;

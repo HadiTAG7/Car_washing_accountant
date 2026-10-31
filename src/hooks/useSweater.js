@@ -221,3 +221,15 @@ export function useSweaterBookingCleanup() {
     fillApply: useCallback(input => callServer('sweaterServiceTypeFillApply', input), []),
   };
 }
+
+/** الحجوزات المفتوحة في سويتر: نافذة آخر مزامنة وما لم تُعِد قراءته، وتطبيق قراءات سويتر المحفوظة (للمدير). */
+export function useSweaterOpenBookings(active = true) {
+  const query = useFirestoreQuery(() => callServer('sweaterOpenBookingsStatus', {}),
+    { cacheKey: 'sweater_open_bookings', enabled: enabled && active, fallback: null, preserveResult: true });
+  const { refetch } = query;
+  return {
+    status: query.data, loading: query.loading, error: query.error, refetch,
+    storedPreview: useCallback(() => callServer('sweaterStoredReadingsPreview', {}), []),
+    storedApply: useCallback(async input => { const r = await callServer('sweaterStoredReadingsApply', input); await refetch(); return r; }, [refetch]),
+  };
+}

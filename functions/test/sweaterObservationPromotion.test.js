@@ -55,6 +55,17 @@ describe('source-proven prefix observation promotion, no owner decision', () => 
     expect(db.rows.get('washes/ssp__B-990001').worker_commission_paid).toBe(false);
     expect(await operationsStatus(db, completed)).toMatchObject({ verified: true, linksVerified: true });
   });
+  it('promotes a reservation Sweater showed as «pending» (like Initiated) once its execution arrives', async () => {
+    db = syncDb(); const waiting = structuredClone(legacy); waiting.importRunId = 'synthetic-pending';
+    waiting.coverage.extractedAt = '2026-10-08T21:00:00+03:00';
+    Object.assign(waiting.records[0], { rawStatus: 'pending', startedAt: null });
+    expect((await save(waiting)).rows[0]).toMatchObject({ processingStatus: 'pending_source' });
+    expect(db.rows.get('sweater_bookings/990001')).toMatchObject({ processingStatus: 'pending_source', reviewReasonCode: 'unknown_status' });
+    const r = await save(completed);
+    expect(r.washesCreated).toBe(1);
+    expect(db.rows.get('sweater_bookings/990001')).toMatchObject(promotedBooking);
+    expect(await operationsStatus(db, completed)).toMatchObject({ verified: true, linksVerified: true });
+  });
   it('proves on-the-way, then started, then actual End without equating the first and latest import IDs', async () => {
     db = syncDb(); const way = structuredClone(legacy); way.importRunId = 'synthetic-on-way';
     way.coverage.extractedAt = '2026-10-08T21:30:00+03:00';

@@ -63,11 +63,20 @@ describe('owner-scoped review of two unexecuted source assignment histories', ()
     expect((await save(db, final))).toMatchObject({ replay: true, washesCreated: 0 });
     expect([...db.rows.keys()].some(p => p.startsWith('washes/'))).toBe(false);
   });
-  it('does not apply the owner-scoped source reassignment review to another natural identity', async () => {
+  it('another identity with the same shape follows the general rule (owner, 31 Oct): the executing biker, without the scoped receipt', async () => {
     const { db, final } = await seedAssignmentMemory({ ...assignmentCases[0], number: '990999' });
-    expect((await save(db, final)).washesCreated).toBe(0);
+    expect((await save(db, final)).washesCreated).toBe(1);
+    const [[, wash]] = [...db.rows].filter(([p]) => p.startsWith('washes/'));
+    expect(wash.source_assignment_review).toMatchObject({ kind: 'source_reassignment_before_dispatch_v1', bookingNumber: '990999' });
+    expect(wash.execution_worker_decision).toBeUndefined();
   });
-  it.each(['date', 'firstRun', 'lastRun', 'finalDriver', 'latestDriver', 'start', 'end', 'firstStatus', 'firstStart', 'firstEnd'])(
+  it('a different genuine End falls outside the scoped review and under the general rule', async () => {
+    const c = assignmentCases[0], { db, final } = await seedAssignmentMemory(c);
+    final.records[0].completedAt = '2026-10-29T19:21:00+03:00';
+    expect((await save(db, final)).washesCreated).toBe(1);
+    expect([...db.rows].find(([p]) => p.startsWith('washes/'))[1].source_assignment_review.kind).toBe('source_reassignment_before_dispatch_v1');
+  });
+  it.each(['date', 'firstRun', 'lastRun', 'finalDriver', 'latestDriver', 'start', 'firstStatus', 'firstStart', 'firstEnd'])(
     'does not turn the scoped source review into a general %s exception', async field => {
       const c = assignmentCases[0], { db, final } = await seedAssignmentMemory(c);
       const rawPath = `sweater_raw_payloads/${c.firstRun}__B-${c.number}`;

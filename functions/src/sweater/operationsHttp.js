@@ -2,6 +2,7 @@ import { verifyIngestRequest, IntegrationAuthError, INTEGRATION_PRINCIPAL } from
 import { SweaterIngestError, MAX_BODY_BYTES } from './ingest.js';
 import { hashBody } from './record.js';
 import { validateOperationsPayload, previewOperations, saveOperations, operationsStatus, validatePendingRequest, pendingBookings } from './operationsSync.js';
+import { syncFollowUp } from './openBookings.js';
 import { checkMetricsSnapshot, saveMetricsSnapshot } from './metricsSnapshot.js';
 
 // Complete action + payload + preview hashes are signed. An import signature
@@ -40,7 +41,9 @@ export function operationsHandler({ getDb, FieldValue, verify = verifyIngestRequ
         : body.action === 'preview' ? await previewOperations(db, body.payload)
           : body.action === 'status' ? await operationsStatus(db, body.payload)
             : await saveOperations(db, FieldValue, { payload: body.payload, reviewedPayloadHash: body.reviewedPayloadHash, previewStateHash: body.previewStateHash }, auth.principal);
-      return res.status(200).json({ result });
+      // After a save: what the next run must read (the 3-day window and every booking still open in Sweater).
+      const followUp = body.action === 'save' ? await syncFollowUp(db, body.payload).catch(() => null) : null;
+      return res.status(200).json({ result, ...(followUp ? { followUp } : {}) });
     } catch (error) {
       const known = error instanceof SweaterIngestError || error instanceof IntegrationAuthError;
       const code = known ? error.code : error instanceof SyntaxError ? 'invalid-argument' : 'internal';

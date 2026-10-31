@@ -17,9 +17,15 @@ const pendingSourceReason = prior => {
   if (['washing_started', 'on_the_way'].includes(prior?.normalizedStatus)) return 'execution_not_final';
   // These exact observed labels are unexecuted source evidence, not new
   // global/financial status mappings. Their original hashes remain valid.
-  if (prior?.normalizedStatus === 'unknown' && ['initiated', 'reached', 'completed'].includes(prior.rawStatus?.trim().toLowerCase())) return 'unknown_status';
+  // Sweater's own «pending» is a reservation not yet started, like Initiated (owner, 31 Oct).
+  if (prior?.normalizedStatus === 'unknown' && ['initiated', 'reached', 'pending', 'completed'].includes(prior.rawStatus?.trim().toLowerCase())) return 'unknown_status';
   return null;
 };
+// Sweater shows Start Service / End Service to the minute: a reading taken within that minute is still before it.
+const MINUTE = 60_000;
+// A reservation not yet dispatched (Initiated / pending, no Start or End): the biker on it is a tentative assignment.
+const undispatched = prior => prior?.normalizedStatus === 'unknown' && ['initiated', 'pending'].includes(prior.rawStatus?.trim().toLowerCase())
+  && !prior.startedAt && !prior.completedAt;
 const pendingSource = (prior, current, expectedDriver = current.driverExternalId) => Boolean(prior && pendingSourceReason(prior)
   && prior.sspBookingId && ownerBookingIdentity(prior.sspBookingId) === ownerBookingIdentity(current.sspBookingId)
   && prior.driverExternalId === expectedDriver && prior.serviceDate === current.serviceDate
@@ -82,8 +88,12 @@ export async function inspectObservationPromotion({ db, read, payload, record, d
     const historicalRow = matchingRows[0];
     const cut = Date.parse(run?.coverage?.extractedAt);
     const originalAssignment = Boolean(assignmentScope && runId === claim.importRunId);
-    const expectedDriver = originalAssignment ? assignmentScope.fromDriver : record.driverExternalId;
-    const expectedWorker = originalAssignment ? assignmentScope.fromWorker : candidate;
+    // Reassigned before dispatch: the first reading names another biker; the readings that show the execution (the
+    // latest open one and this final one) name the same biker, who did the wash and gets it.
+    const reassigned = !assignmentScope && runId === claim.importRunId && runId !== legacy.lastImportRunId && undispatched(prior)
+      && prior.driverExternalId !== record.driverExternalId && historicalRow?.driverExternalId === prior.driverExternalId;
+    const expectedDriver = originalAssignment ? assignmentScope.fromDriver : reassigned ? prior.driverExternalId : record.driverExternalId;
+    const expectedWorker = originalAssignment ? assignmentScope.fromWorker : reassigned ? historicalRow.bikerId : candidate;
     return {
       rawMatches: Boolean(raw && raw.source === SOURCE && raw.importRunId === runId
         && raw.sspBookingId === legacy.sspBookingId && pendingSource(prior, record, expectedDriver)
@@ -99,11 +109,20 @@ export async function inspectObservationPromotion({ db, read, payload, record, d
         && historicalRow.rawId === rawId && historicalRow.sourceHash === raw?.sourceHash
         && historicalRow.reasonCode === pendingSourceReason(prior)
         && (retainedCompleted(prior) ? cut >= Date.parse(record.completedAt)
-          : (prior?.normalizedStatus === 'washing_started' ? cut >= Date.parse(record.startedAt) : cut < Date.parse(record.startedAt))
-            && cut < Date.parse(record.completedAt))
+          : (prior?.normalizedStatus === 'washing_started' ? cut >= Date.parse(record.startedAt) : cut < Date.parse(record.startedAt) + MINUTE)
+            && cut < Date.parse(record.completedAt) + MINUTE)
         && Date.parse(payload.coverage.extractedAt) > cut),
+      reassignedFrom: reassigned ? { driverExternalId: prior.driverExternalId, workerId: historicalRow.bikerId ?? null,
+        observedAt: run?.coverage?.extractedAt ?? null } : null,
     };
   });
+  const reassignment = proofs.find(p => p.reassignedFrom)?.reassignedFrom ?? null;
+  const reassignmentReceipt = reassignment ? { kind: 'source_reassignment_before_dispatch_v1', bookingNumber: number,
+    originalDriverExternalId: reassignment.driverExternalId, originalWorkerId: reassignment.workerId, originalObservationAt: reassignment.observedAt,
+    executionDriverExternalId: record.driverExternalId, executionWorkerId: candidate,
+    executionFirstObservedAt: history.at(-1).run?.coverage?.extractedAt ?? null, executionFirstObservedStatus: legacy.record?.normalizedStatus ?? null,
+    executionWorkerBasis: legacy.record?.normalizedStatus === 'on_the_way' ? 'source_observed_before_execution' : 'source_start_and_end_same_biker',
+    assignmentChangedAt: null, claimRewritten: false, originalSourceRewritten: false } : null;
   const financialRefs = financialSnaps.flatMap((snap, i) => snap.docs.flatMap(d => {
     const metadata = referenceMetadata(d.data());
     return identityReference(d.id, number) || referencesThisIdentity(metadata, number)
@@ -130,8 +149,10 @@ export async function inspectObservationPromotion({ db, read, payload, record, d
     currentBookingId: record.sspBookingId, legacyBookingHash: hashBody(legacy), canonicalWashId: claim.washId, eligible: Object.values(checks).every(Boolean),
     checks, claimPreserved: true, promotionSaved: false, evidenceRefs,
     ...(retainedCompleted(legacy.record) ? { retainedCompletedSource: true } : {}),
-    ...(assignmentScope ? { sourceAssignmentReview: assignmentReviewReceipt(assignmentScope, history) } : {}) },
-    state: { checks, evidenceRefs, financialRefs, ...(assignmentScope ? { sourceAssignmentReview: assignmentReviewReceipt(assignmentScope, history) } : {}) } };
+    ...(assignmentScope ? { sourceAssignmentReview: assignmentReviewReceipt(assignmentScope, history) } : {}),
+    ...(reassignmentReceipt ? { sourceAssignmentReview: reassignmentReceipt } : {}) },
+    state: { checks, evidenceRefs, financialRefs, ...(assignmentScope ? { sourceAssignmentReview: assignmentReviewReceipt(assignmentScope, history) } : {}),
+      ...(reassignmentReceipt ? { sourceAssignmentReview: reassignmentReceipt } : {}) } };
 }
 
 export function preservedPromotionClaimMatches(row, claim) {

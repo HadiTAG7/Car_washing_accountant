@@ -63,6 +63,7 @@ vi.mock('../../hooks/useSweater', () => ({
   useSweaterConfig: () => ({ prices: [], adjustmentTypes: [], policy: [], loading: false, error: null, savePrice: state.savePrice }),
   useSweaterServiceTypes: (allowed) => { state.typesAllowed = allowed; return { serviceTypes: allowed ? [{ serviceType: 'interior_exterior_wash', bookings: 852 }] : [], error: null }; },
   useSweaterBookingCleanup: () => ({ preview: async () => ({ summary: { numbers: 0 }, rows: [] }), apply: async () => ({}), fillPreview: async () => ({ rows: [] }), fillApply: async () => ({}) }),
+  useSweaterOpenBookings: () => ({ status: null, loading: false, error: null, refetch: async () => {}, storedPreview: async () => ({ rows: [] }), storedApply: async () => ({}) }),
 }));
 
 beforeEach(() => {

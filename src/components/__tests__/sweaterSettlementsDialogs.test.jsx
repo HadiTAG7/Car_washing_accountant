@@ -18,6 +18,9 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import SweaterSettlementsPage from '../SweaterSettlementsPage';
+import { LanguageContext } from '../../i18n/LanguageContext';
+import { loadEnglish } from '../../i18n/locale';
+vi.mock('../SweaterBookingDetails', () => ({ default: ({ booking, onClose }) => <div role="dialog" aria-label="TEST-source-detail">{(booking.record ?? booking).sspBookingId}<button onClick={onClose}>TEST-close</button></div> }));
 
 const PERIOD = '2026-05';
 
@@ -61,7 +64,8 @@ vi.mock('../../hooks/useSweater', () => ({
   useSweaterVariances: () => ({ variances: state.variances, loading: false, error: null, refetch: vi.fn(), resolve: vi.fn() }),
 }));
 
-beforeEach(() => {
+beforeEach(async () => {
+  await loadEnglish();
   state.canMutate = true;
   state.settlement = { periodKey: PERIOD, status: 'calculated', figures: FIGURES };
   state.variances = [];
@@ -73,6 +77,17 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 const dialog = () => screen.queryByRole('dialog');
+it.each(['ar','en'])('finds a booking beyond the first 200 and opens source details without a mutation (%s)', language => {
+  state.bookings = Array.from({ length: 205 }, (_, i) => ({ record: { sspBookingId: `B-${i}`, normalizedStatus: 'unknown', rawStatus: 'Initiated' } }));
+  render(<LanguageContext.Provider value={{ language }}><SweaterSettlementsPage /></LanguageContext.Provider>);
+  const totalsBefore = [...document.querySelectorAll('p.tabular-nums')].map(element => element.textContent);
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'B-204' } });
+  expect([...document.querySelectorAll('p.tabular-nums')].map(element => element.textContent)).toEqual(totalsBefore);
+  fireEvent.click(screen.getByRole('button', { name: language === 'ar' ? 'تفاصيل المصدر والإلغاء B-204' : 'Source and cancellation details B-204' }));
+  expect(screen.getByRole('dialog').textContent).toContain('B-204');
+  fireEvent.click(screen.getByText('TEST-close')); expect(screen.queryByRole('dialog')).toBeNull();
+  expect(state.approve).not.toHaveBeenCalled(); expect(state.recordStatement).not.toHaveBeenCalled(); expect(state.recordCollection).not.toHaveBeenCalled(); expect(state.close).not.toHaveBeenCalled();
+});
 const btn = (re) => screen.getByRole('button', { name: re });
 const confirmIn = (re) => [...dialog().querySelectorAll('button')].find((b) => re.test(b.textContent));
 

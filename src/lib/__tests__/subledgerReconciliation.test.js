@@ -19,6 +19,12 @@ const input = {
   policyAt: () => ({ known: true, vatRegistered: false, vatRate: 0.15, washPriceMode: 'inclusive' }),
 };
 describe('subledger page comparisons', () => {
+  it('compares paid capital with the capital accounts less «ذمة رأس مال غير مسددة»', () => {
+    const owed = { ...input, accounts: [...accounts, { code: '1100', accountType: 'asset', normalBalance: 'debit' }], partners: [{ id: 'a', partnerName: 'الشريك', paidAmount: 100 }],
+      entries: [...input.entries, { id: 'o', entryDate: '2026-01-05', status: 'posted' }],
+      lines: [...input.lines, { entryId: 'o', accountId: '1100', debit: 80, description: 'ذمة رأس مال — الشريك' }, { entryId: 'o', accountId: '3000-a', credit: 80 }] };
+    expect(subledgerReconciliation(owed).rows.find(a => a.key === 'capital')).toMatchObject({ ledger: 100, page: 100, difference: 0 });
+  });
   it('uses current page pending status and capital, and existing monthly cost bridge', () => {
     const r = subledgerReconciliation(input);
     expect(r.rows.find(a => a.key === 'advances')).toMatchObject({ ledger: 100, page: 140, difference: 40 });

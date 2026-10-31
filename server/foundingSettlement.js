@@ -16,6 +16,7 @@ import { callerRole } from '../functions/src/handlers.js';
 import { FINANCE_KINDS, financeHash, financeProblems, FinanceReviewError, statementLineRefOf, managerAttestationOf, journalMatchesFinanceSource } from '../functions/src/financeReview.js';
 import { outstandingCustody, applyDocumentRecovery } from '../functions/src/custodyRecovery.js';
 import { manualEntryProblems, MAX_MANUAL_LINES, SETTLEMENTS_ACCOUNT } from '../src/lib/founding/manualEntry.js';
+import { capitalReceivables } from '../functions/src/capitalReceivable.js';
 import { normalizeEntry, normalizeLines, validateEntry, journalCounterUpdate, isRealDate, postingLockId } from '../functions/src/invariants.js';
 import { legacyLockIdFor } from '../functions/src/posting.js';
 import { postedLines } from '../src/lib/accounting/reports.js';
@@ -313,7 +314,9 @@ export function foundingInputs(t) {
       amount: Number(a.amount) || 0, outstanding: halala(outstandingCustody(a)), spentDate: documentDay(a.spent_date), status: a.status || null,
       entryId: e.id, entryNumber: e.entryNumber ?? null }];
   });
-  return { docs, payments, lines: statementLines, decisions, settings, book, posted, closedMonths, hadiLedger, partners,
+  // «ذمة رأس مال غير مسددة» per partner (open 1100 balance): a receipt settles it first.
+  const capitalReceivable = Object.fromEntries(capitalReceivables(ledger, partners).byPartner);
+  return { docs, payments, lines: statementLines, decisions, settings, book, posted, closedMonths, hadiLedger, partners, capitalReceivable,
     review, chart: new Set(t.chart_of_accounts.map(a => a.id)), duplicateEffects, advances,
     custodyHint: t.temporary_expenses.filter(x => x.status !== 'recovered' && documentDay(x.spent_date) && documentDay(x.spent_date) < settings.cutoffDate)
       .reduce((n, x) => n + halala(x.amount) - halala(x.recovered_amount), 0) };

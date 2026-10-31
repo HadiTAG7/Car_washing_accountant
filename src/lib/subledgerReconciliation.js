@@ -1,9 +1,10 @@
-import { trialBalance } from './accounting/reports';
+import { trialBalance, postedLines } from './accounting/reports';
 import { round2 } from './accounting/journal';
 import { liveIncomeStatement } from './accounting/liveIncomeStatement';
 import { incomeCostReconciliation } from './accounting/incomeCostReconciliation';
 import { buildVatReport } from './accounting/vatReturn';
 import { registerSummary } from './accounting/depreciation';
+import { capitalReceivables } from '../../functions/src/capitalReceivable.js';
 
 export function reconciliationMonths(today) {
   return Array.from({ length: Number(today.slice(5, 7)) }, (_, i) => `${today.slice(0, 4)}-${String(i + 1).padStart(2, '0')}`);
@@ -36,9 +37,12 @@ export function subledgerReconciliation({ accounts, entries, lines, today, tempo
   }
   add('vat', 'ضريبة المدخلات المؤهلة', '1200', sum(code => code === '1200'), vat,
     '?page=vat', 'كل الفواتير المؤهلة في صفحة الضريبة، مقابل رصيد 1200؛ لا يشمل تغييرًا في التسجيل الضريبي.');
-  add('capital', 'رأس مال الشركاء', '3000', sum(code => code === '3000' || code.startsWith('3000-')),
+  // «ذمة رأس مال غير مسددة» (1100 «ذمة رأس مال — الشريك») is capital subscribed and not paid: not part of what was paid.
+  const owed = [...capitalReceivables(postedLines(entries, lines, { to: today }),
+    partners.map(p => ({ id: p.id, name: p.partnerName ?? p.partner_name ?? '' }))).byPartner.values()].reduce((total, n) => total + n, 0);
+  add('capital', 'رأس مال الشركاء', '3000', round2(sum(code => code === '3000' || code.startsWith('3000-')) - owed),
     partners.reduce((total, row) => total + Number(row.paidAmount || 0), 0), '?page=partner_capital',
-    'المدفوع في إدارة الشركاء مقابل حسابات رأس المال؛ العرض لا يسجل دفعات أو قيودًا.');
+    `المدفوع في إدارة الشركاء مقابل حسابات رأس المال${owed ? ' بعد طرح ذمة رأس المال غير المسددة (1100)' : ''}؛ العرض لا يسجل دفعات أو قيودًا.`);
   const monthly = [];
   const incomeState = status.income || {};
   if (!incomeState.loading && !incomeState.error) {

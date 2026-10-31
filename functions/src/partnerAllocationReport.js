@@ -216,7 +216,7 @@ export async function partnerAllocationReport(db, { partnerId, periodKey, today 
     }) } : {}),
     // Every receipt (not only those through the report date) and the posted
     // capital balance — the same figures the page used to sum in the browser.
-    capital: partnerCapitalSummary(selected.id, { receipts: data.partner_payments, entries, lines }),
+    capital: partnerCapitalSummary(selected.id, { receipts: data.partner_payments, entries, lines, partners }),
     asOf: today.toISOString(), fundingAsOf, fundingBasis: 'paid-through-report-date',
     from: `${first}-01`, through: monthRange(through).to,
     basis: 'partner-allocation', statements: results };

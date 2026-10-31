@@ -16,6 +16,7 @@
 
 import { round2 } from './journal.js';
 import { partnerCapitalCode } from './chartOfAccounts.js';
+import { capitalReceivables } from '../../../functions/src/capitalReceivable.js';
 
 /** partnerId → total received, summed from the receipts themselves. */
 export function paidByPartner(payments) {
@@ -52,14 +53,20 @@ export function capitalBalanceOf(partnerId, entries, lines) {
  * The receipts win: they are what the partner actually handed over. The
  * ledger reading is reported alongside so an unposted backlog is visible.
  */
-export function partnerPaidSummary(partnerId, { payments, entries, lines }) {
+export function partnerPaidSummary(partnerId, { payments, entries, lines, partners = [] }) {
   const paid = paidByPartner(payments).get(String(partnerId)) || 0;
   const ledger = capitalBalanceOf(partnerId, entries, lines);
+  // «ذمة رأس مال غير مسددة»: capital subscribed and not yet paid sits in the capital
+  // account against 1100 — it is owed, not a posting difference.
+  const live = new Set((entries || []).filter((e) => e.status === 'posted' || e.status === 'reversed').map((e) => e.id));
+  const named = (partners || []).map((p) => ({ id: p.id, name: p.name ?? p.partnerName ?? p.partner_name ?? '' }));
+  const receivable = round2(capitalReceivables((lines || []).filter((l) => live.has(l.entryId)), named).byPartner.get(String(partnerId)) || 0);
   return {
     paid,
     ledgerBalance: ledger.balance,
     ledgerAvailable: ledger.available,
-    unposted: ledger.available ? round2(paid - ledger.balance) : 0,
+    receivable,
+    unposted: ledger.available ? round2(paid - (ledger.balance - receivable)) : 0,
   };
 }
 
@@ -68,7 +75,7 @@ export function partnerPaidSummary(partnerId, { payments, entries, lines }) {
  * already are — the trusted server — so the partner's browser never has to
  * read every receipt and the whole ledger to show its own total.
  */
-export function partnerCapitalSummary(partnerId, { receipts, entries, lines }) {
+export function partnerCapitalSummary(partnerId, { receipts, entries, lines, partners = [] }) {
   const own = (receipts || []).filter((p) => String(p.partnerId ?? p.partner_id ?? '') === String(partnerId));
-  return { ...partnerPaidSummary(partnerId, { payments: own, entries, lines }), receiptsCount: own.length };
+  return { ...partnerPaidSummary(partnerId, { payments: own, entries, lines, partners }), receiptsCount: own.length };
 }

@@ -35,6 +35,19 @@ describe('partners pages do not widen access or writes', () => {
     state.ledger.mockReturnValue({ entries: [], lines: [], error: new Error('تعذرت قراءة الدفتر') });
     page.rerender(<PartnerCapitalPage />); expect(screen.queryByRole('table')).toBeNull();
   });
+  it('shows «ذمة رأس مال غير مسددة» as its own column, with no difference for it', () => {
+    state.partners.mockReturnValue({ partners: [{ id: 'a', partnerName: 'رباب', workersCount: 4 }] });
+    state.payments.mockReturnValue({ payments: [{ id: 'receipt', partnerId: 'a', amount: 60000, paymentDate: '2026-09-25' }] });
+    state.ledger.mockReturnValue({ entries: [{ id: 'paid', status: 'posted', sourceKind: 'partner_payment', sourceId: 'receipt' }, { id: 'owed', status: 'posted', sourceKind: 'founding_manual' }],
+      lines: [{ entryId: 'paid', accountId: '1020', debit: 60000 }, { entryId: 'paid', accountId: '3000-a', credit: 60000 },
+        { entryId: 'owed', accountId: '1100', debit: 20000, description: 'ذمة رأس مال — رباب' }, { entryId: 'owed', accountId: '3000-a', credit: 20000, description: 'رأس مال غير مسدد — رباب' }] });
+    render(<PartnerCapitalPage />);
+    const headers = screen.getAllByRole('columnheader').map(h => h.textContent);
+    expect(headers).toEqual(['الشريك', 'المطلوب', 'المسجّل في السندات', 'المرحّل في الدفتر', 'ذمة رأس مال غير مسددة', 'الفرق']);
+    const cells = screen.getByRole('rowheader', { name: 'رباب' }).closest('tr').querySelectorAll('td');
+    expect([...cells].map(c => c.textContent.match(/-?[\d,]+\.\d{2}/)?.[0])).toEqual(['80,000.00', '60,000.00', '80,000.00', '20,000.00', '0.00']);
+    expect(screen.queryByText(/تفاصيل الفرق/)).toBeNull();
+  });
   it('states linked account counts unambiguously in RTL without claiming last sign-in', () => {
     state.partners.mockReturnValue({ partners: [{ id: 'a', partnerName: 'أول', userId: 'linked' }, { id: 'b', partnerName: 'ثان' }] });
     render(<PartnerAccountsPage />);

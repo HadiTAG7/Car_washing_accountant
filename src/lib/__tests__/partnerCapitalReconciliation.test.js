@@ -28,6 +28,30 @@ describe('partner capital receipts versus posted capital', () => {
     expect(report.totals).toMatchObject({ recorded: 20000, posted: 0, difference: 20000 });
     expect(report.rows[0].pending[0].reason).toBe('قيد السند غير مرحّل'); expect(report.orphanPayments).toHaveLength(1);
   });
+  it('shows «ذمة رأس مال غير مسددة» as its own column, not a difference, and counts a receipt that settled it', () => {
+    const owing = [{ id: 'a', partnerName: 'الشريك', workersCount: 4 }];
+    const paid = { ...receipt, amount: 60000 };
+    const entries = [{ id: 'first', status: 'posted', sourceKind: 'partner_payment', sourceId: 'r' },
+      { id: 'owed', status: 'posted', sourceKind: 'founding_manual', sourceId: 'owed' }];
+    const lines = [{ entryId: 'first', accountId: '1020', debit: 60000 }, { entryId: 'first', accountId: '3000-a', credit: 60000 },
+      { entryId: 'owed', accountId: '1100', debit: 20000, description: 'ذمة رأس مال — الشريك' }, { entryId: 'owed', accountId: '3000-a', credit: 20000 }];
+    let report = reconcilePartnerCapital(owing, [paid], entries, lines);
+    expect(report.rows[0]).toMatchObject({ required: 80000, recorded: 60000, posted: 80000, receivable: 20000, difference: 0, pending: [] });
+    expect(report.totals).toMatchObject({ receivable: 20000, difference: 0 });
+    // A later receipt credited 1100 (not capital): the receivable falls, nothing is pending.
+    const later = { ...receipt, id: 'r2', amount: 5000 };
+    report = reconcilePartnerCapital(owing, [paid, later], [...entries, { id: 'second', status: 'posted', sourceKind: 'partner_payment', sourceId: 'r2' }],
+      [...lines, { entryId: 'second', accountId: '1020', debit: 5000 }, { entryId: 'second', accountId: '1100', credit: 5000, partnerId: 'a', description: 'ذمة رأس مال — الشريك' }]);
+    expect(report.rows[0]).toMatchObject({ recorded: 65000, posted: 80000, receivable: 15000, difference: 0, pending: [] });
+    // A capital-receivable line naming nobody is reported, not guessed.
+    report = reconcilePartnerCapital(owing, [paid], entries, [...lines, { entryId: 'owed', accountId: '1100', debit: 10, description: 'ذمة رأس مال — غيره' }]);
+    expect(report.unmatchedReceivables).toEqual({ count: 1, amount: 10 });
+  });
+  it('recognises a receipt posted by the founding «سند قبض وصل لحساب هادي»', () => {
+    const entries = [{ id: 'f', status: 'posted', sourceType: 'partner_payment', sourceKind: 'founding_receipt', sourceId: 'r' }];
+    const lines = [{ entryId: 'f', accountId: '2300', debit: 20000 }, { entryId: 'f', accountId: '3000-a', credit: 20000 }];
+    expect(reconcilePartnerCapital(partners, [receipt], entries, lines).rows[0]).toMatchObject({ posted: 20000, difference: 0, pending: [] });
+  });
   it('changes only the display of dated opening balances and links the exact receipt', () => {
     const opening = Object.freeze({ ...receipt, paymentDate: '2026-07-03', notes: 'رصيد افتتاحي مُرحّل (تحويل تلقائي إلى سجل الدفعات)' });
     expect(partnerPaymentDescription(opening)).toBe('رصيد افتتاحي (التاريخ الفعلي غير مسجل)');

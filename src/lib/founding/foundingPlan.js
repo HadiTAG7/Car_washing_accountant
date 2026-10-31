@@ -17,6 +17,8 @@
 // لا شيء هنا يُرحَّل: الخادم يعيد الحساب نفسه ويرحّل فقط ما وافق عليه هادي.
 // كل المبالغ الداخلية بالهللة (أعداد صحيحة) حتى لا يتراكم كسر.
 
+import { partnerReceiptCredits, CAPITAL_RECEIVABLE_ACCOUNT } from '../../../functions/src/capitalReceivable.js';
+
 // تاريخ القطع = أول يوم عمل فيه حساب البنك. الافتراضي يُبقي فترة التأسيس حتى
 // 2026-09-30 إلى أن يحدد هادي اليوم الفعلي.
 export const FOUNDING_DEFAULTS = Object.freeze({ cutoffDate: '2026-10-01', threshold: 500 });
@@ -310,6 +312,21 @@ function planCore(input) {
   // ── سندات قبض وصلت لحساب هادي بلا قيد: مدين 2300 ودائن رأس مال الشريك ──
   const proposals = new Map((settings.receiptProposals || []).map(r => [r.id, r]));
   const receiptDate = p => (closed.has(String(p.date).slice(0, 7)) ? dateFor(p.date) : p.date);
+  // «ذمة رأس مال غير مسددة»: an unposted receipt credits the partner's open 1100
+  // receivable first (oldest receipt first), the rest to capital. Posted ones are
+  // already in the journal's balance.
+  const openReceivable = new Map(Object.entries(input.capitalReceivable || {}).map(([id, n]) => [id, halala(n)]));
+  const receiptOrder = [...proposals.keys()].map(id => paymentRows.find(x => x.id === id)).filter(Boolean)
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.id).localeCompare(String(b.id)));
+  const receiptCredits = new Map();
+  for (const p of receiptOrder) {
+    if (posted.has(`receipt:${p.key}`)) continue;
+    const credits = partnerReceiptCredits({ amount: riyal(halala(p.amount)), outstanding: riyal(openReceivable.get(String(p.partnerId)) || 0),
+      partnerId: p.partnerId, partnerName: p.partnerName, capitalAccount: `3000-${p.partnerId}`, capitalDescription: `رأس مال ${p.partnerName}` });
+    const settled = credits.filter(l => l.accountId === CAPITAL_RECEIVABLE_ACCOUNT).reduce((n, l) => n + halala(l.credit), 0);
+    openReceivable.set(String(p.partnerId), (openReceivable.get(String(p.partnerId)) || 0) - settled);
+    receiptCredits.set(p.id, credits);
+  }
   for (const [id, proposal] of proposals) {
     const p = paymentRows.find(x => x.id === id), key = p ? `receipt:${p.key}` : null;
     // Posted some other way, or no longer Hadi's: nothing left to propose.
@@ -318,7 +335,7 @@ function planCore(input) {
     entries.push({ key, type: 'receipt', sourceKey: p.key, paymentId: p.id, partnerId: p.partnerId, title: `سند قبض ${p.partnerName}`, amount, date,
       originalDate: p.date, payer: 'hadi', reason: proposal.reason, proposedByName: proposal.byName || null, proposedAtIso: proposal.atIso || null,
       lines: [{ accountId: ACCOUNTS.HADI, debit: amount, credit: 0, description: `دفعة ${p.partnerName} وصلت لحساب هادي` },
-        { accountId: `3000-${p.partnerId}`, debit: 0, credit: amount, description: `رأس مال ${p.partnerName}` }],
+        ...(receiptCredits.get(p.id) || [{ accountId: `3000-${p.partnerId}`, debit: 0, credit: amount, description: `رأس مال ${p.partnerName}` }])],
       status: status(key, date, false), description: `سند قبض ${p.partnerName} (${p.date}) وصل لحساب هادي — ${proposal.reason}`, ...(posted.get(key) || {}) });
   }
   const receipts = paymentRows.filter(p => p.arrival === 'hadi' && !p.protected && p.partnerId && p.date && !proposals.has(p.id))

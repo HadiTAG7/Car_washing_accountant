@@ -107,7 +107,8 @@ export function bookingReviewState({ record, hasWash = false, established = fals
   if (status === 'admin_cancelled') return hasWash ? { processingStatus: REVIEW.DECISION, reasonCode: 'protected_existing_record' }
     : { processingStatus: REVIEW.DONE, reasonCode: null };
   if (PENDING_STATUSES.includes(status)) return { processingStatus: REVIEW.PENDING, reasonCode: 'execution_not_final' };
-  if (status === 'unknown' && ['initiated', 'reached'].includes(raw)) return { processingStatus: REVIEW.PENDING, reasonCode: 'unknown_status' };
+  // Sweater's own «pending» is a reservation that has not started, like Initiated: it waits, it is not a decision.
+  if (status === 'unknown' && ['initiated', 'reached', 'pending'].includes(raw)) return { processingStatus: REVIEW.PENDING, reasonCode: 'unknown_status' };
   if (status === 'unknown' && raw !== 'completed') return { processingStatus: REVIEW.DECISION, reasonCode: 'unknown_status' };
   if (!String(record?.serviceType ?? '').trim()) return { processingStatus: REVIEW.DECISION, reasonCode: 'unknown_service_type' };
   if (hasWash) return { processingStatus: REVIEW.DONE, reasonCode: null };
@@ -125,7 +126,7 @@ export function bookingReviewState({ record, hasWash = false, established = fals
 }
 const outsideWindow = (record, coverage) => record.serviceDate < coverage.rangeFrom || record.serviceDate > coverage.rangeTo;
 /** Sweater's latest known reading of a booking (beside an owner-held record, or the record itself). */
-const latestReading = booking => booking?.latestObservation ?? booking?.record ?? null;
+export const latestReading = booking => booking?.latestObservation ?? booking?.record ?? null;
 /** A booking still moving in Sweater: re-read on every sync, whatever its date, until it is final. */
 export const stillOpenBooking = booking => Boolean(booking && !lockedFinancially(booking) && latestReading(booking)
   && sourceStillOpen(latestReading(booking)));
@@ -351,7 +352,8 @@ export function operationsVarianceWrite(row, payload, now) {
     supersededBecause: row._review?.processingStatus ?? null };
 }
 
-export async function saveOperations(db, FieldValue, request, actor) {
+// `replayOf`: an owner-approved replay of a reading Sweater already sent (stored raw); it does not count as a sync.
+export async function saveOperations(db, FieldValue, request, actor, { replayOf = null } = {}) {
   if (!exactKeys(request, ['payload', 'reviewedPayloadHash', 'previewStateHash'])) fail('حقول طلب الحفظ غير مسموحة.');
   validateOperationsPayload(request.payload);
   if (request.reviewedPayloadHash !== hashBody(request.payload) || !/^[a-f0-9]{64}$/.test(request.previewStateHash ?? '')) fail('معاينة الجسم الكامل مطلوبة.');
@@ -421,8 +423,8 @@ export async function saveOperations(db, FieldValue, request, actor) {
     const result = { ...resultFor(value), dryRun: false, saved: true, replay: false };
     tx.set(value.runRef, { importRunId: value.payload.importRunId, payloadHash: value.reviewedPayloadHash,
       bodyHash: hashBody(value.payload.records), source: OPERATIONS_SOURCE, actor, status: result.status,
-      coverage: value.payload.coverage, startedAtIso: now, finishedAtIso: now, result });
-    tx.set(db.collection(COL.STATE).doc('current'), { lastOperationalRunId: value.payload.importRunId,
+      coverage: value.payload.coverage, startedAtIso: now, finishedAtIso: now, result, ...(replayOf ? { replayOf } : {}) });
+    if (!replayOf) tx.set(db.collection(COL.STATE).doc('current'), { lastOperationalRunId: value.payload.importRunId,
       lastOperationalSuccessAtIso: now, lastOperationalCoverage: value.payload.coverage, lastOperationalCounts: value.counts }, { merge: true });
     return result;
   });

@@ -273,6 +273,7 @@ import { previewAdministrativeCompletion, saveAdministrativeCompletion } from '.
 import { saveOwnerHandoff } from './sweater/staffHandoff.js';
 import { previewOwnerWashTax, saveOwnerWashTax } from './sweater/ownerWashTax.js';
 import { previewBookingIdentityCleanup, applyBookingIdentityCleanup, previewServiceTypeFill, applyServiceTypeFill } from './sweater/bookingCleanup.js';
+import { openBookingsStatus, previewStoredReadings, applyStoredReadings } from './sweater/openBookings.js';
 import { SweaterIngestError } from './sweater/ingest.js';
 import { getPartnerEligibility, setPartnerEligibility } from './partnerWorkerEligibility.js';
 import { supervisorOverview, supervisorRecords } from './supervisorRead.js';
@@ -557,6 +558,9 @@ export const HANDLERS = {
   sweaterBookingCleanupApply: { guard: 'admin', run: ({ db, FieldValue, data, uid }) => applyBookingIdentityCleanup(db, FieldValue, data, uid) },
   sweaterServiceTypeFillPreview: { guard: 'admin', run: ({ db, data }) => previewServiceTypeFill(db, data) },
   sweaterServiceTypeFillApply: { guard: 'admin', run: ({ db, FieldValue, data, uid }) => applyServiceTypeFill(db, FieldValue, data, uid) },
+  sweaterOpenBookingsStatus: { guard: 'accountant', run: ({ db }) => openBookingsStatus(db) },
+  sweaterStoredReadingsPreview: { guard: 'admin', run: ({ db }) => previewStoredReadings(db) },
+  sweaterStoredReadingsApply: { guard: 'admin', run: ({ db, FieldValue, data, uid }) => applyStoredReadings(db, FieldValue, data, uid) },
   sweaterPreviewOwnerWashTax: {
     guard: 'accountant',
     run: ({ db, data }) => previewOwnerWashTax(db, data),

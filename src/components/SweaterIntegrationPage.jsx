@@ -14,8 +14,9 @@ import Toast from './Toast';
 import SweaterActionDialog from './SweaterActionDialog';
 import SweaterHandoffPreview from './SweaterHandoffPreview';
 import SweaterOwnerWashTaxCorrection from './SweaterOwnerWashTaxCorrection';
-import { useSweaterIntegration, useSweaterConfig, useSweaterServiceTypes, useSweaterBookingCleanup } from '../hooks/useSweater';
+import { useSweaterIntegration, useSweaterConfig, useSweaterServiceTypes, useSweaterBookingCleanup, useSweaterOpenBookings } from '../hooks/useSweater';
 import SweaterBookingCleanup from './SweaterBookingCleanup';
+import SweaterOpenBookings from './SweaterOpenBookings';
 import SweaterServicePrices from './SweaterServicePrices';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 import { describeBackendError } from '../lib/firebaseClient';
@@ -42,6 +43,7 @@ export default function SweaterIntegrationPage() {
   const staff = !isPartnerView && (role === 'admin' || role === 'accountant');
   const { serviceTypes } = useSweaterServiceTypes(staff);
   const cleanup = useSweaterBookingCleanup();
+  const openBookings = useSweaterOpenBookings(staff);
 
   // جاهزية الخادم — تُقرأ من مسبارٍ لا يعرض قيمةً، فيُعرف أن الإعداد ناقص
   // قبل الضغط على الزر لا بعد فشله.
@@ -331,6 +333,13 @@ export default function SweaterIntegrationPage() {
             </div>
           )}
         </Card>
+
+        {/* ── الحجوزات المفتوحة: نافذة كل مزامنة وما لم يُعَد قراءته ── */}
+        {staff && <Card className="p-4 sm:p-6">
+          <SectionHeader title="الحجوزات المفتوحة في سويتر" subtitle="كل مزامنة تقرأ آخر 3 أيام وتعيد قراءة كل حجز غير نهائي" />
+          <div className="mt-4"><SweaterOpenBookings status={openBookings.status} loading={openBookings.loading} error={openBookings.error}
+            canApply={role === 'admin'} onPreview={openBookings.storedPreview} onApply={openBookings.storedApply} /></div>
+        </Card>}
 
         {/* ── توحيد الحجوزات ونوع الخدمة (للمدير) ── */}
         {canMutate && role === 'admin' && !isPartnerView && <Card className="p-4 sm:p-6">

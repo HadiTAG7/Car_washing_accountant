@@ -2,6 +2,8 @@ import { operationsSigningHash } from '../../functions/src/sweater/operationsHtt
 import { hashBody } from '../../functions/src/sweater/record.js';
 import { validateOperationsPayload, validatePendingRequest, PENDING_CONTRACT } from '../../functions/src/sweater/operationsSync.js';
 import { validateMetricsSnapshot } from '../../functions/src/sweater/metricsContract.js';
+import { followUpFor } from '../../functions/src/sweater/openBookings.js';
+import { ownerBookingIdentity } from '../../src/lib/sweater/bookingIdentity.js';
 
 export const OPERATIONS_ENDPOINT = 'https://sweater-hadi-alghanim.vercel.app/api/integrations/sweater/operations';
 export class OperationsClientError extends Error {
@@ -112,4 +114,24 @@ export async function syncMetricsSnapshot(payload, { request, sleep = ms => new 
 export async function fetchPendingBookings({ request, now = new Date() }) {
   const importRunId = `pending-${now.toISOString().replace(/[-:.TZ]/g, '').slice(0, 14)}`;
   return request({ action: 'pending', payload: { contract: PENDING_CONTRACT, importRunId } });
+}
+
+// ── Every run: the last 3 days and every booking still open in Sweater ──
+// What the next run must read, from the signed (read-only) open-bookings list.
+export async function syncPlan({ request, now = new Date(), payload = null }) {
+  const open = await fetchPendingBookings({ request, now });
+  return followUpFor(open.bookings ?? [], { payload, now });
+}
+
+/** Plain-language gaps between a run and what it must read (empty when the run covers both). */
+export function coverageGaps(payload, plan) {
+  const gaps = [], c = payload?.coverage ?? {};
+  if (c.rangeFrom > plan.window.rangeFrom || c.rangeTo < plan.window.rangeTo) {
+    gaps.push(`This run reads ${c.rangeFrom}..${c.rangeTo}; every run must read ${plan.window.rangeFrom}..${plan.window.rangeTo} (the last ${plan.window.days} days).`);
+  }
+  const sent = new Set((payload?.records ?? []).map(r => ownerBookingIdentity(String(r?.sspBookingId ?? ''))));
+  const missing = [...plan.rechecks, ...plan.openInWindow].filter(n => !sent.has(n));
+  if (missing.length) gaps.push(`${missing.length} booking(s) still open in Sweater are not in this run: ${missing.slice(0, 50).join(', ')}`
+    + `${missing.length > 50 ? ' …' : ''}. Re-read each by its number and list it in \`rechecks\`.`);
+  return gaps;
 }

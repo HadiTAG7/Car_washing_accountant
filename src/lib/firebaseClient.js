@@ -28,7 +28,7 @@ const READ_ONLY_OPERATIONS = new Set([
   'payrollPreview', 'payrollPreviews', 'payrollPreapproval', 'payrollReadStatus', 'payrollPreviewAdvanceMonth',
   'payrollPreviewPartialPayment', 'expenseCorrectionOptions', 'expensePreviewCorrection', 'sweaterPreviewAdministrativeCompletion',
   'supervisorOverview', 'supervisorRecords', 'partnerEligibilityGet', 'partnerInsights',
-  'partnerProfile', 'sweaterPreviewImport', 'sweaterPreviewOwnerWashTax', 'sweaterBookingCleanupPreview', 'sweaterServiceTypeFillPreview',
+  'partnerProfile', 'sweaterPreviewImport', 'sweaterPreviewOwnerWashTax', 'sweaterBookingCleanupPreview', 'sweaterServiceTypeFillPreview', 'sweaterOpenBookingsStatus', 'sweaterStoredReadingsPreview',
   'sweaterListIntegrationKeys', 'sweaterServiceTypes', 'authBootstrapStatus',
 ]);
 const afterServerCall = (name) => { if (!READ_ONLY_OPERATIONS.has(name)) invalidateAllReads(); };

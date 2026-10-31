@@ -77,17 +77,47 @@ describe('observed SSP source states in the operational execution contract only'
     const db = syncDb(); await save(db, observation('synthetic-too-late', status, '21:09'));
     expect((await save(db, finish())).washesCreated).toBe(0);
   });
-  it.each(['Washing Started', 'On the Way'])('retains the reassignment protection after an initial different driver and later %s', async status => {
+  // Owner, 31 Oct: a biker change while the booking is still Initiated goes to the biker who executed the wash, when the
+  // readings that show the execution name that biker; the wash keeps a note of the original biker.
+  it.each([['Washing Started', 'source_start_and_end_same_biker'], ['On the Way', 'source_observed_before_execution']])(
+    'attributes the wash to the executing biker after an initial different driver and later %s', async (status, basis) => {
+      const db = syncDb(); db.rows.set('bikers/worker-2', { name: 'Synthetic second worker', driver_external_id: 'driver-2' });
+      await save(db, observation('synthetic-first-driver', 'Initiated', '20:00', { driverExternalId: 'driver-2' }));
+      await save(db, observation('synthetic-new-driver', status, status === 'Washing Started' ? '21:20' : '21:00',
+        status === 'Washing Started' ? { startedAt: '2026-10-08T21:08:00+03:00' } : {}));
+      const payload = finish(); const p = await previewOperations(db, payload);
+      expect(p.rows[0]).toMatchObject({ reasonCode: null, observationPromotion: { eligible: true } });
+      expect((await saveOperations(db, syncFV, syncRequest(payload, p), 'synthetic-agent')).washesCreated).toBe(1);
+      const [[, wash]] = washRows(db);
+      expect(wash).toMatchObject({ biker_id: 'worker-1', driver_external_id: 'driver-1', worker_commission_per_wash: 4.5,
+        source_assignment_review: { kind: 'source_reassignment_before_dispatch_v1', originalDriverExternalId: 'driver-2',
+          executionDriverExternalId: 'driver-1', executionWorkerId: 'worker-1', executionWorkerBasis: basis, claimRewritten: false } });
+      expect(db.rows.get('sweater_owner_booking_claims/990801')).toMatchObject({ importRunId: 'synthetic-first-driver' });
+      expect(db.rows.get('sweater_bookings/990801')).toMatchObject({ processingStatus: 'validated' });
+    });
+  it.each([
+    ['a change after dispatch (On the Way by another biker)', 'On the Way'],
+    ['a change after the start (Washing Started by another biker)', 'Washing Started'],
+  ])('still sends %s to the owner', async (_, status) => {
     const db = syncDb(); db.rows.set('bikers/worker-2', { name: 'Synthetic second worker', driver_external_id: 'driver-2' });
-    await save(db, observation('synthetic-first-driver', 'Initiated', '20:00', { driverExternalId: 'driver-2' }));
-    await save(db, observation('synthetic-new-driver', status, status === 'Washing Started' ? '21:20' : '21:00',
-      status === 'Washing Started' ? { startedAt: '2026-10-08T21:08:00+03:00' } : {}));
+    await save(db, observation('synthetic-first', 'Initiated', '20:00', { driverExternalId: 'driver-2' }));
+    await save(db, observation('synthetic-dispatched', status, '21:20', { driverExternalId: 'driver-2',
+      ...(status === 'Washing Started' ? { startedAt: '2026-10-08T21:08:00+03:00' } : {}) }));
     const originals = new Map(db.rows), payload = finish(); const p = await previewOperations(db, payload);
-    expect(p.rows[0]).toMatchObject({ reasonCode: 'protected_existing_record', observationPromotion: { eligible: false } });
+    expect(p.rows[0]).toMatchObject({ reasonCode: 'protected_existing_record' });
     expect((await saveOperations(db, syncFV, syncRequest(payload, p), 'synthetic-agent')).washesCreated).toBe(0);
     for (const [path, value] of originals) if (!MOVES.has(path)) expect(db.rows.get(path)).toEqual(value);
-    expect(db.rows.get('sweater_variances/ops__990801')).toMatchObject({ resolution: 'unresolved', reasonCode: 'protected_existing_record' });
     expect(washRows(db)).toHaveLength(0);
+  });
+  it('accepts a Washing Started reading taken within the minute Sweater shows as End Service', async () => {
+    const db = syncDb(); await save(db, observation('synthetic-first', 'Initiated', '20:00'));
+    const started = observation('synthetic-started', 'Washing Started', '21:50', { startedAt: '2026-10-08T21:08:00+03:00' });
+    started.coverage.extractedAt = '2026-10-08T21:50:47+03:00'; await save(db, started);
+    expect((await save(db, finish())).washesCreated).toBe(1);
+    const late = syncDb(); await save(late, observation('synthetic-first', 'Initiated', '20:00'));
+    const after = observation('synthetic-started', 'Washing Started', '21:51', { startedAt: '2026-10-08T21:08:00+03:00' });
+    await save(late, after);
+    expect((await save(late, finish())).washesCreated).toBe(0);
   });
   it.each([
     ['accounting_periods/2026-10', { status: 'closed' }],

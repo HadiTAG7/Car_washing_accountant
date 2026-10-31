@@ -1,5 +1,42 @@
 # Agent 7 operational sync v2 — raw facts and evidenced wash executions
 
+## Every run: the last 3 days and every open booking (1 November 2026)
+
+**For agent 7 — do this in EVERY run, not only once a day.** On 31 October every hourly run
+read today only, so bookings Sweater finished after their day (5676193, 5677928, 5680148,
+5680467, 5683129) were never re-read and their washes were not recorded.
+
+1. **Before reading SSP**, ask the server what this run must read:
+
+   ```
+   node scripts/sync-sweater-operations.mjs --plan
+   ```
+
+   It prints `window.rangeFrom..window.rangeTo` (today in Riyadh and the two days before) and
+   `rechecks` (booking numbers still open in Sweater from before the window).
+2. **Read every booking of every day in the window** (all pages), exactly as today, and put
+   `rangeFrom`/`rangeTo` of the window in `coverage`.
+3. **Re-read each number in `rechecks`** in SSP by its number (whatever prefix SSP shows now:
+   B-, S- or C-), add its current record to the same payload, and list the numbers in the envelope
+   field `rechecks`. Keep doing this every run until Sweater shows the booking **Collecting
+   Payment** or **Cancelled by Admin**.
+4. **Send** as usual (`node scripts/sync-sweater-operations.mjs payload.json`). If the run misses
+   part of the window or an open booking, the command prints `SWEATER SYNC GAP: …` before saving —
+   fix the payload and send a new run id. After saving it prints `NEXT RUN: {…}`: the window and
+   `rechecks` for the next run.
+5. Never resend an old run id; a booking already final is not re-read.
+
+The owner sees, on «تكامل سويتر» › «الحجوزات المفتوحة في سويتر», the last run's window and every
+open booking it did not re-read, with how long ago it was last read.
+
+**Washes the server records from these readings.** A biker change while the booking was still
+Initiated/pending goes to the biker who executed it (the readings that show the execution name
+that biker; owner, 31 October); the wash keeps the original biker in `source_assignment_review`.
+A change after dispatch or after the start still goes to the owner. Start/End are shown to the
+minute, so a reading taken within that minute still counts as before it. A newer reading Sweater
+already sent that never reached its booking is applied with the owner's approval from the same
+card («قراءات سويتر المحفوظة»), through the same writer, as a marked replay run.
+
 ## One booking per Sweater number, the sync window and the open list (31 October 2026)
 
 **For agent 7 — what changes in each run (part 1 of 3).**
@@ -38,7 +75,7 @@
 
 | Booking after the reading | `processingStatus` | Variance |
 |---|---|---|
-| Still moving in Sweater (`execution_not_final`, `unknown_status` for Initiated/Reached) | `pending_source` | none |
+| Still moving in Sweater (`execution_not_final`, `unknown_status` for Initiated/Reached/`pending`) | `pending_source` | none |
 | Final, wash recorded or cancelled without a wash | `validated` | none (an open one is superseded) |
 | Needs the owner (unknown label, missing service, unproven execution, unlinked worker, cancelled after a wash, contradicts an owner decision, financially locked) | `needs_review` | one per booking: `sweater_variances/ops__<number>`, with `periodKey` |
 

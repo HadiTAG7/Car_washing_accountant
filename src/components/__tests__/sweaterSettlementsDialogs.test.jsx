@@ -80,7 +80,9 @@ const dialog = () => screen.queryByRole('dialog');
 it.each(['ar','en'])('finds a booking beyond the first 200 and opens source details without a mutation (%s)', language => {
   state.bookings = Array.from({ length: 205 }, (_, i) => ({ record: { sspBookingId: `B-${i}`, normalizedStatus: 'unknown', rawStatus: 'Initiated' } }));
   render(<LanguageContext.Provider value={{ language }}><SweaterSettlementsPage /></LanguageContext.Provider>);
+  const totalsBefore = [...document.querySelectorAll('p.tabular-nums')].map(element => element.textContent);
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'B-204' } });
+  expect([...document.querySelectorAll('p.tabular-nums')].map(element => element.textContent)).toEqual(totalsBefore);
   fireEvent.click(screen.getByRole('button', { name: language === 'ar' ? 'تفاصيل المصدر والإلغاء B-204' : 'Source and cancellation details B-204' }));
   expect(screen.getByRole('dialog').textContent).toContain('B-204');
   fireEvent.click(screen.getByText('TEST-close')); expect(screen.queryByRole('dialog')).toBeNull();

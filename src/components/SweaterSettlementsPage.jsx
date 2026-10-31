@@ -128,7 +128,9 @@ export default function SweaterSettlementsPage() {
     driver: filters.driver || null,
     region: filters.region || null,
     serviceType: filters.serviceType || null,
-  }).filter(row => !bookingSearch.trim() || String((row.record ?? row).sspBookingId).toLowerCase().includes(bookingSearch.trim().toLowerCase())), [bookings, filters, bookingSearch]);
+  }), [bookings, filters]);
+  const visibleBookings = useMemo(() => visible.filter(row => !bookingSearch.trim()
+    || String((row.record ?? row).sspBookingId).toLowerCase().includes(bookingSearch.trim().toLowerCase())), [visible, bookingSearch]);
 
   const options = useMemo(() => filterOptions(bookings), [bookings]);
   const kpis = useMemo(
@@ -477,7 +479,7 @@ export default function SweaterSettlementsPage() {
             <Card className="p-4 sm:p-6" id="settlement-bookings">
               <SectionHeader
                 title={`حجوزات ${periodKey}`}
-                subtitle={`${formatNumber(visible.length)} من ${formatNumber(bookings.length)} بعد الترشيح`}
+                subtitle={`${formatNumber(visibleBookings.length)} من ${formatNumber(bookings.length)} بعد الترشيح`}
               />
               <label className="mt-4 block text-sm">
                 البحث برقم الحجز
@@ -485,7 +487,7 @@ export default function SweaterSettlementsPage() {
                   className="mt-2 w-full max-w-sm rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2" />
               </label>
               <p className="mt-2 text-xs text-slate-500">افتح تفاصيل المصدر لمعرفة جهة الإلغاء والسبب والوقت والبايكر المسند، دون تغيير الحجز.</p>
-              {visible.length === 0 ? (
+              {visibleBookings.length === 0 ? (
                 <div className="mt-4">
                   <EmptyState
                     compact icon={Inbox} title="لا حجوزات في هذا الشهر"
@@ -508,7 +510,7 @@ export default function SweaterSettlementsPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {visible.slice(0, 200).map((row) => {
+                      {visibleBookings.slice(0, 200).map((row) => {
                         const r = row.record ?? row;
                         return (
                           <tr key={r.sspBookingId} className="border-b border-slate-50 dark:border-slate-800/60 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
@@ -533,9 +535,9 @@ export default function SweaterSettlementsPage() {
                       })}
                     </tbody>
                   </table>
-                  {visible.length > 200 && (
+                  {visibleBookings.length > 200 && (
                     <p className="mt-3 text-[11px] text-slate-500 dark:text-slate-400">
-                      يُعرض أول ٢٠٠ من {formatNumber(visible.length)} — رشّح لتضييق القائمة.
+                      يُعرض أول ٢٠٠ من {formatNumber(visibleBookings.length)} — رشّح لتضييق القائمة.
                     </p>
                   )}
                 </div>

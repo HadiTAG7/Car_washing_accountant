@@ -18,6 +18,7 @@ import { recoveryLink } from '../../../../../scripts/migration/first-login-links
 import { verifySupabaseToken, supabaseAuth } from '../../../../../server/db/backend.js';
 import { trialBalance, trialBalanceFromSums, balanceSheet, balanceSheetFromTrialBalance } from '../../../accounting/reports.js';
 import { fetchPostedLineSums } from '../../../accounting/ledgerSums.js';
+import { trialBalancePeriod, trialBalancePeriodFromSums, previousDay } from '../../../trialBalanceView.js';
 import { createStore } from '../../../../../server/db/pgstore/index.js';
 
 const up = await available();
@@ -260,6 +261,14 @@ d('طبقة المتصفح على Supabase', () => {
       const engine = trialBalance(chart, entries, lines, { from, to });
       const sql = trialBalanceFromSums(chart, await fetchPostedLineSums({ from, to }));
       expect(sql).toEqual(engine);
+    }
+    // «ميزان المراجعة» on Supabase: opening + movement from two database sums, closing their sum.
+    for (const window of [{ from: '2026-01-01', to: '2026-10-31' }, { from: '2026-09-01', to: '2026-09-30' }, { from: '', to: '2026-10-15' },
+      { from: '2026-10-16', to: '' }, { from: '2026-09-15', to: '2026-11-20', showAll: true }]) {
+      const engine = trialBalancePeriod(chart, entries, lines, window);
+      const sums = { opening: window.from ? await fetchPostedLineSums({ to: previousDay(window.from) }) : [],
+        movement: await fetchPostedLineSums({ from: window.from || null, to: window.to || null }) };
+      expect(trialBalancePeriodFromSums(chart, sums, window)).toEqual(engine);
     }
     // The balance sheet over the same sums, with fees on revenue and on profit.
     const feeRules = [{ key: 'mgmt', label: 'إدارة', basis: 'profit', rate: 0.1, effectiveFrom: '2026-09-01' }, { key: 'platform', label: 'منصة', basis: 'revenue', rate: 0.025, effectiveFrom: null }];

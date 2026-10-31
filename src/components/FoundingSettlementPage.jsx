@@ -220,6 +220,8 @@ function Entries({ plan, founding, names }) {
           onChange={() => setSelected(cur => { const next = new Set(cur); if (next.has(e.key)) next.delete(e.key); else next.add(e.key); return next; })} />}
         <strong>{e.description}</strong> <span>{day(e.date)}</span> <StatusBadge status={e.status} />{e.entryNumber ? <span>قيد رقم {e.entryNumber}</span> : null}
       </header>
+      {(e.proposedByName || e.postedByName) && <small>{e.proposedByName ? <>أنشأه {e.proposedByName} <bdi>{when(e.proposedAtIso)}</bdi></> : null}
+        {e.settlementReason ? ` · سبب 3200: ${e.settlementReason}` : ''}{e.status === 'posted' && e.postedByName ? ` · وافق عليه ${e.postedByName}` : ''}</small>}
       <EntryLines lines={e.lines} names={names} />
     </article>)}
     <h3>الفرق يوم القطع</h3>

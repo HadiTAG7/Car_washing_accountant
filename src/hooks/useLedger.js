@@ -15,8 +15,9 @@ import { indexPeriods } from '../lib/accounting/periods';
  * Reports are computed from this bundle by the pure functions in
  * lib/accounting/reports.js — nothing here does arithmetic.
  */
-export function useLedger({ liveSources = null } = {}) {
-  const readJournal = isFirebaseConfigured && !liveSources;
+export function useLedger({ liveSources = null, journal = true } = {}) {
+  // `journal: false` — the chart and periods only, for a report the database sums.
+  const readJournal = isFirebaseConfigured && !liveSources && journal;
   const accountsQ = useFirestoreQuery(fetchAccounts, { cacheKey: 'chart_of_accounts', enabled: isFirebaseConfigured, fallback: [] });
   const entriesQ  = useFirestoreQuery(fetchEntries, { cacheKey: 'journal_entries', enabled: readJournal, fallback: [] });
   // fetchLines also reads journal_entries. Reuse the entries already fetched
@@ -51,8 +52,8 @@ export function useLedger({ liveSources = null } = {}) {
   const refetch = useCallback(() => {
     refreshAccounts(); refreshPeriods();
     if (liveSources) liveSources.refetch();
-    else { refreshEntries(); refreshLegacyLines(); }
-  }, [refreshAccounts, refreshPeriods, refreshEntries, refreshLegacyLines, liveSources]);
+    else if (readJournal) { refreshEntries(); refreshLegacyLines(); }
+  }, [refreshAccounts, refreshPeriods, refreshEntries, refreshLegacyLines, liveSources, readJournal]);
 
   return {
     accounts, entries, lines, periods,

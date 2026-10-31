@@ -133,6 +133,8 @@ export const sweaterCreateIntegrationKey = callable('sweaterCreateIntegrationKey
 export const sweaterCreateN8nKey = callable('sweaterCreateN8nKey');
 export const sweaterRevokeIntegrationKey = callable('sweaterRevokeIntegrationKey');
 export const sweaterListIntegrationKeys = callable('sweaterListIntegrationKeys');
+export const sweaterSaveServicePrice = callable('sweaterSaveServicePrice');
+export const sweaterServiceTypes = callable('sweaterServiceTypes');
 
 // ─── روابط المساعد الذكي للشركاء ─────────────────────────────────────────
 // المنفذ نفسه (`api/partner-mcp/[secret].js`) بابٌ مستقل يقرأ بالرمز؛ هنا

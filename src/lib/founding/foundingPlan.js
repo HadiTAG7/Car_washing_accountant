@@ -330,6 +330,7 @@ function planCore(input) {
     off: Boolean(settings.noPersonalStatement) });
   if (comparison.entry) entries.push(comparison.entry);
   for (const a of settings.adjustments || []) entries.push(adjustmentEntry(a, { cutoff, foundingEnd, posted, closed }));
+  for (const m of settings.manualEntries || []) entries.push(manualEntryOf(m, { posted, closed }));
   for (const p of duplicates.values()) {
     const e = duplicateEntry(p, { doc: docByKey.get(p.key), original: docByKey.get(p.originalKey), effects: input.duplicateEffects?.[p.key] || [],
       dateFor, status, held: !decisions[p.key]?.vatReviewed, posted });
@@ -409,6 +410,16 @@ function adjustmentEntry(a, { cutoff, foundingEnd, posted, closed }) {
     description: `تسوية على 3200 بقرار هادي (قبل ${cutoff}) — ${a.reason}`, ...(posted.get(key) || {}) };
 }
 
+/** «قيد يدوي بموافقة» من دفتر الأستاذ: بتاريخه وأسطره كما كتبها الأدمن، ينتظر الموافقة هنا. */
+function manualEntryOf(m, { posted, closed }) {
+  const key = `manual:${m.id}`, done = posted.get(key);
+  const lines = (m.lines || []).map(l => ({ accountId: String(l.accountId), debit: riyal(halala(l.debit)), credit: riyal(halala(l.credit)),
+    description: l.description || m.description }));
+  return { key, type: 'manual', sourceKey: key, id: m.id, title: m.description, amount: riyal(lines.reduce((n, l) => n + halala(l.debit), 0)),
+    date: m.date, lines, status: done ? 'posted' : closed.has(String(m.date).slice(0, 7)) ? 'blocked_period' : 'proposed',
+    reason: m.reason, settlementReason: m.settlementReason || null, proposedByName: m.byName || null, proposedAtIso: m.atIso || null,
+    description: `قيد يدوي — ${m.description} — ${m.reason}`, ...(done || {}) };
+}
 const ROLE_LABEL = { own: 'قيد المستند', payment_correction: '«تصحيح جهة دفع»', cash_bank_share: 'حصته من تصحيح الصندوق والبنك' };
 /**
  * «إلغاء مستند مكرر»: قيد واحد يعكس كل أثر المستند الساري — قيوده و«تصحيح جهة دفع» وحصته من تصحيحات
@@ -641,7 +652,7 @@ const KIND_LABEL = {
   founding_transfer: 'تحويل بين هادي وحساب الشركة', founding_settlement: 'تسوية فترة التأسيس',
   founding_hadi_statement: 'تسوية الحساب الجاري على الكشف', founding_adjustment: 'تسوية على 3200 بقرارك',
   founding_receipt: 'دفعة شريك استلمها هادي', founding_duplicate: 'إلغاء مستند مكرر',
-  founding_custody_settlement: 'تسوية مصروف مؤقت',
+  founding_custody_settlement: 'تسوية مصروف مؤقت', founding_manual: 'قيد يدوي بموافقة',
 };
 export function movementLabel(sourceType, sourceKind) {
   return KIND_LABEL[sourceKind] || KIND_LABEL[sourceType] || 'حركة أخرى';

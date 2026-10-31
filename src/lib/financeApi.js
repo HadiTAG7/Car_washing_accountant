@@ -6,7 +6,7 @@ const endpoints = new Set(['finance-reports', 'finance-workbench']);
 // from the workbench or the founding page) may write entries, locks and sources
 // at once, so every cached read is dropped and re-read on next use — otherwise
 // the trial balance and the ledger keep showing the journal from before it.
-const READ_ONLY_ACTIONS = new Set(['browse', 'list', 'options', 'read', 'preview', 'previewCapture', 'statementSuggest']);
+const READ_ONLY_ACTIONS = new Set(['browse', 'list', 'options', 'read', 'preview', 'previewCapture', 'statementSuggest', 'manualEntries']);
 const actionOf = input => (input?.kind === 'founding' ? input?.request?.action : input?.action);
 // Actions that write journal entries: the founding settlement's «postEntries», a
 // document's «post», and a cash correction's «save».

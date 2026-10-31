@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { trialBalancePeriod, ledgerPeriodHref } from '../trialBalanceView';
+import { trialBalancePeriod, trialBalancePeriodFromSums, addLineSums, previousDay, ledgerPeriodHref } from '../trialBalanceView';
+import { postedLines } from '../accounting/reports';
 import { ledgerLocationFilters } from '../ledgerPresentation';
 const accounts = [
   { code: '1010', nameArabic: 'الصندوق', accountType: 'asset', normalBalance: 'debit' },
@@ -46,5 +47,35 @@ describe('trial balance period presentation', () => {
   it('round trips account and exact dates to the ledger; rejects malformed URL values', () => {
     expect(ledgerLocationFilters(ledgerPeriodHref('1010', '2026-09-01', '2026-09-30'))).toEqual({ account: '1010', from: '2026-09-01', to: '2026-09-30' });
     expect(ledgerLocationFilters('?account=<bad>&from=2026-02-30&to=bad')).toEqual({ account: '', from: '', to: '' });
+  });
+  // What `posted_line_sums(from, to)` returns: Σ per account of posted and reversed lines in the window.
+  const dbSums = (entryRows, lineRows, window) => {
+    const by = new Map();
+    for (const l of postedLines(entryRows, lineRows, window)) {
+      const t = by.get(l.accountId) || { account_id: l.accountId, debit: 0, credit: 0 };
+      t.debit = Math.round(t.debit * 100 + (l.debit || 0) * 100) / 100; t.credit = Math.round(t.credit * 100 + (l.credit || 0) * 100) / 100;
+      by.set(l.accountId, t);
+    }
+    return [...by.values()].map(t => ({ ...t, debit: String(t.debit), credit: String(t.credit) }));
+  };
+  const fromSums = (entryRows, lineRows, { from, to, showAll }) => trialBalancePeriodFromSums(accounts, {
+    opening: from ? dbSums(entryRows, lineRows, { to: previousDay(from) }) : [], movement: dbSums(entryRows, lineRows, { from, to }),
+  }, { from, showAll });
+  it('gives the same trial balance from the database sums as from the journal, for every window', () => {
+    const many = [...entries, { id: 'r', entryDate: '2026-08-15', status: 'reversed' }, { id: 'm', entryDate: '2026-10-05', status: 'posted' },
+      { id: 'd', entryDate: '2026-10-06', status: 'draft' }, { id: 'f', entryDate: '2026-11-02', status: 'posted' }, { id: 'u', entryDate: '2026-10-07', status: 'posted' }];
+    const manyLines = [...lines, { entryId: 'r', accountId: '1010', debit: 0.07 }, { entryId: 'r', accountId: '4000', credit: 0.07 },
+      { entryId: 'm', accountId: '1010', credit: 0.07 }, { entryId: 'm', accountId: '4000', debit: 0.07 },
+      { entryId: 'd', accountId: '1010', debit: 999 }, { entryId: 'd', accountId: '4000', credit: 999 },
+      { entryId: 'f', accountId: '5100', debit: 12.34 }, { entryId: 'f', accountId: '1010', credit: 12.34 },
+      { entryId: 'u', accountId: '9999', debit: 0.55 }, { entryId: 'u', accountId: '1010', credit: 0.55 }];
+    for (const window of [{ from: '2026-10-01', to: '2026-10-23' }, { from: '', to: '2026-10-23' }, { from: '2026-10-02', to: '2026-10-30' },
+      { from: '2026-09-30', to: '2026-09-30' }, { from: '2026-01-01', to: '' }, { from: '2026-10-01', to: '2026-10-23', showAll: true }, { from: '2027-01-01', to: '2027-02-01' }]) {
+      expect(fromSums(many, manyLines, window), JSON.stringify(window)).toEqual(trialBalancePeriod(accounts, many, manyLines, window));
+    }
+  });
+  it('adds opening and movement sums in whole halalas', () => {
+    expect(addLineSums([{ account_id: '1010', debit: '0.1', credit: '0' }], [{ account_id: '1010', debit: '0.2', credit: '0.07' }, { account_id: 5100, debit: 1, credit: null }]))
+      .toEqual([{ account_id: '1010', debit: 0.3, credit: 0.07 }, { account_id: '5100', debit: 1, credit: 0 }]);
   });
 });

@@ -1,4 +1,4 @@
-import { trialBalance } from './accounting/reports';
+import { trialBalance, trialBalanceFromSums } from './accounting/reports';
 import { round2 } from './accounting/journal';
 
 export const TRIAL_TYPES = [
@@ -17,6 +17,34 @@ export function trialBalancePeriod(accounts, entries, lines, { from, to, showAll
   const movement = trialBalance(accounts, entries, lines, { from: from || null, to: to || null });
   const opening = from ? trialBalance(accounts, entries, lines, { to: previousDay(from) }) : { rows: [] };
   const closing = trialBalance(accounts, entries, lines, { to: to || null });
+  return assemblePeriod(accounts, { movement, opening, closing }, { showAll });
+}
+
+/** Σ per account of two `posted_line_sums` results, in whole halalas. */
+export function addLineSums(...lists) {
+  const total = new Map();
+  for (const sums of lists) for (const s of sums || []) {
+    const code = String(s.account_id), t = total.get(code) || { account_id: code, debit: 0, credit: 0 };
+    t.debit += Math.round(Number(s.debit || 0) * 100); t.credit += Math.round(Number(s.credit || 0) * 100);
+    total.set(code, t);
+  }
+  return [...total.values()].map(t => ({ ...t, debit: t.debit / 100, credit: t.credit / 100 }));
+}
+
+/**
+ * The same trial balance from the database's per-account sums — two calls of
+ * `posted_line_sums`: up to the day before «من» (opening) and «من»..«إلى»
+ * (movement). Closing is their sum, so no journal entry reaches the browser.
+ */
+export function trialBalancePeriodFromSums(accounts, { opening = [], movement = [] } = {}, { from, showAll = false } = {}) {
+  return assemblePeriod(accounts, {
+    movement: trialBalanceFromSums(accounts, movement),
+    opening: from ? trialBalanceFromSums(accounts, opening) : { rows: [] },
+    closing: trialBalanceFromSums(accounts, addLineSums(from ? opening : [], movement)),
+  }, { showAll });
+}
+
+function assemblePeriod(accounts, { movement, opening, closing }, { showAll = false } = {}) {
   const before = new Map(opening.rows.map(row => [row.code, row]));
   const during = new Map(movement.rows.map(row => [row.code, row]));
   const after = new Map(closing.rows.map(row => [row.code, row]));

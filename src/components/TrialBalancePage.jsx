@@ -13,8 +13,9 @@ import ErrorState, { SetupRequiredCard } from './ErrorState';
 import { useLedger } from '../hooks/useLedger';
 import { useTrialReconciliation } from '../hooks/useTrialReconciliation';
 import { usePartnerView } from '../contexts/PartnerViewContext';
-import { trialBalancePeriod, ledgerPeriodHref } from '../lib/trialBalanceView';
-import { isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
+import { useTrialBalanceSums } from '../hooks/useTrialBalanceSums';
+import { trialBalancePeriod, trialBalancePeriodFromSums, ledgerPeriodHref } from '../lib/trialBalanceView';
+import { dataSource, isFirebaseConfigured, missingEnvNames } from '../lib/firebaseClient';
 
 const COST_REASONS = {
   'transferred-out': 'رواتب تخص شهرًا آخر', 'transferred-in': 'رواتب هذا الشهر رُحلت في شهر آخر',
@@ -60,26 +61,71 @@ function Reconciliation({ data, today }) {
   </Card>;
 }
 
-function StaffTrialBalance({ ledger, today }) {
+function usePeriodFilter(today) {
+  const [from, setFrom] = useState(`${today.slice(0, 4)}-01-01`), [to, setTo] = useState(today);
+  const [showAll, setShowAll] = useState(false);
+  return { from, to, showAll, setFrom, setTo, setShowAll, invalidPeriod: Boolean(from && to && from > to) };
+}
+
+// ── Firebase: the journal is read and summed in the browser, as before ──
+function JournalTrialBalance({ ledger, today, reconciliation }) {
+  const filter = usePeriodFilter(today), { from, to, showAll } = filter;
+  const { accounts, entries, lines } = ledger;
+  const tb = useMemo(() => trialBalancePeriod(accounts, entries, lines, { from, to, showAll }), [accounts, entries, lines, from, to, showAll]);
+  return <TrialBalanceContent filter={filter} tb={tb} today={today} loading={ledger.loading} error={ledger.error}
+    needsSeeding={ledger.needsSeeding} refetch={ledger.refetch} reconciliation={reconciliation} />;
+}
+
+function StaffJournalTrialBalance({ ledger, today }) {
   const reconciliation = useTrialReconciliation(ledger, today);
-  return <TrialBalanceContent ledger={ledger} today={today} reconciliation={reconciliation} />;
+  return <JournalTrialBalance ledger={ledger} today={today} reconciliation={reconciliation} />;
+}
+
+function FirebaseTrialBalance({ staff, today }) {
+  const ledger = useLedger();
+  return staff ? <StaffJournalTrialBalance ledger={ledger} today={today} /> : <JournalTrialBalance ledger={ledger} today={today} />;
+}
+
+// ── Supabase: the database sums the lines per account; only the chart is read ──
+function OnDemandReconciliation({ today }) {
+  const ledger = useLedger();
+  const data = useTrialReconciliation(ledger, today);
+  if (ledger.loading) return <Card className="p-4 sm:p-6" id="subledger-reconciliation"><LoadingState message="جارٍ تحميل القيود للمطابقة..." /></Card>;
+  if (ledger.error) return <ErrorState title="تعذّر تحميل القيود للمطابقة" error={ledger.error} onRetry={ledger.refetch} />;
+  return <Reconciliation data={data} today={today} />;
+}
+
+function ReconciliationOnRequest({ today }) {
+  const [open, setOpen] = useState(false);
+  if (open) return <OnDemandReconciliation today={today} />;
+  return <Card className="p-4 sm:p-6" id="subledger-reconciliation">
+    <SectionHeader title="مطابقة الدفاتر الفرعية" subtitle="تُحمَّل عند الطلب" />
+    <p className="text-sm mb-3">الأرصدة أعلاه تجمعها قاعدة البيانات. المطابقة مع الصفحات تحتاج تفاصيل القيود كلها، فلا تُحمَّل إلا عند طلبها. لا تسجل أي قيد.</p>
+    <SecondaryButton onClick={() => setOpen(true)}>تحميل المطابقة</SecondaryButton>
+  </Card>;
+}
+
+function DatabaseTrialBalance({ staff, today }) {
+  const chart = useLedger({ journal: false });
+  const filter = usePeriodFilter(today), { from, to, showAll, invalidPeriod } = filter;
+  const sums = useTrialBalanceSums({ from, to, enabled: isFirebaseConfigured && !invalidPeriod });
+  const { accounts } = chart, data = sums.data;
+  const tb = useMemo(() => trialBalancePeriodFromSums(accounts, data || {}, { from, showAll }), [accounts, data, from, showAll]);
+  const { refetch: refetchChart } = chart, { refetch: refetchSums } = sums;
+  return <TrialBalanceContent filter={filter} tb={tb} today={today} loading={chart.loading || sums.loading} error={chart.error || sums.error}
+    needsSeeding={chart.needsSeeding} refetch={() => { refetchChart(); refetchSums(); }}
+    reconciliationSlot={staff ? <ReconciliationOnRequest today={today} /> : null} />;
 }
 
 export default function TrialBalancePage() {
-  const ledger = useLedger();
   const { role, isPartnerView } = usePartnerView();
   const today = todayISO();
-  return !isPartnerView && ['admin', 'accountant'].includes(role)
-    ? <StaffTrialBalance ledger={ledger} today={today} />
-    : <TrialBalanceContent ledger={ledger} today={today} />;
+  const staff = !isPartnerView && ['admin', 'accountant'].includes(role);
+  return dataSource === 'supabase' ? <DatabaseTrialBalance staff={staff} today={today} /> : <FirebaseTrialBalance staff={staff} today={today} />;
 }
 
-function TrialBalanceContent({ ledger, today, reconciliation }) {
-  const { accounts, entries, lines, loading, error, needsSeeding, refetch } = ledger;
-  const [from, setFrom] = useState(`${today.slice(0, 4)}-01-01`), [to, setTo] = useState(today);
-  const [showAll, setShowAll] = useState(false);
-  const invalidPeriod = Boolean(from && to && from > to);
-  const tb = useMemo(() => trialBalancePeriod(accounts, entries, lines, { from, to, showAll }), [accounts, entries, lines, from, to, showAll]);
+function TrialBalanceContent({ filter, tb, today, loading, error, needsSeeding, refetch, reconciliation, reconciliationSlot }) {
+  const { from, to, showAll, setFrom, setTo, setShowAll, invalidPeriod } = filter;
   function handleExport() {
     downloadCsv(`ميزان-المراجعة-${from}-${to}`, ['رقم الحساب', 'اسم الحساب', 'النوع', 'رصيد أول الفترة مدين ناقص دائن', 'حركة مدين', 'حركة دائن', 'رصيد آخر الفترة مدين ناقص دائن'],
       tb.rows.map(row => [row.code, row.nameArabic, row.accountType, row.openingSigned, row.debit, row.credit, row.closingSigned]));
@@ -101,6 +147,7 @@ function TrialBalanceContent({ ledger, today, reconciliation }) {
           <p role={tb.balanced ? 'status' : 'alert'} className="font-bold">{tb.balanced ? 'الميزان متوازن' : 'الميزان غير متوازن'} · فرق الحركة: {formatCurrency(tb.difference)}</p>
           {reconciliation && <p className="text-sm mt-2 text-slate-700 dark:text-slate-300"><a href="#subledger-reconciliation" className="underline">متوازن ما يعني مطابق: {reconciliation.differences} فروقات مع الصفحات</a>
             {reconciliation.unavailable > 0 && <span> · {reconciliation.unavailable} مطابقات لم تكتمل قراءتها</span>}</p>}
+          {reconciliationSlot && <p className="text-sm mt-2 text-slate-700 dark:text-slate-300"><a href="#subledger-reconciliation" className="underline">متوازن ما يعني مطابق: مطابقة الدفاتر الفرعية أسفل الصفحة</a></p>}
         </Card>
         {tb.abnormalRows.length > 0 && <div role="alert" className="rounded-control p-4 bg-rose-100 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300"><strong>رصيد غير طبيعي</strong>
           {tb.abnormalRows.map(row => <p key={row.code}><a className="underline" href={ledgerPeriodHref(row.code, from, to)}>{accountDisplayName(row)}</a>: {formatCurrency(row.balance)}</p>)}</div>}
@@ -128,6 +175,7 @@ function TrialBalanceContent({ ledger, today, reconciliation }) {
         </Card>
       </>}
       {reconciliation && !error && !loading && <Reconciliation data={reconciliation} today={today} />}
+      {reconciliationSlot && !error && !loading && !invalidPeriod && reconciliationSlot}
     </main>
   </>;
 }

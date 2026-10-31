@@ -14,7 +14,8 @@ import Toast from './Toast';
 import SweaterActionDialog from './SweaterActionDialog';
 import SweaterHandoffPreview from './SweaterHandoffPreview';
 import SweaterOwnerWashTaxCorrection from './SweaterOwnerWashTaxCorrection';
-import { useSweaterIntegration, useSweaterConfig } from '../hooks/useSweater';
+import { useSweaterIntegration, useSweaterConfig, useSweaterServiceTypes } from '../hooks/useSweater';
+import SweaterServicePrices from './SweaterServicePrices';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 import { describeBackendError } from '../lib/firebaseClient';
 import { formatNumber } from '../data/initialData';
@@ -37,6 +38,8 @@ export default function SweaterIntegrationPage() {
   const { canMutate, role, isPartnerView } = usePartnerView();
   const integ = useSweaterIntegration();
   const config = useSweaterConfig();
+  const staff = !isPartnerView && (role === 'admin' || role === 'accountant');
+  const { serviceTypes } = useSweaterServiceTypes(staff);
 
   // جاهزية الخادم — تُقرأ من مسبارٍ لا يعرض قيمةً، فيُعرف أن الإعداد ناقص
   // قبل الضغط على الزر لا بعد فشله.
@@ -335,19 +338,8 @@ export default function SweaterIntegrationPage() {
           />
           <p className="text-sm mt-3">حدود حداثة البيانات: أصفر بعد {OPERATIONS_SETTINGS.freshnessWarningHours} ساعات، وأحمر بعد {OPERATIONS_SETTINGS.freshnessCriticalHours} ساعة. موحّدة في إعدادات عرض التشغيل.</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-            <div>
-              <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-2">أسعار الخدمات</p>
-              {config.prices.length === 0
-                ? <p className="text-[12px] text-slate-500">لم تُزرع بعد.</p>
-                : config.prices.map((p) => (
-                  <div key={p.id} className="flex items-baseline justify-between gap-2 py-1.5 border-b border-slate-50 dark:border-slate-800/60 last:border-0">
-                    <span className="text-[12px] text-slate-700 dark:text-slate-300">{p.nameArabic || p.serviceType}</span>
-                    <span className="text-[12px] tabular-nums text-slate-600 dark:text-slate-400">
-                      {p.netRate} + ضريبة = {p.grossRate} · من {p.effectiveFrom}
-                    </span>
-                  </div>
-                ))}
-            </div>
+            <SweaterServicePrices prices={config.prices} serviceTypes={serviceTypes}
+              canEdit={canMutate && role === 'admin' && !isPartnerView} onSave={config.savePrice} />
             <div>
               <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-2">
                 أنواع الخصومات ({formatNumber(config.adjustmentTypes.length)})

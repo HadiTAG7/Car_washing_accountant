@@ -1,6 +1,6 @@
 import { hashBody, hashRecord } from './record.js';
 import { ownerBookingIdentity } from '../../../src/lib/sweater/bookingIdentity.js';
-import { bookingDocId } from './ingest.js';
+import { bookingDocId, sspKey, sspWashDocId } from './ingest.js';
 
 // A newer invoice observation must not rewrite an older, owner-completed
 // booking just to make its notes/URL/timeline hash equal to the latest raw.
@@ -17,8 +17,8 @@ export async function deductionBookingBinding(db, read, { booking, record, verif
     ? { mode: 'current_exact', bookingSourceHash: booking.sourceHash } : null;
   if (verifiedRow.reasonCode !== 'protected_existing_record' || verifiedRow.bookingMustMatch !== false || verifiedRow.bookingSaved !== false
     || !verifiedRow.bikerId || booking.operationalWorkerId !== verifiedRow.bikerId) return null;
-  const id = bookingDocId(record.sspBookingId), washId = `ssp__${id}`;
-  const allowed = [['washes', washId], ['sweater_operational_wash_links', `b__${id}`], ['sweater_operational_wash_links', `w__${encodeURIComponent(washId)}`]];
+  const washId = sspWashDocId(record.sspBookingId);
+  const allowed = [['washes', washId], ['sweater_operational_wash_links', `b__${sspKey(record.sspBookingId)}`], ['sweater_operational_wash_links', `w__${encodeURIComponent(washId)}`]];
   const refs = verifiedRow.existingLinkRefs;
   if (!Array.isArray(refs) || refs.length !== allowed.length || allowed.some(([collection, key]) => refs.filter(r => r.collection === collection && r.id === key).length !== 1)) return null;
   const [claimSnap, ...snapshots] = await Promise.all([

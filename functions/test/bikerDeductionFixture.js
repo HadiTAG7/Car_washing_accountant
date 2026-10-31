@@ -18,7 +18,7 @@ export function deductionSeed() {
     'sweater_metric_snapshots/reading-one': { contractVersion: 'sweater-metrics-v1', periodKey: month, extractedAtIso: '2026-10-28T15:00:00Z', receivedAtIso: '2026-10-28T15:01:00Z',
       metrics: { cancelledByBiker: 1 }, eventDetails: [event], eventCoverage: [{ metricKey: 'cancelledByBiker', totalRows: 1, complete: true }] },
     [`${COL.RAW}/${rawDocId('raw-test-run', record.sspBookingId)}`]: { source: 'operations_sync_v2', importRunId: 'raw-test-run', normalizedRecord: record, sourceHash: hashRecord(record) },
-    'sweater_bookings/C-990002': { source: 'operations_sync_v2', record, sourceHash: hashRecord(record), operationalWorkerId: 'worker-one' },
+    'sweater_bookings/990002': { source: 'operations_sync_v2', record, sourceHash: hashRecord(record), operationalWorkerId: 'worker-one' },
     'sweater_import_runs/raw-test-run': { source: 'operations_sync_v2', status: 'completed_with_gaps', coverage: { extractedAt: '2026-10-28T14:00:00Z' },
       result: { rows: [{ sspBookingId: record.sspBookingId, rawSaved: true, sourceHash: hashRecord(record), rawId: rawDocId('raw-test-run', record.sspBookingId), bikerId: 'worker-one' }] } },
     'washes/unchanged': { price: 20, worker_commission_per_wash: 4.5, worker_commission_paid: false },
@@ -28,10 +28,10 @@ export function deductionSeed() {
 }
 
 export function protectedDeductionSeed() {
-  const seed = deductionSeed(), original = seed['sweater_bookings/C-990002'];
+  const seed = deductionSeed(), original = seed['sweater_bookings/990002'];
   const oldRecord = normalizeRecord({ ...original.record, notes: 'Synthetic preserved execution timeline; no invoice observation yet.',
     sourceUrl: 'https://ssp-portal.sweater.sa/older-reading', startedAt: '2026-10-20T10:00:00+03:00' });
-  seed['sweater_bookings/C-990002'] = { ...original, record: oldRecord, sourceHash: hashRecord(oldRecord),
+  seed['sweater_bookings/990002'] = { ...original, record: oldRecord, sourceHash: hashRecord(oldRecord),
     administrativeCompletionRunId: 'synthetic-owner-completion', processingStatus: 'needs_review' };
   seed['sweater_owner_booking_claims/990002'] = { sspBookingId: 'C-990002', bookingNumber: '990002', washId: 'ssp__C-990002', source: 'operations_sync_v2' };
   seed['washes/ssp__C-990002'] = { ssp_booking_id: 'C-990002', biker_id: 'worker-one', driver_external_id: 'TEST-DRIVER', wash_date: '2026-10-20',

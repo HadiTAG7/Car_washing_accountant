@@ -59,7 +59,8 @@ describe('مراجعة التسليم ومعاينة SSP بلا كتابة', () 
   });
   it('يعاين التكرار والتعديل بعد الترحيل والتكرار المتعارض دون تغيير الموجود', async () => {
     const original = record(); const hash = hashRecord(normalizeRecord(original));
-    const db = readOnlyDb('accountant', { sweater_bookings: { 'B-1': { sourceHash: hash }, 'B-2': {
+    // Bookings are kept under their number, whatever prefix Sweater shows.
+    const db = readOnlyDb('accountant', { sweater_bookings: { 1: { sourceHash: hash }, 2: {
       sourceHash: hash, processingStatus: 'posted', postedEntryId: 'JE-1',
     } } });
     const result = await preview(db, payload([original, original, record('B-2'), record('B-3'), record('B-3', { rawStatus: 'Initiated' })]));

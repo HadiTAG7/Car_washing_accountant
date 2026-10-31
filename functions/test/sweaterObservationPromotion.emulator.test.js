@@ -8,10 +8,13 @@ import { createIntegrationKey, computeSignature } from '../src/sweater/integrati
 import { syncPayload, syncRequest } from './helpers/sweaterOperationsFixture.js';
 import { assignmentCases, reviewedPayloads } from './helpers/sweaterAssignmentReviewFixture.js';
 import { seedUnconsumedCompletion } from './helpers/sweaterUnconsumedCompletionFixture.js';
+import * as legacyWriter from './helpers/legacyOperationsSync.js';
 
 const suite = process.env.FIRESTORE_EMULATOR_HOST ? describe : describe.skip;
 let app, db, previousEncryption;
 const save = async payload => saveOperations(db, FieldValue, syncRequest(payload, await previewOperations(db, payload)), 'synthetic-agent');
+// The earlier observations as the writer of that time filed them (a booking per prefixed id); the promotion runs on today's writer.
+const legacySave = async payload => legacyWriter.saveOperations(db, FieldValue, syncRequest(payload, await legacyWriter.previewOperations(db, payload)), 'synthetic-agent');
 async function seed(onWay = false) {
   await db.doc('bikers/worker-1').set({ name: 'Synthetic worker', driver_external_id: 'driver-1', salary: 900 });
   const legacy = syncPayload(); legacy.importRunId = 'synthetic-started';
@@ -22,7 +25,7 @@ async function seed(onWay = false) {
     legacy.coverage.extractedAt = '2026-10-08T21:30:00+03:00';
     legacy.records.forEach(r => Object.assign(r, { rawStatus: 'On the Way', startedAt: null }));
   }
-  await save(legacy);
+  await legacySave(legacy);
   for (let i = 0; i < 43; i++) await db.doc(`washes/synthetic-existing-${i}`).set({ ssp_booking_id: `S-${880000 + i}`, price: 20 });
   const completed = structuredClone(legacy); completed.importRunId = 'synthetic-ended';
   completed.coverage.extractedAt = '2026-10-09T02:03:00+03:00';
@@ -71,7 +74,7 @@ suite('source observation promotion in isolated demo transactions', () => {
   it.each(assignmentCases)('keeps historical assignee $from and creates one execution for source worker $to in the owner-scoped case $number', async c => {
     await db.doc(`bikers/${c.fromWorker}`).set({ name: 'Synthetic previous assignee', driver_external_id: c.from });
     await db.doc(`bikers/${c.toWorker}`).set({ name: 'Synthetic execution worker', driver_external_id: c.to });
-    const { first, latest, final } = reviewedPayloads(c); await save(first); await save(latest);
+    const { first, latest, final } = reviewedPayloads(c); await legacySave(first); await legacySave(latest);
     const paths = [`sweater_bookings/B-${c.number}`, `sweater_owner_booking_claims/${c.number}`,
       `sweater_raw_payloads/${first.importRunId}__B-${c.number}`, `sweater_import_runs/${first.importRunId}`,
       `sweater_raw_payloads/${latest.importRunId}__B-${c.number}`, `sweater_import_runs/${latest.importRunId}`];
@@ -99,7 +102,7 @@ suite('source observation promotion in isolated demo transactions', () => {
     const next = structuredClone(legacy); next.importRunId = 'synthetic-started-second'; next.records = [next.records[0]];
     next.coverage.recordCount = 1; next.coverage.extractedAt = '2026-10-08T22:10:00+03:00';
     Object.assign(next.records[0], { rawStatus: 'Washing Started', startedAt: '2026-10-08T21:35:00+03:00' });
-    await save(next);
+    await legacySave(next);
     const paths = ['sweater_bookings/B-990101', 'sweater_bookings/B-990102',
       'sweater_owner_booking_claims/990101', 'sweater_owner_booking_claims/990102', 'sweater_import_runs/synthetic-started',
       'sweater_import_runs/synthetic-started-second', 'sweater_raw_payloads/synthetic-started__B-990101',
@@ -125,11 +128,11 @@ suite('source observation promotion in isolated demo transactions', () => {
     first.coverage.extractedAt = '2026-10-08T21:00:00+03:00';
     first.records = ['990201', '990202'].map(n => ({ ...first.records[0], sspBookingId: `B-${n}`,
       serviceType: 'interior_exterior_wash', rawStatus: 'Initiated' }));
-    await save(first);
+    await legacySave(first);
     const middle = structuredClone(first); middle.importRunId = 'synthetic-reached-started';
     middle.coverage.extractedAt = '2026-10-08T21:20:00+03:00'; middle.records[0].rawStatus = 'Reached';
     Object.assign(middle.records[1], { rawStatus: 'Washing Started', startedAt: '2026-10-08T21:08:00+03:00' });
-    await save(middle);
+    await legacySave(middle);
     const paths = ['sweater_owner_booking_claims/990201', 'sweater_owner_booking_claims/990202',
       'sweater_bookings/B-990201', 'sweater_import_runs/synthetic-initial-labels', 'sweater_import_runs/synthetic-reached-started',
       'sweater_raw_payloads/synthetic-initial-labels__B-990201', 'sweater_raw_payloads/synthetic-initial-labels__B-990202',
@@ -210,6 +213,8 @@ suite('source observation promotion in isolated demo transactions', () => {
     expect((await db.collection('washes').get()).size).toBe(43);
     expect((await db.doc('journal_entries/synthetic-protection').get()).data()).toEqual(owner);
     const next = await previewOperations(db, completed);
-    expect(next.rows[0]).toMatchObject({ reasonCode: 'protected_existing_record', observationPromotion: { eligible: false } });
+    // Never a wash: the B copy filed apart now waits for the identity cleanup (or an assertion holds the booking).
+    expect(next.rows[0]).toMatchObject({ outcome: 'needs_review', washCreated: false, observationPromotion: { eligible: false } });
+    expect(['protected_existing_record', 'awaiting_identity_cleanup']).toContain(next.rows[0].reasonCode);
   });
 });

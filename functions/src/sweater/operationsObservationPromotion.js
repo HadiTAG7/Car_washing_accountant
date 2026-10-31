@@ -1,5 +1,5 @@
 import { hashBody, hashRecord, normalizeRecord } from './record.js';
-import { bookingDocId, rawDocId, COL } from './ingest.js';
+import { bookingDocId, sspKey, sspWashDocId, rawDocId, COL } from './ingest.js';
 import { ownerBookingIdentity } from '../../../src/lib/sweater/bookingIdentity.js';
 import { scopedAssignmentReview, matchesOriginalUnexecutedAssignment, assignmentReviewReceipt } from './operationsAssignmentReview20261029.js';
 import { hasProtectedIdentityEffect, identityReference, referencesThisIdentity, referenceMetadata,
@@ -7,8 +7,8 @@ import { hasProtectedIdentityEffect, identityReference, referencesThisIdentity, 
 
 const SOURCE = 'operations_sync_v2';
 const KIND = 'source_execution_promotion_v1';
-const BOOKING_KEYS = new Set(['sspBookingId', 'bookingNumber', 'record', 'sourceHash', 'schemaVersion', 'source', 'lastImportRunId',
-  'serviceDate', 'periodKey', 'normalizedStatus', 'processingStatus', 'reviewReasonCode', 'recognitionEligibility',
+const BOOKING_KEYS = new Set(['sspBookingId', 'bookingNumber', 'aliases', 'mergedFrom', 'identityCleanup', 'record', 'sourceHash', 'schemaVersion', 'source', 'lastImportRunId',
+  'observedAtIso', 'serviceDate', 'periodKey', 'normalizedStatus', 'processingStatus', 'reviewReasonCode', 'recognitionEligibility',
   'recognitionReason', 'operationalWorkerId', 'updatedAtIso', 'updatedAt']);
 const CLAIM_KEYS = new Set(['bookingNumber', 'sspBookingId', 'washId', 'source', 'importRunId', 'claimedBy', 'claimedAt']);
 const exactKeys = (row, allowed) => Boolean(row && Object.keys(row).every(key => allowed.has(key)));
@@ -37,14 +37,17 @@ export async function inspectObservationPromotion({ db, read, payload, record, d
   established, execution, period, settlement }) {
   const number = ownerBookingIdentity(record.sspBookingId);
   if (!/^\d+$/.test(number) || !claim || claim.sspBookingId === record.sspBookingId) return null;
-  const legacyId = bookingDocId(claim.sspBookingId);
-  const legacyDoc = documents.find(d => d.collection === COL.BOOKINGS && d.id === legacyId);
+  // The booking is kept under its number, so the first observation is normally the booking this reading replaces.
+  // Before the identity cleanup it may still be filed under its prefixed key, where older runs recorded it.
+  const legacyKeys = [bookingDocId(claim.sspBookingId), sspKey(claim.sspBookingId)];
+  const legacyDoc = documents.find(d => d.collection === COL.BOOKINGS && legacyKeys.includes(d.id) && d.data?.sspBookingId === claim.sspBookingId);
+  const legacyId = legacyDoc?.id ?? legacyKeys[0], replacesLegacy = legacyId === legacyKeys[0];
   const legacy = legacyDoc?.data;
   const related = documents.filter(d => identityReference(d.id, number) || referencesThisIdentity(referenceMetadata(d.data), number));
   const basic = execution.eligible && established && exactKeys(legacy, BOOKING_KEYS) && exactKeys(claim, CLAIM_KEYS)
     && legacy.sspBookingId === claim.sspBookingId && ownerBookingIdentity(legacy.sspBookingId) === number
     && legacy.bookingNumber === number && legacy.source === SOURCE && legacy.schemaVersion === 1
-    && legacy.processingStatus === 'needs_review' && legacy.reviewReasonCode === pendingSourceReason(legacy.record)
+    && ['needs_review', 'pending_source'].includes(legacy.processingStatus) && legacy.reviewReasonCode === pendingSourceReason(legacy.record)
     && legacy.normalizedStatus === legacy.record?.normalizedStatus && pendingSource(legacy.record, record)
     && !legacy.recognitionEligibility && !legacy.recognitionReason && !hasProtectedIdentityEffect(legacy)
     && legacy.serviceDate === record.serviceDate && legacy.periodKey === record.serviceDate.slice(0, 7)
@@ -53,7 +56,7 @@ export async function inspectObservationPromotion({ db, read, payload, record, d
     && legacy.record.bookingKind === record.bookingKind && record.bookingKind === 'individual'
     && legacy.sourceHash === hashRecord(legacy.record)
     && claim.bookingNumber === number && claim.source === SOURCE && !hasProtectedIdentityEffect(claim)
-    && claim.washId === `ssp__${legacyId}`
+    && claim.washId === sspWashDocId(claim.sspBookingId)
     && [claim.importRunId, legacy.lastImportRunId].every(id => typeof id === 'string' && /^[A-Za-z0-9_-][A-Za-z0-9_.:-]{0,159}$/.test(id))
     && related.length === 1 && related[0] === legacyDoc
     && (!period || period.status === 'open') && !hasProtectedIdentityEffect(period)
@@ -91,7 +94,7 @@ export async function inspectObservationPromotion({ db, read, payload, record, d
       runProvesNoExecution: Boolean(run?.source === SOURCE && run.importRunId === runId
         && ['completed', 'completed_with_gaps'].includes(run.status) && matchingRows.length === 1
         && historicalRow.rawSaved && historicalRow.bookingSaved && !historicalRow.washCreated && !historicalRow.washId
-        && historicalRow.bookingId === legacyId && historicalRow.bikerId === expectedWorker
+        && legacyKeys.includes(historicalRow.bookingId) && historicalRow.bikerId === expectedWorker
         && historicalRow.driverExternalId === expectedDriver
         && historicalRow.rawId === rawId && historicalRow.sourceHash === raw?.sourceHash
         && historicalRow.reasonCode === pendingSourceReason(prior)
@@ -114,8 +117,9 @@ export async function inspectObservationPromotion({ db, read, payload, record, d
       <= Date.parse(history.at(-1).run?.coverage?.extractedAt),
     noReferencedFinancialEffect: financialRefs.length === 0,
   };
+  // A first observation filed under its number is overwritten by this reading; its raw rows and runs stay as the proof.
   const evidenceRefs = [
-    { collection: COL.BOOKINGS, id: legacyId, hash: hashBody(legacy) },
+    ...(replacesLegacy ? [] : [{ collection: COL.BOOKINGS, id: legacyId, hash: hashBody(legacy) }]),
     { collection: 'sweater_owner_booking_claims', id: bookingDocId(number), hash: hashBody(claim) },
     ...history.flatMap(({ runId, rawId, raw, run }) => [
       ...(raw ? [{ collection: COL.RAW, id: rawId, hash: hashBody(raw) }] : []),
@@ -123,7 +127,7 @@ export async function inspectObservationPromotion({ db, read, payload, record, d
     ]),
   ];
   return { public: { kind: KIND, bookingNumber: number, legacyBookingId: legacy.sspBookingId,
-    currentBookingId: record.sspBookingId, canonicalWashId: claim.washId, eligible: Object.values(checks).every(Boolean),
+    currentBookingId: record.sspBookingId, legacyBookingHash: hashBody(legacy), canonicalWashId: claim.washId, eligible: Object.values(checks).every(Boolean),
     checks, claimPreserved: true, promotionSaved: false, evidenceRefs,
     ...(retainedCompleted(legacy.record) ? { retainedCompletedSource: true } : {}),
     ...(assignmentScope ? { sourceAssignmentReview: assignmentReviewReceipt(assignmentScope, history) } : {}) },

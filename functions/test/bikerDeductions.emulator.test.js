@@ -66,7 +66,7 @@ suite('biker deduction isolated transactional behavior', () => {
     const result = await dispatch(db, FieldValue, 'bikerDeductionSave', { payload, reviewedPayloadHash: preview.reviewedPayloadHash, previewStateHash: preview.previewStateHash, requestId: 'owner-classification' }, auth);
     const readback = await dispatch(db, FieldValue, 'bikerDeductionRead', { id: result.id }, auth);
     expect(readback.record.current).toMatchObject({ amountSAR: null, quantity: 1, unit: 'count', matchedToCompensations: false, payrollApplied: false });
-    expect((await db.collection('sweater_bookings').get()).docs[0].data()).toEqual(deductionSeed()['sweater_bookings/C-990002']);
+    expect((await db.collection('sweater_bookings').get()).docs[0].data()).toEqual(deductionSeed()['sweater_bookings/990002']);
   });
   it('records actual invoice deduction 129.95 with count one, never invoice net 109.95', async () => {
     const rawDoc = (await db.collection('sweater_raw_payloads').get()).docs[0], raw = rawDoc.data(), record = raw.normalizedRecord;
@@ -77,7 +77,7 @@ suite('biker deduction isolated transactional behavior', () => {
     record.notes += '\nSSP_INVOICE_DEDUCTION_V1=' + JSON.stringify(invoice);
     const sourceHash = hashRecord(record);
     await rawDoc.ref.set({ ...raw, normalizedRecord: record, sourceHash });
-    await db.doc('sweater_bookings/C-990002').update({ record, sourceHash });
+    await db.doc('sweater_bookings/990002').update({ record, sourceHash });
     const run = (await db.doc('sweater_import_runs/raw-test-run').get()).data(); run.result.rows[0].sourceHash = sourceHash;
     await db.doc('sweater_import_runs/raw-test-run').set(run);
     const input = deductionInput({ sourceKind: 'booking', sourceId: 'C-990002', snapshotId: 'raw-test-run' });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { syncDb, syncFV, syncRequest } from './helpers/sweaterOperationsFixture.js';
 import { operationsStatus, previewOperations, saveOperations } from '../src/sweater/operationsSync.js';
+import * as legacyWriter from './helpers/legacyOperationsSync.js';
 import { calculatePayrollPreview } from '../src/payroll.js';
 
 // Fictional records in memory, scoped IDs deliberately match the approved
@@ -40,7 +41,9 @@ export function scopedDb() {
   return db;
 }
 const save = async (db, payload) => saveOperations(db, syncFV, syncRequest(payload, await previewOperations(db, payload)), 'integration_ingest');
-const seeded = async () => { const db = scopedDb(); await save(db, scopedPayload(true)); db.writes.length = 0; return db; };
+// The B observation as the writer of 10 Oct filed it (a booking per prefixed id); the resolution runs on today's writer.
+const legacySave = async (db, payload) => legacyWriter.saveOperations(db, syncFV, syncRequest(payload, await legacyWriter.previewOperations(db, payload)), 'integration_ingest');
+const seeded = async () => { const db = scopedDb(); await legacySave(db, scopedPayload(true)); db.writes.length = 0; return db; };
 const allWashes = db => [...db.rows.entries()].filter(([path]) => path.startsWith('washes/')).map(([path, value]) => ({ id: path.slice(7), ...value }));
 
 describe('Hadi approved single raw-only B/S5596423 reconciliation', () => {
@@ -115,12 +118,18 @@ describe('Hadi approved single raw-only B/S5596423 reconciliation', () => {
   ])('fails closed and leaves all protected originals untouched: %s', async (_label, mutate) => {
     const db = await seeded(); mutate(db); const before = structuredClone([...db.rows.entries()]);
     const r = await save(db, scopedPayload());
-    expect(r.rows[0]).toMatchObject({ reasonCode: 'protected_existing_record', bookingSaved: false, washCreated: false,
+    // Never a wash, and nothing written over the protected history. An owner or financial assertion about the number
+    // holds the booking for the owner; otherwise the prefixed B copy still filed apart waits for the identity cleanup.
+    // With no B copy at all the reading is simply kept as the booking, and its wash still waits for the owner.
+    const nothingFiled = _label === 'legacy and claim missing';
+    expect(r.rows[0]).toMatchObject({ outcome: 'needs_review', bookingSaved: nothingFiled, washCreated: false,
       identityResolution: { eligible: false, resolutionSaved: false } });
+    expect(['protected_existing_record', 'awaiting_identity_cleanup']).toContain(r.rows[0].reasonCode);
     for (const [path, value] of before) {
       if (path !== 'sweater_integration_state/current') expect(db.rows.get(path)).toEqual(value);
     }
     expect(db.rows.has('sweater_bookings/S-5596423')).toBe(false);
+    expect(db.rows.has('sweater_bookings/5596423')).toBe(nothingFiled);
   });
   it.each([
     p => { p.records[0].sspBookingId = 'S-5596424'; }, p => { p.records[0].serviceDate = '2026-10-09'; },

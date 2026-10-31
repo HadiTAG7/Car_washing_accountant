@@ -12,7 +12,7 @@ function fixture(role = 'admin') {
       biker_id: 'synthetic-worker', biker_name: 'Synthetic worker', worker_commission_per_wash: 4.5,
       revenue_origin: 'sweater', status: 'مكتملة', collection_status: 'confirmed_by_owner', payment_method: null });
     rows.set(`sweater_owner_collection_confirmations/${id}`, { assertedAmount: 20, quantity: 1, collectionStatus: 'confirmed_by_owner', vatAmount: null });
-    rows.set(`sweater_bookings/${id}`, { sspBookingId: id, record: { serviceDate: date, rawStatus: 'Collecting Payment' } });
+    rows.set(`sweater_bookings/${id.replace(/^[A-Z]+-/, '')}`, { sspBookingId: id, record: { serviceDate: date, rawStatus: 'Collecting Payment' } });
   }
   const snap = path => ({ id: path.split('/').at(-1), exists: rows.has(path), data: () => structuredClone(rows.get(path)) });
   const ref = path => ({ id: path.split('/').at(-1), path, get: async () => snap(path) }); let queue = Promise.resolve();
@@ -58,7 +58,7 @@ describe('the twelve owner-authorized net-price clarifications', () => {
     expect((await previewOwnerWashTax(db)).rows.every(row => row.already)).toBe(true);
   });
   it.each([
-    ['missing source', db => db.rows.delete(`sweater_bookings/${PLAN.bookings[0][0]}`)],
+    ['missing source', db => db.rows.delete(`sweater_bookings/${PLAN.bookings[0][0].replace(/^[A-Z]+-/, '')}`)],
     ['wrong price', db => { db.rows.get(`washes/ssp__${PLAN.bookings[0][0]}`).price = 23; }],
     ['existing tax', db => { db.rows.get(`washes/ssp__${PLAN.bookings[0][0]}`).vat_amount = 2; }],
     ['closed period', db => db.rows.set('accounting_periods/2026-10', { status: 'closed' })],

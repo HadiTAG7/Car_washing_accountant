@@ -14,7 +14,8 @@ import Toast from './Toast';
 import SweaterActionDialog from './SweaterActionDialog';
 import SweaterHandoffPreview from './SweaterHandoffPreview';
 import SweaterOwnerWashTaxCorrection from './SweaterOwnerWashTaxCorrection';
-import { useSweaterIntegration, useSweaterConfig, useSweaterServiceTypes } from '../hooks/useSweater';
+import { useSweaterIntegration, useSweaterConfig, useSweaterServiceTypes, useSweaterBookingCleanup } from '../hooks/useSweater';
+import SweaterBookingCleanup from './SweaterBookingCleanup';
 import SweaterServicePrices from './SweaterServicePrices';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 import { describeBackendError } from '../lib/firebaseClient';
@@ -40,6 +41,7 @@ export default function SweaterIntegrationPage() {
   const config = useSweaterConfig();
   const staff = !isPartnerView && (role === 'admin' || role === 'accountant');
   const { serviceTypes } = useSweaterServiceTypes(staff);
+  const cleanup = useSweaterBookingCleanup();
 
   // جاهزية الخادم — تُقرأ من مسبارٍ لا يعرض قيمةً، فيُعرف أن الإعداد ناقص
   // قبل الضغط على الزر لا بعد فشله.
@@ -329,6 +331,13 @@ export default function SweaterIntegrationPage() {
             </div>
           )}
         </Card>
+
+        {/* ── توحيد الحجوزات ونوع الخدمة (للمدير) ── */}
+        {canMutate && role === 'admin' && !isPartnerView && <Card className="p-4 sm:p-6">
+          <SectionHeader title="توحيد الحجوزات ونوع الخدمة" subtitle="إجراء بموافقتك: معاينة أولًا، ثم تطبيق بسبب يُحفظ في سجل التدقيق" />
+          <div className="mt-4"><SweaterBookingCleanup onPreview={cleanup.preview} onApply={cleanup.apply}
+            onFillPreview={cleanup.fillPreview} onFillApply={cleanup.fillApply} /></div>
+        </Card>}
 
         {/* ── الإعدادات المؤرخة ── */}
         <Card className="p-4 sm:p-6">

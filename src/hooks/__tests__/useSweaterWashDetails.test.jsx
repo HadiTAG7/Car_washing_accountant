@@ -23,6 +23,7 @@ it('reads thirty tickets per request, keeps only matching bookings, and reads no
   fs.docs[encodeURIComponent('SB/007')] = { sspBookingId: 'another' };
   const first = renderHook(() => useSweaterWashDetails(ids, true));
   await waitFor(() => expect(first.result.current.loading).toBe(false));
+  // A ticket that is not a booking number is its own document id: 65 ids, three requests.
   expect(fs.calls).toEqual([30, 30, 5]);
   expect(first.result.current.bookings).toHaveLength(64);
   expect(first.result.current.bookings.map(b => b.sspBookingId)).not.toContain('another');
@@ -30,4 +31,14 @@ it('reads thirty tickets per request, keeps only matching bookings, and reads no
   const again = renderHook(() => useSweaterWashDetails([...ids].reverse(), true));
   expect(again.result.current.bookings).toHaveLength(64);
   expect(fs.calls).toHaveLength(3);
+});
+
+it('finds the booking by its number with Sweater\'s latest prefix, and still under its old prefixed id', async () => {
+  fs.docs['5640001'] = { sspBookingId: 'S-5640001', record: { rawStatus: 'Collecting Payment' } };
+  fs.docs['B-5640002'] = { sspBookingId: 'B-5640002', record: { rawStatus: 'On the Way' } };
+  fs.docs['5640003'] = { sspBookingId: 'S-5640999', record: { rawStatus: 'Collecting Payment' } };
+  const { result } = renderHook(() => useSweaterWashDetails(['B-5640001', 'B-5640002', 'B-5640003'], true));
+  await waitFor(() => expect(result.current.loading).toBe(false));
+  expect(result.current.bookings.map(b => [b.requestedId, b.sspBookingId])).toEqual([
+    ['B-5640001', 'S-5640001'], ['B-5640002', 'B-5640002']]);
 });

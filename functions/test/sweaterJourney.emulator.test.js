@@ -196,7 +196,7 @@ d('الرحلة الكاملة لتكامل سويتر', () => {
     // The unfinished test booking must now be resolved before ANY approval write.
     await expect(sweaterApproveSettlement(db, FieldValue, { periodKey: PERIOD }, { userId: 'admin1' })).rejects.toThrow(/مراجعة/);
     expect((await db.collection('sweater_settlements').doc(PERIOD).get()).data().status).toBe('statement_received');
-    const pendingRef = db.collection(SW.BOOKINGS).doc('B-5');
+    const pendingRef = db.collection(SW.BOOKINGS).doc('5');
     const pending = (await pendingRef.get()).data();
     await pendingRef.set({ ...pending, record: { ...pending.record, rawStatus: 'admin_cancelled', normalizedStatus: 'admin_cancelled' }, normalizedStatus: 'admin_cancelled' });
     await sweaterCalculateSettlement(db, FieldValue, { periodKey: PERIOD }, { userId: 'acct1' });

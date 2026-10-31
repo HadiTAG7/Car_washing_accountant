@@ -1,15 +1,17 @@
 // Raw facts remain compatible. Hadi's11Oct approval additionally records a
 // source-proven wash/commission, NEVER collection, owner confirmation or ledger.
 import { hashBody, hashRecord, normalizeRecord, recordProblems, ALLOWED_RECORD_FIELDS } from './record.js';
-import { bookingDocId, rawDocId, COL, MAX_BODY_BYTES, SweaterIngestError } from './ingest.js';
+import { normalizeServiceType, FULL_WASH_SERVICE } from './vocab.js';
+import { bookingDocId, sspKey, sspWashDocId, rawDocId, COL, MAX_BODY_BYTES, SweaterIngestError } from './ingest.js';
 import { ownerBookingIdentity } from '../../../src/lib/sweater/bookingIdentity.js';
 import { executionEligibility, executionWash } from './operationsExecution.js';
-import { inspectIdentity5596423, preservedResolutionClaimMatches } from './operationsIdentity5596423.js';
+import { inspectIdentity5596423, preservedResolutionClaimMatches, identityReference, referencesThisIdentity,
+  referenceMetadata } from './operationsIdentity5596423.js';
 import { inspectObservationPromotion, preservedPromotionClaimMatches } from './operationsObservationPromotion.js';
 import { inspectIdentity5643311, preservedHistorical5643311ClaimMatches } from './operationsIdentity5643311.js';
 
 export const OPERATIONS_SOURCE = 'operations_sync_v2';
-export const OPERATIONS_MAX_RECORDS = 100; // <= 4 writes/row + run + state, one atomic transaction
+export const OPERATIONS_MAX_RECORDS = 100; // raw + claim + wash + booking (+ its variance) per row, one atomic transaction
 const CLAIMS = 'sweater_owner_booking_claims'; // shared natural-key lock with the existing owner workflow
 const PROTECTED_COLLECTIONS = ['washes', COL.BOOKINGS, 'sweater_owner_collection_confirmations',
   'sweater_operational_wash_links', 'sweater_booking_links'];
@@ -26,7 +28,7 @@ const sourceUrl = x => {
 };
 
 export function validateOperationsPayload(payload) {
-  if (!exactKeys(payload, ['contractVersion', 'importRunId', 'agentStatus', 'coverage', 'workerLinks', 'records'])
+  if (!exactKeys(payload, ['contractVersion', 'importRunId', 'agentStatus', 'coverage', 'workerLinks', 'records', 'rechecks'])
     || payload.contractVersion !== 2 || !docId(payload.importRunId)
     || !['ok', 'partial'].includes(payload.agentStatus) || !Array.isArray(payload.records)
     || payload.records.length > OPERATIONS_MAX_RECORDS
@@ -43,10 +45,15 @@ export function validateOperationsPayload(payload) {
   const hasGaps = c.pagesFetched !== c.pageCount || Object.values(c.modules).some(s => s !== 'complete') || c.gaps.length > 0;
   if ((c.isComplete && hasGaps) || (!c.isComplete && !c.gaps.length)) fail('اكتمال التغطية يناقض الصفحات/الفجوات أو نطاق الشركات.');
   if (!object(payload.workerLinks) || Object.entries(payload.workerLinks).some(([driver, id]) => !docId(driver) || !docId(id))) fail('روابط العمال يجب أن تكون معرّفات ثابتة فقط، لا أسماء أو كائنات.');
+  // Optional: bookings outside the window re-read because they were still moving in Sweater (from the `pending` list).
+  if (payload.rechecks !== undefined && (!Array.isArray(payload.rechecks) || payload.rechecks.length > OPERATIONS_MAX_RECORDS
+    || payload.rechecks.some(id => !docId(id) || !/^\d+$/.test(ownerBookingIdentity(id)))
+    || new Set(payload.rechecks.map(ownerBookingIdentity)).size !== payload.rechecks.length)) fail('قائمة إعادة القراءة يجب أن تكون أرقام حجوزات فريدة.');
   return payload;
 }
+const rechecked = (payload, id) => (payload.rechecks ?? []).some(r => ownerBookingIdentity(r) === ownerBookingIdentity(id));
 
-function rowProblems(raw, coverage) {
+function rowProblems(raw, coverage, payload) {
   // Hadi's 10 Oct approval: v2 may retain an otherwise valid observation
   // without a service as pending review. Keep the shared financial/owner
   // contract strict and continue ALL scalar/source/identity checks below.
@@ -58,7 +65,8 @@ function rowProblems(raw, coverage) {
     ? typeof raw[k] !== 'number' || !Number.isFinite(raw[k]) : typeof raw[k] !== 'string' || raw[k].length > 2000))) {
     return [{ code: 'bad_shape', ar: 'حقول السجل يجب أن تكون حقائق نصية/رقمية بسيطة فقط.' }];
   }
-  if (!docId(raw.sspBookingId) || !day(raw.serviceDate) || raw.serviceDate < coverage.rangeFrom || raw.serviceDate > coverage.rangeTo
+  const outside = raw.serviceDate < coverage.rangeFrom || raw.serviceDate > coverage.rangeTo;
+  if (!docId(raw.sspBookingId) || !day(raw.serviceDate) || (outside && !rechecked(payload, raw.sspBookingId))
     || !sourceUrl(raw.sourceUrl) || !['individual', 'corporate'].includes(raw.bookingKind)) {
     return [{ code: 'invalid_source_scope', ar: 'المعرف أو التاريخ أو نوع الحجز أو رابط المصدر غير موثق ضمن النطاق.' }];
   }
@@ -66,11 +74,82 @@ function rowProblems(raw, coverage) {
 }
 
 const identityOf = data => ownerBookingIdentity(data.ssp_booking_id || data.sspBookingId || data.record?.sspBookingId || data.bookingNumber || '');
-const financialProtection = b => Boolean(b && (b.postedEntryId || b.postedAt || b.settlementId || b.ownerCollectionConfirmation
+export const financialProtection = b => Boolean(b && (b.postedEntryId || b.postedAt || b.settlementId || b.ownerCollectionConfirmation
   || b.ownerCompletionDecision || b.financialLock || b.locked || b.lockedAt
   || ['posted', 'ready_for_posting', 'matched'].includes(b.processingStatus)
   || b.source === 'staff_owner_confirmation'));
+// Owner and financial assertions about a booking number, wherever they are filed.
+export const ASSERTIONS = ['sweater_owner_collection_confirmations', 'sweater_booking_links'];
 const publicRow = row => Object.fromEntries(Object.entries(row).filter(([key]) => !key.startsWith('_')));
+
+// ── حالة الحجز: «تحتاج مراجعة» لما يحتاج قرارًا فعليًا فقط ──
+// الحالات النهائية في سويتر: Collecting Payment و Cancelled by Admin. غيرها
+// (Initiated / On the Way / Reached / Washing Started) ينتظر قراءة سويتر التالية.
+export const FINAL_STATUSES = Object.freeze(['payment_collection', 'admin_cancelled']);
+export const REVIEW = Object.freeze({ DECISION: 'needs_review', PENDING: 'pending_source', DONE: 'validated' });
+const PENDING_STATUSES = ['approved', 'on_the_way', 'arrived', 'washing_started'];
+export const lockedFinancially = b => Boolean(b && (b.postedEntryId || b.postedAt || b.settlementId || b.financialLock || b.locked || b.lockedAt
+  || ['posted', 'ready_for_posting', 'matched'].includes(b.processingStatus)));
+/** Is this observation still moving in Sweater (re-read on every sync, whatever its date)? */
+export const sourceStillOpen = record => !FINAL_STATUSES.includes(record?.normalizedStatus)
+  && String(record?.rawStatus ?? '').trim().toLowerCase() !== 'completed';
+
+/**
+ * Where a booking stands, and why. Reason codes are the same the B→S promotion proof
+ * reads, so an unexecuted reservation still promotes when its execution arrives.
+ */
+export function bookingReviewState({ record, hasWash = false, established = false, execution = null,
+  awaitingCleanup = false, lockedChange = false, washBlocked = false, washMissing = false }) {
+  if (awaitingCleanup) return { processingStatus: REVIEW.DECISION, reasonCode: 'awaiting_identity_cleanup' };
+  if (lockedChange) return { processingStatus: REVIEW.DECISION, reasonCode: 'protected_existing_record' };
+  const status = record?.normalizedStatus, raw = String(record?.rawStatus ?? '').trim().toLowerCase();
+  // Cancelled after a wash was recorded for it: which one stands is the owner's call.
+  if (status === 'admin_cancelled') return hasWash ? { processingStatus: REVIEW.DECISION, reasonCode: 'protected_existing_record' }
+    : { processingStatus: REVIEW.DONE, reasonCode: null };
+  if (PENDING_STATUSES.includes(status)) return { processingStatus: REVIEW.PENDING, reasonCode: 'execution_not_final' };
+  if (status === 'unknown' && ['initiated', 'reached'].includes(raw)) return { processingStatus: REVIEW.PENDING, reasonCode: 'unknown_status' };
+  if (status === 'unknown' && raw !== 'completed') return { processingStatus: REVIEW.DECISION, reasonCode: 'unknown_status' };
+  if (!String(record?.serviceType ?? '').trim()) return { processingStatus: REVIEW.DECISION, reasonCode: 'unknown_service_type' };
+  if (hasWash) return { processingStatus: REVIEW.DONE, reasonCode: null };
+  // A proven execution whose wash another record stands in the way of.
+  if (washBlocked) return { processingStatus: REVIEW.DECISION, reasonCode: 'protected_existing_record' };
+  // A proven execution no wash was ever recorded for (only the identity cleanup asks: the writer records it itself).
+  if (washMissing && execution?.eligible && established) return { processingStatus: REVIEW.DECISION, reasonCode: 'execution_without_wash' };
+  if (status === 'unknown' && !execution?.eligible) return { processingStatus: REVIEW.DECISION, reasonCode: 'unknown_status' };
+  if (!established) return { processingStatus: REVIEW.DECISION, reasonCode: 'unverified_worker_link' };
+  // A wash Sweater shows as done but whose execution is not proven needs a decision; another service is kept as observed.
+  if (execution && !execution.eligible && (record.serviceType === FULL_WASH_SERVICE || record.startedAt || record.completedAt)) {
+    return { processingStatus: REVIEW.DECISION, reasonCode: execution.reasonCode };
+  }
+  return { processingStatus: REVIEW.DONE, reasonCode: null };
+}
+const outsideWindow = (record, coverage) => record.serviceDate < coverage.rangeFrom || record.serviceDate > coverage.rangeTo;
+/** Sweater's latest known reading of a booking (beside an owner-held record, or the record itself). */
+const latestReading = booking => booking?.latestObservation ?? booking?.record ?? null;
+/** A booking still moving in Sweater: re-read on every sync, whatever its date, until it is final. */
+export const stillOpenBooking = booking => Boolean(booking && !lockedFinancially(booking) && latestReading(booking)
+  && sourceStillOpen(latestReading(booking)));
+/** One open variance per booking (not one per run), carrying its period. */
+export const operationsVarianceId = number => `ops__${encodeURIComponent(String(number))}`;
+
+// Facts that decide revenue and commission. A later reading that only adds what was missing is not a conflict.
+const MATERIAL_FIELDS = ['normalizedStatus', 'serviceDate', 'driverExternalId', 'serviceType', 'startedAt', 'completedAt'];
+const filled = value => value != null && String(value).trim() !== '';
+const comparable = (key, value) => key === 'serviceType' ? normalizeServiceType(value) : value;
+const done = record => record?.normalizedStatus === 'payment_collection'
+  || (record?.normalizedStatus === 'unknown' && String(record.rawStatus ?? '').trim().toLowerCase() === 'completed');
+// A booking moving on (still in progress, or now completed) agrees with what was kept; going back, or a
+// cancellation against a completion (or the reverse), does not.
+const statusConflict = (kept, observed) => kept.normalizedStatus !== observed.normalizedStatus
+  && !(sourceStillOpen(kept) && (sourceStillOpen(observed) || done(observed)))
+  && !(done(kept) && done(observed));
+/** Sweater's newest reading of a booking whose record the owner holds, kept beside that record. */
+export const latestObservationOf = (record, { observedAtIso, importRunId }) => ({ sspBookingId: record.sspBookingId,
+  rawStatus: record.rawStatus, normalizedStatus: record.normalizedStatus, startedAt: record.startedAt ?? null,
+  completedAt: record.completedAt ?? null, observedAtIso, importRunId, sourceHash: hashRecord(record) });
+/** Which material facts a kept record and a new reading disagree on (both filled, different). */
+export const materialConflicts = (kept, observed) => MATERIAL_FIELDS.filter(key => filled(kept?.[key]) && filled(observed?.[key])
+  && (key === 'normalizedStatus' ? statusConflict(kept, observed) : comparable(key, kept[key]) !== comparable(key, observed[key])));
 
 async function plan(db, payload, read) {
   validateOperationsPayload(payload);
@@ -92,7 +171,7 @@ async function plan(db, payload, read) {
   }
   const counts = { new: 0, modified: 0, duplicate: 0, rejected: 0, needsReview: 0 };
   for (const raw of payload.records) {
-    const problems = rowProblems(raw, payload.coverage);
+    const problems = rowProblems(raw, payload.coverage, payload);
     if (problems.length) {
       counts.rejected++; rows.push({ sspBookingId: typeof raw?.sspBookingId === 'string' ? raw.sspBookingId : null,
         outcome: 'rejected', reasonCode: problems[0].code, rawSaved: false, bookingSaved: false, washId: null }); continue;
@@ -102,11 +181,30 @@ async function plan(db, payload, read) {
       counts.rejected++; rows.push({ sspBookingId: record.sspBookingId, outcome: 'rejected', reasonCode: 'duplicate_in_batch', rawSaved: false, bookingSaved: false, washId: null }); continue;
     }
     seen.add(identity);
-    const id = bookingDocId(record.sspBookingId), bookingRef = db.collection(COL.BOOKINGS).doc(id);
+    // One booking per number: B-, S- and C- are the same booking at different stages. Until the identity cleanup
+    // runs, a number still filed under exactly this prefix is updated where it is; other prefixed copies wait for it.
+    const numbered = documents.find(d => d.collection === COL.BOOKINGS && d.id === bookingDocId(record.sspBookingId));
+    const filedAsSeen = numbered ? null : documents.find(d => d.collection === COL.BOOKINGS && d.id === sspKey(record.sspBookingId)
+      && d.id !== bookingDocId(record.sspBookingId));
+    const id = (numbered ?? filedAsSeen)?.id ?? bookingDocId(record.sspBookingId), bookingRef = db.collection(COL.BOOKINGS).doc(id);
     const related = documents.filter(d => identityOf(d.data) === identity);
-    const existing = documents.find(d => d.collection === COL.BOOKINGS && d.id === id)?.data ?? null;
+    const existing = (numbered ?? filedAsSeen)?.data ?? null;
+    // Copies still stored under another prefixed id: the identity cleanup folds them first.
+    const legacyBookings = related.filter(d => d.collection === COL.BOOKINGS && d.id !== id);
     const claimRef = db.collection(CLAIMS).doc(bookingDocId(identity));
     const claimSnap = await read(claimRef), claim = claimSnap.exists ? claimSnap.data() : null;
+    const varianceRef = db.collection(COL.VARIANCES).doc(operationsVarianceId(identity));
+    const varianceSnap = await read(varianceRef), variance = varianceSnap.exists ? varianceSnap.data() : null;
+    // A reading outside the window is only taken for a booking we hold as still moving in Sweater.
+    if (outsideWindow(record, payload.coverage) && !stillOpenBooking(existing)) {
+      counts.rejected++; rows.push({ sspBookingId: record.sspBookingId, outcome: 'rejected', reasonCode: 'recheck_not_open',
+        rawSaved: false, bookingSaved: false, washId: null }); continue;
+    }
+    // Incomplete new evidence must never erase an already evidenced service.
+    const retainKnownService = !record.serviceType && Boolean(String(existing?.record?.serviceType ?? '').trim());
+    const stored = retainKnownService ? { ...record, serviceType: existing.record.serviceType,
+      serviceTypeLabel: existing.record.serviceTypeLabel ?? record.serviceTypeLabel } : record;
+    const storedHash = hashRecord(stored);
     const existingWorkerIds = new Set(documents.filter(d => d.collection === 'washes' && d.data.driver_external_id === record.driverExternalId)
       .map(d => d.data.biker_id).filter(Boolean));
     // Cloud collectors never need a copy of private worker profiles. Reuse only
@@ -118,18 +216,20 @@ async function plan(db, payload, read) {
     const worker = workerSnap?.exists ? workerSnap.data() : null;
     const established = Boolean(record.driverExternalId && worker?.name && (
       worker.driver_external_id === record.driverExternalId || existingWorkerIds.has(candidate)) && existingWorkerIds.size <= 1);
+    // Everything about this number except its own (canonical) booking.
     const protectedRows = related.filter(d => d.collection !== COL.BOOKINGS || d.id !== id);
     const protectedBooking = financialProtection(existing);
-    const alias = related.some(d => (d.data.ssp_booking_id || d.data.sspBookingId || d.data.record?.sspBookingId) !== record.sspBookingId);
-    const execution = executionEligibility(record, payload.coverage, worker);
-    let proposedWashId = `ssp__${id}`;
+    const alias = protectedRows.some(d => (d.data.ssp_booking_id || d.data.sspBookingId || d.data.record?.sspBookingId) !== record.sspBookingId);
+    const execution = executionEligibility(stored, payload.coverage, worker);
+    let proposedWashId = sspWashDocId(record.sspBookingId);
     const washCollision = execution.eligible && documents.some(d => d.collection === 'washes' && d.id === proposedWashId);
     const claimConflict = claim && (claim.sspBookingId !== record.sspBookingId
       || (execution.eligible && (claim.washId !== proposedWashId || claim.source !== OPERATIONS_SOURCE)));
     const foreignBooking = execution.eligible && existing && existing.source !== OPERATIONS_SOURCE;
-    const periodSnap = execution.eligible ? await read(db.collection('accounting_periods').doc(record.serviceDate.slice(0, 7))) : null;
+    const month = record.serviceDate.slice(0, 7);
+    const periodSnap = await read(db.collection('accounting_periods').doc(month));
     const periodClosed = periodSnap?.data()?.status === 'closed';
-    const settlementSnap = execution.eligible ? await read(db.collection('sweater_settlements').doc(record.serviceDate.slice(0, 7))) : null;
+    const settlementSnap = await read(db.collection('sweater_settlements').doc(month));
     const settlement = settlementSnap?.data();
     const settlementProtected = Boolean(settlement && (settlement.journalEntryId || settlement.postedEntryId
       || ['approved', 'invoiced', 'partially_collected', 'collected', 'closed'].includes(settlement.status)));
@@ -139,44 +239,68 @@ async function plan(db, payload, read) {
       claim, candidate, established, execution, period: periodSnap?.data(), settlement }) : null;
     const promotion = !resolution && !historicalResolution ? await inspectObservationPromotion({ db, read, payload, record, documents, claim, candidate, established, execution,
       period: periodSnap?.data(), settlement }) : null;
+    const resolved = Boolean(resolution?.public.eligible || historicalResolution?.public.eligible || promotion?.public.eligible);
+    const awaitingCleanup = legacyBookings.length > 0 && !resolved;
     const protectedRecord = resolution ? !resolution.public.eligible : historicalResolution ? !historicalResolution.public.eligible : promotion ? !promotion.public.eligible
       : protectedRows.length > 0 || protectedBooking || claimConflict || alias || washCollision || foreignBooking || periodClosed || settlementProtected;
     if (resolution?.public.eligible) proposedWashId = resolution.public.canonicalWashId;
     if (historicalResolution?.public.eligible) proposedWashId = historicalResolution.public.canonicalWashId;
     if (promotion?.public.eligible) proposedWashId = promotion.public.canonicalWashId;
-    const unchanged = existing?.sourceHash === sourceHash && existing.record && hashRecord(existing.record) === sourceHash
+    const sameSource = existing?.sourceHash === storedHash && Boolean(existing.record) && hashRecord(existing.record) === storedHash
       && (protectedRecord || existing.operationalWorkerId === (established ? candidate : null));
-    const missingService = !record.serviceType;
-    // Incomplete new evidence must never erase an already evidenced service.
-    const retainKnownService = missingService && Boolean(String(existing?.record?.serviceType ?? '').trim());
-    let outcome = unchanged ? 'duplicate' : existing ? 'modified' : 'new';
-    let reasonCode = null;
-    if (protectedRecord && !unchanged) { outcome = 'needs_review'; reasonCode = 'protected_existing_record'; }
-    else if (missingService) { outcome = 'needs_review'; reasonCode = 'unknown_service_type'; }
-    else if (!unchanged && !established) { outcome = 'needs_review'; reasonCode = 'unverified_worker_link'; }
-    else if (!unchanged && record.normalizedStatus === 'unknown' && !execution.eligible) { outcome = 'needs_review'; reasonCode = 'unknown_status'; }
-    else if (!unchanged && !execution.eligible && (record.serviceType === 'interior_exterior_wash' || record.startedAt || record.completedAt)) {
-      outcome = 'needs_review'; reasonCode = execution.reasonCode;
-    }
-    const writeBooking = !protectedRecord && !unchanged && !retainKnownService;
-    const writeWash = execution.eligible && established && !protectedRecord && !missingService;
+    // Sweater's latest reading wins; an older one never overwrites it.
+    const stale = !sameSource && Boolean(existing?.observedAtIso) && Date.parse(existing.observedAtIso) > Date.parse(payload.coverage.extractedAt);
+    // Posted, settled or in a closed month: the observation is kept raw and raised, never written over the booking.
+    const locked = lockedFinancially(existing) || periodClosed || settlementProtected;
+    // Confirmed by the owner, completed by an owner decision or written by another path: its record stays as the
+    // owner left it. A later reading only matters when it contradicts it, and then the owner decides.
+    // So is a number whose other records carry an owner or financial assertion (a posted wash, an owner confirmation).
+    const linkedHold = protectedRows.some(d => financialProtection(d.data)) || documents.some(d => ASSERTIONS.includes(d.collection)
+      && (identityOf(d.data) === identity || identityReference(d.id, identity) || referencesThisIdentity(referenceMetadata(d.data), identity)));
+    const held = linkedHold || (Boolean(existing) && (financialProtection(existing) || existing.source !== OPERATIONS_SOURCE));
+    const conflictFields = held && existing && !stale ? materialConflicts(existing.record, stored) : [];
+    const missingService = !stored.serviceType;
+    const writeWash = execution.eligible && established && !protectedRecord && !missingService && !awaitingCleanup && !stale;
+    const hasWash = writeWash || related.some(d => d.collection === 'washes');
+    const washBlocked = execution.eligible && established && !missingService && !writeWash && !hasWash;
+    // Held, the owner decides when the reading contradicts the kept record, or proves a wash something stands in the way of.
+    const heldDecision = held && !stale && (existing ? conflictFields.length > 0 || washBlocked : true);
+    const review = held ? (heldDecision ? { processingStatus: REVIEW.DECISION, reasonCode: 'protected_existing_record' }
+      : { processingStatus: existing?.processingStatus ?? null, reasonCode: existing?.reviewReasonCode ?? null })
+      : bookingReviewState({ record: stored, hasWash, established, execution, awaitingCleanup,
+        lockedChange: locked && !sameSource && !stale, washBlocked });
+    const unchanged = held ? !heldDecision : sameSource && (locked || (existing.processingStatus === review.processingStatus
+      && (existing.reviewReasonCode ?? null) === review.reasonCode));
+    const writeBooking = !unchanged && !stale && !locked && !held && !awaitingCleanup;
+    // A held booking still shows Sweater's latest reading, beside the owner's record and never over it (a contradiction
+    // goes to the owner as a variance instead).
+    const noteLatest = held && !heldDecision && existing && !stale && !locked && !awaitingCleanup && existing.latestObservation?.sourceHash !== storedHash
+      && !(Date.parse(existing.latestObservation?.observedAtIso) > Date.parse(payload.coverage.extractedAt));
+    let outcome = unchanged || stale ? 'duplicate' : existing ? 'modified' : 'new';
+    let reasonCode = stale ? 'older_observation' : null;
+    if (!unchanged && !stale && review.processingStatus === REVIEW.DECISION) { outcome = 'needs_review'; reasonCode = review.reasonCode; }
+    // Still moving in Sweater: saved, and the reason it waits for the next reading is kept on the run.
+    else if (!unchanged && !stale && review.processingStatus === REVIEW.PENDING) reasonCode = review.reasonCode;
     if (writeWash && outcome === 'duplicate') outcome = 'modified';
     const washId = writeWash ? proposedWashId : related.find(d => d.collection === 'washes')?.id
       ?? related.find(d => d.data.washId)?.data.washId ?? null;
     const row = { sspBookingId: record.sspBookingId, bookingNumber: identity, outcome, reasonCode,
+      processingStatus: writeBooking ? review.processingStatus : existing?.processingStatus ?? null,
+      ...(conflictFields.length ? { conflictFields } : {}),
       rawSaved: false, bookingSaved: false, bookingId: existing || writeBooking ? id : null,
-      bookingMustMatch: Boolean(writeBooking || unchanged),
+      bookingMustMatch: Boolean(writeBooking || (unchanged && sameSource)),
       washId, washCreated: false, bikerId: established ? candidate : null,
       existingLinkRefs: protectedRows.map(d => ({ collection: d.collection, id: d.id, hash: hashBody(d.data) })),
       ...(resolution ? { identityResolution: resolution.public } : {}),
       ...(historicalResolution ? { historicalIdentityResolution: historicalResolution.public } : {}),
       ...(promotion ? { observationPromotion: promotion.public } : {}),
       rawStatus: record.rawStatus, serviceDate: record.serviceDate, driverExternalId: record.driverExternalId,
-      sourceHash, rawId: rawDocId(payload.importRunId, record.sspBookingId),
-      _raw: raw, _record: record, _bookingRef: bookingRef, _claimRef: claimRef, _claim: claim,
-      _writeBooking: writeBooking, _protected: protectedRecord, _writeWash: writeWash,
+      sourceHash, storedHash, rawId: rawDocId(payload.importRunId, record.sspBookingId),
+      _raw: raw, _record: record, _stored: stored, _bookingRef: bookingRef, _claimRef: claimRef, _claim: claim,
+      _writeBooking: writeBooking, _noteLatest: noteLatest, _protected: protectedRecord, _writeWash: writeWash, _review: review,
+      _existing: existing, _varianceRef: varianceRef, _variance: variance,
       _washRef: writeWash ? db.collection('washes').doc(proposedWashId) : null,
-      _wash: writeWash ? { ...executionWash(record, candidate, historicalResolution?.public.eligible
+      _wash: writeWash ? { ...executionWash(stored, candidate, historicalResolution?.public.eligible
         ? historicalResolution.public.acceptance.acceptedSourceName : worker.name),
         ...(promotion?.public.eligible && promotion.public.sourceAssignmentReview
           ? { source_assignment_review: promotion.public.sourceAssignmentReview,
@@ -184,11 +308,11 @@ async function plan(db, payload, read) {
               ? { execution_worker_decision: promotion.public.sourceAssignmentReview.workerDecision } : {}) } : {}),
         ...(historicalResolution?.public.eligible ? { historical_identity_acceptance: historicalResolution.public.acceptance } : {}) } : null };
     rows.push(row); counts[outcome === 'needs_review' ? 'needsReview' : outcome]++;
-    state.push({ id: record.sspBookingId, related, claim, worker, existingWorkerIds: [...existingWorkerIds].sort(),
+    state.push({ id: record.sspBookingId, related, claim, variance, worker, existingWorkerIds: [...existingWorkerIds].sort(),
       ...(resolution ? { identityResolution: resolution.state } : {}),
       ...(historicalResolution ? { historicalIdentityResolution: historicalResolution.state } : {}),
       ...(promotion ? { observationPromotion: promotion.state } : {}),
-      ...(periodSnap ? { period: periodSnap.data() ?? null, settlement: settlement ?? null } : {}) });
+      period: periodSnap.data() ?? null, settlement: settlement ?? null });
   }
   return { payload, run, runRef, rows, counts, reviewedPayloadHash, previewStateHash: hashBody(state) };
 }
@@ -204,6 +328,27 @@ const resultFor = value => ({ importRunId: value.payload.importRunId, reviewedPa
 export async function previewOperations(db, payload) {
   const value = await plan(db, payload, ref => ref.get());
   return { ...resultFor(value), dryRun: true, saved: false, replay: false, previousRun: value.run ? { status: value.run.status } : null };
+}
+
+/**
+ * The booking's one variance: opened (or refreshed) while it needs the owner's decision, superseded once a later
+ * reading settles it. A variance the owner already decided on this same evidence is left as decided.
+ */
+export function operationsVarianceWrite(row, payload, now) {
+  const current = row._variance, open = current?.resolution === 'unresolved';
+  if (row.outcome === 'needs_review') {
+    const decided = current && !['unresolved', 'superseded'].includes(current.resolution) && current.sourceHash === row.storedHash;
+    if (decided) return null;
+    return { kind: 'operational_sync_review', sspBookingId: row.sspBookingId, bookingNumber: row.bookingNumber,
+      periodKey: row.serviceDate.slice(0, 7), serviceDate: row.serviceDate, rawId: row.rawId, importRunId: payload.importRunId,
+      sourceHash: row.storedHash, reasonCode: row.reasonCode, conflictFields: row.conflictFields ?? null,
+      resolution: 'unresolved', detectedAtIso: open ? current.detectedAtIso ?? now : now, lastSeenAtIso: now,
+      ...(current && !open ? { previousResolution: current.resolution } : {}) };
+  }
+  // An older reading never settles a question a newer one raised.
+  if (!open || !row._review || row._review.processingStatus === REVIEW.DECISION || row.reasonCode === 'older_observation') return null;
+  return { resolution: 'superseded', supersededAtIso: now, supersededByRunId: payload.importRunId,
+    supersededBecause: row._review?.processingStatus ?? null };
 }
 
 export async function saveOperations(db, FieldValue, request, actor) {
@@ -224,7 +369,7 @@ export async function saveOperations(db, FieldValue, request, actor) {
         processingStatus: row.outcome === 'needs_review' ? 'needs_review' : 'normalized' });
       row.rawSaved = true;
       if (!row._claim && (row._writeBooking || row._writeWash)) tx.set(row._claimRef, { bookingNumber: row.bookingNumber, sspBookingId: row.sspBookingId,
-          washId: `ssp__${bookingDocId(row.sspBookingId)}`, source: OPERATIONS_SOURCE,
+          washId: sspWashDocId(row.sspBookingId), source: OPERATIONS_SOURCE,
           importRunId: value.payload.importRunId, claimedBy: actor, claimedAt: FieldValue.serverTimestamp() });
       if (row._writeWash) {
         const wash = { ...row._wash, handoffWashHash: hashBody(row._wash), created_at: now,
@@ -255,17 +400,23 @@ export async function saveOperations(db, FieldValue, request, actor) {
         row.existingLinkRefs.push({ collection: 'washes', id: row.washId, hash: hashBody(wash) });
       }
       if (row._writeBooking) {
-        tx.set(row._bookingRef, { sspBookingId: row.sspBookingId, bookingNumber: row.bookingNumber,
-          record: row._record, sourceHash: row.sourceHash, schemaVersion: 1, source: OPERATIONS_SOURCE,
-          lastImportRunId: value.payload.importRunId, serviceDate: row.serviceDate, periodKey: row.serviceDate.slice(0, 7),
-          normalizedStatus: row._record.normalizedStatus, processingStatus: 'needs_review',
-          reviewReasonCode: row.reasonCode || 'raw_only_not_wash_eligible', recognitionEligibility: null, recognitionReason: null,
+        const aliases = [...new Set([...(row._existing?.aliases ?? []), row._existing?.sspBookingId, row.sspBookingId].filter(Boolean))].sort();
+        tx.set(row._bookingRef, { sspBookingId: row.sspBookingId, bookingNumber: row.bookingNumber, aliases,
+          record: row._stored, sourceHash: row.storedHash, schemaVersion: 1, source: OPERATIONS_SOURCE,
+          lastImportRunId: value.payload.importRunId, observedAtIso: value.payload.coverage.extractedAt,
+          serviceDate: row.serviceDate, periodKey: row.serviceDate.slice(0, 7),
+          normalizedStatus: row._stored.normalizedStatus, processingStatus: row._review.processingStatus,
+          reviewReasonCode: row._review.reasonCode, recognitionEligibility: null, recognitionReason: null,
           operationalWorkerId: row.bikerId, updatedAtIso: now, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
         row.bookingSaved = true;
       }
-      if (row.outcome === 'needs_review') tx.set(db.collection(COL.VARIANCES).doc(row.rawId), {
-        kind: 'operational_sync_review', sspBookingId: row.sspBookingId, rawId: row.rawId,
-        importRunId: value.payload.importRunId, reasonCode: row.reasonCode, resolution: 'unresolved', detectedAtIso: now });
+      if (row._noteLatest) {
+        tx.set(row._bookingRef, { latestObservation: latestObservationOf(row._stored, { observedAtIso: value.payload.coverage.extractedAt,
+          importRunId: value.payload.importRunId }) }, { merge: true });
+        row.latestObservationSaved = true;
+      }
+      const variance = operationsVarianceWrite(row, value.payload, now);
+      if (variance) tx.set(row._varianceRef, variance, { merge: true });
     }
     const result = { ...resultFor(value), dryRun: false, saved: true, replay: false };
     tx.set(value.runRef, { importRunId: value.payload.importRunId, payloadHash: value.reviewedPayloadHash,
@@ -292,8 +443,11 @@ export async function operationsStatus(db, payload) {
     const raw = rawSnap.exists ? rawSnap.data() : null;
     const rawVerified = raw?.sourceHash === row.sourceHash && raw?.sspBookingId === row.sspBookingId
       && hashBody(raw.rawPayload) === hashBody(payload.records.find(r => r.sspBookingId === row.sspBookingId));
+    // Runs before the identity cleanup recorded the prefixed id; the booking now lives under its number.
     const bookingSnap = row.bookingId ? await db.collection(COL.BOOKINGS).doc(row.bookingId).get() : null;
-    const booking = bookingSnap?.exists ? bookingSnap.data() : null;
+    const foldedSnap = row.bookingId && !bookingSnap.exists && bookingDocId(row.bookingId) !== row.bookingId
+      ? await db.collection(COL.BOOKINGS).doc(bookingDocId(row.bookingId)).get() : null;
+    const booking = bookingSnap?.exists ? bookingSnap.data() : foldedSnap?.exists ? foldedSnap.data() : null;
     const washSnap = row.washId ? await db.collection('washes').doc(row.washId).get() : null;
     const wash = washSnap?.exists ? washSnap.data() : null;
     const claimSnap = await db.collection(CLAIMS).doc(bookingDocId(row.bookingNumber)).get();
@@ -302,9 +456,12 @@ export async function operationsStatus(db, payload) {
       const current = await db.collection(link.collection).doc(link.id).get();
       return { collection: link.collection, id: link.id, unchanged: current.exists && hashBody(current.data()) === link.hash };
     }));
-    return { sspBookingId: row.sspBookingId, rawVerified, bookingId: row.bookingId,
-      currentBookingMatches: booking?.sourceHash === row.sourceHash && Boolean(booking?.record)
-        && hashRecord(booking.record) === row.sourceHash,
+    // A later run that replaced this reading is the booking moving on, not data loss; this run's raw row is the proof.
+    const supersededBy = booking && booking.lastImportRunId !== run.importRunId && Date.parse(booking.observedAtIso) >= Date.parse(run.coverage.extractedAt)
+      ? booking.lastImportRunId : null;
+    return { sspBookingId: row.sspBookingId, rawVerified, bookingId: row.bookingId, ...(supersededBy ? { currentBookingSupersededBy: supersededBy } : {}),
+      currentBookingMatches: booking?.sourceHash === (row.storedHash ?? row.sourceHash) && Boolean(booking?.record)
+        && hashRecord(booking.record) === (row.storedHash ?? row.sourceHash),
       currentWorkerId: booking?.operationalWorkerId ?? null,
       currentNaturalClaimMatches: claim?.sspBookingId === row.sspBookingId || preservedResolutionClaimMatches(row, claim)
         || preservedPromotionClaimMatches(row, claim) || preservedHistorical5643311ClaimMatches(row, claim),
@@ -320,10 +477,31 @@ export async function operationsStatus(db, payload) {
   }));
   const rawVerified = verification.every(r => r.notSaved || r.rawVerified);
   const linksVerified = verification.every((r, i) => r.notSaved || (
-    (!run.result.rows[i].bookingMustMatch || r.currentBookingMatches)
+    (!run.result.rows[i].bookingMustMatch || r.currentBookingMatches || Boolean(r.currentBookingSupersededBy))
     && (!(run.result.rows[i].bookingSaved || run.result.rows[i].washCreated) || r.currentNaturalClaimMatches)
     && r.existingLinks.every(link => link.unchanged) && r.existingWashVerified !== false));
   return { found: true, importRunId: payload.importRunId, verified: rawVerified && linksVerified,
     rawVerified, linksVerified,
     status: run.status, payloadHash: run.payloadHash, coverage: run.coverage, result: run.result, verification };
+}
+
+// ── «ما زال مفتوحًا في سويتر»: ما يعيد الوكيل قراءته في كل مزامنة مهما كان تاريخه ──
+export const PENDING_CONTRACT = 'sweater-pending-v1';
+export function validatePendingRequest(payload) {
+  if (!exactKeys(payload, ['contract', 'importRunId']) || payload.contract !== PENDING_CONTRACT || !docId(payload.importRunId)) {
+    fail('طلب قائمة المفتوح غير صالح.');
+  }
+  return payload;
+}
+/** Every booking still moving in Sweater (Initiated / On the Way / Reached / Washing Started, or an unknown open label). */
+export async function pendingBookings(db) {
+  const snap = await db.collection(COL.BOOKINGS).get();
+  const rows = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(b => /^\d+$/.test(b.id) && stillOpenBooking(b)).map(b => {
+    const reading = latestReading(b);
+    return { bookingNumber: b.id, sspBookingId: reading.sspBookingId ?? b.sspBookingId, serviceDate: reading.serviceDate ?? b.serviceDate,
+      rawStatus: reading.rawStatus ?? null, normalizedStatus: reading.normalizedStatus ?? null, processingStatus: b.processingStatus ?? null,
+      observedAtIso: reading.observedAtIso ?? b.observedAtIso ?? null };
+  }).sort((a, b) => String(a.serviceDate).localeCompare(String(b.serviceDate)) || a.bookingNumber.localeCompare(b.bookingNumber, undefined, { numeric: true }));
+  return { contract: PENDING_CONTRACT, generatedAtIso: new Date().toISOString(), count: rows.length, bookings: rows,
+    finalStatuses: ['Collecting Payment', 'Cancelled by Admin'] };
 }

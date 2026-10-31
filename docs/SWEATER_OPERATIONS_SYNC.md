@@ -1,5 +1,64 @@
 # Agent 7 operational sync v2 — raw facts and evidenced wash executions
 
+## One booking per Sweater number, the sync window and the open list (31 October 2026)
+
+**For agent 7 — what changes in each run (part 1 of 3).**
+
+1. **Window.** Every run reads the last **3 days** (today and the two before),
+   as one batch per day or one batch for the three days, exactly as today.
+2. **Open bookings, whatever their date.** Before each run, ask the server which
+   bookings are still moving in Sweater:
+
+   ```js
+   import { fetchPendingBookings } from './scripts/lib/sweater-operations-client.mjs';
+   const open = await fetchPendingBookings({ request }); // signed, read-only
+   // open.bookings: [{ bookingNumber, sspBookingId, serviceDate, rawStatus, normalizedStatus, processingStatus, observedAtIso }]
+   ```
+
+   The same signed request is available on the n8n route (`action: "pending"`,
+   payload `{ "contract": "sweater-pending-v1", "importRunId": "pending-<yyyymmddhhmmss>" }`).
+   A booking is open until Sweater shows it **Collecting Payment** or
+   **Cancelled by Admin**; Initiated / On the Way / Reached / Washing Started and
+   any unknown label stay open.
+3. **Re-read each open booking** in SSP (by its number, whatever prefix Sweater
+   shows now) and add its current record to the run. A record whose service date
+   is outside the run's `rangeFrom..rangeTo` is accepted only when its booking
+   number is listed in the optional envelope field `rechecks` (booking numbers or
+   prefixed ids, unique by number, at most 100) **and** the booking is still open
+   here; otherwise it is rejected (`invalid_source_scope` / `recheck_not_open`).
+   `coverage` still describes the 3-day window only; `recordCount` counts every
+   record sent, rechecks included.
+4. **Prefixes.** Send the booking id exactly as SSP shows it (`B-`, `S-`, `C-`).
+   The server keeps **one booking per number** (document id = the number), shows
+   Sweater's **latest** reading by extraction time, and keeps every prefix it was
+   seen under in `aliases`. An older reading never overwrites a newer one
+   (`older_observation`).
+
+**What the server does with each reading.**
+
+| Booking after the reading | `processingStatus` | Variance |
+|---|---|---|
+| Still moving in Sweater (`execution_not_final`, `unknown_status` for Initiated/Reached) | `pending_source` | none |
+| Final, wash recorded or cancelled without a wash | `validated` | none (an open one is superseded) |
+| Needs the owner (unknown label, missing service, unproven execution, unlinked worker, cancelled after a wash, contradicts an owner decision, financially locked) | `needs_review` | one per booking: `sweater_variances/ops__<number>`, with `periodKey` |
+
+A booking the owner confirmed or decided keeps the owner's record; Sweater's
+newest reading is stored beside it as `latestObservation`, and only a
+contradiction (a cancellation against a completion, going back, another driver,
+date or Start/End) opens a variance for the owner.
+
+**One-time identity cleanup (owner action, after deploy).** «تكامل سويتر» ›
+«توحيد الحجوزات ونوع الخدمة»: preview, then apply with a written reason. It
+folds the B-/S-/C- copies of each number into one booking, recomputes its review
+state, supersedes the old per-run variances, and writes an audit row per number
+(before/after, who, when, reason). Until it runs, a reading of a number still
+filed under a prefix is kept raw and waits (`awaiting_identity_cleanup`). The
+same card fills the service type of completed bookings without one from
+Sweater's *Biker Bookings and Tips* report (Full Wash), with that report as the
+audited source. «غسيل» and «Full Wash» are the same service as
+`interior_exterior_wash`.
+
+
 ## Actual ongoing washing under the standing owner decision (27 October 2026)
 
 Automatic v2 still requires genuine Start and End before it creates an executed wash. An actual `Washing Started` observation with genuine Start and null End is first stored truthfully by v2. Under Hadi's standing 18 October instruction, the authorized operations manager then uses the existing administrative preview/save workflow described in [SWEATER_ADMINISTRATIVE_COMPLETION.md](SWEATER_ADMINISTRATIVE_COMPLETION.md), with the original owner reference and the current batch's explicit booking IDs. No daily approval request, invented End, collection assertion, new sender, signature, key, pin, or schedule is required. Existing natural claims and canonical wash identities prevent a second entitlement when genuine completion arrives later. Never replay the two already verified 26 October executions merely to test this repair.
@@ -155,7 +214,8 @@ No supplied hash is trusted. A preview signature cannot authorize a save.
 ## Payload and requests
 
 `payload` has exactly `contractVersion: 2`, `importRunId`, `agentStatus`
-(`ok` or `partial`), `coverage`, `workerLinks`, and `records`.
+(`ok` or `partial`), `coverage`, `workerLinks`, and `records`, plus the optional
+`rechecks` list of open bookings re-read outside the window (see the top section).
 No ownerConfirmation, financial fields, secret, customer PII or unknown fields.
 Record fields use the original whitelist; additionally v2 requires a genuine
 SSP `sourceUrl`, `bookingKind` (`individual`/`corporate`), strict calendar date

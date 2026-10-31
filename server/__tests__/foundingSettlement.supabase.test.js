@@ -301,4 +301,40 @@ describe.skipIf(!enabled)('founding settlement on Postgres with the production s
     const detail = await financeWorkbench(db, { uid: admin }, { action: 'read', kind: 'startup', sourceId: 'se2' });
     expect(detail.workflowStage).toBe('cancelled');
   }, 120000);
+
+  it('keeps a manual entry a proposal until a second admin approves it on Postgres, with both names, a partner sub-account and the 3200 reason', async () => {
+    const approver = '11111111-2222-4333-8444-777777777777';
+    await pool.query('insert into auth.users(id,email) values ($1,$2) on conflict(id) do nothing', [approver, 'founding-approver@isolated.test']);
+    const batch = db.batch();
+    batch.set(db.doc(`users/${approver}`), { role: 'admin', displayName: 'هادي' });
+    batch.set(db.doc('partners/p2'), { partner_name: 'شريك ب' });
+    await batch.commit();
+    await call({ action: 'ensureAccounts', confirm: true });
+    const entries = async () => (await pool.query('select id from public.journal_entries order by id')).rows.map(r => r.id);
+    const before = await entries();
+    const manual = (overrides = {}) => ({ action: 'proposeManualEntry', date: '2026-10-20', description: 'إعادة تصنيف', reason: 'تصحيح تصنيف مصروف',
+      lines: [{ accountId: '5100', debit: 150.07, credit: 0 }, { accountId: '3000-p2', debit: 0, credit: 150.07 }], confirm: true, ...overrides });
+    await expect(call(manual({ lines: [{ accountId: '5100', debit: 100, credit: 0 }, { accountId: '1010', debit: 0, credit: 90 }] }))).rejects.toThrow('غير متوازن');
+    await expect(call(manual({ date: '2026-07-15' }))).rejects.toThrow('مقفلة');
+    await expect(call(manual({ lines: [{ accountId: '3200', debit: 50, credit: 0 }, { accountId: '2300', debit: 0, credit: 50 }] }))).rejects.toThrow('سبب استخدام 3200');
+    await call(manual());
+    await call(manual({ description: 'تسوية على 3200', settlementReason: 'فرق بلا مستند تنازل عنه هادي',
+      lines: [{ accountId: '3200', debit: 50, credit: 0 }, { accountId: '2300', debit: 0, credit: 50 }] }));
+    expect(await entries()).toEqual(before);
+    const proposed = (await call({ action: 'read' })).plan.entries.filter(e => e.type === 'manual');
+    expect(proposed.map(e => e.status)).toEqual(['proposed', 'proposed']);
+    await call({ action: 'postEntries', reason: 'موافقة هادي', confirm: true, entries: proposed.map(e => ({ key: e.key, hash: e.hash })) }, approver);
+    const [first, second] = proposed.map(e => foundingEntryId(e.key));
+    expect((await entries()).filter(id => !before.includes(id)).sort()).toEqual([first, second].sort());
+    const lines = (await pool.query(`select e.entry_date, e.status, l.account_id, l.debit, l.credit from public.journal_entries e
+      join public.journal_entry_lines l on l.entry_id = e.id where e.id = $1 order by l.line_no`, [first])).rows;
+    expect(lines.map(l => [l.entry_date, l.status, l.account_id, Number(l.debit), Number(l.credit)]))
+      .toEqual([['2026-10-20', 'posted', '5100', 150.07, 0], ['2026-10-20', 'posted', '3000-p2', 0, 150.07]]);
+    expect((await db.doc(`journal_entries/${first}`).get()).data()).toMatchObject({ sourceKind: 'founding_manual',
+      foundingEntry: { proposedByName: 'مدير الاختبار', approvedByName: 'هادي', reason: 'موافقة هادي' } });
+    expect((await db.doc(`journal_entries/${second}`).get()).data().foundingEntry).toMatchObject({ settlementReason: 'فرق بلا مستند تنازل عنه هادي' });
+    expect((await pool.query("select count(*)::int as n from public.chart_of_accounts where id = '3000-p2'")).rows[0].n).toBe(1);
+    const list = await call({ action: 'manualEntries' });
+    expect(list.entries.map(e => [e.status, e.byName, e.approvedByName])).toEqual([['posted', 'مدير الاختبار', 'هادي'], ['posted', 'مدير الاختبار', 'هادي']]);
+  }, 120000);
 });

@@ -194,5 +194,20 @@ export function useSweaterConfig() {
     policy: policy.data ?? [],
     loading: prices.loading || types.loading || policy.loading,
     error: prices.error || types.error || policy.error,
+    // سعرٌ جديد صفٌّ مؤرخ يحفظه الخادم باسم المدير — لا تعديل لصفٍّ قائم.
+    savePrice: useCallback(async (input) => {
+      const r = await callServer('sweaterSaveServicePrice', input);
+      await prices.refetch();
+      return r;
+    }, [prices]),
   };
+}
+
+/** الخدمات كما تحملها الحجوزات وعددها — ما يحتاج سعرًا. للمحاسب فأعلى. */
+export function useSweaterServiceTypes(allowed) {
+  const query = useFirestoreQuery(
+    async () => callServer('sweaterServiceTypes', {}),
+    { enabled: enabled && Boolean(allowed), deps: [allowed], fallback: [] },
+  );
+  return { serviceTypes: query.data ?? [], error: query.error ?? null };
 }

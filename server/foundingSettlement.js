@@ -15,6 +15,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { callerRole } from '../functions/src/handlers.js';
 import { FINANCE_KINDS, financeHash, financeProblems, FinanceReviewError, statementLineRefOf, managerAttestationOf, journalMatchesFinanceSource } from '../functions/src/financeReview.js';
 import { outstandingCustody, applyDocumentRecovery } from '../functions/src/custodyRecovery.js';
+import { manualEntryProblems, MAX_MANUAL_LINES, SETTLEMENTS_ACCOUNT } from '../src/lib/founding/manualEntry.js';
 import { normalizeEntry, normalizeLines, validateEntry, journalCounterUpdate, isRealDate, postingLockId } from '../functions/src/invariants.js';
 import { legacyLockIdFor } from '../functions/src/posting.js';
 import { postedLines } from '../src/lib/accounting/reports.js';
@@ -85,6 +86,12 @@ const requestSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('proposeCustodySettlement'), advanceId: z.string().regex(/^[\p{L}\p{N}_.:-]{1,160}$/u), accountId: z.string().regex(/^[0-9A-Za-z-]{2,40}$/),
     reason: text(500).pipe(z.string().min(5)), ...confirm }).strict(),
   z.object({ action: z.literal('removeCustodySettlement'), id: z.string().regex(/^cs_[a-f0-9]{16}$/), ...confirm }).strict(),
+  z.object({ action: z.literal('proposeManualEntry'), date: day, description: text(300).pipe(z.string().min(2)), reason: text(500).pipe(z.string().min(5)),
+    settlementReason: text(500).nullable().default(null),
+    lines: z.array(z.object({ accountId: z.string().regex(/^[\p{L}\p{N}_.:-]{1,160}$/u), debit: money, credit: money,
+      description: text(200).default('') }).strict()).min(2).max(MAX_MANUAL_LINES), ...confirm }).strict(),
+  z.object({ action: z.literal('removeManualEntry'), id: z.string().regex(/^me_[a-f0-9]{16}$/), ...confirm }).strict(),
+  z.object({ action: z.literal('manualEntries') }).strict(),
   z.object({ action: z.literal('statementSuggest'), account: z.enum(['personal', 'company']), rows: z.array(statementRow).min(1).max(2000) }).strict(),
   z.object({ action: z.literal('statementApply'), account: z.enum(['personal', 'company']), fileName: text(200), fileHash: z.string().max(128),
     rows: z.array(applyRow).min(1).max(500), ...confirm }).strict(),
@@ -239,7 +246,8 @@ export function foundingInputs(t) {
     manualTransfers: Array.isArray(review.manualTransfers) ? review.manualTransfers : [],
     receiptProposals: Array.isArray(review.receiptProposals) ? review.receiptProposals : [],
     duplicateCancellations: Array.isArray(review.duplicateCancellations) ? review.duplicateCancellations : [],
-    custodySettlements: Array.isArray(review.custodySettlements) ? review.custodySettlements : [] } : {}) };
+    custodySettlements: Array.isArray(review.custodySettlements) ? review.custodySettlements : [],
+    manualEntries: Array.isArray(review.manualEntries) ? review.manualEntries : [] } : {}) };
   const categoryOf = categoryLabels(t);
   const decisions = Object.fromEntries(t.founding_decisions.map(d => [d.sourceKey, d]));
   const partners = t.partners.map(p => ({ id: p.id, name: p.partner_name || 'شريك' }));
@@ -386,9 +394,14 @@ async function postEntries(db, auth, r) {
       // «تسوية مصروف مؤقت»: the item is settled by this entry — payroll and a cash recovery no longer count it; a reversal reopens it.
       const advance = e.type === 'custody_settlement' ? t.temporary_expenses.find(a => a.id === e.advanceId) : null;
       if (e.type === 'custody_settlement' && (!advance || halala(outstandingCustody(advance)) !== halala(e.amount))) fail('تغيّر المصروف المؤقت بعد عرضه؛ أعد القراءة.');
+      // «قيد يدوي بموافقة»: checked again as it posts — the chart, the partners and the periods are today's.
+      const manualProblems = e.type === 'manual' ? manualEntryProblems({ date: e.date, description: e.title, reason: e.reason, settlementReason: e.settlementReason,
+        lines: e.lines }, { accounts: input.chart, partners: input.partners, closedMonths: input.closedMonths }) : [];
+      if (manualProblems.length) fail(`القيد اليدوي «${e.title}»: ${manualProblems[0]}`);
       const journal = { ...entry, lines, lineCount: lines.length, totalDebit: total, totalCredit: total, entryNumber: next, createdBy: auth.uid,
         foundingEntry: { key: e.key, type: e.type, sourceKey: e.sourceKey, cutoffDate: input.settings.cutoffDate, approvedByName: name, reason: r.reason, hash: e.hash,
-          ...(e.originalKey ? { originalKey: e.originalKey } : {}), ...(advance ? { advanceId: advance.id } : {}) },
+          ...(e.originalKey ? { originalKey: e.originalKey } : {}), ...(advance ? { advanceId: advance.id } : {}),
+          ...(e.type === 'manual' ? { proposedByName: e.proposedByName || null, proposedAtIso: e.proposedAtIso || null, settlementReason: e.settlementReason || null } : {}) },
         ...(advance ? { custodyRecovery: { bikerId: advance.biker_id || null, amount: e.amount, excess: 0, allocations: [{ advanceId: advance.id, amount: e.amount }] } } : {}) };
       tx.create(db.collection('journal_entries').doc(entryId), { ...journal, createdAt: FieldValue.serverTimestamp(), postedAt: FieldValue.serverTimestamp() });
       tx.create(db.collection('posting_locks').doc(postingLockId('founding', entryId)), { kind: 'founding', sourceType: 'adjustment', sourceId: entryId,
@@ -771,6 +784,61 @@ async function removeCustodySettlement(db, auth, r) {
   });
 }
 
+/**
+ * «قيد يدوي بموافقة» من دفتر الأستاذ: أسطر مدين ودائن على أي حساب في الدليل أو حساب فرعي لشريك، بتاريخ
+ * وبيان وسبب إلزامي. يُحفظ مقترحًا باسم من أنشأه، ولا يُرحّل إلا بموافقة من «قيود التصحيح والتسوية».
+ * غير المتوازن مرفوض، و3200 لا يُستخدم بلا سبب مكتوب له، ولا تاريخ في فترة مقفلة.
+ */
+async function proposeManualEntry(db, auth, r) {
+  return db.runTransaction(async tx => {
+    await adminOnly(db, auth, tx);
+    const t = await loadTables(db, tx), { input, plan } = planOf(t), name = await actorName(db, auth, tx);
+    const list = plan.settings.manualEntries || [];
+    if (list.length >= 200) fail('قيود يدوية مقترحة كثيرة؛ رحّل أو احذف بعضها أولًا.');
+    const problems = manualEntryProblems(r, { accounts: input.chart, partners: input.partners, closedMonths: input.closedMonths });
+    if (problems.length) fail(problems.join(' '), 'invalid-argument');
+    const at = new Date().toISOString(), touches3200 = r.lines.some(l => l.accountId === SETTLEMENTS_ACCOUNT);
+    const entry = { id: `me_${financeHash({ uid: auth.uid, at, date: r.date, lines: r.lines, reason: r.reason }).slice(0, 16)}`, date: r.date,
+      description: r.description, reason: r.reason, settlementReason: touches3200 ? r.settlementReason : null,
+      lines: r.lines.map(l => ({ accountId: l.accountId, debit: l.debit, credit: l.credit, description: l.description || '' })),
+      by: auth.uid, byName: name, atIso: at };
+    writeReview(db, tx, input.review, plan, { manualEntries: [...list, entry] }, auth, name);
+    audit(db, tx, auth, 'founding-manual-entry', entry.id, entry);
+    return { saved: true, entry };
+  });
+}
+
+async function removeManualEntry(db, auth, r) {
+  return db.runTransaction(async tx => {
+    await adminOnly(db, auth, tx);
+    const t = await loadTables(db, tx), { input, plan } = planOf(t), name = await actorName(db, auth, tx);
+    const list = plan.settings.manualEntries || [], entry = list.find(m => m.id === r.id);
+    if (!entry) fail('القيد المقترح غير موجود.', 'not-found');
+    if (input.posted.has(`manual:${r.id}`)) fail('القيد مرحّل؛ تصحيحه بقيد عكسي.');
+    writeReview(db, tx, input.review, plan, { manualEntries: list.filter(m => m.id !== r.id) }, auth, name);
+    audit(db, tx, auth, 'founding-manual-entry-removed', r.id, { removed: entry });
+    return { saved: true };
+  });
+}
+
+/** The manual entries and their state, for the ledger page — a light read, not the whole settlement. */
+async function readManualEntries(db) {
+  const [review, partners, periods] = await Promise.all([db.collection('founding_review').doc(SETTINGS_ID).get(), db.collection('partners').get(),
+    db.collection('accounting_periods').get()]);
+  const list = review.exists && Array.isArray(review.data().manualEntries) ? review.data().manualEntries : [];
+  const closed = new Set(periods.docs.filter(p => p.data().status === 'closed').map(p => p.data().periodKey || p.id));
+  const journals = await Promise.all(list.map(m => db.collection('journal_entries').doc(foundingEntryId(`manual:${m.id}`)).get()));
+  return {
+    entries: list.map((m, i) => {
+      const j = journals[i].exists && journals[i].data().status === 'posted' ? journals[i].data() : null;
+      return { ...m, key: `manual:${m.id}`, status: j ? 'posted' : closed.has(String(m.date).slice(0, 7)) ? 'blocked_period' : 'proposed',
+        entryNumber: j?.entryNumber ?? null, approvedByName: j?.foundingEntry?.approvedByName || null, approvalReason: j?.foundingEntry?.reason || null };
+    }).sort((a, b) => String(b.atIso).localeCompare(String(a.atIso))),
+    partners: partners.docs.map(p => ({ id: p.id, name: p.data().partner_name || 'شريك' })),
+    closedMonths: [...closed].sort(),
+  };
+}
+
 async function ensureAccounts(db, auth) {
   return db.runTransaction(async tx => {
     await adminOnly(db, auth, tx);
@@ -1030,6 +1098,9 @@ export async function foundingSettlement(db, auth, input, { workbench }) {
   if (r.action === 'removeDuplicate') return removeDuplicate(db, auth, r);
   if (r.action === 'proposeCustodySettlement') return proposeCustodySettlement(db, auth, r);
   if (r.action === 'removeCustodySettlement') return removeCustodySettlement(db, auth, r);
+  if (r.action === 'proposeManualEntry') return proposeManualEntry(db, auth, r);
+  if (r.action === 'removeManualEntry') return removeManualEntry(db, auth, r);
+  if (r.action === 'manualEntries') return readManualEntries(db);
   if (r.action === 'statementSuggest') return statementSuggest(db, auth, r);
   return statementApply(db, auth, r, workbench);
 }

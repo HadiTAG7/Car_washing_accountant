@@ -260,6 +260,7 @@ import {
   createIntegrationKey, revokeIntegrationKey, listIntegrationKeys,
 } from './sweater/integrationKeys.js';
 import { createN8nKey } from './sweater/n8nKeys.js';
+import { saveServicePrice, listServiceTypes } from './sweater/priceList.js';
 import {
   createPartnerMcpKey, revokePartnerMcpKey, PartnerMcpKeyError,
   KEYS_COL as PARTNER_MCP_KEYS_COL,
@@ -634,6 +635,17 @@ export const HANDLERS = {
   sweaterListIntegrationKeys: {
     guard: 'accountant',
     run: ({ db }) => listIntegrationKeys(db),
+  },
+
+  // «أسعار الخدمات»: صفٌّ مؤرخ جديد للمدير وحده — لا تعديل لسعرٍ قائم.
+  // وقائمة الخدمات كما تحملها الحجوزات للمحاسب، بلا مبالغ.
+  sweaterSaveServicePrice: {
+    guard: 'admin',
+    run: ({ db, FieldValue, data, uid }) => saveServicePrice(db, FieldValue, data, { userId: uid }),
+  },
+  sweaterServiceTypes: {
+    guard: 'accountant',
+    run: ({ db }) => listServiceTypes(db),
   },
 
   // ── مسير رواتب البايكر ─────────────────────────────────────────────

@@ -60,7 +60,8 @@ vi.mock('../../hooks/useSweater', () => ({
     createN8nKey: state.createN8nKey,
     revokeKey: state.revokeKey,
   }),
-  useSweaterConfig: () => ({ prices: [], adjustmentTypes: [], policy: [], loading: false, error: null }),
+  useSweaterConfig: () => ({ prices: [], adjustmentTypes: [], policy: [], loading: false, error: null, savePrice: state.savePrice }),
+  useSweaterServiceTypes: (allowed) => { state.typesAllowed = allowed; return { serviceTypes: allowed ? [{ serviceType: 'interior_exterior_wash', bookings: 852 }] : [], error: null }; },
 }));
 
 beforeEach(() => {
@@ -349,5 +350,21 @@ describe('سجل التشغيلات المحفوظة', () => {
     expect(table.textContent).toContain('تعذّر حفظ الدفعة'); expect(table.textContent).toContain('غير مسجل');
     expect(screen.getByText(/آخر 7 أيام/)).toBeTruthy();
     expect(state.createKey).not.toHaveBeenCalled(); expect(state.revokeKey).not.toHaveBeenCalled();
+  });
+});
+
+describe('«أسعار الخدمات» في الإعدادات السارية', () => {
+  it('يعرض نموذج إدخال السعر للمدير وحده، ويقرأ الخدمات للمحاسب ولا يقرؤها للشريك', () => {
+    render(<SweaterIntegrationPage />);
+    expect(screen.getByRole('form', { name: 'إدخال سعر خدمة' })).toBeTruthy();
+    expect(screen.getByRole('note', { name: 'خدمات بلا سعر' }).textContent).toContain('«interior_exterior_wash» في 852 حجزًا بلا سعر');
+    cleanup(); state.role = 'accountant';
+    render(<SweaterIntegrationPage />);
+    expect(screen.queryByRole('form', { name: 'إدخال سعر خدمة' })).toBeNull();
+    expect(state.typesAllowed).toBe(true);
+    cleanup(); state.role = 'partner'; state.isPartnerView = true; state.canMutate = false;
+    render(<SweaterIntegrationPage />);
+    expect(screen.queryByRole('form', { name: 'إدخال سعر خدمة' })).toBeNull();
+    expect(state.typesAllowed).toBe(false);
   });
 });

@@ -29,7 +29,7 @@ const READ_ONLY_OPERATIONS = new Set([
   'payrollPreviewPartialPayment', 'expenseCorrectionOptions', 'expensePreviewCorrection', 'sweaterPreviewAdministrativeCompletion',
   'supervisorOverview', 'supervisorRecords', 'partnerEligibilityGet', 'partnerInsights',
   'partnerProfile', 'sweaterPreviewImport', 'sweaterPreviewOwnerWashTax',
-  'sweaterListIntegrationKeys', 'authBootstrapStatus',
+  'sweaterListIntegrationKeys', 'sweaterServiceTypes', 'authBootstrapStatus',
 ]);
 const afterServerCall = (name) => { if (!READ_ONLY_OPERATIONS.has(name)) invalidateAllReads(); };
 

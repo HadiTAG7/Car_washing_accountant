@@ -25,6 +25,7 @@ import { recordProblems, normalizeRecord, hashRecord, hashBody, SCHEMA_VERSION }
 import { coverageProblems } from './recognition.js';
 import { AGENT_STATUS } from './vocab.js';
 import { isoDay } from './datedConfig.js';
+import { ownerBookingIdentity } from '../../../src/lib/sweater/bookingIdentity.js';
 
 export const COL = Object.freeze({
   RAW: 'sweater_raw_payloads',
@@ -51,8 +52,21 @@ export class SweaterIngestError extends Error {
 export const rawDocId = (importRunId, sspBookingId) =>
   `${importRunId}__${encodeURIComponent(sspBookingId)}`;
 
-/** معرّف الحجز — المفتاح الطبيعي، فلا يوجد حجزان بنفس الرقم بحكم البناء. */
-export const bookingDocId = (sspBookingId) => encodeURIComponent(String(sspBookingId));
+/**
+ * معرّف الحجز — **رقمه بلا بادئة**. سويتر يغيّر البادئة مع الحالة (B- أثناء
+ * التنفيذ، S- بعد الإنجاز، C- بعد الإلغاء)، والحجز واحد: فلا يوجد حجزان بنفس
+ * الرقم بحكم البناء، وأحدث ملاحظة تكتب فوق سابقتها في المستند نفسه.
+ */
+export const bookingDocId = (sspBookingId) => encodeURIComponent(ownerBookingIdentity(String(sspBookingId)));
+
+/**
+ * المفتاح بالبادئة كما ورد — لمعرّفات ثابتة أُنشئت به ولا تُنقل: الغسلة
+ * (`ssp__S-…`)، وروابط التشغيل (`b__…`/`w__…`)، وتأكيدات تحصيل المالك.
+ */
+export const sspKey = (sspBookingId) => encodeURIComponent(String(sspBookingId));
+
+/** معرّف غسلة الحجز — بالبادئة التي لوحظ بها، كما كان دائمًا. */
+export const sspWashDocId = (sspBookingId) => `ssp__${sspKey(sspBookingId)}`;
 
 export function envelopeProblems(payload) {
   const problems = [];
@@ -246,7 +260,7 @@ export async function ingestSweaterOperations(db, FieldValue, payload, {
 
       // ٢) الفرق حين تغيّر مُرحَّل — لا تعديل، بل سجلٌّ يُقرَّر فيه.
       if (r._variance) {
-        batch.set(db.collection(COL.VARIANCES).doc(`${importRunId}__${bookingDocId(r.sspBookingId)}`), {
+        batch.set(db.collection(COL.VARIANCES).doc(`${importRunId}__${sspKey(r.sspBookingId)}`), {
           kind: 'booking_modified_after_posting',
           sspBookingId: r.sspBookingId,
           importRunId,

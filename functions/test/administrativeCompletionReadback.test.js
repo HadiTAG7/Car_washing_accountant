@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { previewAdministrativeCompletion, saveAdministrativeCompletion } from '../src/sweater/administrativeCompletion.js';
 import { completionFixture } from './administrativeCompletionFixture.js';
 import { memoryFinanceDb } from '../../server/__tests__/financeFixtures.js';
-import { bookingDocId, rawDocId, COL } from '../src/sweater/ingest.js';
+import { bookingDocId, sspWashDocId, rawDocId, COL } from '../src/sweater/ingest.js';
 
 async function savedFixture() {
   const db = memoryFinanceDb({ 'users/admin': { role: 'admin' }, 'users/partner': { role: 'partner' },
@@ -35,7 +35,7 @@ describe('read-only current administrative completion verification', () => {
     for (const name of ['journal_entries', 'payroll_runs']) expect([...db.rows.keys()].some(key => key.startsWith(`${name}/`))).toBe(false);
   });
   it.each(['missing-claim', 'wrong-claim', 'duplicate-claim', 'missing-wash', 'duplicate-wash', 'paid-commission', 'missing-commission', 'wrong-commission', 'wrong-worker', 'wrong-decision', 'missing-raw', 'altered-raw'])('reports %s as a current mismatch without repairing anything', async fault => {
-    const { db, payload } = await savedFixture(), raw = payload.records[0], number = raw.sspBookingId.slice(2), washId = `ssp__${bookingDocId(raw.sspBookingId)}`;
+    const { db, payload } = await savedFixture(), raw = payload.records[0], number = raw.sspBookingId.slice(2), washId = sspWashDocId(raw.sspBookingId);
     const washKey = `washes/${washId}`, claimKey = `sweater_owner_booking_claims/${number}`;
     const wash = db.rows.get(washKey), claim = db.rows.get(claimKey);
     if (fault === 'missing-claim') db.rows.delete(claimKey);
@@ -67,7 +67,7 @@ describe('read-only current administrative completion verification', () => {
     expect(result.verification.rows[0]).toMatchObject({ claimImportRunId: 'TEST-earlier-source-run', originalSource: { rawStatus: 'Cancelled by Admin' }, currentSource: { rawStatus: 'Service Complete' } });
   });
   it('keeps missing commission payment status unknown and does not disclose receipts to another role', async () => {
-    const { db, payload } = await savedFixture(), key = `washes/ssp__${bookingDocId(payload.records[0].sspBookingId)}`, row = { ...db.rows.get(key) };
+    const { db, payload } = await savedFixture(), key = `washes/${sspWashDocId(payload.records[0].sspBookingId)}`, row = { ...db.rows.get(key) };
     delete row.worker_commission_paid; db.rows.set(key, row); noWrites(db);
     expect((await previewAdministrativeCompletion(db, payload, 'admin')).verification.rows[0].commission.paid).toBeNull();
     await expect(previewAdministrativeCompletion(db, payload, 'partner')).rejects.toThrow(/للمدير/);

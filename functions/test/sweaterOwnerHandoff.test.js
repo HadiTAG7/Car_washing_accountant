@@ -116,7 +116,7 @@ describe('owner confirmation is independent, atomic and idempotent', () => {
     expect(result).toMatchObject({ saved: true, dryRun: false, ledgerPosted: false, payrollPaid: false });
     expect(new Set(result.washIds).size).toBe(7);
     for (const id of result.bookingIds) {
-      const booking = db.rows.get(`sweater_bookings/${id}`);
+      const booking = db.rows.get(`sweater_bookings/${id.replace(/^[A-Z]+-/, '')}`);
       expect(booking.record).toMatchObject({ rawStatus: 'Collecting Payment', paymentStatus: 'unknown', platformAmount: null });
       expect(db.rows.get(`${OWNER_CONFIRMATIONS}/${id}`)).toMatchObject({ collectionStatus: 'confirmed_by_owner', assertedAmount: 20, vatAmount: null, paymentMethod: null, bankAccountId: null, recordedBy: 'staff' });
       const wash = db.rows.get(`washes/${sspWashId(id)}`);
@@ -213,7 +213,7 @@ describe('explicit owner VAT contract and numeric booking claims',()=>{
     for(const row of p.rows)expect(row).toMatchObject({netAmount:20,vatAmount:3,grossAmount:23,workerCommission:4.5,rawStatus:'CollectingPayment',paymentStatus:'pending'});
     const result=await saveOwnerHandoff(db,FV,request(body,p),'staff');expect(result).toMatchObject({ledgerPosted:false,payrollPaid:false,saved:true});
     for(const id of result.bookingIds){
-      const record=db.rows.get(`sweater_bookings/${id}`).record;expect(record).toMatchObject({serviceType:'',bookingKind:'unknown',rawStatus:'CollectingPayment',rawPaymentStatus:'Pending',paymentStatus:'pending',platformAmount:null});
+      const record=db.rows.get(`sweater_bookings/${id.replace(/^[A-Z]+-/,'')}`).record;expect(record).toMatchObject({serviceType:'',bookingKind:'unknown',rawStatus:'CollectingPayment',rawPaymentStatus:'Pending',paymentStatus:'pending',platformAmount:null});
       const wash=db.rows.get(`washes/${sspWashId(id)}`);expect(wash).toMatchObject({price:20,net_amount:20,vat_amount:3,gross_amount:23,price_mode:'exclusive',vat_rate:0.15,worker_commission_per_wash:4.5,worker_commission_paid:false,payment_method:null,collection_status:'confirmed_by_owner'});
       expect(washPostabilityProblem(wash)).toBeTruthy();
       expect(mapWash({id:sspWashId(id),...wash}).ownerTaxSnapshot).toMatchObject({net:20,vat:3,gross:23,source:'owner_statement'});
@@ -337,7 +337,7 @@ describe('one explicitly authorized cancelled booking, independent of SSP status
     expect(p.coverage).toMatchObject({ scope: 'singleBooking', isComplete: false });
     const result = await saveOwnerHandoff(db, FV, request(body, p), 'staff');
     expect(result).toMatchObject({ saved: true, ledgerPosted: false, payrollPaid: false });
-    const booking = db.rows.get('sweater_bookings/C-5584720');
+    const booking = db.rows.get('sweater_bookings/5584720');
     expect(booking).toMatchObject({ normalizedStatus: 'admin_cancelled', bookingNumber: '5584720', ownerCompletionDecision: body.ownerCompletionDecision });
     expect(booking.record.rawStatus).toBe('Cancelled by Admin'); expect(booking.record.ownerCompletionDecision).toBeUndefined();
     expect([...db.rows].find(([path, row]) => path.startsWith('sweater_raw_payloads/') && row.sspBookingId === 'C-5584720')?.[1]?.rawPayload.rawStatus).toBe('Cancelled by Admin');

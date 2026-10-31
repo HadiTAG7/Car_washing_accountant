@@ -20,7 +20,7 @@ describe('deduction evidence binds preserved owner-completed bookings without re
     expect([...db.rows].filter(([key]) => !key.startsWith('quality_objections/') && !key.startsWith('audit_logs/'))).toEqual(before);
   });
   it.each(['sspBookingId', 'serviceDate', 'driverExternalId', 'rawStatus'])('rejects real current source identity conflict: %s', async field => {
-    const booking = db.rows.get('sweater_bookings/C-990002'); booking.record[field] = field === 'serviceDate' ? '2026-10-21' : 'different';
+    const booking = db.rows.get('sweater_bookings/990002'); booking.record[field] = field === 'serviceDate' ? '2026-10-21' : 'different';
     booking.sourceHash = hashRecord(booking.record);
     await expect(previewBikerDeduction(db, input(), actor)).rejects.toThrow(/روابطه المحمية/);
   });
@@ -33,13 +33,13 @@ describe('deduction evidence binds preserved owner-completed bookings without re
     expect([...db.rows]).toEqual(before);
   });
   it.each(['postedEntryId', 'settlementId', 'financialLock'])('does not bypass protected booking field %s', async flag => {
-    db.rows.get('sweater_bookings/C-990002')[flag] = 'protected';
+    db.rows.get('sweater_bookings/990002')[flag] = 'protected';
     await expect(previewBikerDeduction(db, input(), actor)).rejects.toThrow(/روابطه المحمية/);
   });
   it('rejects a stale protected link or another worker or natural claim', async () => {
     const path = 'sweater_operational_wash_links/b__C-990002'; db.rows.get(path).bikerId = 'other';
     await expect(previewBikerDeduction(db, input(), actor)).rejects.toThrow(/روابطه المحمية/);
-    db = memoryFinanceDb(protectedDeductionSeed()); db.rows.get('sweater_bookings/C-990002').operationalWorkerId = 'other';
+    db = memoryFinanceDb(protectedDeductionSeed()); db.rows.get('sweater_bookings/990002').operationalWorkerId = 'other';
     await expect(previewBikerDeduction(db, input(), actor)).rejects.toThrow(/روابطه المحمية/);
     db = memoryFinanceDb(protectedDeductionSeed()); db.rows.get('sweater_owner_booking_claims/990002').washId = 'another-wash';
     await expect(previewBikerDeduction(db, input(), actor)).rejects.toThrow(/روابطه المحمية/);

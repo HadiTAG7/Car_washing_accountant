@@ -1,5 +1,6 @@
 import { historicalIdentity5643311Record } from '../../src/sweater/operationsIdentity5643311.js';
-import { previewOperations, saveOperations } from '../../src/sweater/operationsSync.js';
+// History as the writer of 20–23 Oct filed it (a booking per prefixed id); the resolution runs on today's writer.
+import { previewOperations, saveOperations } from './legacyOperationsSync.js';
 
 // Isolated synthetic persistence; scoped IDs and immutable source facts match
 // the reviewed case so the same server guards are exercised without live I/O.

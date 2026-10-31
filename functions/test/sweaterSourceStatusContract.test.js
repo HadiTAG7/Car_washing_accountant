@@ -20,6 +20,8 @@ async function initiatedChain(db, latest = 'Reached') {
   return { first, next };
 }
 const washRows = db => [...db.rows.entries()].filter(([p]) => p.startsWith('washes/'));
+// The booking is kept under its number and shows Sweater's latest reading; everything else stays as it was.
+const MOVES = new Set(['sweater_integration_state/current', 'sweater_bookings/990801', 'sweater_variances/ops__990801']);
 describe('observed SSP source states in the operational execution contract only', () => {
   it('promotes Initiated → Reached → real Start/End while preserving unknown source facts and the initial claim', async () => {
     const db = syncDb(); const { first, next } = await initiatedChain(db);
@@ -30,9 +32,12 @@ describe('observed SSP source states in the operational execution contract only'
     const r = await saveOperations(db, syncFV, syncRequest(payload, p), 'synthetic-agent');
     expect(r).toMatchObject({ washesCreated: 1, ledgerPosted: false, payrollPaid: false });
     expect(db.rows.get('sweater_owner_booking_claims/990801')).toMatchObject({ importRunId: first.importRunId, source: SOURCE });
-    expect(db.rows.get('sweater_bookings/B-990801')).toMatchObject({ normalizedStatus: 'unknown', reviewReasonCode: 'unknown_status',
-      lastImportRunId: next.importRunId, record: { rawStatus: 'Reached', normalizedStatus: 'unknown' } });
-    for (const [path, value] of originals) if (path !== 'sweater_integration_state/current') expect(db.rows.get(path)).toEqual(value);
+    // Reached was kept as still moving in Sweater; the source facts of each reading stay in its raw row.
+    expect(originals.get('sweater_bookings/990801')).toMatchObject({ normalizedStatus: 'unknown', reviewReasonCode: 'unknown_status',
+      processingStatus: 'pending_source', lastImportRunId: next.importRunId, record: { rawStatus: 'Reached', normalizedStatus: 'unknown' } });
+    expect(db.rows.get('sweater_bookings/990801')).toMatchObject({ sspBookingId: 'S-990801', processingStatus: 'validated',
+      aliases: ['B-990801', 'S-990801'], record: { rawStatus: 'Collecting Payment' } });
+    for (const [path, value] of originals) if (!MOVES.has(path)) expect(db.rows.get(path)).toEqual(value);
     expect(await operationsStatus(db, payload)).toMatchObject({ verified: true, rawVerified: true, linksVerified: true });
     expect((await save(db, { ...payload, importRunId: 'synthetic-subsequent' })).washesCreated).toBe(0);
     expect(washRows(db)).toHaveLength(1);
@@ -43,7 +48,8 @@ describe('observed SSP source states in the operational execution contract only'
     expect((await save(db, payload))).toMatchObject({ washesCreated: 1, ledgerPosted: false, payrollPaid: false });
     expect(washRows(db)[0][1]).toMatchObject({ worker_commission_per_wash: 4.5, worker_commission_paid: false,
       collection_status: 'pending', payment_method: null, price: 20, net_amount: 20, vat_amount: 3, gross_amount: 23 });
-    expect(db.rows.get('sweater_bookings/B-990801').record).toMatchObject({ rawStatus: 'completed', normalizedStatus: 'unknown' });
+    expect(db.rows.get('sweater_bookings/990801')).toMatchObject({ processingStatus: 'validated',
+      record: { rawStatus: 'completed', normalizedStatus: 'unknown' } });
     expect(await operationsStatus(db, payload)).toMatchObject({ verified: true });
     expect((await save(db, payload)).replay).toBe(true);
     expect((await save(db, { ...payload, importRunId: 'synthetic-later' })).washesCreated).toBe(0);
@@ -79,7 +85,8 @@ describe('observed SSP source states in the operational execution contract only'
     const originals = new Map(db.rows), payload = finish(); const p = await previewOperations(db, payload);
     expect(p.rows[0]).toMatchObject({ reasonCode: 'protected_existing_record', observationPromotion: { eligible: false } });
     expect((await saveOperations(db, syncFV, syncRequest(payload, p), 'synthetic-agent')).washesCreated).toBe(0);
-    for (const [path, value] of originals) if (path !== 'sweater_integration_state/current') expect(db.rows.get(path)).toEqual(value);
+    for (const [path, value] of originals) if (!MOVES.has(path)) expect(db.rows.get(path)).toEqual(value);
+    expect(db.rows.get('sweater_variances/ops__990801')).toMatchObject({ resolution: 'unresolved', reasonCode: 'protected_existing_record' });
     expect(washRows(db)).toHaveLength(0);
   });
   it.each([

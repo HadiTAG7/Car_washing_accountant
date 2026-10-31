@@ -1,5 +1,6 @@
 import { syncDb, syncFV, syncPayload, syncRequest } from './sweaterOperationsFixture.js';
-import { previewOperations, saveOperations } from '../../src/sweater/operationsSync.js';
+// History as the writer of 29 Oct filed it (a booking per prefixed id); the review runs on today's writer.
+import { previewOperations, saveOperations } from './legacyOperationsSync.js';
 
 // Synthetic storage and names. Only the explicitly owner-reviewed scope
 // identifiers and event times mirror the two source cases; no production I/O.

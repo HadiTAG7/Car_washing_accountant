@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { operationsHandler, operationsSigningHash } from '../src/sweater/operationsHttp.js';
 import { verifyIngestRequest, IntegrationAuthError } from '../src/sweater/integrationKeys.js';
-import { makeOperationsTransport, syncOperations, OperationsClientError, OPERATIONS_ENDPOINT } from '../../scripts/lib/sweater-operations-client.mjs';
+import { makeOperationsTransport, syncOperations, OperationsClientError, OPERATIONS_ENDPOINT, fetchPendingBookings } from '../../scripts/lib/sweater-operations-client.mjs';
 import { hashBody } from '../src/sweater/record.js';
 
 const body = () => ({ contractVersion: 2, importRunId: 'synthetic-http-1', agentStatus: 'ok', workerLinks: {}, records: [],
@@ -85,5 +85,36 @@ describe('explicit production client: timeout readback and bounded retries', () 
     expect(fetchImpl.mock.calls[0][0]).toBe(OPERATIONS_ENDPOINT); expect(fetchImpl.mock.calls[0][1].redirect).toBe('error');
     expect(sign.mock.calls[0][0].bodyHash).toBe(operationsSigningHash(req));
     expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).toEqual(req);
+  });
+});
+
+describe('signed «pending» read', () => {
+  it('lists the open bookings for an authenticated agent, and is read-only', async () => {
+    const rows = new Map([['sweater_bookings/990001', { sspBookingId: 'B-990001', serviceDate: '2026-10-08', processingStatus: 'pending_source',
+      record: { sspBookingId: 'B-990001', rawStatus: 'On the Way', normalizedStatus: 'on_the_way', serviceDate: '2026-10-08' } }]]);
+    const db = { collection: name => ({ get: async () => ({ docs: [...rows].filter(([k]) => k.startsWith(`${name}/`))
+      .map(([k, v]) => ({ id: k.split('/')[1], data: () => v })) }) }) };
+    const verify = vi.fn().mockResolvedValue({ keyId: 'k', principal: 'sweater-browser-agent' }), res = response();
+    const req = { action: 'pending', payload: { contract: 'sweater-pending-v1', importRunId: 'pending-20261031-1200' } };
+    await operationsHandler({ getDb: () => db, verify })({ method: 'POST', body: req, headers: {} }, res);
+    expect(res.code).toBe(200);
+    expect(res.body.result).toMatchObject({ count: 1, bookings: [{ bookingNumber: '990001', rawStatus: 'On the Way' }] });
+    expect(verify.mock.calls[0][2]).toMatchObject({ importRunId: 'pending-20261031-1200', bodyHash: operationsSigningHash(req) });
+    const bad = response();
+    await operationsHandler({ getDb: () => db, verify })({ method: 'POST', body: { action: 'pending', payload: { contract: 'other', importRunId: 'p' } }, headers: {} }, bad);
+    expect(bad.code).toBe(400);
+  });
+});
+
+describe('agent client «pending»', () => {
+  it('signs the read with its own request id and refuses a malformed one before signing', async () => {
+    const sign = vi.fn().mockResolvedValue({ keyId: 'synthetic', signature: 'a'.repeat(64) });
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ result: { count: 0, bookings: [] } }) });
+    const request = makeOperationsTransport({ sign, fetchImpl });
+    expect(await fetchPendingBookings({ request, now: new Date('2026-10-31T12:34:56Z') })).toEqual({ count: 0, bookings: [] });
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).toEqual({ action: 'pending', payload: { contract: 'sweater-pending-v1', importRunId: 'pending-20261031123456' } });
+    expect(sign.mock.calls[0][0].importRunId).toBe('pending-20261031123456');
+    await expect(request({ action: 'pending', payload: { contract: 'sweater-pending-v1' } })).rejects.toBeInstanceOf(OperationsClientError);
+    expect(sign).toHaveBeenCalledTimes(1);
   });
 });

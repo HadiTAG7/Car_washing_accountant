@@ -1,7 +1,7 @@
 import { OWNER_WASH_TAX_PLAN as PLAN } from '../../../src/lib/sweater/ownerWashTaxPlan.js';
 import { ownerWashTaxSplit } from '../../../src/lib/sweater/ownerWashTax.js';
 import { hashBody } from './record.js';
-import { SweaterIngestError, bookingDocId } from './ingest.js';
+import { SweaterIngestError, bookingDocId, sspKey } from './ingest.js';
 import { OWNER_CONFIRMATIONS, sspWashId } from './staffHandoff.js';
 
 const RUNS = 'sweater_owner_tax_clarifications';
@@ -16,7 +16,7 @@ async function review(db, read) {
   for (const [id, serviceDate] of PLAN.bookings) {
     const washRef = db.collection('washes').doc(sspWashId(id));
     const [washSnap, proofSnap, bookingSnap, periodSnap, settlementSnap, posted] = await Promise.all([
-      read(washRef), read(db.collection(OWNER_CONFIRMATIONS).doc(bookingDocId(id))),
+      read(washRef), read(db.collection(OWNER_CONFIRMATIONS).doc(sspKey(id))),
       read(db.collection('sweater_bookings').doc(bookingDocId(id))),
       read(db.collection('accounting_periods').doc(serviceDate.slice(0, 7))),
       read(db.collection('sweater_settlements').doc(serviceDate.slice(0, 7))),

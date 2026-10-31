@@ -65,16 +65,16 @@ describe('one-time missing-start owner approval for 5655042 only', () => {
     const p=missingStartCompletionFixture(), r=normalizeRecord(p.records[0]);
     const db=memoryFinanceDb({'users/admin':{role:'admin'},
       'bikers/5MMg7pj0wjYM06NLuzS7':{name:'Synthetic worker',driver_external_id:'1988'},
-      'sweater_bookings/S-5655042':{sspBookingId:r.sspBookingId,source:'operations_sync_v2',record:r,operationalWorkerId:p.workerLinks['1988']}});
+      'sweater_bookings/5655042':{sspBookingId:r.sspBookingId,source:'operations_sync_v2',record:r,operationalWorkerId:p.workerLinks['1988']}});
     db.runTransaction=()=>{throw new Error('Preview cannot write');};
     const before=JSON.stringify([...db.rows]);
     expect((await previewAdministrativeCompletion(db,p,'admin')).canSave).toBe(true);
     expect(JSON.stringify([...db.rows])).toBe(before);
     for(const change of [{record:{...r,startedAt:'2026-10-24T14:00:00+03:00'}},{operationalWorkerId:null},{source:'other'}]){
-      db.rows.set('sweater_bookings/S-5655042',{sspBookingId:r.sspBookingId,source:'operations_sync_v2',record:r,operationalWorkerId:p.workerLinks['1988'],...change});
+      db.rows.set('sweater_bookings/5655042',{sspBookingId:r.sspBookingId,source:'operations_sync_v2',record:r,operationalWorkerId:p.workerLinks['1988'],...change});
       expect((await previewAdministrativeCompletion(db,p,'admin')).canSave).toBe(false);
     }
-    db.rows.delete('sweater_bookings/S-5655042');
+    db.rows.delete('sweater_bookings/5655042');
     expect((await previewAdministrativeCompletion(db,p,'admin')).canSave).toBe(false);
   });
 });

@@ -108,7 +108,7 @@ suite('SSP atomic save on isolated Firestore emulator', () => {
     expect(results.filter(r => !r.replay)).toHaveLength(1);
     const washes = await db.collection('washes').get(); expect(washes.size).toBe(1);
     expect(washes.docs[0].data()).toMatchObject({ status: 'مكتملة', ssp_raw_status: 'Cancelled by Admin', net_amount: 20, vat_amount: 3, gross_amount: 23, worker_commission_paid: false });
-    expect((await db.collection('sweater_bookings').doc('C-5584720').get()).data()).toMatchObject({ record: { rawStatus: 'Cancelled by Admin', normalizedStatus: 'admin_cancelled' }, ownerCompletionDecision: payload.ownerCompletionDecision });
+    expect((await db.collection('sweater_bookings').doc('5584720').get()).data()).toMatchObject({ record: { rawStatus: 'Cancelled by Admin', normalizedStatus: 'admin_cancelled' }, ownerCompletionDecision: payload.ownerCompletionDecision });
     expect((await db.collection('sweater_owner_booking_claims').doc('5584720').get()).data().sspBookingId).toBe('C-5584720');
     for (const name of ['journal_entries', 'bank_accounts', 'transactions', 'payroll', 'sweater_collections', 'sweater_booking_links']) expect((await db.collection(name).get()).empty).toBe(true);
   });

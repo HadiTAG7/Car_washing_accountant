@@ -7,6 +7,7 @@ import { operationsHandler, operationsSigningHash } from '../src/sweater/operati
 import { createIntegrationKey, computeSignature } from '../src/sweater/integrationKeys.js';
 import { previewOwnerHandoff, saveOwnerHandoff } from '../src/sweater/staffHandoff.js';
 import { calculatePayrollPreview } from '../src/payroll.js';
+import * as legacyWriter from './helpers/legacyOperationsSync.js';
 
 const suite = process.env.FIRESTORE_EMULATOR_HOST ? describe : describe.skip;
 let app, db, originalEncryption;
@@ -16,6 +17,8 @@ const payload = () => ({ contractVersion: 2, importRunId: 'synthetic-operations'
     isComplete: false, sourceUrl: 'https://ssp-portal.sweater.sa/', modules: { individual: 'partial', corporate: 'unavailable' }, gaps: ['Missing page 2 and B2B'] } });
 const req = (b, p) => ({ payload: b, reviewedPayloadHash: p.reviewedPayloadHash, previewStateHash: p.previewStateHash });
 const save = async b => saveOperations(db, FieldValue, req(b, await previewOperations(db, b)), 'sweater-browser-agent');
+// The 10 Oct B observation as the writer of that time filed it (a booking per prefixed id).
+const legacySave = async b => legacyWriter.saveOperations(db, FieldValue, req(b, await legacyWriter.previewOperations(db, b)), 'sweater-browser-agent');
 const identityPayload = (legacy = false) => {
   const b = payload(); b.importRunId = legacy ? 'ops-20261011-oct10-210648' : 'synthetic-isolated-5596423';
   Object.assign(b.coverage, { rangeFrom: '2026-10-10', rangeTo: '2026-10-10', extractedAt: '2026-10-11T05:43:10Z' });
@@ -84,7 +87,7 @@ suite('production operations sync in isolated demo Firestore', () => {
     const result = await save(b);
     expect(result).toMatchObject({ washesCreated: 0, ledgerPosted: false, payrollPaid: false });
     expect(await operationsStatus(db, b)).toMatchObject({ verified: true, rawVerified: true, linksVerified: true });
-    const booking = (await db.collection('sweater_bookings').doc('C-980001').get()).data();
+    const booking = (await db.collection('sweater_bookings').doc('980001').get()).data();
     expect(booking).toMatchObject({ processingStatus: 'needs_review', operationalWorkerId: 'biker-1',
       recognitionEligibility: null, serviceDate: '2026-10-08',
       record: { paymentStatus: 'pending', completedAt: '2026-10-08T10:30:00+03:00' } });
@@ -109,8 +112,11 @@ suite('production operations sync in isolated demo Firestore', () => {
     const same = await Promise.all(Array.from({ length: 3 }, () => saveOperations(db, FieldValue, req(a, p), 'agent')));
     expect(same.filter(r => !r.replay)).toHaveLength(1);
     const b = { ...a, importRunId: 'alias-run', records: [{ ...a.records[0], sspBookingId: 'S-980001' }] };
-    expect((await save(b)).rows[0]).toMatchObject({ outcome: 'needs_review', bookingSaved: false, rawSaved: true });
+    // One booking per number: the other prefix is the same booking's latest reading, never a second booking.
+    expect((await save(b)).rows[0]).toMatchObject({ outcome: 'modified', bookingSaved: true, rawSaved: true });
     expect((await db.collection('sweater_bookings').get()).size).toBe(1);
+    expect((await db.collection('sweater_bookings').doc('980001').get()).data()).toMatchObject({ sspBookingId: 'S-980001',
+      aliases: ['C-980001', 'S-980001'] });
   });
   it('retains missing-service facts for review, verifies readback and replay, and later accepts evidenced service', async () => {
     const b = payload(); delete b.records[0].serviceType;
@@ -119,7 +125,7 @@ suite('production operations sync in isolated demo Firestore', () => {
     expect((await db.collection('sweater_raw_payloads').get()).empty).toBe(true);
     const result = await saveOperations(db, FieldValue, req(b, preview), 'agent');
     expect(result).toMatchObject({ rawSavedCount: 1, bookingSavedCount: 1, washesCreated: 0, ledgerPosted: false, payrollPaid: false });
-    const booking = (await db.collection('sweater_bookings').doc('C-980001').get()).data();
+    const booking = (await db.collection('sweater_bookings').doc('980001').get()).data();
     expect(booking).toMatchObject({ processingStatus: 'needs_review', reviewReasonCode: 'unknown_service_type', recognitionEligibility: null });
     expect(booking.record.serviceType).toBe('');
     expect(await operationsStatus(db, b)).toMatchObject({ verified: true });
@@ -127,10 +133,11 @@ suite('production operations sync in isolated demo Firestore', () => {
     expect((await db.collection('sweater_raw_payloads').get()).size).toBe(1);
     const evidenced = structuredClone(b); evidenced.importRunId = 'evidenced-service'; evidenced.records[0].serviceType = 'observed-service';
     expect((await save(evidenced)).bookingSavedCount).toBe(1);
-    const knownBefore = await db.collection('sweater_bookings').doc('C-980001').get();
+    const knownBefore = await db.collection('sweater_bookings').doc('980001').get();
     const gap = { ...b, importRunId: 'missing-again' };
-    expect((await save(gap)).rows[0]).toMatchObject({ rawSaved: true, bookingSaved: false, reasonCode: 'unknown_service_type' });
-    const knownAfter = await db.collection('sweater_bookings').doc('C-980001').get();
+    // The known service is kept, so the gap changes nothing and raises nothing.
+    expect((await save(gap)).rows[0]).toMatchObject({ rawSaved: true, bookingSaved: false, outcome: 'duplicate', reasonCode: null });
+    const knownAfter = await db.collection('sweater_bookings').doc('980001').get();
     expect(knownAfter.updateTime.isEqual(knownBefore.updateTime)).toBe(true);
     expect(await operationsStatus(db, gap)).toMatchObject({ verified: true });
     for (const col of ['washes', 'journal_entries', 'sweater_owner_collection_confirmations', 'sweater_collections']) {
@@ -204,7 +211,7 @@ suite('production operations sync in isolated demo Firestore', () => {
   });
   it('signed approved5596423 decision is read-only; atomic completion preserves B/raw/claim and all24other washes', async () => {
     await db.collection('bikers').doc('KehSV5K73zkyWWEE8hE9').set({ name: 'Synthetic isolated worker', driver_external_id: '1986', salary: 900 });
-    const legacy = identityPayload(true); await save(legacy);
+    const legacy = identityPayload(true); await legacySave(legacy);
     for (let i = 0; i < 24; i++) await db.collection('washes').doc(`synthetic-other-${i}`).set({ ssp_booking_id: `S-${880000 + i}`, price: 20 });
     const originals = await Promise.all(['sweater_bookings/B-5596423', 'sweater_owner_booking_claims/5596423',
       'sweater_raw_payloads/ops-20261011-oct10-210648__B-5596423', ...Array.from({ length: 24 }, (_, i) => `washes/synthetic-other-${i}`)].map(path => db.doc(path).get()));
@@ -238,7 +245,7 @@ suite('production operations sync in isolated demo Firestore', () => {
     expect((await db.collection('sweater_owner_collection_confirmations').get()).empty).toBe(true);
   });
   it('a non-ingest principal cannot save5596423; no fallback or second wash is attempted', async () => {
-    await db.doc('bikers/KehSV5K73zkyWWEE8hE9').set({ name: 'Synthetic worker', driver_external_id: '1986' }); await save(identityPayload(true));
+    await db.doc('bikers/KehSV5K73zkyWWEE8hE9').set({ name: 'Synthetic worker', driver_external_id: '1986' }); await legacySave(identityPayload(true));
     const key = await createIntegrationKey(db, FieldValue, { label: 'Synthetic unauthorized key' });
     await db.doc(`sweater_integration_keys/${key.keyId}`).set({ scope: 'admin' }, { merge: true });
     const p = identityPayload(), body = { action: 'save', ...req(p, await previewOperations(db, p)) }, timestamp = String(Math.floor(Date.now() / 1000));
@@ -250,7 +257,7 @@ suite('production operations sync in isolated demo Firestore', () => {
     expect((await db.doc('sweater_bookings/S-5596423').get()).exists).toBe(false);
   });
   it('a financial effect introduced after preview invalidates CAS and leaves every document unchanged', async () => {
-    await db.doc('bikers/KehSV5K73zkyWWEE8hE9').set({ name: 'Synthetic worker', driver_external_id: '1986' }); await save(identityPayload(true));
+    await db.doc('bikers/KehSV5K73zkyWWEE8hE9').set({ name: 'Synthetic worker', driver_external_id: '1986' }); await legacySave(identityPayload(true));
     const p = identityPayload(), preview = await previewOperations(db, p);
     await db.doc('journal_entries/synthetic-protected').set({ sourceId: 'ssp__B-5596423', status: 'posted' });
     const original = await db.doc('sweater_bookings/B-5596423').get();
@@ -265,12 +272,14 @@ suite('production operations sync in isolated demo Firestore', () => {
     ['journal_entries/manual-protected', { sourceId: 'ssp__C-5596423', status: 'posted', amount: 999 }],
   ])('all-prefix protection at %s is fail-closed before and after CAS without touching its data', async (path, protectedRecord) => {
     await db.doc('bikers/KehSV5K73zkyWWEE8hE9').set({ name: 'Synthetic worker', driver_external_id: '1986' });
-    await save(identityPayload(true)); const p = identityPayload(), before = await previewOperations(db, p);
+    await legacySave(identityPayload(true)); const p = identityPayload(), before = await previewOperations(db, p);
     expect(before.rows[0].identityResolution.eligible).toBe(true);
     await db.doc(path).set(protectedRecord); const original = await db.doc(path).get();
     await expect(saveOperations(db, FieldValue, req(p, before), 'sweater-browser-agent')).rejects.toMatchObject({ code: 'failed-precondition' });
     const fresh = await previewOperations(db, p);
-    expect(fresh.rows[0]).toMatchObject({ reasonCode: 'protected_existing_record', washCreated: false, identityResolution: { eligible: false } });
+    // Held by the assertion, or waiting for the identity cleanup while the B copy is filed apart: never a wash.
+    expect(fresh.rows[0]).toMatchObject({ outcome: 'needs_review', washCreated: false, identityResolution: { eligible: false } });
+    expect(['protected_existing_record', 'awaiting_identity_cleanup']).toContain(fresh.rows[0].reasonCode);
     const result = await saveOperations(db, FieldValue, req(p, fresh), 'sweater-browser-agent');
     expect(result.washesCreated).toBe(0);
     expect((await db.doc('washes/ssp__B-5596423').get()).exists).toBe(false);
@@ -279,7 +288,7 @@ suite('production operations sync in isolated demo Firestore', () => {
   });
   it('a Firestore document-reference financial pointer to an orphaned other-prefix wash is protected', async () => {
     await db.doc('bikers/KehSV5K73zkyWWEE8hE9').set({ name: 'Synthetic worker', driver_external_id: '1986' });
-    await save(identityPayload(true)); const p = identityPayload();
+    await legacySave(identityPayload(true)); const p = identityPayload();
     await db.doc('transactions/synthetic-reference').set({ sourceRef: db.doc('washes/ssp__PREFIX-5596423'), amount: 999 });
     const original = await db.doc('transactions/synthetic-reference').get();
     expect((await previewOperations(db, p)).rows[0].identityResolution).toMatchObject({ eligible: false, checks: { noReferencedFinancialEffect: false } });

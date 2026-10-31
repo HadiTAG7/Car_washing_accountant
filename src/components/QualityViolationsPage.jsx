@@ -38,6 +38,7 @@ export function QualityViolationsContent() {
   const eventCount = rows.reduce((sum, row) => sum + row.events.length, 0);
   const loading = read.current.loading || read.workers.loading, error = read.current.error || read.workers.error;
   return <><TopBar title="الجودة والمخالفات" subtitle="تفاصيل سويتر ومتابعة الاعتراضات" />
+    <a className="sw-button sw-button--secondary sw-button--sm mx-4 mt-4" href={`?page=sweater_settlements&period=${month}#settlement-bookings`}>تفاصيل إلغاء الحجوزات</a>
     <main className="qv-page" dir="rtl"><SweaterFreshnessBar /><div className="qv-toolbar"><div><h2>الجودة والمخالفات</h2><p>من اللقطات المحفوظة · بدون اتصال مباشر بسويتر</p></div>
       <BikerProfileMonthPicker value={month} max={today.slice(0, 7)} language="ar" onChange={value => { setMonth(value); setSelected(null); }} />
       <button className={button} onClick={read.refresh}>تحديث البيانات</button></div>

@@ -7,7 +7,7 @@ import '../../src/index.css';
 
 // Synthetic data only. The Vite test configuration replaces both read hooks;
 // no auth, database, SSP, integration sender or mutation endpoint is imported.
-function Preview() {
+export default function Preview() {
   const [language, setLanguage] = useState(new URLSearchParams(location.search).get('lang') === 'en' ? 'en' : 'ar');
   const [open, setOpen] = useState(true);
   return <LanguageContext.Provider value={{ language }}><div style={{ padding: 24 }}>

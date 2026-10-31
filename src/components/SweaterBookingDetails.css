@@ -1,0 +1,15 @@
+.sw-modal-surface.sw-booking-details { margin: auto; width: min(760px, calc(100vw - 24px)); height: auto; max-height: calc(100dvh - 24px); background: var(--sw-surface); color: var(--sw-text); border: 1px solid var(--sw-border-subtle); border-radius: 20px; padding: 0; box-shadow: var(--sw-shadow-overlay); }
+.sw-booking-details section { padding: 24px; overflow-wrap: anywhere; }
+.sw-booking-details header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.sw-booking-details h2 { font-size: 20px; font-weight: 700; }
+.sw-booking-details h3 { font-weight: 700; margin-block: 20px 12px; }
+.sw-booking-details header button { flex-shrink: 0; padding: 8px; border-radius: 8px; }
+.sw-booking-details p { margin-block: 12px; }
+.sw-booking-details__notice { border-inline-start: 3px solid var(--sw-primary, #f97316); padding-inline-start: 12px; }
+.sw-booking-details dl > div { display: grid; grid-template-columns: minmax(140px, 1fr) 2fr; gap: 12px; padding-block: 12px; border-bottom: 1px solid var(--sw-border-subtle); }
+.sw-booking-details dt, .sw-booking-details small { color: var(--sw-text-muted); }
+.sw-booking-details small { display: block; font-size: 12px; margin-block-start: 4px; }
+.sw-booking-details a { display: inline-block; color: var(--sw-primary, #f97316); margin-block: 12px; }
+.sw-booking-details summary { cursor: pointer; padding-block: 16px; }
+.sw-booking-details article { padding-block: 12px; border-top: 1px solid var(--sw-border-subtle); }
+@media (max-width: 520px) { .sw-booking-details section { padding: 16px; } .sw-booking-details dl > div { grid-template-columns: 1fr; gap: 4px; } }

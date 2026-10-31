@@ -11,6 +11,7 @@ import Toast from './Toast';
 import SweaterActionDialog from './SweaterActionDialog';
 import SettlementInvoicePanel from './SettlementInvoicePanel';
 import OperationsReadinessBanner from './OperationsReadinessBanner';
+import SweaterBookingDetails from './SweaterBookingDetails';
 import {
   useSweaterSettlements, useSweaterBookings, useSweaterAdjustments, useSweaterVariances,
   useSweaterMetrics, useSweaterFirstPeriod,
@@ -75,6 +76,8 @@ export default function SweaterSettlementsPage() {
     return /^\d{4}-(0[1-9]|1[0-2])$/.test(requested || '') ? requested : currentPeriod();
   });
   const [filters, setFilters] = useState({ driver: '', region: '', serviceType: '' });
+  const [bookingSearch, setBookingSearch] = useState('');
+  const [selectedBooking, setSelectedBooking] = useState(null);
   const [busy, setBusy] = useState(null);
   // نوافذ داخلية بدل `prompt` — الأخيرة محجوبةٌ في المتصفح الآلي، ولا تتحقق
   // من رقمٍ ولا تاريخ. `dialog` اسمُ النافذة المفتوحة، أو `null`.
@@ -126,6 +129,8 @@ export default function SweaterSettlementsPage() {
     region: filters.region || null,
     serviceType: filters.serviceType || null,
   }), [bookings, filters]);
+  const visibleBookings = useMemo(() => visible.filter(row => !bookingSearch.trim()
+    || String((row.record ?? row).sspBookingId).toLowerCase().includes(bookingSearch.trim().toLowerCase())), [visible, bookingSearch]);
 
   const options = useMemo(() => filterOptions(bookings), [bookings]);
   const kpis = useMemo(
@@ -177,6 +182,7 @@ export default function SweaterSettlementsPage() {
               {periods.map((p) => <option key={p} value={p}>{p}</option>)}
             </select>
             <StatusChip status={settlement?.status ?? 'draft'} reviewCount={approval.reviewCount} />
+            <a href="#settlement-bookings" className="sw-button sw-button--secondary sw-button--sm">تفاصيل إلغاء الحجوزات</a>
             {settlement?.journalEntryNumber && (
               <span className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
                 قيد رقم {settlement.journalEntryNumber}
@@ -473,9 +479,15 @@ export default function SweaterSettlementsPage() {
             <Card className="p-4 sm:p-6" id="settlement-bookings">
               <SectionHeader
                 title={`حجوزات ${periodKey}`}
-                subtitle={`${formatNumber(visible.length)} من ${formatNumber(bookings.length)} بعد الترشيح`}
+                subtitle={`${formatNumber(visibleBookings.length)} من ${formatNumber(bookings.length)} بعد الترشيح`}
               />
-              {visible.length === 0 ? (
+              <label className="mt-4 block text-sm">
+                البحث برقم الحجز
+                <input type="search" value={bookingSearch} onChange={event => setBookingSearch(event.target.value)}
+                  className="mt-2 w-full max-w-sm rounded-control border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2" />
+              </label>
+              <p className="mt-2 text-xs text-slate-500">افتح تفاصيل المصدر لمعرفة جهة الإلغاء والسبب والوقت والبايكر المسند، دون تغيير الحجز.</p>
+              {visibleBookings.length === 0 ? (
                 <div className="mt-4">
                   <EmptyState
                     compact icon={Inbox} title="لا حجوزات في هذا الشهر"
@@ -494,10 +506,11 @@ export default function SweaterSettlementsPage() {
                         <th className="py-3 px-4">المنطقة</th>
                         <th className="py-3 px-4">الحالة</th>
                         <th className="py-3 px-4 text-left tabular-nums">مبلغ المنصة</th>
+                        <th className="py-3 px-4">تفاصيل المصدر</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {visible.slice(0, 200).map((row) => {
+                      {visibleBookings.slice(0, 200).map((row) => {
                         const r = row.record ?? row;
                         return (
                           <tr key={r.sspBookingId} className="border-b border-slate-50 dark:border-slate-800/60 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
@@ -515,14 +528,16 @@ export default function SweaterSettlementsPage() {
                             <td className="py-3 px-4 text-left tabular-nums text-slate-600 dark:text-slate-400">
                               {r.platformAmount == null ? '—' : formatCurrency(r.platformAmount)}
                             </td>
+                            <td className="py-3 px-4"><button type="button" className="sw-button sw-button--secondary sw-button--sm"
+                              aria-label={`تفاصيل المصدر والإلغاء ${r.sspBookingId}`} onClick={() => setSelectedBooking(row)}>تفاصيل الإلغاء</button></td>
                           </tr>
                         );
                       })}
                     </tbody>
                   </table>
-                  {visible.length > 200 && (
+                  {visibleBookings.length > 200 && (
                     <p className="mt-3 text-[11px] text-slate-500 dark:text-slate-400">
-                      يُعرض أول ٢٠٠ من {formatNumber(visible.length)} — رشّح لتضييق القائمة.
+                      يُعرض أول ٢٠٠ من {formatNumber(visibleBookings.length)} — رشّح لتضييق القائمة.
                     </p>
                   )}
                 </div>
@@ -531,6 +546,8 @@ export default function SweaterSettlementsPage() {
           </>
         )}
       </main>
+      {selectedBooking && <SweaterBookingDetails key={(selectedBooking.record ?? selectedBooking).sspBookingId}
+        booking={selectedBooking} onClose={() => setSelectedBooking(null)} />}
 
       {/* ── كشف سويتر ── */}
       <SweaterActionDialog

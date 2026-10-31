@@ -7,7 +7,7 @@ import { SWEATER_METRICS } from './sweater/metricsContract.js';
 import { composeSweaterMetricReadings } from '../../src/lib/sweaterMetricReadings.js';
 import { bikerDeductionIdentity, BIKER_DEDUCTION_TYPE, BIKER_DEDUCTION_AUTHORITY, isBikerDeduction } from '../../src/lib/sweater/bikerDeductions.js';
 import { qualityObjectionId } from './qualityObjections.js';
-import { COL, bookingDocId, rawDocId } from './sweater/ingest.js';
+import { COL, rawDocId, readBookingDoc } from './sweater/ingest.js';
 import { hashRecord } from './sweater/record.js';
 import { compensationGroup } from './sweater/compensationEvents.js';
 import { COMPENSATION_KEYS } from './sweater/metricsContract.js';
@@ -61,7 +61,7 @@ async function plan(db, input, read, userId) {
     if (input.metricKey !== 'cancelledByBiker') fail('تصنيف الحجز بقرار هادي للإلغاء بسبب البايكر فقط.');
     const [rawSnap, bookingSnap, runSnap] = await Promise.all([
       read(db.collection(COL.RAW).doc(rawDocId(input.snapshotId, input.sourceId))),
-      read(db.collection(COL.BOOKINGS).doc(bookingDocId(input.sourceId))), read(db.collection(COL.RUNS).doc(input.snapshotId)),
+      readBookingDoc(db, read, input.sourceId), read(db.collection(COL.RUNS).doc(input.snapshotId)),
     ]);
     const raw = rawSnap.data(), booking = bookingSnap.data(), run = runSnap.data(), record = raw?.normalizedRecord;
     const reason = record?.notes?.match(/\nReason\n([^;]+);/)?.[1]?.trim();

@@ -262,3 +262,15 @@ describe('a reservation whose execution Sweater proved but that never got its wa
     expect(db.rows.get('sweater_bookings/990007')).toMatchObject({ sspBookingId: 'S-990007', processingStatus: 'validated' });
   });
 });
+
+describe('readers before the cleanup runs', () => {
+  it('find a booking under its number, or else under the prefixed id it was seen with', async () => {
+    const { readBookingDoc } = await import('../src/sweater/ingest.js');
+    const db = syncDb(), read = ref => ref.get();
+    db.rows.set('sweater_bookings/B-990020', { sspBookingId: 'B-990020' });
+    expect((await readBookingDoc(db, read, 'B-990020')).id).toBe('B-990020');
+    db.rows.set('sweater_bookings/990020', { sspBookingId: 'S-990020' });
+    expect((await readBookingDoc(db, read, 'B-990020')).data()).toEqual({ sspBookingId: 'S-990020' });
+    expect((await readBookingDoc(db, read, 'S-990021')).exists).toBe(false);
+  });
+});

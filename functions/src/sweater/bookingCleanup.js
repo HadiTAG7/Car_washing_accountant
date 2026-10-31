@@ -239,7 +239,9 @@ export async function applyBookingIdentityCleanup(db, FieldValue, { reason, prev
       }
     });
   }
-  const state = { cleanupId, appliedAtIso: new Date().toISOString(), appliedBy: actor, reason: why, previewHash, summary: plan.summary, applied };
+  const who = (await db.collection('users').doc(String(actor)).get()).data();
+  const state = { cleanupId, appliedAtIso: new Date().toISOString(), appliedBy: actor, appliedByName: who?.displayName || who?.email || null,
+    reason: why, previewHash, summary: plan.summary, applied };
   await db.collection(COL.STATE).doc(CLEANUP_STATE_ID).set(state);
   return { saved: true, cleanupId, applied, summary: plan.summary, ledgerPosted: false, washesCreated: 0 };
 }

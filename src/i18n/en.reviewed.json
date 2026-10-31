@@ -5506,5 +5506,6 @@
   "طلب قائمة المفتوح غير صالح.": "Invalid request for the open bookings list.",
   "غسيل": "Wash",
   "غسيل_داخلي_وخارجي": "interior_exterior_wash",
-  "داخلي_وخارجي": "interior_and_exterior"
+  "داخلي_وخارجي": "interior_and_exterior",
+  "— بقي على قراءة الحجز المفتوحة حتى تُثبت المزامنة التالية الغسلة": "— kept on the booking's open reading until the next sync proves the wash"
 }

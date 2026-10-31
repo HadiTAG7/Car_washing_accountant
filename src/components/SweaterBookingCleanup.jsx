@@ -24,7 +24,7 @@ export default function SweaterBookingCleanup({ onPreview, onApply, onFillPrevie
       <p className="text-sm">سويتر يعرض الحجز نفسه ببادئة تتغيّر مع حالته (B- قيد التنفيذ، S- منجز، C- ملغى). يُجمع كل رقم في حجز واحد بآخر قراءة من سويتر،
         ويبقى ما قرّرته أنت كما هو. تُغلق فروق المزامنة القديمة، ويبقى «تحتاج مراجعة» لما يحتاج قرارك فعلًا.</p>
       {preview?.lastApplied && <p className="text-xs text-slate-500" role="note">آخر توحيد: {preview.lastApplied.appliedAtIso?.slice(0, 16).replace('T', ' ')} ·
-        بواسطة {preview.lastApplied.appliedBy} · السبب: {preview.lastApplied.reason}</p>}
+        بواسطة {preview.lastApplied.appliedByName || preview.lastApplied.appliedBy} · السبب: {preview.lastApplied.reason}</p>}
       <SecondaryButton disabled={busy} onClick={() => run(async () => { setAsking(false); setPreview(await onPreview()); })}>معاينة التوحيد</SecondaryButton>
       {s && (s.numbers === 0
         ? <p role="status" className="text-sm text-emerald-700 dark:text-emerald-300">كل الحجوزات موحّدة برقمها؛ لا شيء يتغيّر.</p>

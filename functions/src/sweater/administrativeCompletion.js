@@ -37,7 +37,10 @@ async function plan(db, payload, read, actor) {
   const rows = [], state = [], counts = { new: 0, modified: 0, duplicate: 0, rejected: 0, needsReview: 0 };
   for (const raw of payload.records) {
     const record = normalizeRecord(raw), number = ownerBookingIdentity(record.sspBookingId), id = bookingDocId(record.sspBookingId), washId = sspWashDocId(record.sspBookingId);
-    const related = docs.filter(d => identity(d.data) === number), booking = related.find(d => d.collection === COL.BOOKINGS && d.id === id)?.data;
+    // Until the identity cleanup runs, the booking may still be filed under the prefixed id it was seen with.
+    const bookingDoc = docs.find(d => d.collection === COL.BOOKINGS && d.id === id)
+      ?? docs.find(d => d.collection === COL.BOOKINGS && d.id === sspKey(record.sspBookingId));
+    const related = docs.filter(d => identity(d.data) === number), booking = bookingDoc?.data;
     const claimRef = db.collection(CLAIMS).doc(bookingDocId(number)), claim = (await read(claimRef)).data();
     const bikerId = payload.workerLinks[record.driverExternalId], worker = (await read(db.collection('bikers').doc(bikerId))).data();
     const linkedWorkers = new Set(docs.filter(d => d.collection === 'washes' && d.data.driver_external_id === record.driverExternalId).map(d => d.data.biker_id).filter(Boolean));
@@ -81,7 +84,7 @@ async function plan(db, payload, read, actor) {
       reasonAr: conflict ? 'تعارض في الهوية أو العامل أو سجل محمي؛ لا يُستبدل الموجود.' : 'قرار اكتمال إداري مستقل؛ التحصيل غير مثبت.',
       assertedAmount: wash.net_amount, vatAmount: wash.vat_amount, grossAmount: wash.gross_amount, workerCommission: wash.worker_commission_per_wash,
       _raw: raw, _record: record, _decision: decision, _wash: wash, _washHash: hash, _claimRef: claimRef, _claim: claim,
-      _bookingRef: db.collection(COL.BOOKINGS).doc(id), _booking: booking, _washRef: db.collection('washes').doc(washId), _links: links, _existingWash: existingWash };
+      _bookingRef: db.collection(COL.BOOKINGS).doc(bookingDoc?.id ?? id), _booking: booking, _washRef: db.collection('washes').doc(washId), _links: links, _existingWash: existingWash };
     rows.push(row); state.push({ number, related, claim, worker, period: periodSnap.data() || null, settlement: settlementSnap.data() || null });
   }
   return { runRef, payloadHash, rows, counts, stateHash: hashBody(state) };

@@ -67,6 +67,16 @@ export const sspKey = (sspBookingId) => encodeURIComponent(String(sspBookingId))
 
 /** معرّف غسلة الحجز — بالبادئة التي لوحظ بها، كما كان دائمًا. */
 export const sspWashDocId = (sspBookingId) => `ssp__${sspKey(sspBookingId)}`;
+/**
+ * A booking's document: under its number, or — until the owner's identity cleanup has run — under the prefixed id
+ * it was seen with. `read` is the caller's reader (a transaction's get, or ref.get()).
+ */
+export async function readBookingDoc(db, read, sspBookingId) {
+  const numbered = await read(db.collection(COL.BOOKINGS).doc(bookingDocId(sspBookingId)));
+  if (numbered.exists || bookingDocId(sspBookingId) === sspKey(sspBookingId)) return numbered;
+  const filed = await read(db.collection(COL.BOOKINGS).doc(sspKey(sspBookingId)));
+  return filed.exists ? filed : numbered;
+}
 
 export function envelopeProblems(payload) {
   const problems = [];

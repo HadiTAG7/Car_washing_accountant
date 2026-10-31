@@ -2,7 +2,7 @@ import { ownerBookingIdentity } from '../../../src/lib/sweater/bookingIdentity.j
 import { ownerConfirmationTaxSplit } from '../../../src/lib/sweater/ownerConfirmation.js';
 import { WASH_COMMISSION_RATE } from '../washCommission.js';
 import { reviewSweaterHandoff, ownerHandoffCoverageComplete } from '../../../src/lib/sweater/handoff.js';
-import { bookingDocId, sspKey, sspWashDocId, rawDocId, classifyRecord, COL, SweaterIngestError } from './ingest.js';
+import { bookingDocId, sspKey, sspWashDocId, rawDocId, readBookingDoc, classifyRecord, COL, SweaterIngestError } from './ingest.js';
 import { hashBody, hashRecord, normalizeRecord, SCHEMA_VERSION } from './record.js';
 import { LINKS_COL } from './revenueOrigin.js';
 
@@ -59,7 +59,9 @@ async function plan(db, input, read) {
     const record = normalizeRecord(raw);
     const sourceHash = hashRecord(record);
     // The booking is keyed by its number; the confirmation and the links keep the observed prefixed key.
-    const id = bookingDocId(record.sspBookingId), observedKey = sspKey(record.sspBookingId);
+    // Until the identity cleanup runs, a booking may still be filed under the prefixed id it was seen with.
+    const observedKey = sspKey(record.sspBookingId), filedSnap = await readBookingDoc(db, read, record.sspBookingId);
+    const id = filedSnap.exists ? filedSnap.id : bookingDocId(record.sspBookingId);
     const bookingRef = db.collection(COL.BOOKINGS).doc(id);
     const identity = ownerBookingIdentity(record.sspBookingId);
     const claimRef = db.collection(OWNER_BOOKING_CLAIMS).doc(bookingDocId(identity));

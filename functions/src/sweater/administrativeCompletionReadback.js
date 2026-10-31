@@ -1,5 +1,5 @@
 import { ownerBookingIdentity } from '../../../src/lib/sweater/bookingIdentity.js';
-import { bookingDocId, sspWashDocId, rawDocId, COL } from './ingest.js';
+import { bookingDocId, sspWashDocId, rawDocId, readBookingDoc, COL } from './ingest.js';
 import { hashBody, hashRecord, normalizeRecord } from './record.js';
 import { executionWash } from './operationsExecution.js';
 
@@ -26,7 +26,7 @@ export async function administrativeCompletionReadback(db, tx, payload, run) {
     const record = normalizeRecord(raw), bookingNumber = ownerBookingIdentity(record.sspBookingId);
     const washId = sspWashDocId(record.sspBookingId), bikerId = payload.workerLinks[record.driverExternalId];
     const [booking, source] = await Promise.all([
-      tx.get(db.collection(COL.BOOKINGS).doc(bookingDocId(record.sspBookingId))),
+      readBookingDoc(db, ref => tx.get(ref), record.sspBookingId),
       tx.get(db.collection(COL.RAW).doc(rawDocId(payload.importRunId, record.sspBookingId))),
     ]);
     const matchingWashes = washSnapshot.docs.filter(doc => numberOf(doc.data()) === bookingNumber);

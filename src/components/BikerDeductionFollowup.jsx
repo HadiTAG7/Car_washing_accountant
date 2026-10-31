@@ -1,17 +1,16 @@
 import { useState } from 'react';
 import { BIKER_DEDUCTION_AUTHORITY } from '../lib/sweater/bikerDeductions';
 import { Card, SectionHeader } from './UI';
+import BikerDeductionSummary from './BikerDeductionSummary';
 const button = 'sw-button sw-button--secondary sw-button--sm';
 const amount = row => row.unit === 'count' ? `${row.quantity} إلغاء · المبلغ ${row.amountSAR == null ? 'غير محدد من المصدر' : `${row.amountSAR} ر.س`}` : `${row.amountSAR} ر.س`;
 
-export default function BikerDeductionFollowup({ records = [], preview, save, disabled }) {
+export default function BikerDeductionFollowup({ records = [], periodKey, loading = false, readError = null, preview, save, disabled }) {
   const [json, setJson] = useState(''), [review, setReview] = useState(null), [payload, setPayload] = useState(null);
   const [busy, setBusy] = useState(false), [message, setMessage] = useState(''), [confirmed, setConfirmed] = useState(false), [requestId, setRequestId] = useState(null);
   return <Card className="qv-panel qv-deductions"><SectionHeader title="خصومات سويتر على البايكر" subtitle="إسناد واقعة موثقة فقط؛ لا يخصم من المسير ولا يرحّل مبلغًا." />
     <p>قرار هادي يشمل الوقائع من 29 أغسطس إلى 28 أكتوبر 2026. إلغاء البايكر بالعدد، والمخالفة بمبلغ المصدر.</p>
-    {records.length ? <ul>{records.map(record => <li key={record.id}>{record.bikerName} · {record.event?.bookingId || record.sourceId} · {record.event?.date} · {amount(record)}
-      {' · '}{record.matchedToCompensations ? 'مطابق لتفاصيل سويتر' : record.bookingEvidence?.invoice ? 'فاتورة الحجز؛ مطابقة جدول سويتر معلقة' : 'قرار هادي؛ بانتظار مطابقة تفاصيل سويتر'} · النسخة {record.revision}
-      <details><summary>دليل الواقعة وسجل التصحيح</summary><pre dir="ltr">{JSON.stringify(record, null, 2)}</pre></details></li>)}</ul> : <p>لا توجد وقائع خصم مسجلة لهذا الشهر.</p>}
+    <BikerDeductionSummary records={records} periodKey={periodKey} loading={loading} readError={readError} />
     <details><summary>معاينة واقعة موثقة أو تصحيحها</summary>
       <p>مرجع القرار: <bdi>{BIKER_DEDUCTION_AUTHORITY}</bdi>. المعاينة تقرأ المصدر المحفوظ وتكشف التكرار والربط والأقفال.</p>
       <form onSubmit={async e => { e.preventDefault(); setBusy(true); setReview(null); setMessage(''); setConfirmed(false); try {

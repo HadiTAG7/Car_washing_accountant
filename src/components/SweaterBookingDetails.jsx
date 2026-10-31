@@ -51,7 +51,7 @@ export default function SweaterBookingDetails({ booking, onClose }) {
       {!read.loading && <><h3>{current.original ? text('تفاصيل الحجز المحفوظ', 'Saved booking details') : text('أحدث ملاحظة مصدر محفوظة', 'Latest stored source observation')}</h3>
         <EventDetails observation={current} bikers={workers.bikers} language={language} />
         {workers.error && <p role="status">{text('تعذّرت قراءة أسماء البايكرية؛ معرّف المصدر باقٍ ظاهرًا.', 'Biker names could not be read; the source ID remains visible.')}</p>}
-        {observations.length > 1 && <details><summary>{text('الملاحظات السابقة', 'Earlier observations')} ({observations.length - 1})</summary>
+        {observations.length > 1 && <details><summary tabIndex={0}>{text('الملاحظات السابقة', 'Earlier observations')} ({observations.length - 1})</summary>
           {observations.slice(1).map(item => <article key={item.id}><EventDetails observation={item} bikers={workers.bikers} language={language} /></article>)}
         </details>}
       </>}

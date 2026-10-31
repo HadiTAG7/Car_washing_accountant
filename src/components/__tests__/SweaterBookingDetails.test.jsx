@@ -6,7 +6,7 @@ import { LanguageContext } from '../../i18n/LanguageContext';
 const state = vi.hoisted(() => ({ data: [], loading: false, error: null }));
 vi.mock('../../hooks/useSweaterBookingSource', () => ({ useSweaterBookingSource: () => state }));
 vi.mock('../../hooks/useBikers', () => ({ useBikers: () => ({ bikers: [{ id: 'test', driverExternalId: '1986', name: 'بايكر اختبار', nameEnglish: 'Test biker' }], error: null }) }));
-afterEach(() => { cleanup(); state.data = []; state.error = null; state.loading = false; });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); state.data = []; state.error = null; state.loading = false; });
 const booking = { record: { sspBookingId: 'B-5673287', rawStatus: 'Initiated' } };
 it.each(['ar','en'])('shows separate source facts, missing actor, honest time zone and a read-only history (%s)', language => {
   state.data = [{ id: 'new', sspBookingId: 'C-5673287', fetchedAtIso: '2026-10-29T16:10:44Z', rawPayload: {
@@ -30,4 +30,16 @@ it('reports a raw read failure without inventing zero cancellations or hiding th
   render(<SweaterBookingDetails booking={booking} onClose={vi.fn()} />);
   expect(screen.getByRole('alert').textContent).toContain('تعذّرت قراءة');
   expect(screen.getByRole('dialog').textContent).toContain('Initiated');
+});
+it('includes source history in the modal keyboard loop and restores the opener on unmount', () => {
+  vi.spyOn(HTMLElement.prototype, 'getClientRects').mockReturnValue([{ width: 10, height: 10 }]);
+  state.data = ['2026-10-29T16:10:44Z','2026-10-29T14:49:03Z'].map((date, index) => ({
+    id: String(index), sspBookingId: 'B-5673287', fetchedAtIso: date, rawPayload: booking.record }));
+  render(<button>TEST opener</button>); const opener = screen.getByText('TEST opener'); opener.focus();
+  const view = render(<SweaterBookingDetails booking={booking} onClose={vi.fn()} />);
+  const summary = screen.getByText('الملاحظات السابقة', { exact: false });
+  expect(summary.tabIndex).toBe(0); summary.focus();
+  fireEvent.keyDown(summary, { key: 'Tab' }); expect(document.activeElement).toBe(screen.getByRole('button', { name: 'إغلاق التفاصيل' }));
+  fireEvent.keyDown(document.activeElement, { key: 'Tab', shiftKey: true }); expect(document.activeElement).toBe(summary);
+  view.unmount(); expect(document.activeElement).toBe(opener);
 });

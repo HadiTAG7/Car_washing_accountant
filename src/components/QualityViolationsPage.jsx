@@ -17,9 +17,6 @@ import BikerDeductionFollowup from './BikerDeductionFollowup';
 import { BEFORE_PAGE_NAVIGATION } from '../lib/navigationEvents';
 import { qualitySourceDetails } from '../lib/qualitySourceDetails';
 import QualitySourceRows from './QualitySourceRows';
-import QualityCaseSummary from './QualityCaseSummary';
-import QualityEventValue, { QualityValueOverview } from './QualityEventValue';
-import { QUALITY_VALUED_TYPES } from '../lib/qualityEventValuation';
 import { useLanguage } from '../i18n/useLanguage';
 import { getLanguage, translate } from '../i18n/locale';
 import './QualityViolationsPage.css';
@@ -88,8 +85,6 @@ export function QualityViolationsContent() {
         {COMPENSATION_KEYS.map(key => {
           const group = snapshot?.eventGroups?.[key];
           const total = snapshot?.metrics?.[key];
-          const ticketTab = key === 'compensations';
-          const ticketsUnavailable = details?.reviews?.loading || details?.reviews?.error;
           return <button type="button" role="tab" key={key} ref={element => { tabRefs.current[key] = element; }}
             id={`qv-tab-${key}`} aria-controls={`qv-panel-${key}`} aria-selected={activeType === key} tabIndex={activeType === key ? 0 : -1}
             onClick={() => chooseType(key)} onKeyDown={event => {
@@ -97,8 +92,8 @@ export function QualityViolationsContent() {
               const next = event.key === 'Home' ? COMPENSATION_KEYS[0] : event.key === 'End' ? COMPENSATION_KEYS.at(-1)
                 : offset ? COMPENSATION_KEYS[(index + offset + COMPENSATION_KEYS.length) % COMPENSATION_KEYS.length] : null;
               if (next) { event.preventDefault(); chooseType(next, true); }
-            }}><span>{typeLabels[key]}</span><strong>{number(ticketTab ? ticketsUnavailable ? null : linked.groups[key].length : total)} {ticketTab ? 'تكت' : SWEATER_METRICS[key].unit === 'sar' ? 'ر.س' : key === 'freeWashCompensation' ? 'غسلة' : 'واقعة'}</strong>
-              <small>{ticketTab ? <>لقطة اللوحة: {number(total)} ر.س</> : <>صفوف اللقطة: {group ? `${number(group.rows.length)}${group.complete ? '' : language === 'en' ? ' · partial' : ' · جزئي'}` : 'غير متاح'}</>}</small>
+            }}><span>{typeLabels[key]}</span><strong>{number(total)} {SWEATER_METRICS[key].unit === 'sar' ? 'ر.س' : key === 'freeWashCompensation' ? 'غسلة' : 'واقعة'}</strong>
+              <small>صفوف اللقطة: {group ? `${number(group.rows.length)}${group.complete ? '' : language === 'en' ? ' · partial' : ' · جزئي'}` : 'غير متاح'}</small>
               {linked.groups[key].length > 0 && <small>سجلات مرتبطة: {linked.groups[key].length}</small>}</button>;
         })}
       </div>
@@ -111,9 +106,7 @@ export function QualityViolationsContent() {
         const sourceBusy = ticketSource ? details?.reviews?.loading : details?.bookings?.loading || details?.observations?.loading;
         const sourceFailed = ticketSource ? details?.reviews?.error : details?.bookings?.error || details?.observations?.error;
         return <section key={key} role="tabpanel" id={`qv-panel-${key}`} aria-labelledby={`qv-tab-${key}`} hidden={activeType !== key}>
-          <TypeSummary metricKey={key} snapshot={snapshot} previous={read.previous} month={month}
-            linkedRows={linked.groups[key]} valuationRows={own.length ? own : linked.groups[key]} valuationUnavailable={!own.length && Boolean(sourceBusy || sourceFailed)} sourceUnavailable={Boolean(sourceBusy || sourceFailed)} />
-          <Card className="qv-panel qv-cases"><header className="qv-cases-header"><h3>تفاصيل الحالات</h3><p className="qv-note">افتح أي بطاقة لعرض المصدر والتواريخ والمبالغ المستقلة.</p></header>
+          <TypeSummary metricKey={key} snapshot={snapshot} previous={read.previous} month={month} />
           {!group ? <p className="qv-note">ما وصلت تفاصيل جدول المجاميع لهذا النوع؛ السجلات الأخرى أدناه لها مصدر وتوقيت مستقلان.</p>
             : <><p className="qv-note">نتائج البحث: {shown.length} من {own.length} صف مستلم.</p>
               {!own.length ? <p>{group.complete ? 'لا حالات في التفاصيل المكتملة لهذا النوع.' : 'لا صفوف مستلمة بعد؛ التفاصيل جزئية وليست صفر حالات.'}</p>
@@ -135,9 +128,8 @@ export function QualityViolationsContent() {
             {key === 'freeWashCompensation' && <p className="qv-note">نعرض الغسلة المجانية بنوع صريح ووحدة عدد. مبلغ 20 ريالًا أو كود العميل لا يكفي.</p>}
             {!sourceBusy && !sourceFailed && !linked.groups[key].length && <p>لا سجلات مصنفة محفوظة لهذا النوع؛ لا يعني ذلك صفر حالات في سويتر.</p>}
             {linked.groups[key].length > 0 && <p className="qv-note">نتائج البحث في السجلات المرتبطة: {linked.groups[key].filter(matches).length} من {linked.groups[key].length}</p>}
-            <QualitySourceRows rows={linked.groups[key].filter(matches)} metricKey={key} valueUnavailable={Boolean(sourceBusy || sourceFailed)} protectLink={protectLink} />
+            <QualitySourceRows rows={linked.groups[key].filter(matches)} protectLink={protectLink} />
           </section>}
-          </Card>
         </section>;
       })}
       {linked.undatedTickets > 0 && <p className="qv-warning">تكتات بلا تاريخ إنشاء مقروء: {linked.undatedTickets}. لم تُنسب إلى الشهر المختار؛ راجع سجل التكتات.</p>}
@@ -169,41 +161,25 @@ export function QualityViolationsContent() {
     </main></>;
 }
 
-function TypeSummary({ metricKey: key, snapshot, previous, month, linkedRows = [], valuationRows = [], valuationUnavailable, sourceUnavailable }) {
+function TypeSummary({ metricKey: key, snapshot, previous, month }) {
   const { language } = useLanguage();
   const group = snapshot?.eventGroups?.[key], value = snapshot?.metrics?.[key], money = SWEATER_METRICS[key].unit === 'sar';
   const count = money ? group?.totalRows ?? null : value ?? null, amount = groupAmount(group, value, key);
   const oldSnapshot = previous.error || previous.loading ? null : previous.snapshot;
   const oldGroup = oldSnapshot?.eventGroups?.[key], oldValue = oldSnapshot?.metrics?.[key];
   const oldCount = money ? oldGroup?.totalRows ?? null : oldValue ?? null, oldAmount = groupAmount(oldGroup, oldValue, key);
-  const tickets = key === 'compensations';
-  const valued = QUALITY_VALUED_TYPES.includes(key);
-  const withCompensation = linkedRows.filter(row => row.source?.amounts?.some(a => a.kind === 'compensation' && a.unit === 'SAR' && typeof a.value === 'number' && Number.isFinite(a.value))).length;
   const coverageText = !group ? 'ما وصلت تفاصيل سويتر' : language === 'en'
     ? `${group.rows.length} ${group.rows.length === 1 ? 'row' : 'rows'} received${group.totalRows != null ? ` of ${group.totalRows}` : ''} · ${group.complete ? 'Complete source table' : 'Partial details'}`
     : `${group.rows.length} صف مستلم${group.totalRows != null ? ` من ${group.totalRows}` : ''} · ${group.complete ? 'الجدول مكتمل حسب المصدر' : 'تفاصيل جزئية'}`;
   return <Card className="qv-panel qv-type-summary"><h2>{typeLabels[key]} · {month}</h2>
-    <div className="qv-type-totals">
-      <div><p>{tickets ? 'التكتات المحفوظة:' : 'العدد حسب المصدر:'}</p><strong>{number(tickets ? sourceUnavailable ? null : linkedRows.length : count)} <small>{tickets ? 'تكت' : key === 'freeWashCompensation' ? 'غسلة' : 'واقعة'}</small></strong></div>
-      <div><p>{tickets ? 'قيم التعويض المثبتة:' : valued ? 'تقييم التفاصيل المتاحة:' : 'المبلغ:'}</p>
-        {valued ? <QualityValueOverview rows={valuationRows} metricKey={key} total={value} unavailable={valuationUnavailable} />
-          : <strong>{tickets ? 'مفصلة في البطاقات' : <>{number(amount)} ر.س</>}</strong>}
-        {tickets && <small>تكتات بمبلغ موثق: {sourceUnavailable ? 'غير متاح' : withCompensation}</small>}</div>
-      <div><p>صفوف اللقطة:</p><strong>{number(group?.rows.length)}</strong><small>سجلات مرتبطة: {sourceUnavailable ? 'غير متاح' : linkedRows.length}</small></div>
-    </div>
-    <p className="qv-context-note">{tickets ? <>لقطة لوحة سويتر المحفوظة: {number(value)} ر.س. ليست إجمالي قيم التكتات، ولا تُجمع الأكواد والتعويضات كخصم تسوية.</>
-      : key === 'damages' && snapshot?.metricSources?.[key]?.sourceUrl === 'https://ssp-portal.sweater.sa/damages'
-        ? 'النطاق: قائمة الأضرار، كل البايكرز دون تاريخ. الفراغ هنا لا ينفي مطالبات في مصادر أخرى.'
-        : key === 'violations' ? 'المبلغ للمخالفات المسجلة، وليس خصمًا صافيًا بعد الاعتراضات.'
-          : key === 'freeWashCompensation' ? 'التقدير لتعويض الغسلات المجانية فقط، ولا يشمل الغسلات التسويقية. ليس خصم تسوية معتمدًا.'
-            : valued ? 'مبالغ المصدر والتقدير الداخلي منفصلان. التقييم للسجلات المتاحة فقط، وليس تسوية أو خصم راتب.'
-              : 'العدد من لقطة المصدر المحفوظة. التفاصيل المرتبطة لها نطاق وتوقيت مستقلان.'}</p>
-    <details className="qv-summary-source"><summary>مصدر الأرقام والمقارنة</summary>
+    <div className="qv-type-totals"><p>العدد حسب المصدر: <strong>{number(count)} <small>{key === 'freeWashCompensation' ? 'غسلة' : 'واقعة'}</small></strong></p><p>المبلغ: <strong>{number(amount)} ر.س</strong></p></div>
+    <small>عن الشهر السابق: العدد {count != null && oldCount != null ? number(count - oldCount) : 'غير متاح'} · المبلغ {amount != null && oldAmount != null ? `${number(amount - oldAmount)} ر.س` : 'غير متاح'}</small>
     <p className="qv-note">{coverageText}</p>
     <small>قراءة المصدر: {stamp(snapshot?.metricSources?.[key]?.extractedAtIso)} (الرياض)</small>
-    <p><small>عن الشهر السابق: العدد {count != null && oldCount != null ? number(count - oldCount) : 'غير متاح'} · المبلغ {amount != null && oldAmount != null ? `${number(amount - oldAmount)} ر.س` : 'غير متاح'}</small></p>
     {snapshot?.metricSources?.[key]?.sourceUrl && <p><a href={snapshot.metricSources[key].sourceUrl} target="_blank" rel="noreferrer">مصدر المجموع</a></p>}
-    </details>
+    {key === 'damages' && snapshot?.metricSources?.[key]?.sourceUrl === 'https://ssp-portal.sweater.sa/damages'
+      && <p className="qv-note">النطاق: قائمة الأضرار، كل البايكرز دون تاريخ. الفراغ هنا لا ينفي مطالبات في مصادر أخرى.</p>}
+    {key === 'violations' && <p className="qv-note">المبلغ للمخالفات المسجلة، وليس خصمًا صافيًا بعد الاعتراضات.</p>}
   </Card>;
 }
 
@@ -225,12 +201,8 @@ function EventRow({ row, objection, month, today, deadlineDays, disabled, save, 
   const edit = patch => updateDraft({ status, note, expectedRevision: objection?.revision || 0, snapshotId: row.snapshotId, ...draft, ...patch });
   const deadline = objectionDeadline(row, deadlineDays, today, objection?.status);
   return <details ref={detailsRef} className={`qv-event qv-tone-${deadline?.tone || ''}`}>
-    <QualityCaseSummary kind={row.bookingId ? 'الحجز' : 'سجل المصدر'} sourceId={row.bookingId || row.sourceId} bikerLabel={row.bikerLabel}
-      externalId={row.driverExternalId} date={row.date} reason={row.reason}
-      figures={<><span>العدد: {number(row.quantity)}</span>{QUALITY_VALUED_TYPES.includes(row.metricKey)
-        ? <QualityEventValue row={row} metricKey={row.metricKey} compact /> : <span>المبلغ: {number(row.amount)} ر.س</span>}</>} />
-    <div className="qv-event-body">
-    <QualityEventValue row={row} metricKey={row.metricKey} />
+    <summary><strong>{row.bookingId ? 'الحجز' : 'سجل المصدر'} <bdi>{row.bookingId || row.sourceId}</bdi></strong><span>اسم الموقع حسب الربط: {row.bikerLabel} · <bdi>{row.date || 'غير متاح'}</bdi></span>
+      <span translate={row.reason ? 'no' : undefined}>{row.reason || 'غير متاح من المصدر'}</span><span>العدد: {number(row.quantity)} · المبلغ: {number(row.amount)} ر.س</span></summary>
     <h3>{COMPENSATION_LABELS[row.metricKey]}</h3>
     <p>رقم سجل المصدر: <bdi>{row.sourceId}</bdi></p>
     <p>اسم الموقع حسب الربط: {row.bikerLabel} · رقم الشركة في سويتر: <bdi>{row.driverExternalId || 'غير متاح'}</bdi></p>
@@ -252,6 +224,5 @@ function EventRow({ row, objection, month, today, deadlineDays, disabled, save, 
       <p role="status">{message}</p>
     </form>{objection?.updatedAtIso && <small>آخر تعديل: {objection.updatedByName} · {stamp(objection.updatedAtIso)}</small>}
     <button type="button" className={button} onClick={() => { detailsRef.current.open = false; detailsRef.current.querySelector('summary')?.focus(); }}>إغلاق التفاصيل</button>
-    </div>
   </details>;
 }

@@ -2,8 +2,6 @@ import { cancellationTime, cancellationSourceLink } from '../lib/sweater/cancell
 import { bookingInvoiceDeduction } from '../../functions/src/sweater/bookingInvoiceDeduction';
 import { reviewStatusLabels, safeReviewUrl } from '../lib/compensationReview';
 import { getLanguage } from '../i18n/locale';
-import QualityCaseSummary from './QualityCaseSummary';
-import QualityEventValue from './QualityEventValue';
 
 const stamp = value => value && Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleString(getLanguage() === 'en' ? 'en-GB' : 'ar-SA-u-ca-gregory', {
   timeZone: 'Asia/Riyadh', numberingSystem: 'latn',
@@ -12,34 +10,23 @@ const amountLabels = { customer_code: 'كود أو محفظة العميل', com
   invoice_deduction: 'خصم فاتورة الحجز', settlement: 'مبلغ التسوية', late: 'دقائق التأخير' };
 const objectionLabels = { Open: 'مفتوح', Processing: 'قيد المعالجة', Accepted: 'مقبول في سويتر', Rejected: 'مرفوض في سويتر' };
 
-export default function QualitySourceRows({ rows, protectLink, metricKey, valueUnavailable }) {
+export default function QualitySourceRows({ rows, protectLink }) {
   return <div className="qv-events">{rows.map(row => <details key={row.id} className="qv-event qv-source-event">
-    <QualityCaseSummary kind={row.kind === 'ticket' ? 'التكت' : 'الحجز'} sourceId={row.sourceId}
-      bikerPrefix={row.siteBikerName ? 'اسم الموقع حسب الربط:' : row.sourceBikerName ? 'اسم سويتر:' : 'البايكر:'}
-      bikerLabel={row.bikerLabel} externalId={row.driverExternalId} date={row.date} reason={row.reason}
-      figures={<>{row.kind === 'ticket' ? <TicketAmountLabels amounts={row.source.amounts} /> : <span>العدد: {row.quantity ?? 'غير متاح'}</span>}<QualityEventValue row={row} metricKey={metricKey} unavailable={valueUnavailable} compact /></>} />
-    <div className="qv-event-body">
+    <summary><strong>{row.kind === 'ticket' ? 'التكت' : 'الحجز'} <bdi>{row.sourceId}</bdi></strong>
+      <span>{row.siteBikerName ? 'اسم الموقع حسب الربط:' : row.sourceBikerName ? 'اسم سويتر:' : 'البايكر:'} {row.bikerLabel} <bdi>{row.driverExternalId || ''}</bdi> · <bdi>{row.date || 'غير متاح'}</bdi></span>
+      <span className="qv-preview" translate={row.reason ? 'no' : undefined}>{row.reason || 'السبب غير محفوظ'}</span></summary>
     <p>{row.dateBasis === 'ticket' ? 'تاريخ التكت' : 'تاريخ الخدمة'}: <bdi>{row.date || 'غير محسوم'}</bdi></p>
     <p>اسم الموقع حسب الربط: {row.siteBikerName || 'غير مربوط'}</p>
     <p>اسم سويتر: {row.sourceBikerName || 'غير محفوظ'} · رقم الشركة في سويتر: <bdi>{row.driverExternalId || 'غير متاح'}</bdi></p>
     {row.identityConflict && <p className="qv-warning">ربط البايكر مكرر أو متعارض؛ الاسم المعروض من المصدر ولا يثبت الإسناد.</p>}
     <p className="qv-prose" translate={row.reason ? 'no' : undefined}>{row.reason || 'السبب غير محفوظ'}</p>
     {row.quantity !== null && <p>الكمية المسجلة في هذا المصدر: <bdi>{row.quantity}</bdi></p>}
-    <QualityEventValue row={row} metricKey={metricKey} unavailable={valueUnavailable} />
     <p className="qv-note">{row.kind === 'ticket' || row.timeBasis === 'source_read' ? 'قراءة هذا المصدر:'
       : row.timeBasis === 'record_update' ? 'وقت تحديث السجل المحفوظ:' : 'وقت حفظ ملاحظة المصدر:'} <bdi>{stamp(row.sourceReadAt)}</bdi> (الرياض). مستقلة عن لقطة المجاميع.</p>
     {row.kind === 'booking' && row.timeBasis !== 'source_read' && <p className="qv-note">هذا وقت حفظ أو تحديث السجل، وليس وقت قراءة سويتر أو الإلغاء.</p>}
     {row.kind === 'ticket' ? <TicketFacts row={row} protectLink={protectLink} /> : <BookingFacts row={row} />}
     {row.sourceUrl && <a href={row.sourceUrl} target="_blank" rel="noreferrer">فتح المصدر الأصلي</a>}
-    </div>
   </details>)}</div>;
-}
-
-function TicketAmountLabels({ amounts = [] }) {
-  const shown = amounts.filter(a => ['compensation', 'customer_code'].includes(a.kind) && a.unit === 'SAR' && typeof a.value === 'number' && Number.isFinite(a.value));
-  return shown.length ? shown.map((amount, i) => <span key={i} className="qv-source-amount">
-    {amount.kind === 'compensation' ? 'تعويض موثق:' : 'كود أو محفظة العميل:'} <bdi>{amount.value}</bdi> ر.س
-  </span>) : <span>لا مبلغ تعويض موثق في هذا السجل</span>;
 }
 
 function TicketFacts({ row, protectLink }) {

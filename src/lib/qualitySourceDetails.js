@@ -26,7 +26,8 @@ export function cancellationType(record) {
   if (detail.ambiguous) return null;
   const reason = detail.reason?.trim() || '', status = (record.rawStatus || '').trim().toLowerCase();
   const candidates = new Set();
-  if (detail.party === 'customer' || /^customer (?:cancel|request|refus)/i.test(reason)) candidates.add('cancelledByCustomer');
+  if (detail.party === 'customer' || /^customer (?:cancel|request|refus)/i.test(reason)
+    || /^cancel by customer request\b/i.test(reason)) candidates.add('cancelledByCustomer');
   if (detail.party === 'biker' || status === 'biker refused wash'
     || /^biker (?:delay|illness|absen|refus|cancel)/i.test(reason)) candidates.add('cancelledByBiker');
   if (/^(?:(?:bike|motorcycle) )?(?:maintenance|breakdown)\b/i.test(reason)) candidates.add('cancelledMaintenance');

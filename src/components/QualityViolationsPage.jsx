@@ -202,12 +202,12 @@ function EventRow({ row, objection, month, today, deadlineDays, disabled, save, 
   const deadline = objectionDeadline(row, deadlineDays, today, objection?.status);
   return <details ref={detailsRef} className={`qv-event qv-tone-${deadline?.tone || ''}`}>
     <summary><strong>{row.bookingId ? 'الحجز' : 'سجل المصدر'} <bdi>{row.bookingId || row.sourceId}</bdi></strong><span>اسم الموقع حسب الربط: {row.bikerLabel} · <bdi>{row.date || 'غير متاح'}</bdi></span>
-      <span>{row.reason || 'غير متاح من المصدر'}</span><span>العدد: {number(row.quantity)} · المبلغ: {number(row.amount)} ر.س</span></summary>
+      <span translate={row.reason ? 'no' : undefined}>{row.reason || 'غير متاح من المصدر'}</span><span>العدد: {number(row.quantity)} · المبلغ: {number(row.amount)} ر.س</span></summary>
     <h3>{COMPENSATION_LABELS[row.metricKey]}</h3>
     <p>رقم سجل المصدر: <bdi>{row.sourceId}</bdi></p>
     <p>اسم الموقع حسب الربط: {row.bikerLabel} · رقم الشركة في سويتر: <bdi>{row.driverExternalId || 'غير متاح'}</bdi></p>
     <p className="qv-note">اسم سويتر غير محفوظ في هذه اللقطة؛ راجعه عبر رابط المصدر. رقم الشركة مستقل عن معرّف البايكر الداخلي.</p>
-    <p>التاريخ: <bdi>{row.date || 'غير متاح'}</bdi> · الوقت: <bdi>{row.time || 'غير متاح'}</bdi> (الرياض)</p><p>السبب: {row.reason || 'غير متاح من المصدر'}</p>
+    <p>التاريخ: <bdi>{row.date || 'غير متاح'}</bdi> · الوقت: <bdi>{row.time || 'غير متاح'}</bdi> (الرياض)</p><p>السبب: {row.reason ? <span translate="no">{row.reason}</span> : 'غير متاح من المصدر'}</p>
     <p>العدد: {row.quantity} · المبلغ: {number(row.amount)} ر.س · <a href={row.sourceUrl} target="_blank" rel="noreferrer">عرض المصدر</a></p>
     {deadline && <p>آخر يوم للاعتراض: <bdi>{deadline.dueDate}</bdi> · {deadline.days < 0 ? `انتهت المهلة منذ ${-deadline.days} يوم` : `باقي ${deadline.days} يوم`}</p>}
     {(objection && objection.snapshotId !== row.snapshotId || draft && draft.snapshotId !== row.snapshotId) && <p className="qv-warning">وصلت قراءة أحدث. راجع بيانات الصف قبل تحديث المتابعة.</p>}

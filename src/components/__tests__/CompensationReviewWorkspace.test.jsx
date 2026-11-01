@@ -28,6 +28,24 @@ it('returns keyboard focus to the initiating draft button after a verified save'
   fireEvent.submit(screen.getByRole('button',{name:'تأكيد وحفظ'}).closest('form'));
   await waitFor(()=>expect(document.activeElement).toBe(trigger));
 });
+it.each(['draft','request_submission'])('waits for the refreshed revision before restoring %s focus',async action=>{
+  const saved={...record(),revision:2};
+  if(action==='request_submission')saved.submission={status:'queued',requestId:'test-request',text:saved.draft.text};
+  const r=read(),call=vi.fn(async input=>input.op==='read'?{cases:[saved]}:{record:saved});
+  const view=render(<CompensationReviewWorkspace read={r} call={call}/>);
+  const label=action==='draft'?'حفظ مسودة':'طلب رفع هذا التكت بالنص المحدد';
+  fireEvent.click(screen.getByRole('button',{name:label}));
+  fireEvent.click(screen.getByRole('checkbox'));
+  fireEvent.submit(screen.getByRole('button',{name:'تأكيد وحفظ'}).closest('form'));
+  await waitFor(()=>expect(r.refresh).toHaveBeenCalledTimes(1));
+  // The fixture's refresh keeps old data until its async read resolves.
+  const refreshed={...r,data:{...r.data,cases:[saved]}};
+  view.rerender(<CompensationReviewWorkspace read={refreshed} call={call}/>);
+  const expected=screen.getByRole('button',{name:action==='draft'?label:'تحديث السجل'});
+  await waitFor(()=>expect(document.activeElement).toBe(expected));
+  view.rerender(<CompensationReviewWorkspace read={{...refreshed,data:{...refreshed.data}}} call={call}/>);
+  expect(document.activeElement).toBe(expected);
+});
 const record = () => ({ ticketId:'TEST-900001',revision:1,source:reviewSource(),sourceHash:'hash',reviewStatus:'pending',
   updatedAtIso:'2026-11-01T12:00:00Z',draft:{text:'مسودة غير مرسلة',revision:1},submission:{status:'draft'},
   decisions:[],sourceHistory:[],objectionHistory:[] });

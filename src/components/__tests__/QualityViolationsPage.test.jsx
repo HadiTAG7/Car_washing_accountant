@@ -42,6 +42,63 @@ it('offers seven named tabs and distinguishes unavailable details from zero', ()
   expect(document.querySelectorAll('.qv-secondary')).toHaveLength(3);
   expect([...document.querySelectorAll('.qv-secondary')].every(d => !d.open)).toBe(true);
 });
+it('keeps the same summary and case-list shell for every tab, including empty damages and ticket details', () => {
+  render(<QualityViolationsPage />);
+  for (const tab of screen.getAllByRole('tab')) {
+    fireEvent.click(tab);
+    const panel = screen.getByRole('tabpanel');
+    expect(panel.querySelectorAll('.qv-type-summary')).toHaveLength(1);
+    expect(panel.querySelectorAll('.qv-type-totals > div')).toHaveLength(3);
+    expect(panel.querySelectorAll('.qv-cases')).toHaveLength(1);
+    expect(within(panel).getByRole('heading', { name: 'تفاصيل الحالات' })).toBeTruthy();
+  }
+  expect(mocks.save).not.toHaveBeenCalled();
+});
+it('shows saved ticket count and individual documented amounts independently from an old zero dashboard value', () => {
+  const data = state(); data.current.snapshot.metrics.compensations = 0;
+  data.current.snapshot.metricSources.compensations = { snapshotId: 'old-dashboard', extractedAtIso: '2026-10-20T12:00:00Z' };
+  data.sourceDetails = { reviews: { data: { cases: Array.from({ length: 17 }, (_, i) => ({
+    recordType: 'ssp_ticket_review_v1', ticketId: `SYNTHETIC-${i}`, reviewStatus: 'historical_excluded',
+    source: { facts: { ticketDate: '2026-10-20', biker: { externalId: '2007', name: 'Source worker' }, complaint: 'Synthetic source text', washIds: [], comments: [] },
+      source: { readAt: '2026-10-27T12:00:00Z', coverage: { limitations: [], filters: 'Synthetic only' } },
+      amounts: [{ kind: 'compensation', value: 20, unit: 'SAR', sourceRef: 'One compensation section' }, { kind: 'customer_code', value: 60, unit: 'SAR', sourceRef: 'Separate promo' }] }
+  })) } }, bookings: { data: [] }, observations: { data: [] } };
+  mocks.read.mockReturnValue(data); render(<QualityViolationsPage />); choose('تعويضات');
+  expect(document.querySelector('#qv-tab-compensations strong').textContent).toBe('17 تكت');
+  const panel = screen.getByRole('tabpanel');
+  expect(panel.querySelector('.qv-context-note').textContent).toContain('0 ر.س. ليست إجمالي قيم التكتات');
+  expect(panel.querySelector('.qv-type-summary').textContent).toContain('تكتات بمبلغ موثق: 17');
+  const summary = panel.querySelector('.qv-source-event > summary');
+  expect(summary.textContent).toContain('تعويض موثق: 20 ر.س');
+  expect(summary.textContent).toContain('كود أو محفظة العميل: 60 ر.س');
+  expect(panel.querySelectorAll('.qv-source-event')).toHaveLength(17);
+  expect(panel.textContent).not.toContain('340'); expect(panel.textContent).not.toContain('1360');
+  expect(mocks.save).not.toHaveBeenCalled();
+});
+it('uses actual source money including zero, and separately labels a twenty-riyal fallback for only missing values', () => {
+  const data = state(), key = 'cancelledByBiker';
+  data.current.snapshot.metrics[key] = 3;
+  data.current.snapshot.metricSources[key] = { snapshotId: 'synthetic', extractedAtIso: '2026-10-26T12:00:00Z' };
+  data.current.snapshot.eventGroups[key] = { complete: true, totalRows: 3, rows: [129.95, 0, null].map((amount, i) => ({ ...row, metricKey: key, sourceId: `VALUE-${i}`, bookingId: `VALUE-${i}`, amount })) };
+  mocks.read.mockReturnValue(data); render(<QualityViolationsPage />); choose('إلغاء البايكر');
+  const summaries = [...screen.getByRole('tabpanel').querySelectorAll('.qv-event > summary')];
+  expect(summaries[0].textContent).toContain('مبلغ سويتر المحفوظ: 129.95');
+  expect(summaries[1].textContent).toContain('مبلغ سويتر المحفوظ: 0');
+  expect(summaries[1].textContent).not.toContain('تقدير داخلي');
+  expect(summaries[2].textContent).toContain('تقدير داخلي بقرار هادي: 20');
+  const overview = screen.getByRole('tabpanel').querySelector('.qv-type-summary').textContent;
+  expect(overview).toContain('129.95'); expect(overview).toContain('تقدير داخلي بقرار هادي: 20');
+  expect(overview).not.toContain('149.95'); expect(mocks.save).not.toHaveBeenCalled();
+});
+it('does not replace an unread source with a monetary fallback', () => {
+  const data = state(); data.current.snapshot.metrics.freeWashCompensation = 12;
+  data.sourceDetails = { reviews: { error: Error('unread') }, bookings: { data: [] }, observations: { data: [] } };
+  mocks.read.mockReturnValue(data); render(<QualityViolationsPage />); choose('غسلات مجانية');
+  const summary = screen.getByRole('tabpanel').querySelector('.qv-type-summary');
+  expect(summary.textContent).not.toContain('240');
+  expect(summary.textContent).toContain('تعذّرت قراءة المصدر؛ لم نفترض قيمة بديلة.');
+  expect(mocks.save).not.toHaveBeenCalled();
+});
 it('uses English for composed coverage and partial labels, preserving source reason text',async()=>{
   await loadEnglish();
   const data=state(); data.current.snapshot.eventGroups.cancelledByCustomer.complete=false; mocks.read.mockReturnValue(data);

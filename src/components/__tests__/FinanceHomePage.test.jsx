@@ -21,9 +21,9 @@ it('does not describe unbudgeted expenditure as a budget overrun', () => {
   state.data.budget = { month: '2026-10', cards: [{ budget: { amount: 0 }, spent: 87263.64 }], totals: { remaining: 0 } };
   render(<FinanceHomePage onNavigate={vi.fn()} />);
   expect(screen.queryByText('ميزانيات متجاوزة')).toBeNull();
-  expect(screen.getByRole('region', { name: 'يحتاج إجراء' }).querySelectorAll('li')).toHaveLength(5);
+  expect(screen.getByRole('region', { name: 'يحتاج إجراء' }).querySelectorAll('li')).toHaveLength(3);
 });
-it('renders the seven source-backed amounts, posted comparisons, negative cash and six actionable rows', () => {
+it('preserves source-backed amounts and visible actions without exposing the internal workbench', () => {
   const navigate = vi.fn(); render(<FinanceHomePage onNavigate={navigate} />);
   const monthly = screen.getByRole('region', { name: 'نتيجة الشهر' });
   expect(monthly.querySelectorAll('.fm-card')).toHaveLength(4);
@@ -35,10 +35,12 @@ it('renders the seven source-backed amounts, posted comparisons, negative cash a
   ['240,980.00', '663,937.12', '-422,957.12', '856,857.65', '902.92'].forEach(value => expect(money.textContent).toContain(value));
   expect(money.querySelector('.fm-negative').textContent).toContain('-422,957.12');
   const actions = screen.getByRole('region', { name: 'يحتاج إجراء' });
-  expect(actions.querySelectorAll('li')).toHaveLength(6);
-  ['243.08', '0 خدمات مؤهلة من 113 حجز', '410.00', '300.00', '-87,263.64'].forEach(value => expect(actions.textContent).toContain(value));
+  expect(actions.querySelectorAll('li')).toHaveLength(4);
+  ['243.08', '0 خدمات مؤهلة من 113 حجز', '-87,263.64'].forEach(value => expect(actions.textContent).toContain(value));
+  expect(screen.queryByText('مستندات السداد غير مثبت')).toBeNull();
+  expect(screen.queryByText('مستندات بانتظار المراجعة أو الاعتماد أو الترحيل')).toBeNull();
   within(actions).getAllByRole('button').forEach(button => fireEvent.click(button));
-  expect(navigate.mock.calls.flat()).toEqual(['ledger', 'vat', 'sweater_settlements', 'finance_workbench', 'finance_workbench', 'budgets']);
+  expect(navigate.mock.calls.flat()).toEqual(['ledger', 'vat', 'sweater_settlements', 'budgets']);
 });
 it('only declares an empty queue after every source was verified, preserving real zero and green profit', () => {
   Object.assign(state.data, { ledger: { postedRevenue: 0, postedCosts: 0, cash: 0, bank: 0, availableCash: 0, capital: 0, negativeAccounts: [] },

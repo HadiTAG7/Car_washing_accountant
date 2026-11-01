@@ -33,10 +33,6 @@ function ActionList({ data, onNavigate }) {
   if (settlementReady && !APPROVED_SETTLEMENT_STATUSES.has(settlement?.status)) rows.push({ key: 'settlement', route: 'sweater_settlements',
     label: settlement?.figures ? 'تسوية سويتر بانتظار الاعتماد' : 'تسوية سويتر لم تُحسب',
     detail: settlement?.figures ? `${settlement.figures.counts?.eligible ?? '—'} خدمات مؤهلة من ${settlement.figures.counts?.imported ?? '—'} حجز · ${month}` : month });
-  if (workbench?.unknownPayment.count) rows.push({ key: 'payment', route: 'finance_workbench', label: 'مستندات السداد غير مثبت',
-    detail: `${workbench.unknownPayment.count} مستندات · ${amountText(workbench.unknownPayment.amount)}` });
-  if (workbench?.pending.count) rows.push({ key: 'pending', route: 'finance_workbench', label: 'مستندات بانتظار المراجعة أو الاعتماد أو الترحيل',
-    detail: `${workbench.pending.count} مستندات · ${amountText(workbench.pending.amount)}` });
   const overrunCount = budget?.cards.filter(card => card.budget.amount > 0 && card.spent > card.budget.amount).length || 0;
   if (overrunCount) rows.push({ key: 'budget', route: 'budgets', label: 'ميزانيات متجاوزة',
     detail: `${overrunCount} بنود · ${budget.totals.remaining < 0 ? `العجز الإجمالي: ${amountText(budget.totals.remaining)}` : 'راجع تفاصيل التجاوز'} · ${budget.month}` });
@@ -51,7 +47,7 @@ function ActionList({ data, onNavigate }) {
     </li>)}</ul>}
     {rows.length === 0 && complete && <p className="fm-clear"><CheckCircle2 size={18} />ما فيه شي يحتاج إجراء</p>}
     {!complete && <p className="fm-incomplete" role="status">{data.loading ? 'جارٍ التحقق من البنود المتبقية…' : 'لم يكتمل فحص جميع البنود؛ لا يعني ذلك خلوّها من الإجراءات.'}</p>}
-    <p className="fm-scope">المستندات: كل الفترات. الميزانيات: الشهر الحالي والسنة، كما في صفحة الرقابة والميزانيات.</p>
+    <p className="fm-scope">الميزانيات: الشهر الحالي والسنة، كما في صفحة الرقابة والميزانيات.</p>
   </section>;
 }
 

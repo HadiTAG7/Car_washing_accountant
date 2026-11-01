@@ -121,11 +121,12 @@ export const TAB_GROUPS = [
     { id: 'partner_accounts', label: 'الحسابات والمساعد الذكي', icon: Bot, roles: ['admin'] },
   ] },
   { id: 'operations', title: 'العمليات', homeTab: 'operations_summary', sections: [
-    { id: 'daily', title: 'المتابعة اليومية', tabIds: ['today', 'washes', 'quality_violations'] },
+    { id: 'daily', title: 'المتابعة اليومية', tabIds: ['today', 'washes', 'quality_violations', 'compensation_review'] },
     { id: 'resources', title: 'الفريق والموارد', tabIds: ['bikers', 'housing', 'fleet'] },
     { id: 'performance', title: 'الأداء والتقارير', tabIds: ['operations_summary', 'growth_performance', 'operations_reports'] },
     { id: 'close', title: 'التكامل والإقفال', tabIds: ['sweater_integration', 'operations_close'] },
   ], tabs: [
+    { id: 'compensation_review', label: 'مراجعة التعويضات والاعتراضات', icon: Target, roles: ['admin'] },
     ...LEGACY_TAB_GROUPS.flatMap(group => group.tabs).filter(tab => ['today','washes','quality_violations','bikers','housing','fleet','growth_performance','operations_reports','sweater_integration'].includes(tab.id)),
     { id: 'operations_summary', label: 'ملخص العمليات', icon: Activity, roles: ['admin'] },
     { id: 'operations_close', label: 'إقفال شهر التشغيل', icon: Lock, roles: ['admin'] },

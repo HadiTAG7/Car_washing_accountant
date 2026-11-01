@@ -23,10 +23,11 @@ vi.mock('../../hooks/useBikerProfileBookings', () => ({ useBikerProfileBookings:
 } }));
 const { default: BikerProfile } = await import('../BikerProfile');
 const { default: BikersPage } = await import('../BikersPage');
-beforeEach(() => { state.partnerView = false; state.qualityLoading = false; state.qualityError = null;
+// These quality fixtures describe October; keep the clock in their service period.
+beforeEach(() => { vi.useFakeTimers({ toFake:['Date'] }); vi.setSystemTime(new Date('2026-10-27T12:00:00+03:00')); state.partnerView = false; state.qualityLoading = false; state.qualityError = null;
   state.compositeLoading = false; state.compositeError = null; state.compositeReports = [];
   readQuality.mockClear(); readComposite.mockClear(); });
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.useRealTimers(); });
 const props = () => ({ role: 'admin', biker, washes: [], advances: [], onClose: vi.fn() });
 const chooseMonth = label => {
   fireEvent.click(screen.getByRole('button', { name: 'الشهر', exact: true }));

@@ -27,6 +27,10 @@
   },
   "rewrites": [
     {
+      "source": "/api/compensation-review",
+      "destination": "/api/ledger?reviewEndpoint=tickets"
+    },
+    {
       "source": "/api/integrations/sweater/n8n",
       "destination": "/api/integrations/sweater/operations?n8nEndpoint=1"
     },

@@ -7,6 +7,7 @@ import { SWEATER_METRICS } from './sweater/metricsContract.js';
 import { composeSweaterMetricReadings } from '../../src/lib/sweaterMetricReadings.js';
 import { bikerDeductionIdentity, BIKER_DEDUCTION_TYPE, BIKER_DEDUCTION_AUTHORITY, isBikerDeduction } from '../../src/lib/sweater/bikerDeductions.js';
 import { qualityObjectionId } from './qualityObjections.js';
+import { isInternalQualityObjection } from '../../src/lib/sweater/qualityRecordTypes.js';
 import { COL, rawDocId, readBookingDoc } from './sweater/ingest.js';
 import { hashRecord } from './sweater/record.js';
 import { compensationGroup } from './sweater/compensationEvents.js';
@@ -113,7 +114,7 @@ async function plan(db, input, read, userId) {
   const objection = cases.find(c => c.id === qualityObjectionId(input.periodKey, input.metricKey, input.sourceId));
   const sourceAliases = readings.flatMap(r => COMPENSATION_KEYS.flatMap(key => (compensationGroup(r, key)?.rows || [])))
     .filter(r => bikerDeductionIdentity(r) === eventIdentity);
-  const acceptedObjection = cases.some(c => !isBikerDeduction(c) && c.status === 'accepted'
+  const acceptedObjection = cases.some(c => isInternalQualityObjection(c) && c.status === 'accepted'
     && sourceAliases.some(r => c.metricKey === r.metricKey && c.sourceId === r.sourceId));
   const locked = Boolean(protectedRecord(old) || protectedRecord(old?.current) || period.data()?.status === 'closed'
     || settlement.data()?.journalEntryId || settlement.data()?.postedEntryId

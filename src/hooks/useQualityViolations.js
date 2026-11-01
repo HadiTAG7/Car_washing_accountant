@@ -8,6 +8,7 @@ import { isFirebaseConfigured } from '../lib/firebaseClient';
 import { invalidateCollections } from '../lib/readCache';
 import { previousQualityMonth } from '../lib/qualityViolations';
 import { isBikerDeduction } from '../lib/sweater/bikerDeductions';
+import { isInternalQualityObjection } from '../lib/sweater/qualityRecordTypes';
 export function useQualityViolations(month) {
   const { user } = useAuth();
   const current = useSweaterMetrics(month), previous = useSweaterMetrics(previousQualityMonth(month)), workers = useBikers();
@@ -17,7 +18,7 @@ export function useQualityViolations(month) {
   const settings = useFirestoreQuery(() => getRow('app_settings', 'quality-objections'),
     { enabled, preserveResult: true, cacheKey: 'quality-objections-settings', cacheTags: ['app_settings'], queryKey: user?.id, fallback: null });
   const refresh = () => { current.refetch(); previous.refetch(); workers.refetch(); objections.refetch(); settings.refetch(); };
-  return { current, previous, workers, objections: { ...objections, data: objections.data?.filter(row => !isBikerDeduction(row)) },
+  return { current, previous, workers, objections: { ...objections, data: objections.data?.filter(isInternalQualityObjection) },
     deductions: objections.data?.filter(isBikerDeduction) || [], settings, refresh,
     previewDeduction: input => callServer('bikerDeductionPreview', input),
     saveDeduction: async input => {

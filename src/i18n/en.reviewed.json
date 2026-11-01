@@ -1274,7 +1274,8 @@
   "الخصم": "Deduction",
   "الخصومات": "Deductions",
   "خصم السلفة": "Advance Repayment",
-  "السلف المخصومة": "Advances Repaid",
+  "السلف المخصومة": "Advance deductions",
+  "من قائم": "outstanding balance",
   "العامل": "Biker",
   "عدد العاملين": "Number of Bikers",
   "الأيام": "Days",
@@ -5865,5 +5866,9 @@
   "التفاصيل والإعدادات": "Details and settings",
   "هذه معاينة للخدمات المؤهلة فقط، وليست كشف سويتر أو صافيًا معتمدًا. الأرقام المحفوظة أدناه تبقى بتاريخ آخر احتساب.": "This previews eligible services only; it is not a Sweater statement or an approved net amount. Saved figures below retain their last calculation date.",
   "وقت قراءة المعاينة:": "Preview read at:",
-  "(الرياض) · تبقى هذه القراءة حتى التحديث أو تغيّر مصادرها.": "(Riyadh) · This reading remains until refreshed or its sources change."
+  "(الرياض) · تبقى هذه القراءة حتى التحديث أو تغيّر مصادرها.": "(Riyadh) · This reading remains until refreshed or its sources change.",
+  "المصدر أو العامل خارج مراجعة الغسلات المحددة بقرار هادي.": "The source or worker is outside Hadi's approved review scope.",
+  "الفترة أو التسوية عليها حماية؛ لا يتجاوزها قرار اكتمال الغسلات.": "The period or settlement is protected; an owner completion decision does not bypass that protection.",
+  "تغيّرت ملاحظة المصدر الأصلية.": "The original source observation changed.",
+  "تغيّر دليل الجولة الأصلية.": "The original import-run evidence changed."
 }

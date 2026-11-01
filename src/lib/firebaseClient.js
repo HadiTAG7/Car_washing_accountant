@@ -19,19 +19,11 @@ import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import {
   collection, query, where, getDocs, doc, setDoc, serverTimestamp,
 } from 'firebase/firestore';
-import { invalidateAllReads } from './readCache';
+import { invalidateAfterServerCall } from './serverReadPolicy';
 
 // Server operations that only read. Anything else may change several
 // collections at once (a posting writes the entry, its lock and the period),
 // so after it succeeds every cached read is dropped and re-read on next use.
-const READ_ONLY_OPERATIONS = new Set([
-  'payrollPreview', 'payrollPreviews', 'payrollPreapproval', 'payrollReadStatus', 'payrollPreviewAdvanceMonth',
-  'payrollPreviewPartialPayment', 'expenseCorrectionOptions', 'expensePreviewCorrection', 'sweaterPreviewAdministrativeCompletion',
-  'supervisorOverview', 'supervisorRecords', 'partnerEligibilityGet', 'partnerInsights',
-  'partnerProfile', 'sweaterPreviewImport', 'sweaterPreviewOwnerWashTax', 'sweaterBookingCleanupPreview', 'sweaterServiceTypeFillPreview',
-  'sweaterListIntegrationKeys', 'sweaterServiceTypes', 'authBootstrapStatus',
-]);
-const afterServerCall = (name) => { if (!READ_ONLY_OPERATIONS.has(name)) invalidateAllReads(); };
 
 // The Firebase web config is a PUBLIC client identifier — Google ships it
 // in the browser bundle by design; access is enforced by Firestore/Storage
@@ -111,7 +103,7 @@ export async function callLedger(name, payload = {}) {
   if (!functions) throw new Error('Firebase غير مُهيّأ — لا يمكن الترحيل.');
   try {
     const res = await httpsCallable(functions, name)(payload);
-    afterServerCall(name);
+    invalidateAfterServerCall(name, payload);
     return res.data;
   } catch (e) {
     const err = new Error(e?.message || 'تعذّر إتمام العملية.');
@@ -175,7 +167,7 @@ async function callLedgerApi(name, payload = {}, endpoint = ledgerApiUrl) {
     if (e.details?.problems) err.problems = e.details.problems;
     throw err;
   }
-  afterServerCall(name);
+  invalidateAfterServerCall(name, payload);
   return body?.result;
 }
 

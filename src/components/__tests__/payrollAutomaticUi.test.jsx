@@ -44,11 +44,14 @@ it('ignores a late previous-month preview after switching month', async () => {
   const next = new Date(); next.setUTCMonth(next.getUTCMonth()+1); const nextMonth = next.toISOString().slice(0,7);
   let resolveOld; state.preview.mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve; }));
   const { container } = render(<BikerPayroll role="admin" />);
-  fireEvent.change(container.querySelector('input[type="month"]'), { target: { value: nextMonth } });
+  fireEvent.click(screen.getByRole('button', { name: 'الشهر', exact: true }));
+  if (next.getFullYear() !== new Date().getFullYear()) fireEvent.click(screen.getByRole('button', { name: 'السنة التالية' }));
+  fireEvent.click(container.querySelector(`button[data-month="${nextMonth}"]`));
   await screen.findAllByText('Synthetic worker');
   resolveOld(result('2026-09', { lines: [{ ...result('2026-09').lines[0], name: 'Stale worker' }] }));
   await waitFor(() => expect(screen.queryByText('Stale worker')).toBeNull());
-  expect(container.querySelector('input[type="month"]').value).toBe(nextMonth);
+  expect(container.querySelector('input[type="month"]')).toBeNull();
+  expect(state.preview.mock.lastCall[0].periodKey).toBe(nextMonth);
 });
 it('item fallback preserves bonus/deduction reasons without a manual advance', () => {
   expect(automaticPayrollAdjustments(null, [{ bikerId: 'a', bonus: 20, bonusReason: 'Real bonus', deduction: 10,

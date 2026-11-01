@@ -56,7 +56,8 @@ it('يفرق بين الرواتب غير المحتسبة والصفر الفع
   await waitFor(() => expect(screen.queryByText('لم تُحتسب بعد')).toBeNull());
   expect(document.querySelectorAll('.sw-stat-value')).toHaveLength(6);
   expect([...document.querySelectorAll('.sw-stat-value')].every((node) => node.textContent.includes('0.00'))).toBe(true);
-  fireEvent.change(document.querySelector('input[type="month"]'), { target: { value: '2026-08' } });
+  fireEvent.click(screen.getByRole('button', { name: 'الشهر', exact: true }));
+  fireEvent.click(document.querySelector('button[data-month="2026-08"]'));
   expect(await screen.findAllByText('لم تُحتسب بعد')).toHaveLength(6);
 });
 

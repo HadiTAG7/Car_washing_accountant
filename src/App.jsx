@@ -219,7 +219,7 @@ function AppShell({ membership }) {
           {/* key={activeTab} remounts the wrapper per tab so the page-in
               entrance replays on every switch (no-op under
               prefers-reduced-motion). */}
-          <div key={pageKey} className="animate-page-in flex-1 flex flex-col">
+          <div key={pageKey} className="sw-workspace animate-page-in flex-1 flex flex-col">
             <RouteMounted page={effectiveTab} />
             {investorView && <InvestorPage view={investorView} />}
             {effectiveTab === 'overview' && (membership.role === 'supervisor' ? <SupervisorPage /> : <OverviewPage onNavigate={handleSelectTab} />)}

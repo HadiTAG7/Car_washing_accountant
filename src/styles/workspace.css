@@ -1,0 +1,32 @@
+/* The monthly income statement is the shared page recipe. Keep semantic
+   warnings, amounts and action colours in their existing components. */
+.sw-workspace { min-width: 0; color: var(--sw-text-primary); background: var(--sw-canvas-subtle); }
+.sw-workspace > main, .sw-workspace > main[class] {
+  width: 100%; max-width: 1600px; min-width: 0; box-sizing: border-box;
+  margin-inline: auto; padding: 16px; overflow-wrap: anywhere;
+}
+@media (min-width: 640px) { .sw-workspace > main, .sw-workspace > main[class] { padding: 24px; } }
+.sw-workspace :is(.fw-panel, .fm-card, .fm-actions, .sw-executive__metrics > section,
+  .sw-executive__queue, .sw-executive__weekly, .sw-executive-daily__metrics > section,
+  .sw-executive-daily__decisions article, .sw-executive-daily__operations,
+  .sw-executive__toolbar) {
+  border-radius: var(--sw-radius-card); box-shadow: var(--sw-shadow-card);
+}
+.sw-workspace .sw-executive__toolbar {
+  background: var(--sw-surface); border: 1px solid var(--sw-border-subtle); padding: 20px;
+}
+.sw-workspace :is(.fw-page, .sw-executive-page) { color: var(--sw-text-primary); }
+.sw-workspace .fw-page :focus-visible { outline-color: var(--sw-action); }
+.sw-workspace .fw-page :is(th,td) { text-align: start; }
+.payroll-advance-details { font-size: 11px; color: var(--sw-text-secondary); margin-top: 8px; }
+.payroll-advance-details summary { cursor: pointer; min-height: 32px; padding-block: 6px; }
+.payroll-advance-details p { margin-block: 5px; }
+.settlement-preview { min-width: 0; }
+.settlement-preview__figures { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 16px; margin-block: 16px; }
+.settlement-preview__figures > div { display: grid; gap: 6px; min-width: 0; }
+.settlement-preview__figures strong { font-size: 1.4rem; font-variant-numeric: tabular-nums; }
+.settlement-preview__figures span, .settlement-preview small { color: var(--sw-text-secondary); font-size: 12px; }
+.settlement-preview details { border-top: 1px solid var(--sw-border-subtle); padding-block: 12px; }
+.settlement-preview summary { cursor: pointer; }
+.settlement-preview li { margin-block: 8px; }
+@media (max-width: 639px) { .settlement-preview__figures { grid-template-columns: 1fr; } }

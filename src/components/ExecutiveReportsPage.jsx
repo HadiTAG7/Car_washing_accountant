@@ -141,6 +141,7 @@ export function ExecutiveReportsAdmin({useQuery=useExecutiveReportQuery,request=
       {!archive.data?.items.length&&<option value="">لا تقرير مختار</option>}{archive.data?.items.map(r=><option key={r.reportId} value={r.reportId}>{r.dateRiyadh}</option>)}</select></label>
       <button type="button" onClick={()=>{setBefore(null);setSelected(null);setRevision(null);setRefresh(x=>x+1);}}>آخر التقارير</button>
       {before&&<p>تعرض صفحة أقدم من الأرشيف؛ ليست أحدث التقارير.</p>}
+      <p>الأرشيف يعرض التقارير التي حُفظت في الموقع فقط. تجهيز تقرير خارج الموقع لا يحدّث الأرشيف.</p>
     </section>
     {(archive.loading||source.loading)&&<p role="status">جارٍ قراءة التقرير المختار…</p>}
     {(archive.error||source.error)&&<p role="alert">{archive.error||source.error}</p>}

@@ -16,8 +16,11 @@ const executionRequest = z.object({ requestId: request, ticketId: ticket, expect
   action: z.enum(['observed','receipt']), objectionId: z.string().regex(/^OBJ[-A-Z0-9]+$/).nullable(),
 }).strict();
 const parse = (schema, input) => { const r = schema.safeParse(input); if (!r.success) fail(r.error.issues.map(i => i.message).join(' · '), 'invalid-argument'); return r.data; };
-async function authorized(db, auth, owner = false) {
-  if (await callerRole(db, auth) !== 'admin') fail('سجل مراجعة التكتات للمدير فقط.', 'permission-denied');
+async function authorized(db, auth, owner = false, read = null) {
+  // Membership reads participate in the transaction's conflict/revocation
+  // checks, using the existing role resolver rather than a second role policy.
+  const roleDb = read ? { collection: name => ({ doc: id => ({ get: () => read(db.collection(name).doc(id)) }) }) } : db;
+  if (await callerRole(roleDb, read ? { ...auth } : auth) !== 'admin') fail('سجل مراجعة التكتات للمدير فقط.', 'permission-denied');
   if (owner && (auth.uid !== REVIEW_OWNER_UID || String(auth.token?.email || '').toLowerCase() !== REVIEW_OWNER_EMAIL))
     fail('قرار التكت من جلسة هادي المخولة فقط؛ دور المدير وحده لا يكفي.', 'permission-denied');
 }
@@ -42,7 +45,7 @@ async function transaction(db, auth, input, mode, now) {
   const ref = db.collection(COLLECTION).doc(ticketDocumentId(input.source?.ticketId || input.ticketId));
   const qref = db.collection(COLLECTION).doc(QUEUE), requestHash = hashBody({ mode, input });
   return db.runTransaction(async tx => {
-    await authorized(db, auth, mode === 'owner');
+    await authorized(db, auth, mode === 'owner', ref => tx.get(ref));
     const [snap, qsnap, cases] = await Promise.all([tx.get(ref), tx.get(qref), allCases(q => tx.get(q), db)]);
     const old = snap.exists ? snap.data() : null, queue = qsnap.exists ? qsnap.data() : queueDefault();
     const ticketId = input.source?.ticketId || input.ticketId;

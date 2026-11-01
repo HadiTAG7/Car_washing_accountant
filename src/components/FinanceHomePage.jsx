@@ -84,7 +84,7 @@ function FinanceHomeContent({ onNavigate }) {
   return <><TopBar title="ملخص المالية" subtitle="نتيجة الشهر، الفلوس المتاحة، وما يحتاج إجراء" />
     <main className="fw-page fm-page" dir={language === 'en' ? 'ltr' : 'rtl'} aria-busy={data.loading}>
       <div className="fw-toolbar"><div className="fw-period" role="group" aria-label="فترة الملخص"><span>الشهر</span>
-        <BikerProfileMonthPicker value={month} max="9999-12" language="en" onChange={setMonth} /></div>
+        <BikerProfileMonthPicker value={month} max="9999-12" language={language} onChange={setMonth} /></div>
         <button type="button" disabled={data.loading} onClick={() => { setReadStarted(new Date().toISOString()); data.refresh(); reports.refresh(); }}><RefreshCw size={16} /> تحديث البيانات</button>
       </div>
       <p className="fm-ledger-note" role="note"><AlertTriangle size={14} />الأرصدة دفترية، وليست كشف بنك أو جرد صندوق أو إثبات سداد.</p>

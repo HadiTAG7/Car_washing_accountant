@@ -114,27 +114,31 @@ describe('finance report UI and access boundaries', () => {
     fireEvent.click(screen.getByRole('button', { name: /^رأس المال المدفوع/ })); expect(navigate).toHaveBeenCalledWith('partner_capital');
     fireEvent.click(screen.getByRole('button', { name: /^الضريبة المستحقة/ })); expect(navigate).toHaveBeenCalledWith('vat');
   });
-  it('uses the branded English calendar and filters posted revenue without refetching or writing', () => {
+  it.each([
+    { language: 'ar', triggerName: 'الشهر', dialogName: 'اختيار الشهر', month: 'أكتوبر', next: 'نوفمبر 2026', previous: 'سبتمبر 2026', year: 'السنة التالية', direction: 'rtl' },
+    { language: 'en', triggerName: 'Month', dialogName: 'Choose month', month: 'October', next: 'November 2026', previous: 'September 2026', year: 'Next year', direction: 'ltr' },
+  ])('uses the $language branded calendar and filters posted revenue without refetching or writing', ({ language, triggerName, dialogName, month, next, previous, year, direction }) => {
     vi.useFakeTimers(); vi.setSystemTime(new Date('2026-10-19T07:00:00Z'));
     const refetch = vi.fn();
     mock.home.mockImplementation(month => ({ today: '2026-10-19', month, problems: [], loading: false,
       ledger: { postedRevenue: month === '2026-10' ? 120 : 80, negativeAccounts: [] }, refresh: refetch, settlementReady: false }));
-    render(<LanguageContext.Provider value={{ language: 'ar' }}><FinanceHomePage onNavigate={vi.fn()} /></LanguageContext.Provider>);
-    const trigger = screen.getByRole('button', { name: 'Month' });
+    render(<LanguageContext.Provider value={{ language }}><FinanceHomePage onNavigate={vi.fn()} /></LanguageContext.Provider>);
+    const trigger = screen.getByRole('button', { name: triggerName });
     const revenue = () => screen.getByRole('button', { name: /^الإيراد / }).textContent;
-    expect(trigger.textContent).toContain('October 2026'); expect(revenue()).toContain('120.00');
+    expect(trigger.textContent).toContain(month); expect(revenue()).toContain('120.00');
     expect(document.querySelector('input[type="month"]')).toBeNull();
     fireEvent.click(trigger);
-    const dialog = screen.getByRole('dialog', { name: 'Choose month' });
-    expect(dialog.parentElement.dir).toBe('ltr'); expect(dialog.textContent).not.toMatch(/[٠-٩]/);
-    expect(screen.getByRole('button', { name: 'November 2026' }).disabled).toBe(false);
-    fireEvent.click(screen.getByRole('button', { name: 'September 2026' }));
-    expect(trigger.textContent).toContain('September 2026'); expect(revenue()).toContain('80.00');
+    const dialog = screen.getByRole('dialog', { name: dialogName });
+    expect(dialog.parentElement.dir).toBe(direction);
+    if (language === 'en') expect(dialog.textContent).not.toMatch(/[٠-٩]/);
+    expect(screen.getByRole('button', { name: next }).disabled).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: previous }));
+    expect(trigger.textContent).toContain(previous.split(' ')[0]); expect(revenue()).toContain('80.00');
     expect(screen.queryByRole('dialog')).toBeNull(); expect(document.activeElement).toBe(trigger);
     expect(mock.home).toHaveBeenLastCalledWith('2026-09');
-    fireEvent.click(trigger); fireEvent.click(screen.getByRole('button', { name: 'Next year' }));
+    fireEvent.click(trigger); fireEvent.click(screen.getByRole('button', { name: year }));
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
-    expect(trigger.textContent).toContain('September 2026'); expect(document.activeElement).toBe(trigger);
+    expect(trigger.textContent).toContain(previous.split(' ')[0]); expect(document.activeElement).toBe(trigger);
     expect(refetch).not.toHaveBeenCalled(); expect(mock.api).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'تحديث البيانات' })); expect(refetch).toHaveBeenCalledTimes(1);
   });

@@ -15,6 +15,8 @@ import QualityViolationsPage from '../QualityViolationsPage';
 import Sidebar from '../Sidebar';
 import { usePageNavigation } from '../../hooks/usePageNavigation';
 import { visibleGroupsFor } from '../../lib/navGroups';
+import { LanguageContext } from '../../i18n/LanguageContext';
+import { loadEnglish } from '../../i18n/locale';
 const row = { metricKey: 'cancelledByCustomer', sourceId: 'source-a', bookingId: '5572978', date: '2026-10-20', time: '19:10', driverExternalId: '2007', reason: 'إلغاء من العميل', quantity: 1, amount: null, sourceUrl: 'https://ssp-portal.sweater.sa/test' };
 const state = () => ({ current: { snapshot: { metrics: { cancelledByCustomer: 1 }, metricSources: { cancelledByCustomer: { snapshotId: 'reading', extractedAtIso: '2026-10-26T19:00:00+03:00' } }, eventGroups: { cancelledByCustomer: { rows: [row], totalRows: 1, complete: true } } } },
   previous: {}, workers: { bikers: [{ id: 'worker', name: 'بايكر اختبار', driverExternalId: '2007' }] }, objections: { data: [] }, settings: { data: null },
@@ -39,6 +41,15 @@ it('offers seven named tabs and distinguishes unavailable details from zero', ()
   expect(mocks.save).not.toHaveBeenCalled();
   expect(document.querySelectorAll('.qv-secondary')).toHaveLength(3);
   expect([...document.querySelectorAll('.qv-secondary')].every(d => !d.open)).toBe(true);
+});
+it('uses English for composed coverage and partial labels, preserving source reason text',async()=>{
+  await loadEnglish();
+  const data=state(); data.current.snapshot.eventGroups.cancelledByCustomer.complete=false; mocks.read.mockReturnValue(data);
+  data.current.snapshot.eventGroups.cancelledByCustomer.rows=[{...row,reason:'غير متاح'}];
+  render(<LanguageContext.Provider value={{language:'en'}}><QualityViolationsPage/></LanguageContext.Provider>);
+  const tab=document.querySelector('#qv-tab-cancelledByCustomer');expect(tab.textContent).toContain('partial'); fireEvent.click(tab);
+  expect(screen.getByRole('tabpanel').textContent).toContain('1 row received of 1 · Partial details');
+  expect(screen.getByRole('tabpanel').textContent).toContain('غير متاح');
 });
 it('supports RTL arrows, Home and End without saving or requiring a biker-table selection', () => {
   render(<QualityViolationsPage />);
@@ -114,7 +125,7 @@ it('distinguishes complete empty, partial empty and read failure', () => {
   data.current.snapshot.eventGroups.violations.complete = false; view.rerender(<QualityViolationsPage />);
   expect(screen.getByText('لا صفوف مستلمة بعد؛ التفاصيل جزئية وليست صفر حالات.')).toBeTruthy();
   data.current.error = Error('offline'); view.rerender(<QualityViolationsPage />);
-  expect(screen.getByRole('alert').textContent).toContain('تعذّرت قراءة التفاصيل'); expect(screen.queryByRole('tabpanel')).toBeNull();
+  expect(screen.getByRole('alert').textContent).toContain('تعذّرت قراءة لقطة المجاميع'); expect(screen.getByRole('tabpanel').textContent).toContain('غير متاح');
 });
 it('disables saving when current follow-up cannot be read and returns focus when details close', () => {
   const data = state(); data.objections.error = Error('unavailable'); mocks.read.mockReturnValue(data);
@@ -159,4 +170,42 @@ it('warns on the real Sidebar navigation path and lets cancellation retain the p
   expect(within(details).getByLabelText('ملاحظة').value).toBe('مسودة قبل مغادرة القائمة');
   confirm.mockReturnValue(true); fireEvent.click(screen.getByRole('button', { name: 'ملخص المالية' }));
   expect(screen.getByText('Finance destination')).toBeTruthy(); expect(mocks.save).not.toHaveBeenCalled();
+});
+it('links stored ticket facts independently of a missing aggregate, preserving wallet amounts and the archived review', () => {
+  const data = state(); data.current.error = Error('aggregate unavailable');
+  data.sourceDetails = { reviews: { data: { cases: [{ recordType:'ssp_ticket_review_v1', ticketId:'TEST-TICKET', reviewStatus:'historical_excluded',
+    objectionHistory:[{id:'OBJ-TEST-A',status:'Accepted'},{id:'OBJ-TEST-B',status:'Rejected'}], source:{
+      facts:{ ticketDate:'2026-10-20', biker:{name:'Source name',externalId:'2007'}, complaint:'Synthetic wallet compensation', washIds:['TEST-WASH'], comments:[], supportResponse:'Recorded support response' },
+      source:{url:'https://ssp-portal.sweater.sa/tickets/TEST-TICKET',readAt:'2026-10-27T12:00:00Z',coverage:{complete:false,limitations:['Synthetic partial coverage'],filters:'October tickets'}},
+      amounts:[{kind:'compensation',value:20,unit:'SAR',sourceRef:'Compensation section'},{kind:'customer_code',value:60,unit:'SAR',sourceRef:'Customer promo code'},
+        {kind:'compensation',value:1,unit:'count',sourceRef:'Wash in Wallet'}] } }] } }, bookings:{data:[]},observations:{data:[]} };
+  mocks.read.mockReturnValue(data); render(<QualityViolationsPage />); choose('تعويضات');
+  let panel=screen.getByRole('tabpanel'); expect(panel.textContent).toContain('صفوف مرتبطة: 1');
+  const detail=within(panel).getByText('TEST-TICKET').closest('details'); fireEvent.click(detail.querySelector('summary'));
+  expect(detail.textContent).toContain('بايكر اختبار'); expect(detail.textContent).toContain('OBJ-TEST-A'); expect(detail.textContent).toContain('OBJ-TEST-B');
+  expect(within(detail).getByRole('cell',{name:'20'})).toBeTruthy(); expect(within(detail).getByRole('cell',{name:'60'})).toBeTruthy();
+  expect(within(detail).getByRole('link',{name:'فتح سجل التكت القائم'}).getAttribute('href')).toBe('?page=compensation_review&ticket=TEST-TICKET');
+  choose('غسلات مجانية'); panel=screen.getByRole('tabpanel'); expect(panel.textContent).not.toContain('TEST-TICKET');
+  expect(mocks.save).not.toHaveBeenCalled();
+});
+it('keeps cancellation classifications separate from an admin status and displays unknown rows for review', () => {
+  const data=state(); const booking=(id,reason)=>({updatedAtIso:'2026-10-27T12:00:00Z',observedAtIso:'2026-10-27T12:00:00Z',record:{sspBookingId:id,serviceDate:'2026-10-20',driverExternalId:'2007',rawStatus:'Cancelled by Admin',
+    notes:reason?'Cancellation Reason\nReason\n'+reason:'',sourceUrl:'https://ssp-portal.sweater.sa/bookings/TEST'}});
+  data.sourceDetails={reviews:{data:{cases:[]}},bookings:{data:[booking('TEST-BIKER','Biker illness'),booking('TEST-UNKNOWN',null)]},observations:{data:[]}};
+  mocks.read.mockReturnValue(data);render(<QualityViolationsPage/>);choose('إلغاء البايكر');
+  expect(screen.getByRole('tabpanel').textContent).toContain('TEST-BIKER');expect(screen.getByRole('tabpanel').textContent).not.toContain('TEST-UNKNOWN');
+  expect(screen.getByText('حجوزات إلغاء غير مصنفة (1)')).toBeTruthy();expect(mocks.save).not.toHaveBeenCalled();
+});
+it('does not display one resolved invoice deduction for conflicting same-time invoice notes',()=>{
+  const data=state(), at='2026-10-27T12:00:00Z';
+  const record={sspBookingId:'C-123',serviceDate:'2026-10-20',rawStatus:'Cancelled by Admin',driverExternalId:'2007',
+    sourceUrl:'https://ssp-portal.sweater.sa/bookings/TEST',notes:'Cancellation Reason\nReason\nBiker illness'};
+  data.sourceDetails={reviews:{data:{cases:[]}},bookings:{data:[{record,observedAtIso:'2026-10-26T12:00:00Z'}]},observations:{data:[10,20].map((amount,i)=>({
+    id:String(i),sspBookingId:'C-123',sourceReadAtIso:at,fetchedAtIso:at,rawPayload:{...record,notes:record.notes+'\nSSP_INVOICE_DEDUCTION_V1='+JSON.stringify({signedDeductionSAR:-amount})}}))}};
+  mocks.read.mockReturnValue(data); render(<QualityViolationsPage/>);
+  const section=screen.getByText('حجوزات إلغاء غير مصنفة (1)').closest('details');fireEvent.click(section.querySelector('summary'));
+  const row=within(section).getByText('C-123').closest('details');fireEvent.click(row.querySelector('summary'));
+  expect(row.textContent).toContain('قراءات متعارضة');expect(row.textContent).not.toContain('خصم فاتورة الحجز كما ورد:');
+  expect(row.textContent).toContain('"signedDeductionSAR":-10'); expect(row.textContent).toContain('"signedDeductionSAR":-20');
+  expect(mocks.save).not.toHaveBeenCalled();
 });

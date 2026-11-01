@@ -15,10 +15,14 @@ import ScrollableTable from './ScrollableTable';
 import { Card } from './UI';
 import BikerDeductionFollowup from './BikerDeductionFollowup';
 import { BEFORE_PAGE_NAVIGATION } from '../lib/navigationEvents';
+import { qualitySourceDetails } from '../lib/qualitySourceDetails';
+import QualitySourceRows from './QualitySourceRows';
+import { useLanguage } from '../i18n/useLanguage';
+import { getLanguage, translate } from '../i18n/locale';
 import './QualityViolationsPage.css';
 
 const number = value => value == null ? 'غير متاح' : formatNumber(Math.round(value * 100) / 100);
-const stamp = value => value ? new Date(value).toLocaleString('ar-SA-u-ca-gregory', { timeZone: 'Asia/Riyadh', numberingSystem: 'latn' }) : 'غير متاح';
+const stamp = value => value ? new Date(value).toLocaleString(getLanguage() === 'en' ? 'en-GB' : 'ar-SA-u-ca-gregory', { timeZone: 'Asia/Riyadh', numberingSystem: 'latn' }) : 'غير متاح';
 const button = 'sw-button sw-button--secondary sw-button--sm';
 const typeLabels = { violations: 'مخالفات', damages: 'أضرار', compensations: 'تعويضات', freeWashCompensation: 'غسلات مجانية',
   cancelledByBiker: 'إلغاء البايكر', cancelledMaintenance: 'إلغاء الصيانة', cancelledByCustomer: 'إلغاء العميل' };
@@ -31,6 +35,7 @@ export default function QualityViolationsPage() {
 }
 
 export function QualityViolationsContent() {
+  const { language } = useLanguage();
   const today = riyadhToday(), [month, setMonth] = useState(today.slice(0, 7));
   const [activeType, setActiveType] = useState(COMPENSATION_KEYS[0]), [search, setSearch] = useState(''), [selected, setSelected] = useState(null);
   const [drafts, setDrafts] = useState({}), [deductionDirty, setDeductionDirty] = useState(false);
@@ -42,23 +47,28 @@ export function QualityViolationsContent() {
   const events = useMemo(() => rows.flatMap(biker => biker.events.map(row => ({ ...row, bikerLabel: biker.name, bikerRowId: biker.id })))
     .sort((a, b) => `${b.date || ''} ${b.time || ''}`.localeCompare(`${a.date || ''} ${a.time || ''}`)), [rows]);
   const quality = useOverviewBikerQuality(read.workers.bikers, month, true);
+  const details = read.sourceDetails;
+  const linked = useMemo(() => qualitySourceDetails({ month, language, bikers: read.workers.bikers,
+    reviews: details?.reviews?.error || details?.reviews?.loading ? [] : details?.reviews?.data?.cases,
+    bookings: details?.bookings?.error || details?.bookings?.loading ? [] : details?.bookings?.data,
+    raw: details?.observations?.error || details?.observations?.loading ? [] : details?.observations?.data }), [month, language, read.workers.bikers, details]);
   const selectedRow = rows.find(row => row.id === selected);
   const draftCount = Object.keys(drafts).length + Number(deductionDirty);
   useEffect(() => {
     if (!draftCount) return undefined;
     const warn = event => { event.preventDefault(); event.returnValue = ''; };
-    const guardNavigation = event => { if (!window.confirm('عندك تغييرات غير محفوظة. تتركها وتكمل؟')) event.preventDefault(); };
+    const guardNavigation = event => { if (!window.confirm(translate('عندك تغييرات غير محفوظة. تتركها وتكمل؟'))) event.preventDefault(); };
     window.addEventListener('beforeunload', warn);
     window.addEventListener(BEFORE_PAGE_NAVIGATION, guardNavigation);
     return () => { window.removeEventListener('beforeunload', warn); window.removeEventListener(BEFORE_PAGE_NAVIGATION, guardNavigation); };
   }, [draftCount]);
   const updateDraft = (key, value) => setDrafts(previous => ({ ...previous, [key]: value }));
   const clearDraft = key => setDrafts(previous => { const next = { ...previous }; delete next[key]; return next; });
-  const protectLink = event => { if (draftCount && !window.confirm('عندك تغييرات غير محفوظة. تتركها وتكمل؟')) event.preventDefault(); };
+  const protectLink = event => { if (draftCount && !window.confirm(translate('عندك تغييرات غير محفوظة. تتركها وتكمل؟'))) event.preventDefault(); };
   const chooseType = (key, focus = false) => { setActiveType(key); if (focus) tabRefs.current[key]?.focus(); };
-  const matches = row => (!selected || row.bikerRowId === selected) && `${row.bikerLabel} ${row.driverExternalId || ''} ${row.bookingId || ''} ${row.date || ''} ${row.reason || ''}`.toLowerCase().includes(search.trim().toLowerCase());
+  const matches = row => (!selected || row.bikerRowId === selected) && `${row.bikerLabel} ${row.driverExternalId || ''} ${row.sourceId || ''} ${row.bookingId || ''} ${row.date || ''} ${row.reason || ''}`.toLowerCase().includes(search.trim().toLowerCase());
   return <><TopBar title="الجودة والمخالفات" subtitle="المشاكل حسب النوع، وتفاصيلها من المصدر المحفوظ" />
-    <main className="qv-page" dir="rtl">
+    <main className="qv-page" dir={language === 'en' ? 'ltr' : 'rtl'}>
       <SweaterFreshnessBar />
       <div className="qv-toolbar"><div><h2>الجودة والمخالفات</h2><p>من اللقطات المحفوظة · بدون اتصال مباشر بسويتر</p></div>
         <BikerProfileMonthPicker value={month} max={today.slice(0, 7)} language="ar" onChange={value => { setMonth(value); setSelected(null); }} />
@@ -74,22 +84,30 @@ export function QualityViolationsContent() {
       <div className="qv-tabs" role="tablist" aria-label="أنواع المشاكل">
         {COMPENSATION_KEYS.map(key => {
           const group = snapshot?.eventGroups?.[key];
+          const total = snapshot?.metrics?.[key];
           return <button type="button" role="tab" key={key} ref={element => { tabRefs.current[key] = element; }}
             id={`qv-tab-${key}`} aria-controls={`qv-panel-${key}`} aria-selected={activeType === key} tabIndex={activeType === key ? 0 : -1}
             onClick={() => chooseType(key)} onKeyDown={event => {
-              const index = COMPENSATION_KEYS.indexOf(key), offset = event.key === 'ArrowLeft' ? 1 : event.key === 'ArrowRight' ? -1 : 0;
+              const index = COMPENSATION_KEYS.indexOf(key), offset = event.key === 'ArrowLeft' ? (language === 'en' ? -1 : 1) : event.key === 'ArrowRight' ? (language === 'en' ? 1 : -1) : 0;
               const next = event.key === 'Home' ? COMPENSATION_KEYS[0] : event.key === 'End' ? COMPENSATION_KEYS.at(-1)
                 : offset ? COMPENSATION_KEYS[(index + offset + COMPENSATION_KEYS.length) % COMPENSATION_KEYS.length] : null;
               if (next) { event.preventDefault(); chooseType(next, true); }
-            }}><span>{typeLabels[key]}</span><small>{group ? `${number(group.rows.length)}${group.complete ? '' : ' · جزئي'}` : 'غير متاح'}</small></button>;
+            }}><span>{typeLabels[key]}</span><strong>{number(total)} {SWEATER_METRICS[key].unit === 'sar' ? 'ر.س' : key === 'freeWashCompensation' ? 'غسلة' : 'واقعة'}</strong>
+              <small>صفوف اللقطة: {group ? `${number(group.rows.length)}${group.complete ? '' : language === 'en' ? ' · partial' : ' · جزئي'}` : 'غير متاح'}</small>
+              {linked.groups[key].length > 0 && <small>سجلات مرتبطة: {linked.groups[key].length}</small>}</button>;
         })}
       </div>
-      <p className="qv-note">الأعداد على التبويبات للصفوف المستلمة فقط؛ لا تثبت اكتمال تفاصيل الشهر.</p>
-      {loading ? <p role="status">جارٍ قراءة اللقطات…</p> : error ? <p role="alert">تعذّرت قراءة التفاصيل. أعد المحاولة.</p> : COMPENSATION_KEYS.map(key => {
+      <p className="qv-note">إجمالي سويتر مستقل عن صفوف اللقطة والسجلات المرتبطة. اختلاف المصدر أو وقت القراءة لا يثبت المطابقة.</p>
+      {loading && <p role="status">جارٍ قراءة اللقطات…</p>}
+      {error && <p role="alert">تعذّرت قراءة لقطة المجاميع؛ المصادر المرتبطة مستقلة عنها.</p>}
+      {COMPENSATION_KEYS.map(key => {
         const group = snapshot?.eventGroups?.[key], own = events.filter(row => row.metricKey === key), shown = own.filter(matches);
+        const ticketSource = ['compensations','freeWashCompensation'].includes(key);
+        const sourceBusy = ticketSource ? details?.reviews?.loading : details?.bookings?.loading || details?.observations?.loading;
+        const sourceFailed = ticketSource ? details?.reviews?.error : details?.bookings?.error || details?.observations?.error;
         return <section key={key} role="tabpanel" id={`qv-panel-${key}`} aria-labelledby={`qv-tab-${key}`} hidden={activeType !== key}>
           <TypeSummary metricKey={key} snapshot={snapshot} previous={read.previous} month={month} />
-          {!group ? <p className="qv-note">ما وصلت تفاصيل سويتر لهذا النوع؛ المجاميع وحدها لا تحدد الحجز أو البايكر.</p>
+          {!group ? <p className="qv-note">ما وصلت تفاصيل جدول المجاميع لهذا النوع؛ السجلات الأخرى أدناه لها مصدر وتوقيت مستقلان.</p>
             : <><p className="qv-note">نتائج البحث: {shown.length} من {own.length} صف مستلم.</p>
               {!own.length ? <p>{group.complete ? 'لا حالات في التفاصيل المكتملة لهذا النوع.' : 'لا صفوف مستلمة بعد؛ التفاصيل جزئية وليست صفر حالات.'}</p>
                 : !shown.length && <p>لا توجد نتائج للبحث.</p>}
@@ -102,8 +120,23 @@ export function QualityViolationsContent() {
                   disabled={Boolean(read.objections.error || read.objections.loading)} save={read.save} /></div>;
               })}</div>
             </>}
+          {['compensations','freeWashCompensation','cancelledByBiker','cancelledMaintenance','cancelledByCustomer'].includes(key) && <section className="qv-linked" aria-label="تفاصيل المصادر المرتبطة">
+            <h3>{['compensations','freeWashCompensation'].includes(key) ? 'تكتات المصدر المحفوظة' : 'الحجوزات المصنفة حسب السبب أو الحالة الصريحة'}</h3>
+            {sourceBusy ? <p role="status">جارٍ قراءة السجلات المرتبطة…</p> : sourceFailed && <p role="alert">تعذّرت قراءة بعض المصادر المرتبطة؛ المعروض لا يثبت اكتمالها.</p>}
+            <p className="qv-note">صفوف مرتبطة: {sourceBusy || sourceFailed ? 'غير متاح' : linked.groups[key].length}. ليست مطابقة تلقائية لإجمالي سويتر.</p>
+            {key === 'compensations' && <p className="qv-note">التكتات ذات التعويض لا تثبت خصمًا من الشركة. كود العميل ومبلغ التعويض وفاتورة الحجز بنود مستقلة.</p>}
+            {key === 'freeWashCompensation' && <p className="qv-note">نعرض الغسلة المجانية بنوع صريح ووحدة عدد. مبلغ 20 ريالًا أو كود العميل لا يكفي.</p>}
+            {!sourceBusy && !sourceFailed && !linked.groups[key].length && <p>لا سجلات مصنفة محفوظة لهذا النوع؛ لا يعني ذلك صفر حالات في سويتر.</p>}
+            {linked.groups[key].length > 0 && <p className="qv-note">نتائج البحث في السجلات المرتبطة: {linked.groups[key].filter(matches).length} من {linked.groups[key].length}</p>}
+            <QualitySourceRows rows={linked.groups[key].filter(matches)} protectLink={protectLink} />
+          </section>}
         </section>;
       })}
+      {linked.undatedTickets > 0 && <p className="qv-warning">تكتات بلا تاريخ إنشاء مقروء: {linked.undatedTickets}. لم تُنسب إلى الشهر المختار؛ راجع سجل التكتات.</p>}
+      {linked.unclassified.length > 0 && <details className="qv-secondary"><summary>حجوزات إلغاء غير مصنفة ({linked.unclassified.length})</summary>
+        <p>حالة الإلغاء الإداري وحدها لا تحدد البايكر أو العميل أو الصيانة. تبقى هذه الحجوزات خارج التصنيفات.</p>
+        <QualitySourceRows rows={linked.unclassified.filter(matches)} protectLink={protectLink} />
+      </details>}
       <details className="qv-secondary"><summary>حسب البايكر</summary><Card className="qv-panel">
         <p>الأرقام الجزئية هي الصفوف المستلمة فقط. عدم توفر الإسناد لا يعني صفر مخالفات.</p>
         <ScrollableTable className="overflow-x-auto"><table className="qv-table"><thead><tr>{['البايكر', 'رقم سويتر', 'المخالفات (ر.س)', 'الغسلات المجانية', 'إلغاء البايكر', 'الأضرار والحوادث (ر.س)', 'نقاط الجودة من البروفايل', 'التفاصيل'].map(label => <th key={label}>{label}</th>)}</tr></thead>
@@ -113,7 +146,7 @@ export function QualityViolationsContent() {
             return <tr key={row.id}><th>{row.name}</th><td><bdi>{row.externalId || 'غير مربوط بسويتر'}</bdi></td>
               {['violations', 'freeWashCompensation', 'cancelledByBiker', 'damages'].map(key => <td key={key}>{number(row.values[key].value)}{row.values[key].value != null && row.values[key].partial && <small> · جزئي</small>}</td>)}
               <td>{score?.points != null ? `${number(score.points)} / ${number(score.weight)}${score.incomplete ? ' · جزئي' : ''}` : 'غير متاح'}</td>
-              <td><button type="button" className={button} onClick={() => { setSelected(row.id); chooseType(row.events[0]?.metricKey || activeType, true); tabRefs.current[row.events[0]?.metricKey || activeType]?.scrollIntoView?.({ block: 'nearest' }); }}>عرض الصفوف ({row.events.length})</button></td></tr>;
+              <td><button type="button" className={button} onClick={() => { setSelected(row.id); chooseType(row.events[0]?.metricKey || activeType, true); tabRefs.current[row.events[0]?.metricKey || activeType]?.scrollIntoView?.({ block: 'nearest' }); }}>عرض حالات البايكر</button></td></tr>;
           })}</tbody></table></ScrollableTable>
       </Card></details>
       <details className="qv-secondary"><summary>إسناد خصومات البايكر — أدوات المتابعة الداخلية</summary>
@@ -129,16 +162,24 @@ export function QualityViolationsContent() {
 }
 
 function TypeSummary({ metricKey: key, snapshot, previous, month }) {
+  const { language } = useLanguage();
   const group = snapshot?.eventGroups?.[key], value = snapshot?.metrics?.[key], money = SWEATER_METRICS[key].unit === 'sar';
   const count = money ? group?.totalRows ?? null : value ?? null, amount = groupAmount(group, value, key);
   const oldSnapshot = previous.error || previous.loading ? null : previous.snapshot;
   const oldGroup = oldSnapshot?.eventGroups?.[key], oldValue = oldSnapshot?.metrics?.[key];
   const oldCount = money ? oldGroup?.totalRows ?? null : oldValue ?? null, oldAmount = groupAmount(oldGroup, oldValue, key);
+  const coverageText = !group ? 'ما وصلت تفاصيل سويتر' : language === 'en'
+    ? `${group.rows.length} ${group.rows.length === 1 ? 'row' : 'rows'} received${group.totalRows != null ? ` of ${group.totalRows}` : ''} · ${group.complete ? 'Complete source table' : 'Partial details'}`
+    : `${group.rows.length} صف مستلم${group.totalRows != null ? ` من ${group.totalRows}` : ''} · ${group.complete ? 'الجدول مكتمل حسب المصدر' : 'تفاصيل جزئية'}`;
   return <Card className="qv-panel qv-type-summary"><h2>{typeLabels[key]} · {month}</h2>
     <div className="qv-type-totals"><p>العدد حسب المصدر: <strong>{number(count)} <small>{key === 'freeWashCompensation' ? 'غسلة' : 'واقعة'}</small></strong></p><p>المبلغ: <strong>{number(amount)} ر.س</strong></p></div>
     <small>عن الشهر السابق: العدد {count != null && oldCount != null ? number(count - oldCount) : 'غير متاح'} · المبلغ {amount != null && oldAmount != null ? `${number(amount - oldAmount)} ر.س` : 'غير متاح'}</small>
-    <p className="qv-note">{!group ? 'ما وصلت تفاصيل سويتر' : `${group.rows.length} صف مستلم${group.totalRows != null ? ` من ${group.totalRows}` : ''} · ${group.complete ? 'الجدول مكتمل حسب المصدر' : 'تفاصيل جزئية'}`}</p>
+    <p className="qv-note">{coverageText}</p>
     <small>قراءة المصدر: {stamp(snapshot?.metricSources?.[key]?.extractedAtIso)} (الرياض)</small>
+    {snapshot?.metricSources?.[key]?.sourceUrl && <p><a href={snapshot.metricSources[key].sourceUrl} target="_blank" rel="noreferrer">مصدر المجموع</a></p>}
+    {key === 'damages' && snapshot?.metricSources?.[key]?.sourceUrl === 'https://ssp-portal.sweater.sa/damages'
+      && <p className="qv-note">النطاق: قائمة الأضرار، كل البايكرز دون تاريخ. الفراغ هنا لا ينفي مطالبات في مصادر أخرى.</p>}
+    {key === 'violations' && <p className="qv-note">المبلغ للمخالفات المسجلة، وليس خصمًا صافيًا بعد الاعتراضات.</p>}
   </Card>;
 }
 
@@ -160,15 +201,18 @@ function EventRow({ row, objection, month, today, deadlineDays, disabled, save, 
   const edit = patch => updateDraft({ status, note, expectedRevision: objection?.revision || 0, snapshotId: row.snapshotId, ...draft, ...patch });
   const deadline = objectionDeadline(row, deadlineDays, today, objection?.status);
   return <details ref={detailsRef} className={`qv-event qv-tone-${deadline?.tone || ''}`}>
-    <summary><strong>الحجز <bdi>{row.bookingId || 'غير متاح'}</bdi></strong><span>{row.bikerLabel} · <bdi>{row.date || 'غير متاح'}</bdi></span>
-      <span>{row.reason || 'غير متاح من المصدر'}</span><span>العدد: {number(row.quantity)} · المبلغ: {number(row.amount)} ر.س</span></summary>
+    <summary><strong>{row.bookingId ? 'الحجز' : 'سجل المصدر'} <bdi>{row.bookingId || row.sourceId}</bdi></strong><span>اسم الموقع حسب الربط: {row.bikerLabel} · <bdi>{row.date || 'غير متاح'}</bdi></span>
+      <span translate={row.reason ? 'no' : undefined}>{row.reason || 'غير متاح من المصدر'}</span><span>العدد: {number(row.quantity)} · المبلغ: {number(row.amount)} ر.س</span></summary>
     <h3>{COMPENSATION_LABELS[row.metricKey]}</h3>
-    <p>البايكر: {row.bikerLabel} · رقم سويتر: <bdi>{row.driverExternalId || 'غير متاح'}</bdi></p>
-    <p>التاريخ: <bdi>{row.date || 'غير متاح'}</bdi> · الوقت: <bdi>{row.time || 'غير متاح'}</bdi> (الرياض)</p><p>السبب: {row.reason || 'غير متاح من المصدر'}</p>
+    <p>رقم سجل المصدر: <bdi>{row.sourceId}</bdi></p>
+    <p>اسم الموقع حسب الربط: {row.bikerLabel} · رقم الشركة في سويتر: <bdi>{row.driverExternalId || 'غير متاح'}</bdi></p>
+    <p className="qv-note">اسم سويتر غير محفوظ في هذه اللقطة؛ راجعه عبر رابط المصدر. رقم الشركة مستقل عن معرّف البايكر الداخلي.</p>
+    <p>التاريخ: <bdi>{row.date || 'غير متاح'}</bdi> · الوقت: <bdi>{row.time || 'غير متاح'}</bdi> (الرياض)</p><p>السبب: {row.reason ? <span translate="no">{row.reason}</span> : 'غير متاح من المصدر'}</p>
     <p>العدد: {row.quantity} · المبلغ: {number(row.amount)} ر.س · <a href={row.sourceUrl} target="_blank" rel="noreferrer">عرض المصدر</a></p>
     {deadline && <p>آخر يوم للاعتراض: <bdi>{deadline.dueDate}</bdi> · {deadline.days < 0 ? `انتهت المهلة منذ ${-deadline.days} يوم` : `باقي ${deadline.days} يوم`}</p>}
     {(objection && objection.snapshotId !== row.snapshotId || draft && draft.snapshotId !== row.snapshotId) && <p className="qv-warning">وصلت قراءة أحدث. راجع بيانات الصف قبل تحديث المتابعة.</p>}
     <p className="qv-note">متابعة داخلية فقط؛ الحفظ هنا لا يرسل اعتراضًا إلى سويتر.</p>
+    <p className="qv-note">المبلغ من هذه القراءة؛ لا يثبت خصمًا ماليًا نهائيًا أو عكسه.</p>
     <form onSubmit={async e => { e.preventDefault(); setBusy(true); setMessage(''); try {
       await save({ periodKey: month, metricKey: row.metricKey, sourceId: row.sourceId, snapshotId: draft?.snapshotId ?? row.snapshotId,
         expectedRevision: draft?.expectedRevision ?? objection?.revision ?? 0, status, note }); clearDraft(); setMessage('حُفظت المتابعة الداخلية.');

@@ -9,16 +9,18 @@ import { invalidateCollections } from '../lib/readCache';
 import { previousQualityMonth } from '../lib/qualityViolations';
 import { isBikerDeduction } from '../lib/sweater/bikerDeductions';
 import { isInternalQualityObjection } from '../lib/sweater/qualityRecordTypes';
+import { useQualitySourceDetails } from './useQualitySourceDetails';
 export function useQualityViolations(month) {
   const { user } = useAuth();
   const current = useSweaterMetrics(month), previous = useSweaterMetrics(previousQualityMonth(month)), workers = useBikers();
+  const sourceDetails = useQualitySourceDetails(month);
   const enabled = isFirebaseConfigured && Boolean(user?.id);
   const objections = useFirestoreQuery(() => fetchRows('quality_objections', [where('periodKey', '==', month)]),
     { enabled, cacheKey: `quality_objections:${month}`, cacheTags: ['quality_objections'], queryKey: user?.id, deps: [month], fallback: [] });
   const settings = useFirestoreQuery(() => getRow('app_settings', 'quality-objections'),
     { enabled, preserveResult: true, cacheKey: 'quality-objections-settings', cacheTags: ['app_settings'], queryKey: user?.id, fallback: null });
-  const refresh = () => { current.refetch(); previous.refetch(); workers.refetch(); objections.refetch(); settings.refetch(); };
-  return { current, previous, workers, objections: { ...objections, data: objections.data?.filter(isInternalQualityObjection) },
+  const refresh = () => { current.refetch(); previous.refetch(); workers.refetch(); objections.refetch(); settings.refetch(); sourceDetails.refresh(); };
+  return { current, previous, workers, sourceDetails, objections: { ...objections, data: objections.data?.filter(isInternalQualityObjection) },
     deductions: objections.data?.filter(isBikerDeduction) || [], settings, refresh,
     previewDeduction: input => callServer('bikerDeductionPreview', input),
     saveDeduction: async input => {

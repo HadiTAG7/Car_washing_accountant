@@ -22,7 +22,10 @@ export function QualityValueOverview({ rows, metricKey, total, unavailable }) {
     : <strong>غير متاح</strong>;
   const value = qualityValuationSummary(rows, metricKey);
   return <>
-    <strong>{value.sourceRows ? <>{number(value.sourceSAR)} ر.س</> : 'لا مبلغ مصدر مثبت'}</strong>
+    {value.sourceRows ? <div className="qv-source-signed-values">
+      {value.sourceNegativeSAR < 0 && <span>مبالغ سالبة من المصدر: <strong><bdi>{number(value.sourceNegativeSAR)}</bdi> ر.س</strong></span>}
+      {(value.sourcePositiveSAR > 0 || value.sourceNegativeSAR === 0) && <span>مبالغ غير سالبة من المصدر: <strong><bdi>{number(value.sourcePositiveSAR)}</bdi> ر.س</strong></span>}
+    </div> : <strong>لا مبلغ مصدر مثبت</strong>}
     <small>مبالغ المصدر: {value.sourceRows} سجل</small>
     {value.estimatedRows > 0 && <small>تقدير داخلي بقرار هادي: {number(value.estimatedSAR)} ر.س · {value.estimatedRows} سجل</small>}
     {value.unresolvedRows > 0 && <small>قيمة غير محسومة: {value.unresolvedRows} سجل</small>}

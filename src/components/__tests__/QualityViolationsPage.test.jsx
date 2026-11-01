@@ -12,6 +12,7 @@ vi.mock('../../lib/firebaseClient', () => ({ auth: null, isFirebaseConfigured: f
 vi.mock('../ChangePasswordModal', () => ({ default: () => null }));
 vi.mock('../BikerProfileMonthPicker', () => ({ default: ({ value, onChange }) => <select aria-label="شهر الاختبار" value={value} onChange={e => onChange(e.target.value)}><option>2026-10</option><option>2026-09</option></select> }));
 import QualityViolationsPage from '../QualityViolationsPage';
+import { QualityValueOverview } from '../QualityEventValue';
 import Sidebar from '../Sidebar';
 import { usePageNavigation } from '../../hooks/usePageNavigation';
 import { visibleGroupsFor } from '../../lib/navGroups';
@@ -98,6 +99,20 @@ it('does not replace an unread source with a monetary fallback', () => {
   expect(summary.textContent).not.toContain('240');
   expect(summary.textContent).toContain('تعذّرت قراءة المصدر؛ لم نفترض قيمة بديلة.');
   expect(mocks.save).not.toHaveBeenCalled();
+});
+it('shows signed source buckets and an estimate separately without an absolute or net source total', () => {
+  const view = render(<QualityValueOverview rows={[{ amount: -129.95, quantity: 1 }, { amount: 129.95, quantity: 1 }, { amount: null, quantity: 1 }]}
+    metricKey="cancelledByBiker" total={3} unavailable={false} />);
+  const values = document.querySelector('.qv-source-signed-values').textContent.replace(/[\u200e\u200f\u202a-\u202e]/g, '');
+  expect(values).toContain('مبالغ سالبة من المصدر: -129.95');
+  expect(values).toContain('مبالغ غير سالبة من المصدر: 129.95');
+  expect(document.body.textContent).not.toContain('259.9');
+  expect(document.body.textContent).toContain('تقدير داخلي بقرار هادي: 20');
+  view.rerender(<QualityValueOverview rows={[{ amount: -129.95, quantity: 1 }]} metricKey="cancelledByBiker" total={1} unavailable={false} />);
+  expect(document.querySelector('.qv-source-signed-values').textContent).toContain('-129.95');
+  view.rerender(<QualityValueOverview rows={[{ amount: 0, quantity: 1 }]} metricKey="cancelledByBiker" total={1} unavailable={false} />);
+  expect(document.querySelector('.qv-source-signed-values').textContent).toContain('مبالغ غير سالبة من المصدر: 0');
+  expect(document.body.textContent).not.toContain('تقدير داخلي');
 });
 it('uses English for composed coverage and partial labels, preserving source reason text',async()=>{
   await loadEnglish();

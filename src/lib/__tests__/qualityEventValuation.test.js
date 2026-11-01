@@ -5,7 +5,7 @@ it('keeps explicit actual zero and source charges instead of replacing either wi
   expect(qualityEventValuation({ amount: 0, quantity: 1 }, 'cancelledByBiker')).toMatchObject({ basis: 'source', amountSAR: 0 });
   expect(qualityEventValuation({ amount: 129.95, quantity: 1 }, 'cancelledByBiker')).toMatchObject({ basis: 'source', amountSAR: 129.95 });
   expect(qualityEventValuation({ amount: 20.10, quantity: 1 }, 'cancelledByBiker')).toMatchObject({ basis: 'source', amountSAR: 20.10 });
-  expect(qualityEventValuation({ amount: -129.95, quantity: 1 }, 'cancelledByBiker')).toMatchObject({ basis: 'source', amountSAR: 129.95, sourceSignedSAR: -129.95 });
+  expect(qualityEventValuation({ amount: -129.95, quantity: 1 }, 'cancelledByBiker')).toMatchObject({ basis: 'source', amountSAR: -129.95, sourceSignedSAR: -129.95 });
   expect(qualityEventValuation({ amount: null, quantity: 2 }, 'freeWashCompensation')).toMatchObject({ basis: 'owner_estimate', amountSAR: 40, sourceSignedSAR: null });
 });
 const invoiceRow = amount => {
@@ -18,7 +18,7 @@ const invoiceRow = amount => {
 };
 it('uses a verified signed invoice deduction, never the net invoice or flat estimate', () => {
   const row = invoiceRow(129.95), before = structuredClone(row);
-  expect(qualityEventValuation(row, 'cancelledByBiker')).toMatchObject({ basis: 'source', amountSAR: 129.95, sourceSignedSAR: -129.95 });
+  expect(qualityEventValuation(row, 'cancelledByBiker')).toMatchObject({ basis: 'source', amountSAR: -129.95, sourceSignedSAR: -129.95 });
   expect(row).toEqual(before);
 });
 it('does not estimate over conflicts, broken invoice evidence, invalid values or an unrelated category', () => {
@@ -39,7 +39,11 @@ it('does not turn wallet, promocode or promotional free washes into compensation
 });
 it('keeps source and estimated totals separate, including zero, without a settlement total', () => {
   expect(qualityValuationSummary([{ amount: 0, quantity: 1 }, { amount: 129.95, quantity: 1 }, { amount: null, quantity: 1 }, { conflict: true }], 'cancelledMaintenance'))
-    .toEqual({ sourceRows: 2, estimatedRows: 1, unresolvedRows: 1, sourceSAR: 129.95, estimatedSAR: 20 });
+    .toEqual({ sourceRows: 2, estimatedRows: 1, unresolvedRows: 1, sourcePositiveSAR: 129.95, sourceNegativeSAR: 0, estimatedSAR: 20 });
+});
+it('preserves separate signed source totals rather than summing magnitudes or inventing a net settlement', () => {
+  expect(qualityValuationSummary([{ amount: -129.95, quantity: 1 }, { amount: 129.95, quantity: 1 }], 'cancelledByBiker'))
+    .toEqual({ sourceRows: 2, estimatedRows: 0, unresolvedRows: 0, sourcePositiveSAR: 129.95, sourceNegativeSAR: -129.95, estimatedSAR: 0 });
 });
 it('does not treat an invalid or conflicting explicit ticket amount as missing', () => {
   const count = { kind: 'compensation', unit: 'count', value: 1, sourceRef: 'Compensation type: Free Wash; Quantity 1' };

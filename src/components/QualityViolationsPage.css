@@ -1,4 +1,5 @@
-.qv-page{max-width:1600px;margin:auto;padding:24px;display:grid;gap:22px;min-width:0;color:var(--sw-text-primary);background:var(--sw-canvas)}
+/* Auto width with auto margins inside App's flex column shrinks to content. */
+.qv-page{width:100%;max-width:1600px;box-sizing:border-box;margin:auto;padding:24px;display:grid;grid-template-columns:minmax(0,1fr);gap:22px;min-width:0;color:var(--sw-text-primary);background:var(--sw-canvas)}
 .qv-page>*,.qv-page [role=tabpanel],.qv-linked,.qv-events,.qv-event{min-width:0;max-width:100%}.qv-events>*{min-width:0}
 .qv-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:16px;justify-content:space-between}.qv-toolbar h2{font-size:1.4rem;font-weight:700}
 .qv-page p,.qv-page small{line-height:1.8}.qv-page .qv-panel{padding:20px;min-width:0;background:var(--sw-surface);color:var(--sw-text-primary);border-color:var(--sw-border-subtle)}

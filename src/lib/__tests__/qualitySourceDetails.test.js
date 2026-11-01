@@ -52,6 +52,20 @@ it('does not classify an admin cancellation as biker fault and refuses conflicti
   expect(cancellationType(booking('1', 'Cancelled by Customer', 'Biker illness').record)).toBeNull();
   expect(cancellationType(booking('1', 'Cancelled by Admin', 'Maintenance').record)).toBe('cancelledMaintenance');
 });
+it('links explicit customer-request reasons without inferring a party from other customer circumstances', () => {
+  const records = [
+    booking('TEST-EARLY', 'Cancelled by Admin', 'Cancel by customer request (More than one hour before) without fees'),
+    booking('TEST-LATE', 'Cancelled by Admin', 'Cancel by customer request (one hour or less before) with fees'),
+    booking('TEST-UNKNOWN', 'Cancelled by Admin', 'Client did not answer'),
+    booking('TEST-CONFLICT', 'Biker Refused Wash', 'Cancel by customer request (one hour or less before) with fees'),
+  ];
+  const before = structuredClone(records);
+  const out = qualitySourceDetails({ month, bikers, bookings: records });
+  expect(out.groups.cancelledByCustomer.map(row => row.sourceId).sort()).toEqual(['TEST-EARLY', 'TEST-LATE']);
+  expect(out.groups.cancelledByBiker).toHaveLength(0);
+  expect(out.unclassified.map(row => row.sourceId).sort()).toEqual(['TEST-CONFLICT', 'TEST-UNKNOWN']);
+  expect(records).toEqual(before);
+});
 it('joins latest raw prefix observations once, without confusing document update with SSP read time', () => {
   const held = booking('B-123', 'Collecting Payment', null, '2026-11-01T20:00:00Z');
   held.observedAtIso='2026-10-29T12:00:00Z';

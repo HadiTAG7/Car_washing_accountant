@@ -94,7 +94,7 @@ export function QualityViolationsContent() {
               const next = event.key === 'Home' ? COMPENSATION_KEYS[0] : event.key === 'End' ? COMPENSATION_KEYS.at(-1)
                 : offset ? COMPENSATION_KEYS[(index + offset + COMPENSATION_KEYS.length) % COMPENSATION_KEYS.length] : null;
               if (next) { event.preventDefault(); chooseType(next, true); }
-            }}><span>{typeLabels[key]}</span><strong>{number(total)} {SWEATER_METRICS[key].unit === 'sar' ? 'ر.س' : 'واقعة'}</strong>
+            }}><span>{typeLabels[key]}</span><strong>{number(total)} {SWEATER_METRICS[key].unit === 'sar' ? 'ر.س' : key === 'freeWashCompensation' ? 'غسلة' : 'واقعة'}</strong>
               <small>صفوف اللقطة: {group ? `${number(group.rows.length)}${group.complete ? '' : ' · جزئي'}` : 'غير متاح'}</small>
               {linked.groups[key].length > 0 && <small>سجلات مرتبطة: {linked.groups[key].length}</small>}</button>;
         })}

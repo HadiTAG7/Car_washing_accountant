@@ -59,7 +59,7 @@ it('joins latest raw prefix observations once, without confusing document update
   const before = structuredClone({ held, raw });
   const out = qualitySourceDetails({ month, bikers, bookings: [held, held], raw });
   expect(out.groups.cancelledByBiker).toHaveLength(1);
-  expect(out.groups.cancelledByBiker[0]).toMatchObject({ bookingId: 'C-123', sourceReadAt: raw[0].fetchedAtIso, amount: null });
+  expect(out.groups.cancelledByBiker[0]).toMatchObject({ bookingId: 'C-123', sourceReadAt: raw[0].fetchedAtIso, timeBasis:'observation_saved', amount: null });
   expect({ held, raw }).toEqual(before);
 });
 it('keeps equal-time source conflicts and latest-status-without-raw observations unclassified', () => {

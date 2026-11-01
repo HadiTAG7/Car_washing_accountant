@@ -21,7 +21,9 @@ export default function QualitySourceRows({ rows, onOpenBooking, protectLink }) 
     {row.identityConflict && <p className="qv-warning">ربط البايكر مكرر أو متعارض؛ الاسم المعروض من المصدر ولا يثبت الإسناد.</p>}
     <p className="qv-prose">{row.reason || 'السبب غير محفوظ'}</p>
     {row.quantity !== null && <p>الكمية المسجلة في هذا المصدر: <bdi>{row.quantity}</bdi></p>}
-    <p className="qv-note">قراءة هذا المصدر: <bdi>{stamp(row.sourceReadAt)}</bdi> (الرياض). مستقلة عن لقطة المجاميع.</p>
+    <p className="qv-note">{row.kind === 'ticket' || row.timeBasis === 'source_read' ? 'قراءة هذا المصدر:'
+      : row.timeBasis === 'record_update' ? 'وقت تحديث السجل المحفوظ:' : 'وقت حفظ ملاحظة المصدر:'} <bdi>{stamp(row.sourceReadAt)}</bdi> (الرياض). مستقلة عن لقطة المجاميع.</p>
+    {row.kind === 'booking' && row.timeBasis !== 'source_read' && <p className="qv-note">هذا وقت حفظ أو تحديث السجل، وليس وقت قراءة سويتر أو الإلغاء.</p>}
     {row.kind === 'ticket' ? <TicketFacts row={row} protectLink={protectLink} /> : <BookingFacts row={row} onOpenBooking={onOpenBooking} />}
     {row.sourceUrl && <a href={row.sourceUrl} target="_blank" rel="noreferrer">فتح المصدر الأصلي</a>}
   </details>)}</div>;

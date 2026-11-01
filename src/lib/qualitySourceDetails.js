@@ -78,7 +78,7 @@ export function qualitySourceDetails({ month, reviews = [], bookings = [], raw =
     // Document update time can be an owner decision, not a newer SSP reading.
     // Raw observations win; never attach the held record's old reason to a new status.
     const fallback = latest ? { record: { sspBookingId: record.sspBookingId, serviceDate: record.serviceDate,
-      rawStatus: latest.rawStatus, sourceUrl: record.sourceUrl, notes: null }, savedAt: latest.observedAtIso }
+      rawStatus: latest.rawStatus, sourceUrl: record.sourceUrl, notes: null }, savedAt: latest.observedAtIso, timeBasis: 'source_read' }
       : { record, savedAt: booking.updatedAtIso, original: true };
     const variants = saved.length ? saved : [fallback];
     for (const observation of variants) {
@@ -97,6 +97,7 @@ export function qualitySourceDetails({ month, reviews = [], bookings = [], raw =
     const row = sourceBiker({ id: `booking:${id}`, kind: 'booking', sourceId: record.sspBookingId, bookingId: record.sspBookingId,
       date: record.serviceDate, dateBasis: 'service', driverExternalId: record.driverExternalId, sourceBikerName: record.driverName,
       reason: detail.reason, sourceUrl: cancellationSourceLink(record.sourceUrl), sourceReadAt: observation.savedAt,
+      timeBasis: observation.original ? 'record_update' : observation.timeBasis || 'observation_saved',
       record, detail, conflict, quantity: 1, amount: null }, bikers, language);
     if (metricKey) groups[metricKey].push(row); else unclassified.push(row);
   }

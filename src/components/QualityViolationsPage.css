@@ -1,4 +1,5 @@
 .qv-page{max-width:1600px;margin:auto;padding:24px;display:grid;gap:22px;min-width:0;color:var(--sw-text-primary);background:var(--sw-canvas)}
+.qv-page>*,.qv-page [role=tabpanel],.qv-linked,.qv-events,.qv-event{min-width:0;max-width:100%}.qv-events>*{min-width:0}
 .qv-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:16px;justify-content:space-between}.qv-toolbar h2{font-size:1.4rem;font-weight:700}
 .qv-page p,.qv-page small{line-height:1.8}.qv-page .qv-panel{padding:20px;min-width:0;background:var(--sw-surface);color:var(--sw-text-primary);border-color:var(--sw-border-subtle)}
 .qv-note{font-size:.8rem;color:var(--sw-text-secondary);margin:12px 0}
@@ -17,7 +18,7 @@
 .qv-secondary>summary{cursor:pointer;padding:15px;font-weight:700;border:1px solid var(--sw-border-subtle);border-radius:var(--sw-radius-control);background:var(--sw-surface)}.qv-secondary[open]>summary{margin-bottom:12px}
 .qv-drafts{padding:12px 16px;border:1px solid var(--sw-warning);border-radius:var(--sw-radius-control);background:var(--sw-warning-soft);color:var(--sw-warning)}
 .qv-deductions{overflow-wrap:anywhere}.qv-deductions pre{max-width:100%;max-height:350px;overflow:auto;font-size:.8rem}.qv-deductions textarea{width:100%}.qv-deductions li{padding:12px 0;border-bottom:1px solid var(--sw-border-subtle)}.qv-deductions input[type=checkbox]{display:inline-block;margin-inline-end:8px}
-.qv-scroll{max-width:100%;overflow:auto;margin-block:14px}.qv-scroll table{min-width:420px;width:100%;font-size:.85rem}.qv-scroll th,.qv-scroll td{padding:10px;text-align:start;border-bottom:1px solid var(--sw-border-subtle);vertical-align:top}.qv-scroll caption{text-align:start;line-height:1.8}
+.qv-scroll{width:100%;min-width:0;max-width:100%;overflow:auto;margin-block:14px}.qv-scroll table{min-width:420px;width:100%;font-size:.85rem}.qv-scroll th,.qv-scroll td{padding:10px;text-align:start;border-bottom:1px solid var(--sw-border-subtle);vertical-align:top}.qv-scroll caption{text-align:start;line-height:1.8}
 .qv-followup-table{width:100%;min-width:650px;font-size:.85rem}.qv-followup-table th,.qv-followup-table td{padding:12px 10px;border-bottom:1px solid var(--sw-border-subtle);text-align:start}.qv-deductions summary{padding-block:12px;cursor:pointer}
 .qv-page :is(button,input,select,textarea,summary,a):focus-visible{outline:3px solid var(--sw-action);outline-offset:3px}
 @media(max-width:600px){.qv-page{padding:16px;gap:16px}.qv-page .qv-panel{padding:16px}.qv-toolbar{align-items:flex-start}.qv-tabs button{flex-basis:125px}}

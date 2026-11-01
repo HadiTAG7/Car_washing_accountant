@@ -18,7 +18,7 @@ import { BEFORE_PAGE_NAVIGATION } from '../lib/navigationEvents';
 import { qualitySourceDetails } from '../lib/qualitySourceDetails';
 import QualitySourceRows from './QualitySourceRows';
 import { useLanguage } from '../i18n/useLanguage';
-import { getLanguage } from '../i18n/locale';
+import { getLanguage, translate } from '../i18n/locale';
 import './QualityViolationsPage.css';
 
 const number = value => value == null ? 'غير متاح' : formatNumber(Math.round(value * 100) / 100);
@@ -57,14 +57,14 @@ export function QualityViolationsContent() {
   useEffect(() => {
     if (!draftCount) return undefined;
     const warn = event => { event.preventDefault(); event.returnValue = ''; };
-    const guardNavigation = event => { if (!window.confirm('عندك تغييرات غير محفوظة. تتركها وتكمل؟')) event.preventDefault(); };
+    const guardNavigation = event => { if (!window.confirm(translate('عندك تغييرات غير محفوظة. تتركها وتكمل؟'))) event.preventDefault(); };
     window.addEventListener('beforeunload', warn);
     window.addEventListener(BEFORE_PAGE_NAVIGATION, guardNavigation);
     return () => { window.removeEventListener('beforeunload', warn); window.removeEventListener(BEFORE_PAGE_NAVIGATION, guardNavigation); };
   }, [draftCount]);
   const updateDraft = (key, value) => setDrafts(previous => ({ ...previous, [key]: value }));
   const clearDraft = key => setDrafts(previous => { const next = { ...previous }; delete next[key]; return next; });
-  const protectLink = event => { if (draftCount && !window.confirm('عندك تغييرات غير محفوظة. تتركها وتكمل؟')) event.preventDefault(); };
+  const protectLink = event => { if (draftCount && !window.confirm(translate('عندك تغييرات غير محفوظة. تتركها وتكمل؟'))) event.preventDefault(); };
   const chooseType = (key, focus = false) => { setActiveType(key); if (focus) tabRefs.current[key]?.focus(); };
   const matches = row => (!selected || row.bikerRowId === selected) && `${row.bikerLabel} ${row.driverExternalId || ''} ${row.sourceId || ''} ${row.bookingId || ''} ${row.date || ''} ${row.reason || ''}`.toLowerCase().includes(search.trim().toLowerCase());
   return <><TopBar title="الجودة والمخالفات" subtitle="المشاكل حسب النوع، وتفاصيلها من المصدر المحفوظ" />
@@ -93,7 +93,7 @@ export function QualityViolationsContent() {
                 : offset ? COMPENSATION_KEYS[(index + offset + COMPENSATION_KEYS.length) % COMPENSATION_KEYS.length] : null;
               if (next) { event.preventDefault(); chooseType(next, true); }
             }}><span>{typeLabels[key]}</span><strong>{number(total)} {SWEATER_METRICS[key].unit === 'sar' ? 'ر.س' : key === 'freeWashCompensation' ? 'غسلة' : 'واقعة'}</strong>
-              <small>صفوف اللقطة: {group ? `${number(group.rows.length)}${group.complete ? '' : ' · جزئي'}` : 'غير متاح'}</small>
+              <small>صفوف اللقطة: {group ? `${number(group.rows.length)}${group.complete ? '' : language === 'en' ? ' · partial' : ' · جزئي'}` : 'غير متاح'}</small>
               {linked.groups[key].length > 0 && <small>سجلات مرتبطة: {linked.groups[key].length}</small>}</button>;
         })}
       </div>
@@ -162,15 +162,19 @@ export function QualityViolationsContent() {
 }
 
 function TypeSummary({ metricKey: key, snapshot, previous, month }) {
+  const { language } = useLanguage();
   const group = snapshot?.eventGroups?.[key], value = snapshot?.metrics?.[key], money = SWEATER_METRICS[key].unit === 'sar';
   const count = money ? group?.totalRows ?? null : value ?? null, amount = groupAmount(group, value, key);
   const oldSnapshot = previous.error || previous.loading ? null : previous.snapshot;
   const oldGroup = oldSnapshot?.eventGroups?.[key], oldValue = oldSnapshot?.metrics?.[key];
   const oldCount = money ? oldGroup?.totalRows ?? null : oldValue ?? null, oldAmount = groupAmount(oldGroup, oldValue, key);
+  const coverageText = !group ? 'ما وصلت تفاصيل سويتر' : language === 'en'
+    ? `${group.rows.length} ${group.rows.length === 1 ? 'row' : 'rows'} received${group.totalRows != null ? ` of ${group.totalRows}` : ''} · ${group.complete ? 'Complete source table' : 'Partial details'}`
+    : `${group.rows.length} صف مستلم${group.totalRows != null ? ` من ${group.totalRows}` : ''} · ${group.complete ? 'الجدول مكتمل حسب المصدر' : 'تفاصيل جزئية'}`;
   return <Card className="qv-panel qv-type-summary"><h2>{typeLabels[key]} · {month}</h2>
     <div className="qv-type-totals"><p>العدد حسب المصدر: <strong>{number(count)} <small>{key === 'freeWashCompensation' ? 'غسلة' : 'واقعة'}</small></strong></p><p>المبلغ: <strong>{number(amount)} ر.س</strong></p></div>
     <small>عن الشهر السابق: العدد {count != null && oldCount != null ? number(count - oldCount) : 'غير متاح'} · المبلغ {amount != null && oldAmount != null ? `${number(amount - oldAmount)} ر.س` : 'غير متاح'}</small>
-    <p className="qv-note">{!group ? 'ما وصلت تفاصيل سويتر' : `${group.rows.length} صف مستلم${group.totalRows != null ? ` من ${group.totalRows}` : ''} · ${group.complete ? 'الجدول مكتمل حسب المصدر' : 'تفاصيل جزئية'}`}</p>
+    <p className="qv-note">{coverageText}</p>
     <small>قراءة المصدر: {stamp(snapshot?.metricSources?.[key]?.extractedAtIso)} (الرياض)</small>
     {snapshot?.metricSources?.[key]?.sourceUrl && <p><a href={snapshot.metricSources[key].sourceUrl} target="_blank" rel="noreferrer">مصدر المجموع</a></p>}
     {key === 'damages' && snapshot?.metricSources?.[key]?.sourceUrl === 'https://ssp-portal.sweater.sa/damages'

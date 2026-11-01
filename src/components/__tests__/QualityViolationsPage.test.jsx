@@ -15,6 +15,7 @@ import QualityViolationsPage from '../QualityViolationsPage';
 import Sidebar from '../Sidebar';
 import { usePageNavigation } from '../../hooks/usePageNavigation';
 import { visibleGroupsFor } from '../../lib/navGroups';
+import { LanguageContext } from '../../i18n/LanguageContext';
 const row = { metricKey: 'cancelledByCustomer', sourceId: 'source-a', bookingId: '5572978', date: '2026-10-20', time: '19:10', driverExternalId: '2007', reason: 'إلغاء من العميل', quantity: 1, amount: null, sourceUrl: 'https://ssp-portal.sweater.sa/test' };
 const state = () => ({ current: { snapshot: { metrics: { cancelledByCustomer: 1 }, metricSources: { cancelledByCustomer: { snapshotId: 'reading', extractedAtIso: '2026-10-26T19:00:00+03:00' } }, eventGroups: { cancelledByCustomer: { rows: [row], totalRows: 1, complete: true } } } },
   previous: {}, workers: { bikers: [{ id: 'worker', name: 'بايكر اختبار', driverExternalId: '2007' }] }, objections: { data: [] }, settings: { data: null },
@@ -39,6 +40,13 @@ it('offers seven named tabs and distinguishes unavailable details from zero', ()
   expect(mocks.save).not.toHaveBeenCalled();
   expect(document.querySelectorAll('.qv-secondary')).toHaveLength(3);
   expect([...document.querySelectorAll('.qv-secondary')].every(d => !d.open)).toBe(true);
+});
+it('uses English for composed coverage and partial labels, preserving source reason text',()=>{
+  const data=state(); data.current.snapshot.eventGroups.cancelledByCustomer.complete=false; mocks.read.mockReturnValue(data);
+  render(<LanguageContext.Provider value={{language:'en'}}><QualityViolationsPage/></LanguageContext.Provider>);
+  expect(screen.getByRole('tab',{name:/إلغاء العميل/}).textContent).toContain('partial'); choose('إلغاء العميل');
+  expect(screen.getByRole('tabpanel').textContent).toContain('1 row received of 1 · Partial details');
+  expect(screen.getByRole('tabpanel').textContent).toContain(row.reason);
 });
 it('supports RTL arrows, Home and End without saving or requiring a biker-table selection', () => {
   render(<QualityViolationsPage />);

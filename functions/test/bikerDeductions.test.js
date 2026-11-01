@@ -10,6 +10,12 @@ import { tableFor } from '../../src/lib/data/schema/registry.js';
 const FieldValue = { serverTimestamp: () => 'synthetic-time' };
 describe('source biker deduction follow-up without payroll or financial writes', () => {
   let db;
+  it('a ticket review with an Accepted SSP outcome is not an internal accepted objection or payroll deduction', async () => {
+    const db = memoryFinanceDb(deductionSeed());
+    db.rows.set('quality_objections/ssp-ticket-synthetic', { recordType:'ssp_ticket_review_v1',status:'accepted',
+      metricKey:'cancelledByBiker',sourceId:'event-one',objectionHistory:[{id:'OBJ-TEST',status:'Accepted'}] });
+    expect((await previewBikerDeduction(db,deductionInput(),actor)).canSave).toBe(true);
+  });
   beforeEach(() => { db = memoryFinanceDb(deductionSeed()); });
   const prepare = async (input = deductionInput(), requestId = 'test-request') => {
     const p = await previewBikerDeduction(db, input, actor);

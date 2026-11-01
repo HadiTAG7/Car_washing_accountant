@@ -6,6 +6,7 @@ import { housingOverview } from './housingOverview.js';
 import { fleetSummary, fleetInventorySummary, EXPECTED_FLEET_COUNT } from './fleet.js';
 import { COMPENSATION_KEYS } from '../../functions/src/sweater/metricsContract.js';
 import { objectionDeadline } from '../../functions/src/sweater/compensationEvents.js';
+import { isInternalQualityObjection } from './sweater/qualityRecordTypes.js';
 export const operationsReadinessText = value => value.ready?'جاهز لتسوية سويتر':`غير جاهز: ${value.failedCount} بنود`;
 
 // Read-only composition of the existing page models. No alternate payroll,
@@ -44,7 +45,7 @@ export function operationsWorkspace({ periodKey, today, ops = null, bikers = nul
   const repairBikes = registered ? inventory.maintenance : null;
   const incompleteDetails = COMPENSATION_KEYS.filter(key => !snapshot?.eventGroups?.[key]?.complete);
   const events = COMPENSATION_KEYS.flatMap(key => snapshot?.eventGroups?.[key]?.rows || []);
-  const objections = resources?.objections || [];
+  const objections = (resources?.objections || []).filter(isInternalQualityObjection);
   const nearDeadline = resources?.qualitySettings?.deadlineDays != null ? events.filter(row => {
     const saved = objections.find(o => o.metricKey === row.metricKey && o.sourceId === row.sourceId && o.snapshotId === snapshot?.metricSources?.[row.metricKey]?.snapshotId);
     const due = objectionDeadline(row, resources.qualitySettings.deadlineDays, today, saved?.status);

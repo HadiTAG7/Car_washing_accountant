@@ -38,6 +38,7 @@ import financeReportsHandler from '../server/financeReportsHttp.js';
 import financeWorkbenchHandler from '../server/financeWorkbenchHttp.js';
 import operationsReportsHandler from '../server/operationsReportsHttp.js';
 import backupExportHandler from '../server/backupExportHttp.js';
+import compensationReviewHandler from '../server/compensationReviewHttp.js';
 
 /**
  * A refusal the operator must be able to tell apart from a bug.
@@ -113,6 +114,7 @@ const STATUS = {
 };
 
 export default async function handler(req, res) {
+  if (req.query?.reviewEndpoint === 'tickets') return compensationReviewHandler(req, res);
   // Public finance URLs are rewritten here to share one deployment function.
   // Each service retains its own current-role, revoked-token and input gates.
   if (req.query?.financeEndpoint === 'reports') return financeReportsHandler(req, res);

@@ -29,6 +29,10 @@ vi.mock('../components/SupervisorPage', () => ({ default: () => <h1>لوحة ا�
 vi.mock('../components/SupervisorRecordsPage', () => ({ default: () => <h1>بيانات عمل المشرف للاختبار</h1> }));
 vi.mock('../components/FinancialSummaryPage', () => ({ default: () => <h1>قائمة دخل الشركة للاختبار</h1> }));
 vi.mock('../components/FinanceWorkbenchPage', () => ({ default: () => <h1>مسار الصندوق الداخلي للاختبار</h1> }));
+vi.mock('../components/BalanceSheetPage', () => ({ default: () => <h1>Internal balance</h1> }));
+vi.mock('../components/TrialBalancePage', () => ({ default: () => <h1>Internal trial</h1> }));
+vi.mock('../components/GeneralLedgerPage', () => ({ default: () => <h1>Internal ledger</h1> }));
+vi.mock('../components/FinanceReportsPage', () => ({ default: () => <h1>Internal finance_reports</h1> }));
 vi.mock('../components/InvestorPage', () => ({ default: ({ view }) => <h1>حساب الشريك: {view}</h1> }));
 vi.mock('../components/LoginScreen', () => ({ default: () => <h1>الدخول للاختبار</h1> }));
 vi.mock('../components/UpdatePasswordScreen', () => ({ default: () => <h1>تحديث كلمة المرور للاختبار</h1> }));
@@ -41,6 +45,11 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('بقاء الصفحة عند إعادة التحميل', () => {
+  it.each(['balance', 'trial', 'ledger', 'finance_reports'])('keeps the authorized internal %s route mounted after hiding it', async id => {
+    window.history.replaceState(null, '', `/?page=${id}`);
+    render(<App />);
+    expect(await screen.findByRole('heading', { name: `Internal ${id}` })).toBeTruthy();
+  });
   it('retains the admin internal workbench URL without a navigation entry', async () => {
     window.history.replaceState(null, '', '/?page=finance_workbench');
     render(<App />);

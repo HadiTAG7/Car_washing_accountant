@@ -16,7 +16,8 @@ export function financeLedgerSnapshot(ledger, month, cashBalances) {
   return { postedRevenue: posted.totalRevenue, postedCosts: round2(posted.totalCost + posted.totalExpenses),
     cash, bank, availableCash: Number.isFinite(cash) && Number.isFinite(bank) ? round2(cash + bank) : null,
     capital: round2(capital.reduce((sum, row) => sum + row.amount, 0)),
-    negativeAccounts: cashBalances.filter(row => row.balance < 0) };
+    negativeAccounts: cashBalances.filter(row => row.balance < 0),
+    position: { totalAssets: sheet.totalAssets, totalLiabilities: sheet.totalLiabilities, totalEquity: sheet.totalEquity } };
 }
 
 export function financeVatSnapshot({ invoices, washes, entries, lines, settings, month }) {

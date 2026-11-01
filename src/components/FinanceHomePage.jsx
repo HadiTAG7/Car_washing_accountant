@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { ArrowLeft, RefreshCw, AlertTriangle, TrendingUp, Receipt, Wallet, HandCoins, Landmark, Users, Percent, CheckCircle2 } from 'lucide-react';
 import TopBar from './TopBar';
 import BikerProfileMonthPicker from './BikerProfileMonthPicker';
@@ -6,6 +6,8 @@ import { useFinanceHomeData } from '../hooks/useFinanceHomeData';
 import { APPROVED_SETTLEMENT_STATUSES } from '../lib/financeHome';
 import { usePartnerView } from '../contexts/PartnerViewContext';
 import { riyadhTodayISO } from '../lib/washesYesterday';
+import { useLatestFinanceOwnerReports } from '../hooks/useLatestFinanceOwnerReports';
+import FinanceOwnerBrief from './FinanceOwnerBrief';
 import './FinanceWorkspace.css';
 import './BikerProfile.css';
 import './FinanceHomePage.css';
@@ -23,7 +25,7 @@ function Metric({ label, value, note, date, icon: Icon, tone = '', onClick, chil
   </button>;
 }
 
-function ActionList({ data, onNavigate }) {
+function ActionList({ data, onNavigate, onCashDetails }) {
   const { ledger, vat, workbench, settlement, settlementReady, budget, month } = data;
   const rows = [];
   ledger?.negativeAccounts.forEach(account => rows.push({ key: `cash-${account.code}`, danger: true, route: 'ledger',
@@ -40,7 +42,7 @@ function ActionList({ data, onNavigate }) {
   return <section className="fm-actions" aria-labelledby="finance-actions-title">
     <div className="fm-section-heading"><h2 id="finance-actions-title">يحتاج إجراء</h2>{rows.length > 0 && <span className="fm-count">{rows.length}</span>}</div>
     {rows.length > 0 && <ul>{rows.map(row => <li key={row.key} className={row.danger ? 'fm-action--danger' : ''}>
-      <button type="button" onClick={() => onNavigate(row.route)}>
+      <button type="button" onClick={() => row.route === 'ledger' ? onCashDetails() : onNavigate(row.route)}>
         <AlertTriangle size={17} aria-hidden="true" /><span className="fm-action__label">{row.label}</span>
         <span className="fm-action__detail">{row.detail}</span><ArrowLeft size={16} aria-hidden="true" />
       </button>
@@ -60,6 +62,14 @@ export default function FinanceHomePage({ onNavigate }) {
 function FinanceHomeContent({ onNavigate }) {
   const [month, setMonth] = useState(() => riyadhTodayISO().slice(0, 7));
   const data = useFinanceHomeData(month);
+  const reports = useLatestFinanceOwnerReports();
+  const cashDetails = useRef(null);
+  const showCashDetails = () => {
+    if (!cashDetails.current) return;
+    cashDetails.current.open = true;
+    cashDetails.current.querySelector('summary')?.focus();
+    cashDetails.current.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+  };
   const { ledger, statement, vat, settlement, settlementReady } = data;
   const [readStarted, setReadStarted] = useState(() => new Date().toISOString());
   const cumulativeDate = `تراكمي · ${data.today}`;
@@ -69,7 +79,7 @@ function FinanceHomeContent({ onNavigate }) {
     <main className="fw-page fm-page" dir="rtl" aria-busy={data.loading}>
       <div className="fw-toolbar"><div className="fw-period" role="group" aria-label="فترة الملخص"><span>الشهر</span>
         <BikerProfileMonthPicker value={month} max="9999-12" language="en" onChange={setMonth} /></div>
-        <button type="button" disabled={data.loading} onClick={() => { setReadStarted(new Date().toISOString()); data.refresh(); }}><RefreshCw size={16} /> تحديث البيانات</button>
+        <button type="button" disabled={data.loading} onClick={() => { setReadStarted(new Date().toISOString()); data.refresh(); reports.refresh(); }}><RefreshCw size={16} /> تحديث البيانات</button>
       </div>
       <p className="fm-ledger-note" role="note"><AlertTriangle size={14} />الأرصدة دفترية، وليست كشف بنك أو جرد صندوق أو إثبات سداد.</p>
       {data.problems.length > 0 && <p className="fm-read-error" role="alert">تعذرت قراءة: {data.problems.join('، ')}. الأرقام غير المتحققة لا تُستبدل بأصفار.</p>}
@@ -93,7 +103,7 @@ function FinanceHomeContent({ onNavigate }) {
       <section aria-labelledby="finance-money-title">
         <div className="fm-section-heading"><h2 id="finance-money-title">الفلوس</h2><span>أرصدة الدفتر وصافي الضريبة</span></div>
         <div className="fm-grid fm-grid--money">
-          <Metric label="النقد المتاح (دفتري)" value={ledger?.availableCash} icon={Landmark} date={cumulativeDate} onClick={() => onNavigate('ledger')}>
+          <Metric label="النقد المتاح (دفتري)" value={ledger?.availableCash} icon={Landmark} date={cumulativeDate} onClick={showCashDetails}>
             <span className="fm-cash-split"><span className={ledger?.bank < 0 ? 'fm-negative' : ''}>البنك <bdi>{amountText(ledger?.bank)}</bdi></span>
               <span className={ledger?.cash < 0 ? 'fm-negative' : ''}>الصندوق <bdi>{amountText(ledger?.cash)}</bdi></span></span>
             {hasNegativeCash && <span className="fm-negative fm-cash-alert"><AlertTriangle size={14} />يوجد حساب نقدي بالسالب</span>}
@@ -104,7 +114,18 @@ function FinanceHomeContent({ onNavigate }) {
             note={vat?.direction === 'refundable' ? 'صافي الشهر قابل للاسترداد' : 'صافي ضريبة الشهر من صفحة الضريبة'} onClick={() => onNavigate('vat')} />
         </div>
       </section>
-      <ActionList data={data} onNavigate={onNavigate} />
+      <details ref={cashDetails} className="fm-actions fm-details" open={new URLSearchParams(window.location.search).get('detail') === 'balances' || undefined}>
+        <summary>تفاصيل الأرصدة المبسطة</summary>
+        <p className="fm-scope">أرصدة دفترية تراكمية · {data.today}. ليست كشف بنك أو إثبات سداد، ولا تتبع اختيار الشهر.</p>
+        <dl>{[['البنك', ledger?.bank], ['الصندوق', ledger?.cash], ['رأس المال المدفوع', ledger?.capital],
+          ['الأصول المسجلة', ledger?.position?.totalAssets], ['الالتزامات المسجلة', ledger?.position?.totalLiabilities], ['حقوق الملكية المسجلة', ledger?.position?.totalEquity]]
+          .map(([label, value]) => <div key={label}><dt>{label}</dt><dd className={value < 0 ? 'fm-negative' : ''}><bdi>{amountText(value)}</bdi></dd></div>)}</dl>
+        {hasNegativeCash && <p role="alert" className="fm-negative">رصيد نقدي سالب يحتاج مطابقة؛ لا يعني وجود نقد متاح في هذا الحساب.</p>}
+        {!ledger && <p role="alert">تعذرت قراءة الأرصدة؛ لم تُفترض أصفار.</p>}
+        <p className="fm-scope">المسجل في الدفتر فقط؛ الرواتب التقديرية وإيراد الشهر غير المرحل تظهر في أرقام الشهر أعلاه.</p>
+      </details>
+      <ActionList data={data} onNavigate={onNavigate} onCashDetails={showCashDetails} />
+      <FinanceOwnerBrief state={reports} />
       <p className="fw-meta">بدء القراءة: {new Date(readStarted).toLocaleString('ar-SA', { timeZone: 'Asia/Riyadh', calendar: 'gregory', numberingSystem: 'latn' })} · الرياض</p>
     </main></>;
 }

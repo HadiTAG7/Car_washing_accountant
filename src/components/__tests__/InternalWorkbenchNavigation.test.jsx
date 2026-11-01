@@ -24,12 +24,16 @@ it.each([false, true])('hides the internal destination in the shared sidebar (mo
   const groups = visibleGroupsFor({ role: 'admin' });
   render(<Sidebar groups={groups} activeTab="finance" onSelectTab={select} mobileOpen={mobileOpen} />);
   expect(screen.queryByRole('button', { name: 'صندوق العمل المالي' })).toBeNull();
+  for (const name of ['المركز المالي', 'ميزان المراجعة', 'دفتر الأستاذ', 'تقارير المالية والأرشيف']) {
+    expect(screen.queryByRole('button', { name })).toBeNull();
+  }
   for (const [label, id] of [['المصاريف', 'expenses'], ['تسويات سويتر', 'sweater_settlements'], ['الرواتب ماليًا', 'finance_payroll']]) {
     fireEvent.click(screen.getByRole('button', { name: label }));
     expect(select).toHaveBeenLastCalledWith(id);
   }
   const allowedTabIds = groups.flatMap(group => group.tabs.map(tab => tab.id));
   expect(resolveTab('finance_workbench', { allowedTabIds })).toBe('finance_workbench');
+  for (const id of ['balance', 'trial', 'ledger', 'finance_reports']) expect(resolveTab(id, { allowedTabIds })).toBe(id);
 });
 
 it('retains the unposted document figures without an owner-facing workbench link', () => {

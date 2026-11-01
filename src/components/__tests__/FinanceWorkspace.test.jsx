@@ -12,6 +12,7 @@ vi.mock('../../hooks/useFinanceRead', () => ({ useFinanceRead: (...args) => mock
 vi.mock('../../lib/financeApi', () => ({ callFinanceApi: (...args) => mock.api(...args) }));
 vi.mock('../../hooks/useLedger', () => ({ useLedger: () => mock.ledger() }));
 vi.mock('../../hooks/useFinanceHomeData', () => ({ useFinanceHomeData: (...args) => mock.home(...args) }));
+vi.mock('../../hooks/useLatestFinanceOwnerReports', () => ({ useLatestFinanceOwnerReports: () => ({ teams: [], loading: false, error: false, refresh: vi.fn() }) }));
 vi.mock('../../hooks/useOverviewDashboard', () => ({ useOverviewDashboard: () => ({ finance: { loading: false, error: null, statement: { netRevenue: 500, totalCosts: 300 } } }) }));
 vi.mock('../../contexts/PartnerViewContext', () => ({ usePartnerView: () => mock.role }));
 vi.mock('../TopBar', () => ({ default: ({ title }) => <h1>{title}</h1> }));
@@ -105,9 +106,11 @@ describe('finance report UI and access boundaries', () => {
     expect(screen.queryByText('صورة واضحة. خطوة موثقة.')).toBeNull();
     expect(screen.queryByRole('heading', { name: 'الرواتب ماليًا' })).toBeNull();
     expect(screen.queryByText('ما فيه شي يحتاج إجراء')).toBeNull();
-    expect(screen.getByRole('alert').textContent).toContain('الدفتر');
+    expect(document.querySelector('.fm-read-error').textContent).toContain('الدفتر');
     expect(screen.getByRole('status').textContent).toContain('لم يكتمل فحص');
-    fireEvent.click(screen.getByRole('button', { name: /^النقد المتاح/ })); expect(navigate).toHaveBeenCalledWith('ledger');
+    fireEvent.click(screen.getByRole('button', { name: /^النقد المتاح/ }));
+    expect(screen.getByText('تفاصيل الأرصدة المبسطة').closest('details').open).toBe(true);
+    expect(navigate).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: /^رأس المال المدفوع/ })); expect(navigate).toHaveBeenCalledWith('partner_capital');
     fireEvent.click(screen.getByRole('button', { name: /^الضريبة المستحقة/ })); expect(navigate).toHaveBeenCalledWith('vat');
   });

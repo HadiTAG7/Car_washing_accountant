@@ -35,7 +35,7 @@ export default function BalanceSheetUnposted({ ledger, asOf, feeRules }) {
     {result.loading ? <p role="status">جارٍ قراءة البنود غير المرحلة...</p> : result.error ? <p role="alert">تعذرت قراءة البنود كاملة؛ لا تمثل صفرًا.</p> : <ul className="space-y-3 text-sm">
       <li><a className="underline" href="?page=finance_payroll">الرواتب غير المرحلة من قائمة الدخل</a>: {amount(result.payroll)} {result.estimated ? '· تقديرية للشهر كاملًا' : ''}</li>
       <li><a className="underline" href="?page=summary">إيراد الشهر غير المرحل</a>: {amount(result.revenue)} · ضريبته: {amount(result.vat)}</li>
-      <li><a className="underline" href="?page=finance_workbench">المستندات غير المرحلة</a>: {workbench.loading ? 'جارٍ التحميل...' : !result.documents ? 'غير متاح' : <>
+      <li>المستندات غير المرحلة: {workbench.loading ? 'جارٍ التحميل...' : !result.documents ? 'غير متاح' : <>
         {result.documents.count} مستند · {amount(result.documents.amount)} شامل الضريبة
         <small className="block">منها المعتمد غير المرحل: {result.documents.approvedCount} · {amount(result.documents.approvedAmount)}. البقية ليست التزامًا معتمدًا.</small>
       </>}</li>

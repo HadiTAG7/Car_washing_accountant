@@ -20,7 +20,7 @@ vi.mock('../contexts/PartnerViewContext', () => ({
 vi.mock('../components/PartnerViewBanner', () => ({ default: () => null }));
 vi.mock('../components/FinancialEntrySelector', () => ({ default: () => null }));
 vi.mock('../components/Sidebar', () => ({ default: ({ groups, onSelectTab }) => (
-  <nav>{groups.flatMap((group) => group.tabs).map((tab) => (
+  <nav>{groups.flatMap((group) => group.tabs).filter(tab => !tab.hidden).map((tab) => (
     <button key={tab.id} onClick={() => onSelectTab(tab.id)}>{tab.label}</button>
   ))}</nav>
 ) }));
@@ -28,6 +28,7 @@ vi.mock('../components/OverviewPage', () => ({ default: () => <h1>صفحة ال�
 vi.mock('../components/SupervisorPage', () => ({ default: () => <h1>لوحة المشرف للاختبار</h1> }));
 vi.mock('../components/SupervisorRecordsPage', () => ({ default: () => <h1>بيانات عمل المشرف للاختبار</h1> }));
 vi.mock('../components/FinancialSummaryPage', () => ({ default: () => <h1>قائمة دخل الشركة للاختبار</h1> }));
+vi.mock('../components/FinanceWorkbenchPage', () => ({ default: () => <h1>مسار الصندوق الداخلي للاختبار</h1> }));
 vi.mock('../components/InvestorPage', () => ({ default: ({ view }) => <h1>حساب الشريك: {view}</h1> }));
 vi.mock('../components/LoginScreen', () => ({ default: () => <h1>الدخول للاختبار</h1> }));
 vi.mock('../components/UpdatePasswordScreen', () => ({ default: () => <h1>تحديث كلمة المرور للاختبار</h1> }));
@@ -40,6 +41,20 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('بقاء الصفحة عند إعادة التحميل', () => {
+  it('retains the admin internal workbench URL without a navigation entry', async () => {
+    window.history.replaceState(null, '', '/?page=finance_workbench');
+    render(<App />);
+    expect(await screen.findByRole('heading', { name: 'مسار الصندوق الداخلي للاختبار' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'صندوق العمل المالي' })).toBeNull();
+  });
+  it.each(['accountant', 'operator', 'partner', 'supervisor'])('does not grant the hidden route to %s', async role => {
+    Object.assign(state, { role, partnerView: role === 'partner' });
+    window.history.replaceState(null, '', '/?page=finance_workbench');
+    render(<App />);
+    const heading = role === 'partner' ? 'حساب الشريك: overview' : role === 'supervisor' ? 'لوحة المشرف للاختبار' : 'صفحة الرئيسية للاختبار';
+    expect(await screen.findByRole('heading', { name: heading })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'مسار الصندوق الداخلي للاختبار' })).toBeNull();
+  });
   it('معاينة الأدمن تستخدم صفحات الشريك فقط وتعيد التنقل الإداري عند الخروج', async () => {
     window.history.replaceState(null, '', '/?page=summary');
     const page = render(<App />);

@@ -29,6 +29,22 @@ const day = x => typeof x === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(x) && Numbe
 const stamp = x => typeof x === 'string' && /T.*(?:Z|[+-]\d{2}:\d{2})$/.test(x) && Number.isFinite(Date.parse(x));
 const url = x => { try { const u = new URL(x); return u.protocol === 'https:' && u.hostname === 'ssp-portal.sweater.sa' && !u.username && !u.password && !u.hash && ![...u.searchParams.keys()].some(k => /token|session|auth|secret|cookie/i.test(k)); } catch { return false; } };
 
+// Client-side shape review only. The server separately binds this decision to
+// the seventeen reviewed records and their actual workers/source observations.
+// It is not a new automatic Collecting Payment or minute-precision policy.
+export function isRecentOwnerRecoveryDecision(input) {
+  const d = input?.decision;
+  return d?.conversationId === '01a04f9f-cdbe-7213-bf1b-eee76eb35b38'
+    && d.messageId === '01a19941-eb8d-71b1-8a54-eb04ff63bf26'
+    && d.decidedAt === '2026-11-01T22:36:41Z' && d.decidedAtBasis === 'request_received_at'
+    && ['2026-10-30', '2026-10-31', '2026-11-01'].includes(d.serviceDate)
+    && d.approved === true && d.source === 'owner_statement' && d.decision === 'record_as_completed_wash';
+}
+function recentOwnerRecoveryShape(input, record) {
+  return isRecentOwnerRecoveryDecision(input) && record?.rawStatus === 'Collecting Payment'
+    && record.serviceType === 'interior_exterior_wash' && stamp(record.startedAt) && stamp(record.completedAt);
+}
+
 // Standing owner instruction of 18 Oct, reaffirmed on 25/26 Oct. This changes
 // the administrative decision route only; automatic source completion still
 // requires real Start and End, and cancellation approvals remain independent.
@@ -79,7 +95,7 @@ export function reviewAdministrativeCompletion(input) {
   for (const [index, r] of records.entries()) {
     const problems = recordProblems(r).filter(p => p.code !== 'unknown_service_type').map(p => ({ code: p.code, message: p.ar }));
     if (!object(r) || !approvedIds.includes(r.sspBookingId) || excluded.has(ownerBookingIdentity(r?.sspBookingId))
-      || r?.serviceDate !== d?.serviceDate || (r?.rawStatus !== 'Cancelled by Admin' && !isApprovedMissingStartCompletion(input, r) && !isApprovedOngoingCompletion(input, r)) || r?.bookingKind !== 'individual'
+      || r?.serviceDate !== d?.serviceDate || (r?.rawStatus !== 'Cancelled by Admin' && !isApprovedMissingStartCompletion(input, r) && !isApprovedOngoingCompletion(input, r) && !recentOwnerRecoveryShape(input, r)) || r?.bookingKind !== 'individual'
       || !id(r?.driverExternalId) || !input.workerLinks?.[r?.driverExternalId] || !url(r?.sourceUrl)) problems.push({ code: 'outside_decision', message: 'الحجز خارج قرار المالك أو مستثنى أو حالته/عامله غير موثقين.' });
     if (object(r) && ALLOWED_RECORD_FIELDS.some(k => r[k] != null && (typeof r[k] === 'object' || typeof r[k] === 'boolean' || String(r[k]).length > 2000))) problems.push({ code: 'bad_shape', message: 'حقول المصدر يجب أن تبقى قيمًا بسيطة دون بيانات جلسة.' });
     rows.push({ index: index + 1, sspBookingId: r?.sspBookingId || '—', problems });

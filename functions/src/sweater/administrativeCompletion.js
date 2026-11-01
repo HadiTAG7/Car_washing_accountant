@@ -1,10 +1,12 @@
-import { reviewAdministrativeCompletion, ADMIN_COMPLETION_WARNING, isApprovedMissingStartCompletion, isApprovedOngoingCompletion } from '../../../src/lib/sweater/administrativeCompletion.js';
+import { reviewAdministrativeCompletion, ADMIN_COMPLETION_WARNING, isApprovedMissingStartCompletion, isApprovedOngoingCompletion, isRecentOwnerRecoveryDecision } from '../../../src/lib/sweater/administrativeCompletion.js';
 import { ownerBookingIdentity } from '../../../src/lib/sweater/bookingIdentity.js';
 import { COL, bookingDocId, sspKey, sspWashDocId, rawDocId, SweaterIngestError } from './ingest.js';
 import { hashBody, hashRecord, normalizeRecord } from './record.js';
 import { executionWash } from './operationsExecution.js';
 import { WASH_COMMISSION_EFFECTIVE_MONTH } from '../washCommission.js';
 import { administrativeCompletionReadback } from './administrativeCompletionReadback.js';
+import { approvedRecentRecoveryRow, readRecentRecoveryProtection, inspectRecentOwnerRecovery, naturallyReferencesRecovery } from './recentOwnerRecovery20261102.js';
+import { hasProtectedIdentityEffect } from './operationsIdentity5596423.js';
 
 export const ADMIN_COMPLETION_SOURCE = 'staff_owner_administrative_completion_v1';
 const CLAIMS = 'sweater_owner_booking_claims', LINKS = 'sweater_operational_wash_links';
@@ -19,6 +21,8 @@ function validated(payload) {
 }
 async function plan(db, payload, read, actor) {
   validated(payload);
+  const recoveryRequested = isRecentOwnerRecoveryDecision(payload);
+  if (recoveryRequested && payload.records.some(raw => !approvedRecentRecoveryRow(payload,raw))) fail('المصدر أو العامل خارج مراجعة الغسلات المحددة بقرار هادي.', 'invalid-argument');
   // Re-read actual membership, including on transactional retries. Never trust a payload role.
   const [member, marker] = await Promise.all([read(db.collection('users').doc(actor)), read(db.collection('app_admins').doc(actor))]);
   const role = member.data()?.role;
@@ -33,15 +37,24 @@ async function plan(db, payload, read, actor) {
   ]);
   if (periodSnap.data()?.status === 'closed' || settlementSnap.data()?.journalEntryId || settlementSnap.data()?.postedEntryId
     || ['approved', 'invoiced', 'partially_collected', 'collected', 'closed'].includes(settlementSnap.data()?.status)) fail('الفترة أو تسوية الشهر محمية؛ لا تُضاف غسلات بهذا المسار.');
+  if (recoveryRequested && ((periodSnap.exists && periodSnap.data()?.status !== 'open')
+    || hasProtectedIdentityEffect(periodSnap.data()) || hasProtectedIdentityEffect(settlementSnap.data()))) fail('الفترة أو التسوية عليها حماية؛ لا يتجاوزها قرار اكتمال الغسلات.');
+  const recoveryProtection = recoveryRequested ? await readRecentRecoveryProtection(db,read) : null;
   const docs = snaps.flatMap((s,i) => s.docs.map(d => ({ collection: collections[i], id: d.id, data: d.data() })));
   const rows = [], state = [], counts = { new: 0, modified: 0, duplicate: 0, rejected: 0, needsReview: 0 };
   for (const raw of payload.records) {
-    const record = normalizeRecord(raw), number = ownerBookingIdentity(record.sspBookingId), id = bookingDocId(record.sspBookingId), washId = sspWashDocId(record.sspBookingId);
+    const record = normalizeRecord(raw), number = ownerBookingIdentity(record.sspBookingId), id = bookingDocId(record.sspBookingId);
+    const approvedRecovery = recoveryRequested ? approvedRecentRecoveryRow(payload,raw) : null;
+    const related = docs.filter(d => approvedRecovery ? naturallyReferencesRecovery(d,number) : identity(d.data) === number);
     // Until the identity cleanup runs, the booking may still be filed under the prefixed id it was seen with.
-    const bookingDoc = docs.find(d => d.collection === COL.BOOKINGS && d.id === id)
-      ?? docs.find(d => d.collection === COL.BOOKINGS && d.id === sspKey(record.sspBookingId));
-    const related = docs.filter(d => identity(d.data) === number), booking = bookingDoc?.data;
+    const recoveryBookings = related.filter(d => d.collection === COL.BOOKINGS);
+    const bookingDoc = approvedRecovery ? (recoveryBookings.length === 1 ? recoveryBookings[0] : undefined)
+      : (docs.find(d => d.collection === COL.BOOKINGS && d.id === id)
+      ?? docs.find(d => d.collection === COL.BOOKINGS && d.id === sspKey(record.sspBookingId)));
+    const booking = bookingDoc?.data;
     const claimRef = db.collection(CLAIMS).doc(bookingDocId(number)), claim = (await read(claimRef)).data();
+    const washId = approvedRecovery && claim?.washId ? claim.washId : sspWashDocId(record.sspBookingId);
+    const recovery = approvedRecovery ? await inspectRecentOwnerRecovery({db,read,approved:approvedRecovery,bookingDoc,related,claim,protection:recoveryProtection}) : null;
     const bikerId = payload.workerLinks[record.driverExternalId], worker = (await read(db.collection('bikers').doc(bikerId))).data();
     const linkedWorkers = new Set(docs.filter(d => d.collection === 'washes' && d.data.driver_external_id === record.driverExternalId).map(d => d.data.biker_id).filter(Boolean));
     const workerOK = Boolean(worker?.name && (worker.driver_external_id === record.driverExternalId || linkedWorkers.has(bikerId)) && linkedWorkers.size <= 1
@@ -55,7 +68,7 @@ async function plan(db, payload, read, actor) {
       || d.collection === 'sweater_owner_collection_confirmations' || d.collection === 'sweater_booking_links'
       || (d.collection === 'washes' && d.id !== washId)
       || (d.collection === LINKS && (!expectedLinks.includes(d.id) || d.data.washId !== washId)));
-    const protectedBooking = Boolean(booking && (booking.postedEntryId || booking.postedAt || booking.settlementId || booking.ownerCollectionConfirmation
+    const protectedBooking = !approvedRecovery && Boolean(booking && (booking.postedEntryId || booking.postedAt || booking.settlementId || booking.ownerCollectionConfirmation
       || booking.financialLock || booking.locked || booking.lockedAt || ['posted','ready_for_posting','matched'].includes(booking.processingStatus)
       || (booking.ownerCompletionDecision && hashBody(booking.ownerCompletionDecision) !== hashBody(decision))
       || (booking.source !== 'operations_sync_v2' && booking.source !== ADMIN_COMPLETION_SOURCE)
@@ -73,8 +86,8 @@ async function plan(db, payload, read, actor) {
       || booking.source !== 'operations_sync_v2' || booking.operationalWorkerId !== bikerId
       || ['sspBookingId', 'serviceDate', 'driverExternalId', 'rawStatus', 'startedAt', 'completedAt', 'serviceType', 'bookingKind'].some(k => booking.record?.[k] !== record[k]));
     const existingMatches = existingWash && existingWash.administrativeWashHash === hash && Object.entries(wash).every(([k,v]) => hashBody(existingWash[k]) === hashBody(v));
-    const conflict = !workerOK || foreignRelated || protectedBooking || missingStartEvidenceConflict || ongoingEvidenceConflict || (existingWash && !existingMatches)
-      || (claim && (claim.sspBookingId !== record.sspBookingId || claim.washId !== washId))
+    const conflict = !workerOK || (approvedRecovery ? !recovery.eligible : foreignRelated || protectedBooking) || missingStartEvidenceConflict || ongoingEvidenceConflict || (existingWash && !existingMatches)
+      || (!approvedRecovery && claim && (claim.sspBookingId !== record.sspBookingId || claim.washId !== washId))
       || Boolean(existingWash) !== Boolean(booking?.ownerCompletionDecision);
     const outcome = conflict ? 'needs_review' : existingWash ? 'duplicate' : booking ? 'modified' : 'new';
     counts[outcome === 'needs_review' ? 'needsReview' : outcome]++;
@@ -83,9 +96,10 @@ async function plan(db, payload, read, actor) {
       rawStatus: record.rawStatus, normalizedStatus: record.normalizedStatus, collectionStatus: 'pending', outcome,
       reasonAr: conflict ? 'تعارض في الهوية أو العامل أو سجل محمي؛ لا يُستبدل الموجود.' : 'قرار اكتمال إداري مستقل؛ التحصيل غير مثبت.',
       assertedAmount: wash.net_amount, vatAmount: wash.vat_amount, grossAmount: wash.gross_amount, workerCommission: wash.worker_commission_per_wash,
+      ...(recovery ? {sourceRecovery:recovery} : {}),
       _raw: raw, _record: record, _decision: decision, _wash: wash, _washHash: hash, _claimRef: claimRef, _claim: claim,
       _bookingRef: db.collection(COL.BOOKINGS).doc(bookingDoc?.id ?? id), _booking: booking, _washRef: db.collection('washes').doc(washId), _links: links, _existingWash: existingWash };
-    rows.push(row); state.push({ number, related, claim, worker, period: periodSnap.data() || null, settlement: settlementSnap.data() || null });
+    rows.push(row); state.push({ number, related, claim, worker, period: periodSnap.data() || null, settlement: settlementSnap.data() || null, ...(recovery ? {sourceRecovery:recovery} : {}) });
   }
   return { runRef, payloadHash, rows, counts, stateHash: hashBody(state) };
 }

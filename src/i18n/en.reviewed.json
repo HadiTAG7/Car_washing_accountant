@@ -5688,5 +5688,13 @@
   "عرض تفاصيل الأرصدة المبسطة": "View simple balance details",
   "تعذر التحقق من التقرير المحفوظ.": "The saved report could not be verified.",
   "عرض بقية الملاحظات (": "Show remaining notes (",
-  "طلبات كما حُفظت وقت التقرير؛ ليست حالة لحظية. هذا العرض للقراءة فقط ولا يسجل قرارًا.": "Requests as saved at the report cutoff, not live status. This read-only view does not record a decision."
+  "طلبات كما حُفظت وقت التقرير؛ ليست حالة لحظية. هذا العرض للقراءة فقط ولا يسجل قرارًا.": "Requests as saved at the report cutoff, not live status. This read-only view does not record a decision.",
+  "الميزانيات: الشهر الحالي والسنة؛ تفاصيل التجاوز للقراءة داخل الملخص.": "Budgets: the current month and year; overrun details can be read within the summary.",
+  "تفاصيل تجاوز الميزانية": "Budget overrun details",
+  "فترة الميزانيات:": "Budget period:",
+  "والسنة الحالية؛ مستقلة عن شهر نتيجة الشركة المختار.": "and the current year; independent of the selected company result month.",
+  "المتبقي حسب نموذج الميزانيات:": "Remaining amount in the budget model:",
+  "البنود التالية تجاوزت ميزانياتها المسجلة؛ البنود بلا ميزانية لا تُعد تجاوزًا. العرض للقراءة فقط.": "These items exceed their recorded budgets; unbudgeted items are not counted as overruns. Read-only view.",
+  "· الميزانية:": "· Budget:",
+  "· الصرف:": "· Spent:"
 }

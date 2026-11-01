@@ -99,12 +99,12 @@ const financeTabs = [
   { id: 'finance_workbench', label: 'صندوق العمل المالي', icon: Receipt, roles: ['admin'], hidden: true },
   { id: 'finance_reports', label: 'تقارير المالية والأرشيف', icon: FileText, roles: ['admin'], hidden: true },
   { id: 'expenses', label: 'المصاريف', icon: Receipt, activeTabIds: EXPENSE_TAB_IDS },
-  ...oldFinanceTabs.map(tab => [...EXPENSE_TAB_IDS, 'balance', 'trial', 'ledger'].includes(tab.id) ? { ...tab, hidden: true } : tab),
+  ...oldFinanceTabs.map(tab => [...EXPENSE_TAB_IDS, 'balance', 'trial', 'ledger', 'budgets', 'periods', 'documents', 'assets'].includes(tab.id) ? { ...tab, hidden: true } : tab),
   { id: 'finance_payroll', label: 'الرواتب ماليًا', icon: HandCoins, roles: ['admin'] },
-  { id: 'hadi_current', label: 'حساب هادي الجاري', icon: Wallet, roles: ['admin'] },
-  { id: 'bank_statements', label: 'كشوف الحساب', icon: FileSpreadsheet, roles: ['admin'] },
-  { id: 'founding_settlement', label: 'تسوية فترة التأسيس', icon: Scale, roles: ['admin'] },
-  { id: 'founding_summary', label: 'ملخص فترة التأسيس', icon: ClipboardList, roles: ['admin'] },
+  { id: 'hadi_current', label: 'حساب هادي الجاري', icon: Wallet, roles: ['admin'], hidden: true },
+  { id: 'bank_statements', label: 'كشوف الحساب', icon: FileSpreadsheet, roles: ['admin'], hidden: true },
+  { id: 'founding_settlement', label: 'تسوية فترة التأسيس', icon: Scale, roles: ['admin'], hidden: true },
+  { id: 'founding_summary', label: 'ملخص فترة التأسيس', icon: ClipboardList, roles: ['admin'], hidden: true },
 ];
 const top = LEGACY_TAB_GROUPS[0];
 export const TAB_GROUPS = [

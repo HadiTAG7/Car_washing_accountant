@@ -43,8 +43,21 @@ it('preserves source-backed amounts and visible actions without exposing the int
   expect(screen.queryByText('مستندات السداد غير مثبت')).toBeNull();
   expect(screen.queryByText('مستندات بانتظار المراجعة أو الاعتماد أو الترحيل')).toBeNull();
   within(actions).getAllByRole('button').forEach(button => fireEvent.click(button));
-  expect(navigate.mock.calls.flat()).toEqual(['vat', 'sweater_settlements', 'budgets']);
+  expect(navigate.mock.calls.flat()).toEqual(['vat', 'sweater_settlements']);
   expect(screen.getByText('تفاصيل الأرصدة المبسطة').closest('details').open).toBe(true);
+});
+it('keeps budget overruns visible and opens the existing amounts in place without editing or navigating', () => {
+  state.data.budget.cards[0].budget.categoryLabel = 'سكن اختبار';
+  state.data.budget.cards[0].budget.budgetType = 'annual';
+  const before = JSON.stringify(state.data.budget), navigate = vi.fn();
+  render(<FinanceHomePage onNavigate={navigate} />);
+  fireEvent.click(screen.getByRole('button', { name: /ميزانيات متجاوزة/ }));
+  const summary = screen.getByText('تفاصيل تجاوز الميزانية'), details = summary.closest('details');
+  expect(details.open).toBe(true); expect(document.activeElement).toBe(summary);
+  for (const amount of ['5,000.00', '92,263.64', '-87,263.64']) expect(details.textContent).toContain(amount);
+  expect(details.textContent).toContain('سكن اختبار'); expect(details.textContent).toContain('2026-10');
+  expect(details.querySelector('button, input, a')).toBeNull(); expect(navigate).not.toHaveBeenCalled();
+  expect(JSON.stringify(state.data.budget)).toBe(before);
 });
 it('opens simple balances from the cash card and negative warning without navigating to hidden books', () => {
   const navigate = vi.fn(); render(<FinanceHomePage onNavigate={navigate} />);

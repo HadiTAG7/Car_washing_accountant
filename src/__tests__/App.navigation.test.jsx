@@ -33,6 +33,14 @@ vi.mock('../components/BalanceSheetPage', () => ({ default: () => <h1>Internal b
 vi.mock('../components/TrialBalancePage', () => ({ default: () => <h1>Internal trial</h1> }));
 vi.mock('../components/GeneralLedgerPage', () => ({ default: () => <h1>Internal ledger</h1> }));
 vi.mock('../components/FinanceReportsPage', () => ({ default: () => <h1>Internal finance_reports</h1> }));
+vi.mock('../components/BudgetsPage', () => ({ default: () => <h1>Internal budgets</h1> }));
+vi.mock('../components/PeriodClosePage', () => ({ default: () => <h1>Internal periods</h1> }));
+vi.mock('../components/HadiCurrentAccountPage', () => ({ default: () => <h1>Internal hadi_current</h1> }));
+vi.mock('../components/BankStatementsPage', () => ({ default: () => <h1>Internal bank_statements</h1> }));
+vi.mock('../components/FoundingSettlementPage', () => ({ default: () => <h1>Internal founding_settlement</h1> }));
+vi.mock('../components/FoundingSummaryPage', () => ({ default: () => <h1>Internal founding_summary</h1> }));
+vi.mock('../components/SalesDocumentsPage', () => ({ default: () => <h1>Internal documents</h1> }));
+vi.mock('../components/FixedAssetsPage', () => ({ default: () => <h1>Internal assets</h1> }));
 vi.mock('../components/InvestorPage', () => ({ default: ({ view }) => <h1>حساب الشريك: {view}</h1> }));
 vi.mock('../components/LoginScreen', () => ({ default: () => <h1>الدخول للاختبار</h1> }));
 vi.mock('../components/UpdatePasswordScreen', () => ({ default: () => <h1>تحديث كلمة المرور للاختبار</h1> }));
@@ -45,7 +53,7 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('بقاء الصفحة عند إعادة التحميل', () => {
-  it.each(['balance', 'trial', 'ledger', 'finance_reports'])('keeps the authorized internal %s route mounted after hiding it', async id => {
+  it.each(['balance', 'trial', 'ledger', 'finance_reports', 'budgets', 'periods', 'hadi_current', 'bank_statements', 'founding_settlement', 'founding_summary', 'documents', 'assets'])('keeps the authorized internal %s route mounted after hiding it', async id => {
     window.history.replaceState(null, '', `/?page=${id}`);
     render(<App />);
     expect(await screen.findByRole('heading', { name: `Internal ${id}` })).toBeTruthy();

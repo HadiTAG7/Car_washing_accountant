@@ -8,6 +8,7 @@ import { usePartnerView } from '../contexts/PartnerViewContext';
 import { riyadhTodayISO } from '../lib/washesYesterday';
 import { useLatestFinanceOwnerReports } from '../hooks/useLatestFinanceOwnerReports';
 import FinanceOwnerBrief from './FinanceOwnerBrief';
+import { useLanguage } from '../i18n/useLanguage';
 import './FinanceWorkspace.css';
 import './BikerProfile.css';
 import './FinanceHomePage.css';
@@ -67,6 +68,7 @@ export default function FinanceHomePage({ onNavigate }) {
 }
 
 function FinanceHomeContent({ onNavigate }) {
+  const { language } = useLanguage();
   const [month, setMonth] = useState(() => riyadhTodayISO().slice(0, 7));
   const data = useFinanceHomeData(month);
   const reports = useLatestFinanceOwnerReports();
@@ -80,9 +82,9 @@ function FinanceHomeContent({ onNavigate }) {
   const monthDate = `${month} · حتى ${data.today}`;
   const hasNegativeCash = Boolean(ledger?.negativeAccounts.length);
   return <><TopBar title="ملخص المالية" subtitle="نتيجة الشهر، الفلوس المتاحة، وما يحتاج إجراء" />
-    <main className="fw-page fm-page" dir="rtl" aria-busy={data.loading}>
+    <main className="fw-page fm-page" dir={language === 'en' ? 'ltr' : 'rtl'} aria-busy={data.loading}>
       <div className="fw-toolbar"><div className="fw-period" role="group" aria-label="فترة الملخص"><span>الشهر</span>
-        <BikerProfileMonthPicker value={month} max="9999-12" language="en" onChange={setMonth} /></div>
+        <BikerProfileMonthPicker value={month} max="9999-12" language={language} onChange={setMonth} /></div>
         <button type="button" disabled={data.loading} onClick={() => { setReadStarted(new Date().toISOString()); data.refresh(); reports.refresh(); }}><RefreshCw size={16} /> تحديث البيانات</button>
       </div>
       <p className="fm-ledger-note" role="note"><AlertTriangle size={14} />الأرصدة دفترية، وليست كشف بنك أو جرد صندوق أو إثبات سداد.</p>

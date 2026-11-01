@@ -1,6 +1,6 @@
 /* The workbench uses Overview's shared tokens, not a separate navy palette.
    These overrides are scoped to this page; workflow rules remain unchanged. */
-:is(main, dialog).fw-page.fw-workbench { max-width: none; padding: 28px 32px; color: var(--sw-text-primary); }
+:is(main, dialog).fw-page.fw-workbench { max-width: 1600px; padding: 24px; color: var(--sw-text-primary); }
 .fw-workbench .fw-toolbar { margin-top: 0; }
 .fw-workbench h1 { font-size: clamp(22px, 2.4vw, 30px); }
 .fw-workbench h2 { font-size: 1rem; }

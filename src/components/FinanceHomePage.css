@@ -6,11 +6,11 @@
 .fw-comparison h2 { font-weight: 700; margin-bottom: 8px; }
 .fw-comparison p, .fw-comparison small { font-size: .8rem; line-height: 1.8; }
 .fw-comparison table { margin: 12px 0; min-width: 420px; font-size: .85rem; }
-.fw-comparison th, .fw-comparison td { padding: 12px 8px; border-bottom: 1px solid #64748b40; }
+.fw-comparison th, .fw-comparison td { padding: 12px 8px; border-bottom: 1px solid #66666640; }
 .fm-page { max-width: 1600px; }
 .fm-details, .fm-owner-brief { margin: 18px 0; }
 .fm-details summary, .fm-owner-brief summary { cursor: pointer; font-weight: 700; padding: 8px 0; }
-.fm-details dl > div { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 0; border-bottom: 1px solid #64748b25; }
+.fm-details dl > div { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 0; border-bottom: 1px solid #66666625; }
 .fm-owner-brief h3 { font-weight: 700; margin-top: 18px; }
 .fm-owner-brief li { padding: 12px 0; }
 .fm-owner-brief small { display: block; line-height: 1.8; }
@@ -20,21 +20,21 @@
 .fm-ledger-note svg { flex-shrink: 0; }
 .fm-section-heading { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 .fm-section-heading h2 { margin: 0; }
-.fm-section-heading > span { color: #64748b; font-size: 12px; }
-.dark .fm-section-heading > span { color: #a8b8cc; }
+.fm-section-heading > span { color: #666666; font-size: 12px; }
+.dark .fm-section-heading > span { color: #9aa0a6; }
 .fm-grid { display: grid; gap: 14px; }
 .fm-grid--month { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .fm-grid--money { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 28px; }
-.fm-page button.fm-card { display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; text-align: start; padding: 20px; min-height: 190px; border-radius: 18px; background: #fff; border: 1px solid #e2e8f0; gap: 12px; }
-.dark .fm-page button.fm-card { background: #172131; border-color: #344155; }
+.fm-page button.fm-card { display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; text-align: start; padding: 20px; min-height: 190px; border-radius: 18px; background: #fff; border: 1px solid #e3e5e8; gap: 12px; }
+.dark .fm-page button.fm-card { background: #292929; border-color: #3f4247; }
 .fm-card__top { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; font-weight: 600; }
 .fm-card__icon { display: inline-flex; padding: 9px; border-radius: 11px; color: #cf5808; background: #f9731615; }
 .fm-card__value { display: flex; align-items: baseline; flex-wrap: wrap; gap: 7px; font-size: clamp(24px, 2.15vw, 33px); line-height: 1.5; letter-spacing: -.6px; font-variant-numeric: tabular-nums; }
 .fm-card__value small { font-size: 12px; font-weight: 500; letter-spacing: 0; }
-.fm-card__note { font-size: 12px; line-height: 1.8; color: #64748b; }
-.dark .fm-card__note { color: #a8b8cc; }
-.fm-card__footer { display: flex; justify-content: space-between; gap: 6px; border-top: 1px solid #64748b25; padding-top: 10px; margin-top: auto; font-size: 11px; color: #64748b; }
-.dark .fm-card__footer { color: #a8b8cc; }
+.fm-card__note { font-size: 12px; line-height: 1.8; color: #666666; }
+.dark .fm-card__note { color: #9aa0a6; }
+.fm-card__footer { display: flex; justify-content: space-between; gap: 6px; border-top: 1px solid #66666625; padding-top: 10px; margin-top: auto; font-size: 11px; color: #666666; }
+.dark .fm-card__footer { color: #9aa0a6; }
 .fm-card--revenue .fm-card__icon, .fm-card--profit .fm-card__value { color: #047857; }
 .dark .fm-card--revenue .fm-card__icon, .dark .fm-card--profit .fm-card__value { color: #6ee7b7; }
 .fm-card--revenue .fm-card__icon { background: #10b98118; }
@@ -42,27 +42,27 @@
 .dark .fm-page button.fm-card--loss { border-color: #a54d4a; background: #331b1f; }
 .fm-card--loss .fm-card__value { color: #b91c1c; }
 .dark .fm-card--loss .fm-card__value { color: #fca5a5; }
-.fm-page .fm-posting-note { margin: 12px 0 28px; font-size: 12px; color: #64748b; }
-.dark .fm-page .fm-posting-note { color: #a8b8cc; }
+.fm-page .fm-posting-note { margin: 12px 0 28px; font-size: 12px; color: #666666; }
+.dark .fm-page .fm-posting-note { color: #9aa0a6; }
 .fm-cash-split { display: flex; flex-wrap: wrap; gap: 5px 14px; font-size: 12px; }
 .fm-cash-split > span { display: inline-flex; gap: 6px; }
 .fm-negative { color: #b91c1c; }
 .dark .fm-negative { color: #fca5a5; }
 .fm-cash-alert { display: flex; align-items: center; gap: 5px; font-size: 12px; }
-.fm-actions { border: 1px solid #e2e8f0; border-radius: 18px; padding: 20px; background: #fff; }
-.dark .fm-actions { border-color: #344155; background: #172131; }
+.fm-actions { border: 1px solid #e3e5e8; border-radius: 18px; padding: 20px; background: #fff; }
+.dark .fm-actions { border-color: #3f4247; background: #292929; }
 .fm-count { padding: 2px 8px; border-radius: 20px; background: #f9731615; color: #b45309!important; }
 .dark .fm-count { color: #fdba74!important; }
 .fm-actions ul { list-style: none; padding: 0; margin: 0; }
-.fm-actions li + li { border-top: 1px solid #64748b25; }
+.fm-actions li + li { border-top: 1px solid #66666625; }
 .fm-page .fm-actions li button { width: 100%; border: 0; border-radius: 8px; padding: 13px 5px; justify-content: flex-start; text-align: start; gap: 10px; background: transparent; font-size: 13px; }
 .fm-actions li svg { flex-shrink: 0; color: #a9680d; }
 .fm-action__label { flex: 1; min-width: 0; }
 .fm-action__detail { font-variant-numeric: tabular-nums; }
 .fm-action--danger, .fm-action--danger svg { color: #b91c1c!important; }
 .dark .fm-action--danger, .dark .fm-action--danger svg { color: #fca5a5!important; }
-.fm-page .fm-scope { font-size: 11px; margin: 14px 0 0; color: #64748b; }
-.dark .fm-page .fm-scope { color: #a8b8cc; }
+.fm-page .fm-scope { font-size: 11px; margin: 14px 0 0; color: #666666; }
+.dark .fm-page .fm-scope { color: #9aa0a6; }
 .fm-clear { display: flex; align-items: center; gap: 8px; color: #047857; }
 .dark .fm-clear { color: #6ee7b7; }
 .fm-incomplete, .fm-loading { font-size: 13px; color: #a9680d; }

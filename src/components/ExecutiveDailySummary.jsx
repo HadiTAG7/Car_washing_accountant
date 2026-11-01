@@ -46,6 +46,7 @@ export default function ExecutiveDailySummary({ report, data, latestReportDate =
     {latestReportDate && latestReportDate !== today && <p className="sw-executive-daily__stale" role="note">آخر تقرير: <time dateTime={latestReportDate}>{dayLabel(latestReportDate)}</time> — لم يُحفظ تقرير اليوم؛ سبب عدم صدوره غير مسجل.</p>}
     <section aria-label="خلاصة المشروع الحالية">
       <h2>الخلاصة</h2>
+      <p className="sw-executive-daily__dated">مؤشرات الموقع الحالية حتى <time dateTime={today}>{dayLabel(today)}</time>؛ ليست لقطة التقرير المحفوظ{report ? <> بتاريخ <time dateTime={report.dateRiyadh}>{dayLabel(report.dateRiyadh)}</time></> : ''}.</p>
       <div className="sw-executive-daily__metrics">{metrics.map(metric => <section key={metric.label} aria-label={metric.label}>
         <h3>{metric.label}</h3><strong><bdi>{metric.value}</bdi></strong><time dateTime={metric.day}>{metric.date}</time>
         {metric.note && <small>{metric.note}</small>}

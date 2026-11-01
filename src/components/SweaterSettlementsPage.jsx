@@ -12,6 +12,8 @@ import SweaterActionDialog from './SweaterActionDialog';
 import SettlementInvoicePanel from './SettlementInvoicePanel';
 import OperationsReadinessBanner from './OperationsReadinessBanner';
 import SweaterBookingDetails from './SweaterBookingDetails';
+import SettlementPreviewPanel from './SettlementPreviewPanel';
+import { useSettlementPreview } from '../hooks/useSettlementPreview';
 import {
   useSweaterSettlements, useSweaterBookings, useSweaterAdjustments, useSweaterVariances,
   useSweaterMetrics, useSweaterFirstPeriod,
@@ -140,6 +142,8 @@ export default function SweaterSettlementsPage() {
   const recon = useMemo(() => reconciliationRows(settlement), [settlement]);
 
   const figures = settlement?.figures ?? null;
+  const canPreview = canMutate && !['approved', 'invoiced', 'partially_collected', 'collected', 'closed'].includes(settlement?.status);
+  const currentPreview = useSettlementPreview(periodKey, canPreview, settlement?.calculatedAtIso);
   const unresolved = variancesApi.variances.filter((v) => v.resolution === 'unresolved');
   const loading = sLoading || bLoading;
   const queryError = sError || bError;
@@ -203,6 +207,7 @@ export default function SweaterSettlementsPage() {
         </Card>
 
         <OperationsReadinessBanner periodKey={periodKey}/>
+        {canPreview && <SettlementPreviewPanel state={currentPreview} periodKey={periodKey} />}
         {loading && !settlement ? (
           <Card className="p-6"><LoadingState message="جارٍ تحميل التسوية..." /></Card>
         ) : (
@@ -211,7 +216,7 @@ export default function SweaterSettlementsPage() {
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
               <StatCard
                 icon={Handshake} tone="primary" label="خدمات مؤهّلة"
-                value={formatNumber(figures?.counts?.eligible ?? 0)}
+                value={figures ? formatNumber(figures.counts.eligible) : 'لم يُحتسب'}
                 sub={figures ? `من ${formatNumber(figures.counts.imported)} حجزًا وقت آخر احتساب محفوظ، لا العدد الحالي` : 'احتسب الشهر أولاً'}
               />
               <StatCard

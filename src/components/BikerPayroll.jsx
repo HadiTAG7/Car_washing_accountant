@@ -8,6 +8,8 @@ import ErrorState from './ErrorState';
 import LoadingState from './LoadingState';
 import Toast from './Toast';
 import DateField from './DateField';
+import BikerProfileMonthPicker from './BikerProfileMonthPicker';
+import './BikerProfile.css';
 import { usePayrollItems, usePayrollRuns } from '../hooks/usePayroll';
 import { describeBackendError } from '../lib/firebaseClient';
 import { downloadCsv } from '../lib/exportCsv';
@@ -25,6 +27,15 @@ import './BikerPayroll.css';
 
 const POLICY = 'أيام الشهر الفعلية';
 const FORMULA = 'صافي المستحق = الراتب المستحق + العمولة + البونص − الخصومات − السلفة المخصومة';
+
+function AdvanceDetails({ line, review }) {
+  return <details className="payroll-advance-details">
+    <summary>تفاصيل السلف — لا تُسوّى قبل الصرف</summary>
+    <p>القائم: {review ? formatCurrency(review.outstanding) : '—'}</p>
+    <p>المسند لهذا الشهر: {review ? formatCurrency(review.assigned) : '—'}</p>
+    <p>الفترة: {formatDate(line.eligibleStart)} — {formatDate(line.eligibleEnd)}</p>
+  </details>;
+}
 const STATUS = {
   draft: 'مسودة', approved: 'معتمد', partially_paid: 'مصروف جزئيًا', paid: 'مصروف', reversed: 'معكوس', cancelled: 'ملغى',
 };
@@ -192,7 +203,7 @@ function AdjustmentInputs({ line, adjustment, disabled, onChange, compact = fals
         {(Number(adjustment.deduction) || 0) > 0 && <input disabled={disabled} value={adjustment.deductionReason || ''} onChange={(e) => onChange('deductionReason', e.target.value)} className={reasonClass} placeholder="سبب الخصم (إلزامي)" aria-label={`سبب خصم ${line.name}`} />}
       </div>
       <div>
-        {compact && <span className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">السلفة المخصومة</span>}
+        {compact && <span className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">السلف المخصومة من الراتب</span>}
         {moneyInput('advanceDeduction', 'خصم السلفة', advanceMax)}
         <span className="block text-[10px] text-slate-500 mt-1">الحد {formatCurrency(advanceMax)} من قائم {formatCurrency(line.advanceOutstanding)}</span>
       </div>
@@ -470,7 +481,7 @@ export default function BikerPayroll({ role, previewMode = false, bikers: suppli
         <div className="flex flex-col xl:flex-row xl:items-end gap-4">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 flex-1">
             <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">الشهر
-              <input type="month" value={periodKey} onChange={(e) => setPeriodKey(e.target.value)} className={`mt-1 ${INPUT}`} />
+              <BikerProfileMonthPicker value={periodKey} onChange={setPeriodKey} language={language} max="9999-12" />
             </label>
             <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">بداية فترة الراتب
               <DateField ariaLabel="بداية فترة الرواتب" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} />
@@ -546,9 +557,9 @@ export default function BikerPayroll({ role, previewMode = false, bikers: suppli
         {preview?.lines?.length ? (
           <>
             <div className="hidden lg:block overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
-              <table className="w-full min-w-[1900px] text-xs">
+              <table className="w-full min-w-[1600px] text-xs">
                 <thead><tr className="text-right text-[10px] font-bold text-slate-500 uppercase border-b border-slate-100 dark:border-slate-800">
-                  {['العامل','الراتب / المباشرة','الأيام','الأساسي','العمولة','البونص + السبب','الخصم + السبب','السلف القائمة','المسند لهذا الشهر','خصم السلفة','الصافي','الحالة'].map((h) => <th key={h} className="py-3 px-3">{h}</th>)}
+                  {['العامل','الراتب / المباشرة','الأيام','الأساسي','العمولة','البونص + السبب','الخصم + السبب','السلف المخصومة من الراتب','الصافي','الحالة'].map((h) => <th key={h} className="py-3 px-3">{h}</th>)}
                 </tr></thead>
                 <tbody>{displayPreview.lines.map((line) => {
                   const adj = adjustments[line.bikerId] || adjustmentsFromPayrollLines([line])[line.bikerId];
@@ -561,9 +572,7 @@ export default function BikerPayroll({ role, previewMode = false, bikers: suppli
                     <td className="py-3 px-3 tabular-nums">{formatCurrency(line.commission)}</td>
                     <td className="py-3 px-3 min-w-40"><input type="number" min="0" step="0.01" disabled={locked} value={adj.bonus ?? 0} onChange={(e) => updateAdjustment(line, 'bonus', e.target.value)} className={INPUT} aria-label={`بونص ${line.name}`} />{(Number(adj.bonus) || 0) > 0 && <input disabled={locked} value={adj.bonusReason || ''} onChange={(e) => updateAdjustment(line, 'bonusReason', e.target.value)} className={`${INPUT} mt-1`} placeholder="سبب إلزامي" aria-label={`سبب بونص ${line.name}`} />}</td>
                     <td className="py-3 px-3 min-w-40"><input type="number" min="0" step="0.01" disabled={locked} value={adj.deduction ?? 0} onChange={(e) => updateAdjustment(line, 'deduction', e.target.value)} className={INPUT} aria-label={`خصم ${line.name}`} />{(Number(adj.deduction) || 0) > 0 && <input disabled={locked} value={adj.deductionReason || ''} onChange={(e) => updateAdjustment(line, 'deductionReason', e.target.value)} className={`${INPUT} mt-1`} placeholder="سبب إلزامي" aria-label={`سبب خصم ${line.name}`} />}</td>
-                    <td className="py-3 px-3 font-semibold text-amber-700 tabular-nums">{reviewByBiker.has(line.bikerId) ? formatCurrency(reviewByBiker.get(line.bikerId).outstanding) : '—'}</td>
-                    <td className="py-3 px-3 tabular-nums">{reviewByBiker.has(line.bikerId) ? formatCurrency(reviewByBiker.get(line.bikerId).assigned) : '—'}</td>
-                    <td className="py-3 px-3"><input type="number" min="0" max={advanceMax} step="0.01" disabled={locked} value={adj.advanceDeduction ?? line.advanceDeduction ?? 0} onChange={e => updateAdjustment(line, 'advanceDeduction', e.target.value)} className={`${INPUT} w-28`} aria-label={`خصم السلفة ${line.name}`} /><span className="block text-[10px] text-slate-500 mt-1">الحد {formatCurrency(advanceMax)}</span></td>
+                    <td className="py-3 px-3"><input type="number" min="0" max={advanceMax} step="0.01" disabled={locked} value={adj.advanceDeduction ?? line.advanceDeduction ?? 0} onChange={e => updateAdjustment(line, 'advanceDeduction', e.target.value)} className={`${INPUT} w-28`} aria-label={`خصم السلفة ${line.name}`} /><span className="block text-[10px] text-slate-500 mt-1">الحد {formatCurrency(advanceMax)} · التسوية عند الصرف فقط</span><AdvanceDetails line={line} review={reviewByBiker.get(line.bikerId)} /></td>
                     <td className="py-3 px-3 font-extrabold text-primary-700 dark:text-primary-300 tabular-nums">{formatCurrency(line.netDue)}</td>
                     <td className="py-3 px-3"><StatusChip status={line.status || status} /></td>
                   </tr>;
@@ -577,8 +586,8 @@ export default function BikerPayroll({ role, previewMode = false, bikers: suppli
                 <div className="flex justify-between gap-3"><div><h3 translate="no" className="font-bold text-slate-900 dark:text-slate-100">{line.name}</h3><p className="text-[11px] text-slate-500">{formatCurrency(line.monthlySalary)} · {line.daysEntitled}/{line.monthDays} يوماً</p></div><StatusChip status={line.status || status} /></div>
                 <div className="grid grid-cols-3 gap-2 text-center text-[11px]"><div className="bg-slate-50 dark:bg-slate-800 rounded-control p-2"><span className="block text-slate-500">الأساسي</span><strong>{formatCurrency(line.basicDue)}</strong></div><div className="bg-slate-50 dark:bg-slate-800 rounded-control p-2"><span className="block text-slate-500">العمولة</span><strong>{formatCurrency(line.commission)}</strong></div><div className="bg-primary-50 dark:bg-primary-500/10 rounded-control p-2"><span className="block text-slate-500">الصافي</span><strong>{formatCurrency(line.netDue)}</strong></div></div>
                 <p className="text-[10px] text-slate-500">الفترة المستحقة: {formatDate(line.eligibleStart)} — {formatDate(line.eligibleEnd)}{line.endDate ? ` · نهاية الخدمة ${formatDate(line.endDate)}` : ''}</p>
-                <p className="text-xs text-amber-500">السلف القائمة: {reviewByBiker.has(line.bikerId) ? formatCurrency(reviewByBiker.get(line.bikerId).outstanding) : '—'} · المسند لهذا الشهر: {reviewByBiker.has(line.bikerId) ? formatCurrency(reviewByBiker.get(line.bikerId).assigned) : '—'}</p>
                 <div className="grid grid-cols-1 gap-3"><AdjustmentInputs line={line} adjustment={adj} disabled={locked} onChange={(k, v) => updateAdjustment(line, k, v)} compact /></div>
+                <AdvanceDetails line={line} review={reviewByBiker.get(line.bikerId)} />
               </article>;
             })}</div>
           </>

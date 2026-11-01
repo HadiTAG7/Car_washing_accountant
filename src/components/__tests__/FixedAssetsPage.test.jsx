@@ -31,7 +31,7 @@ describe('الأصول — حواجز العرض والترحيل', () => {
   it('يعرض الفرق ورابط الحساب ويعطل الفردي والجماعي عند عدم المطابقة', () => {
     render(<FixedAssetsPage />);
     expect(screen.getByRole('alert', { name: 'مطابقة تكلفة سجل الأصول' }).textContent).toContain('479,626.17');
-    expect(screen.getByRole('link', { name: /عرض قيود الأصول/ }).getAttribute('href')).toBe('?page=ledger&account=1500');
+    expect(screen.getByRole('link', { name: 'عرض تفاصيل الأرصدة المبسطة' }).getAttribute('href')).toBe('?page=finance&detail=balances');
     for (const button of [screen.getByRole('button', { name: 'ترحيل' }), screen.getByRole('button', { name: 'ترحيل 1 شهر' })]) {
       expect(button.disabled).toBe(true); fireEvent.click(button);
     }

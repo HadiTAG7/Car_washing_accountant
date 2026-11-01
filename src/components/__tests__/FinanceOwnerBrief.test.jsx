@@ -21,3 +21,11 @@ it('does not claim there are no owner requests when part of the read is unavaila
   expect(screen.getByRole('alert').textContent).toContain('قد توجد تنبيهات أو قرارات لم تظهر');
   expect(screen.queryByText('لا قرار مسجل بانتظار هادي في آخر تقارير الفرق.')).toBeNull();
 });
+it('keeps further notes readable in place instead of linking to the hidden archive', () => {
+  const report = financeFixture({ visibleWarnings: Array.from({ length: 5 }, (_, i) => ({ id: `note-${i}`, severity: 'open', text: `ملاحظة محفوظة رقم ${i + 1}` })) });
+  render(<FinanceOwnerBrief state={{ teams: [team(report)], loading: false, error: false }} />);
+  const remaining = screen.getByText('عرض بقية الملاحظات (2)').closest('details');
+  expect(remaining.textContent).toContain('ملاحظة محفوظة رقم 4');
+  expect(remaining.textContent).toContain('ملاحظة محفوظة رقم 5');
+  expect(remaining.querySelector('a')).toBeNull();
+});

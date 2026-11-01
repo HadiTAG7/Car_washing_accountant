@@ -5686,5 +5686,7 @@
   "تظهر الطلبات الموسومة بانتظار قرار هادي فقط؛ راجع حالتها مع الفريق قبل القرار.": "Only requests marked as awaiting Hadi are shown; confirm their status with the team before deciding.",
   "لا قرار مسجل بانتظار هادي في آخر تقارير الفرق.": "No decision is recorded as awaiting Hadi in the teams' latest reports.",
   "عرض تفاصيل الأرصدة المبسطة": "View simple balance details",
-  "تعذر التحقق من التقرير المحفوظ.": "The saved report could not be verified."
+  "تعذر التحقق من التقرير المحفوظ.": "The saved report could not be verified.",
+  "عرض بقية الملاحظات (": "Show remaining notes (",
+  "طلبات كما حُفظت وقت التقرير؛ ليست حالة لحظية. هذا العرض للقراءة فقط ولا يسجل قرارًا.": "Requests as saved at the report cutoff, not live status. This read-only view does not record a decision."
 }

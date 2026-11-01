@@ -47,7 +47,16 @@ export function CompensationReviewWorkspace({ read, call }) {
     : !['historical_excluded','historical_deferred','prior_decision_unverified','left','previously_objected'].includes(r.reviewStatus)))
     && [r.ticketId,...r.source.facts.washIds,r.source.facts.biker.name,r.source.facts.biker.externalId,r.source.facts.complaint].join(' ').toLowerCase().includes(search.toLowerCase()));
   const visible = filtered.slice(page * 15, page * 15 + 15);
-  const refresh = () => { setUncertain(false); setPendingAction(null); read.refresh(); };
+  const refresh = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const fresh = await call({ op:'read' });
+      if (!Array.isArray(fresh?.cases) || !Number.isSafeInteger(fresh?.queue?.revision)) throw Error(tr('الحفظ غير محسوم؛ أعد القراءة ولا تكرر الطلب.','Save is unconfirmed. Re-read before retrying.'));
+      setUncertain(false); setMessage(''); setPendingAction(null); read.refresh();
+    } catch (e) { setUncertain(true); setMessage(e.message); }
+    finally { setBusy(false); }
+  };
   if (!read.allowed) return <main className="cr-page"><Card><p role="alert">{tr('هذه الصفحة للمدير فقط، ولا تظهر في معاينة الشريك.','This page is restricted to administrators and is unavailable in partner preview.')}</p></Card></main>;
   return <main className="cr-page" aria-label={tr('مراجعة التعويضات والاعتراضات','Compensation ticket review')}>
     <header className="cr-row"><h1>{tr('مراجعة التكتات','Ticket review')}</h1><button className="cr-button" onClick={refresh} disabled={busy}>{tr('تحديث السجل','Refresh records')}</button></header>

@@ -36,6 +36,25 @@ it('blocks further mutation after an ambiguous save until the record is re-read'
   await waitFor(()=>expect(screen.getByRole('alert').textContent).toContain('unknown save result'));
   expect(screen.getByRole('button',{name:'طلب رفع هذا التكت بالنص المحدد'}).disabled).toBe(true);
 });
+it('clears stale ambiguity only after a successful explicit record read',async()=>{
+  const r=read(),call=vi.fn().mockRejectedValueOnce(Error('unknown save result')).mockResolvedValueOnce(r.data);
+  render(<CompensationReviewWorkspace read={r} call={call}/>);
+  fireEvent.click(screen.getByRole('button',{name:'تركها دون اعتراض'}));
+  fireEvent.click(screen.getByRole('checkbox'));
+  fireEvent.submit(screen.getByRole('button',{name:'تأكيد وحفظ'}).closest('form'));
+  await waitFor(()=>expect(screen.getByRole('alert').textContent).toContain('unknown save result'));
+  fireEvent.click(screen.getByRole('button',{name:'تحديث السجل'}));
+  await waitFor(()=>expect(screen.queryByRole('alert')).toBeNull());
+  expect(screen.queryByText('unknown save result')).toBeNull();expect(r.refresh).toHaveBeenCalledTimes(1);
+});
+it('retains the write block when the explicit recovery read fails',async()=>{
+  const r=read(),call=vi.fn().mockRejectedValue(Error('record read failed'));
+  render(<CompensationReviewWorkspace read={r} call={call}/>);
+  fireEvent.click(screen.getByRole('button',{name:'تحديث السجل'}));
+  await waitFor(()=>expect(screen.getByRole('alert').textContent).toContain('record read failed'));
+  expect(screen.getByRole('button',{name:'طلب رفع هذا التكت بالنص المحدد'}).disabled).toBe(true);
+  expect(r.refresh).not.toHaveBeenCalled();
+});
 it('accepts a complete identical readback whose object keys were reordered by JSONB',async()=>{
   const row=record();row.submission={status:'queued',text:row.draft.text,requestId:'synthetic-request',draftRevision:1};
   const reorder=value=>Array.isArray(value)?value.map(reorder):value&&typeof value==='object'

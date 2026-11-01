@@ -5793,5 +5793,17 @@
   "اسم سويتر غير محفوظ في هذه اللقطة؛ راجعه عبر رابط المصدر. رقم الشركة مستقل عن معرّف البايكر الداخلي.": "The Sweater name is not saved in this snapshot; check the source link. Company ID is separate from the internal biker ID.",
   "وقت تحديث السجل المحفوظ:": "Saved record update time:",
   "وقت حفظ ملاحظة المصدر:": "Source observation save time:",
-  "هذا وقت حفظ أو تحديث السجل، وليس وقت قراءة سويتر أو الإلغاء.": "This is a save or update time, not the Sweater read or cancellation time."
+  "هذا وقت حفظ أو تحديث السجل، وليس وقت قراءة سويتر أو الإلغاء.": "This is a save or update time, not the Sweater read or cancellation time.",
+  "قراءات متعارضة": "Conflicting readings",
+  "وقت قراءة المصدر غير محفوظ؛ لا نرتب الوقائع بوقت الحفظ ولا نحسم نوع الإلغاء أو المبلغ.": "Source read time is not saved. Save time does not establish chronology; cancellation type and amount remain unresolved.",
+  "نص الملاحظة المحفوظة للمراجعة": "Saved observation text for review",
+  "القراءات المتعارضة للمراجعة": "Conflicting readings for review",
+  "توجد ملاحظات بلا وقت قراءة مثبت؛ المعروض آخر قراءة معروفة، وليس إثبات الحالة الحالية.": "Some observations have no confirmed read time. This is the latest known reading, not proof of current status.",
+  "إنشاء التكت كما ورد:": "Ticket creation as recorded:",
+  "مرفقات المصدر (": "Source attachments (",
+  "مشاهدة مسجلة في المصدر المحفوظ": "Viewing recorded in the saved source",
+  "لم تُشاهد أو تعذر عرضها": "Not viewed or could not be displayed",
+  "فتح رابط المرفق الأصلي": "Open original attachment link",
+  "أوقات المصدر كما سُجلت": "Source times as recorded",
+  "منطقة زمنية غير مثبتة": "Timezone unconfirmed"
 }

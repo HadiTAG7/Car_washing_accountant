@@ -178,10 +178,23 @@ it('links stored ticket facts independently of a missing aggregate, preserving w
   expect(mocks.save).not.toHaveBeenCalled();
 });
 it('keeps cancellation classifications separate from an admin status and displays unknown rows for review', () => {
-  const data=state(); const booking=(id,reason)=>({updatedAtIso:'2026-10-27T12:00:00Z',record:{sspBookingId:id,serviceDate:'2026-10-20',driverExternalId:'2007',rawStatus:'Cancelled by Admin',
+  const data=state(); const booking=(id,reason)=>({updatedAtIso:'2026-10-27T12:00:00Z',observedAtIso:'2026-10-27T12:00:00Z',record:{sspBookingId:id,serviceDate:'2026-10-20',driverExternalId:'2007',rawStatus:'Cancelled by Admin',
     notes:reason?'Cancellation Reason\nReason\n'+reason:'',sourceUrl:'https://ssp-portal.sweater.sa/bookings/TEST'}});
   data.sourceDetails={reviews:{data:{cases:[]}},bookings:{data:[booking('TEST-BIKER','Biker illness'),booking('TEST-UNKNOWN',null)]},observations:{data:[]}};
   mocks.read.mockReturnValue(data);render(<QualityViolationsPage/>);choose('إلغاء البايكر');
   expect(screen.getByRole('tabpanel').textContent).toContain('TEST-BIKER');expect(screen.getByRole('tabpanel').textContent).not.toContain('TEST-UNKNOWN');
   expect(screen.getByText('حجوزات إلغاء غير مصنفة (1)')).toBeTruthy();expect(mocks.save).not.toHaveBeenCalled();
+});
+it('does not display one resolved invoice deduction for conflicting same-time invoice notes',()=>{
+  const data=state(), at='2026-10-27T12:00:00Z';
+  const record={sspBookingId:'C-123',serviceDate:'2026-10-20',rawStatus:'Cancelled by Admin',driverExternalId:'2007',
+    sourceUrl:'https://ssp-portal.sweater.sa/bookings/TEST',notes:'Cancellation Reason\nReason\nBiker illness'};
+  data.sourceDetails={reviews:{data:{cases:[]}},bookings:{data:[{record,observedAtIso:'2026-10-26T12:00:00Z'}]},observations:{data:[10,20].map((amount,i)=>({
+    id:String(i),sspBookingId:'C-123',sourceReadAtIso:at,fetchedAtIso:at,rawPayload:{...record,notes:record.notes+'\nSSP_INVOICE_DEDUCTION_V1='+JSON.stringify({signedDeductionSAR:-amount})}}))}};
+  mocks.read.mockReturnValue(data); render(<QualityViolationsPage/>);
+  const section=screen.getByText('حجوزات إلغاء غير مصنفة (1)').closest('details');fireEvent.click(section.querySelector('summary'));
+  const row=within(section).getByText('C-123').closest('details');fireEvent.click(row.querySelector('summary'));
+  expect(row.textContent).toContain('قراءات متعارضة');expect(row.textContent).not.toContain('خصم فاتورة الحجز كما ورد:');
+  expect(row.textContent).toContain('"signedDeductionSAR":-10'); expect(row.textContent).toContain('"signedDeductionSAR":-20');
+  expect(mocks.save).not.toHaveBeenCalled();
 });

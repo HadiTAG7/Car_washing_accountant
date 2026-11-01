@@ -17,7 +17,6 @@ import BikerDeductionFollowup from './BikerDeductionFollowup';
 import { BEFORE_PAGE_NAVIGATION } from '../lib/navigationEvents';
 import { qualitySourceDetails } from '../lib/qualitySourceDetails';
 import QualitySourceRows from './QualitySourceRows';
-import SweaterBookingDetails from './SweaterBookingDetails';
 import { useLanguage } from '../i18n/useLanguage';
 import { getLanguage } from '../i18n/locale';
 import './QualityViolationsPage.css';
@@ -40,7 +39,6 @@ export function QualityViolationsContent() {
   const today = riyadhToday(), [month, setMonth] = useState(today.slice(0, 7));
   const [activeType, setActiveType] = useState(COMPENSATION_KEYS[0]), [search, setSearch] = useState(''), [selected, setSelected] = useState(null);
   const [drafts, setDrafts] = useState({}), [deductionDirty, setDeductionDirty] = useState(false);
-  const [openedBooking, setOpenedBooking] = useState(null);
   const tabRefs = useRef({});
   const read = useQualityViolations(month);
   const loading = read.current.loading || read.workers.loading, error = read.current.error || read.workers.error;
@@ -130,14 +128,14 @@ export function QualityViolationsContent() {
             {key === 'freeWashCompensation' && <p className="qv-note">نعرض الغسلة المجانية بنوع صريح ووحدة عدد. مبلغ 20 ريالًا أو كود العميل لا يكفي.</p>}
             {!sourceBusy && !sourceFailed && !linked.groups[key].length && <p>لا سجلات مصنفة محفوظة لهذا النوع؛ لا يعني ذلك صفر حالات في سويتر.</p>}
             {linked.groups[key].length > 0 && <p className="qv-note">نتائج البحث في السجلات المرتبطة: {linked.groups[key].filter(matches).length} من {linked.groups[key].length}</p>}
-            <QualitySourceRows rows={linked.groups[key].filter(matches)} onOpenBooking={setOpenedBooking} protectLink={protectLink} />
+            <QualitySourceRows rows={linked.groups[key].filter(matches)} protectLink={protectLink} />
           </section>}
         </section>;
       })}
       {linked.undatedTickets > 0 && <p className="qv-warning">تكتات بلا تاريخ إنشاء مقروء: {linked.undatedTickets}. لم تُنسب إلى الشهر المختار؛ راجع سجل التكتات.</p>}
       {linked.unclassified.length > 0 && <details className="qv-secondary"><summary>حجوزات إلغاء غير مصنفة ({linked.unclassified.length})</summary>
         <p>حالة الإلغاء الإداري وحدها لا تحدد البايكر أو العميل أو الصيانة. تبقى هذه الحجوزات خارج التصنيفات.</p>
-        <QualitySourceRows rows={linked.unclassified.filter(matches)} onOpenBooking={setOpenedBooking} protectLink={protectLink} />
+        <QualitySourceRows rows={linked.unclassified.filter(matches)} protectLink={protectLink} />
       </details>}
       <details className="qv-secondary"><summary>حسب البايكر</summary><Card className="qv-panel">
         <p>الأرقام الجزئية هي الصفوف المستلمة فقط. عدم توفر الإسناد لا يعني صفر مخالفات.</p>
@@ -160,7 +158,6 @@ export function QualityViolationsContent() {
         {read.settings.loading ? <p>جارٍ قراءة المهلة…</p> : read.settings.error ? <p role="alert">تعذّرت قراءة المهلة؛ لا يمكن تحديد قرب انتهائها.</p>
           : <DeadlineSetting settings={read.settings.data} save={read.saveSettings} draft={drafts.deadline} updateDraft={value => updateDraft('deadline', value)} clearDraft={() => clearDraft('deadline')} />}
       </Card></details>
-      {openedBooking && <SweaterBookingDetails booking={openedBooking} onClose={() => setOpenedBooking(null)} />}
     </main></>;
 }
 

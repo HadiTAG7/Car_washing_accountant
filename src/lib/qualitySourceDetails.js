@@ -73,32 +73,51 @@ export function qualitySourceDetails({ month, reviews = [], bookings = [], raw =
   const observations = new Map();
   for (const booking of bookings) {
     const record = booking.record ?? booking;
-    const saved = bookingSourceObservations(booking, raw);
+    const rawById = new Map(raw.map(r => [r.id, r]));
+    const saved = bookingSourceObservations(booking, raw).map(o => ({ ...o, sourceAt: rawById.get(o.id)?.sourceReadAtIso,
+      importRunId: rawById.get(o.id)?.importRunId }));
     const latest = booking.latestObservation;
     // Document update time can be an owner decision, not a newer SSP reading.
     // Raw observations win; never attach the held record's old reason to a new status.
-    const fallback = latest ? { record: { sspBookingId: record.sspBookingId, serviceDate: record.serviceDate,
-      rawStatus: latest.rawStatus, sourceUrl: record.sourceUrl, notes: null }, savedAt: latest.observedAtIso, timeBasis: 'source_read' }
-      : { record, savedAt: booking.updatedAtIso, original: true };
-    const variants = saved.length ? saved : [fallback];
+    const fallback = { record, sourceAt: booking.observedAtIso, savedAt: booking.updatedAtIso, original: true };
+    const partial = latest ? { record: { sspBookingId: record.sspBookingId, serviceDate: record.serviceDate,
+      rawStatus: latest.rawStatus, sourceUrl: record.sourceUrl, notes: null }, sourceAt: latest.observedAtIso,
+      savedAt: null, importRunId: latest.importRunId, partial: true } : null;
+    const variants = [...saved, ...(!saved.length || instant(fallback.sourceAt) ? [fallback] : []), ...(partial ? [partial] : [])];
     for (const observation of variants) {
       const r = observation.record, id = ownerBookingIdentity(r.sspBookingId);
       if (!id || !day(r.serviceDate) || r.serviceDate.slice(0, 7) !== month) continue;
-      const at = instant(observation.savedAt), prior = observations.get(id);
-      const signature = JSON.stringify([r.rawStatus, r.driverExternalId, r.serviceDate, cancellationDetails(r)]);
-      if (!prior || at > prior.at) observations.set(id, { observation, at, signature, conflict: false });
-      else if (at === prior.at && signature !== prior.signature) prior.conflict = true;
+      if (!observations.has(id)) observations.set(id, []);
+      observations.get(id).push(observation);
     }
   }
-  for (const [id, { observation, conflict }] of observations) {
+  for (const [id, all] of observations) {
+    const known = all.filter(o => instant(o.sourceAt));
+    const newest = known.length ? Math.max(...known.map(o => instant(o.sourceAt))) : 0;
+    const candidates = known.length ? known.filter(o => instant(o.sourceAt) === newest) : all;
+    const partial = candidates.find(o => o.partial), full = candidates.filter(o => !o.partial);
+    const signature = r => JSON.stringify([r.rawStatus?.trim().toLowerCase(), r.driverExternalId || null, r.driverName?.trim() || null,
+      r.serviceDate, r.serviceTime || null, r.notes?.trim() || null, r.platformAmount ?? null, r.customerDiscount ?? null,
+      r.partnerOperationalDeduction ?? null, r.compensationAmount ?? null]);
+    // Same-time invoice evidence is part of the source, even when cancellation
+    // reason and worker match. Never pick one amount from conflicting notes.
+    let conflict = new Set(full.map(o => signature(o.record))).size > 1;
+    if (partial && full.length && !full.every(o => o.importRunId && o.importRunId === partial.importRunId
+      && o.record.rawStatus === partial.record.rawStatus)) conflict = true;
+    const observation = partial && !full.some(o => o.importRunId && o.importRunId === partial.importRunId) ? partial
+      : [...candidates].sort((a,b) => Number(Boolean(a.partial)) - Number(Boolean(b.partial)) || instant(b.savedAt) - instant(a.savedAt))[0];
     const record = observation.record;
     if (!cancellationCandidate(record)) continue;
-    const detail = cancellationDetails(record), metricKey = conflict ? null : cancellationType(record);
+    const orderUnknown = !known.length;
+    const detail = cancellationDetails(record), metricKey = conflict || orderUnknown ? null : cancellationType(record);
     const row = sourceBiker({ id: `booking:${id}`, kind: 'booking', sourceId: record.sspBookingId, bookingId: record.sspBookingId,
-      date: record.serviceDate, dateBasis: 'service', driverExternalId: record.driverExternalId, sourceBikerName: record.driverName,
-      reason: detail.reason, sourceUrl: cancellationSourceLink(record.sourceUrl), sourceReadAt: observation.savedAt,
-      timeBasis: observation.original ? 'record_update' : observation.timeBasis || 'observation_saved',
-      record, detail, conflict, quantity: 1, amount: null }, bikers, language);
+      date: conflict ? null : record.serviceDate, dateBasis: 'service', driverExternalId: conflict ? null : record.driverExternalId,
+      sourceBikerName: conflict ? null : record.driverName, reason: conflict ? null : detail.reason,
+      sourceUrl: cancellationSourceLink(record.sourceUrl), sourceReadAt: observation.sourceAt || observation.savedAt,
+      timeBasis: instant(observation.sourceAt) ? 'source_read' : observation.original ? 'record_update' : 'observation_saved',
+      savedAt: observation.savedAt, record, detail, conflict, orderUnknown,
+      hasUndatedObservations: all.some(o => !o.original && !instant(o.sourceAt)),
+      alternatives: conflict ? candidates.map(o => ({ record: o.record, sourceAt: o.sourceAt })) : [], quantity: 1, amount: null }, bikers, language);
     if (metricKey) groups[metricKey].push(row); else unclassified.push(row);
   }
   for (const rows of Object.values(groups)) rows.sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id));

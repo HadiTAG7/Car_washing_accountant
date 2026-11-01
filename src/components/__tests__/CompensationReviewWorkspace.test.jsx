@@ -134,4 +134,13 @@ it('can display an excluded archive record without changing the queue or making 
   expect(screen.getByRole('heading',{name:'عرض السجل · تكت TEST-900001'})).toBeTruthy();
   expect(call).not.toHaveBeenCalled();expect(screen.queryByRole('button',{name:'طلب رفع هذا التكت بالنص المحدد'})).toBeNull();
 });
+it('opens a linked archived ticket for display without a select, reopen or source mutation',()=>{
+  const row=record(); row.reviewStatus='historical_excluded';
+  window.history.replaceState(null,'','/?page=compensation_review&ticket=TEST-900001');
+  const call=vi.fn();
+  render(<CompensationReviewWorkspace read={read({data:{cases:[row],queue:{activeTicketId:null,revision:1},canDecide:false}})} call={call}/>);
+  expect(screen.getByRole('heading',{name:'عرض السجل · تكت TEST-900001'})).toBeTruthy();
+  expect(call).not.toHaveBeenCalled(); expect(screen.queryByRole('button',{name:'طلب رفع هذا التكت بالنص المحدد'})).toBeNull();
+  window.history.replaceState(null,'','/');
+});
 

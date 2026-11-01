@@ -1,0 +1,70 @@
+import { cancellationTime, cancellationSourceLink } from '../lib/sweater/cancellationDetails';
+import { bookingInvoiceDeduction } from '../../functions/src/sweater/bookingInvoiceDeduction';
+import { reviewStatusLabels } from '../lib/compensationReview';
+import { getLanguage } from '../i18n/locale';
+
+const stamp = value => value && Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleString(getLanguage() === 'en' ? 'en-GB' : 'ar-SA-u-ca-gregory', {
+  timeZone: 'Asia/Riyadh', numberingSystem: 'latn',
+}) : 'غير متاح';
+const amountLabels = { customer_code: 'كود أو محفظة العميل', compensation: 'قسم التعويضات',
+  invoice_deduction: 'خصم فاتورة الحجز', settlement: 'مبلغ التسوية', late: 'دقائق التأخير' };
+const objectionLabels = { Open: 'مفتوح', Processing: 'قيد المعالجة', Accepted: 'مقبول في سويتر', Rejected: 'مرفوض في سويتر' };
+
+export default function QualitySourceRows({ rows, onOpenBooking, protectLink }) {
+  return <div className="qv-events">{rows.map(row => <details key={row.id} className="qv-event qv-source-event">
+    <summary><strong>{row.kind === 'ticket' ? 'التكت' : 'الحجز'} <bdi>{row.sourceId}</bdi></strong>
+      <span>{row.siteBikerName ? 'اسم الموقع حسب الربط:' : row.sourceBikerName ? 'اسم سويتر:' : 'البايكر:'} {row.bikerLabel} <bdi>{row.driverExternalId || ''}</bdi> · <bdi>{row.date || 'غير متاح'}</bdi></span>
+      <span className="qv-preview">{row.reason || 'السبب غير محفوظ'}</span></summary>
+    <p>{row.dateBasis === 'ticket' ? 'تاريخ التكت' : 'تاريخ الخدمة'}: <bdi>{row.date}</bdi></p>
+    <p>اسم الموقع حسب الربط: {row.siteBikerName || 'غير مربوط'}</p>
+    <p>اسم سويتر: {row.sourceBikerName || 'غير محفوظ'} · رقم الشركة في سويتر: <bdi>{row.driverExternalId || 'غير متاح'}</bdi></p>
+    {row.identityConflict && <p className="qv-warning">ربط البايكر مكرر أو متعارض؛ الاسم المعروض من المصدر ولا يثبت الإسناد.</p>}
+    <p className="qv-prose">{row.reason || 'السبب غير محفوظ'}</p>
+    {row.quantity !== null && <p>الكمية المسجلة في هذا المصدر: <bdi>{row.quantity}</bdi></p>}
+    <p className="qv-note">قراءة هذا المصدر: <bdi>{stamp(row.sourceReadAt)}</bdi> (الرياض). مستقلة عن لقطة المجاميع.</p>
+    {row.kind === 'ticket' ? <TicketFacts row={row} protectLink={protectLink} /> : <BookingFacts row={row} onOpenBooking={onOpenBooking} />}
+    {row.sourceUrl && <a href={row.sourceUrl} target="_blank" rel="noreferrer">فتح المصدر الأصلي</a>}
+  </details>)}</div>;
+}
+
+function TicketFacts({ row, protectLink }) {
+  const source = row.source, facts = source.facts;
+  return <>
+    <p>الحجوزات المرتبطة: <bdi>{facts.washIds.join(' · ') || 'غير متاح'}</bdi></p>
+    <p>تاريخ الخدمة: <bdi>{facts.serviceDate || 'غير متاح'}</bdi></p>
+    <p className="qv-prose">رد الدعم: {facts.supportResponse || 'غير محفوظ'}</p>
+    <details><summary>التعليقات وحدود القراءة</summary>
+      {[...facts.comments, ...source.source.coverage.limitations].map((text, i) => <p key={i} className="qv-prose">{text}</p>)}
+      <p>{source.source.coverage.filters}</p>
+      <p>تغطية المصدر: {source.source.coverage.complete ? 'مكتملة حسب القراءة' : 'جزئية'}</p>
+    </details>
+    <div className="qv-scroll"><table><caption>مبالغ المصدر مستقلة؛ لا تُجمع كخصم تسوية</caption>
+      <thead><tr><th>البند</th><th>القيمة</th><th>الوحدة</th><th>المرجع</th></tr></thead>
+      <tbody>{source.amounts.map((a, i) => <tr key={i}><th>{amountLabels[a.kind]}</th><td><bdi>{a.value ?? 'غير متاح'}</bdi></td><td>{a.unit}</td><td>{a.sourceRef}</td></tr>)}</tbody>
+    </table></div>
+    <h3>اعتراضات سويتر المرتبطة بالتكت</h3>
+    {row.review.objectionHistory?.length ? row.review.objectionHistory.map(obj => <p key={obj.id}>
+      {cancellationSourceLink(obj.url) ? <a href={cancellationSourceLink(obj.url)} target="_blank" rel="noreferrer"><bdi>{obj.id}</bdi></a> : <bdi>{obj.id}</bdi>}
+      {' · '}{objectionLabels[obj.status] || obj.status} · {obj.reply || 'لا رد محفوظ'} · <bdi>{stamp(obj.checkedAt)}</bdi>
+    </p>) : <p>لا اعتراض محفوظ لهذا التكت؛ لا يعني فحص كل اعتراضات سويتر.</p>}
+    <p className="qv-note">قبول اعتراض لا يثبت عكس خصم مالي. عرض الأرشيف لا يعيد فتحه أو يرسل اعتراضًا.</p>
+    <p>المراجعة الداخلية: {reviewStatusLabels[row.review.reviewStatus] || row.review.reviewStatus}</p>
+    <a href={`?page=compensation_review&ticket=${encodeURIComponent(row.sourceId)}`} onClick={protectLink}>فتح سجل التكت القائم</a>
+  </>;
+}
+
+function BookingFacts({ row, onOpenBooking }) {
+  const time = cancellationTime(row.detail.time, row.detail.timeZone);
+  let invoice = null, invoiceError = false;
+  try { invoice = bookingInvoiceDeduction(row.record, row.detail.reason, row.sourceReadAt); } catch { invoiceError = true; }
+  return <>
+    <p>حالة سويتر الأصلية: <bdi>{row.record.rawStatus}</bdi></p>
+    <p>وقت الإلغاء: <bdi>{time.text || 'غير محفوظ'}</bdi>{time.text && !time.converted && ' · المنطقة الزمنية غير مثبتة'}</p>
+    <p>اسم منفّذ الإلغاء: {row.detail.actorName || 'غير محفوظ'}</p>
+    <p className="qv-note">الحالة والسبب من المصدر؛ اسم البايكر المسند لا يثبت المسؤولية أو خصمًا من راتبه.</p>
+    {row.conflict && <p className="qv-warning">قراءات متعارضة بالتوقيت نفسه؛ لم نحدد نوع الإلغاء.</p>}
+    {invoice && <p>خصم فاتورة الحجز كما ورد: <bdi>{invoice.signedDeductionSAR}</bdi> ر.س · ليس خصم تسوية معتمدًا.</p>}
+    {invoiceError && <p className="qv-warning">تعذّر التحقق من دليل مبلغ الفاتورة؛ لم نستخدم مبلغًا بديلًا.</p>}
+    <button type="button" className="sw-button sw-button--secondary sw-button--sm" onClick={() => onOpenBooking({ record: row.record, updatedAtIso: row.sourceReadAt })}>تفاصيل ملاحظات الحجز</button>
+  </>;
+}

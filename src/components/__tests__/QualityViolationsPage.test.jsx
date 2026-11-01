@@ -114,7 +114,7 @@ it('distinguishes complete empty, partial empty and read failure', () => {
   data.current.snapshot.eventGroups.violations.complete = false; view.rerender(<QualityViolationsPage />);
   expect(screen.getByText('لا صفوف مستلمة بعد؛ التفاصيل جزئية وليست صفر حالات.')).toBeTruthy();
   data.current.error = Error('offline'); view.rerender(<QualityViolationsPage />);
-  expect(screen.getByRole('alert').textContent).toContain('تعذّرت قراءة التفاصيل'); expect(screen.queryByRole('tabpanel')).toBeNull();
+  expect(screen.getByRole('alert').textContent).toContain('تعذّرت قراءة لقطة المجاميع'); expect(screen.getByRole('tabpanel').textContent).toContain('غير متاح');
 });
 it('disables saving when current follow-up cannot be read and returns focus when details close', () => {
   const data = state(); data.objections.error = Error('unavailable'); mocks.read.mockReturnValue(data);
@@ -159,4 +159,29 @@ it('warns on the real Sidebar navigation path and lets cancellation retain the p
   expect(within(details).getByLabelText('ملاحظة').value).toBe('مسودة قبل مغادرة القائمة');
   confirm.mockReturnValue(true); fireEvent.click(screen.getByRole('button', { name: 'ملخص المالية' }));
   expect(screen.getByText('Finance destination')).toBeTruthy(); expect(mocks.save).not.toHaveBeenCalled();
+});
+it('links stored ticket facts independently of a missing aggregate, preserving wallet amounts and the archived review', () => {
+  const data = state(); data.current.error = Error('aggregate unavailable');
+  data.sourceDetails = { reviews: { data: { cases: [{ recordType:'ssp_ticket_review_v1', ticketId:'TEST-TICKET', reviewStatus:'historical_excluded',
+    objectionHistory:[{id:'OBJ-TEST-A',status:'Accepted'},{id:'OBJ-TEST-B',status:'Rejected'}], source:{
+      facts:{ ticketDate:'2026-10-20', biker:{name:'Source name',externalId:'2007'}, complaint:'Synthetic wallet compensation', washIds:['TEST-WASH'], comments:[], supportResponse:'Recorded support response' },
+      source:{url:'https://ssp-portal.sweater.sa/tickets/TEST-TICKET',readAt:'2026-10-27T12:00:00Z',coverage:{complete:false,limitations:['Synthetic partial coverage'],filters:'October tickets'}},
+      amounts:[{kind:'compensation',value:20,unit:'SAR',sourceRef:'Compensation section'},{kind:'customer_code',value:60,unit:'SAR',sourceRef:'Customer promo code'},
+        {kind:'compensation',value:1,unit:'count',sourceRef:'Wash in Wallet'}] } }] } }, bookings:{data:[]},observations:{data:[]} };
+  mocks.read.mockReturnValue(data); render(<QualityViolationsPage />); choose('تعويضات');
+  let panel=screen.getByRole('tabpanel'); expect(panel.textContent).toContain('صفوف مرتبطة: 1');
+  const detail=within(panel).getByText('TEST-TICKET').closest('details'); fireEvent.click(detail.querySelector('summary'));
+  expect(detail.textContent).toContain('بايكر اختبار'); expect(detail.textContent).toContain('OBJ-TEST-A'); expect(detail.textContent).toContain('OBJ-TEST-B');
+  expect(within(detail).getByRole('cell',{name:'20'})).toBeTruthy(); expect(within(detail).getByRole('cell',{name:'60'})).toBeTruthy();
+  expect(within(detail).getByRole('link',{name:'فتح سجل التكت القائم'}).getAttribute('href')).toBe('?page=compensation_review&ticket=TEST-TICKET');
+  choose('غسلات مجانية'); panel=screen.getByRole('tabpanel'); expect(panel.textContent).not.toContain('TEST-TICKET');
+  expect(mocks.save).not.toHaveBeenCalled();
+});
+it('keeps cancellation classifications separate from an admin status and displays unknown rows for review', () => {
+  const data=state(); const booking=(id,reason)=>({updatedAtIso:'2026-10-27T12:00:00Z',record:{sspBookingId:id,serviceDate:'2026-10-20',driverExternalId:'2007',rawStatus:'Cancelled by Admin',
+    notes:reason?'Cancellation Reason\nReason\n'+reason:'',sourceUrl:'https://ssp-portal.sweater.sa/bookings/TEST'}});
+  data.sourceDetails={reviews:{data:{cases:[]}},bookings:{data:[booking('TEST-BIKER','Biker illness'),booking('TEST-UNKNOWN',null)]},observations:{data:[]}};
+  mocks.read.mockReturnValue(data);render(<QualityViolationsPage/>);choose('إلغاء البايكر');
+  expect(screen.getByRole('tabpanel').textContent).toContain('TEST-BIKER');expect(screen.getByRole('tabpanel').textContent).not.toContain('TEST-UNKNOWN');
+  expect(screen.getByText('حجوزات إلغاء غير مصنفة (1)')).toBeTruthy();expect(mocks.save).not.toHaveBeenCalled();
 });

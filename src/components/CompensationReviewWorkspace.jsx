@@ -9,7 +9,12 @@ export function CompensationReviewWorkspace({ read, call }) {
   const [filter, setFilter] = useState('queue'), [search, setSearch] = useState(''), [page, setPage] = useState(0);
   const [bundle, setBundle] = useState(''), [preview, setPreview] = useState(null), [receiptId, setReceiptId] = useState('');
   const [pendingAction, setPendingAction] = useState(null), [actionText, setActionText] = useState('');
-  const [viewTicketId, setViewTicketId] = useState(null);
+  // Display-only deep link: never selects the active queue or reopens an archive.
+  const [viewTicketId, setViewTicketId] = useState(() => {
+    if (typeof window === 'undefined') return null;
+    const id = new URLSearchParams(window.location.search).get('ticket');
+    return /^[A-Z0-9][A-Z0-9-]{0,79}$/.test(id || '') ? id : null;
+  });
   const confirmRef = useRef(null);
   const rootRef = useRef(null);
   const [returnFocusTo, setReturnFocusTo] = useState(null);

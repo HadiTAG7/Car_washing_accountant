@@ -8,15 +8,20 @@ vi.mock('../../hooks/useOverviewBikerQuality', () => ({ useOverviewBikerQuality:
 vi.mock('../../lib/bikerProfile', () => ({ riyadhToday: () => '2026-10-26' }));
 vi.mock('../TopBar', () => ({ default: () => null }));
 vi.mock('../SweaterFreshnessBar', () => ({ default: () => <p>Freshness fixture</p> }));
+vi.mock('../../lib/firebaseClient', () => ({ auth: null, isFirebaseConfigured: false }));
+vi.mock('../ChangePasswordModal', () => ({ default: () => null }));
 vi.mock('../BikerProfileMonthPicker', () => ({ default: ({ value, onChange }) => <select aria-label="شهر الاختبار" value={value} onChange={e => onChange(e.target.value)}><option>2026-10</option><option>2026-09</option></select> }));
 import QualityViolationsPage from '../QualityViolationsPage';
+import Sidebar from '../Sidebar';
+import { usePageNavigation } from '../../hooks/usePageNavigation';
+import { visibleGroupsFor } from '../../lib/navGroups';
 const row = { metricKey: 'cancelledByCustomer', sourceId: 'source-a', bookingId: '5572978', date: '2026-10-20', time: '19:10', driverExternalId: '2007', reason: 'إلغاء من العميل', quantity: 1, amount: null, sourceUrl: 'https://ssp-portal.sweater.sa/test' };
 const state = () => ({ current: { snapshot: { metrics: { cancelledByCustomer: 1 }, metricSources: { cancelledByCustomer: { snapshotId: 'reading', extractedAtIso: '2026-10-26T19:00:00+03:00' } }, eventGroups: { cancelledByCustomer: { rows: [row], totalRows: 1, complete: true } } } },
   previous: {}, workers: { bikers: [{ id: 'worker', name: 'بايكر اختبار', driverExternalId: '2007' }] }, objections: { data: [] }, settings: { data: null },
   save: mocks.save, saveSettings: vi.fn(), previewDeduction: vi.fn(), saveDeduction: vi.fn(), refresh: vi.fn() });
 const choose = name => fireEvent.click(screen.getByRole('tab', { name: new RegExp(name) }));
 const openRow = () => { choose('إلغاء العميل'); const trigger = screen.getByText('5572978').closest('summary'); fireEvent.click(trigger); return trigger.closest('details'); };
-beforeEach(() => { mocks.view = { role: 'admin', isPartnerView: false }; mocks.read.mockReturnValue(state()); mocks.save.mockResolvedValue({}); });
+beforeEach(() => { window.history.replaceState(null, '', '/?page=quality_violations'); mocks.view = { role: 'admin', isPartnerView: false }; mocks.read.mockReturnValue(state()); mocks.save.mockResolvedValue({}); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.clearAllMocks(); });
 
 it('does not mount protected reads for other roles or a partner simulation', () => {
@@ -135,4 +140,23 @@ it('retains deadline and internal-tool drafts across filters, without invoking t
   const unload = new Event('beforeunload', { cancelable: true }); window.dispatchEvent(unload); expect(unload.defaultPrevented).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: 'حفظ المهلة' }));
   expect(data.saveSettings).toHaveBeenCalledWith({ deadlineDays: 14, expectedRevision: 1 });
+});
+it('warns on the real Sidebar navigation path and lets cancellation retain the page and draft', () => {
+  function Harness() {
+    const [page, select] = usePageNavigation('quality_violations');
+    return <><Sidebar groups={visibleGroupsFor({ role: 'admin' })} activeTab={page} onSelectTab={select} />
+      {page === 'quality_violations' ? <QualityViolationsPage /> : <h1>Finance destination</h1>}</>;
+  }
+  render(<Harness />); const details = openRow();
+  fireEvent.change(within(details).getByLabelText('ملاحظة'), { target: { value: 'مسودة قبل مغادرة القائمة' } });
+  const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+  fireEvent.click(screen.getByRole('button', { name: 'ملخص المالية' }));
+  expect(confirm).toHaveBeenCalledOnce(); expect(window.location.search).toBe('?page=quality_violations');
+  expect(within(details).getByLabelText('ملاحظة').value).toBe('مسودة قبل مغادرة القائمة');
+  expect(screen.queryByText('Finance destination')).toBeNull(); expect(mocks.save).not.toHaveBeenCalled();
+  window.history.pushState(null, '', '/?page=finance'); fireEvent.popState(window);
+  expect(window.location.search).toBe('?page=quality_violations');
+  expect(within(details).getByLabelText('ملاحظة').value).toBe('مسودة قبل مغادرة القائمة');
+  confirm.mockReturnValue(true); fireEvent.click(screen.getByRole('button', { name: 'ملخص المالية' }));
+  expect(screen.getByText('Finance destination')).toBeTruthy(); expect(mocks.save).not.toHaveBeenCalled();
 });

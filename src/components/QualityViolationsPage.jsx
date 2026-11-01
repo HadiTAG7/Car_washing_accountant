@@ -14,6 +14,7 @@ import BikerProfileMonthPicker from './BikerProfileMonthPicker';
 import ScrollableTable from './ScrollableTable';
 import { Card } from './UI';
 import BikerDeductionFollowup from './BikerDeductionFollowup';
+import { BEFORE_PAGE_NAVIGATION } from '../lib/navigationEvents';
 import './QualityViolationsPage.css';
 
 const number = value => value == null ? 'غير متاح' : formatNumber(Math.round(value * 100) / 100);
@@ -46,8 +47,10 @@ export function QualityViolationsContent() {
   useEffect(() => {
     if (!draftCount) return undefined;
     const warn = event => { event.preventDefault(); event.returnValue = ''; };
+    const guardNavigation = event => { if (!window.confirm('عندك تغييرات غير محفوظة. تتركها وتكمل؟')) event.preventDefault(); };
     window.addEventListener('beforeunload', warn);
-    return () => window.removeEventListener('beforeunload', warn);
+    window.addEventListener(BEFORE_PAGE_NAVIGATION, guardNavigation);
+    return () => { window.removeEventListener('beforeunload', warn); window.removeEventListener(BEFORE_PAGE_NAVIGATION, guardNavigation); };
   }, [draftCount]);
   const updateDraft = (key, value) => setDrafts(previous => ({ ...previous, [key]: value }));
   const clearDraft = key => setDrafts(previous => { const next = { ...previous }; delete next[key]; return next; });

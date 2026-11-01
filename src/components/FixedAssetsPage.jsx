@@ -201,7 +201,7 @@ export default function FixedAssetsPage() {
             <p className="tabular-nums">تكلفة السجل: {formatCurrencyPrecise(costReconciliation.registerCost)} · رصيد 1500 في الدفتر: {formatCurrencyPrecise(costReconciliation.ledgerCost)}</p>
             <p className="tabular-nums font-bold">الفرق (السجل − الدفتر): {formatCurrencyPrecise(costReconciliation.difference)}</p>
             {!costReconciliation.matched && <p>ترحيل الإهلاك والإطفاء متوقف حتى تكتمل المطابقة. إضافة الأصل للسجل لا تنشئ قيد شراء جديدًا.</p>}
-            <a href="?page=ledger&account=1500" className="inline-block underline min-h-touch py-2">عرض قيود الأصول في دفتر الأستاذ</a>
+            <a href="?page=finance&detail=balances" className="inline-block underline min-h-touch py-2">عرض تفاصيل الأرصدة المبسطة</a>
           </section>
         )}
 

@@ -30,6 +30,7 @@ describe('finance home is a read-only projection of the existing pages', () => {
     expect(snapshot.postedRevenue).toBe(income.totalRevenue);
     expect(snapshot.postedCosts).toBe(income.totalCost + income.totalExpenses);
     expect(snapshot.capital).toBe(sheet.equity.filter(r => r.code === '3000' || r.code.startsWith('3000-')).reduce((sum, r) => sum + r.amount, 0));
+    expect(snapshot.position).toEqual({ totalAssets: sheet.totalAssets, totalLiabilities: sheet.totalLiabilities, totalEquity: sheet.totalEquity });
     expect(snapshot.capital).toBe(90); expect(snapshot.availableCash).toBe(90);
     expect(snapshot.negativeAccounts).toEqual([{ code: '1010', balance: -10 }]);
     expect(financeLedgerSnapshot(ledger, '2026-09', cash).postedCosts).toBe(0);

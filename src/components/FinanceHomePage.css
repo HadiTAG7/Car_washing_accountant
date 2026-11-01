@@ -8,6 +8,12 @@
 .fw-comparison table { margin: 12px 0; min-width: 420px; font-size: .85rem; }
 .fw-comparison th, .fw-comparison td { padding: 12px 8px; border-bottom: 1px solid #64748b40; }
 .fm-page { max-width: 1600px; }
+.fm-details, .fm-owner-brief { margin: 18px 0; }
+.fm-details summary, .fm-owner-brief summary { cursor: pointer; font-weight: 700; padding: 8px 0; }
+.fm-details dl > div { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 0; border-bottom: 1px solid #64748b25; }
+.fm-owner-brief h3 { font-weight: 700; margin-top: 18px; }
+.fm-owner-brief li { padding: 12px 0; }
+.fm-owner-brief small { display: block; line-height: 1.8; }
 .fm-page .fw-toolbar { margin-top: 0; }
 .fm-page .fm-ledger-note { display: flex; align-items: center; gap: 7px; padding: 8px 12px; border-radius: 9px; background: #f59e0b0e; color: #8b5a12; font-size: 12px; margin: 0 0 24px; }
 .dark .fm-page .fm-ledger-note { color: #ebc477; }

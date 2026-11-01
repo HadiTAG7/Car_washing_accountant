@@ -97,9 +97,9 @@ const financeTabs = [
   { id: 'finance', label: 'ملخص المالية', icon: Landmark, roles: ['admin'] },
   // Internal agent workflow: retain the existing route and role checks, omit daily navigation.
   { id: 'finance_workbench', label: 'صندوق العمل المالي', icon: Receipt, roles: ['admin'], hidden: true },
-  { id: 'finance_reports', label: 'تقارير المالية والأرشيف', icon: FileText, roles: ['admin'] },
+  { id: 'finance_reports', label: 'تقارير المالية والأرشيف', icon: FileText, roles: ['admin'], hidden: true },
   { id: 'expenses', label: 'المصاريف', icon: Receipt, activeTabIds: EXPENSE_TAB_IDS },
-  ...oldFinanceTabs.map(tab => EXPENSE_TAB_IDS.includes(tab.id) ? { ...tab, hidden: true } : tab),
+  ...oldFinanceTabs.map(tab => [...EXPENSE_TAB_IDS, 'balance', 'trial', 'ledger'].includes(tab.id) ? { ...tab, hidden: true } : tab),
   { id: 'finance_payroll', label: 'الرواتب ماليًا', icon: HandCoins, roles: ['admin'] },
   { id: 'hadi_current', label: 'حساب هادي الجاري', icon: Wallet, roles: ['admin'] },
   { id: 'bank_statements', label: 'كشوف الحساب', icon: FileSpreadsheet, roles: ['admin'] },

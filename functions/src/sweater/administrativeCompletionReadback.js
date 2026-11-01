@@ -2,6 +2,7 @@ import { ownerBookingIdentity } from '../../../src/lib/sweater/bookingIdentity.j
 import { bookingDocId, sspWashDocId, rawDocId, readBookingDoc, COL } from './ingest.js';
 import { hashBody, hashRecord, normalizeRecord } from './record.js';
 import { executionWash } from './operationsExecution.js';
+import { isSavedRecentRecovery, retainedRecoveryBookingHash } from './recentOwnerRecovery20261102.js';
 
 const MAX_READBACK_ROWS = 10000;
 const numberOf = row => ownerBookingIdentity(row.ssp_booking_id || row.sspBookingId || row.bookingNumber || '');
@@ -11,6 +12,7 @@ const problemLabels = {
   claimMatches: 'ربط الحجز يشير إلى غسلة مختلفة.', sourceEvidence: 'دليل المصدر المحفوظ لا يطابق الملف.',
   decisionMatches: 'قرار المالك الحالي لا يطابق سجل الحفظ.', washFacts: 'تغيرت حقائق الغسلة منذ تسجيلها.',
   commissionUnpaid: 'حالة العمولة أو قيمتها تختلف عن وقت التسجيل.', noCollection: 'حالة التحصيل الحالية تختلف عن التسجيل.',
+  originalBookingPreserved: 'تغيّرت ملاحظة المصدر الأصلية.', originalHistoryPreserved: 'تغيّر دليل الجولة الأصلية.',
 };
 
 /** Called only inside an authenticated, read-only replay transaction. A saved
@@ -24,24 +26,34 @@ export async function administrativeCompletionReadback(db, tx, payload, run) {
   const rows = [];
   for (const raw of payload.records) {
     const record = normalizeRecord(raw), bookingNumber = ownerBookingIdentity(record.sspBookingId);
-    const washId = sspWashDocId(record.sspBookingId), bikerId = payload.workerLinks[record.driverExternalId];
+    const savedRow = (Array.isArray(run.result?.rows) ? run.result.rows : []).find(row => row.sspBookingId === record.sspBookingId);
+    const recovered = isSavedRecentRecovery(payload,savedRow);
+    const originalClaim = recovered ? savedRow.sourceRecovery.claim : null;
+    const washId = recovered ? originalClaim?.washId : sspWashDocId(record.sspBookingId), bikerId = payload.workerLinks[record.driverExternalId];
     const [booking, source] = await Promise.all([
-      readBookingDoc(db, ref => tx.get(ref), record.sspBookingId),
+      recovered ? tx.get(db.collection(COL.BOOKINGS).doc(savedRow.sourceRecovery.booking.id)) : readBookingDoc(db, ref => tx.get(ref), record.sspBookingId),
       tx.get(db.collection(COL.RAW).doc(rawDocId(payload.importRunId, record.sspBookingId))),
     ]);
     const matchingWashes = washSnapshot.docs.filter(doc => numberOf(doc.data()) === bookingNumber);
     const matchingClaims = claimSnapshot.docs.filter(doc => numberOf(doc.data()) === bookingNumber);
     const wash = matchingWashes.find(doc => doc.id === washId)?.data(), claimDoc = matchingClaims.find(doc => doc.id === bookingDocId(bookingNumber));
     const claim = claimDoc?.data(), b = booking.data(), original = source.data();
-    const savedRow = (Array.isArray(run.result?.rows) ? run.result.rows : []).find(row => row.sspBookingId === record.sspBookingId);
     const decision = { ...payload.decision, sspBookingId: record.sspBookingId, bookingNumber,
       driverExternalId: record.driverExternalId, rawStatus: record.rawStatus };
     const expected = { ...executionWash(record, bikerId, savedRow?.bikerName || ''), ssp_booking_number: bookingNumber,
       ssp_raw_status: record.rawStatus, owner_completion_decision: decision, completion_basis: 'owner_administrative_decision' };
+    let originalHistoryPreserved = true;
+    if (recovered) {
+      for (const item of savedRow.sourceRecovery.history) {
+        const [rawSnapshot,runSnapshot] = await Promise.all([tx.get(db.collection(COL.RAW).doc(item.rawId)),tx.get(db.collection(COL.RUNS).doc(item.runId))]);
+        if (!rawSnapshot.exists || !runSnapshot.exists || hashBody(rawSnapshot.data()) !== item.sourceHash || hashBody(runSnapshot.data()) !== item.runHash) originalHistoryPreserved = false;
+      }
+    }
     const checks = {
       oneWash: washCoverage && matchingWashes.length === 1 && Boolean(wash),
       oneClaim: claimCoverage && matchingClaims.length === 1 && Boolean(claim),
-      claimMatches: Boolean(claim && claim.washId === washId && claim.sspBookingId === record.sspBookingId && ownerBookingIdentity(claim.bookingNumber) === bookingNumber),
+      claimMatches: Boolean(claim && claim.washId === washId && ownerBookingIdentity(claim.bookingNumber) === bookingNumber
+        && (recovered ? claim.sspBookingId === originalClaim.sspBookingId && hashBody(claim) === originalClaim.hash : claim.sspBookingId === record.sspBookingId)),
       sourceEvidence: Boolean(original?.normalizedRecord && original.rawPayload && original.sourceHash === hashRecord(record)
         && hashRecord(original.normalizedRecord) === hashRecord(record) && same(original.rawPayload, raw)),
       decisionMatches: Boolean(wash && b && same(wash.owner_completion_decision, decision)
@@ -51,12 +63,14 @@ export async function administrativeCompletionReadback(db, tx, payload, run) {
       commissionUnpaid: Boolean(wash && wash.quantity === 1 && wash.worker_commission_per_wash === expected.worker_commission_per_wash
         && wash.worker_commission_paid === false && wash.worker_commission_payment_timing === 'payroll'),
       noCollection: Boolean(wash && wash.collection_status === 'pending' && wash.payment_method === null),
+      ...(recovered ? {originalBookingPreserved:Boolean(b && retainedRecoveryBookingHash(b) === savedRow.sourceRecovery.booking.retainedHash),originalHistoryPreserved} : {}),
     };
     rows.push({ sspBookingId: record.sspBookingId, bookingNumber, washId, bikerId, driverExternalId: record.driverExternalId,
       serviceDate: record.serviceDate, verified: Object.values(checks).every(Boolean), checks,
       issues: Object.entries(checks).filter(([, passed]) => !passed).map(([key]) => problemLabels[key]),
       washCount: washCoverage ? matchingWashes.length : null, claimCount: claimCoverage ? matchingClaims.length : null,
       claimSource: claim?.source ?? null, claimImportRunId: claim?.importRunId ?? null,
+      ...(recovered ? {sourceRecovery:{caseId:savedRow.sourceRecovery.caseId,originalClaimPreserved:checks.claimMatches,sourceObservation:savedRow.sourceRecovery.sourceObservation}} : {}),
       originalSource: { rawStatus: original?.normalizedRecord?.rawStatus ?? null, startedAt: original?.normalizedRecord?.startedAt ?? null,
         completedAt: original?.normalizedRecord?.completedAt ?? null, sourceHash: original?.sourceHash ?? null },
       currentSource: { rawStatus: b?.record?.rawStatus ?? null, startedAt: b?.record?.startedAt ?? null, completedAt: b?.record?.completedAt ?? null },

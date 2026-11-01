@@ -5838,5 +5838,9 @@
   "لم تُشاهد أو تعذر عرضها": "Not viewed or could not be displayed",
   "فتح رابط المرفق الأصلي": "Open original attachment link",
   "أوقات المصدر كما سُجلت": "Source times as recorded",
-  "منطقة زمنية غير مثبتة": "Timezone unconfirmed"
+  "منطقة زمنية غير مثبتة": "Timezone unconfirmed",
+  "المصدر أو العامل خارج مراجعة الغسلات المحددة بقرار هادي.": "The source or worker is outside Hadi's approved review scope.",
+  "الفترة أو التسوية عليها حماية؛ لا يتجاوزها قرار اكتمال الغسلات.": "The period or settlement is protected; an owner completion decision does not bypass that protection.",
+  "تغيّرت ملاحظة المصدر الأصلية.": "The original source observation changed.",
+  "تغيّر دليل الجولة الأصلية.": "The original import-run evidence changed."
 }

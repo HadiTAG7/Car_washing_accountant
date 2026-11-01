@@ -1,0 +1,304 @@
+{
+  "caseId": "OWNER-RECENT-WASH-RECOVERY-20261102",
+  "authority": {
+    "conversationId": "01a04f9f-cdbe-7213-bf1b-eee76eb35b38",
+    "turnId": "01a19941-ea7b-7ac2-b3ab-ea2b34915c3f",
+    "messageId": "01a19941-eb8d-71b1-8a54-eb04ff63bf26",
+    "statement": "شوف أنا اللي أبغاه باختصار شديد أبغى جميع الغسلات اللي صارت تسجل في الموقع الطريقة أنت تسويها تبغى تعدلها مع التقنية، تبغى تسويها أنت بنفسك على كيفك. لكن أهم شيء يتم الموضوع",
+    "requestReceivedAtUtc": "2026-11-01T22:36:41Z",
+    "requestTimeBasis": "verified request receipt; not exact speaking timestamp",
+    "scope": "Execute completion of current recent-days missing-wash task, including necessary supported technical repair; preserve source truth and single wash/commission. No repeated commercial approval."
+  },
+  "sourceCut": "2026-11-01T22:09:08.943Z",
+  "rows": [
+    {
+      "bookingNumber": "5681609",
+      "workerId": "KehSV5K73zkyWWEE8hE9",
+      "record": {
+        "sspBookingId": "S-5681609",
+        "serviceDate": "2026-11-01",
+        "driverExternalId": "1986",
+        "rawStatus": "Collecting Payment",
+        "startedAt": "2026-11-01T08:57:00+03:00",
+        "completedAt": "2026-11-01T09:44:00+03:00",
+        "sourceUrl": "https://ssp-portal.sweater.sa/bookings?pageSize=100&fromDate=2026-11-01&toDate=2026-11-01&page=1",
+        "bookingKind": "individual",
+        "serviceType": "interior_exterior_wash"
+      },
+      "detailReadAt": "2026-11-01T22:06:38.899Z",
+      "timePrecision": "displayed_minute"
+    },
+    {
+      "bookingNumber": "5687835",
+      "workerId": "2N4FP4rQAxXQ7rpuBrla",
+      "record": {
+        "sspBookingId": "S-5687835",
+        "serviceDate": "2026-11-01",
+        "driverExternalId": "1984",
+        "rawStatus": "Collecting Payment",
+        "startedAt": "2026-11-01T10:01:00+03:00",
+        "completedAt": "2026-11-01T10:25:00+03:00",
+        "sourceUrl": "https://ssp-portal.sweater.sa/bookings?pageSize=100&fromDate=2026-11-01&toDate=2026-11-01&page=1",
+        "bookingKind": "individual",
+        "serviceType": "interior_exterior_wash"
+      },
+      "detailReadAt": "2026-11-01T22:06:42.903Z",
+      "timePrecision": "displayed_minute"
+    },
+    {
+      "bookingNumber": "5687154",
+      "workerId": "2QQGNvfPcT6Rscqh1Y5T",
+      "record": {
+        "sspBookingId": "S-5687154",
+        "serviceDate": "2026-11-01",
+        "driverExternalId": "1999",
+        "rawStatus": "Collecting Payment",
+        "startedAt": "2026-11-01T11:35:00+03:00",
+        "completedAt": "2026-11-01T11:56:00+03:00",
+        "sourceUrl": "https://ssp-portal.sweater.sa/bookings?pageSize=100&fromDate=2026-11-01&toDate=2026-11-01&page=1",
+        "bookingKind": "individual",
+        "serviceType": "interior_exterior_wash"
+      },
+      "detailReadAt": "2026-11-01T22:06:46.912Z",
+      "timePrecision": "displayed_minute"
+    },
+    {
+      "bookingNumber": "5687165",
+      "workerId": "IdJJ3q1NzETQLZOGeL94",
+      "record": {
+        "sspBookingId": "S-5687165",
+        "serviceDate": "2026-11-01",
+        "driverExternalId": "1982",
+        "rawStatus": "Collecting Payment",
+        "startedAt": "2026-11-01T11:20:00+03:00",
+        "completedAt": "2026-11-01T11:57:00+03:00",
+        "sourceUrl": "https://ssp-portal.sweater.sa/bookings?pageSize=100&fromDate=2026-11-01&toDate=2026-11-01&page=1",
+        "bookingKind": "individual",
+        "serviceType": "interior_exterior_wash"
+      },
+      "detailReadAt": "2026-11-01T22:06:50.903Z",
+      "timePrecision": "displayed_minute"
+    },
+    {
+      "bookingNumber": "5687110",
+      "workerId": "KehSV5K73zkyWWEE8hE9",
+      "record": {
+        "sspBookingId": "S-5687110",
+        "serviceDate": "2026-11-01",
+        "driverExternalId": "1986",
+        "rawStatus": "Collecting Payment",
+        "startedAt": "2026-11-01T14:19:00+03:00",
+        "completedAt": "2026-11-01T15:18:00+03:00",
+        "sourceUrl": "https://ssp-portal.sweater.sa/bookings?pageSize=100&fromDate=2026-11-01&toDate=2026-11-01&page=1",
+        "bookingKind": "individual",
+        "serviceType": "interior_exterior_wash"
+      },
+      "detailReadAt": "2026-11-01T22:06:54.915Z",
+      "timePrecision": "displayed_minute"
+    },
+    {
+      "bookingNumber": "5687884",
+      "workerId": "IdJJ3q1NzETQLZOGeL94",
+      "record": {
+        "sspBookingId": "S-5687884",
+        "serviceDate": "2026-11-01",
+        "driverExternalId": "1982",
+        "rawStatus": "Collecting Payment",
+        "startedAt": "2026-11-01T13:48:00+03:00",
+        "completedAt": "2026-11-01T14:31:00+03:00",
+        "sourceUrl": "https://ssp-portal.sweater.sa/bookings?pageSize=100&fromDate=2026-11-01&toDate=2026-11-01&page=1",
+        "bookingKind": "individual",
+        "serviceType": "interior_exterior_wash"
+      },
+      "detailReadAt": "2026-11-01T22:06:58.900Z",
+      "timePrecision": "displayed_minute"
+    },
+    {
+      "bookingNumber": "5688606",
+      "workerId": "GjVUWPitR9dxbbMKc3qD",
+      "record": {
+        "sspBookingId": "S-5688606",
+        "serviceDate": "2026-11-01",
+        "driverExternalId": "1998",
+        "rawStatus": "Collecting Payment",
+        "startedAt": "2026-11-01T14:05:00+03:00",
+        "completedAt": "2026-11-01T14:57:00+03:00",
+        "sourceUrl": "https://ssp-portal.sweater.sa/bookings?pageSize=100&fromDate=2026-11-01&toDate=2026-11-01&page=1",
+        "bookingKind": "individual",
+        "serviceType": "interior_exterior_wash"
+      },
+      "detailReadAt": "2026-11-01T22:07:02.894Z",
+      "timePrecision": "displayed_minute"
+    },
+    {
+      "bookingNumber": "5688564",
+      "workerId": "5MMg7pj0wjYM06NLuzS7",
+      "record": {
+        "sspBookingId": "S-5688564",
+        "serviceDate": "2026-11-01",
+        "driverExternalId": "1988",
+        "rawStatus": "Collecting Payment",
+        "startedAt": "2026-11-01T18:48:00+03:00",
+        "completedAt": "2026-11-01T19:31:00+03:00",
+        "sourceUrl": "https://ssp-portal.sweater.sa/bookings?pageSize=100&fromDate=2026-11-01&toDate=2026-11-01&page=1",
+        "bookingKind": "individual",
+        "serviceType": "interior_exterior_wash"
+      },
+      "detailReadAt": "2026-11-01T22:07:17.268Z",
+      "timePrecision": "displayed_minute"
+    },
+    {
+      "bookingNumber": "5690104",
+      "workerId": "KpkzKKTLQXZwaGQ36x5y",
+      "record": {
+        "sspBookingId": "S-5690104",
+        "serviceDate": "2026-11-01",
+        "driverExternalId": "1989",
+        "rawStatus": "Collecting Payment",
+        "startedAt": "2026-11-01T18:48:00+03:00",
+        "completedAt": "2026-11-01T20:08:00+03:00",
+        "sourceUrl": "https://ssp-portal.sweater.sa/bookings?pageSize=100&fromDate=2026-11-01&toDate=2026-11-01&page=1",
+        "bookingKind": "individual",
+        "serviceType": "interior_exterior_wash"
+      },
+      "detailReadAt": "2026-11-01T22:07:21.301Z",
+      "timePrecision": "displayed_minute"
+    },
+    {
+      "bookingNumber": "5683816",
+      "workerId": "2QQGNvfPcT6Rscqh1Y5T",
+      "record": {
+        "sspBookingId": "S-5683816",
+        "serviceDate": "2026-11-01",
+        "driverExternalId": "1999",
+        "rawStatus": "Collecting Payment",
+        "startedAt": "2026-11-01T21:28:00+03:00",
+        "completedAt": "2026-11-01T21:57:00+03:00",
+        "sourceUrl": "https://ssp-portal.sweater.sa/bookings?pageSize=100&fromDate=2026-11-01&toDate=2026-11-01&page=1",
+        "bookingKind": "individual",
+        "serviceType": "interior_exterior_wash"
+      },
+      "detailReadAt": "2026-11-01T22:03:01.320Z",
+      "timePrecision": "displayed_minute"
+    },
+    {
+      "bookingNumber": "5683129",
+      "workerId": "GjVUWPitR9dxbbMKc3qD",
+      "record": {
+        "sspBookingId": "S-5683129",
+        "serviceDate": "2026-10-31",
+        "driverExternalId": "1998",
+        "rawStatus": "Collecting Payment",
+        "startedAt": "2026-10-31T11:53:00+03:00",
+        "completedAt": "2026-10-31T12:26:00+03:00",
+        "sourceUrl": "https://ssp-portal.sweater.sa/bookings?pageSize=100&fromDate=2026-10-31&toDate=2026-10-31&page=1",
+        "bookingKind": "individual",
+        "serviceType": "interior_exterior_wash"
+      },
+      "detailReadAt": "2026-11-01T22:07:25.163Z",
+      "timePrecision": "displayed_minute"
+    },
+    {
+      "bookingNumber": "5680467",
+      "workerId": "2N4FP4rQAxXQ7rpuBrla",
+      "record": {
+        "sspBookingId": "S-5680467",
+        "serviceDate": "2026-10-31",
+        "driverExternalId": "1984",
+        "rawStatus": "Collecting Payment",
+        "startedAt": "2026-10-31T16:23:00+03:00",
+        "completedAt": "2026-10-31T17:01:00+03:00",
+        "sourceUrl": "https://ssp-portal.sweater.sa/bookings?pageSize=100&fromDate=2026-10-31&toDate=2026-10-31&page=1",
+        "bookingKind": "individual",
+        "serviceType": "interior_exterior_wash"
+      },
+      "detailReadAt": "2026-11-01T22:07:29.176Z",
+      "timePrecision": "displayed_minute"
+    },
+    {
+      "bookingNumber": "5672394",
+      "workerId": "GjVUWPitR9dxbbMKc3qD",
+      "record": {
+        "sspBookingId": "S-5672394",
+        "serviceDate": "2026-10-31",
+        "driverExternalId": "1998",
+        "rawStatus": "Collecting Payment",
+        "startedAt": "2026-10-31T20:56:00+03:00",
+        "completedAt": "2026-10-31T21:25:00+03:00",
+        "sourceUrl": "https://ssp-portal.sweater.sa/bookings?pageSize=100&fromDate=2026-10-31&toDate=2026-10-31&page=1",
+        "bookingKind": "individual",
+        "serviceType": "interior_exterior_wash"
+      },
+      "detailReadAt": "2026-11-01T22:07:33.157Z",
+      "timePrecision": "displayed_minute"
+    },
+    {
+      "bookingNumber": "5680148",
+      "workerId": "5MMg7pj0wjYM06NLuzS7",
+      "record": {
+        "sspBookingId": "S-5680148",
+        "serviceDate": "2026-10-30",
+        "driverExternalId": "1988",
+        "rawStatus": "Collecting Payment",
+        "startedAt": "2026-10-30T16:32:00+03:00",
+        "completedAt": "2026-10-30T17:03:00+03:00",
+        "sourceUrl": "https://ssp-portal.sweater.sa/bookings?pageSize=100&fromDate=2026-10-30&toDate=2026-10-30&page=1",
+        "bookingKind": "individual",
+        "serviceType": "interior_exterior_wash"
+      },
+      "detailReadAt": "2026-11-01T22:07:36.946Z",
+      "timePrecision": "displayed_minute"
+    },
+    {
+      "bookingNumber": "5676193",
+      "workerId": "GjVUWPitR9dxbbMKc3qD",
+      "record": {
+        "sspBookingId": "S-5676193",
+        "serviceDate": "2026-10-30",
+        "driverExternalId": "1998",
+        "rawStatus": "Collecting Payment",
+        "startedAt": "2026-10-30T16:28:00+03:00",
+        "completedAt": "2026-10-30T16:33:00+03:00",
+        "sourceUrl": "https://ssp-portal.sweater.sa/bookings?pageSize=100&fromDate=2026-10-30&toDate=2026-10-30&page=1",
+        "bookingKind": "individual",
+        "serviceType": "interior_exterior_wash"
+      },
+      "detailReadAt": "2026-11-01T22:07:40.926Z",
+      "timePrecision": "displayed_minute"
+    },
+    {
+      "bookingNumber": "5677928",
+      "workerId": "GjVUWPitR9dxbbMKc3qD",
+      "record": {
+        "sspBookingId": "S-5677928",
+        "serviceDate": "2026-10-30",
+        "driverExternalId": "1998",
+        "rawStatus": "Collecting Payment",
+        "startedAt": "2026-10-30T17:43:00+03:00",
+        "completedAt": "2026-10-30T18:03:00+03:00",
+        "sourceUrl": "https://ssp-portal.sweater.sa/bookings?pageSize=100&fromDate=2026-10-30&toDate=2026-10-30&page=1",
+        "bookingKind": "individual",
+        "serviceType": "interior_exterior_wash"
+      },
+      "detailReadAt": "2026-11-01T22:07:44.953Z",
+      "timePrecision": "displayed_minute"
+    },
+    {
+      "bookingNumber": "5678622",
+      "workerId": "IdJJ3q1NzETQLZOGeL94",
+      "record": {
+        "sspBookingId": "S-5678622",
+        "serviceDate": "2026-11-01",
+        "driverExternalId": "1982",
+        "rawStatus": "Collecting Payment",
+        "startedAt": "2026-11-01T15:41:00+03:00",
+        "completedAt": "2026-11-01T15:41:00+03:00",
+        "sourceUrl": "https://ssp-portal.sweater.sa/bookings?pageSize=100&fromDate=2026-11-01&toDate=2026-11-01&page=1",
+        "bookingKind": "individual",
+        "serviceType": "interior_exterior_wash"
+      },
+      "detailReadAt": "2026-11-01T22:07:06.914Z",
+      "timePrecision": "displayed_minute"
+    }
+  ]
+}

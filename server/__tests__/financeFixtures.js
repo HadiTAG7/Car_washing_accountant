@@ -72,7 +72,7 @@ export function memoryFinanceDb(seed = {}) {
   db.runTransaction = fn => {
     const result = queue.then(async () => {
       const writes = [];
-      const tx = { get: ref => ref.get(), set: (ref, value) => writes.push(() => rows.set(ref.path, value)),
+      const tx = { get: ref => ref.get(), set: (ref, value, options) => writes.push(() => rows.set(ref.path, options?.merge ? { ...rows.get(ref.path), ...value } : value)),
         create: (ref, value) => writes.push(() => rows.set(ref.path, value)), delete: ref => writes.push(() => rows.delete(ref.path)), update: (ref, value) => writes.push(() => rows.set(ref.path, { ...rows.get(ref.path), ...value })) };
       const answer = await fn(tx); writes.forEach(write => write()); return answer;
     });

@@ -4,6 +4,22 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { CompensationReviewWorkspace } from '../CompensationReviewWorkspace';
 import { reviewSource } from '../../../functions/test/compensationReviewFixture.js';
 afterEach(cleanup);
+it('returns keyboard focus to the initiating draft button on cancel',async()=>{
+  render(<CompensationReviewWorkspace read={read()} call={vi.fn()}/>);
+  const trigger=screen.getByRole('button',{name:'حفظ مسودة'});
+  fireEvent.click(trigger);
+  expect(document.activeElement.classList.contains('cr-confirm')).toBe(true);
+  fireEvent.click(screen.getByRole('button',{name:'إلغاء'}));
+  await waitFor(()=>expect(document.activeElement).toBe(trigger));
+});
+it('returns keyboard focus to the initiating draft button after a verified save',async()=>{
+  const row=record(),r=read(),call=vi.fn(async input=>input.op==='read'?{cases:[row]}:{record:row});
+  render(<CompensationReviewWorkspace read={r} call={call}/>);
+  const trigger=screen.getByRole('button',{name:'حفظ مسودة'});
+  fireEvent.click(trigger);fireEvent.click(screen.getByRole('checkbox'));
+  fireEvent.submit(screen.getByRole('button',{name:'تأكيد وحفظ'}).closest('form'));
+  await waitFor(()=>expect(document.activeElement).toBe(trigger));
+});
 const record = () => ({ ticketId:'TEST-900001',revision:1,source:reviewSource(),sourceHash:'hash',reviewStatus:'pending',
   updatedAtIso:'2026-11-01T12:00:00Z',draft:{text:'مسودة غير مرسلة',revision:1},submission:{status:'draft'},
   decisions:[],sourceHistory:[],objectionHistory:[] });

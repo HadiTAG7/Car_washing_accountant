@@ -11,10 +11,18 @@ export function CompensationReviewWorkspace({ read, call }) {
   const [pendingAction, setPendingAction] = useState(null), [actionText, setActionText] = useState('');
   const [viewTicketId, setViewTicketId] = useState(null);
   const confirmRef = useRef(null);
+  const rootRef = useRef(null);
+  const [returnFocusTo, setReturnFocusTo] = useState(null);
   useEffect(() => {
     if (pendingAction) { confirmRef.current?.scrollIntoView?.({ block:'center' }); confirmRef.current?.focus(); }
   }, [pendingAction]);
   const data = read.data, cases = data?.cases || [], queue = data?.queue;
+  useEffect(() => {
+    if (!returnFocusTo || pendingAction || read.loading || read.error || !data) return;
+    const target = rootRef.current?.querySelector('[data-cr-action="' + returnFocusTo.action + '"][data-cr-ticket="' + returnFocusTo.ticketId + '"]')
+      || rootRef.current?.querySelector('[data-cr-refresh]');
+    target?.focus(); setReturnFocusTo(null);
+  }, [returnFocusTo, pendingAction, read.loading, read.error, data]);
   const active = cases.find(r => r.ticketId === (viewTicketId || queue?.activeTicketId));
   const isActive = active?.ticketId === queue?.activeTicketId;
   const locked = busy || uncertain || read.loading || Boolean(read.error) || !data;
@@ -33,12 +41,14 @@ export function CompensationReviewWorkspace({ read, call }) {
         || !reviewRecordEqual(record, result.record))
         throw Error(tr('الحفظ غير محسوم؛ أعد القراءة ولا تكرر الطلب.','Save is unconfirmed. Re-read before retrying.'));
       setMessage(tr('حُفظ السجل وطابقته إعادة القراءة.','Saved and verified by re-reading.'));
+      if (op === 'owner') setReturnFocusTo({ action:payload.action, ticketId:payload.ticketId });
       setPendingAction(null); setPreview(null); read.refresh();
       if (payload.action === 'next' || payload.action === 'select') setViewTicketId(null);
     } catch(e) { setUncertain(true); setMessage(e.message); }
     finally { setBusy(false); }
   }
   function owner(action, row = active) {
+    setReturnFocusTo(null);
     setActionText(action === 'draft' || action === 'request_submission' ? row.draft.text : '');
     setPendingAction({ action, row });
   }
@@ -58,8 +68,8 @@ export function CompensationReviewWorkspace({ read, call }) {
     finally { setBusy(false); }
   };
   if (!read.allowed) return <main className="cr-page"><Card><p role="alert">{tr('هذه الصفحة للمدير فقط، ولا تظهر في معاينة الشريك.','This page is restricted to administrators and is unavailable in partner preview.')}</p></Card></main>;
-  return <main className="cr-page" aria-label={tr('مراجعة التعويضات والاعتراضات','Compensation ticket review')}>
-    <header className="cr-row"><h1>{tr('مراجعة التكتات','Ticket review')}</h1><button className="cr-button" onClick={refresh} disabled={busy}>{tr('تحديث السجل','Refresh records')}</button></header>
+  return <main ref={rootRef} className="cr-page" aria-label={tr('مراجعة التعويضات والاعتراضات','Compensation ticket review')}>
+    <header className="cr-row"><h1>{tr('مراجعة التكتات','Ticket review')}</h1><button data-cr-refresh className="cr-button" onClick={refresh} disabled={busy}>{tr('تحديث السجل','Refresh records')}</button></header>
     <p className="cr-notice">{tr('لا يرسل الموقع اعتراضًا. طلب الرفع ينتظر قراءة الوكيل المحلي، ولا يوجد إيقاظ فوري مثبت.','The website does not submit objections. Requests wait for the local agent; instant wakeup is not available.')}</p>
     <small>{tr('الأعداد من السجلات المحفوظة هنا؛ نطاق المصدر وحدوده موضحان مع كل حالة.','Counts reflect records saved here; each case states its source coverage and limitations.')}</small>
     <p role={uncertain || read.error ? 'alert' : 'status'}>{message || read.error || (read.loading ? tr('جارٍ قراءة السجل…','Loading records…') : '')}</p>
@@ -68,7 +78,7 @@ export function CompensationReviewWorkspace({ read, call }) {
         {[[tr('في الطابور','In queue'),cases.filter(r=>r.reviewStatus==='pending').length],
           [tr('اعترض عليها سابقًا','Previously objected'),cases.filter(r=>r.objectionHistory?.length).length],
           [tr('طلبات رفع تنتظر','Queued requests'),cases.filter(r=>r.submission.status==='queued').length],
-          [tr('الأرشيف والاستثناءات','Archive and exclusions'),cases.filter(r=>['historical_excluded','left','prior_decision_unverified'].includes(r.reviewStatus)).length]]
+          [tr('الأرشيف والاستثناءات','Archive and exclusions'),cases.filter(r=>['historical_excluded','historical_deferred','previously_objected','left','prior_decision_unverified'].includes(r.reviewStatus)).length]]
           .map(([label,n])=><Card key={label}><h2>{label}</h2><strong>{n}</strong></Card>)}
       </div>
       {active ? <Card className="cr-case" key={active.ticketId + ':' + active.revision}>
@@ -105,7 +115,7 @@ export function CompensationReviewWorkspace({ read, call }) {
         {active.objectionHistory?.map(o=><article className="cr-obj" key={o.id}><SafeLink href={o.url}>{o.id}</SafeLink> · {o.status}<p>{o.reply}</p><small>{tr('آخر فحص','Last checked')}: {stamp(o.checkedAt)}</small></article>)}
         <p className="cr-notice">{tr('Accepted في SSP لا يثبت استردادًا أو عكس خصم. لا يغيّر هذا السجل أي مالية.','An Accepted SSP objection does not establish a refund or reversal. This record changes no financial data.')}</p>
         {data.canDecide && isActive ? <div className="cr-actions">{[['leave',tr('تركها دون اعتراض','Leave without objection')],['information',tr('طلب معلومات','Request information')],['draft',tr('حفظ مسودة','Save draft')],['request_submission',tr('طلب رفع هذا التكت بالنص المحدد','Request submission of this ticket with the exact text')],['next',tr('التالي','Next case')]].map(([action,label])=>
-          <button className={'cr-button ' + (action==='request_submission'?'cr-primary':'')} key={action} disabled={locked || (action==='request_submission' && (!active.draft.text || active.objectionHistory?.length || ['queued','in_progress_uncertain','sent'].includes(active.submission.status)))} onClick={()=>owner(action)}>{label}</button>)}</div>
+          <button data-cr-action={action} data-cr-ticket={active.ticketId} className={'cr-button ' + (action==='request_submission'?'cr-primary':'')} key={action} disabled={locked || (action==='request_submission' && (!active.draft.text || active.objectionHistory?.length || ['queued','in_progress_uncertain','sent'].includes(active.submission.status)))} onClick={()=>owner(action)}>{label}</button>)}</div>
           : <p>{tr('قرارات هادي متاحة من جلسته المخولة فقط.','Only Hadi’s authorized session can record owner decisions.')}</p>}
         <details><summary>{tr('سجل القرارات والنسخ','Decision and revision history')}</summary>
           {active.decisions.map((d,i)=><article className="cr-obj" key={i}><strong>{d.action}</strong> · {stamp(d.at)}<p>{tr('الفاعل','Actor')}: <bdi>{d.actor}</bdi> · {tr('نسخة السجل','Record revision')}: {d.caseRevision} · {tr('نسخة المسودة','Draft revision')}: {d.draftRevision}</p><p className="cr-prose">{d.text}</p></article>)}
@@ -126,7 +136,7 @@ export function CompensationReviewWorkspace({ read, call }) {
         <p>{pendingAction.action==='reopen'?tr('إعادة مراجعة مستقلة تحفظ القرار القديم؛ ليست طلب إرسال. اكتب السبب.','This separate decision reopens review and preserves the original decision. It is not a submission request. Enter a reason.'):pendingAction.action==='next'?tr('ستنتقل للتالية؛ الحالة دون قرار تبقى مؤجلة.','Move to the next case; an undecided case remains deferred.'):pendingAction.action==='request_submission'?tr('يحفظ طلبًا لهذا النص والتكت فقط؛ لا يرسل اعتراضًا الآن.','Saves a request for this exact text and ticket; it does not submit now.'):tr('سيُحفظ الفاعل والوقت ونسخة السجل والنص.','The actor, time, record revision and text will be audited.')}</p>
         <label>{tr('نص القرار أو المسودة','Decision or draft text')}<textarea value={actionText} onChange={e=>setActionText(e.target.value)} required={['information','reopen'].includes(pendingAction.action)} readOnly={pendingAction.action==='request_submission'} maxLength={8000}/></label>
         <label className="cr-check"><input type="checkbox" required/>{tr('أؤكد هذا القرار للتكت المعروض','I confirm this decision for the displayed ticket')}</label>
-        <button className="cr-button cr-primary" disabled={locked}>{tr('تأكيد وحفظ','Confirm and save')}</button><button type="button" className="cr-button" onClick={()=>setPendingAction(null)} disabled={busy}>{tr('إلغاء','Cancel')}</button>
+        <button className="cr-button cr-primary" disabled={locked}>{tr('تأكيد وحفظ','Confirm and save')}</button><button type="button" className="cr-button" onClick={()=>{setReturnFocusTo({action:pendingAction.action,ticketId:pendingAction.row.ticketId});setPendingAction(null);}} disabled={busy}>{tr('إلغاء','Cancel')}</button>
       </form></Card></section>}
       <Card><div className="cr-row"><h2>{tr('الطابور والأرشيف','Queue and archive')}</h2><label>{tr('العرض','View')}<select value={filter} onChange={e=>{setFilter(e.target.value);setPage(0);}}><option value="queue">{tr('الطابور','Queue')}</option><option value="archive">{tr('الأرشيف والاستثناءات','Archive and exclusions')}</option><option value="all">{tr('الكل','All')}</option></select></label>
         <label>{tr('بحث في كل السجل','Search all records')}<input value={search} onChange={e=>{setSearch(e.target.value);setPage(0);}}/></label></div>

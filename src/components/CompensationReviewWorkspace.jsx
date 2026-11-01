@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Card } from './UI';
-import { sourceSchema, safeReviewUrl, reviewStatusLabels, submissionLabels } from '../lib/compensationReview';
+import { sourceSchema, safeReviewUrl, reviewStatusLabels, submissionLabels, reviewRecordEqual } from '../lib/compensationReview';
 import { useLanguage } from '../i18n/useLanguage';
 import './CompensationReviewPage.css';
 export function CompensationReviewWorkspace({ read, call }) {
@@ -30,7 +30,7 @@ export function CompensationReviewWorkspace({ read, call }) {
       const result = await call({ op, data: { ...payload, requestId: crypto.randomUUID() } });
       const reread = await call({ op: 'read' }), record = reread.cases.find(r => r.ticketId === result.record.ticketId);
       if (!record || record.revision !== result.record.revision || record.sourceHash !== result.record.sourceHash
-        || JSON.stringify(record.submission) !== JSON.stringify(result.record.submission))
+        || !reviewRecordEqual(record, result.record))
         throw Error(tr('الحفظ غير محسوم؛ أعد القراءة ولا تكرر الطلب.','Save is unconfirmed. Re-read before retrying.'));
       setMessage(tr('حُفظ السجل وطابقته إعادة القراءة.','Saved and verified by re-reading.'));
       setPendingAction(null); setPreview(null); read.refresh();

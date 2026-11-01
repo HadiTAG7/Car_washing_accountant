@@ -20,6 +20,15 @@ const stamp = z.string().datetime({ offset: true });
 const ticket = z.string().regex(/^[A-Z0-9][A-Z0-9-]{0,79}$/);
 export const ticketKey = value => String(value || '').trim().toUpperCase();
 export const ticketDocumentId = value => 'ssp-ticket-' + ticketKey(value);
+// JSONB may reorder object keys. Preserve field presence, array order and every
+// value while ignoring object insertion order in independent readback.
+export function reviewRecordEqual(left, right) {
+  if (Object.is(left, right)) return true;
+  if (!left || !right || typeof left !== 'object' || typeof right !== 'object') return false;
+  if (Array.isArray(left) !== Array.isArray(right)) return false;
+  const a = Object.keys(left).sort(), b = Object.keys(right).sort();
+  return a.length === b.length && a.every((key, index) => key === b[index] && reviewRecordEqual(left[key], right[key]));
+}
 export const sourceSchema = z.object({
   schemaVersion: z.literal(1), ticketId: ticket,
   source: z.object({ url, readAt: stamp, coverage: z.object({

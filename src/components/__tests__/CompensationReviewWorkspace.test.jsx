@@ -36,6 +36,30 @@ it('blocks further mutation after an ambiguous save until the record is re-read'
   await waitFor(()=>expect(screen.getByRole('alert').textContent).toContain('unknown save result'));
   expect(screen.getByRole('button',{name:'طلب رفع هذا التكت بالنص المحدد'}).disabled).toBe(true);
 });
+it('accepts a complete identical readback whose object keys were reordered by JSONB',async()=>{
+  const row=record();row.submission={status:'queued',text:row.draft.text,requestId:'synthetic-request',draftRevision:1};
+  const reorder=value=>Array.isArray(value)?value.map(reorder):value&&typeof value==='object'
+    ?Object.fromEntries(Object.keys(value).reverse().map(key=>[key,reorder(value[key])])):value;
+  const r=read(),call=vi.fn(async input=>input.op==='read'?{cases:[reorder(row)]}:{record:row});
+  render(<CompensationReviewWorkspace read={r} call={call}/>);
+  fireEvent.click(screen.getByRole('button',{name:'طلب رفع هذا التكت بالنص المحدد'}));
+  fireEvent.click(screen.getByRole('checkbox'));
+  fireEvent.submit(screen.getByRole('button',{name:'تأكيد وحفظ'}).closest('form'));
+  await waitFor(()=>expect(screen.getByRole('status').textContent).toContain('حُفظ السجل وطابقته إعادة القراءة'));
+  expect(r.refresh).toHaveBeenCalledTimes(1);
+});
+it('keeps the ambiguous-write gate when the returned decision text really differs',async()=>{
+  const row=record();row.submission={status:'queued',text:row.draft.text,requestId:'synthetic-request'};
+  const changed={...row,submission:{...row.submission,text:'Different actual text'}};
+  const r=read(),call=vi.fn(async input=>input.op==='read'?{cases:[changed]}:{record:row});
+  render(<CompensationReviewWorkspace read={r} call={call}/>);
+  fireEvent.click(screen.getByRole('button',{name:'طلب رفع هذا التكت بالنص المحدد'}));
+  fireEvent.click(screen.getByRole('checkbox'));
+  fireEvent.submit(screen.getByRole('button',{name:'تأكيد وحفظ'}).closest('form'));
+  await waitFor(()=>expect(screen.getByRole('alert').textContent).toContain('الحفظ غير محسوم'));
+  expect(r.refresh).not.toHaveBeenCalled();
+  expect(screen.getByRole('button',{name:'حفظ مسودة'}).disabled).toBe(true);
+});
 it('denies partner preview, without exposing the import form or an owner action',()=>{
   const call=vi.fn();render(<CompensationReviewWorkspace read={read({allowed:false,data:null})} call={call}/>);
   expect(screen.queryByRole('button')).toBeNull();expect(call).not.toHaveBeenCalled();

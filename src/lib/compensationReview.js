@@ -2,6 +2,7 @@ import { z } from 'zod';
 export { TICKET_REVIEW_TYPE, TICKET_QUEUE_TYPE, isTicketReview, isInternalQualityObjection } from './sweater/qualityRecordTypes.js';
 export const REVIEW_OWNER_UID = '35b55029-8f93-5c3d-b505-3f0b7e96d5b9';
 export const REVIEW_OWNER_EMAIL = 'haditag77+admin@gmail.com';
+export const TICKET_REVIEW_ARCHIVE_STATES = Object.freeze(['historical_excluded','historical_deferred','previously_objected','left','prior_decision_unverified']);
 // No source URL is fetched by our server. Links are opened only by the authorized reader.
 export function safeReviewUrl(value) {
   try {

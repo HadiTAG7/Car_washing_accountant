@@ -4,6 +4,14 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { CompensationReviewWorkspace } from '../CompensationReviewWorkspace';
 import { reviewSource } from '../../../functions/test/compensationReviewFixture.js';
 afterEach(cleanup);
+it('counts the same excluded and historically deferred cases in the archive counter and filter',()=>{
+  const a=record(),b={...record(),ticketId:'TEST-900002',reviewStatus:'historical_deferred'};
+  a.reviewStatus='historical_excluded';
+  render(<CompensationReviewWorkspace read={read({data:{cases:[a,b],queue:{activeTicketId:null,revision:1},canDecide:false}})} call={vi.fn()}/>);
+  expect(screen.getByRole('heading',{name:'الأرشيف والاستثناءات'}).parentElement.querySelector('strong').textContent).toBe('2');
+  fireEvent.change(screen.getByLabelText('العرض'),{target:{value:'archive'}});
+  expect(screen.getAllByRole('row')).toHaveLength(3);
+});
 it('returns keyboard focus to the initiating draft button on cancel',async()=>{
   render(<CompensationReviewWorkspace read={read()} call={vi.fn()}/>);
   const trigger=screen.getByRole('button',{name:'حفظ مسودة'});

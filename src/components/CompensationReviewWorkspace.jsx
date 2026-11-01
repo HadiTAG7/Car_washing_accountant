@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Card } from './UI';
-import { sourceSchema, safeReviewUrl, reviewStatusLabels, submissionLabels, reviewRecordEqual } from '../lib/compensationReview';
+import { sourceSchema, safeReviewUrl, reviewStatusLabels, submissionLabels, reviewRecordEqual, TICKET_REVIEW_ARCHIVE_STATES } from '../lib/compensationReview';
 import { useLanguage } from '../i18n/useLanguage';
 import './CompensationReviewPage.css';
 export function CompensationReviewWorkspace({ read, call }) {
@@ -19,8 +19,8 @@ export function CompensationReviewWorkspace({ read, call }) {
   const data = read.data, cases = data?.cases || [], queue = data?.queue;
   useEffect(() => {
     if (!returnFocusTo || pendingAction || read.loading || read.error || !data) return;
-    const target = rootRef.current?.querySelector('[data-cr-action="' + returnFocusTo.action + '"][data-cr-ticket="' + returnFocusTo.ticketId + '"]')
-      || rootRef.current?.querySelector('[data-cr-refresh]');
+    const candidate = rootRef.current?.querySelector('[data-cr-action="' + returnFocusTo.action + '"][data-cr-ticket="' + returnFocusTo.ticketId + '"]');
+    const target = candidate && !candidate.disabled ? candidate : rootRef.current?.querySelector('[data-cr-refresh]');
     target?.focus(); setReturnFocusTo(null);
   }, [returnFocusTo, pendingAction, read.loading, read.error, data]);
   const active = cases.find(r => r.ticketId === (viewTicketId || queue?.activeTicketId));
@@ -53,8 +53,8 @@ export function CompensationReviewWorkspace({ read, call }) {
     setPendingAction({ action, row });
   }
   const filtered = cases.filter(r => (filter === 'all' || (filter === 'archive'
-    ? ['historical_excluded','historical_deferred','prior_decision_unverified','left','previously_objected'].includes(r.reviewStatus)
-    : !['historical_excluded','historical_deferred','prior_decision_unverified','left','previously_objected'].includes(r.reviewStatus)))
+    ? TICKET_REVIEW_ARCHIVE_STATES.includes(r.reviewStatus)
+    : !TICKET_REVIEW_ARCHIVE_STATES.includes(r.reviewStatus)))
     && [r.ticketId,...r.source.facts.washIds,r.source.facts.biker.name,r.source.facts.biker.externalId,r.source.facts.complaint].join(' ').toLowerCase().includes(search.toLowerCase()));
   const visible = filtered.slice(page * 15, page * 15 + 15);
   const refresh = async () => {
@@ -78,7 +78,7 @@ export function CompensationReviewWorkspace({ read, call }) {
         {[[tr('في الطابور','In queue'),cases.filter(r=>r.reviewStatus==='pending').length],
           [tr('اعترض عليها سابقًا','Previously objected'),cases.filter(r=>r.objectionHistory?.length).length],
           [tr('طلبات رفع تنتظر','Queued requests'),cases.filter(r=>r.submission.status==='queued').length],
-          [tr('الأرشيف والاستثناءات','Archive and exclusions'),cases.filter(r=>['historical_excluded','historical_deferred','previously_objected','left','prior_decision_unverified'].includes(r.reviewStatus)).length]]
+          [tr('الأرشيف والاستثناءات','Archive and exclusions'),cases.filter(r=>TICKET_REVIEW_ARCHIVE_STATES.includes(r.reviewStatus)).length]]
           .map(([label,n])=><Card key={label}><h2>{label}</h2><strong>{n}</strong></Card>)}
       </div>
       {active ? <Card className="cr-case" key={active.ticketId + ':' + active.revision}>
@@ -140,7 +140,7 @@ export function CompensationReviewWorkspace({ read, call }) {
       </form></Card></section>}
       <Card><div className="cr-row"><h2>{tr('الطابور والأرشيف','Queue and archive')}</h2><label>{tr('العرض','View')}<select value={filter} onChange={e=>{setFilter(e.target.value);setPage(0);}}><option value="queue">{tr('الطابور','Queue')}</option><option value="archive">{tr('الأرشيف والاستثناءات','Archive and exclusions')}</option><option value="all">{tr('الكل','All')}</option></select></label>
         <label>{tr('بحث في كل السجل','Search all records')}<input value={search} onChange={e=>{setSearch(e.target.value);setPage(0);}}/></label></div>
-        <div className="cr-scroll"><table><thead><tr>{[tr('التكت','Ticket'),tr('البايكر','Biker'),tr('الحالة','Status'),tr('مرجع التاريخ المستثنى','Historical reference'),tr('الاعتراضات','Objections'),tr('فتح','Open')].map(t=><th key={t}>{t}</th>)}</tr></thead><tbody>{visible.map(r=><tr key={r.ticketId}><th><bdi>{r.ticketId}</bdi></th><td>{r.source.facts.biker.name || '—'}</td><td>{status(r)}</td><td>{r.source.historicalReference || '—'}</td><td>{r.objectionHistory?.map(o=>o.id).join(' · ') || '—'}</td><td><button className="cr-button" onClick={()=>setViewTicketId(r.ticketId)}>{tr('عرض التفاصيل','View details')}</button>{data.canDecide && <button className="cr-button" disabled={locked || r.ticketId===queue.activeTicketId} onClick={()=>owner(['pending','deferred'].includes(r.reviewStatus)?'select':'reopen',r)}>{['pending','deferred'].includes(r.reviewStatus)?tr('تعيين كحالة نشطة','Set as active case'):tr('إعادة مراجعة بقرار هادي','Reopen by Hadi’s decision')}</button>}</td></tr>)}</tbody></table></div>
+        <div className="cr-scroll"><table><thead><tr>{[tr('التكت','Ticket'),tr('البايكر','Biker'),tr('الحالة','Status'),tr('مرجع التاريخ المستثنى','Historical reference'),tr('الاعتراضات','Objections'),tr('فتح','Open')].map(t=><th key={t}>{t}</th>)}</tr></thead><tbody>{visible.map(r=><tr key={r.ticketId}><th><bdi>{r.ticketId}</bdi></th><td>{r.source.facts.biker.name || '—'}</td><td>{status(r)}</td><td>{r.source.historicalReference || '—'}</td><td>{r.objectionHistory?.map(o=>o.id).join(' · ') || '—'}</td><td><button className="cr-button" onClick={()=>setViewTicketId(r.ticketId)}>{tr('عرض التفاصيل','View details')}</button>{data.canDecide && <button data-cr-ticket={r.ticketId} data-cr-action={["pending","deferred"].includes(r.reviewStatus)?"select":"reopen"} className="cr-button" disabled={locked || r.ticketId===queue.activeTicketId} onClick={()=>owner(['pending','deferred'].includes(r.reviewStatus)?'select':'reopen',r)}>{['pending','deferred'].includes(r.reviewStatus)?tr('تعيين كحالة نشطة','Set as active case'):tr('إعادة مراجعة بقرار هادي','Reopen by Hadi’s decision')}</button>}</td></tr>)}</tbody></table></div>
         {!visible.length && <p>{tr('لا توجد نتائج ضمن هذا الفلتر.','No results for this filter.')}</p>}
         <nav className="cr-row" aria-label={tr('صفحات السجل','Record pages')}><button className="cr-button" onClick={()=>setPage(p=>p-1)} disabled={!page}>{tr('السابق','Previous')}</button><span>{page+1} / {Math.max(1,Math.ceil(filtered.length/15))} · {filtered.length}</span><button className="cr-button" onClick={()=>setPage(p=>p+1)} disabled={(page+1)*15>=filtered.length}>{tr('التالي في السجل','Next records')}</button></nav>
       </Card>
@@ -157,6 +157,7 @@ export function CompensationReviewWorkspace({ read, call }) {
 }
 function SafeLink({ href, children }) { return safeReviewUrl(href) ? <a href={href} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">{children}</a> : <span>{children} — رابط غير آمن</span>; }
 function TextList({ items }) { return items?.length ? <ul>{items.map((t,i)=><li className="cr-prose" key={i}>{t}</li>)}</ul> : <p>—</p>; }
+
 
 
 

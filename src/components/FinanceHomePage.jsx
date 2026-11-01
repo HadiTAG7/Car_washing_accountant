@@ -14,6 +14,13 @@ import './FinanceHomePage.css';
 
 const money = value => Number.isFinite(value) ? value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : null;
 const amountText = value => money(value) === null ? 'المبلغ غير متاح' : `${money(value)} ر.س`;
+const budgetOverruns = budget => (budget?.cards || []).filter(card => card.budget.amount > 0 && card.spent > card.budget.amount);
+function openDetails(ref) {
+  if (!ref.current) return;
+  ref.current.open = true;
+  ref.current.querySelector('summary')?.focus();
+  ref.current.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+}
 
 function Metric({ label, value, note, date, icon: Icon, tone = '', onClick, children }) {
   return <button type="button" className={`fm-card ${tone ? `fm-card--${tone}` : ''}`} onClick={onClick}>
@@ -25,7 +32,7 @@ function Metric({ label, value, note, date, icon: Icon, tone = '', onClick, chil
   </button>;
 }
 
-function ActionList({ data, onNavigate, onCashDetails }) {
+function ActionList({ data, onNavigate, onCashDetails, onBudgetDetails }) {
   const { ledger, vat, workbench, settlement, settlementReady, budget, month } = data;
   const rows = [];
   ledger?.negativeAccounts.forEach(account => rows.push({ key: `cash-${account.code}`, danger: true, route: 'ledger',
@@ -35,21 +42,21 @@ function ActionList({ data, onNavigate, onCashDetails }) {
   if (settlementReady && !APPROVED_SETTLEMENT_STATUSES.has(settlement?.status)) rows.push({ key: 'settlement', route: 'sweater_settlements',
     label: settlement?.figures ? 'تسوية سويتر بانتظار الاعتماد' : 'تسوية سويتر لم تُحسب',
     detail: settlement?.figures ? `${settlement.figures.counts?.eligible ?? '—'} خدمات مؤهلة من ${settlement.figures.counts?.imported ?? '—'} حجز · ${month}` : month });
-  const overrunCount = budget?.cards.filter(card => card.budget.amount > 0 && card.spent > card.budget.amount).length || 0;
+  const overrunCount = budgetOverruns(budget).length;
   if (overrunCount) rows.push({ key: 'budget', route: 'budgets', label: 'ميزانيات متجاوزة',
     detail: `${overrunCount} بنود · ${budget.totals.remaining < 0 ? `العجز الإجمالي: ${amountText(budget.totals.remaining)}` : 'راجع تفاصيل التجاوز'} · ${budget.month}` });
   const complete = ledger && vat && workbench && budget && settlementReady;
   return <section className="fm-actions" aria-labelledby="finance-actions-title">
     <div className="fm-section-heading"><h2 id="finance-actions-title">يحتاج إجراء</h2>{rows.length > 0 && <span className="fm-count">{rows.length}</span>}</div>
     {rows.length > 0 && <ul>{rows.map(row => <li key={row.key} className={row.danger ? 'fm-action--danger' : ''}>
-      <button type="button" onClick={() => row.route === 'ledger' ? onCashDetails() : onNavigate(row.route)}>
+      <button type="button" onClick={() => row.route === 'ledger' ? onCashDetails() : row.route === 'budgets' ? onBudgetDetails() : onNavigate(row.route)}>
         <AlertTriangle size={17} aria-hidden="true" /><span className="fm-action__label">{row.label}</span>
         <span className="fm-action__detail">{row.detail}</span><ArrowLeft size={16} aria-hidden="true" />
       </button>
     </li>)}</ul>}
     {rows.length === 0 && complete && <p className="fm-clear"><CheckCircle2 size={18} />ما فيه شي يحتاج إجراء</p>}
     {!complete && <p className="fm-incomplete" role="status">{data.loading ? 'جارٍ التحقق من البنود المتبقية…' : 'لم يكتمل فحص جميع البنود؛ لا يعني ذلك خلوّها من الإجراءات.'}</p>}
-    <p className="fm-scope">الميزانيات: الشهر الحالي والسنة، كما في صفحة الرقابة والميزانيات.</p>
+    <p className="fm-scope">الميزانيات: الشهر الحالي والسنة؛ تفاصيل التجاوز للقراءة داخل الملخص.</p>
   </section>;
 }
 
@@ -64,13 +71,10 @@ function FinanceHomeContent({ onNavigate }) {
   const data = useFinanceHomeData(month);
   const reports = useLatestFinanceOwnerReports();
   const cashDetails = useRef(null);
-  const showCashDetails = () => {
-    if (!cashDetails.current) return;
-    cashDetails.current.open = true;
-    cashDetails.current.querySelector('summary')?.focus();
-    cashDetails.current.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
-  };
-  const { ledger, statement, vat, settlement, settlementReady } = data;
+  const budgetDetails = useRef(null);
+  const showCashDetails = () => openDetails(cashDetails);
+  const { ledger, statement, vat, settlement, settlementReady, budget } = data;
+  const overruns = budgetOverruns(budget);
   const [readStarted, setReadStarted] = useState(() => new Date().toISOString());
   const cumulativeDate = `تراكمي · ${data.today}`;
   const monthDate = `${month} · حتى ${data.today}`;
@@ -124,7 +128,17 @@ function FinanceHomeContent({ onNavigate }) {
         {!ledger && <p role="alert">تعذرت قراءة الأرصدة؛ لم تُفترض أصفار.</p>}
         <p className="fm-scope">المسجل في الدفتر فقط؛ الرواتب التقديرية وإيراد الشهر غير المرحل تظهر في أرقام الشهر أعلاه.</p>
       </details>
-      <ActionList data={data} onNavigate={onNavigate} onCashDetails={showCashDetails} />
+      <ActionList data={data} onNavigate={onNavigate} onCashDetails={showCashDetails} onBudgetDetails={() => openDetails(budgetDetails)} />
+      {overruns.length > 0 && <details ref={budgetDetails} className="fm-actions fm-details">
+        <summary>تفاصيل تجاوز الميزانية</summary>
+        <p className="fm-scope">فترة الميزانيات: {budget.month} والسنة الحالية؛ مستقلة عن شهر نتيجة الشركة المختار.</p>
+        <p>المتبقي حسب نموذج الميزانيات: <bdi className={budget.totals.remaining < 0 ? 'fm-negative' : ''}>{amountText(budget.totals.remaining)}</bdi></p>
+        <p className="fm-scope">البنود التالية تجاوزت ميزانياتها المسجلة؛ البنود بلا ميزانية لا تُعد تجاوزًا. العرض للقراءة فقط.</p>
+        <ul>{overruns.map((card, i) => <li key={card.budget.id || i}>
+          <strong>{card.budget.categoryLabel || 'تصنيف غير معروف'}</strong>
+          <p>{card.budget.budgetType === 'annual' ? 'سنوي' : card.budget.budgetType === 'monthly' ? 'شهري' : 'غير محدد'} · الميزانية: <bdi>{amountText(card.budget.amount)}</bdi> · الصرف: <bdi>{amountText(card.spent)}</bdi></p>
+        </li>)}</ul>
+      </details>}
       <FinanceOwnerBrief state={reports} />
       <p className="fw-meta">بدء القراءة: {new Date(readStarted).toLocaleString('ar-SA', { timeZone: 'Asia/Riyadh', calendar: 'gregory', numberingSystem: 'latn' })} · الرياض</p>
     </main></>;

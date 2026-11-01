@@ -5,7 +5,7 @@ import BikerDeductionSummary from './BikerDeductionSummary';
 const button = 'sw-button sw-button--secondary sw-button--sm';
 const amount = row => row.unit === 'count' ? `${row.quantity} إلغاء · المبلغ ${row.amountSAR == null ? 'غير محدد من المصدر' : `${row.amountSAR} ر.س`}` : `${row.amountSAR} ر.س`;
 
-export default function BikerDeductionFollowup({ records = [], periodKey, loading = false, readError = null, preview, save, disabled }) {
+export default function BikerDeductionFollowup({ records = [], periodKey, loading = false, readError = null, preview, save, disabled, onDraftChange }) {
   const [json, setJson] = useState(''), [review, setReview] = useState(null), [payload, setPayload] = useState(null);
   const [busy, setBusy] = useState(false), [message, setMessage] = useState(''), [confirmed, setConfirmed] = useState(false), [requestId, setRequestId] = useState(null);
   return <Card className="qv-panel qv-deductions"><SectionHeader title="خصومات سويتر على البايكر" subtitle="إسناد واقعة موثقة فقط؛ لا يخصم من المسير ولا يرحّل مبلغًا." />
@@ -16,7 +16,7 @@ export default function BikerDeductionFollowup({ records = [], periodKey, loadin
       <form onSubmit={async e => { e.preventDefault(); setBusy(true); setReview(null); setMessage(''); setConfirmed(false); try {
         const input = JSON.parse(json); const result = await preview(input); setReview(result); setPayload(input); setRequestId(crypto.randomUUID());
       } catch (error) { setMessage(error.message || 'تعذّرت المعاينة.'); } finally { setBusy(false); } }}>
-        <label>ملف الواقعة المراجع<textarea aria-label="ملف واقعة الخصم" dir="ltr" value={json} rows={8} onChange={e => { setJson(e.target.value); setReview(null); setPayload(null); setConfirmed(false); }} /></label>
+        <label>ملف الواقعة المراجع<textarea aria-label="ملف واقعة الخصم" dir="ltr" value={json} rows={8} onChange={e => { setJson(e.target.value); setReview(null); setPayload(null); setConfirmed(false); onDraftChange?.(Boolean(e.target.value.trim())); }} /></label>
         <button className={button} disabled={disabled || busy}>معاينة فقط</button>
       </form>
       {review && <section aria-label="معاينة خصم البايكر"><h3>{review.proposed.bikerName} · {amount(review.proposed)}</h3>
@@ -29,7 +29,7 @@ export default function BikerDeductionFollowup({ records = [], periodKey, loadin
           <button className={button} disabled={disabled || busy || !confirmed} onClick={async () => {
             setBusy(true); setMessage(''); try { const result = await save({ payload, reviewedPayloadHash: review.reviewedPayloadHash, previewStateHash: review.previewStateHash, requestId });
               if (!result.record) throw Error('تعذّر التحقق من سجل الحفظ.');
-              setReview({ ...review, canSave: false }); setMessage(`تم تسجيل الواقعة · النسخة ${result.record.revision} · لم يُخصم راتب ولم يُنشأ قيد.`);
+              setReview({ ...review, canSave: false }); onDraftChange?.(false); setMessage(`تم تسجيل الواقعة · النسخة ${result.record.revision} · لم يُخصم راتب ولم يُنشأ قيد.`);
             } catch (error) { setMessage(error.message || 'تعذّر الحفظ؛ أعد المعاينة.'); } finally { setBusy(false); }
           }}>تسجيل الواقعة المراجعة</button></>}
       </section>}

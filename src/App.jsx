@@ -138,7 +138,7 @@ function AppShell({ membership }) {
 
   // Selecting a tab from inside the mobile drawer should auto-close it.
   function handleSelectTab(id) {
-    setActiveTab(id);
+    if (setActiveTab(id) === false) return;
     setMobileMenuOpen(false);
   }
 
